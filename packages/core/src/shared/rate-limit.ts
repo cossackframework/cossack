@@ -1,6 +1,8 @@
 // src/shared/rate-limit.ts
 import './metadata';
 import type { Context } from 'hono';
+import { assertRateLimitNotAborted, readRateLimitResponse, runRateLimitOperation, rateLimitTimeout, RATE_LIMIT_RESPONSE_MAX_BYTES, type RateLimitHitOptions } from './rate-limit-io';
+export { RATE_LIMIT_RESPONSE_MAX_BYTES, type RateLimitHitOptions } from './rate-limit-io';
 
 export const RATE_LIMIT_METADATA_KEY = 'cossack:rate-limit';
 
@@ -31,6 +33,8 @@ export interface RateLimitOptions {
      * Body of the `429` response. Default `'Too Many Requests'`.
      */
     message?: string;
+    /** Counter decision deadline in milliseconds, including body EOF. Default 5000. */
+    backendTimeoutMs?: number;
 }
 
 /**
@@ -48,7 +52,7 @@ export interface RateLimitStore {
      * reset, start a fresh window with count `1`. Must return the current count
      * and the epoch-millis timestamp at which the window resets.
      */
-    hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> | { count: number; resetAt: number };
+    hit(key: string, windowMs: number, options?: RateLimitHitOptions): Promise<{ count: number; resetAt: number }> | { count: number; resetAt: number };
 }
 
 const RATE_LIMIT_COUNTER_KEY = 'cossack:rate-limit:counter';
@@ -104,8 +108,10 @@ export class InMemoryRateLimitStore implements RateLimitStore {
         this.maxEntries = maxEntries;
     }
 
-    hit(key: string, windowMs: number): { count: number; resetAt: number } {
+    hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): { count: number; resetAt: number } {
         assertKey(key); assertWindow(windowMs);
+        rateLimitTimeout(options);
+        assertRateLimitNotAborted(options.signal);
         const now = Date.now();
         const existing = this.entries.get(key);
         if (!existing || now >= existing.resetAt) {
@@ -180,26 +186,31 @@ export class KvRateLimitStore implements RateLimitStore {
         this.namespace = options.namespace ?? 'cossack:rl:';
     }
 
-    async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+    async hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): Promise<{ count: number; resetAt: number }> {
         assertKey(key); assertWindow(windowMs);
-        const kvKey = `${this.namespace}${key}`;
-        const entry = await this.read(kvKey);
-        const now = Date.now();
-        assertWindow(windowMs);
-        const next = readCounter(entry && now < entry.resetAt
-            ? { count: entry.count + 1, resetAt: entry.resetAt }
-            : { count: 1, resetAt: now + windowMs });
-        // Storage retention must not expire the counter before its logical window.
-        const ttl = Math.max(60, Math.ceil((next.resetAt - now) / 1000));
-        await this.kv.put(kvKey, JSON.stringify(next), { expirationTtl: ttl });
-        return next;
+        return runRateLimitOperation(options, async signal => {
+            const kvKey = `${this.namespace}${key}`;
+            const entry = await this.read(kvKey);
+            assertRateLimitNotAborted(signal);
+            const now = Date.now();
+            assertWindow(windowMs);
+            const next = readCounter(entry && now < entry.resetAt
+                ? { count: entry.count + 1, resetAt: entry.resetAt }
+                : { count: 1, resetAt: now + windowMs });
+            // Storage retention must not expire the counter before its logical window.
+            const ttl = Math.max(60, Math.ceil((next.resetAt - now) / 1000));
+            await this.kv.put(kvKey, JSON.stringify(next), { expirationTtl: ttl });
+            assertRateLimitNotAborted(signal);
+            return next;
+        });
     }
 
     private async read(kvKey: string): Promise<RateLimitCounter | undefined> {
         const raw = await this.kv.get(kvKey);
         if (raw === null) return undefined;
         try {
-            if (typeof raw !== 'string') throw new Error();
+            if (typeof raw !== 'string' || raw.length > RATE_LIMIT_RESPONSE_MAX_BYTES ||
+                new TextEncoder().encode(raw).byteLength > RATE_LIMIT_RESPONSE_MAX_BYTES) throw new Error();
             return readCounter(JSON.parse(raw));
         } catch {
             throw new Error('[Cossack] Invalid rate-limit counter returned by KV storage.');
@@ -316,15 +327,14 @@ export class DurableObjectRateLimitStore implements RateLimitStore {
         }
     }
 
-    async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+    async hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): Promise<{ count: number; resetAt: number }> {
         assertKey(key); assertWindow(windowMs);
-        const id = this.ns.idFromName(key);
-        const stub = this.ns.get(id);
-        const res = await stub.fetch(`https://rate-limit/?window=${windowMs}`);
-        if (!res.ok) {
-            throw new Error(`[Cossack] RateLimitDurableObject returned ${res.status}`);
-        }
-        return readCounter(await res.json());
+        return runRateLimitOperation(options, async signal => {
+            const id = this.ns.idFromName(key);
+            const stub = this.ns.get(id);
+            const res = await stub.fetch(`https://rate-limit/?window=${windowMs}`, { signal });
+            return readCounter(await readRateLimitResponse(res, signal));
+        });
     }
 }
 
@@ -396,18 +406,16 @@ export class RedisRateLimitStore implements RateLimitStore {
         }
     }
 
-    async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+    async hit(key: string, windowMs: number, options: RateLimitHitOptions = {}): Promise<{ count: number; resetAt: number }> {
         assertKey(key); assertWindow(windowMs);
-        const kvKey = `${this.namespace}${key}`;
-        const res = await this.fetchFn(this.url, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(['EVAL', REDIS_RATE_LIMIT_SCRIPT, '1', kvKey, String(windowMs)]),
+        return runRateLimitOperation(options, async signal => {
+            const kvKey = `${this.namespace}${key}`;
+            const res = await this.fetchFn(this.url, {
+                method: 'POST', signal,
+                headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(['EVAL', REDIS_RATE_LIMIT_SCRIPT, '1', kvKey, String(windowMs)]),
         });
-        if (!res.ok) {
-            throw new Error(`[Cossack] RedisRateLimitStore Upstash HTTP ${res.status}`);
-        }
-        const data = await res.json() as { result?: unknown; error?: unknown } | null;
+        const data = await readRateLimitResponse(res, signal) as { result?: unknown; error?: unknown } | null;
         if (!data || typeof data !== 'object' || Array.isArray(data) || 'error' in data ||
             !Array.isArray(data.result) || data.result.length !== 2) {
             throw new Error('[Cossack] RedisRateLimitStore returned an invalid or error response.');
@@ -417,6 +425,7 @@ export class RedisRateLimitStore implements RateLimitStore {
             throw new Error('[Cossack] RedisRateLimitStore returned an invalid counter TTL.');
         }
         return readCounter({ count, resetAt: Date.now() + pttl });
+        });
     }
 }
 
@@ -575,6 +584,7 @@ export async function evaluateRateLimit(
     c: Context,
     scopeKey: string,
     options: RateLimitOptions,
+    signal: AbortSignal | undefined = c.req?.raw?.signal,
 ): Promise<{ message: string; retryAfter: number } | null> {
     const store = configureRateLimitFromEnv((c as unknown as { env?: Record<string, unknown> }).env);
     const windowMs = options.window === undefined ? 60_000 : options.window;
@@ -592,7 +602,9 @@ export async function evaluateRateLimit(
     assertKey(scopeKey);
     const caller = options.key ? options.key(c) : defaultRateLimitKey(c);
     assertKey(caller);
-    const { count, resetAt } = readCounter(await store.hit(`${scopeKey}:${caller}`, windowMs));
+    const { count, resetAt } = await runRateLimitOperation({ signal, timeoutMs: options.backendTimeoutMs },
+        async operationSignal => readCounter(await store.hit(`${scopeKey}:${caller}`, windowMs,
+            { signal: operationSignal, timeoutMs: options.backendTimeoutMs })));
     if (count <= max) return null;
 
     const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
@@ -694,6 +706,7 @@ function wrapHandler(options: RateLimitOptions, handler: HonoHandler): HonoHandl
     return async (c: Context) => {
         const blocked = await enforceRateLimit(c, `route:${c.req.method}:${c.req.path}`, options);
         if (blocked) return blocked;
+        assertRateLimitNotAborted(c.req?.raw?.signal);
         return handler(c);
     };
 }

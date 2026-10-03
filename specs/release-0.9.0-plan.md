@@ -1249,15 +1249,40 @@ sanitized failure with state unchanged. These fixtures do not prove live Redis
 or KV regional consistency. Real Node sockets and Deno event tests pass; actual
 Deno execution remains a separate release gate.
 
+Codex checkpoint (2026-10-03, after `14365b3`): DO/Redis replies now have an
+8192-byte bound, strict UTF-8 and required EOF. KV text records are bounded before
+parsing. A five-second default counter decision deadline applies to built-ins
+and framework enforcement of custom stores. `backendTimeoutMs` configures it;
+async direct built-in calls accept `{ signal, timeoutMs }` as a third argument.
+Late/error bodies are cancelled and readers released without hanging on faulty
+cancel callbacks. HTTP request signals and socket call/close/error signals stop
+late action invocation. A cancelled pending KV read cannot dispatch a write;
+an in-flight write can still commit. No retry or rollback is promised.
+
+Client HTTP/multipart/service requests now carry UUID v4 correlation IDs before
+headers. Only valid UUID v4 input is adopted by the server guard; arbitrary IDs
+get replaced and authorization still applies. Six new matrix cases initially
+exposed missing IDs before response headers. The matrix now has 354 cases, with
+12 additions for limiter deadlines/cancellation and next-action progress before
+an ignored provider is released. Core has 43 focused I/O cases and three peer
+close/error queue cases. Native workerd reads real DO response streams: oversized,
+invalid UTF-8, HTTP error, stalled and aborted replies reject without mutations,
+reader locks release, and an exact 8192-byte valid body succeeds. Separate custom
+fetch cases inside workerd prove late-body disposal for both clients; these are
+not live Redis or native header-abort guarantees. Remote native producer cancel
+callbacks were not observed after cancelling the subrequest; do not claim them.
+
 Next steps, with each goal kept separate:
 
-1. Finish backend I/O ownership and resource policy. DO/Redis still consume
-   responses with unbounded `res.json()` and do not pass an action/request abort
-   signal into store calls. Prove bounded bytes, strict UTF-8, body EOF/errors,
-   non-success body cleanup, cancellation/deadlines and no late mutation after
-   a blocked/aborted decision. A counter may already have incremented; do not
-   retry or promise rollback. Keep direct third-party/custom-store behavior
-   explicit rather than implying the built-in backend guarantee applies to it.
+1. Finish native disconnect and coordinator acceptance. Incoming Cloudflare
+   request signals require `enable_request_signal`; audit scaffold/upgrade and
+   named environment flags and prove a real client disconnect during a pending
+   decision. The native body-abort fixture uses an explicit request controller.
+   The shared matrix's SSE path uses the local backend. Prove current distributed
+   coordinator cancellation behavior during a queued or pending counter decision
+   before claiming no late mutation there. Keep native Deno/Electron release
+   gates separate. Audit cancellation/resource ownership for unsupported custom
+   direct stores without implying a guarantee the interface does not enforce.
 2. Finish provider-specific configuration/resource validation. Audit Redis URL
    schemes, optional namespace values, key UTF-8 bounds, memory prune/capacity
    semantics and backend maximum durations. Check namespace encoding/collision

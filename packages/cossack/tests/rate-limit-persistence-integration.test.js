@@ -116,3 +116,100 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
   expect((await configured.fetch('/configured?mode=unset')).status).toBe(429);
   expect(await (await configured.fetch('/mutations')).json()).toEqual({ mutations: 3, run: 'after' });
 }, 60_000);
+
+it('bounds native counter response bodies and cancels decisions before handler mutation', async () => {
+  vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-rate-io-'));
+  const core = fileURLToPath(new URL('../../core/dist/index.js', import.meta.url));
+  const hono = fileURLToPath(new URL('../../../node_modules/hono/dist/index.js', import.meta.url));
+  const main = path.join(directory, 'worker.ts');
+  await fs.writeFile(main, `
+    import { Hono } from ${JSON.stringify(hono)};
+    import { RateLimit, DurableObjectRateLimitStore, RedisRateLimitStore } from ${JSON.stringify(core)};
+    export class CounterReplies {
+      state; hits = 0; cancels = 0;
+      constructor(state) { this.state = state; }
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname === '/stats') return Response.json({ hits: this.hits, cancels: this.cancels });
+        this.hits++;
+        const mode = url.searchParams.get('mode');
+        const text = JSON.stringify({ count: 1, resetAt: Date.now() + 60000 });
+        const encoder = new TextEncoder();
+        if (mode === 'valid') return new Response(text.padEnd(8192, ' '));
+        if (mode === 'utf8') return new Response(new Uint8Array([255]));
+        if (mode === 'error') return new Response(new ReadableStream({ cancel: () => { this.cancels++; } }), { status: 503 });
+        return new Response(new ReadableStream({ start(c) {
+          c.enqueue(encoder.encode(mode === 'oversized' ? text.padEnd(8193, ' ') : text));
+        }, cancel: () => { this.cancels++; } }));
+      }
+    }
+    const app = new Hono();
+    let mutations = 0;
+    app.get('/case', async c => {
+      const mode = c.req.query('mode');
+      const controller = new AbortController();
+      let timer;
+      const stub = c.env.COUNTERS.getByName(mode);
+      let observedBody;
+      const namespace = { idFromName: name => name, get: () => ({
+        fetch: async (input, init) => {
+          const response = await stub.fetch(input + '&mode=' + mode, init);
+          observedBody = response.body;
+          if (mode === 'abort') timer = setTimeout(() => controller.abort('PRIVATE_REASON'), 30);
+          return response;
+        },
+      }) };
+      const guarded = new Hono();
+      guarded.onError(error => Response.json({ code: error.code || 'COSSACK_RPC_INTERNAL_ERROR' }, { status: 500 }));
+      guarded.get('/', RateLimit({ backendTimeoutMs: 500, key: () => 'member' }, c => c.json({ mutations: ++mutations })));
+      try {
+        const response = await guarded.fetch(new Request('https://guard/', { signal: controller.signal }),
+          { rateLimit: 'do', RATE_LIMIT_DO: namespace });
+        const body = await response.json();
+        const stats = await (await stub.fetch('https://limit/stats')).json();
+        return c.json({ status: response.status, body, stats, mutations, localLocked: observedBody?.locked ?? false });
+      } finally { clearTimeout(timer); }
+    });
+    // A deliberately uncooperative custom fetch tests late-response disposal in
+    // the actual Worker runtime. It is not a remote Redis service or native DO.
+    app.get('/late', async c => {
+      let charged = 0; let cancelled = 0; let receivedSignal;
+      const provider = c.req.query('provider');
+      const fetch = async (input, init) => {
+        receivedSignal = init.signal; charged++;
+        await new Promise(resolve => setTimeout(resolve, 80));
+        return new Response(new ReadableStream({ cancel() { cancelled++; } }));
+      };
+      const store = provider === 'redis' ? new RedisRateLimitStore({ url: 'https://redis.test', token: 'private', fetch })
+        : new DurableObjectRateLimitStore({ idFromName: name => name, get: () => ({ fetch }) });
+      let code;
+      try { await store.hit('member', 60000, { timeoutMs: 20 }); mutations++; }
+      catch (error) { code = error.code; }
+      await new Promise(resolve => setTimeout(resolve, 120));
+      return c.json({ code, charged, cancelled, aborted: receivedSignal.aborted, mutations });
+    });
+    export default { fetch: (request, env, context) => app.fetch(request, env, context) };
+  `);
+  server = createTestHarness({ root: directory, workers: [{ config: { main, name: 'io',
+    compatibility_date: '2026-07-29', compatibility_flags: ['nodejs_compat', 'enable_request_signal'],
+    durable_objects: { bindings: [{ name: 'COUNTERS', class_name: 'CounterReplies' }] },
+    migrations: [{ tag: 'v1', new_sqlite_classes: ['CounterReplies'] }],
+  } }] });
+  await server.listen();
+  const worker = server.getWorker('io');
+  for (const mode of ['oversized', 'utf8', 'error', 'stall', 'abort']) {
+    const response = await worker.fetch('/case?mode=' + mode);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result).toMatchObject({ status: 500, mutations: 0, localLocked: false, stats: { hits: 1 },
+      body: { code: mode === 'abort' ? 'COSSACK_RPC_CANCELLED' : mode === 'stall' ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_INTERNAL_ERROR' } });
+    // workerd does not promise delivery of a remote JS producer cancel hook.
+    // The returned body's reader is released and the action never runs.
+  }
+  for (const provider of ['redis', 'do']) {
+    expect(await (await worker.fetch('/late?provider=' + provider)).json()).toEqual({
+      code: 'COSSACK_RPC_TIMEOUT', charged: 1, cancelled: 1, aborted: true, mutations: 0 });
+  }
+  expect(await (await worker.fetch('/case?mode=valid')).json()).toMatchObject({ status: 200, mutations: 1, stats: { hits: 1 } });
+}, 30000);

@@ -97,6 +97,8 @@ export class InMemoryWebSocketRuntime<
     }
 
     removeClient(client: Client): void {
+        for (const cancel of rpcCancellations(client).values()) cancel();
+        rpcCancellations(client).clear();
         this.clients.delete(client);
         if (typeof client === 'object' && client !== null) {
             this.users.delete(client);

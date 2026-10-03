@@ -38,8 +38,37 @@ KV storage retention has a minimum of 60 seconds, while its stored millisecond
 deadline determines the logical window. KV still cannot guarantee exact counting
 across regions or sustain more than one write to a key per second; write failures
 reject. Provider capability inspection and cache duration conventions remain
-under RT-18. Backend reply bounds/cancellation and remaining resource policies
-also require further audit.
+under RT-18. Provider-specific resource policies and native disconnect/coordinator coverage
+still require further audit.
+
+## Counter decisions own a deadline and bounded replies
+
+Framework counter decisions now expire after 5000 ms by default. Set
+`@RateLimit({ backendTimeoutMs })` (or the handler wrapper option) to choose a
+positive safe-integer deadline up to `2147483647` ms. This is separate from the
+window and a client method timeout. Async built-in stores support the optional
+third `hit` argument `{ signal, timeoutMs }`. Custom stores receive it too, but
+framework enforcement races them even if they ignore the signal. Direct custom
+store calls must provide their own ownership policy.
+
+DO/Redis JSON replies now reject above 8192 bytes, on malformed UTF-8, or before
+a valid EOF. KV text records have the same encoded byte cap before parsing.
+HTTP error and late response bodies are cancelled; readers release locks.
+Cleanup does not wait indefinitely for a producer's cancel callback. Stalled
+providers reject without action mutation, retry or rollback of a charged hit.
+Observed HTTP request abort and socket cancellation/close stop a pending decision
+from invoking its action. In-flight writes or already started application work
+can still finish. Cloudflare incoming disconnect signals require the
+[`enable_request_signal` compatibility flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-requestsignal-for-incoming-requests).
+Native coordinator queued cancellation remains a separate gate.
+
+HTTP, multipart and service proxies send a UUID v4 `X-Cossack-Request-Id` from
+dispatch. The transport guard accepts a valid UUID v4 and generates a fresh ID
+for absent/unsupported input. IDs now survive cancellation/deadlines before
+response headers; a returned server ID remains authoritative. These public IDs
+are not identity assertions. Origin and route authorization checks still run.
+Custom XMLHttpRequest doubles used with component upload progress must implement
+`setRequestHeader`.
 
 ## Durable Object rate limits persist through eviction
 

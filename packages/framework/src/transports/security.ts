@@ -13,7 +13,11 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) {
                 return c.text('Origin not allowed', 403);
             }
-            const requestId = crypto.randomUUID();
+            const suppliedId = c.req.header('X-Cossack-Request-Id');
+            // Correlation is public data, never an identity or authorization key.
+            // Bound accepted IDs to UUID v4; arbitrary/oversized values get a fresh ID.
+            const requestId = suppliedId && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(suppliedId)
+                ? suppliedId : crypto.randomUUID();
             c.res.headers.set('X-Cossack-Request-Id', requestId);
             try {
                 const body = await readRpcRequest(c);

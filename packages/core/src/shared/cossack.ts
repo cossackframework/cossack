@@ -1091,7 +1091,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Chain onto the queue so actions run one at a time. The runner catches
         // its own errors so a failing action never breaks the chain for later
         // callers (and never surfaces as an unhandled rejection).
-        const cancellation = { cancelled: false, close: undefined as (() => void) | undefined };
+        const cancellation = { cancelled: false, controller: new AbortController(), close: undefined as (() => void) | undefined };
         if (requestId !== undefined) {
             const hooks = rpcCancellations(clientContext);
             if (hooks.has(requestId)) {
@@ -1099,7 +1099,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     code: 'COSSACK_RPC_REQUEST_DUPLICATE', message: 'A call with this request ID is already active.' });
                 return Promise.resolve();
             }
-            hooks.set(requestId, () => { cancellation.cancelled = true; cancellation.close?.(); });
+            hooks.set(requestId, () => { cancellation.cancelled = true; cancellation.controller.abort(); cancellation.close?.(); });
         }
         const run = async () => {
             try {
@@ -1114,7 +1114,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
-        requestId: string | undefined, cancellation: { cancelled: boolean; close?: () => void }, requestContext?: Context): Promise<void> {
+        requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context): Promise<void> {
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {
             if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
@@ -1161,7 +1161,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     },
                 });
                 const blocked = await evaluateRateLimit(rateContext,
-                    `${JSON.stringify(['crpc', root.__cossack_rpcOwner ?? root.constructor.name, actionClass.name])}:${action}`, limit);
+                    `${JSON.stringify(['crpc', root.__cossack_rpcOwner ?? root.constructor.name, actionClass.name])}:${action}`, limit, cancellation.controller.signal);
                 if (blocked) throw new RpcError('COSSACK_RPC_RATE_LIMITED', blocked.message);
                 if (cancellation.cancelled) return;
             }
@@ -1202,7 +1202,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         } catch (e) {
             // Error boundary: log and continue so the runtime doesn't receive an
             // unhandled rejection and so `loading[action]` is always released.
-            if (requestId !== undefined) {
+            if (requestId !== undefined && !cancellation.cancelled) {
                 sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
                     code: isActionValidationError(e) ? e.validationCode : isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
                         : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR',

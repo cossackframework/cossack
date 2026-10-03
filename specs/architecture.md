@@ -325,6 +325,20 @@ PEXPIRE with checked PTTL; KV retains records for at least 60 seconds and uses
 their millisecond logical deadlines. KV remains approximate, with one write per
 key per second and no strict bound on cross-region under-counting.
 
+
+Limiter decisions own a five-second default deadline, independent of window and
+client method timeout. Built-in async providers and framework custom-store
+calls receive an abort signal; even uncooperative custom stores are raced.
+DO/Redis replies use a bounded 8 KiB strict UTF-8 reader through EOF; KV text
+records are bounded before parsing. Non-success and late responses are cancelled
+and reader locks released, without waiting indefinitely for producer cleanup.
+HTTP request abort or socket call cancellation/close suppresses late action
+invocation and releases the decision queue. Backend increments already dispatched
+are not rolled back or retried. Incoming Cloudflare disconnect notifications
+require `enable_request_signal`; native queued coordinator cancellation remains
+separate. HTTP/multipart/service proxies send a bounded UUID v4 correlation ID
+before dispatch, retained by the transport guard without changing authorization.
+
 Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
 from the action request. Components, their descendants, and layout scopes remain
 alive through the stream. SSE subscriptions only receive state updates; they

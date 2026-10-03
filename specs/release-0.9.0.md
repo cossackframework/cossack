@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 342 cases. Remaining: backend I/O bounds/abort/cleanup, provider capabilities/resource policies and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rate-store-contracts-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 354-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 342 cases. Remaining: backend I/O bounds/abort/cleanup, provider capabilities/resource policies and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rate-store-contracts-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,80 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rate-decision-io-2026-10-03"></a>
+### Codex continuation: bounded counter decisions and cancellation (2026-10-03)
+
+**Author: Codex.** Continued RT-18/RT-01 after `14365b3`. Counter clients used
+unbounded `res.json()`, did not own a deadline or carry action/request abort,
+and could hold the shared component queue while a backend ignored cancellation.
+HTTP/service errors before response headers also lost their correlation ID;
+six new matrix cases reproduced that gap before the proxy/guard fix.
+
+DO/Redis readers now limit actual bytes to 8192, require strict UTF-8 and EOF,
+and reject producer errors after a valid JSON prefix. KV text records have the
+same encoded bound before parsing; its structural API still materializes text.
+Error and late reply bodies are cancelled, and readers release locks without
+waiting indefinitely for a faulty producer's cancel callback. Every framework
+counter decision has a five-second default deadline, configurable with
+`backendTimeoutMs`; async built-in direct calls support `{ signal, timeoutMs }`
+as an optional third `hit` argument. Framework custom stores are raced even if
+they ignore the signal. There is no retry or rollback of a charged attempt.
+
+HTTP decisions observe request abort. Correlated socket calls have a dedicated
+controller; cancel and peer close/error abort it. Cancelled calls suppress late
+frames and release the shared queue. A late KV read cannot dispatch a write;
+an already dispatched write can still finish. Router guards recheck request
+abort after input validation, before invocation. HTTP/multipart/service proxies
+send UUID v4 IDs at dispatch. The server accepts valid UUID v4 IDs and replaces
+unsupported input; origin checks and route guards still apply. XHR progress
+requests carry the ID too. Server-returned IDs remain authoritative.
+
+Verified:
+
+- Sequential `pnpm --filter @cossackframework/core run build` and framework
+  `run build:types` passed. Framework's `pretest` rebuilds declarations; never
+  run it while another consumer loads those exports. An accidental parallel
+  pretest caused missing-export CLI/type failures; reruns after it finished pass.
+- `pnpm --filter @cossackframework/core exec vitest run`: **955** / **58** files.
+  **43** new focused I/O cases cover exact/excess bytes, multibyte/invalid UTF-8,
+  EOF/errors, headers/body deadlines, early/late abort, uncooperative fetch,
+  hanging cancel callbacks, KV read/write ownership and the default deadline.
+  Three additional real core dispatch cases cover process close and native
+  DO close/error callbacks, queue progress and suppressed late mutation/frames.
+- Framework suite: **1032** / **50** files. Shared matrix **354** cases; 12
+  additions cover backend and client deadlines/cancellation through HTTP/SSE/
+  socket/services, cleanup and following actions before the provider is released.
+  Six security cases cover UUID acceptance, replacement and preserved guards.
+- CLI suite: **562** / **41** files, including all 14 generated runtime cases,
+  native workerd fixtures and the real-pnpm release fixture. A new workerd
+  counter-body case consumes real DO streams: oversized, invalid UTF-8, HTTP
+  error, stalled and explicitly aborted replies reject with no handler mutation
+  and unlocked local bodies. An exact 8192-byte valid reply succeeds. Custom
+  fetch cases inside workerd prove late-body disposal for both counter clients.
+- Node: **16** / **4** files; Deno: **16** / **2**. Total **2581** across these
+  suites. Root `pnpm tsc --noEmit` and all **11** package checks pass. After the
+  last type-only test correction, the focused 43-case suite passed again.
+- `git diff --check -- . ':!reports.md'` passes. Unrelated `reports.md` and
+  `.zcodeignore` remain outside this work.
+
+Limits of evidence: native abort is triggered by an explicit request controller,
+not a disconnected external client. Cloudflare incoming disconnect signals need
+[`enable_request_signal`](https://developers.cloudflare.com/workers/configuration/compatibility-flags/).
+The shared matrix's SSE path uses the local backend. Native coordinator queued
+cancellation remains open. Cancelling a native subrequest did not invoke the
+remote DO producer's JS cancel hook in this fixture; the consumer cancels and
+releases its local reader, but does not promise remote producer shutdown.
+Custom fetch fixtures are not a live Redis service. KV mocks do not prove
+regional consistency, and Deno event tests do not prove native Deno execution.
+
+**14/58 checked; no new checkbox closes.** RT-18 still needs native disconnect/
+coordinator acceptance, provider URL/key/namespace/capacity/duration policy,
+cache unit/ownership contracts and capability inspection/rejection. RT-01 has
+additional lifecycle/serialization criteria. All 44 unchecked tasks remain in
+scope; versions stay 0.8.3 until REL-04. Continue from the detailed plan and
+[Codex handoff](./handoff-0.9.0.md), without treating this checkpoint as release
+completion.
 
 <a id="codex-rate-store-contracts-2026-10-03"></a>
 ### Codex continuation: request-owned rate stores and validated counters (2026-10-03)

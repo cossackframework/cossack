@@ -14,6 +14,7 @@ class Xhr {
     constructor() { Xhr.latest = this; }
     getResponseHeader(key: string) { return this.responseHeaders.get(key); }
     getAllResponseHeaders() { return [...this.responseHeaders].map(([k, v]) => `${k}: ${v}`).join('\r\n'); }
+    setRequestHeader = vi.fn();
     open() {} send() {} overrideMimeType() {}
     beginStream() {
         this.responseHeaders = new Headers({ 'Content-Type': RPC_STREAM_CONTENT_TYPE, 'X-Cossack-Request-Id': 'upload-a' });
@@ -49,6 +50,13 @@ describe('multipart payload values', () => {
 });
 
 describe('progressive upload replies', () => {
+    it('retains the supplied call ID when aborting before response headers', async () => {
+        const controller = new AbortController(); const id = crypto.randomUUID();
+        const pending = sendRpcUpload('/upload', new FormData(), controller.signal, vi.fn(), id);
+        expect(Xhr.latest.setRequestHeader).toHaveBeenCalledWith('X-Cossack-Request-Id', id);
+        controller.abort();
+        await expect(pending).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED', requestId: id });
+    });
     it('exposes headers and complete Unicode frames before load while preserving upload progress', async () => {
         const progress = vi.fn();
         const pending = sendRpcUpload('/upload', new FormData(), new AbortController().signal, progress);

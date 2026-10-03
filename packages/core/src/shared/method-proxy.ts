@@ -339,6 +339,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
+            let requestId: string = crypto.randomUUID();
             const controller = new AbortController();
             let timedOut = false;
             // A deadline aborts the call but never retries it: the mutation may
@@ -385,15 +386,15 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                 component.setProperty(property, event.loaded / event.total * 100);
                                 component.requestUpdate();
                             }
-                        })
+                        }, requestId)
                         : fetch(`/upload${window.location.search}`, {
                             method: 'POST', body: formData, signal: controller.signal,
-                            headers: { Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                            headers: { 'X-Cossack-Request-Id': requestId, Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         });
                 } else {
                     request = fetch(`/crpc${window.location.search}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        headers: { 'X-Cossack-Request-Id': requestId, 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
                         body: JSON.stringify({
                             componentRouteId, target: component._id, action: name,
@@ -417,12 +418,11 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             // The request starts immediately; selecting a result consumer never dispatches it again.
             void request.catch(() => {});
             const apply = createStateApplier(component, requestState);
-            let requestId: string | undefined;
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
                 try {
-                    if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+                    if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
                     const response = await request;
-                    requestId = response.headers?.get('X-Cossack-Request-Id') ?? undefined;
+                    requestId = response.headers?.get('X-Cossack-Request-Id') ?? requestId;
                     if (!response.ok) {
                         throw await readRpcHttpError(response, controller.signal);
                     }

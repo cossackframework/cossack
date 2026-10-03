@@ -134,6 +134,7 @@ describe('HTTP component RPC targeting', () => {
             onload?: () => void;
             onerror?: () => void;
             open() {}
+            setRequestHeader() {}
             send() {
                 this.status = FakeXhr.status;
                 this.onload?.();

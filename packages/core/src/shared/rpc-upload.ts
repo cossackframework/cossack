@@ -2,13 +2,13 @@ import { RPC_NATIVE_RESPONSE_HEADER, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRA
 
 /** Keep native upload progress while exposing generator replies before load. */
 export function sendRpcUpload(url: string, body: FormData, signal: AbortSignal,
-    onProgress: (event: ProgressEvent) => void): Promise<Response> {
+    onProgress: (event: ProgressEvent) => void, clientRequestId?: string): Promise<Response> {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
         let closed = false;
         let offset = 0;
-        let knownRequestId: string | undefined;
+        let knownRequestId: string | undefined = clientRequestId;
         const encoder = new TextEncoder();
         const requestId = () => knownRequestId ?? xhr.getResponseHeader?.('X-Cossack-Request-Id') ?? undefined;
         const headers = () => {
@@ -57,6 +57,7 @@ export function sendRpcUpload(url: string, body: FormData, signal: AbortSignal,
             }
         };
         xhr.open('POST', url, true);
+        if (clientRequestId) xhr.setRequestHeader('X-Cossack-Request-Id', clientRequestId);
         xhr.responseType = 'arraybuffer';
         xhr.upload.onprogress = onProgress;
         xhr.onreadystatechange = () => {
@@ -64,7 +65,7 @@ export function sendRpcUpload(url: string, body: FormData, signal: AbortSignal,
             // https://xhr.spec.whatwg.org/#the-responsetype-attribute
             if (xhr.readyState !== 2 || closed || stream) return;
             const responseHeaders = headers();
-            knownRequestId = responseHeaders.get('X-Cossack-Request-Id') ?? undefined;
+            knownRequestId = responseHeaders.get('X-Cossack-Request-Id') ?? knownRequestId;
             if (xhr.status < 200 || xhr.status >= 300 || responseHeaders.get(RPC_NATIVE_RESPONSE_HEADER) === 'native' ||
                 responseHeaders.get('Content-Type')?.split(';', 1)[0] !== RPC_STREAM_CONTENT_TYPE) return;
             xhr.responseType = 'text';

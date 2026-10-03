@@ -37,6 +37,10 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         limited() { this.effectOwner.runs++; return ++this.count; }
         @Server() @RateLimit({ max: 1, window: 60_000 })
         async *limitedStream() { this.effectOwner.runs++; yield ++this.count; return ++this.count; }
+        @Server() @RateLimit({ backendTimeoutMs: 20 })
+        limitedDeadline() { this.effectOwner.runs++; return ++this.count; }
+        @Server({ timeout: 80 }) @RateLimit({ max: 1 })
+        limitedClientDeadline() { this.effectOwner.runs++; return ++this.count; }
         @Server() @RateLimit({ max: NaN })
         invalidLimit() { this.effectOwner.runs++; return ++this.count; }
         @Server() @RateLimit({ key: () => '' })
@@ -267,7 +271,8 @@ async function harness(transport: Transport, uploadMode = false) {
                 readyState = 1; status = 0; statusText = '';
                 onreadystatechange?: () => void; onprogress?: () => void; onload?: () => void;
                 onerror?: () => void; onabort?: () => void;
-                controller = new AbortController(); responseHeaders = new Headers();
+                controller = new AbortController(); responseHeaders = new Headers(); requestHeaders = new Headers();
+                setRequestHeader(key: string, value: string) { this.requestHeaders.set(key, value); }
                 getResponseHeader(key: string) { return this.responseHeaders.get(key); }
                 getAllResponseHeaders() { return [...this.responseHeaders].map(([k, v]) => `${k}: ${v}`).join('\r\n'); }
                 open() {}
@@ -276,7 +281,7 @@ async function harness(transport: Transport, uploadMode = false) {
                     const job = (async () => {
                         try {
                             this.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 1 });
-                            const response = await fetch('/upload', { method: 'POST', body, signal: this.controller.signal });
+                            const response = await fetch('/upload', { method: 'POST', body, signal: this.controller.signal, headers: Object.fromEntries(this.requestHeaders) });
                             this.status = response.status; this.statusText = response.statusText; this.responseHeaders = response.headers;
                             this.readyState = 2; this.onreadystatechange?.();
                             if (this.responseType === 'text') {
@@ -361,6 +366,36 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         });
         expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0);
         expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('bounds a stuck counter decision and releases the next action', async () => {
+        let backendSignal!: AbortSignal;
+        const hit = vi.fn((_key, _window, options) => { backendSignal = options.signal; return new Promise<any>(() => {}); });
+        setRateLimitStore({ hit });
+        await expect(rpc$(wire.target.limitedDeadline())).rejects.toMatchObject({ code: 'COSSACK_RPC_TIMEOUT', requestId: expect.any(String) });
+        expect(backendSignal.aborted).toBe(true); expect(hit).toHaveBeenCalledTimes(1);
+        expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0); settled();
+        expect(await rpc$(wire.target.echo('next'))).toBe('next'); settled();
+    });
+    it.each(['cancel', 'client deadline'] as const)('does not run a late mutation after %s during a counter decision', async mode => {
+        let release!: (value: any) => void; let backendSignal!: AbortSignal;
+        const pending = new Promise<any>(resolve => { release = resolve; });
+        const hit = vi.fn((_key, _window, options) => { backendSignal = options.signal; return pending; });
+        setRateLimitStore({ hit });
+        const call = rpc$(mode === 'cancel' ? wire.target.limited() : wire.target.limitedClientDeadline());
+        const rejection = expect(call).rejects.toMatchObject({ code: mode === 'cancel' ? 'COSSACK_RPC_CANCELLED' : 'COSSACK_RPC_TIMEOUT', requestId: expect.any(String) });
+        await vi.waitFor(() => expect(hit).toHaveBeenCalledTimes(1));
+        if (mode === 'cancel') await call.cancel();
+        await rejection;
+        await vi.waitFor(() => expect(backendSignal.aborted).toBe(true));
+        // Client and server have separate globals in production. Wait for the
+        // aborted HTTP response to restore this loopback's browser global.
+        if (transport !== 'websocket') await vi.waitFor(() => expect(wire.responses).toHaveLength(1));
+        // Prove queue progress BEFORE the uncooperative provider is released.
+        expect(await rpc$(wire.target.echo('next'))).toBe('next'); settled();
+        expect(effects.current.runs).toBe(1); expect(wire.target.count).toBe(0);
+        release({ count: 1, resetAt: Date.now() + 60000 });
+        await Promise.resolve(); await Promise.resolve();
+        expect(effects.current.runs).toBe(1); expect(wire.target.count).toBe(0); settled();
     });
     it.each(['do', 'kv', 'redis', 'unknown', null])('rejects invalid backend %s before a limited mutation', async rateLimit => {
         wire.configureEnv({ rateLimit });

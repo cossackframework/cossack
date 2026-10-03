@@ -5,6 +5,7 @@ import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import './metadata';
 import { snapshotSocketRequest } from './socket-context';
+import { rpcCancellations } from './rpc-stream';
 
 export abstract class CossackDurableObject {
     state: DurableObjectState;
@@ -249,6 +250,11 @@ export abstract class CossackDurableObject {
         await this.runtime.onClientMessage(ws, message as string);
     }
 
-    async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {}
-    async webSocketError(ws: any) {}
+    async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+        for (const cancel of rpcCancellations(ws).values()) cancel();
+        rpcCancellations(ws).clear();
+    }
+    async webSocketError(ws: WebSocket) {
+        await this.webSocketClose(ws, 1011, 'Socket error', false);
+    }
 }

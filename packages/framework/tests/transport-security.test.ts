@@ -30,7 +30,7 @@ describe('transport security boundary', () => {
     it.each(['https://evil.example', 'null', undefined])('rejects RPC and form CSRF from %s before dispatch', async (origin) => {
         const { app, action } = appFor();
         for (const route of ['/crpc', '/upload']) {
-            const body = route === '/crpc' ? JSON.stringify(rpc) : new URLSearchParams(rpc as any);
+            const body = route === '/crpc' ? JSON.stringify(rpc) : new URLSearchParams({ ...rpc, payload: JSON.stringify(rpc.payload) });
             const response = await app.request(route, {
                 method: 'POST', body,
                 headers: { ...(origin ? { origin } : {}), 'content-type': route === '/crpc' ? 'text/plain' : 'application/x-www-form-urlencoded' },
@@ -38,6 +38,26 @@ describe('transport security boundary', () => {
             expect(response.status).toBe(403);
         }
         expect(action).not.toHaveBeenCalled();
+    });
+
+    it.each(['/crpc', '/upload'])('retains a supplied UUID correlation ID on %s without bypassing guards', async route => {
+        const id = crypto.randomUUID();
+        const guard = vi.fn((c: any) => c.json({ error: 'Forbidden' }, 403));
+        const { app, action } = appFor({ ...ctx, getMiddlewares: () => [guard] });
+        const body = route === '/crpc' ? JSON.stringify(rpc) : new URLSearchParams({ ...rpc, payload: JSON.stringify(rpc.payload) });
+        const response = await app.request(route, { method: 'POST', body, headers: {
+            origin: 'http://localhost', 'X-Cossack-Request-Id': id,
+            'Content-Type': route === '/crpc' ? 'application/json' : 'application/x-www-form-urlencoded',
+        } });
+        expect(response.status).toBe(403); expect(response.headers.get('X-Cossack-Request-Id')).toBe(id);
+        expect(guard).toHaveBeenCalledOnce(); expect(action).not.toHaveBeenCalled();
+    });
+    it.each(['arbitrary', '', 'x'.repeat(10000), '00000000-0000-1000-8000-000000000000'])('replaces unsupported correlation ID (%#)', async id => {
+        const { app } = appFor();
+        const response = await app.request('/crpc', { method: 'POST', body: JSON.stringify(rpc),
+            headers: { origin: 'http://localhost', 'X-Cossack-Request-Id': id } });
+        expect(response.headers.get('X-Cossack-Request-Id')).toMatch(/^[0-9a-f-]{36}$/);
+        expect(response.headers.get('X-Cossack-Request-Id')).not.toBe(id);
     });
 
     it('allows same-origin RPC and explicit allowed origins', async () => {

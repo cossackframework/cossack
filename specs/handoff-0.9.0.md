@@ -2,7 +2,58 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex rate-store contracts (2026-10-03):** read
+> **Latest checkpoint — Codex bounded rate decisions (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-rate-decision-io-2026-10-03),
+> [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
+> [rate-limit guide](../docs/rate-limiting.md). **Author: Codex.** Continued after
+> `14365b3`. DO/Redis replies now have an 8192-byte strict UTF-8/EOF reader;
+> KV text records are bounded before parsing. Error/late replies are cancelled,
+> readers release locks and cleanup does not wait forever for producer callbacks.
+> A five-second counter decision deadline applies to built-ins and framework
+> enforcement of custom stores. Configure `backendTimeoutMs`; async direct
+> built-in `hit` accepts `{ signal, timeoutMs }` as an optional third argument.
+> Custom stores are raced even if they ignore the signal. No retry or rollback.
+>
+> HTTP request abort and correlated socket call cancellation/peer close/error
+> abort pending decisions. Late replies cannot invoke the action; socket queues
+> and pending hooks release. KV avoids dispatching a write after an aborted read,
+> but a dispatched write can finish. Router guards recheck abort after validation.
+> HTTP/multipart/service proxies now send UUID v4 IDs before response headers;
+> the server retains valid UUIDs, replaces unsupported input and still applies
+> origin/route guards. XHR progress sends the same header. Returned server IDs
+> remain authoritative. Six matrix cases exposed missing pre-header IDs before
+> fixing; test XHR doubles now implement `setRequestHeader`.
+>
+> Verified: core **955**/58 files (43 focused I/O cases and three peer close/error
+> queue cases), framework **1032**/50 (matrix **354**), CLI **562**/41, Node
+> **16**/4, Deno **16**/2. Total **2581**. Native workerd consumes real DO body
+> streams: bounds/UTF-8/errors/deadline/explicit abort reject before mutation and
+> local bodies unlock; a valid exact-bound reply succeeds. Worker-local custom
+> fetch fixtures prove disposal of late DO-client/Redis-client replies. All 14
+> generated cases and the real-pnpm release fixture pass. Root/all 11 package
+> type checks and sequential core/framework builds pass. Run dependent suites
+> only after declaration generation finishes. Framework's `pretest` rebuilds
+> declarations; use `pnpm exec vitest run` when running consumers in parallel.
+>
+> **14/58 checked; no new checkbox closes. All 44 unchecked tasks persist.**
+> Next finish native disconnect/coordinator acceptance: Cloudflare requires
+> `enable_request_signal` for incoming client disconnect signals. Audit scaffold,
+> upgrades and named environment flags; prove a real disconnect during a pending
+> counter decision. This workerd abort uses an explicit request controller; the
+> shared matrix's SSE backend is local. Inspect current queued coordinator
+> cancellation rather than promising no late mutation there. Native DO producer
+> cancel hooks were not observed after subrequest cancellation; local ownership
+> does not prove remote producer shutdown. Custom fetch is not live Redis; KV
+> mocks do not prove regional consistency. Deno execution remains a release gate.
+>
+> Then finish provider URL/key/namespace/capacity/duration policies, cache units
+> and configured-provider ownership, provider capability inspection and rejected
+> unsupported guarantees. Audit component init/restoration concurrency and full
+> RT-01 criteria, RT-02/RT-14 policy and RT-11 session/secrets criteria. Preserve
+> the full 58-task scope and separate Deno/Electron/tarball/live release gates.
+> Versions stay 0.8.3 until REL-04. Preserve `reports.md`/`.zcodeignore`.
+
+> **Previous checkpoint — Codex rate-store contracts (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-rate-store-contracts-2026-10-03),
 > [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
 > [rate-limit guide](../docs/rate-limiting.md). **Author: Codex.** Fixed invalid

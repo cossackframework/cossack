@@ -332,6 +332,7 @@ export class ServiceScope {
             // deadlines, and correlated RpcError failures.
             entry.instance[action] = (...payload: unknown[]) => {
                 this.setLoading(action, 1);
+                let requestId: string = crypto.randomUUID();
                 const controller = new AbortController();
                 let timedOut = false;
                 const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
@@ -346,7 +347,7 @@ export class ServiceScope {
                         payload: normalized.payload, state, scopeKey: this.scopeKey };
                     request = fetch(normalized.files.size ? '/upload' : '/crpc', {
                         method: 'POST',
-                        headers: { ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        headers: { 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
                         body: normalized.files.size ? rpcFormData(body, normalized.files) : JSON.stringify(body),
                     });
@@ -355,11 +356,10 @@ export class ServiceScope {
                         'COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize service request.', { cause }));
                 }
                 void request.catch(() => {});
-                let requestId: string | undefined;
                 const operation = async function* (scope: ServiceScope): AsyncGenerator<unknown, unknown> {
                     try {
                         const response = await request;
-                        requestId = response.headers.get('X-Cossack-Request-Id') ?? undefined;
+                        requestId = response.headers.get('X-Cossack-Request-Id') ?? requestId;
                         if (!response.ok) {
                             throw await readRpcHttpError(response, controller.signal);
                         }

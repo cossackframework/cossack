@@ -21,12 +21,52 @@ It works in three places:
 | `max` | `number` | `60` | Non-negative safe integer; zero denies all calls. |
 | `key` | `(c) => string` | user id, else IP | Returns a non-empty string identifying the caller bucket. |
 | `message` | `string` | `'Too Many Requests'` | Body of the `429` response. |
+| `backendTimeoutMs` | `number` (ms) | `5000` | Counter decision deadline, including response EOF. Positive safe integer, at most `2147483647`. |
 
 Invalid runtime options reject before the counter is touched. Counter replies
 must contain a positive safe-integer `count` and a positive safe-integer
 `resetAt` in epoch milliseconds. This applies to custom stores too. Backend
 errors and corrupt counters reject before the application action runs. A failed
 reply can still mean the backend counted the attempt; calls are not retried.
+
+## Backend deadlines and cancellation
+
+Every framework counter decision has a deadline. `backendTimeoutMs` sets it
+independently of the fixed window and the server method's client timeout. A
+stalled provider rejects the decision and releases the call without invoking
+the application action. The framework races custom stores too, even when they
+ignore cancellation. It does not retry or undo an increment already dispatched.
+
+Built-in async stores accept `hit(key, windowMs, { signal, timeoutMs })` for
+direct calls. `timeoutMs` also defaults to 5000. Custom stores receive this
+optional third argument during framework enforcement. Direct calls to a custom
+store must implement their own deadline and cancellation contract.
+
+DO and Redis replies have an 8192-byte maximum (`RATE_LIMIT_RESPONSE_MAX_BYTES`).
+The reader checks actual bytes, decodes strict UTF-8, and requires EOF before
+using the counter. Invalid JSON, producer errors, oversized replies and stalled
+bodies reject. HTTP error bodies and late replies after cancellation are
+cancelled without exposing their contents. Readers release their locks. Cleanup
+requests do not wait forever for a producer's cancellation callback. KV text
+records are checked against the same encoded byte bound before JSON parsing;
+the structural KV API still materializes the returned string.
+
+HTTP decisions observe the request's abort signal; correlated socket decisions observe
+call cancellation and peer close/error events. After an observed abort, a late
+counter result cannot invoke the action. KV skips a write if its preceding read
+finishes after cancellation; a write already dispatched can still commit.
+Cancellation does not stop application work that began before it was observed.
+RPC deadlines reject with `COSSACK_RPC_TIMEOUT`; observed cancellation rejects
+with `COSSACK_RPC_CANCELLED`. HTTP/SSE/service calls now carry their UUID
+correlation ID from dispatch, including errors before response headers. IDs are
+public correlation data and do not bypass authentication or route guards.
+
+Cloudflare client disconnect notifications require
+[`enable_request_signal`](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-requestsignal-for-incoming-requests).
+The deadline still applies when a runtime does not emit an abort. Cancelling a
+local body or passing a signal does not guarantee that a remote producer stops,
+or that a charged counter is rolled back. Native distributed SSE queued-caller
+cancellation remains a separate acceptance gate.
 
 ## Functional API routes (handler wrapper)
 
@@ -52,7 +92,8 @@ method limits use the declaring metadata. RPC rejection uses
 `COSSACK_RPC_RATE_LIMITED` and the request ID. HTTP replies also include status
 429 and `Retry-After`; WebSocket calls reject through their correlated error
 frame and release loading. Counter-store failures reject before mutation with
-a sanitized internal error. Calls are never retried automatically.
+a sanitized internal error. Backend deadlines and observed cancellation use the
+codes described above. Calls are never retried automatically.
 
 Component budgets belong to the canonical server route, action-owning class,
 method and caller. Changing request IDs, opening another socket, or switching

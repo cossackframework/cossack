@@ -820,6 +820,7 @@ export function createApp(options: CreateAppOptions = {}) {
         let actionResult: unknown;
         try {
           const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : []);
+          if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
           actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
         } catch (e: any) {
           if (isActionValidationError(e)) {
@@ -1018,6 +1019,8 @@ export function createApp(options: CreateAppOptions = {}) {
           }
           throw validation;
         }
+
+        if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
 
         // Await promises before inspecting the result. Awaiting an async generator
         // does not pull it; its response owns iteration and request-context lifetime.
