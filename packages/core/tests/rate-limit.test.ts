@@ -126,11 +126,12 @@ describe('KvRateLimitStore', () => {
         expect((await store.hit('a', 20)).count).toBe(1);
     });
 
-    it('survives corrupt KV values', async () => {
+    it('rejects corrupt KV values without restoring a budget', async () => {
         const kv = new FakeKv();
         await kv.put('cossack:rl:corrupt', '{not json');
         const store = new KvRateLimitStore(kv);
-        expect((await store.hit('corrupt', 60_000)).count).toBe(1);
+        await expect(store.hit('corrupt', 60_000)).rejects.toThrow(/counter/);
+        expect(await kv.get('cossack:rl:corrupt')).toBe('{not json');
     });
 
     it('honours a custom key namespace', async () => {
@@ -429,22 +430,22 @@ describe('RedisRateLimitStore (Upstash REST, zero-dep)', () => {
         const res = await store.hit('k', 60_000);
         expect(res.count).toBe(3);
         expect(res.resetAt).toBeGreaterThan(Date.now());
-        // EVAL command shape: ['EVAL', script, '1', key, ttl]
+        // EVAL command shape: ['EVAL', script, '1', key, ttlMs]
         expect(sentBody[0]).toBe('EVAL');
         expect(sentBody[2]).toBe('1');
         expect(sentBody[3]).toBe('cossack:rl:k');
-        expect(sentBody[4]).toBe('60');
+        expect(sentBody[4]).toBe('60000');
     });
 
     it('throws on missing credentials', () => {
         expect(() => new RedisRateLimitStore({})).toThrow(/Upstash/);
     });
 
-    it('surfaces Upstash error payloads', async () => {
+    it('rejects Upstash error payloads without echoing their body', async () => {
         const fakeFetch = async () =>
             new Response(JSON.stringify({ error: 'invalid token' }), { status: 200 });
         const store = new RedisRateLimitStore({ url: 'u', token: 't', fetch: fakeFetch });
-        await expect(store.hit('k', 1000)).rejects.toThrow(/invalid token/);
+        await expect(store.hit('k', 1000)).rejects.toThrow(/error response/);
     });
 
     it('throws on non-OK HTTP status', async () => {
@@ -453,13 +454,11 @@ describe('RedisRateLimitStore (Upstash REST, zero-dep)', () => {
         await expect(store.hit('k', 1000)).rejects.toThrow(/502/);
     });
 
-    it('falls back to windowMs when PTTL is missing', async () => {
+    it('rejects a counter with no Redis expiry', async () => {
         const fakeFetch = async () =>
             new Response(JSON.stringify({ result: [1, -1] }), { status: 200 });
         const store = new RedisRateLimitStore({ url: 'u', token: 't', fetch: fakeFetch });
-        const res = await store.hit('k', 5_000);
-        expect(res.count).toBe(1);
-        expect(res.resetAt).toBeGreaterThan(Date.now());
+        await expect(store.hit('k', 5_000)).rejects.toThrow(/TTL/);
     });
 
     it('honours a custom namespace prefix', async () => {
@@ -506,17 +505,18 @@ describe('configureRateLimitFromEnv (zero-code config)', () => {
 
     it('builds a KvRateLimitStore from rateLimit="kv" + RATE_LIMITS binding', () => {
         const fakeKv = { async get() { return null; }, async put() {} };
-        configureRateLimitFromEnv({ rateLimit: 'kv', RATE_LIMITS: fakeKv });
-        expect(getRateLimitStore()).toBeInstanceOf(KvRateLimitStore);
+        const env = { rateLimit: 'kv', RATE_LIMITS: fakeKv };
+        configureRateLimitFromEnv(env);
+        expect(getRateLimitStore(env)).toBeInstanceOf(KvRateLimitStore);
     });
 
     it('builds a RedisRateLimitStore from rateLimit="redis"', () => {
-        configureRateLimitFromEnv({
+        const store = configureRateLimitFromEnv({
             rateLimit: 'redis',
             UPSTASH_REDIS_REST_URL: 'u',
             UPSTASH_REDIS_REST_TOKEN: 't',
         });
-        expect(getRateLimitStore()).toBeInstanceOf(RedisRateLimitStore);
+        expect(store).toBeInstanceOf(RedisRateLimitStore);
     });
 
     it('builds a DurableObjectRateLimitStore from rateLimit="durable-object"', () => {
@@ -524,46 +524,36 @@ describe('configureRateLimitFromEnv (zero-code config)', () => {
             idFromName: () => 0,
             get: () => ({ fetch: async () => new Response('{}') }),
         };
-        configureRateLimitFromEnv({ rateLimit: 'durable-object', RATE_LIMIT_DO: fakeNs });
-        expect(getRateLimitStore()).toBeInstanceOf(DurableObjectRateLimitStore);
+        expect(configureRateLimitFromEnv({ rateLimit: 'durable-object', RATE_LIMIT_DO: fakeNs }))
+            .toBeInstanceOf(DurableObjectRateLimitStore);
     });
 
     it('accepts the RATE_LIMIT alias and is case-insensitive', () => {
-        configureRateLimitFromEnv({
+        const store = configureRateLimitFromEnv({
             RATE_LIMIT: 'Redis',
             UPSTASH_REDIS_REST_URL: 'u',
             UPSTASH_REDIS_REST_TOKEN: 't',
         });
-        expect(getRateLimitStore()).toBeInstanceOf(RedisRateLimitStore);
+        expect(store).toBeInstanceOf(RedisRateLimitStore);
     });
 
-    it('stays on the default when a binding is missing (logs an error)', () => {
-        const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        configureRateLimitFromEnv({ rateLimit: 'kv' }); // no RATE_LIMITS binding
+    it('rejects a missing binding without changing the process default', () => {
+        const before = getRateLimitStore();
+        expect(() => configureRateLimitFromEnv({ rateLimit: 'kv' })).toThrow(/RATE_LIMITS/);
+        expect(getRateLimitStore()).toBe(before);
+    });
+
+    it('rejects an unknown explicit mode', () => {
+        expect(() => configureRateLimitFromEnv({ rateLimit: 'memcached' })).toThrow(/Unknown/);
+    });
+
+    it('memoizes an environment selection without replacing other environments', () => {
+        const env = { rateLimit: 'kv', RATE_LIMITS: { async get() { return null; }, async put() {} } };
+        const first = configureRateLimitFromEnv(env);
+        expect(configureRateLimitFromEnv({ rateLimit: 'redis', UPSTASH_REDIS_REST_URL: 'https://redis.test',
+            UPSTASH_REDIS_REST_TOKEN: 't' })).toBeInstanceOf(RedisRateLimitStore);
+        expect(getRateLimitStore(env)).toBe(first);
         expect(getRateLimitStore()).toBeInstanceOf(InMemoryRateLimitStore);
-        expect(spy).toHaveBeenCalledWith(expect.stringContaining('RATE_LIMITS'));
-        spy.mockRestore();
-    });
-
-    it('stays on the default for an unknown mode', () => {
-        const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        configureRateLimitFromEnv({ rateLimit: 'memcached' });
-        expect(getRateLimitStore()).toBeInstanceOf(InMemoryRateLimitStore);
-        expect(spy).toHaveBeenCalledWith(expect.stringContaining('Unknown'));
-        spy.mockRestore();
-    });
-
-    it('is memoized — configures only once', () => {
-        const fakeKv = { async get() { return null; }, async put() {} };
-        configureRateLimitFromEnv({ rateLimit: 'kv', RATE_LIMITS: fakeKv });
-        const first = getRateLimitStore();
-        configureRateLimitFromEnv({
-            rateLimit: 'redis',
-            UPSTASH_REDIS_REST_URL: 'u',
-            UPSTASH_REDIS_REST_TOKEN: 't',
-        });
-        expect(getRateLimitStore()).toBe(first); // unchanged by the second call
-        expect(getRateLimitStore()).toBeInstanceOf(KvRateLimitStore);
     });
 
     it('a manual setRateLimitStore() wins over env config', () => {
@@ -581,6 +571,6 @@ describe('configureRateLimitFromEnv (zero-code config)', () => {
         const c = makeContext({ ip: '1.1.1.1' });
         (c as any).env = { rateLimit: 'kv', RATE_LIMITS: fakeKv };
         await enforceRateLimit(c, 's', { window: 60_000, max: 5 });
-        expect(getRateLimitStore()).toBeInstanceOf(KvRateLimitStore);
+        expect(getRateLimitStore(c.env)).toBeInstanceOf(KvRateLimitStore);
     });
 });

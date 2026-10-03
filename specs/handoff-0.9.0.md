@@ -2,7 +2,56 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex durable rate windows (2026-10-03):** read
+> **Latest checkpoint — Codex rate-store contracts (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-rate-store-contracts-2026-10-03),
+> [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
+> [rate-limit guide](../docs/rate-limiting.md). **Author: Codex.** Fixed invalid
+> backend fallback and first-env global ownership. Automatic selection returns
+> and captures the request's store, caching only unchanged env/binding/credential
+> descriptors. Missing/invalid bindings, unsupported/blank/non-string/null modes
+> and missing credentials reject before mutation. Repair and selection changes
+> work. Unconfigured memory and intentional manual overrides remain process-wide.
+> Shared component limits use the action context's environment, with bootstrap
+> fallback only when the context supplies no env. Internal inspection now passes
+> env to `getRateLimitStore` or reads `configureRateLimitFromEnv`'s return value.
+>
+> Windows/maxima/keys/messages have runtime validation before counter dispatch;
+> all counter fields are snapshotted once and checked. Corrupt KV records and
+> malformed Redis/custom replies reject. Redis uses millisecond PEXPIRE and
+> checked PTTL, and explicit env helpers never borrow process credentials.
+> KV storage TTL is at least 60 seconds while logical deadlines remain ms.
+> KV has no strict cross-region under-count bound and only one write/key/second;
+> failures reject. Guide examples now use fixed-backend setup for manual overrides,
+> automatic config for per-request selection, and Worker secrets for Redis tokens.
+>
+> Verified: core **908**/57 files, framework **1014**/50, CLI **561**/41 with
+> four native workerd fixtures/all **14** generated cases, Node **16**/4, Deno
+> **16**/2, sequential core/framework builds, root/all **11** package checks.
+> The initial contract suite exposed 91 failures; 44 new shared-matrix cases
+> exposed 40 failures; a separate peer-env socket case also failed before fixing.
+> Final suites include explicit null and changing custom getters. Matrix **342**
+> proves correlated sanitized errors, pending/loading cleanup and no mutations.
+> Native workerd proves two distinct DO bindings, shared spent counters across
+> Workers and backend failure before handler mutation; socket reload into invalid
+> config returns a correlated error with count unchanged. Redis tests cover REST/
+> script/TTL contracts, not a live Redis service. KV mocks do not prove regional
+> consistency. Deno event tests do not replace actual Deno execution.
+>
+> **14/58 checked; no new checkbox closes. All 44 unchecked tasks persist.**
+> Next finish backend I/O ownership: DO/Redis still use unbounded `res.json()`
+> and do not carry a request/action abort signal into store calls. Prove body byte
+> bounds, UTF-8/EOF/errors, non-success cleanup, deadline/cancellation and no late
+> mutation. A backend may already have charged a failed hit; do not retry or
+> promise rollback. Then finish provider-specific URL/key/namespace/capacity and
+> duration policies, cache units, capability inspection and unsupported-guarantee
+> rejection. The detailed plan explains goals and acceptance evidence. Audit
+> component init/restoration concurrency and full RT-01 criteria; continue
+> RT-02/RT-14 policies and RT-11 secrets/session criteria. Keep separate Deno,
+> Electron, tarball and live release gates. Versions stay 0.8.3 until REL-04.
+> Preserve `reports.md`/`.zcodeignore`; keep export generation sequential and
+> out of running tests/type checks.
+
+> **Previous checkpoint — Codex durable rate windows (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-rate-window-persistence-2026-10-03),
 > [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
 > [rate-limit contract](../docs/rate-limiting.md). **Author: Codex.** Fixed the

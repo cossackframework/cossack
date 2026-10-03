@@ -17,10 +17,16 @@ It works in three places:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `window` | `number` (ms) | `60_000` | Fixed-window duration. |
-| `max` | `number` | `60` | Max requests per window, per key. |
-| `key` | `(c) => string` | user id, else IP | How callers are bucketed. |
+| `window` | `number` (ms) | `60_000` | Positive safe-integer milliseconds. |
+| `max` | `number` | `60` | Non-negative safe integer; zero denies all calls. |
+| `key` | `(c) => string` | user id, else IP | Returns a non-empty string identifying the caller bucket. |
 | `message` | `string` | `'Too Many Requests'` | Body of the `429` response. |
+
+Invalid runtime options reject before the counter is touched. Counter replies
+must contain a positive safe-integer `count` and a positive safe-integer
+`resetAt` in epoch milliseconds. This applies to custom stores too. Backend
+errors and corrupt counters reject before the application action runs. A failed
+reply can still mean the backend counted the attempt; calls are not retried.
 
 ## Functional API routes (handler wrapper)
 
@@ -119,12 +125,12 @@ The default store is **in-memory and per-process**, so it is exact for a single 
 
 ### Zero-code configuration (recommended)
 
-You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework picks the store automatically on first use. (On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.)
+You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework resolves the store from each request’s environment. (On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.)
 
 | `rateLimit` value | What you also need |
 | --- | --- |
 | `"durable-object"` (alias `"do"`) | a `RATE_LIMIT_DO` DO binding + export the class (see below) |
-| `"redis"` (alias `"upstash"`) | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` vars |
+| `"redis"` (alias `"upstash"`) | `UPSTASH_REDIS_REST_URL` var + `UPSTASH_REDIS_REST_TOKEN` secret |
 | `"kv"` | a `RATE_LIMITS` KV binding |
 | *(unset)* | the default in-memory store (single instance only) |
 
@@ -148,7 +154,18 @@ You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.j
 > ```
 > (Keep `AppDurableObject`'s existing import from the framework : only `RateLimitDurableObject` comes from core.) `"redis"` and `"kv"` modes need **no code changes at all** : bindings/vars only.
 
-A manual `setRateLimitStore(...)` call, if present, always takes precedence over this var.
+Explicit configuration requires a supported non-empty mode and valid bindings
+or credentials. Missing bindings, unknown modes and invalid values throw; they
+never fall back to memory. A repaired environment can serve its next request.
+Unchanged environment/binding/credential selections reuse a store. Changing a
+selection does not retarget another request's already selected store. An
+unconfigured request uses the process-local memory default and never inherits a
+previous request's configured backend.
+
+`setRateLimitStore(...)` is an intentional process-wide override. Configure it
+once during setup for an application with one fixed backend. It overrides every
+environment selection. Use automatic environment selection when serving multiple
+environments or bindings in one process.
 
 ## Manual configuration
 
@@ -166,10 +183,10 @@ failures reject the hit before the application action runs. Persisted records
 and DO replies require positive safe-integer counts and epoch-millisecond reset
 times; corrupt data fails rather than restoring a caller's budget.
 
-The DO store requires a positive safe-integer `window` in milliseconds that
-fits the platform's timestamp range. Invalid direct DO requests return 400 with
+Every built-in store requires a positive safe-integer `window` in milliseconds
+that fits the timestamp range. Invalid direct DO requests return 400 with
 `COSSACK_RATE_LIMIT_CONFIG_INVALID`; direct store calls throw before contacting
-the binding. This validation applies to the DO provider.
+the binding. All built-in direct `hit()` calls also reject invalid keys and windows.
 
 The implementation uses the transactional key-value API supported by SQLite
 and existing legacy DO storage. Create new namespaces with SQLite; retain the
@@ -186,32 +203,29 @@ Register the bundled `RateLimitDurableObject` in `wrangler.jsonc`:
 }
 ```
 
-Then wire it up and re-export the class from your Worker entry:
+Export the class from the Worker entry as shown above. For a process with one
+fixed namespace, configure an override during application setup:
 
 ```ts
-import { setRateLimitStore, DurableObjectRateLimitStore, RateLimitDurableObject } from '@cossackframework/core';
+import { setRateLimitStore, DurableObjectRateLimitStore, type RateLimitDurableObjectNamespace } from '@cossackframework/core';
 
-export { RateLimitDurableObject };
-
-export default {
-    async fetch(req, env) {
-        setRateLimitStore(new DurableObjectRateLimitStore(env.RATE_LIMIT_DO));
-        return app.fetch(req, env);
-    },
-};
+export function configureLimiter(bindings: { RATE_LIMIT_DO: RateLimitDurableObjectNamespace }) {
+    setRateLimitStore(new DurableObjectRateLimitStore(bindings.RATE_LIMIT_DO));
+}
 ```
 
 ### Redis / Upstash (strongly consistent, cross-runtime)
 
-`RedisRateLimitStore` talks to **Upstash Redis over REST** : the only Redis shape that runs on both Cloudflare Workers (no TCP sockets) and Node.js, with **zero extra dependencies**. Counting uses a single atomic `EVAL` (`INCR` + conditional `EXPIRE`), so it is exact under concurrency.
+`RedisRateLimitStore` uses Upstash Redis over REST on Cloudflare Workers and Node.js with zero extra dependencies. Counting uses a single atomic `EVAL` (`INCR` + conditional `PEXPIRE`), so it is exact under concurrency.
 
-Configure the credentials as env vars (in `wrangler.jsonc` `vars`, or your host's env):
+Set the REST URL in `wrangler.jsonc` and provide the token as a Worker secret:
+`pnpm exec wrangler secret put UPSTASH_REDIS_REST_TOKEN`. Local development can
+read the token from `.dev.vars`. Other runtimes can use their host environment.
 
 ```jsonc
 {
   "vars": {
-    "UPSTASH_REDIS_REST_URL": "https://xxxxx.upstash.io",
-    "UPSTASH_REDIS_REST_TOKEN": "AY...="
+    "UPSTASH_REDIS_REST_URL": "https://xxxxx.upstash.io"
   }
 }
 ```
@@ -219,43 +233,51 @@ Configure the credentials as env vars (in `wrangler.jsonc` `vars`, or your host'
 ```ts
 import { setRateLimitStore, redisRateLimitStoreFromEnv } from '@cossackframework/core';
 
-export default {
-    async fetch(req, env) {
-        setRateLimitStore(redisRateLimitStoreFromEnv(env));
-        return app.fetch(req, env);
-    },
-};
-// or, anywhere: new RedisRateLimitStore({ url, token })
+// One fixed backend, configured once during application setup.
+export function configureLimiter(env: Record<string, string | undefined>) {
+    setRateLimitStore(redisRateLimitStoreFromEnv(env));
+}
+// Or construct a store directly: new RedisRateLimitStore({ url, token }).
 ```
+
+Redis expiry uses milliseconds without rounding to whole seconds. Missing,
+malformed or negative PTTL values reject instead of creating a guessed deadline.
+The explicit `redisRateLimitStoreFromEnv(env)` helper requires credentials from
+that environment; it does not borrow process credentials when they are absent.
+See [Redis PEXPIRE](https://redis.io/docs/latest/commands/pexpire/) and
+[PTTL](https://redis.io/docs/latest/commands/pttl/).
 
 ### Cloudflare KV (approximate)
 
-`KvRateLimitStore` is the cheapest global option. Expired buckets are auto-expired via KV's TTL, so there is no unbounded growth.
+KV is a shared approximate store. Its storage TTL is at least 60 seconds, while
+the record's millisecond deadline controls the logical fixed window. Shorter
+windows reset at that deadline even while the old record remains in storage.
+Corrupt records reject without overwriting them or restoring a caller's budget.
 
 ```ts
-import { setRateLimitStore, KvRateLimitStore } from '@cossackframework/core';
+import { setRateLimitStore, KvRateLimitStore, type RateLimitKvNamespace } from '@cossackframework/core';
 
-export default {
-    async fetch(req, env) {
-        setRateLimitStore(new KvRateLimitStore(env.RATE_LIMITS));
-        return app.fetch(req, env);
-    },
-};
+// One fixed binding, configured once during application setup.
+export function configureLimiter(bindings: { RATE_LIMITS: RateLimitKvNamespace }) {
+    setRateLimitStore(new KvRateLimitStore(bindings.RATE_LIMITS));
+}
 ```
 
-> **KV is approximate, not exact.** KV is *eventually consistent* and has no atomic increment. Two reads can happen before either write during a concurrent burst, which can cause a temporary under-count. The limit can be exceeded by a small amount under load. For exact limits, use the Durable Object or Redis store above.
+KV has eventual consistency and no atomic increment; under-counting across
+regions has no strict bound. It also permits only one write per key per second.
+Write failures reject the action, so this backend is unsuitable for burst
+traffic that needs reliable counting. Use Durable Objects or Redis for that
+workload. See [Cloudflare KV write limits](https://developers.cloudflare.com/kv/api/write-key-value-pairs/).
 
 ### Custom store
 
 Need D1, a self-hosted Redis, or something else? Implement the `RateLimitStore` interface (a single `hit` method) and register it:
 
 ```ts
-import type { RateLimitStore } from '@cossackframework/core';
+import { setRateLimitStore, type RateLimitStore } from '@cossackframework/core';
 
-class MyStore implements RateLimitStore {
-    async hit(key: string, windowMs: number) {
-        // return { count, resetAt }
-    }
+// Supply a store whose hit() increments a real fixed-window counter.
+export function configureLimiter(store: RateLimitStore) {
+    setRateLimitStore(store);
 }
-setRateLimitStore(new MyStore());
 ```

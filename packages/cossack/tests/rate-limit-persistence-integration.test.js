@@ -24,6 +24,7 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
     import { Hono } from ${JSON.stringify(hono)};
     import { DurableObjectRateLimitStore, RateLimitDurableObject, enforceRateLimit } from ${JSON.stringify(core)};
     export { RateLimitDurableObject };
+    export class AlternateRateLimitDurableObject extends RateLimitDurableObject {}
     const app = new Hono();
     app.get('/hit', async c => c.json(await new DurableObjectRateLimitStore(c.env.RATE_LIMIT_DO)
       .hit(c.req.query('key') || 'shared', Number(c.req.query('window') || '120000'))));
@@ -35,16 +36,32 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
       return blocked || c.json({ mutations: ++mutations });
     });
     app.get('/mutations', c => c.json({ mutations, run: c.env.RUN }));
-    export default app;
+    app.onError(c => Response.json({ error: 'Internal Server Error' }, { status: 500 }));
+    app.get('/configured', async c => {
+      const blocked = await enforceRateLimit(c, 'config-route', { max: 1, key: () => 'member' });
+      return blocked || c.json({ mutations: ++mutations });
+    });
+    export default { fetch(request, env, context) {
+      const url = new URL(request.url);
+      if (url.pathname !== '/configured') return app.fetch(request, env, context);
+      const selected = { ...env, rateLimit: url.searchParams.get('mode') || 'do' };
+      if (selected.rateLimit === 'unset') delete selected.rateLimit;
+      if (selected.rateLimit === 'null') selected.rateLimit = null;
+      if (url.searchParams.get('store') === 'alternate') selected.RATE_LIMIT_DO = env.RATE_LIMIT_ALTERNATE;
+      if (url.searchParams.get('store') === 'missing') delete selected.RATE_LIMIT_DO;
+      return app.fetch(request, selected, context);
+    } };
   `);
   const common = { main, compatibility_date: '2026-07-29', compatibility_flags: ['nodejs_compat'],
     vars: { rateLimit: 'durable-object', RUN: 'before' } };
   const options = { root: directory, workers: [
     { config: { ...common, name: 'first', durable_objects: { bindings: [
       { name: 'RATE_LIMIT_DO', class_name: 'RateLimitDurableObject' },
-    ] }, migrations: [{ tag: 'v1', new_sqlite_classes: ['RateLimitDurableObject'] }] } },
+      { name: 'RATE_LIMIT_ALTERNATE', class_name: 'AlternateRateLimitDurableObject' },
+    ] }, migrations: [{ tag: 'v1', new_sqlite_classes: ['RateLimitDurableObject', 'AlternateRateLimitDurableObject'] }] } },
     { config: { ...common, name: 'second', durable_objects: { bindings: [
       { name: 'RATE_LIMIT_DO', class_name: 'RateLimitDurableObject', script_name: 'first' },
+      { name: 'RATE_LIMIT_ALTERNATE', class_name: 'AlternateRateLimitDurableObject', script_name: 'first' },
     ] } } },
   ] };
   server = createTestHarness(options);
@@ -87,4 +104,15 @@ it('persists exact fixed-window counters across concurrent Workers and actual DO
   for (const window of ['0', '-1', 'NaN', 'Infinity', '1.5']) {
     expect((await server.getWorker('first').fetch('/raw?window=' + window)).status).toBe(400);
   }
+  const configured = server.getWorker('first');
+  expect((await configured.fetch('/configured')).status).toBe(200);
+  expect((await configured.fetch('/configured?store=alternate')).status).toBe(200);
+  expect((await server.getWorker('second').fetch('/configured')).status).toBe(429);
+  expect((await server.getWorker('second').fetch('/configured?store=alternate')).status).toBe(429);
+  expect((await configured.fetch('/configured?mode=unknown')).status).toBe(500);
+  expect((await configured.fetch('/configured?mode=null')).status).toBe(500);
+  expect((await configured.fetch('/configured?store=missing')).status).toBe(500);
+  expect((await configured.fetch('/configured?mode=unset')).status).toBe(200);
+  expect((await configured.fetch('/configured?mode=unset')).status).toBe(429);
+  expect(await (await configured.fetch('/mutations')).json()).toEqual({ mutations: 3, run: 'after' });
 }, 60_000);

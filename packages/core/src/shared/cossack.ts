@@ -1154,7 +1154,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 const rateContext = new Proxy(context ?? {} as Context, {
                     get: (target, property) => {
                         if (property === 'get') return (key: string) => key === 'user' ? user : target.get?.(key);
-                        if (property === 'env') return this.env;
+                        if (property === 'env') return context?.env ?? this.env;
                         if (property === 'req' && !target.req) return { header: () => undefined };
                         const value = Reflect.get(target, property, target);
                         return typeof value === 'function' ? value.bind(target) : value;

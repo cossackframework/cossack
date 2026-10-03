@@ -185,4 +185,10 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     name: JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited:user:member',
   });
   expect(await member.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED' });
+  await server.update({ ...options, workers: options.workers.map(worker => ({ config: { ...worker.config,
+    vars: { ...worker.config.vars, rateLimit: 'unknown' } } })) });
+  const invalidConfig = await connect({ name: 'invalid-config' });
+  expect(await invalidConfig.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_INTERNAL_ERROR',
+    message: 'Internal Server Error', requestId: expect.any(String) });
+  expect((await invalidConfig.call('inspect')).value.count).toBe(0);
 }, 60_000);

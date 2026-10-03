@@ -5,6 +5,42 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## Rate-limit configuration and counters reject invalid values
+
+An explicit `rateLimit`/`RATE_LIMIT` now requires a supported non-empty string
+and valid backend bindings or credentials. Missing bindings and unknown modes
+throw instead of silently switching to memory. Selection belongs to the current
+request environment; another request's configuration cannot choose its store.
+Configuration/binding/credential changes are read on the next evaluation.
+Unconfigured requests use the process memory default. A manual
+`setRateLimitStore` remains an intentional process-wide override; register it
+once for a fixed backend, rather than changing it for each request.
+
+`configureRateLimitFromEnv(env)` now returns the selected store without changing
+a global backend. Internal integrations that inspect it should use the return
+value or `getRateLimitStore(env)`. Without an environment, `getRateLimitStore()`
+returns the manual/default store. Shared socket components evaluate limits using
+the action context's environment, with their bootstrap environment as fallback
+only when no context environment is supplied.
+
+`window` requires positive safe-integer milliseconds; `max` requires a
+non-negative safe integer, with zero denying all calls. Key functions must return
+non-empty strings. Invalid options reject before touching a counter. All counter
+replies require positive safe-integer counts and positive epoch-millisecond reset
+times. Corrupt KV records, malformed Redis/custom replies and invalid Redis TTLs
+reject before mutation rather than restoring a caller's budget. A backend may
+have counted an attempt before its invalid/error reply; no retry or rollback is
+implied. The explicit Redis environment helper no longer borrows process
+credentials when its supplied environment lacks them.
+
+Redis now uses PEXPIRE and millisecond durations, without whole-second rounding.
+KV storage retention has a minimum of 60 seconds, while its stored millisecond
+deadline determines the logical window. KV still cannot guarantee exact counting
+across regions or sustain more than one write to a key per second; write failures
+reject. Provider capability inspection and cache duration conventions remain
+under RT-18. Backend reply bounds/cancellation and remaining resource policies
+also require further audit.
+
 ## Durable Object rate limits persist through eviction
 
 `RateLimitDurableObject` now commits each counter and its fixed reset deadline
@@ -17,8 +53,8 @@ DO windows must be positive safe-integer milliseconds within the alarm timestamp
 range. Invalid direct requests return 400/`COSSACK_RATE_LIMIT_CONFIG_INVALID`;
 `DurableObjectRateLimitStore.hit()` rejects invalid windows before contacting the
 binding. Corrupt records and malformed replies reject rather than reset budgets.
-Storage failures reject before action mutation. Other store configuration and
-validation policies remain under the RT-18 audit.
+Storage failures reject before action mutation. Counter validation now also applies to other providers; capability inspection
+and cache duration conventions remain under the RT-18 audit.
 
 Create new namespaces with `new_sqlite_classes`. Keep existing migration history;
 the transactional key-value implementation also supports legacy DO storage.

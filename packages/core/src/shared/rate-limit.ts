@@ -14,11 +14,11 @@ export const RATE_LIMIT_METADATA_KEY = 'cossack:rate-limit';
  */
 export interface RateLimitOptions {
     /**
-     * Fixed-window duration in milliseconds. Default `60_000` (1 minute).
+     * Positive safe-integer fixed-window milliseconds. Default `60_000`.
      */
     window?: number;
     /**
-     * Maximum allowed requests per window per key. Default `60`.
+     * Non-negative safe-integer maximum per window/key. Default `60`; zero denies all.
      */
     max?: number;
     /**
@@ -59,14 +59,37 @@ function validWindow(windowMs: number, now: number): boolean {
     return Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= MAX_ALARM_TIMESTAMP - now;
 }
 
+function assertWindow(windowMs: number): void {
+    if (!validWindow(windowMs, Date.now())) {
+        throw new Error('[Cossack] Rate-limit window must be positive integer milliseconds within the timestamp range.');
+    }
+}
+
+function assertKey(key: string): void {
+    if (typeof key !== 'string' || !key.trim()) {
+        throw new Error('[Cossack] Rate-limit key must be a non-empty string.');
+    }
+}
+
+function hasMethod(value: unknown, method: string): boolean {
+    return value !== null && (typeof value === 'object' || typeof value === 'function') &&
+        typeof (value as Record<string, unknown>)[method] === 'function';
+}
+
+function credential(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
 function readCounter(value: unknown): RateLimitCounter {
-    const entry = value as Partial<RateLimitCounter> | null;
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
-        !Number.isSafeInteger(entry.count) || entry.count! <= 0 ||
-        !Number.isSafeInteger(entry.resetAt) || entry.resetAt! <= 0 || entry.resetAt! > MAX_ALARM_TIMESTAMP) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('[Cossack] Invalid rate-limit counter returned by storage.');
     }
-    return { count: entry.count!, resetAt: entry.resetAt! };
+    const { count, resetAt } = value as Partial<RateLimitCounter>;
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count <= 0 ||
+        typeof resetAt !== 'number' || !Number.isSafeInteger(resetAt) || resetAt <= 0 || resetAt > MAX_ALARM_TIMESTAMP) {
+        throw new Error('[Cossack] Invalid rate-limit counter returned by storage.');
+    }
+    return { count, resetAt };
 }
 
 /**
@@ -82,6 +105,7 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     }
 
     hit(key: string, windowMs: number): { count: number; resetAt: number } {
+        assertKey(key); assertWindow(windowMs);
         const now = Date.now();
         const existing = this.entries.get(key);
         if (!existing || now >= existing.resetAt) {
@@ -90,7 +114,7 @@ export class InMemoryRateLimitStore implements RateLimitStore {
             if (this.entries.size > this.maxEntries) this.prune(now);
             return { count: 1, resetAt };
         }
-        existing.count += 1;
+        existing.count = readCounter({ count: existing.count + 1, resetAt: existing.resetAt }).count;
         return { count: existing.count, resetAt: existing.resetAt };
     }
 
@@ -123,27 +147,25 @@ export interface KvRateLimitStoreOptions {
  * via {@link setRateLimitStore} so limits hold across Worker instances/regions
  * (the default {@link InMemoryRateLimitStore} is per-process).
  *
- * Keys are written with a TTL equal to the window, so expired buckets are
- * garbage-collected by KV automatically — there is no unbounded growth.
+ * KV storage TTL is rounded to seconds with a 60-second minimum. The stored
+ * millisecond deadline controls logical expiry, including shorter windows.
  *
  * @example
  * ```ts
- * import { setRateLimitStore, KvRateLimitStore } from '@cossackframework/core';
+ * import { setRateLimitStore, KvRateLimitStore, type RateLimitKvNamespace } from '@cossackframework/core';
  *
- * export default {
- *   async fetch(req, env) {
- *     setRateLimitStore(new KvRateLimitStore(env.RATE_LIMITS));
- *     // ...your app
- *   },
- * };
+ * // Call once during setup for a process with one fixed binding.
+ * export function configureLimiter(bindings: { RATE_LIMITS: RateLimitKvNamespace }) {
+ *   setRateLimitStore(new KvRateLimitStore(bindings.RATE_LIMITS));
+ * }
  * ```
  *
  * > **Caveat — approximate, not exact.** KV is *eventually consistent* and has
  * > no atomic increment, so a concurrent burst from the same caller can
  * > under-count (two reads see the old value before either write lands). In
- * > practice this means the limit may be exceeded by a small amount under load
- * > — acceptable for most abuse protection, but if you need **strict/accurate**
- * > limits, back the store with a Durable Object (strongly consistent) instead.
+ * > There is no strict bound on under-counting across regions. KV also limits
+ * > writes to one per key per second; write failures reject the action. For
+ * > burst traffic or strict limits, use Durable Objects or Redis.
  */
 export class KvRateLimitStore implements RateLimitStore {
     private readonly namespace: string;
@@ -152,39 +174,36 @@ export class KvRateLimitStore implements RateLimitStore {
         private readonly kv: RateLimitKvNamespace,
         options: KvRateLimitStoreOptions = {},
     ) {
+        if (!hasMethod(kv, 'get') || !hasMethod(kv, 'put')) {
+            throw new Error('[Cossack] RATE_LIMITS requires a KV binding with get/put methods.');
+        }
         this.namespace = options.namespace ?? 'cossack:rl:';
     }
 
     async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+        assertKey(key); assertWindow(windowMs);
         const kvKey = `${this.namespace}${key}`;
-        const now = Date.now();
-        const ttl = Math.max(1, Math.ceil(windowMs / 1000));
-        const windowEnd = now + windowMs;
-
         const entry = await this.read(kvKey);
-        if (entry && now < entry.resetAt) {
-            entry.count += 1;
-        } else {
-            entry.count = 1;
-            entry.resetAt = windowEnd;
-        }
-
-        await this.kv.put(kvKey, JSON.stringify(entry), { expirationTtl: ttl });
-        return { count: entry.count, resetAt: entry.resetAt };
+        const now = Date.now();
+        assertWindow(windowMs);
+        const next = readCounter(entry && now < entry.resetAt
+            ? { count: entry.count + 1, resetAt: entry.resetAt }
+            : { count: 1, resetAt: now + windowMs });
+        // Storage retention must not expire the counter before its logical window.
+        const ttl = Math.max(60, Math.ceil((next.resetAt - now) / 1000));
+        await this.kv.put(kvKey, JSON.stringify(next), { expirationTtl: ttl });
+        return next;
     }
 
-    private async read(kvKey: string): Promise<{ count: number; resetAt: number }> {
+    private async read(kvKey: string): Promise<RateLimitCounter | undefined> {
         const raw = await this.kv.get(kvKey);
-        if (!raw) return { count: 0, resetAt: 0 };
+        if (raw === null) return undefined;
         try {
-            const parsed = JSON.parse(raw);
-            if (typeof parsed?.count === 'number' && typeof parsed?.resetAt === 'number') {
-                return { count: parsed.count, resetAt: parsed.resetAt };
-            }
+            if (typeof raw !== 'string') throw new Error();
+            return readCounter(JSON.parse(raw));
         } catch {
-            /* corrupt entry — treat as fresh */
+            throw new Error('[Cossack] Invalid rate-limit counter returned by KV storage.');
         }
-        return { count: 0, resetAt: 0 };
     }
 }
 
@@ -280,25 +299,25 @@ export class RateLimitDurableObject {
  *
  * @example
  * ```ts
- * import { setRateLimitStore, DurableObjectRateLimitStore, RateLimitDurableObject } from '@cossackframework/core';
+ * import { setRateLimitStore, DurableObjectRateLimitStore, RateLimitDurableObject, type RateLimitDurableObjectNamespace } from '@cossackframework/core';
  *
  * export { RateLimitDurableObject };
  *
- * export default {
- *   async fetch(req, env) {
- *     setRateLimitStore(new DurableObjectRateLimitStore(env.RATE_LIMIT_DO));
- *     return app.fetch(req, env);
- *   },
- * };
+ * // Call once during setup for a process with one fixed binding.
+ * export function configureLimiter(bindings: { RATE_LIMIT_DO: RateLimitDurableObjectNamespace }) {
+ *   setRateLimitStore(new DurableObjectRateLimitStore(bindings.RATE_LIMIT_DO));
+ * }
  * ```
  */
 export class DurableObjectRateLimitStore implements RateLimitStore {
-    constructor(private readonly ns: RateLimitDurableObjectNamespace) {}
+    constructor(private readonly ns: RateLimitDurableObjectNamespace) {
+        if (!hasMethod(ns, 'idFromName') || !hasMethod(ns, 'get')) {
+            throw new Error('[Cossack] RATE_LIMIT_DO requires a Durable Object namespace binding.');
+        }
+    }
 
     async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
-        if (!validWindow(windowMs, Date.now())) {
-            throw new Error('[Cossack] Rate-limit window must be positive integer milliseconds within the alarm range.');
-        }
+        assertKey(key); assertWindow(windowMs);
         const id = this.ns.idFromName(key);
         const stub = this.ns.get(id);
         const res = await stub.fetch(`https://rate-limit/?window=${windowMs}`);
@@ -326,37 +345,35 @@ export interface RedisRateLimitStoreOptions {
 }
 
 /**
- * Atomic INCR + conditional EXPIRE + PTTL in a single round-trip via EVAL.
- * Returns `{ count, pttlMs }`. EXPIRE is only set on the first increment of a
+ * Atomic INCR + conditional PEXPIRE + PTTL in a single round-trip via EVAL.
+ * Returns `{ count, pttlMs }`. PEXPIRE is only set on the first increment of a
  * window (count === 1), so the window is fixed, not sliding.
  */
 const REDIS_RATE_LIMIT_SCRIPT =
-    "local c=redis.call('INCR',KEYS[1]) if c==1 then redis.call('EXPIRE',KEYS[1],ARGV[1]) end return {c,redis.call('PTTL',KEYS[1])}";
+    "local c=redis.call('INCR',KEYS[1]) if c==1 then redis.call('PEXPIRE',KEYS[1],ARGV[1]) end return {c,redis.call('PTTL',KEYS[1])}";
 
 /**
- * Rate-limit store backed by **Redis via Upstash REST** — the only Redis client
- * shape that runs on both Cloudflare Workers (no TCP sockets) and Node.js, with
- * zero external dependencies. Configure it from your Worker `env` (set in
+ * Redis rate-limit store using Upstash REST on Cloudflare Workers and Node.js,
+ * with zero external dependencies. Configure it from your Worker `env` (set in
  * `wrangler.jsonc`) using {@link redisRateLimitStoreFromEnv}, or pass the
  * URL/token directly.
  *
- * Counting uses a single atomic `EVAL` (`INCR` + conditional `EXPIRE`), so it
+ * Counting uses a single atomic `EVAL` (`INCR` + conditional `PEXPIRE`), so it
  * is exact under concurrency (unlike the read-then-write KV store).
  *
  * @example wrangler.jsonc
  * ```jsonc
- * { "vars": { "UPSTASH_REDIS_REST_URL": "https://xxx.upstash.io", "UPSTASH_REDIS_REST_TOKEN": "..." } }
+ * { "vars": { "UPSTASH_REDIS_REST_URL": "https://xxx.upstash.io" } }
+ * // Set UPSTASH_REDIS_REST_TOKEN using wrangler secret put or local .dev.vars.
  * ```
  * @example
  * ```ts
  * import { redisRateLimitStoreFromEnv, setRateLimitStore } from '@cossackframework/core';
  *
- * export default {
- *   async fetch(req, env) {
- *     setRateLimitStore(redisRateLimitStoreFromEnv(env));
- *     return app.fetch(req, env);
- *   },
- * };
+ * // Call once during setup for a process with one fixed backend.
+ * export function configureLimiter(env: Record<string, string | undefined>) {
+ *   setRateLimitStore(redisRateLimitStoreFromEnv(env));
+ * }
  * ```
  */
 export class RedisRateLimitStore implements RateLimitStore {
@@ -371,7 +388,7 @@ export class RedisRateLimitStore implements RateLimitStore {
         this.token = options.token ?? env.UPSTASH_REDIS_REST_TOKEN ?? '';
         this.namespace = options.namespace ?? 'cossack:rl:';
         this.fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
-        if (!this.url || !this.token) {
+        if (!credential(this.url) || !credential(this.token)) {
             throw new Error(
                 '[Cossack] RedisRateLimitStore requires a Upstash REST url + token. ' +
                     'Pass them explicitly or set UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN.',
@@ -380,23 +397,26 @@ export class RedisRateLimitStore implements RateLimitStore {
     }
 
     async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+        assertKey(key); assertWindow(windowMs);
         const kvKey = `${this.namespace}${key}`;
-        const ttl = Math.max(1, Math.ceil(windowMs / 1000));
         const res = await this.fetchFn(this.url, {
             method: 'POST',
             headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(['EVAL', REDIS_RATE_LIMIT_SCRIPT, '1', kvKey, String(ttl)]),
+            body: JSON.stringify(['EVAL', REDIS_RATE_LIMIT_SCRIPT, '1', kvKey, String(windowMs)]),
         });
         if (!res.ok) {
             throw new Error(`[Cossack] RedisRateLimitStore Upstash HTTP ${res.status}`);
         }
-        const data = (await res.json()) as { result?: [number, number]; error?: string };
-        if (data.error) {
-            throw new Error(`[Cossack] RedisRateLimitStore: ${data.error}`);
+        const data = await res.json() as { result?: unknown; error?: unknown } | null;
+        if (!data || typeof data !== 'object' || Array.isArray(data) || 'error' in data ||
+            !Array.isArray(data.result) || data.result.length !== 2) {
+            throw new Error('[Cossack] RedisRateLimitStore returned an invalid or error response.');
         }
-        const [count, pttl] = data.result ?? [0, 0];
-        const remaining = typeof pttl === 'number' && pttl > 0 ? pttl : windowMs;
-        return { count: Number(count), resetAt: Date.now() + remaining };
+        const [count, pttl] = data.result;
+        if (typeof pttl !== 'number' || !Number.isSafeInteger(pttl) || pttl < 0) {
+            throw new Error('[Cossack] RedisRateLimitStore returned an invalid counter TTL.');
+        }
+        return readCounter({ count, resetAt: Date.now() + pttl });
     }
 }
 
@@ -409,114 +429,101 @@ export function redisRateLimitStoreFromEnv(
     env: Record<string, string | undefined>,
     options: Omit<RedisRateLimitStoreOptions, 'url' | 'token'> = {},
 ): RedisRateLimitStore {
+    if (!credential(env.UPSTASH_REDIS_REST_URL) || !credential(env.UPSTASH_REDIS_REST_TOKEN)) {
+        throw new Error('[Cossack] Upstash credentials must be supplied by the selected environment.');
+    }
     return new RedisRateLimitStore({
+        ...options,
         url: env.UPSTASH_REDIS_REST_URL,
         token: env.UPSTASH_REDIS_REST_TOKEN,
-        ...options,
     });
 }
 
-let globalStore: RateLimitStore = new InMemoryRateLimitStore();
-let manualOverride = false;
-let autoConfigured = false;
+let defaultStore: RateLimitStore = new InMemoryRateLimitStore();
+let manualStore: RateLimitStore | undefined;
+interface StoreSelection {
+    mode: 'durable-object' | 'redis' | 'kv';
+    binding?: unknown;
+    url?: string;
+    token?: string;
+}
+let configuredStores = new WeakMap<object, StoreSelection & { store: RateLimitStore }>();
 
 /**
- * Override the global rate-limit store (advanced). Use this to back the limiter
- * with shared storage so limits hold across instances. An explicit call here
- * takes precedence over {@link configureRateLimitFromEnv} / the `rateLimit`
- * env-var config — the auto-config will not overwrite a store you set manually.
+ * Set an intentional process-wide store override. This takes precedence over
+ * environment selection. Do not set per-request stores here; use `rateLimit`
+ * and bindings on the request environment for automatic selection instead.
  */
 export function setRateLimitStore(store: RateLimitStore): void {
-    globalStore = store;
-    manualOverride = true;
+    if (!hasMethod(store, 'hit')) throw new Error('[Cossack] Rate-limit store requires a hit method.');
+    manualStore = store;
 }
 
-/** @internal Current global store. */
-export function getRateLimitStore(): RateLimitStore {
-    return globalStore;
+/** @internal Resolve this environment's store, or the manual/process default. */
+export function getRateLimitStore(env?: Record<string, unknown>): RateLimitStore {
+    return configureRateLimitFromEnv(env);
 }
 
 /** @internal Reset all module state — tests only. */
 export function __resetRateLimitForTests(): void {
-    globalStore = new InMemoryRateLimitStore();
-    manualOverride = false;
-    autoConfigured = false;
+    defaultStore = new InMemoryRateLimitStore();
+    manualStore = undefined;
+    configuredStores = new WeakMap();
 }
 
 /**
- * Configure the rate-limit store from a Worker `env`, driven by the `rateLimit`
- * (or `RATE_LIMIT`) var. This is the **zero-code** path: set the var plus the
- * relevant binding in `wrangler.jsonc` and the framework picks the store
- * automatically — no `setRateLimitStore()` call in your entry.
- *
- * Accepted values:
- * - `"durable-object"` (aliases `"do"`) → uses the `RATE_LIMIT_DO` binding.
- * - `"redis"` (alias `"upstash"`) → uses `UPSTASH_REDIS_REST_URL` / `_TOKEN`.
- * - `"kv"` → uses the `RATE_LIMITS` binding.
- * - unset → the default in-memory store is kept.
- *
- * Idempotent: builds the store once on the first call that sees a config value,
- * and is a cheap no-op afterwards. A manual `setRateLimitStore()` call wins.
- * @internal — invoked automatically by `enforceRateLimit`; export for testing.
+ * Resolve `rateLimit` (or `RATE_LIMIT`) from this request's environment.
+ * `durable-object`/`do`, `redis`/`upstash`, and `kv` require their own bindings
+ * or credentials. Unset configuration uses the process-local memory store.
+ * Invalid explicit configuration throws; it never falls back to another store.
+ * Unchanged environment/binding/credential selections reuse a store. Changes
+ * are read on each call. The returned store belongs to this selection and does
+ * not modify a process-wide "last configured store". Manual overrides win.
+ * @internal — invoked automatically by `evaluateRateLimit`; exported for tests.
  */
-export function configureRateLimitFromEnv(env: Record<string, any> | undefined): void {
-    if (manualOverride || autoConfigured) return;
-    if (!env) return;
-    const raw = env.rateLimit ?? env.RATE_LIMIT;
-    if (!raw) return;
-    const mode = String(raw).trim().toLowerCase();
-    const store = buildRateLimitStore(mode, env);
-    autoConfigured = true;
-    if (store) {
-        globalStore = store;
+export function configureRateLimitFromEnv(env: Record<string, unknown> | undefined): RateLimitStore {
+    if (manualStore) return manualStore;
+    if (env == null) return defaultStore;
+    if (typeof env !== 'object' || Array.isArray(env)) {
+        throw new Error('[Cossack] Rate-limit environment must be an object.');
     }
-}
-
-/** @internal Maps a config string + env to a concrete store. */
-function buildRateLimitStore(mode: string, env: Record<string, any>): RateLimitStore | null {
+    const raw = env.rateLimit === undefined ? env.RATE_LIMIT : env.rateLimit;
+    if (raw === undefined) return defaultStore;
+    if (typeof raw !== 'string' || !raw.trim()) {
+        throw new Error('[Cossack] rateLimit must name a supported backend.');
+    }
+    const mode = raw.trim().toLowerCase();
+    let selection: StoreSelection;
     switch (mode) {
         case 'durable-object':
-        case 'do': {
-            const ns = env.RATE_LIMIT_DO;
-            if (!ns) {
-                console.error(
-                    '[Cossack] rateLimit="durable-object" but no "RATE_LIMIT_DO" binding was found. ' +
-                        'Add it to durable_objects.bindings (and migrations) in wrangler.jsonc.',
-                );
-                return null;
-            }
-            return new DurableObjectRateLimitStore(ns);
-        }
+        case 'do':
+            selection = { mode: 'durable-object', binding: env.RATE_LIMIT_DO };
+            break;
+        case 'kv':
+            selection = { mode: 'kv', binding: env.RATE_LIMITS };
+            break;
         case 'redis':
         case 'upstash': {
             const url = env.UPSTASH_REDIS_REST_URL;
             const token = env.UPSTASH_REDIS_REST_TOKEN;
-            if (!url || !token) {
-                console.error(
-                    '[Cossack] rateLimit="redis" but UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set. ' +
-                        'Add them to vars in wrangler.jsonc.',
-                );
-                return null;
+            if (!credential(url) || !credential(token)) {
+                throw new Error('[Cossack] Upstash requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in the selected environment.');
             }
-            return new RedisRateLimitStore({ url, token });
-        }
-        case 'kv': {
-            const kv = env.RATE_LIMITS;
-            if (!kv) {
-                console.error(
-                    '[Cossack] rateLimit="kv" but no "RATE_LIMITS" binding was found. ' +
-                        'Add a KV namespace binding in wrangler.jsonc.',
-                );
-                return null;
-            }
-            return new KvRateLimitStore(kv);
+            selection = { mode: 'redis', url, token };
+            break;
         }
         default:
-            console.error(
-                `[Cossack] Unknown rateLimit mode "${mode}". Use "durable-object", "redis", or "kv".`,
-            );
-            return null;
+            throw new Error('[Cossack] Unknown rateLimit mode. Use durable-object, redis, or kv.');
     }
+    const cached = configuredStores.get(env);
+    if (cached && cached.mode === selection.mode && cached.binding === selection.binding &&
+        cached.url === selection.url && cached.token === selection.token) return cached.store;
+    const store = selection.mode === 'durable-object'
+        ? new DurableObjectRateLimitStore(selection.binding as RateLimitDurableObjectNamespace)
+        : selection.mode === 'kv' ? new KvRateLimitStore(selection.binding as RateLimitKvNamespace)
+        : new RedisRateLimitStore({ url: selection.url, token: selection.token });
+    configuredStores.set(env, { ...selection, store });
+    return store;
 }
 
 /**
@@ -544,7 +551,7 @@ export function defaultRateLimitKey(c: Context): string {
 }
 
 /**
- * @internal Evaluate a rate limit against the global store. Returns a `429`
+ * @internal Evaluate a rate limit against the selected request store. Returns a `429`
  * `Response` when the caller has exceeded the limit, or `null` when allowed.
  * `scopeKey` namespaces the counter (e.g. per route or per server method) so
  * limits on one endpoint don't consume another's budget.
@@ -569,13 +576,23 @@ export async function evaluateRateLimit(
     scopeKey: string,
     options: RateLimitOptions,
 ): Promise<{ message: string; retryAfter: number } | null> {
-    // Zero-code store config: lazily read `env.rateLimit` once, on first use.
-    configureRateLimitFromEnv((c as unknown as { env?: Record<string, any> }).env);
-
-    const windowMs = options.window ?? 60_000;
-    const max = options.max ?? 60;
+    const store = configureRateLimitFromEnv((c as unknown as { env?: Record<string, unknown> }).env);
+    const windowMs = options.window === undefined ? 60_000 : options.window;
+    const max = options.max === undefined ? 60 : options.max;
+    assertWindow(windowMs);
+    if (!Number.isSafeInteger(max) || max < 0) {
+        throw new Error('[Cossack] Rate-limit max must be a non-negative safe integer.');
+    }
+    if (options.key !== undefined && typeof options.key !== 'function') {
+        throw new Error('[Cossack] Rate-limit key must be a function.');
+    }
+    if (options.message !== undefined && typeof options.message !== 'string') {
+        throw new Error('[Cossack] Rate-limit message must be a string.');
+    }
+    assertKey(scopeKey);
     const caller = options.key ? options.key(c) : defaultRateLimitKey(c);
-    const { count, resetAt } = await globalStore.hit(`${scopeKey}:${caller}`, windowMs);
+    assertKey(caller);
+    const { count, resetAt } = readCounter(await store.hit(`${scopeKey}:${caller}`, windowMs));
     if (count <= max) return null;
 
     const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
@@ -643,7 +660,7 @@ type HonoHandler = (c: Context) => unknown;
  *
  * The decorator form stores metadata (`cossack:rate-limit`) which the framework
  * enforces at the RPC/API dispatch boundary. The wrapper forms guard the handler
- * directly. Both use the same global {@link RateLimitStore}.
+ * directly. Both resolve the same request-environment {@link RateLimitStore}.
  *
  * > Decorators cannot legally be applied to a standalone `const` export in
  * > TypeScript, so functional API routes use the wrapper forms (2/3) rather than

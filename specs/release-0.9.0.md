@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Remaining: configured-store failure/ownership, other backend validation/capabilities and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rate-window-persistence-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 342 cases. Remaining: backend I/O bounds/abort/cleanup, provider capabilities/resource policies and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rate-store-contracts-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -38,7 +38,7 @@ below link directly to those explanations.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
-- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Persistent transactional DO windows, expiry cleanup and native concurrency/eviction are verified; configuration/ownership, other provider validation and inspection remain open.
+- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Persistent transactional DO windows, expiry cleanup and native concurrency/eviction are verified; configuration ownership and runtime counter/option validation now pass; backend I/O/resource policy, cache durations and capability inspection remain open.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. GLM (2026-10-02): `component.realtime` exposes per-connection state/attempts/lastError/lastEventId/resynced; WebSocket reconnect uses bounded exponential backoff (0.5s→30s, reset on open, none after intentional disposal); SSE resends an authoritative snapshot with a `resync` marker when history expired; pending calls reject with explicit uncertain-outcome errors (`COSSACK_RPC_TRANSPORT_CLOSED`) and never replay. Covered by core recovery/conformance tests plus the workerd coordinator suite.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
@@ -85,6 +85,85 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rate-store-contracts-2026-10-03"></a>
+### Codex continuation: request-owned rate stores and validated counters (2026-10-03)
+
+**Author: Codex.** Continued RT-18/RT-01 after `78c208c`. Automatic configuration
+silently fell back to memory after errors and stuck to the first environment.
+Redis missing results defaulted to count zero; KV corruption restored budgets;
+invalid options and custom-store replies could allow or misclassify calls.
+The initial 103-case contract suite exposed **91** baseline failures. The initial
+44 shared-matrix additions exposed **40** failures across HTTP/SSE/socket/service
+RPC. A separate shared-component peer-env test also failed before its fix.
+
+Automatic selection now returns the request environment's store and caches
+unchanged binding/credential descriptors in a WeakMap. Each evaluation captures
+its selection; another environment cannot replace it. Missing/invalid binding
+shapes, unknown/blank/non-string modes (including explicit null), and missing
+credentials reject instead of falling back. Repair and binding/mode changes
+work. Unconfigured requests use the process memory default. Intentional manual
+registration remains a process-wide override, documented as fixed-backend setup.
+`configureRateLimitFromEnv(env)` returns a store without global mutation;
+`getRateLimitStore(env)` inspects that selection. Without env it returns the
+manual/default store. Shared component limits prefer the action context's env
+instead of charging the first peer's bootstrap binding.
+
+Runtime windows require positive safe-integer milliseconds; maxima require
+non-negative safe integers (zero denies all). Key functions return non-empty
+strings and messages are strings. Checks run before counter dispatch. Every
+returned counter is validated and snapshotted once before the decision, including
+custom getter-backed records. Corrupt KV records reject without overwriting;
+malformed Redis results and negative/missing TTL reject without guessed expiry.
+Redis uses atomic PEXPIRE with millisecond durations. KV retains records at least
+60 seconds while the stored logical deadline controls shorter windows. Redis
+explicit-env helpers require that env's credentials, without process fallback.
+
+Final focused evidence: **105** contract cases and one real core socket-dispatch
+peer-env case; the shared matrix is now **342** cases with null-mode refusal,
+configuration repair, invalid options and malformed replies. It proves sanitized
+correlated failures, loading/pending-call release and zero rejected mutations.
+Native workerd adds two distinct DO namespace classes to prove binding ownership,
+spent counters across two Workers, invalid/missing/null/absent modes and unchanged
+mutation counts on denial. Socket workerd reloads into an invalid backend and
+returns correlated internal failure with state unchanged. These are local native
+runtime proofs; they do not establish live Redis or KV regional guarantees.
+No local Redis binary was available; Redis coverage checks the REST contract,
+script command shape and checked TTL semantics against primary documentation.
+
+Verified after the final changes: core **908**/57 files; framework **1014**/50;
+CLI **561**/41 with four native fixtures, all **14** generated runtime cases and
+real-pnpm release validation; Node **16**/4 and Deno **16**/2; sequential core build
+and framework declarations; root TypeScript and all **11** package checks.
+Deno coverage is through adapter events, not native Deno execution. The earlier
+full suites were rerun after the final null/getter audit; no assertions or
+runtime deadlines were relaxed. Updated rate guide, architecture, migration,
+detailed task plan and Codex handoff.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run tests/rate-limit-contract.test.ts tests/rate-limit-peer-store.test.ts tests/rate-limit.test.ts
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts
+pnpm --filter cossack exec vitest run tests/rate-limit-persistence-integration.test.js tests/websocket-peer-integration.test.js
+pnpm tsc --noEmit
+pnpm typecheck
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm --filter @cossackframework/node-adapter exec vitest run
+pnpm --filter @cossackframework/deno-adapter exec vitest run
+```
+
+**14/58 checked; no new checkbox closes. All 44 unchecked tasks remain.**
+Next own and bound backend response bodies, propagate abort/deadline ownership
+and prove no late mutation. Finish provider resource/key/namespace policies,
+cache duration conventions and public capability inspection/rejection with RT-18.
+Then audit component initialization/restoration concurrency and all RT-01
+criteria; continue RT-02/RT-14 policies and RT-11 secrets/session criteria.
+Separate Deno/Electron/tarball/live release gates remain. Versions stay 0.8.3
+until REL-04; preserve unrelated `reports.md`/`.zcodeignore`. Keep export
+generation sequential and out of running tests or type checks.
 
 <a id="codex-rate-window-persistence-2026-10-03"></a>
 ### Codex continuation: persistent Durable Object rate windows (2026-10-03)

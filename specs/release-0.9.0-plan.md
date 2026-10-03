@@ -12,7 +12,14 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex durable rate-window checkpoint](./release-0.9.0.md#codex-rate-window-persistence-2026-10-03)
+The latest [Codex rate-store contract checkpoint](./release-0.9.0.md#codex-rate-store-contracts-2026-10-03)
+fixes invalid configuration fallback, first-environment ownership and unchecked
+runtime options/counter replies. Per-action peer environments select their own
+backend. Redis now uses millisecond expiry; KV retains records for at least 60
+seconds while preserving their logical millisecond deadline. Native fixtures
+verify distinct bindings and sanitized configuration refusal before mutation.
+Capabilities/inspection, cache duration conventions and backend I/O ownership
+remain open; 14/58 tasks stay checked. The preceding [Codex durable rate-window checkpoint](./release-0.9.0.md#codex-rate-window-persistence-2026-10-03)
 fixes the DO store's eviction reset. Transactional counter/deadline records and
 expiry alarms preserve spent budgets. Native workerd verifies two-Worker bursts,
 actual DO eviction, Worker reload and HTTP/socket denial before mutation.
@@ -750,11 +757,13 @@ counts from concurrent requests through two Workers, actual DO eviction, Worker
 reload and spent HTTP/socket budgets. DO requests/replies have window/counter
 validation; malformed storage and failed counter/alarm writes reject. Fake-clock
 cases cover exact expiry and queued transactions. These proofs do not apply to
-Redis, KV or memory. Next reject configured-store failures before mutation and
-prove environment/binding ownership rather than module-global first-env reuse.
-Audit Redis/KV/custom-store replies and option validation, then public provider
-capabilities and cache/limiter units. Do not infer their guarantees from the
-native DO fixture.
+Redis, KV or memory. The subsequent rate-store contract checkpoint rejects invalid configured
+backends, removes first-env global ownership and validates runtime options plus
+Redis/KV/custom counters. Peer actions prefer their own context environment.
+Redis expiry is now milliseconds; KV logical deadlines respect a minimum
+60-second storage TTL. Next finish backend response bounds/abort/cleanup,
+provider resource policies and public capability/cache-unit inspection. Do not
+infer Redis/KV live or regional guarantees from native DO fixtures.
 Audit component initialization/restoration concurrency and all remaining RT-01
 criteria. Continue schema/file/unknown-key/resource policies with RT-02/RT-14
 and session recipes/secrets/rotation/concurrency with RT-11. Handshake identity
@@ -1210,27 +1219,59 @@ spent budgets, and blocked handlers do not mutate. The native socket fixture als
 evicts the real limiter DO before reconnect/new-component and existing-peer
 actions. Component reconstruction in that socket fixture remains forced.
 
+Codex checkpoint (2026-10-03, after `78c208c`): explicit backend modes and
+binding/credential shapes now reject invalid configuration before mutation.
+There is no fallback on failure and no sticky first-env global selection.
+`configureRateLimitFromEnv(env)` returns the environment's store; unchanged
+binding/credential descriptors are cached in a WeakMap. Each evaluation captures
+that store, while intentional manual overrides and the unconfigured memory
+store remain process-wide. A shared component's limiter prefers the current
+peer context environment. Configuration repair and binding/mode changes work.
+
+Limiter `window`, `max`, `key` and `message` values have runtime checks before
+counter dispatch. All returned counters are validated and snapshotted once.
+KV corrupt records are not overwritten; storage TTL respects the 60-second
+minimum while logical windows remain millisecond deadlines. Redis uses PEXPIRE
+and checked PTTL instead of second rounding/guessed TTL. Explicit Redis env
+helpers do not borrow process credentials. Public examples distinguish fixed
+process overrides from automatic request selection and use Worker token secrets.
+
+Evidence: the initial 103-case contract suite exposed 91 baseline failures, and
+44 new shared-matrix cases exposed 40 baseline failures across HTTP/SSE/socket/
+service paths. The final contract suite has 105 cases, including explicit null
+configuration and single-observation custom getters; the shared matrix has 342
+cases after adding null-mode checks. A separate real core socket-dispatch case
+reproduced bootstrap-env reuse and now passes. Native workerd uses two distinct
+DO namespace classes to prove binding ownership, inherited budgets across two
+Workers, absent/invalid/null configuration and zero denied-handler mutations.
+The socket fixture reloads into an invalid backend mode and proves correlated
+sanitized failure with state unchanged. These fixtures do not prove live Redis
+or KV regional consistency. Real Node sockets and Deno event tests pass; actual
+Deno execution remains a separate release gate.
+
 Next steps, with each goal kept separate:
 
-1. Make an explicit invalid/missing backend reject before application mutation.
-   `configureRateLimitFromEnv` currently logs and sticks to memory after missing
-   bindings or unknown modes; this changes a requested distributed guarantee.
-   Test failed configuration followed by repair and concurrent valid requests.
-2. Resolve the store from each request's environment/binding identity. The
-   module-global `autoConfigured` flag currently pins the first environment.
-   Prove requests for two environments cannot charge each other's store; retain
-   the intentional manual override and test configuration changes explicitly.
-3. Validate Redis, KV and custom-store counters and runtime options. Redis
-   defaults missing results to `[0, 0]`; KV treats corrupt records as fresh.
-   Define fail-closed count/deadline/key/window/max behavior before transport
-   mutation. Test missing/error/non-finite/string/invalid TTL responses. Do not
-   imply that unit KV doubles model real eventual consistency.
-4. Normalize or explicitly distinguish public cache seconds and limiter
-   milliseconds. Declare provider locality, persistence, expiry precision,
-   atomicity and unsupported operations; expose them through inspection. KV's
-   minimum TTL and per-key write limits must be represented accurately. Prove
-   the capability rejection path and inspection units, then audit all RT-18
-   acceptance criteria and related RT-01 transport criteria before checking them.
+1. Finish backend I/O ownership and resource policy. DO/Redis still consume
+   responses with unbounded `res.json()` and do not pass an action/request abort
+   signal into store calls. Prove bounded bytes, strict UTF-8, body EOF/errors,
+   non-success body cleanup, cancellation/deadlines and no late mutation after
+   a blocked/aborted decision. A counter may already have incremented; do not
+   retry or promise rollback. Keep direct third-party/custom-store behavior
+   explicit rather than implying the built-in backend guarantee applies to it.
+2. Finish provider-specific configuration/resource validation. Audit Redis URL
+   schemes, optional namespace values, key UTF-8 bounds, memory prune/capacity
+   semantics and backend maximum durations. Check namespace encoding/collision
+   policy with RT-01/RT-14. Do not reinterpret KV write errors as ordinary caller
+   quota denials or approximate consistency as a bounded global counter.
+3. Normalize or explicitly distinguish public cache seconds and limiter
+   milliseconds. Choose one consistent public duration convention and document
+   any breaking change; preserve provider-specific expiry precision accurately.
+   Audit cache get/set/remember and configured-provider failure/ownership too.
+4. Declare provider locality, persistence, expiry precision, atomicity and
+   unsupported operations; expose them through inspection. Reject a requested
+   guarantee the selected provider cannot provide. Prove capability rejection
+   and inspection units, then audit every RT-18 acceptance criterion and related
+   RT-01 transport criteria before checking either task.
 
 Done when: Fake-clock and provider tests prove expiry boundaries and counter
 behavior. Multi-request tests prove supported shared limits. KV behavior is not

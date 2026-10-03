@@ -37,6 +37,10 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         limited() { this.effectOwner.runs++; return ++this.count; }
         @Server() @RateLimit({ max: 1, window: 60_000 })
         async *limitedStream() { this.effectOwner.runs++; yield ++this.count; return ++this.count; }
+        @Server() @RateLimit({ max: NaN })
+        invalidLimit() { this.effectOwner.runs++; return ++this.count; }
+        @Server() @RateLimit({ key: () => '' })
+        invalidRateKey() { this.effectOwner.runs++; return ++this.count; }
         @Server({ input: { title: { required: true } } })
         async fileInfo(input: { title: string; nested: { files: File[] } }) {
             this.effectOwner.runs++; this.count++;
@@ -122,6 +126,7 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
 }
 @Page({ transport: 'http' })
 class HttpPage extends actions(Cossack) {
+    setFixtureEnv(env: Record<string, any>) { this.env = env; }
     render() { return null as any; }
     onCleanup() { this.effectOwner.disposed++; }
 }
@@ -157,6 +162,7 @@ function clientSurface(constructor: any, transport: Transport) {
 }
 
 async function harness(transport: Transport, uploadMode = false) {
+    const environment: Record<string, any> = { APP_URL: 'http://localhost' };
     const owner = effects.current;
     const app = createApp();
     const requests: any[] = [];
@@ -185,6 +191,7 @@ async function harness(transport: Transport, uploadMode = false) {
 
     if (transport === 'websocket') {
         server = createInstance(HttpPage) as HttpPage;
+        server.setFixtureEnv(environment);
         server.__cossack_rpcOwner = httpPath;
         server.connectedCallback();
         const runtime = new InMemoryWebSocketRuntime(server);
@@ -214,7 +221,7 @@ async function harness(transport: Transport, uploadMode = false) {
             vi.stubGlobal('window', undefined);
             const job = Promise.resolve(app.fetch(new Request('http://localhost' + _url, {
                 ...init, headers: { ...init.headers, Origin: 'http://localhost' },
-            }), { APP_URL: 'http://localhost' } as any));
+            }), environment as any));
             serverJobs.push(job);
             const response = job.finally(() => vi.stubGlobal('window', browserWindow)).then(async res => {
                 responses.push(res);
@@ -293,6 +300,7 @@ async function harness(transport: Transport, uploadMode = false) {
     }
     return {
         client, target, requests, responses,
+        configureEnv(update: Record<string, any>) { Object.assign(environment, update); },
         corruptFrame(change: (frame: any) => any, after = 0) { damage = change; damageAt = after; },
         corruptJson(change: (data: any) => any) { jsonDamage = change; },
         pendingCalls: () => socket ? wsPendingCalls(socket).size : 0,
@@ -353,6 +361,42 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         });
         expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0);
         expect(wire.requests).toHaveLength(1); settled();
+    });
+    it.each(['do', 'kv', 'redis', 'unknown', null])('rejects invalid backend %s before a limited mutation', async rateLimit => {
+        wire.configureEnv({ rateLimit });
+        await expect(rpc$(wire.target.limited())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_INTERNAL_ERROR', message: 'Internal Server Error', requestId: expect.any(String),
+        });
+        expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0);
+        expect(wire.requests).toHaveLength(1); settled();
+    });
+    it('repairs a missing binding without silently allowing uncounted mutations', async () => {
+        wire.configureEnv({ rateLimit: 'do' });
+        await expect(rpc$(wire.target.limited())).rejects.toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR', requestId: expect.any(String) });
+        expect(effects.current.runs).toBe(0);
+        let count = 0;
+        wire.configureEnv({ RATE_LIMIT_DO: { idFromName: (name: string) => name,
+            get: () => ({ fetch: async () => Response.json({ count: ++count, resetAt: Date.now() + 60000 }) }) } });
+        expect(await rpc$(wire.target.limited())).toBe(1);
+        await expect(rpc$(wire.target.limited())).rejects.toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
+        expect(effects.current.runs).toBe(1); expect(wire.target.count).toBe(1);
+        expect(wire.requests).toHaveLength(3); settled();
+    });
+    it.each(['invalidLimit', 'invalidRateKey'])('rejects %s before counter or mutation', async action => {
+        const hit = vi.fn(() => ({ count: 1, resetAt: Date.now() + 60000 })); setRateLimitStore({ hit });
+        await expect(rpc$(wire.target[action]())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_INTERNAL_ERROR', message: 'Internal Server Error', requestId: expect.any(String),
+        });
+        expect(hit).not.toHaveBeenCalled(); expect(effects.current.runs).toBe(0);
+        expect(wire.target.count).toBe(0); settled();
+    });
+    it.each([null, { count: 0, resetAt: 100 }, { count: NaN, resetAt: 100 },
+        { count: 1, resetAt: Infinity }])('rejects malformed counter %j before mutation', async reply => {
+        setRateLimitStore({ hit: () => reply as any });
+        await expect(rpc$(wire.target.limited())).rejects.toMatchObject({
+            code: 'COSSACK_RPC_INTERNAL_ERROR', message: 'Internal Server Error', requestId: expect.any(String),
+        });
+        expect(effects.current.runs).toBe(0); expect(wire.target.count).toBe(0); settled();
     });
 
     it.each([

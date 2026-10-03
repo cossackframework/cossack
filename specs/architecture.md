@@ -314,6 +314,17 @@ and replies instead of granting a fresh budget. Store failures
 reject before mutation. Process-local SSE publishes page state after child
 actions, matching distributed page/target snapshot separation.
 
+Each limiter evaluation captures its request environment's store. Automatic
+selection caches unchanged environment/binding/credential descriptors without
+changing a global last-selected backend. Invalid explicit configuration rejects;
+unset configuration uses the process memory default. Manual store registration
+is intentionally process-wide and takes precedence. Shared components prefer
+the current action context's environment for limiter evaluation. Runtime options
+and all store replies are validated before mutation. Redis uses atomic millisecond
+PEXPIRE with checked PTTL; KV retains records for at least 60 seconds and uses
+their millisecond logical deadlines. KV remains approximate, with one write per
+key per second and no strict bound on cross-region under-counting.
+
 Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
 from the action request. Components, their descendants, and layout scopes remain
 alive through the stream. SSE subscriptions only receive state updates; they
