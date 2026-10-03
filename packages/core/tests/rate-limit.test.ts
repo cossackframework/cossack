@@ -1,5 +1,6 @@
 // tests/rate-limit.test.ts
 import 'reflect-metadata';
+import { RateLimitStorageFixture } from './helpers/rate-limit-storage';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
     InMemoryRateLimitStore,
@@ -340,7 +341,7 @@ describe('RateLimitDurableObject', () => {
     it('counts hits within a window and resets after it elapses', async () => {
         let now = 1_700_000_000_000;
         const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
-        const dobj = new RateLimitDurableObject({} as any, {});
+        const dobj = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
         const hit = (w: number) =>
             dobj.fetch(new Request(`https://rl/?window=${w}`)).then((r) => r.json() as Promise<{ count: number }>);
         try {
@@ -352,7 +353,7 @@ describe('RateLimitDurableObject', () => {
     });
 
     it('defaults to a 60s window when none is given', async () => {
-        const dobj = new RateLimitDurableObject({} as any, {});
+        const dobj = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
         const r = await dobj.fetch(new Request('https://rl/'));
         expect(((await r.json()) as { count: number }).count).toBe(1);
     });
@@ -367,7 +368,7 @@ describe('DurableObjectRateLimitStore', () => {
                 const key = id as string;
                 let inst = instances.get(key);
                 if (!inst) {
-                    inst = new RateLimitDurableObject({} as any, {});
+                    inst = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
                     instances.set(key, inst);
                 }
                 return { fetch: (input: RequestInfo | URL) => inst!.fetch(new Request(input)) };
@@ -396,7 +397,7 @@ describe('DurableObjectRateLimitStore', () => {
                 const key = id as string;
                 let inst = instances.get(key);
                 if (!inst) {
-                    inst = new RateLimitDurableObject({} as any, {});
+                    inst = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
                     instances.set(key, inst);
                 }
                 return { fetch: (input: RequestInfo | URL) => inst!.fetch(new Request(input)) };

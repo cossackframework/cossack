@@ -12,7 +12,13 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex socket-peer checkpoint](./release-0.9.0.md#codex-socket-peer-context-2026-10-03)
+The latest [Codex durable rate-window checkpoint](./release-0.9.0.md#codex-rate-window-persistence-2026-10-03)
+fixes the DO store's eviction reset. Transactional counter/deadline records and
+expiry alarms preserve spent budgets. Native workerd verifies two-Worker bursts,
+actual DO eviction, Worker reload and HTTP/socket denial before mutation.
+Configuration failure/ownership, other provider validation, cache capability
+inspection and duration conventions remain open; 14/58 tasks stay checked.
+The preceding [Codex socket-peer checkpoint](./release-0.9.0.md#codex-socket-peer-context-2026-10-03)
 fixes anonymous Cloudflare identity and per-connection request context across
 Cloudflare/Node/Deno. A new native two-Worker fixture proves shared configured
 DO counters, custom headers/params, reconnect budgets and retained attachments
@@ -737,12 +743,18 @@ sockets prove shared-component headers/users/custom budgets. Deno event tests
 verify adapter wiring; actual Deno execution remains REL-03. See the checkpoint
 for full commands and counts. No new checkbox closes.
 
-Next audit configured rate-store failures and persistence with RT-18. Current
-configuration can silently fall back to memory for missing bindings/unknown
-modes; Redis/DO replies lack strict runtime validation, and the rate DO counter
-resets on eviction. Prove fixed-window persistence, concurrent counter updates,
-malformed/unavailable backend rejection before mutation, and environment/store
-ownership. Do not infer those guarantees from the new warm-counter fixture.
+The subsequent durable rate-window checkpoint with RT-18 closes the DO
+counter's eviction-reset defect. Counter/deadline commits are transactional and
+expiry alarms cannot erase a newer window. Native workerd proves unique ordered
+counts from concurrent requests through two Workers, actual DO eviction, Worker
+reload and spent HTTP/socket budgets. DO requests/replies have window/counter
+validation; malformed storage and failed counter/alarm writes reject. Fake-clock
+cases cover exact expiry and queued transactions. These proofs do not apply to
+Redis, KV or memory. Next reject configured-store failures before mutation and
+prove environment/binding ownership rather than module-global first-env reuse.
+Audit Redis/KV/custom-store replies and option validation, then public provider
+capabilities and cache/limiter units. Do not infer their guarantees from the
+native DO fixture.
 Audit component initialization/restoration concurrency and all remaining RT-01
 criteria. Continue schema/file/unknown-key/resource policies with RT-02/RT-14
 and session recipes/secrets/rotation/concurrency with RT-11. Handshake identity
@@ -1179,6 +1191,46 @@ component/service RPC and realtime calls as well as API routes.
 
 Start in framework `cache.ts`, core `shared/rate-limit.ts`, framework transport
 handlers, and `specs/cache.md`.
+
+Codex checkpoint (2026-10-03, after `97316b6`): DO counters now persist in one
+transactional storage record with their fixed deadline. Fresh windows schedule
+expiry cleanup; delayed/duplicate alarms cannot clear a newer window. Using the
+transactional key-value API keeps SQLite and legacy storage support without
+importing a platform-only module into the shared core entry. New namespace
+examples use SQLite. The original in-memory windows cannot be recovered on the
+first upgrade; subsequent windows survive reconstruction.
+
+Evidence: 23 focused core cases cover reconstructed instances, exact expiry,
+queued transaction timing, failed counter/alarm commits, corrupt records,
+malformed replies and invalid direct windows. All 17 initial regressions failed
+on the old implementation. The published core entry is exercised by real
+workerd with two Workers sharing one native DO namespace: concurrent counts
+remain unique, actual eviction preserves count/deadline, Worker reload preserves
+spent budgets, and blocked handlers do not mutate. The native socket fixture also
+evicts the real limiter DO before reconnect/new-component and existing-peer
+actions. Component reconstruction in that socket fixture remains forced.
+
+Next steps, with each goal kept separate:
+
+1. Make an explicit invalid/missing backend reject before application mutation.
+   `configureRateLimitFromEnv` currently logs and sticks to memory after missing
+   bindings or unknown modes; this changes a requested distributed guarantee.
+   Test failed configuration followed by repair and concurrent valid requests.
+2. Resolve the store from each request's environment/binding identity. The
+   module-global `autoConfigured` flag currently pins the first environment.
+   Prove requests for two environments cannot charge each other's store; retain
+   the intentional manual override and test configuration changes explicitly.
+3. Validate Redis, KV and custom-store counters and runtime options. Redis
+   defaults missing results to `[0, 0]`; KV treats corrupt records as fresh.
+   Define fail-closed count/deadline/key/window/max behavior before transport
+   mutation. Test missing/error/non-finite/string/invalid TTL responses. Do not
+   imply that unit KV doubles model real eventual consistency.
+4. Normalize or explicitly distinguish public cache seconds and limiter
+   milliseconds. Declare provider locality, persistence, expiry precision,
+   atomicity and unsupported operations; expose them through inspection. KV's
+   minimum TTL and per-key write limits must be represented accurately. Prove
+   the capability rejection path and inspection units, then audit all RT-18
+   acceptance criteria and related RT-01 transport criteria before checking them.
 
 Done when: Fake-clock and provider tests prove expiry boundaries and counter
 behavior. Multi-request tests prove supported shared limits. KV behavior is not

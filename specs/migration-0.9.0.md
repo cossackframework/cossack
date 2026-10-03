@@ -5,6 +5,27 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## Durable Object rate limits persist through eviction
+
+`RateLimitDurableObject` now commits each counter and its fixed reset deadline
+to transactional storage. Reconstructing the object no longer restores a spent
+budget. Active windows retain their deadline when a caller requests a different
+duration; the new duration takes effect after expiry. Expiry alarms remove old
+records and do not shorten a newer window.
+
+DO windows must be positive safe-integer milliseconds within the alarm timestamp
+range. Invalid direct requests return 400/`COSSACK_RATE_LIMIT_CONFIG_INVALID`;
+`DurableObjectRateLimitStore.hit()` rejects invalid windows before contacting the
+binding. Corrupt records and malformed replies reject rather than reset budgets.
+Storage failures reject before action mutation. Other store configuration and
+validation policies remain under the RT-18 audit.
+
+Create new namespaces with `new_sqlite_classes`. Keep existing migration history;
+the transactional key-value implementation also supports legacy DO storage.
+Unit fixtures must supply transactional storage and alarm methods; an empty fake
+`DurableObjectState` is no longer sufficient. Existing in-memory windows cannot
+be recovered during the first upgrade; subsequent windows are persisted.
+
 ## Ordinary RPC results no longer appear as generator yields
 
 Ordinary HTTP/SSE component calls previously yielded their JSON return value

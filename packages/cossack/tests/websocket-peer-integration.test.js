@@ -141,6 +141,9 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   expect((await a.call('inspect')).value).toMatchObject({ user: null, contextUser: null, ip: '192.0.2.1', bucket: 'one',
     tenant: 'example', filter: 'active', marker: 'peer-worker', cookie: null, authorization: null });
   expect((await a.call('limited')).type).toBe('done');
+  await server.getWorker('first').evictDurableObject('RATE_LIMIT_DO', {
+    name: JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited:ip:192.0.2.1',
+  });
   const again = await connect({ worker: 'second', name: 'new-object' });
   expect(await again.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
   expect((await again.call('inspect')).value.count).toBe(0);
@@ -178,5 +181,8 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
   expect((await server.fetch('/restore', { method: 'POST' })).status).toBe(200);
   expect((await member.call('inspect')).value).toMatchObject({ user: 'member', contextUser: 'member', ip: '192.0.2.1', bucket: 'one', tenant: 'example' });
   expect((await secondBucket.call('inspect')).value).toMatchObject({ user: 'second', contextUser: 'second', bucket: 'two' });
+  await server.getWorker('first').evictDurableObject('RateLimitDurableObject', {
+    name: JSON.stringify(['crpc', '/src/pages/live/index.ts', 'Live']) + ':limited:user:member',
+  });
   expect(await member.call('limited')).toMatchObject({ type: 'error', code: 'COSSACK_RPC_RATE_LIMITED' });
 }, 60_000);

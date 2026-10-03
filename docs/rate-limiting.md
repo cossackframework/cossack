@@ -113,7 +113,7 @@ The default store is **in-memory and per-process**, so it is exact for a single 
 
 | Store | Consistency | Best for |
 | --- | --- | --- |
-| `DurableObjectRateLimitStore` | **Strong** (exact) | Strict/accurate limits on Cloudflare : the recommended option. |
+| `DurableObjectRateLimitStore` | **Strong**, persistent fixed window | Exact counters across Workers and DO reconstruction. |
 | `RedisRateLimitStore` (Upstash) | **Strong** (exact) | Cross-runtime Redis. Works on Workers and Node.js. |
 | `KvRateLimitStore` | **Approximate** | Cheap, global, "good enough" abuse protection. |
 
@@ -135,7 +135,7 @@ You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.j
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMIT_DO", "class_name": "RateLimitDurableObject" }]
   },
-  "migrations": [{ "tag": "v1", "new_classes": ["RateLimitDurableObject"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimitDurableObject"] }]
 }
 ```
 
@@ -154,7 +154,26 @@ A manual `setRateLimitStore(...)` call, if present, always takes precedence over
 
 ### Durable Object (strongly consistent : recommended)
 
-Each key is routed to its own Durable Object (`idFromName(key)`), so every bucket is its own single-threaded consistency point : limits are exact across instances and regions. This is Cloudflare's recommended pattern for precise rate limiting.
+Each key is routed to its own Durable Object (`idFromName(key)`). The counter
+and reset deadline commit together in a storage transaction. Eviction and
+reconstruction preserve a spent budget. New hits within the active window keep
+its original deadline, even if the requested duration changes. At the deadline,
+the next hit starts a new window with the requested duration.
+
+An alarm removes the expired record. Delayed alarms cannot erase a newer
+window, and expiry does not depend on alarm delivery. Storage or alarm-write
+failures reject the hit before the application action runs. Persisted records
+and DO replies require positive safe-integer counts and epoch-millisecond reset
+times; corrupt data fails rather than restoring a caller's budget.
+
+The DO store requires a positive safe-integer `window` in milliseconds that
+fits the platform's timestamp range. Invalid direct DO requests return 400 with
+`COSSACK_RATE_LIMIT_CONFIG_INVALID`; direct store calls throw before contacting
+the binding. This validation applies to the DO provider.
+
+The implementation uses the transactional key-value API supported by SQLite
+and existing legacy DO storage. Create new namespaces with SQLite; retain the
+migration history of existing namespaces. See [Cloudflare storage transactions](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#transaction).
 
 Register the bundled `RateLimitDurableObject` in `wrangler.jsonc`:
 
@@ -163,7 +182,7 @@ Register the bundled `RateLimitDurableObject` in `wrangler.jsonc`:
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMIT_DO", "class_name": "RateLimitDurableObject" }]
   },
-  "migrations": [{ "tag": "v1", "new_classes": ["RateLimitDurableObject"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimitDurableObject"] }]
 }
 ```
 

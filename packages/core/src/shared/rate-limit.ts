@@ -51,6 +51,24 @@ export interface RateLimitStore {
     hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> | { count: number; resetAt: number };
 }
 
+const RATE_LIMIT_COUNTER_KEY = 'cossack:rate-limit:counter';
+const MAX_ALARM_TIMESTAMP = 8_640_000_000_000_000;
+type RateLimitCounter = { count: number; resetAt: number };
+
+function validWindow(windowMs: number, now: number): boolean {
+    return Number.isSafeInteger(windowMs) && windowMs > 0 && windowMs <= MAX_ALARM_TIMESTAMP - now;
+}
+
+function readCounter(value: unknown): RateLimitCounter {
+    const entry = value as Partial<RateLimitCounter> | null;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) ||
+        !Number.isSafeInteger(entry.count) || entry.count! <= 0 ||
+        !Number.isSafeInteger(entry.resetAt) || entry.resetAt! <= 0 || entry.resetAt! > MAX_ALARM_TIMESTAMP) {
+        throw new Error('[Cossack] Invalid rate-limit counter returned by storage.');
+    }
+    return { count: entry.count!, resetAt: entry.resetAt! };
+}
+
 /**
  * Simple in-memory fixed-window counter. Entries are pruned lazily once the
  * store grows beyond `maxEntries` (default 10 000).
@@ -191,9 +209,10 @@ export interface RateLimitDurableObjectNamespace {
  * its own single-threaded consistency point — making this the **strictly
  * accurate** option (unlike the eventually-consistent KV store).
  *
- * The counter lives in memory; if the DO is evicted the window simply restarts
- * (count resets to 0). Reads/writes happen with no `await` between them, so each
- * `fetch` is atomic by the DO's single-threaded execution guarantee.
+ * The counter and fixed deadline are persisted together in a storage
+ * transaction. Eviction does not restore a spent budget. An alarm removes the
+ * expired record; the deadline, rather than alarm delivery, controls expiry.
+ * Uses the transactional KV API, available on SQLite and legacy DO storage.
  *
  * @example wrangler.jsonc
  * ```jsonc
@@ -201,15 +220,13 @@ export interface RateLimitDurableObjectNamespace {
  *   "durable_objects": {
  *     "bindings": [{ "name": "RATE_LIMIT_DO", "class_name": "RateLimitDurableObject" }]
  *   },
- *   "migrations": [{ "tag": "v1", "new_classes": ["RateLimitDurableObject"] }]
+ *   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimitDurableObject"] }]
  * }
  * ```
  */
 export class RateLimitDurableObject {
     state: DurableObjectState;
     env: any;
-    private count = 0;
-    private resetAt = 0;
 
     constructor(state: DurableObjectState, env: any) {
         this.state = state;
@@ -219,14 +236,39 @@ export class RateLimitDurableObject {
     async fetch(request: Request): Promise<Response> {
         const url = new URL(request.url);
         const windowMs = Number(url.searchParams.get('window') ?? '60000');
-        const now = Date.now();
-        if (now >= this.resetAt) {
-            this.count = 1;
-            this.resetAt = now + windowMs;
-        } else {
-            this.count += 1;
+        if (!validWindow(windowMs, Date.now())) {
+            return Response.json({ error: 'Rate-limit window must be positive integer milliseconds within the alarm range.',
+                code: 'COSSACK_RATE_LIMIT_CONFIG_INVALID' }, { status: 400 });
         }
-        return Response.json({ count: this.count, resetAt: this.resetAt });
+        const counter = await this.state.storage.transaction(async txn => {
+            const stored = await txn.get<unknown>(RATE_LIMIT_COUNTER_KEY);
+            const previous = stored === undefined ? undefined : readCounter(stored);
+            const now = Date.now();
+            if (!validWindow(windowMs, now)) {
+                throw new Error('[Cossack] Rate-limit window exceeds the alarm range.');
+            }
+            const fresh = !previous || now >= previous.resetAt;
+            const next = fresh ? { count: 1, resetAt: now + windowMs }
+                : readCounter({ count: previous.count + 1, resetAt: previous.resetAt });
+            await txn.put(RATE_LIMIT_COUNTER_KEY, next);
+            if (fresh) await txn.setAlarm(next.resetAt);
+            return next;
+        });
+        return Response.json(counter);
+    }
+
+    async alarm(): Promise<void> {
+        await this.state.storage.transaction(async txn => {
+            const stored = await txn.get<unknown>(RATE_LIMIT_COUNTER_KEY);
+            const counter = stored === undefined ? undefined : readCounter(stored);
+            if (!counter || Date.now() >= counter.resetAt) {
+                await txn.delete(RATE_LIMIT_COUNTER_KEY);
+                await txn.deleteAlarm();
+            } else {
+                // A delayed alarm for the old window must leave a newer one intact.
+                await txn.setAlarm(counter.resetAt);
+            }
+        });
     }
 }
 
@@ -254,14 +296,16 @@ export class DurableObjectRateLimitStore implements RateLimitStore {
     constructor(private readonly ns: RateLimitDurableObjectNamespace) {}
 
     async hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+        if (!validWindow(windowMs, Date.now())) {
+            throw new Error('[Cossack] Rate-limit window must be positive integer milliseconds within the alarm range.');
+        }
         const id = this.ns.idFromName(key);
         const stub = this.ns.get(id);
         const res = await stub.fetch(`https://rate-limit/?window=${windowMs}`);
         if (!res.ok) {
             throw new Error(`[Cossack] RateLimitDurableObject returned ${res.status}`);
         }
-        const data = (await res.json()) as { count: number; resetAt: number };
-        return { count: data.count, resetAt: data.resetAt };
+        return readCounter(await res.json());
     }
 }
 

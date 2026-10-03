@@ -306,7 +306,11 @@ Hono context per action, without HTTP credentials or arbitrary middleware
 variables. Oversized context fails before acceptance; legacy sockets without
 metadata must reconnect. Node/Deno retain their own verified upgrade contexts,
 including framework-decoded page params, instead of borrowing the first peer's
-headers. Counter storage retains its existing persistence and consistency limits. Store failures
+headers. The rate-limit Durable Object persists each bucket's counter and deadline
+in a storage transaction, preserving spent windows through reconstruction.
+Expiry alarms remove old records without erasing a newer window. Memory remains
+process-local and KV approximate. DO counter validation rejects corrupt records
+and replies instead of granting a fresh budget. Store failures
 reject before mutation. Process-local SSE publishes page state after child
 actions, matching distributed page/target snapshot separation.
 

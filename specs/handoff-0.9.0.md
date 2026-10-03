@@ -2,7 +2,48 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex socket peer context (2026-10-03):** read
+> **Latest checkpoint — Codex durable rate windows (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-rate-window-persistence-2026-10-03),
+> [RT-18 continuation](./release-0.9.0-plan.md#rt-18), and
+> [rate-limit contract](../docs/rate-limiting.md). **Author: Codex.** Fixed the
+> strict DO limiter restoring a caller's budget after eviction. Counter/deadline
+> now commit together in a storage transaction. Expiry is evaluated after the
+> transaction's read; active windows keep their deadline when duration changes.
+> Expiry alarms clean records without deleting a newer window. Failed writes,
+> corrupt records, invalid DO windows and malformed DO replies reject the hit.
+>
+> Verified: core **802**/55 files, framework **966**/50, CLI **561**/41 with
+> four native workerd fixtures/all **14** generated cases, sequential core build
+> and framework declarations, root/all **11** package type checks. All 17 initial
+> regressions failed before the fix; the final focused suite has 23 cases. Native
+> workerd also failed before the fix at actual DO eviction. It now proves unique
+> concurrent counts through two Workers, preserved count/deadline after actual
+> eviction and spent budgets after Worker reload. Handler mutation remains zero
+> when denied after reload. Existing socket acceptance now evicts the real limiter
+> DO before anonymous reconnect and member actions; spent budgets stay denied.
+> The component itself still uses forced reconstruction, not timed hibernation.
+> This is local workerd evidence, not a live edge or Redis/KV guarantee. The test
+> uses the installed binary's newest supported date (`2026-07-29`).
+>
+> **14/58 checked; no new checkbox closes. All 44 unchecked tasks persist.**
+> Next fix `configureRateLimitFromEnv` missing/unknown-mode fallback and its
+> module-global first-environment ownership. Prove failure before mutation,
+> configuration repair and concurrent environments with distinct stores while
+> retaining intentional manual overrides. Validate Redis/KV/custom counters and
+> runtime max/window/key policy. Finish provider capability/expiry/unit inspection
+> and cache contracts before claiming RT-18. The detailed plan explains each
+> goal and proof. Then audit DO component initialization/restoration concurrency
+> and full RT-01 criteria, RT-02/RT-14 policies and RT-11 secrets/session criteria.
+> Deno/Electron/tarball/live release gates remain separate. Versions remain 0.8.3
+> until REL-04. Preserve `reports.md`/`.zcodeignore`. Build core then framework
+> declarations before dependent checks; do not regenerate exports during tests.
+>
+> New namespace examples use SQLite. Existing migration histories remain intact;
+> the implementation's transactional key-value API supports legacy DO storage.
+> Existing memory-only windows cannot be recovered on the first upgrade. New
+> unit fixtures must supply storage transactions and alarm methods.
+
+> **Previous checkpoint — Codex socket peer context (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-socket-peer-context-2026-10-03),
 > [RT-01 continuation](./release-0.9.0-plan.md#rt-01), and
 > [WebSocket contract](../docs/websockets.md). **Author: Codex.** Fixed synthetic

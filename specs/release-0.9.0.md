@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. Remaining: rate-backend failure/persistence/consistency guarantees and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-socket-peer-context-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Remaining: configured-store failure/ownership, other backend validation/capabilities and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rate-window-persistence-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -38,7 +38,7 @@ below link directly to those explanations.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
-- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
+- [ ] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage. Persistent transactional DO windows, expiry cleanup and native concurrency/eviction are verified; configuration/ownership, other provider validation and inspection remain open.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. GLM (2026-10-02): `component.realtime` exposes per-connection state/attempts/lastError/lastEventId/resynced; WebSocket reconnect uses bounded exponential backoff (0.5s→30s, reset on open, none after intentional disposal); SSE resends an authoritative snapshot with a `resync` marker when history expired; pending calls reject with explicit uncertain-outcome errors (`COSSACK_RPC_TRANSPORT_CLOSED`) and never replay. Covered by core recovery/conformance tests plus the workerd coordinator suite.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
@@ -85,6 +85,72 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-rate-window-persistence-2026-10-03"></a>
+### Codex continuation: persistent Durable Object rate windows (2026-10-03)
+
+**Author: Codex.** Continued RT-18/RT-01 after `97316b6`. The recommended
+strict rate store kept its counter only in memory, so reconstructing the DO
+restored a spent budget. All 17 initial unit regressions failed on the original
+implementation. The native fixture also failed after actual object eviction:
+count 21 became count 1, with a new deadline.
+
+`RateLimitDurableObject` now commits counter/deadline together using its storage
+transaction API. Every hit reads durable state; no separate memory cache can
+acknowledge a write that failed. Expiry is evaluated inside the transaction,
+after a queued storage read. Changing duration during an active window retains
+its deadline. A fresh window schedules an alarm; delayed or duplicate alarms
+cannot erase a newer window. Storage/alarm-write errors reject the hit.
+Corrupt persisted data rejects instead of restoring a fresh budget.
+
+DO windows require positive safe-integer milliseconds within the platform alarm
+timestamp range. Direct DO requests reject invalid values with structured 400;
+`DurableObjectRateLimitStore` rejects them before binding dispatch and validates
+positive integer counter/deadline replies. Other provider/runtime option policies
+remain open. New namespace examples use SQLite; the transactional key-value
+API also works with legacy DO storage. The first upgrade cannot recover old
+memory-only counters. The migration guide states this limit explicitly.
+
+Evidence: **23** focused core cases cover reconstruction, exact expiry, queued
+transaction timing, failed counter/alarm commits, corrupt state, invalid windows
+and malformed replies. The storage double is not a platform concurrency model.
+The published core entry runs in a native workerd fixture with two Workers and
+one SQLite DO namespace. A concurrent 20-hit burst yields unique counts 2–21
+and one original deadline. Actual DO eviction preserves count/deadline twice;
+a forced configuration reload proves Worker memory reset while the durable
+window stays spent. Blocked HTTP handlers do not mutate, including after reload.
+The existing native socket fixture evicts limiter DOs before anonymous reconnect
+and existing member actions; spent budgets remain denied. Its component reset
+still uses the earlier forced reconstruction path, not timed hibernation.
+
+Verified after the changes: core **802**/55 files; framework **966**/50; CLI
+**561**/41 with four native workerd fixtures, all **14** generated runtime cases
+and the real-pnpm release test; root TypeScript and all **11** package checks.
+The fixture uses compatibility date `2026-07-29`, the newest supported by the
+installed workerd binary. A startup attempt using today's date was rejected;
+no platform behavior assertion or test deadline was relaxed.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/core exec vitest run tests/rate-limit-persistence.test.ts tests/rate-limit.test.ts
+pnpm --filter cossack exec vitest run tests/rate-limit-persistence-integration.test.js tests/websocket-peer-integration.test.js
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+```
+
+**14/58 checked; no new checkbox closes. All 44 unchecked tasks remain.**
+Next fix explicit missing/unknown backend configuration, environment/store
+ownership and Redis/KV/custom-store response and option validation. Then audit
+cache/limiter duration conventions, provider capabilities and inspection; do not
+claim those guarantees from the native DO fixture. Audit component initialization
+and restoration concurrency with RT-01, and continue RT-02/RT-14 policy and
+RT-11 secrets/session criteria. Separate Deno/Electron/tarball/live release gates
+remain open. Versions stay 0.8.3 until REL-04. Preserve unrelated `reports.md`
+and `.zcodeignore`; keep export generation out of running tests and type checks.
 
 <a id="codex-socket-peer-context-2026-10-03"></a>
 ### Codex review: WebSocket peer context and native Cloudflare acceptance (2026-10-03)
