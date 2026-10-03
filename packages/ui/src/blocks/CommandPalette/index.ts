@@ -74,6 +74,7 @@ export class CommandPalette extends Cossack {
                 open: this.props.open ?? this.open,
                 onClose: () => { this.setOpen(false); },
                 closeOnBackdrop: true,
+                'aria-label': 'Command palette',
             }, html`
                 <div class="cs-command-palette flex flex-col gap-2" ...=${rest}>
                     <div class="flex items-center gap-2 border-b pb-2">

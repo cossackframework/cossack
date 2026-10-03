@@ -194,3 +194,17 @@ component(DatePicker,{id:'due','.value':'2024-02-29'});
 component(DatePicker,{id:'due',placeholder:'Pick'});
 // @ts-expect-error Native events use the input currentTarget.
 component(DatePicker,{id:'due','@input':(event: Event & {currentTarget: HTMLTextAreaElement})=>event.currentTarget.rows});
+
+import { Modal, Sheet, Drawer, type DialogControlProps } from '@cossackframework/ui';
+const dialogProps: DialogControlProps = { open: true, onClose: event => { const dialog: HTMLDialogElement = event.currentTarget; void dialog.returnValue; }, '@cancel': event => event.preventDefault(), 'aria-label': 'Details' };
+component(Modal, dialogProps);
+component(Sheet, { ...dialogProps, side: 'left', fullScreen: true });
+component(Drawer, { ...dialogProps, title: 'Details', closeLabel: 'Dismiss' });
+// @ts-expect-error The component owns native open state.
+component(Modal, { '.open': true });
+// @ts-expect-error Native dialog semantics cannot be replaced.
+component(Sheet, { role: 'button' });
+// @ts-expect-error Dialog events target HTMLDialogElement.
+component(Drawer, { '@close': (event: Event & { currentTarget: HTMLTextAreaElement }) => {} });
+// @ts-expect-error Unknown attributes no longer disappear into an any index.
+component(Modal, { unknownOption: true });

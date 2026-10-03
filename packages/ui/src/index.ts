@@ -104,3 +104,5 @@ export { DataTable, type DataTableProps, type DataTableColumn, type DataTableSta
 export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, TextareaAttributes, SelectAttributes, PasswordAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
 
 export { isCalendarDate } from './internal/date';
+
+export type { DialogControlProps } from './internal/dialog';

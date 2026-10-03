@@ -168,6 +168,7 @@ export default class PublicLayout extends Cossack {
                     open: this.mobileNavOpen,
                     side: 'right',
                     onClose: () => this.closeMobileNav(),
+                    'aria-label': 'Navigation',
                 }, html`
                     <nav class="flex flex-col gap-1 pt-4">
                         ${this.mobileLinks.map((link) => html`

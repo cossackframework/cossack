@@ -11,10 +11,12 @@ it.each(['2024-02-30','legacy text','2024-02-29T12:00:00Z'])('preserves non-date
     expect(output).toMatch(/id="cell-editor-date"[^>]*type="text"/);
     expect(output).toContain(`value="${value}"`);
     expect(output).toContain('for="cell-editor-date"');
+    expect(output.match(/<dialog\b[^>]*>/)![0]).toContain('aria-label="Edit cell"');
 });
 it.each(['2024-02-29','legacy text'])('keeps insert date labels linked and values editable for %s',value=>{
     const output=renderToString(component(InsertRowSheet,{object,open:true,fields:{'due date':{mode:'value',valueKind:'date',value}},error:'',theme:'light',inserting:false,onClose:noop,onValueChange:noop,onSelectionChange:noop,onRegenerateValue:noop,onSubmit:noop}));
     expect(output).toContain('for="insert-value-due%20date"');
+    expect(output.match(/<dialog\b[^>]*>/)![0]).toContain('aria-label="Insert row"');
     expect(output).toContain('id="insert-value-due%20date"');
     expect(output).toContain(`value="${value}"`);
     if(value==='2024-02-29')expect(output).toContain('type="date"');

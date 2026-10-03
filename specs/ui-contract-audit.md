@@ -79,7 +79,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [ContextMenu](../packages/ui/src/components/ContextMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [DataTable](../packages/ui/src/components/DataTable.ts) | Foundation reviewed | Typed columns/props, generated Node/workerd resource/query acceptance and focus checks. |
 | [DatePicker](../packages/ui/src/components/DatePicker.ts) | Reviewed foundation | Shared Calendar, typed native date input, min/max/required/form/reset behavior, stable labels, controlled/default values, nonmodal popup focus and browser acceptance. |
-| [Drawer](../packages/ui/src/components/Drawer.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Drawer](../packages/ui/src/components/Drawer.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [DropdownMenu](../packages/ui/src/components/DropdownMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Empty](../packages/ui/src/components/Empty.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Field](../packages/ui/src/components/Field.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -95,7 +95,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Menubar](../packages/ui/src/components/Menubar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Message](../packages/ui/src/components/Message.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Modal](../packages/ui/src/components/Modal.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Modal](../packages/ui/src/components/Modal.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [MultiSelect](../packages/ui/src/components/MultiSelect.ts) | Reviewed foundation | Typed input props/events, stable IDs, controlled/default tags, repeated form values, visible validation, keyboard/chip focus, composition, external form reset and SSR/fresh-render acceptance. |
 | [NativeSelect](../packages/ui/src/components/NativeSelect.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [NavigationMenu](../packages/ui/src/components/NavigationMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -108,7 +108,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Select](../packages/ui/src/components/Select.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Separator](../packages/ui/src/components/Separator.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Sheet](../packages/ui/src/components/Sheet.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Sheet](../packages/ui/src/components/Sheet.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [Sidebar](../packages/ui/src/components/Sidebar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Skeleton](../packages/ui/src/components/Skeleton.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Slider](../packages/ui/src/components/Slider.ts) | Foundation reviewed | Published types, SSR validation and themed keyboard/state browser acceptance. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Modal, Sheet, Drawer and Popover. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Popover and the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the
@@ -134,3 +134,5 @@ allowed attributes, native event target and accessibility contract.
 The shared types currently cover the reviewed controls. Extend them from implemented
 native behavior. Preserve an explicit status for unknown or unsupported behavior in
 the installed catalog rather than implying that unreviewed components are complete.
+
+Modal, Sheet and Drawer share native lifecycle handling. The [dialog checkpoint](./release-0.9.0.md#codex-dialog-controls-2026-10-04) records public types, SSR, browser and installed-catalog evidence. Twenty-two foundations are reviewed. The full RT-23 acceptance scope remains open.

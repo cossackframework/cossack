@@ -32,6 +32,7 @@ export class QueryHistorySheet extends Cossack {
       size: 'min(36rem, 94vw)',
       onClose: this.props.onClose,
       'data-testid': 'query-history',
+      'aria-label': 'Query history',
     }, html`
       <header class="flex shrink-0 items-start justify-between gap-4 border-b p-5">
         <div>

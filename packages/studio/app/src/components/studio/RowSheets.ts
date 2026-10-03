@@ -42,6 +42,7 @@ export class RowEditorSheet extends Cossack {
       size: 'min(48rem, 94vw)',
       onClose: this.props.onClose,
       'data-testid': 'row-editor-sheet',
+      'aria-label': 'Edit row',
     }, html`
       <header class="flex shrink-0 items-start justify-between border-b p-5">
         <div>
@@ -118,6 +119,7 @@ export class ExportSheet extends Cossack {
       size: 'min(32rem, 92vw)',
       onClose: this.props.onClose,
       'data-testid': 'export-sheet',
+      'aria-label': 'Export rows',
     }, html`
       <header class="border-b p-5">
         <h2 class="font-semibold">
@@ -194,6 +196,7 @@ export class BatchUpdateSheet extends Cossack {
       size: 'min(32rem, 92vw)',
       onClose: this.props.onClose,
       'data-testid': 'batch-update-sheet',
+      'aria-label': 'Update rows',
     }, html`
       <header class="border-b p-5">
         <h2 class="font-semibold">Update ${this.props.selectedCount} selected rows</h2>

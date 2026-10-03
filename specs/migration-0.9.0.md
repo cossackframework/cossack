@@ -776,3 +776,23 @@ month ends. Arithmetic and custom labels use UTC with the Gregorian calendar.
 Use `locale`, `weekStartsOn` and the navigation labels to localize the calendar.
 Pass `today` when the application's local day or deterministic SSR matters; its
 default is the current UTC day. Native date-input formatting follows the browser.
+
+## Modal, Sheet and Drawer
+
+These components now share typed native dialog attributes and events. Drawer
+forwards attributes to its dialog instead of its panel. Replace assumptions that
+`class`, `style` or event targets refer to the panel. Supply `aria-label` or
+`aria-labelledby`; Drawer also uses its title as a fallback name.
+
+`open` is controlled. Accept `onClose` by setting `open=false`, or the dialog
+reopens. Use `defaultOpen` for initial uncontrolled state. `onClose` reports user
+or native dismissal, not prop-driven closing or cleanup. Use `@close` to observe
+native close events from prop changes. `@cancel` can prevent Escape dismissal.
+`closeOnEscape=false` and `closeOnBackdrop=false` disable those dismissal paths.
+Backdrop clicks must start and end outside the panel.
+
+SSR always emits a closed dialog. Client connection opens it through `showModal`.
+Native form validation and `method="dialog"` submission remain available.
+`onClose` receives the actual native event; its currentTarget contains returnValue.
+A new opening clears the previous returnValue. Drawer now applies vertical size
+and offers its localizable close button on all sides.

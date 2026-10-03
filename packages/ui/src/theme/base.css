@@ -358,6 +358,15 @@ a:active {
 
 /* --- Drawer (<dialog>): same slide mechanism as Sheet --- */
 .cs-drawer {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    overflow: hidden;
     transition: display 300ms allow-discrete, overlay 300ms allow-discrete;
 }
 .cs-drawer::backdrop {

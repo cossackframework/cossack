@@ -81,6 +81,7 @@ export class CellEditorSheet extends Cossack {
       size: 'min(42rem, 92vw)',
       onClose: this.props.onClose,
       'data-testid': 'cell-editor-sheet',
+      'aria-label': 'Edit cell',
     }, html`
       <header class="flex shrink-0 items-start justify-between border-b p-5">
         <div>

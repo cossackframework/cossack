@@ -6808,3 +6808,42 @@ Logs: `/tmp/cossack-dates-{build,ui,studio,browser,root-types,package-types,agen
 Nineteen foundations are reviewed. Continue Modal, Sheet, Drawer and Popover,
 including native events, controlled closing, labeling and focus restoration.
 RT-23 and CLI-07/CLI-08 remain open. No release checkbox or version changed.
+
+<a id="codex-dialog-controls-2026-10-04"></a>
+### Codex: native Modal, Sheet and Drawer contracts (2026-10-04)
+
+The three controls now share typed dialog attributes, native events and lifecycle
+handling. Controlled dismissal reopens unless the parent accepts it. Uncontrolled
+`defaultOpen` applies once. Prop-driven closing does not call the dismissal callback.
+Native `@close` still observes those close events. Escape vetoes, pointer-origin
+backdrop dismissal, native dialog forms and cleanup retain browser behavior.
+SSR stays closed and opens through `showModal` after client connection.
+
+The browser regression found Drawer had a zero-size native container around its
+fixed panel. Its theme now supplies a full-viewport container. Drawer forwards
+native attributes to the dialog, applies vertical size and provides a localizable
+close control on all sides. Studio, scaffold navigation and CommandPalette now
+supply accessible dialog names. Migration notes describe changed callback and
+attribute ownership. Package guidance exposes the same contract to agents.
+
+Verification: UI build, 183 UI tests across 16 files, five Studio editor regressions,
+root `pnpm tsc --noEmit` and all 11 package type checks pass. Public declarations
+reject competing native state, role overrides, unknown props and incorrect event
+targets. The themed Chromium fixture covers no-JS SSR, retained hydration, fresh
+mounts, autofocus, background inertness, controlled acceptance/rejection, Escape
+vetoes, backdrop and panel clicks, native form validation/return values, nested
+dialogs, focus restoration, rapid close/reopen and cleanup.
+
+Installed-tarball acceptance passes for all three dialog contracts and the new
+guide, with exact-symbol Modal parity between CLI and MCP. Discovery passes with
+Node networking disabled. The six existing packaged examples compile and execute.
+The UI guide itself does not add an executable example.
+
+Native focus behavior follows the [HTML focus specification](https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation):
+background content is inert, but keyboard navigation can reach browser chrome.
+Chromium coverage does not prove other browser engines or assistive-technology acceptance.
+Logs: `/tmp/cossack-dialog-{build,ui,studio,browser,root-types,types,agent-docs}.log`.
+
+Twenty-two foundations are reviewed. Continue Popover and remaining UI audit rows.
+RT-23, CLI-07/CLI-08 and the broader release matrix remain open. The checklist stays
+at 24 of 58 completed tasks. Package versions remain 0.8.3 until REL-04.

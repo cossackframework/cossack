@@ -973,7 +973,9 @@ form values and visible validation. See the [MultiSelect review](./release-0.9.0
 Calendar and DatePicker now share strict Gregorian arithmetic, bounded keyboard
 navigation and native date-field form contracts. Studio preserves invalid stored
 text via the public isCalendarDate guard. See the [date-control review](./release-0.9.0.md#codex-date-controls-2026-10-04).
-Continue Modal, Sheet, Drawer and Popover through the UI audit. RT-23 stays open.
+Modal, Sheet and Drawer now share typed native dialog contracts. See the
+[dialog review](./release-0.9.0.md#codex-dialog-controls-2026-10-04).
+Continue Popover and pending UI audit rows. RT-23 stays open.
 
 Codex DataTable implementation (2026-10-04): the UI root now exports a generic
 DataTable and typed row/column/query contracts. Columns select a valid row key or
@@ -1017,7 +1019,7 @@ A browser-specific renderer entry removes the SSR parser from normal UI bundles.
 Explicit browser serialization uses `/server`. InputGroup and PasswordInput now
 have native contracts, composed callbacks, ARIA reference types and retained SSR
 hydration. Password reveal respects disabling and pointer/keyboard focus ownership.
-Next: Modal, Sheet, Drawer and Popover. See the
+Next: Popover and pending UI audit rows. See the
 [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
 See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).

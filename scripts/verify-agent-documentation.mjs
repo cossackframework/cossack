@@ -175,10 +175,18 @@ require('node:module').syncBuiltinESMExports();
     }
     assert.ok(uiSymbols.some(symbol => symbol.name === 'isCalendarDate'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'gregorian-date-controls'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'DatePicker', '--json']);
+    for (const name of ['Modal','Sheet','Drawer']) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@close' && member.type.includes('HTMLDialogElement')));
+      assert.ok(!control.propsContract.members.some(member => ['role','.open','aria-modal','tabindex'].includes(member.name)));
+    }
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-modal-dialogs'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Modal', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['DatePicker']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'DatePicker' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Modal']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Modal' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

@@ -48,6 +48,7 @@ export class InsertRowSheet extends Cossack {
       size: 'min(42rem, 94vw)',
       onClose: this.props.onClose,
       'data-testid': 'insert-form',
+      'aria-label': 'Insert row',
     }, html`
       <header class="shrink-0 border-b p-5">
         <h2 class="font-semibold">Insert row</h2>
