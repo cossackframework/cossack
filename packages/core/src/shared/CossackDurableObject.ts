@@ -4,6 +4,7 @@ import type { User } from './user';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import './metadata';
+import { snapshotSocketRequest } from './socket-context';
 
 export abstract class CossackDurableObject {
     state: DurableObjectState;
@@ -35,7 +36,7 @@ export abstract class CossackDurableObject {
             const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
             const isStateful = pageOptions?.stateful === true;
 
-            this.runtime = new DurableObjectRuntime(componentInstance, this.state, isStateful);
+            this.runtime = new DurableObjectRuntime(componentInstance, this.state, isStateful, this.env);
 
             return componentInstance;
         } else {
@@ -124,6 +125,33 @@ export abstract class CossackDurableObject {
             return new Response('pathname query parameter is required for WebSocket connection', { status: 400 });
         }
 
+        // Identity assertions are supplied by the Worker proxy, never message
+        // payloads. Anonymous peers have no user, so the default key uses IP.
+        const userId = request.headers.get('X-User-ID');
+        const userData = request.headers.get('X-User-Data');
+        let user: User | undefined;
+        try {
+            const value = userData ? JSON.parse(userData) : userId ? { id: userId } : undefined;
+            if (value !== undefined && (!userId || !value || typeof value !== 'object' || Array.isArray(value) || value.id !== userId)) {
+                throw new TypeError('Invalid identity assertion');
+            }
+            user = value;
+        } catch {
+            return Response.json({ code: 'COSSACK_WS_CONTEXT_INVALID', error: 'Invalid WebSocket identity context.' }, { status: 400 });
+        }
+        const { 0: client, 1: server } = new WebSocketPair();
+        const channel = url.pathname.split('/').pop() || 'global';
+        try {
+            // Attachment limits depend on the Workers runtime version. Refuse
+            // an oversized snapshot; silently dropping headers changes budgets.
+            server.serializeAttachment({ channel, user, request: snapshotSocketRequest(request, params) });
+        } catch {
+            // This attachment consists entirely of JSON identity data and
+            // string request metadata. The runtime's capacity exception is a
+            // plain Error on workerd, rather than a RangeError.
+            return Response.json({ code: 'COSSACK_WS_CONTEXT_TOO_LARGE', error: 'WebSocket peer context exceeds the attachment limit.' }, { status: 413 });
+        }
+
         // For stateless DOs, discard the in-memory component when the DO is idle
         // (no other clients connected). This prevents stale in-memory state from
         // leaking into a new session. Cloudflare keeps idle DOs in memory for
@@ -154,15 +182,6 @@ export abstract class CossackDurableObject {
             }
         }
 
-        const userId = request.headers.get('X-User-ID');
-        const userData = request.headers.get('X-User-Data');
-        const user: User = userId
-            ? (userData ? JSON.parse(userData) : { id: userId })
-            : { id: 'anonymous' };
-
-        const { 0: client, 1: server } = new WebSocketPair();
-        const channel = url.pathname.split('/').pop() || 'global';
-        server.serializeAttachment({ channel, user });
         this.state.acceptWebSocket(server);
 
         // For stateful DOs, send the current in-memory state so the client syncs immediately.

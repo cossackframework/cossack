@@ -12,7 +12,13 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-The latest [Codex ordinary-envelope checkpoint](./release-0.9.0.md#codex-rpc-json-envelopes-2026-10-03)
+The latest [Codex socket-peer checkpoint](./release-0.9.0.md#codex-socket-peer-context-2026-10-03)
+fixes anonymous Cloudflare identity and per-connection request context across
+Cloudflare/Node/Deno. A new native two-Worker fixture proves shared configured
+DO counters, custom headers/params, reconnect budgets and retained attachments
+through forced component reconstruction. Counter persistence/failure/consistency
+and session policies remain open; 14/58 tasks stay checked. The preceding
+[Codex ordinary-envelope checkpoint](./release-0.9.0.md#codex-rpc-json-envelopes-2026-10-03)
 records shared bounded UTF-8 decoding before hydration, required service state,
 exclusive redirect metadata and correlated typed HTTP diagnostics. The matrix
 now has 294 cases; 14/58 tasks remain checked. RT-01 stays open for actual
@@ -707,15 +713,41 @@ response regressions); full core 775/53 files and framework 966/50 pass with
 root/all 11 package checks. See the linked checkpoint for CLI/runtime evidence.
 No new checkbox closes. The original task scope and all remaining tasks persist.
 
-Next extend actual Cloudflare WebSocket/DO acceptance for authenticated and anonymous peer context,
-reconnect and custom rate keys; the neutral socket matrix is not a substitute.
-Audit configured rate-store failures, namespace ownership, persistence and
-consistency limits before making stronger distributed guarantees. The current DO
-may have only hydrated route params, without original HTTP headers; anonymous
-identity and IP parity remain unverified. Complete RT-01's criterion audit after
-that evidence. Continue schema/file/unknown-key/resource policy with RT-02/RT-14
-and session recipes/secrets/rotation/concurrency with RT-11. RT-01 stays open;
-14/58 checked and all 44 unchecked tasks remain in scope.
+Codex socket-peer checkpoint (2026-10-03): Cloudflare formerly assigned every
+anonymous socket a synthetic `anonymous` user and rebuilt only page params.
+Core now retains the verified peer user and upgrade URL/params/filtered headers
+in the native attachment. Anonymous peers have no user and use captured IP
+headers. Every action receives a fresh Hono context; custom keys and generator
+bodies use that peer instead of shared bootstrap state. HTTP credentials,
+handshake noise and internal identity assertions are excluded. Arbitrary
+middleware variables/session revalidation are not reconstructed. Oversized
+attachments reject upgrades with structured 413, and old sockets without a
+snapshot reject before mutation and close 1012 for reconnect. Child targets
+receive the same context; unrelated broadcasts do not read attachments.
+
+The shared process runtime now stores each client's context; framework upgrade
+metadata includes decoded page params. Node, its legacy adapter, and Deno pass
+the connecting context rather than borrowing a shared component's first peer.
+Evidence includes real two-Worker/native DO sockets with a configured DO rate
+store, IP/user/header-key isolation, cross-Worker/reconnect budgets, interleaved
+generators, forged message/identity isolation and HTTP/socket counter sharing.
+Forced reconstruction uses native storage and retained attachments; it does not
+claim timed platform eviction or a persistent rate-counter window. Real Node
+sockets prove shared-component headers/users/custom budgets. Deno event tests
+verify adapter wiring; actual Deno execution remains REL-03. See the checkpoint
+for full commands and counts. No new checkbox closes.
+
+Next audit configured rate-store failures and persistence with RT-18. Current
+configuration can silently fall back to memory for missing bindings/unknown
+modes; Redis/DO replies lack strict runtime validation, and the rate DO counter
+resets on eviction. Prove fixed-window persistence, concurrent counter updates,
+malformed/unavailable backend rejection before mutation, and environment/store
+ownership. Do not infer those guarantees from the new warm-counter fixture.
+Audit component initialization/restoration concurrency and all remaining RT-01
+criteria. Continue schema/file/unknown-key/resource policies with RT-02/RT-14
+and session recipes/secrets/rotation/concurrency with RT-11. Handshake identity
+is not per-message session revalidation. All 44 unchecked tasks remain in scope;
+14/58 are checked. Keep the separate Deno/Electron/tarball/live release gates.
 
 Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

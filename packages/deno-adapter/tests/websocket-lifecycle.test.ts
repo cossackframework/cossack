@@ -8,6 +8,7 @@ vi.mock('hono/deno', () => ({
   },
 }));
 import { createDenoAdapter } from '../src/index';
+import { Hono } from 'hono';
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>(done => { resolve = done; });
@@ -24,6 +25,34 @@ async function connect(adapter: ReturnType<typeof createDenoAdapter>, factory: (
   const socket = { readyState: 1, send: vi.fn(), close: vi.fn() };
   return { events, socket, open: () => events.onOpen({}, socket), close: () => events.onClose({}, socket) };
 }
+it('passes each verified upgrade context into a shared runtime action', async () => {
+  const adapter = createDenoAdapter();
+  const page = { ...component(), executeAction: vi.fn(async () => {}) };
+  const pairs: { events: any; socket: any }[] = [];
+  const app = new Hono();
+  app.get('/ws', async c => {
+    const user = { id: c.req.header('x-member')! };
+    c.set('user' as never, user as never);
+    await adapter.handleWebSocketUpgrade!(c, {
+      componentId: 'page', provider: 'page', target: 'shared', pathname: '/', env: {}, user,
+      createComponent: async () => page as any,
+    });
+    const events = handlers.pop();
+    const socket = { readyState: 1, send: vi.fn(), close: vi.fn() };
+    pairs.push({ events, socket }); await events.onOpen({}, socket);
+    return new Response();
+  });
+  await app.request('/ws', { headers: { 'x-member': 'first', 'x-bucket': 'one' } });
+  await app.request('/ws', { headers: { 'x-member': 'second', 'x-bucket': 'two' } });
+  for (const pair of pairs) await pair.events.onMessage({ data: JSON.stringify({ type: 'action', action: 'inspect', payload: [] }) }, pair.socket);
+  const first = page.executeAction.mock.calls[0] as unknown as any[];
+  const second = page.executeAction.mock.calls[1] as unknown as any[];
+  expect(first[2]).toEqual({ id: 'first' }); expect(first[5].req.header('x-bucket')).toBe('one');
+  expect(second[2]).toEqual({ id: 'second' }); expect(second[5].req.header('x-bucket')).toBe('two');
+  expect(first[5]).not.toBe(second[5]);
+  expect(adapter.instanceCount).toBe(1);
+  await adapter.dispose();
+});
 it('shares pending creation and only evicts after the last connection closes', async () => {
   const adapter = createDenoAdapter({ idleTimeoutMs: 0 });
   const gate = deferred();

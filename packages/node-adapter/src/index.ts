@@ -158,7 +158,15 @@ export class CossackNodeAdapter {
             const pathname = params.get('pathname') || '/';
             const context = {
                 get: (key: string) => key === 'user' ? user : undefined,
+                env: this.env,
                 req: {
+                    header: (key?: string) => {
+                        const headers = new Headers();
+                        for (let index = 0; index < request.rawHeaders.length; index += 2) {
+                            headers.append(request.rawHeaders[index]!, request.rawHeaders[index + 1]!);
+                        }
+                        return key === undefined ? Object.fromEntries(headers) : headers.get(key) ?? undefined;
+                    },
                     path: pathname,
                     param: (key?: string) => {
                         if (key) return routeParams[key];
@@ -223,7 +231,7 @@ export class CossackNodeAdapter {
             }
             entry!.lastActive = Date.now();
 
-            runtime.addClient(ws, user);
+            runtime.addClient(ws, user, context);
             
             // Send initial state to the connecting client
             const initialState = (runtime as any).component.getInitialState();

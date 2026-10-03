@@ -727,6 +727,7 @@ export function createApp(options: CreateAppOptions = {}) {
         componentId: componentPath,
         pathname,
         user,
+        context: componentContext,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
           const rootScope = createRootServiceScope();

@@ -132,6 +132,26 @@ request ID before hydration. Native failure bodies remain opaque even when
 JSON-shaped; non-JSON middleware errors keep generic HTTP status diagnostics.
 None of these client rejections undo a completed server mutation or retry it.
 
+## WebSocket actions use each connection's request context
+
+Anonymous Cloudflare sockets no longer become `user:anonymous` for rate limiting;
+they have no user and use their captured IP headers. Custom keys can read the
+socket's own headers and page params. Node/Deno shared components also use the
+originating connection's context instead of their first peer's headers.
+
+Cloudflare reconstructs action context from the native socket attachment;
+Cookie/Authorization, common credential and internal assertion headers are
+excluded. Custom headers and query values are retained. Keep credentials out of
+those values. The snapshot supplies user/env/read-request facilities, not an
+HTTP middleware scope or per-message session revalidation. Existing connections
+without metadata reject calls and close with 1012 for reconnect. Oversized
+snapshots fail upgrades with structured 413 rather than silently dropping headers.
+The runtime adapter upgrade contract adds optional `context`; the framework
+supplies it with decoded page params, and built-in adapters pass it per socket.
+Custom process runtimes can pass context as `addClient(client, user, context)`
+or provide `getContext` in runtime options. Counter backend persistence and
+consistency guarantees are unchanged in this checkpoint.
+
 ## RPC limits and child state ownership
 
 `@RateLimit` now applies to WebSocket action execution, including inherited and

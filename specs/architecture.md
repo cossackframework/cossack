@@ -300,8 +300,13 @@ class, method and caller, so changing socket/request/child IDs or HTTP encoding
 does not restore a shared budget. Sibling instances of one child class share
 their budget while the page class remains separate. Explicit service budgets
 use the owning layout and slot. Socket evaluation uses authenticated peer
-identity; hydrated Durable Object contexts may lack HTTP headers. Counter
-storage retains its existing persistence and consistency limits. Store failures
+identity and the originating socket's request context. Cloudflare persists
+upgrade URL/params/filtered headers in native attachments and creates a fresh
+Hono context per action, without HTTP credentials or arbitrary middleware
+variables. Oversized context fails before acceptance; legacy sockets without
+metadata must reconnect. Node/Deno retain their own verified upgrade contexts,
+including framework-decoded page params, instead of borrowing the first peer's
+headers. Counter storage retains its existing persistence and consistency limits. Store failures
 reject before mutation. Process-local SSE publishes page state after child
 actions, matching distributed page/target snapshot separation.
 

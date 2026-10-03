@@ -35,6 +35,9 @@ async function upgrade(consume: (upgrade: RuntimeWebSocketUpgrade) => Promise<Re
 }
 it('constructs nested scopes and preserves page params, auth, and bindings through runtime bootstrap', async () => {
   const response = await upgrade(async request => {
+    expect(request.context?.req.param('team')).toBe('alpha');
+    expect(request.context?.get('user')).toEqual({ id: 'owner' });
+    expect(request.context?.env).toMatchObject({ MARKER: 'request-env' });
     const instance = await request.createComponent() as Team;
     expect(instance.__cossack_rpcOwner).toBe('/src/pages/team/[team]/index.ts');
     instances.push(instance);

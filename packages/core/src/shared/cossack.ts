@@ -1077,7 +1077,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     private _actionQueue: Promise<void> = Promise.resolve();
 
-    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string): Promise<void> {
+    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string,
+        requestContext?: Context): Promise<void> {
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a
@@ -1103,7 +1104,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const run = async () => {
             try {
                 if (cancellation.cancelled) return;
-                await this._runAction(action, payload, user, clientContext, requestId, cancellation);
+                await this._runAction(action, payload, user, clientContext, requestId, cancellation, requestContext);
             } finally {
                 if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
             }
@@ -1113,7 +1114,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
-        requestId: string | undefined, cancellation: { cancelled: boolean; close?: () => void }): Promise<void> {
+        requestId: string | undefined, cancellation: { cancelled: boolean; close?: () => void }, requestContext?: Context): Promise<void> {
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {
             if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
@@ -1121,7 +1122,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return;
         }
         this._cossack_ws_context = clientContext;
-        const context = this.c;
+        const context = requestContext ? createCossackContext(requestContext, true) : this.c;
         this._actionIdentity = {
             user,
             context: context && new Proxy(context, {

@@ -2,7 +2,48 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex ordinary JSON envelopes (2026-10-03):** read
+> **Latest checkpoint — Codex socket peer context (2026-10-03):** read
+> [review and evidence](./release-0.9.0.md#codex-socket-peer-context-2026-10-03),
+> [RT-01 continuation](./release-0.9.0-plan.md#rt-01), and
+> [WebSocket contract](../docs/websockets.md). **Author: Codex.** Fixed synthetic
+> anonymous Cloudflare users and missing peer headers/params; shared Node/Deno
+> components also now receive each connection's context. Core dispatch passes
+> context into queued actions without overwriting shared bootstrap context.
+>
+> Native attachments retain user and filtered upgrade URL/headers/params. Each
+> Cloudflare action creates a fresh Hono context. Cookie/Authorization, common
+> credentials and internal assertions are excluded; custom headers/query values
+> remain retained. This is a handshake snapshot, not an HTTP middleware scope
+> or per-message session revalidation. Oversized attachments return structured
+> 413 (workerd throws plain Error); old peers without snapshots reject before
+> mutation and close 1012 for reconnect. Child targets receive the same context.
+>
+> Verified: core **779**/54 files, framework **966**/50, Node **16**/4, Deno
+> **16**/2, CLI **560**/40 with three native workerd fixtures and all **14**
+> generated runtime cases, sequential builds and root/all **11** package checks.
+> The new two-Worker fixture proves verified users/IP/header keys, forged-input
+> isolation, interleaved generators, cross-Worker/new-component/reconnect budgets
+> with the configured DO store, HTTP/socket counter sharing, oversize refusal and
+> component reconstruction using native storage and retained socket attachments.
+> Reconstruction is forced, not timed platform eviction. Node uses real sockets;
+> Deno adapter wiring is tested through events, not actual Deno execution. One
+> existing inspect test hit its 5-second timeout during the first parallel CLI
+> run; the complete CLI run alone passes without changing deadlines/assertions.
+>
+> **14/58 checked; no new checkbox closes. All 44 unchecked tasks persist.**
+> Next audit RT-18's configured stores: missing bindings/unknown modes currently
+> log and silently fall back to memory, Redis/DO replies lack strict validation,
+> and the DO rate counter resets on eviction. Prove fail-closed decisions before
+> mutation, fixed-window persistence, concurrent updates and environment/store
+> ownership. Do not infer persistence from warm-counter acceptance. Then audit
+> component initialization/restoration concurrency and all remaining RT-01
+> criteria; continue RT-02/RT-14 schema/file/unknown-key/resource policies and
+> RT-11 secrets/session recipes/rotation/concurrency/revocation. Keep separate
+> Deno/Electron/tarball/live gates and versions 0.8.3 until REL-04. Preserve
+> unrelated `reports.md`/`.zcodeignore`. Build core then framework declarations
+> before adapters/dependent checks; keep export generation out of running tests.
+
+> **Previous checkpoint — Codex ordinary JSON envelopes (2026-10-03):** read
 > [review and evidence](./release-0.9.0.md#codex-rpc-json-envelopes-2026-10-03),
 > [RT-01 continuation](./release-0.9.0-plan.md#rt-01), and
 > [RPC contract](../docs/rpc.md). **Author: Codex.** Fixed false completion from

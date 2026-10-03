@@ -1,16 +1,20 @@
 import type { CossackServerRuntime } from '../runtime';
 import { dispatchSocketRpcMessage } from '../runtime';
 import type { Cossack } from '../cossack';
+import { socketRequestContext, type SocketRequestSnapshot } from '../socket-context';
+import { sendRpcFrame } from '../rpc-stream';
 
 export class DurableObjectRuntime implements CossackServerRuntime {
     private component: Cossack;
     private state: DurableObjectState;
     private isStateful: boolean;
+    private env: unknown;
 
-    constructor(component: Cossack, state: DurableObjectState, stateful: boolean = false) {
+    constructor(component: Cossack, state: DurableObjectState, stateful: boolean = false, env?: unknown) {
         this.component = component;
         this.state = state;
         this.isStateful = stateful;
+        this.env = env;
         (this.component as any)._runtime = this;
     }
 
@@ -26,8 +30,21 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         }
         // The attachment deserializes lazily so non-action frames (broadcasts,
         // pings, malformed payloads) never touch DO storage APIs.
+        let attachment: { user?: unknown; request?: SocketRequestSnapshot } | undefined;
+        const peer = () => attachment ??= client.deserializeAttachment?.() ?? {};
+        if (data?.type === 'action' && typeof data.action === 'string' && Array.isArray(data.payload) && !peer().request) {
+            // Connections opened before request snapshots were introduced must
+            // reauthenticate. Do not execute with guessed identity/headers.
+            if (typeof data.requestId === 'string' && data.requestId.trim()) sendRpcFrame(client, {
+                v: 1, type: 'error', requestId: data.requestId, code: 'COSSACK_RPC_TRANSPORT_CLOSED',
+                message: 'WebSocket request context is unavailable. Reconnect before calling server methods.',
+            });
+            client.close?.(1012, 'Reconnect to refresh request context');
+            return;
+        }
         await dispatchSocketRpcMessage(this.component, data, client,
-            () => (client as any).deserializeAttachment?.()?.user);
+            () => peer().user,
+            () => peer().request ? socketRequestContext(peer().request!, this.env, peer().user) : undefined);
     }
 
     broadcastState(partialState: Record<string, any>): void {

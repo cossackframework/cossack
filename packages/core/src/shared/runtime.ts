@@ -1,4 +1,5 @@
 import { rpcCancellations, sendRpcFrame } from './rpc-stream';
+import type { Context } from 'hono';
 
 export interface CossackServerRuntime {
     onClientMessage(client: unknown, message: string): Promise<void>;
@@ -18,6 +19,7 @@ export async function dispatchSocketRpcMessage(
     data: unknown,
     client: unknown,
     getUser?: (client: any) => unknown,
+    getContext?: (client: any) => Context | undefined,
 ): Promise<void> {
     if (!data || typeof data !== 'object') return;
     const message = data as Record<string, unknown>;
@@ -46,7 +48,9 @@ export async function dispatchSocketRpcMessage(
             return;
         }
     }
-    await targetInstance.executeAction(message.action, message.payload, user, client, requestId);
+    const context = getContext?.(client);
+    if (context) await targetInstance.executeAction(message.action, message.payload, user, client, requestId, context);
+    else await targetInstance.executeAction(message.action, message.payload, user, client, requestId);
 }
 
 /** Minimal socket surface shared by process runtimes such as Node and Deno. */
@@ -57,6 +61,7 @@ export interface InMemoryWebSocketClient {
 
 export interface InMemoryWebSocketRuntimeOptions<Client extends InMemoryWebSocketClient> {
     getUser?: (client: Client) => unknown;
+    getContext?: (client: Client) => Context | undefined;
     isOpen?: (client: Client) => boolean;
     onError?: (error: unknown) => void;
 }
@@ -74,6 +79,7 @@ export class InMemoryWebSocketRuntime<
     protected readonly clients = new Set<Client>();
     protected readonly component: any;
     private readonly users = new WeakMap<object, unknown>();
+    private readonly contexts = new WeakMap<object, Context>();
     private readonly options: InMemoryWebSocketRuntimeOptions<Client>;
 
     constructor(component: any, options: InMemoryWebSocketRuntimeOptions<Client> = {}) {
@@ -82,14 +88,20 @@ export class InMemoryWebSocketRuntime<
         this.component._runtime = this;
     }
 
-    addClient(client: Client, user?: unknown): void {
+    addClient(client: Client, user?: unknown, context?: Context): void {
         this.clients.add(client);
-        if (typeof client === 'object' && client !== null) this.users.set(client, user);
+        if (typeof client === 'object' && client !== null) {
+            this.users.set(client, user);
+            if (context) this.contexts.set(client, context);
+        }
     }
 
     removeClient(client: Client): void {
         this.clients.delete(client);
-        if (typeof client === 'object' && client !== null) this.users.delete(client);
+        if (typeof client === 'object' && client !== null) {
+            this.users.delete(client);
+            this.contexts.delete(client);
+        }
     }
 
     get clientCount(): number {
@@ -116,7 +128,9 @@ export class InMemoryWebSocketRuntime<
         }
         await dispatchSocketRpcMessage(this.component, data, socket, candidate =>
             this.options.getUser?.(candidate as Client) ??
-            (typeof candidate === 'object' && candidate !== null ? this.users.get(candidate) : undefined));
+            (typeof candidate === 'object' && candidate !== null ? this.users.get(candidate) : undefined), candidate =>
+            this.options.getContext?.(candidate as Client) ??
+            (typeof candidate === 'object' && candidate !== null ? this.contexts.get(candidate) : undefined));
     }
 
     broadcastState(partialState: Record<string, any>): void {

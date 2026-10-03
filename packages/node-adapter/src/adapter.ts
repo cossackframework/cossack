@@ -10,6 +10,7 @@ export interface NodeWebSocketUpgrade {
   provider: string;
   componentId: string;
   user?: unknown;
+  context?: Context;
   createComponent(): Promise<Cossack>;
 }
 /** Host event contract for HTTP/1.1 WebSocket upgrade handling. */
@@ -123,7 +124,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
       const entry = await acquire(upgrade);
       if (stopped || ws.readyState !== WebSocket.OPEN) { await prune(); return; }
       entry.clients.add(ws);
-      entry.runtime.addClient(ws, upgrade.user);
+      entry.runtime.addClient(ws, upgrade.user, upgrade.context);
       entry.lastActive = Date.now();
       ws.on('close', () => {
         entry.clients.delete(ws);
@@ -171,7 +172,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
     handleWebSocketUpgrade(context: Context, upgrade: NodeWebSocketUpgrade): Response {
       const request = requests.get(context.req.raw);
       if (stopped || !request) return new Response('WebSocket upgrade unavailable', { status: 503 });
-      request.upgrade = upgrade;
+      request.upgrade = { ...upgrade, context: upgrade.context ?? context };
       return new Response(null, { status: 204, headers: { 'x-cossack-upgrade': request.token } });
     },
     attach(server: NodeUpgradeServer, fetch: (request: Request) => Response | Promise<Response>) {

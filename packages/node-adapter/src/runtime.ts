@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { InMemoryWebSocketRuntime, type Cossack } from '@cossackframework/core';
+import type { Context } from 'hono';
 
 export class NodeWebSocketRuntime extends InMemoryWebSocketRuntime<WebSocket> {
     constructor(component: Cossack) {
@@ -9,8 +10,8 @@ export class NodeWebSocketRuntime extends InMemoryWebSocketRuntime<WebSocket> {
         });
     }
 
-    public override addClient(ws: WebSocket, user?: unknown) {
-        super.addClient(ws, user);
+    public override addClient(ws: WebSocket, user?: unknown, context?: Context) {
+        super.addClient(ws, user, context);
         ws.on('close', () => {
             this.removeClient(ws);
         });

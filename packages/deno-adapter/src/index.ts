@@ -196,7 +196,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
             if (stopped) client.close(1001, 'Runtime shutting down');
             return;
           }
-          entry.runtime.addClient(client, upgrade.user);
+          entry.runtime.addClient(client, upgrade.user, upgrade.context ?? context);
           entry.clients.add(client);
           const state = entry.runtime.getInitialState();
           client.send(JSON.stringify({ type: 'state-update', state }));

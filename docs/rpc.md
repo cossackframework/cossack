@@ -269,6 +269,12 @@ methods outside the server allowlist (`COSSACK_RPC_FORBIDDEN`). Rate-limited
 actions reject before mutation with `COSSACK_RPC_RATE_LIMITED` and the known ID.
 See [rate-limit ownership](./rate-limiting.md) for caller keys and store limits.
 
+WebSocket actions and custom rate keys use the originating peer's verified
+upgrade context, even when several peers share one component. Cloudflare keeps
+a filtered request snapshot in the native attachment; Node/Deno pass each
+connection's context. See [action identity and context](./websockets.md#action-identity-and-request-context)
+for retained headers, old-peer reconnects, capacity errors and session limits.
+
 The shared [transport conformance matrix](../packages/framework/tests/rpc-conformance-matrix.test.ts)
 runs the same assertions against HTTP and SSE component actions, explicit service
 actions, and the WebSocket runtime dispatcher. It exercises real server handlers

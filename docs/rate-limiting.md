@@ -57,13 +57,22 @@ Explicit layout services use their owning layout and service slot, so the same
 service shares its budget across pages that use that layout. These budgets do
 not limit direct server-to-server calls to the original local method.
 
-WebSocket identity comes from the runtime's authenticated peer rather than
-action arguments. An anonymous Durable Object action may have only hydrated
-route context, without original HTTP headers. Prefer authenticated user keys
-there; anonymous IP parity and custom header keys require runtime-specific
-context support. Custom keys receive the available action context. In-memory
-counters stay process-local; a shared route namespace does not itself make
-counters durable or distributed.
+WebSocket identity comes from the runtime's verified upgrade rather than action
+arguments. Anonymous Durable Object peers have no synthetic user ID, so the
+default key uses the captured IP headers. Each socket supplies its own headers,
+query and decoded page route params to actions and custom keys, including after
+component reconstruction. Node and Deno also pass the connecting peer context
+when sharing a component; they do not reuse the first connection's headers.
+
+Cloudflare retains a request snapshot in the native WebSocket attachment.
+Cookie/Authorization, common credential headers, handshake noise and internal
+identity assertions are excluded. Custom application headers and query values
+are retained; do not put credentials in those values. Oversized snapshots fail
+the upgrade with `COSSACK_WS_CONTEXT_TOO_LARGE` (413), rather than dropping key
+inputs. Old connections without a snapshot reject actions and close with 1012
+for reconnect. These are upgrade-time facts; session revocation/rotation still
+needs application/session policy. In-memory counters remain process-local;
+shared route namespaces do not make them durable or distributed.
 
 ```typescript
 import { Cossack, Page, Server, State, RateLimit } from '@cossackframework/core';

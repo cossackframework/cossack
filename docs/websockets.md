@@ -48,6 +48,31 @@ Each status entry tracks `state`, `attempts` (reconnects since the last open),
 `this.realtime.sse`; `resynced` becomes true when a reconnect had to replace
 expired history with an authoritative snapshot.
 
+## Action identity and request context
+
+Actions use the verified identity and request context of their originating
+socket. Another connection sharing a component cannot replace that context.
+`this.user`, `this.c.get('user')`, and custom rate keys use the same peer;
+client-supplied message identity is ignored. Anonymous Cloudflare sockets have
+no synthetic user and their default rate key uses captured IP headers.
+
+Cloudflare keeps the upgrade URL, page route params and selected headers in
+native socket attachments. Each action reconstructs its own context, retaining
+query/header access through generator completion and component restoration.
+Cookie/Authorization, common credential headers and internal auth assertions
+are excluded. Custom headers and query values are retained; they are not a
+place for credentials. A snapshot is not the full original HTTP middleware
+scope: arbitrary middleware variables, request bodies, response cookies and
+session revalidation are not reconstructed. The identity is a handshake snapshot.
+
+Oversized metadata returns `COSSACK_WS_CONTEXT_TOO_LARGE` with status 413 before
+accepting the socket. Malformed identity assertions return
+`COSSACK_WS_CONTEXT_INVALID` (400). Connections created by an older version
+without request metadata reject actions and close with code 1012 to reconnect.
+Node/Deno adapters pass each connection's upgrade context into their shared
+runtime; the framework includes decoded page route params. See
+[rate limiting](./rate-limiting.md) for counter-store guarantees.
+
 ## Stateless vs Stateful Durable Objects
 
 By default, `transport: 'durable-object'` creates a **stateless** DO that acts as a WebSocket hub only. State is ephemeral : it lives in-memory during the session but is not persisted to DO storage. This is ideal for applications that use a database (D1, R2, etc.) as the source of truth.

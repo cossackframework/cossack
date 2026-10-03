@@ -21,7 +21,7 @@ below link directly to those explanations.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Remaining: actual Cloudflare socket/peer/header context and rate-backend guarantees, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-rpc-json-envelopes-2026-10-03).
+- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 294-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. Remaining: rate-backend failure/persistence/consistency guarantees and initialization/restoration concurrency, plus RT-02/RT-14 policies and RT-11 session criteria. See the [latest checkpoint](#codex-socket-peer-context-2026-10-03).
 - [ ] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex Group 3 review: @Server({ input }) validates component/forwarded/explicit service actions; client errors retain fieldErrors across JSON and stream frames; input closures are stripped from client decorators. Remaining: inferred schema types, defined unknown-key/array/file behavior, and resource-policy enforcement with RT-14.
 - [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
@@ -85,6 +85,88 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-socket-peer-context-2026-10-03"></a>
+### Codex review: WebSocket peer context and native Cloudflare acceptance (2026-10-03)
+
+**Author: Codex.** Continued RT-01 after `44bd46f`. Inspection found that
+Cloudflare labeled all anonymous sockets as one user, while rebuilt DO contexts
+contained only params. Shared process components also reused their first peer's
+headers. Custom rate keys and anonymous identity therefore differed from HTTP.
+
+Cloudflare attachments now retain verified peer identity and a filtered upgrade
+request snapshot. Anonymous peers have no user, so the default key uses captured
+IP headers. A fresh Hono action context exposes that socket's URL, headers,
+query, params, user and DO environment through ordinary/generator completion.
+Identity in message payloads is ignored. Old sockets without a snapshot reject
+before mutation and close 1012 to reconnect. Cookie/Authorization, common
+credential headers, handshake noise and internal auth assertions are excluded;
+custom headers/query values remain retained. Arbitrary middleware variables,
+HTTP request bodies and session revalidation are outside the snapshot contract.
+
+Native workerd exposed the attachment overflow exception as a plain Error,
+rather than RangeError. The upgrade now returns `COSSACK_WS_CONTEXT_TOO_LARGE`
+with 413 instead of 500 or discarding header key inputs. Identity assertions
+are checked for shape/ID consistency before acceptance (`COSSACK_WS_CONTEXT_INVALID`).
+Child dispatch receives the peer context; unrelated frames do not deserialize
+attachments. Component base context is restored after each queued action.
+
+The process runtime accepts per-client context, either through
+`addClient(client, user, context)` or `getContext`. Framework upgrade metadata
+includes original page params. Node, its legacy adapter, and Deno pass the
+connecting context through shared-component action execution. Libraries retain
+structural runtime contracts and do not import the application package.
+
+The new native two-Worker fixture uses published core entries, the real framework
+proxy and CossackDurableObject, native WebSocketPair/attachments/storage and a
+configured RateLimitDurableObject binding. It proves user/IP isolation,
+forged-identity isolation, custom header/param keys, denied calls without
+state mutation, cross-Worker/new-component/reconnect budgets, interleaved
+peer-aware generators and HTTP limiter/socket counter sharing. Forced component
+reconstruction retains native attachments and reloads durable component state;
+it does not claim timed eviction or counter persistence across process restarts.
+The test-only Worker supplies auth/IP assertions; this is local workerd acceptance,
+not live edge deployment or full auth-provider/session-revocation acceptance.
+
+Real Node sockets sharing one Cossack instance verify user/context/header
+isolation and custom budgets. Deno event-level tests verify adapter wiring;
+Deno execution remains a separate release gate. Framework scope tests prove the
+upgrade's context carries decoded params/user/bindings. Core tests cover filtered
+snapshots, variable isolation, child forwarding and old-peer refusal.
+
+Verification: sequential core/framework declarations and Node/Deno builds;
+core **779**/54 files, framework **966**/50, Node **16**/4, Deno **16**/2,
+CLI **560**/40 including the new native peer fixture, both existing workerd
+fixtures and all **14** generated runtime cases; root/all **11** package checks.
+The first concurrent CLI run hit an existing 5-second inspect test timeout.
+Running the full CLI suite alone passed; no production deadline or assertion
+was relaxed. Architecture, RPC/WebSocket/rate documentation, migration, detailed
+plan and Codex handoff describe the contract and remaining evidence.
+
+```sh
+pnpm --filter @cossackframework/core run build
+pnpm --filter @cossackframework/framework run build:types
+pnpm --filter @cossackframework/node-adapter --filter @cossackframework/deno-adapter run build
+pnpm --filter cossack exec vitest run tests/websocket-peer-integration.test.js
+pnpm --filter @cossackframework/core exec vitest run
+pnpm --filter @cossackframework/framework exec vitest run
+pnpm --filter @cossackframework/node-adapter exec vitest run
+pnpm --filter @cossackframework/deno-adapter exec vitest run
+pnpm --filter cossack exec vitest run
+pnpm tsc --noEmit
+pnpm typecheck
+git diff --check -- . ':!reports.md'
+```
+
+**14/58 checked; no new task closes. All 44 unchecked tasks remain in scope.**
+Next audit RT-18 store configuration fallback, backend response validation,
+fixed-window persistence under DO eviction, concurrency and per-environment
+ownership. The current DO rate counter remains in memory; shared namespaces
+are not persistence. Audit component bootstrap/restoration concurrency and all
+RT-01 criteria, then continue RT-02/RT-14 policies and RT-11 sensitive old input,
+session recipes, rotation/concurrency and revocation semantics. Preserve separate
+Deno/Electron/tarball/live gates, versions 0.8.3 until REL-04 and unrelated
+`reports.md`/`.zcodeignore`. No push, deployment or publication occurred.
 
 <a id="codex-rpc-json-envelopes-2026-10-03"></a>
 ### Codex review: ordinary JSON and HTTP failure envelopes (2026-10-03)

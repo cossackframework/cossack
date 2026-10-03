@@ -9,6 +9,8 @@ export interface RuntimeWebSocketUpgrade {
   componentId: string;
   pathname: string;
   user?: unknown;
+  /** This peer's verified upgrade context, with decoded page route params. */
+  context?: Context;
   env: Record<string, unknown>;
   createComponent(): Promise<Cossack>;
 }
