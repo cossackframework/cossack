@@ -14,6 +14,7 @@ import {
     instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
+import type { UrlCodec, UrlValue, UrlStateDefinition, UrlStateValues } from './url-state';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, describeUnsupportedStateValue } from './rpc-stream';
@@ -992,6 +993,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.user = metadata.user;
             const clientParams = metadata.params || {};
             this._cossack_path = metadata.pathname || window.location.pathname;
+            this._cossack_url = new URL(metadata.url ?? window.location.href, window.location.href).href;
 
             // Capture component reference for the getter
             const component = this;
@@ -999,8 +1001,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 req: {
                     param: (key?: string) => key ? clientParams[key] : clientParams,
                     get path() { return (this as any)._component?._cossack_path || component._cossack_path; },
+                    get url() { return component._cossack_url ?? window.location.href; },
                     query: (key?: string) => {
-                         const url = new URL(window.location.href);
+                         const url = new URL(component._cossack_url ?? window.location.href);
                          if (key) return url.searchParams.get(key);
                          const params: Record<string, string> = {};
                          url.searchParams.forEach((value, k) => {
@@ -1150,8 +1153,24 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     @Client()
-    public updatePath(path: string) {
+    public updatePath(path: string, url?: string) {
         this._cossack_path = path;
+        if (url !== undefined) this._cossack_url = new URL(url, typeof window === 'undefined' ? 'https://cossack.invalid' : window.location.href).href;
+    }
+
+    private _cossack_url?: string;
+    private _urlStateCache = new WeakMap<object, { url: string; values: unknown }>();
+
+    /** Read immutable query values from this request/destination, including during hydration. */
+    @Shared()
+    public urlState<S extends Record<string, UrlCodec<UrlValue>>>(definition: UrlStateDefinition<S>): UrlStateValues<S> {
+        const current = this.c?.req.url;
+        if (typeof current !== 'string') throw new Error('[Cossack] urlState() requires a request context. Read it in a getter or after bootstrap.');
+        const cached = this._urlStateCache.get(definition);
+        if (cached?.url === current) return cached.values as UrlStateValues<S>;
+        const values = definition.read(current).values;
+        this._urlStateCache.set(definition, { url: current, values });
+        return values;
     }
 
     public isActive(path: string, exact: boolean = true): boolean {
@@ -2585,6 +2604,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      */
     public getInitialState(): SerializedComponentState {
         const params = (this.c as Context)?.req.param() || {};
+        const requestUrl = this.c?.req.url;
+        const destination = typeof requestUrl === 'string' ? new URL(requestUrl, 'https://cossack.invalid') : undefined;
 
         // Build the serialized state object
         const serializedState: SerializedComponentState = {
@@ -2592,6 +2613,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             metadata: {
                 componentId: this.constructor.name,
                 pathname: (this.c as Context)?.req.path,
+                url: destination ? destination.pathname + destination.search : undefined,
                 params,
                 user: this.user,
             },

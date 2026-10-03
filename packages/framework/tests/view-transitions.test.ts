@@ -58,7 +58,7 @@ describe('View Transitions: data-transition-types click interception', () => {
   type TestNavigateOptions = {
     types?: string[];
     scroll?: 'auto' | 'top' | 'preserve';
-    navigationType?: 'push' | 'traverse';
+    navigationType?: 'push' | 'replace' | 'traverse';
   };
   let onNavigateCalls: { url: string; options?: TestNavigateOptions }[];
   let cleanupNavigation: (() => void) | undefined;

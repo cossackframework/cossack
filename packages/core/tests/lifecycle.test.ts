@@ -103,7 +103,7 @@ describe('Lifecycle Hooks', () => {
         vi.clearAllMocks();
         global.window = {
             __INITIAL_STATE__: {},
-            location: { host: 'localhost' },
+            location: { host: 'localhost', href: 'http://localhost/', pathname: '/' },
         } as any;
         global.document = {
             head: {

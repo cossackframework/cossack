@@ -28,7 +28,7 @@ below link directly to those explanations.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
 - [x] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. Codex completion (2026-10-03): shared discovery/manifest, published URL and API contracts, actual Node/native workerd/D1 handlers, source-specific boundaries and middleware ownership pass. Grouped/dynamic unknown URLs, literal/catch-all selection, ambiguous source groups, guards, status-preserving browser hydration/navigation and read-only source explanations now meet the original criteria. The unused PageOptions.route is removed with type/runtime/compiler diagnostics and migration guidance. See the [criterion audit](./release-0.9.0-plan.md#rt-07) and [completion review](#codex-route-boundaries-2026-10-03). Broader RPC, session and runtime/release gates remain separate.
-- [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
+- [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults. Codex checkpoint (2026-10-03): portable inferred codecs, strict defaults/encoding/arrays, destination-owned SSR/browser query contexts and push/replace history pass published types and actual Node/native Worker browser acceptance. Remaining: pending patch ownership, local draft preservation, retained-layout resource handoff and the full rapid-change matrix. See the [checkpoint](#codex-url-state-contracts-2026-10-03).
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
@@ -85,6 +85,73 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-url-state-contracts-2026-10-03"></a>
+### Codex checkpoint: typed query contracts and destination contexts (2026-10-03)
+
+Author: Codex. Continued after `25eab9c`. No checkbox closes. The original
+58 task IDs remain: 22 checked and 36 unchecked. RT-08 remains open. Read its
+[criterion audit and next steps](./release-0.9.0-plan.md#rt-08),
+[URL-state guide](../docs/url-state.md),
+[migration notes](./migration-0.9.0.md#browser-query-context-and-history), and
+[Codex handoff](./handoff-0.9.0.md).
+
+Core now owns defineUrlState, inferred readonly values, UrlStateError and string,
+number, integer, boolean, enum, array, optional and synchronous custom codecs.
+The portable `/url-state` export has no framework or browser dependency.
+Declarations and defaults are snapshots. Parsing uses strict percent/UTF-8
+validation, rejects repeated scalars, resets invalid arrays as a whole and reports
+field/code issues without query values. Total query bounds throw; field bounds
+use declared defaults. Unsupported asynchronous callback results remain observed.
+URL patches reject unknown keys, getters, sparse arrays and unsupported values.
+Serialization sorts declared keys, omits defaults and retains unrelated encoded
+pairs and fragments. Bare array keys distinguish an empty list from one empty
+string. Published types reject variable/union extras and invalid custom codecs.
+
+Cossack.urlState caches against the request or browser destination URL. SSR
+metadata exposes the public path/query without its internal origin. Browser
+bootstrap previously read the old window address before history committed.
+Page, App and retained layouts now own the resolved destination. Initial
+hydration retains the visible fragment. The production browser fixture first
+caught its loss from fragment-free SSR metadata; the fix and both runtimes pass.
+Navigation accepts explicit push/replace history. Replacement preserves other
+history state, and existing guards and navigation outcomes still apply.
+
+Actual generated Node and native workerd apps execute one shared filtered-page
+fixture. Browsers verify copied Unicode/array URLs, invalid page defaults,
+back/forward, replacement, preserved fragments and matching query-derived SSR
+resources without extra hydration RPCs. Those cases do not prove local draft
+preservation, overlapping query patches, retained-layout resource handoff or
+stalled query transitions. Normal query navigation still recreates the page.
+RT-08 remains open for those original criteria, and RT-09 retains bounded
+navigation completion and its larger cache/scroll/transition/diagnostic matrix.
+
+Final verification:
+
+- Core build and framework declaration build passed before consumer checks.
+  Generated applications passed actual client and server builds for both runtimes.
+- `pnpm tsc --noEmit` passed. `pnpm typecheck` passed all 11 packages.
+- `pnpm --filter @cossackframework/core exec vitest run`: 1,391 tests in 82 files.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,406 tests in 66 files.
+- `pnpm --filter cossack exec vitest run --maxWorkers=2`: 608 tests in 44 files.
+  This includes both new production Node/native workerd browser cases and all
+  existing generated runtime acceptance. The three suites total 3,405 tests.
+- New core coverage includes 38 codec cases, three real browser-context cases,
+  one real request-context case and one package-export fixture with 17 negative
+  type cases. Framework adds two destination/history cases.
+- Both TypeScript examples in the URL-state guide compiled separately through
+  published exports. The portable entry imported and round-tripped Unicode.
+- Review resolved the initial incomplete browser mock locations, the custom
+  serializer's inference widening, the narrower navigation test type and the
+  fixture's required server$ initial value. Final full suites above passed.
+- Syntax, owned whitespace, original task ID/state audit and documentation links
+  passed. No owned build or test process remains.
+
+Continue the five concrete RT-08 steps in the plan and all other unchecked
+CLI/runtime/service/Cloudflare/release tasks. RT-01/RT-11, plain Node Vite dev,
+native Deno/Electron and final release gates remain open. Versions stay 0.8.3
+until REL-04. User-owned reports.md/.zcodeignore are preserved. No push,
+publication, live cloud changes, external messages or new chat occurred.
 
 <a id="codex-route-boundaries-2026-10-03"></a>
 ### Codex completion: typed routes and source boundaries (2026-10-03)

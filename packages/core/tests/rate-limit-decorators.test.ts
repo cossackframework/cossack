@@ -84,7 +84,7 @@ describe('@Debounce / @Throttle runtime behavior', () => {
             __INITIAL_STATE__: {},
             addEventListener: vi.fn(),
             removeEventListener: vi.fn(),
-            location: { host: 'localhost' },
+            location: { host: 'localhost', href: 'http://localhost/', pathname: '/' },
         } as any;
 
         component = new RateLimitComponent();

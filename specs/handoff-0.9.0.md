@@ -2,7 +2,53 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex RT-07 completion (2026-10-03). Author: Codex.
+> Latest checkpoint: Codex RT-08 query contracts (2026-10-03). Author: Codex.
+> Continued after `25eab9c`. Read the
+> [verification](./release-0.9.0.md#codex-url-state-contracts-2026-10-03),
+> [criterion audit and five next steps](./release-0.9.0-plan.md#rt-08),
+> [URL-state guide](../docs/url-state.md), and
+> [migration notes](./migration-0.9.0.md#browser-query-context-and-history).
+>
+> No checkbox closes: 22/58 checked, 36 unchecked. RT-08 remains open.
+> Core now exports immutable inferred query declarations through its root and
+> portable /url-state entry. Strict codecs/defaults cover strings, finite numbers,
+> safe integers, booleans, enums, repeated arrays, optional and sync custom values.
+> Patches preserve unrelated encoded pairs/fragments and reject extra keys,
+> accessors, sparse arrays and invalid values. Bare array keys mean an empty list.
+> Query/field bounds and fixed diagnostics are documented and tested.
+>
+> Browser request/query contexts now own the destination before history commits.
+> Initial hydration retains the visible fragment; retained layouts receive the
+> new URL. Navigation supports explicit push/replace and retains unrelated
+> history data. Real generated Node/native workerd browser tests cover copied
+> Unicode URLs, invalid defaults, back/forward, replace, fragments and page
+> resource SSR hydration without extra RPCs. The guide's two examples compile.
+>
+> Final checks passed: root TypeScript, all 11 package type checks, full core
+> 1,391/82 files, framework 1,406/66 files and CLI 608/44 files: 3,405 tests.
+> Core and framework declarations built before these suites. The CLI run includes
+> actual client/server builds and both new native browser fixtures. No owned
+> build/test process remains.
+>
+> Next for GLM: continue RT-08 from the five concrete steps in the detailed plan.
+> Add a typed updater that merges overlapping patches against pending intent.
+> Preserve local declared ClientState/ClientStore drafts for same-page queries
+> through trusted framework ownership; remote SSR JSON cannot supply them.
+> Hydrate retained-layout resources from matching SSR data without duplicate
+> reads, and prevent old reads from overwriting the new dependency or URL.
+> Extend both native browser fixtures with delays, drafts, guards, failures,
+> overlaps and pending history changes. Then audit every original criterion.
+> Normal navigation currently recreates pages; the current fixture does not
+> certify those remaining cases. RT-09 still owns bounded completion and its
+> larger navigation matrix.
+>
+> Continue all other unchecked tasks. RT-01/RT-11, plain Node Vite dev and native
+> Deno/Electron gates remain open. Versions stay 0.8.3 until REL-04. Preserve
+> reports.md/.zcodeignore. No push, publication, live cloud changes, external
+> messages or new chats.
+>
+
+> Previous checkpoint: Codex RT-07 completion (2026-10-03). Author: Codex.
 > Continued after `b82ba4b`. Read the
 > [completion evidence](./release-0.9.0.md#codex-route-boundaries-2026-10-03),
 > [criterion audit](./release-0.9.0-plan.md#rt-07),

@@ -16,6 +16,8 @@ export interface NavigateResult {
 }
 
 export interface NavigateOptions {
+    /** Create a new history entry (default) or replace the active entry. */
+    history?: 'push' | 'replace';
     /**
      * View Transition types to apply to the navigation. Corresponds to the
      * `types` field on `document.startViewTransition({ update, types })`.
@@ -33,7 +35,7 @@ export interface NavigateOptions {
 }
 
 export type NavigationScrollBehavior = 'auto' | 'top' | 'preserve';
-export type NavigationType = 'push' | 'traverse';
+export type NavigationType = 'push' | 'replace' | 'traverse';
 
 export interface ScrollPosition {
     x: number;

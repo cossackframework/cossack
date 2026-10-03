@@ -419,9 +419,10 @@ export async function createClientApp({
   appInstance.updateHead = syncHead;
 
   // Initial bootstrap without render logic override
+  const initialAppState = window.__INITIAL_STATE__._app_state ?? window.__INITIAL_STATE__;
   await appInstance.bootstrap({
     container: containerEl as Element,
-    initialState: window.__INITIAL_STATE__._app_state,
+    initialState: { ...initialAppState, metadata: { ...initialAppState?.metadata, url: window.location.href } },
     skipInit: true,
     deferMount: true,
   });
@@ -436,7 +437,9 @@ export async function createClientApp({
     currentPage?._frameworkNavigateComplete(pathname);
   };
 
-  const loadComponent = async (initialState: any) => {
+  const loadComponent = async (initialState: any, destination?: string) => {
+    const destinationUrl = destination ?? initialState?.metadata?.url ?? window.location.href;
+    initialState = { ...initialState, metadata: { ...initialState?.metadata, url: destinationUrl } };
     // Support both routePath (new) and componentPath (legacy) for backward compatibility
     const routePath = initialState?.routePath || initialState?.componentPath;
     const layoutStack = initialState?._layout_stack || [];
@@ -452,7 +455,7 @@ export async function createClientApp({
       : initialState?.componentPath && pages[initialState.componentPath] ? initialState.componentPath
       : routeToFilePath.get(routePath) || routePath;
 
-    appInstance.updatePath(pathname);
+    appInstance.updatePath(pathname, destinationUrl);
 
     // Build a set of active layout file paths (layoutStack now contains file paths)
     const activeLayoutPaths = new Set<string>();
@@ -514,12 +517,12 @@ export async function createClientApp({
           };
 
           await instance.bootstrap({
-            initialState: { ...state, componentRouteId },
+            initialState: { ...state, metadata: { ...state?.metadata, url: destinationUrl }, componentRouteId },
             skipInit: true,
           });
           currentLayoutsMap.set(layoutFilePath, instance);
         }
-        instance.updatePath(pathname);
+        instance.updatePath(pathname, destinationUrl);
         currentLayoutInstances.push(instance);
         activeServiceScope = instance._getServiceScope() || activeServiceScope;
       }
@@ -561,7 +564,7 @@ export async function createClientApp({
         };
 
         await componentInstance.bootstrap({ initialState, skipInit: true });
-        componentInstance.updatePath(pathname);
+        componentInstance.updatePath(pathname, destinationUrl);
 
         // Register with DevTools for state inspection (use absolute path from Vite injection)
         const sourceFile = (componentInstance.constructor as any).__source?.file;
@@ -582,7 +585,7 @@ export async function createClientApp({
     }
   };
 
-  await loadComponent(window.__INITIAL_STATE__);
+  await loadComponent(window.__INITIAL_STATE__, window.location.href);
   // Mount now that the full app tree (header + page + footer) is composed.
   // Hydrate the existing SSR DOM in place instead of wiping it — the server
   // already rendered this exact tree, so we bind to the existing nodes (no
@@ -607,7 +610,7 @@ export async function createClientApp({
   let commitQueue: Promise<void> = Promise.resolve();
   const navigate = async (url: string, force = false, options?: NavigateOptions): Promise<NavigateResult> => {
     const seq = ++navigationSequence;
-    const navigationType = options?.navigationType ?? 'push';
+    const navigationType = options?.navigationType ?? (options?.history === 'replace' ? 'replace' : 'push');
     if (navigationType === 'traverse' && scrollSaveFrame !== undefined) {
       // popstate has already activated the destination entry. Do not let a
       // queued scroll save from the outgoing page overwrite that entry.
@@ -629,7 +632,7 @@ export async function createClientApp({
           }
       }
 
-      if (navigationType === 'push') {
+      if (navigationType !== 'traverse') {
         saveCurrentScrollPosition();
       }
 
@@ -700,10 +703,12 @@ export async function createClientApp({
       const commit = async () => {
         if (seq !== navigationSequence) return;
         window.__INITIAL_STATE__ = state;
-        await loadComponent(state);
+        await loadComponent(state, destinationUrl);
         if (seq !== navigationSequence) return;
         if (navigationType === 'push') {
           window.history.pushState(createNavigationHistoryState(), '', destinationUrl);
+        } else if (navigationType === 'replace') {
+          window.history.replaceState(window.history.state, '', destinationUrl);
         } else if (redirected) {
           window.history.replaceState(window.history.state, '', destinationUrl);
         }

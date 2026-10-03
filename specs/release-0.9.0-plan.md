@@ -12,7 +12,17 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-Latest checkpoint: Codex RT-07 completion (2026-10-03).
+Latest checkpoint: Codex RT-08 query contracts (2026-10-03).
+Read the [evidence](./release-0.9.0.md#codex-url-state-contracts-2026-10-03),
+[implementation and remaining work](#rt-08), and [URL-state guide](../docs/url-state.md).
+Portable typed codecs, default/invalid-value behavior, source-owned browser
+queries and explicit history replacement are implemented. Actual Node/native
+workerd browser fixtures pass copied URLs, history and resource hydration parity.
+RT-08 remains open for draft preservation, pending patch ownership and the full
+resource/rapid-edit matrix. All 58 task IDs remain: 22 checked, 36 unchecked.
+Continue that work and every remaining task. No release gate is newly closed.
+
+Previous checkpoint: Codex RT-07 completion (2026-10-03).
 Read the [completion evidence](./release-0.9.0.md#codex-route-boundaries-2026-10-03)
 and [original criterion audit](#rt-07). Source boundaries now retain distinct IDs,
 apply their policies once, preserve parameters and hydrate the correct browser
@@ -1903,7 +1913,85 @@ Integrate dependency changes with server resources without duplicate fetches.
 Start in core `client/navigation.ts`, framework `client/app.ts`, and route
 metadata from RT-07. Keep this separate from path-parameter generation.
 
-**Codex starting context after RT-07 (2026-10-03):**
+Codex implementation checkpoint (2026-10-03): portable query contracts.
+Author: Codex. Continued after `25eab9c`. This is progress on RT-08, not its
+completion. Read the [public guide](../docs/url-state.md) and
+[verification](./release-0.9.0.md#codex-url-state-contracts-2026-10-03).
+
+Core exports defineUrlState, url codecs, InferUrlState and UrlStateError through
+its root and portable `/url-state` entry. Declarations infer readonly records.
+Codecs support strings, finite decimals, safe integers, literal enums, booleans,
+repeated scalar arrays, optional values and explicit synchronous custom codecs.
+Missing or invalid field values use declared defaults. Scalar repeats reject
+selection even when equal. One invalid array item resets the field. Malformed
+encoding has a separate issue. Read issues contain field/code, not raw values.
+Unexpected callbacks throw fixed diagnostics. Unsupported promises remain
+observed without becoming asynchronous parsing.
+
+URL construction checks inferred patches, rejects variable/union extras and
+snapshots arrays without reading item getters. It normalizes declared keys,
+omits defaults by default and preserves unrelated encoded pairs/fragments.
+Undefined resets a field. A bare array key represents an empty list, distinct
+from one empty string. Parsing never edits the address. Limits bound total
+query text/pairs, declaration fields, strings and arrays. Read/write limits
+share the exact boundary. Definitions/defaults and parsed records are immutable.
+The published custom codec uses NoInfer on serializer parameters so String
+cannot erase default/parser constraints to any.
+
+Cossack.urlState reads and caches a declaration against the current context URL.
+Use it in getters or after bootstrap. SSR emits the public path/query without
+an internal origin. Browser contexts previously read window.location while the
+new destination booted before history changed. They now own the resolved URL.
+Initial App/page/layout hydration retains the visible fragment. Retained layouts
+receive the new destination through updatePath. Existing native req.query reads
+use that same destination. NavigateOptions.history supports push/replace through
+the existing navigation sequence and preserves unrelated history state.
+
+The new production fixture declares a filtered list with a server$ resource.
+Actual Node and native workerd browsers copy Unicode/array URLs into a new tab,
+exercise invalid page defaults, back/forward, replace and fragments, and perform
+zero extra hydration RPCs for matching SSR dependency arguments. It does not
+prove retained-layout resource handoff, draft preservation or stalled/overlapping
+query transitions. Those requirements remain below.
+
+| Original RT-08 criterion | Current evidence | Status |
+| --- | --- | --- |
+| Copied filtered URLs show identical state | Real Node/workerd SSR and two browser tabs have equal search/page/sort/tags and resource output. | Implemented for page resources. |
+| Back/forward restores filters and results | Both native production browser fixtures navigate away/back/forward with cached SSR documents and matching dependency values. | Implemented for the fixture. Extend to retained scopes and pending queries. |
+| Invalid numbers and predictable defaults | Controlled parsing tests and real invalid page URLs reset to documented defaults. Read/write canonicalization preserves defaults and explicit empty arrays. | Implemented. |
+| Browser history, SSR parity and Unicode | Owned destination context and push/replace paths pass unit and actual production acceptance. | Implemented for normal navigation. |
+| Rapid changes and resource integration | Existing sequence guards protect ordinary stale navigation responses. New acceptance confirms matching initial/page SSR resources do not issue duplicate RPCs. | Incomplete: direct overlapping query patches, drafts, pending resource changes and retained-layout reads still need implementation and acceptance. |
+
+Next implementation steps for GLM:
+
+1. Add a typed component updater that carries a patch and declaration through
+   navigation ownership. Merge later patches against the latest pending intent,
+   not only this.c.req.url. Keep committed reads separate from pending intent.
+   Clear pending ownership on success, prevention, failure, supersession and
+   disposal. Do not introduce a second global URL store.
+2. Preserve declared browser-owned ClientState/ClientStore drafts during query
+   changes on the same effective page. Normal navigation currently destroys
+   and recreates the page. Either retain it with precise hydration ownership or
+   transfer only local declared fields through a trusted framework path. Remote
+   SSR JSON must not supply client-only draft state. Native File values and
+   store proxies need explicit ownership. Do not preserve drafts across unrelated
+   pages or make failed/superseded navigation restore an older draft.
+3. Hydrate authoritative query-derived resources for retained layouts without
+   issuing a duplicate RPC for the same SSR read. Inspect entry identity,
+   cancellation and service scopes before replacing a pending resource. Preserve
+   layout services and client-only drafts. An older read must not overwrite the
+   new dependency or its URL. Scope/transport changes must rebind appropriately.
+4. Extend the shared Node/workerd browser fixture with overlapping patches,
+   delayed old server reads, a retained layout resource, native draft values,
+   guard prevention, failed navigation, replace and back/forward during pending
+   work. Count actual reads/RPCs and compare both address and rendered state.
+   The current fixture's zero hydration RPCs is not a broader retained-read claim.
+5. Complete bounded cancellation/completion through RT-09 as the integration
+   needs it. Keep its larger cache/scroll/transition/diagnostic matrix open until
+   its own evidence passes. Audit every RT-08 criterion before checking its box.
+   All other 36 unchecked tasks and release gates remain in scope.
+
+Previous starting context after RT-07 (2026-10-03):
 Path parameters and native API query schemas are now separate completed
 contracts. Neither provides page URL state. Core's route builder constructs
 paths only. Framework navigation caches full destinations, including queries.

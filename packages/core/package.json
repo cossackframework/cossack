@@ -29,6 +29,10 @@
       "types": "./dist/shared/runtime-capabilities.d.ts",
       "import": "./dist/shared/runtime-capabilities.js"
     },
+    "./url-state": {
+      "types": "./dist/shared/url-state.d.ts",
+      "import": "./dist/shared/url-state.js"
+    },
     "./routes": {
       "types": "./dist/shared/routes.d.ts",
       "import": "./dist/shared/routes.js"

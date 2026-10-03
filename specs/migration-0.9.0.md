@@ -31,6 +31,19 @@ For CLI explanations, replace a public boundary pattern such as `/404` with the
 exact source path. `COSSACK_ROUTE_BOUNDARY_SOURCE_REQUIRED` lists the candidates.
 Normal public route explanations retain their existing syntax.
 
+## Browser query context and history
+
+Browser `this.c.req.query()` now reads the component's resolved destination.
+During navigation bootstrap, it no longer reads the previous address while
+history waits to commit. `this.c.req.url` exposes that same destination. Initial
+hydration retains the visible browser fragment. Retained layouts receive the
+new URL when their path updates.
+
+Use `defineUrlState` for typed query defaults and serialization. Choose
+`this.navigate(path, { history: 'replace' })` to replace the active history entry.
+Existing calls create a new entry. Read the [URL-state guide](../docs/url-state.md)
+for the API and the remaining RT-08 integration work.
+
 ## Rate-limit configuration and counters reject invalid values
 
 An explicit `rateLimit`/`RATE_LIMIT` now requires a supported non-empty string

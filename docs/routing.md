@@ -121,9 +121,11 @@ file to the intended path under `src/pages`; see the
 [migration guide](../specs/migration-0.9.0.md#file-routes-and-boundary-identities).
 
 The generated browser module contains public patterns and the portable core
-helper. Native API declarations use type-only page references, which disappear
-from browser output. No page runtime imports, schemas or handlers enter it. The
-structural manifest retains source layout ancestry and nearest source boundaries.
+helper. For typed query values, defaults and history updates, read
+[typed URL state](./url-state.md). Native API declarations use type-only page
+references, which disappear from browser output. No page runtime imports,
+schemas or handlers enter it. The structural manifest retains source layout
+ancestry and nearest source boundaries.
 Functional API handlers do not execute component layouts. Method and middleware
 facts remain in `cossack routes --json` inspection. See
 [declared API contracts and generated types](./api-routes.md#declared-input-and-output).

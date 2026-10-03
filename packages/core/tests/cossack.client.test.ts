@@ -102,7 +102,7 @@ describe('Cossack Core: Client-Side', () => {
       // Mock global window and WebSocket
       global.window = {
           __INITIAL_STATE__: mockInitialState,
-          location: { host: 'localhost' },
+          location: { host: 'localhost', href: 'http://localhost/test', pathname: '/test' },
       } as any;
       global.WebSocket = vi.fn(function () {
           return {

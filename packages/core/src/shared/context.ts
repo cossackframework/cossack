@@ -16,6 +16,7 @@ export type HydratedContext = {
         param: (key?: string) => any;
         path: string;
         query: (key?: string) => any;
+        url?: string;
     }
 }
 

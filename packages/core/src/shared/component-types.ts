@@ -52,6 +52,8 @@ export interface SerializedComponentState {
         /** Simplified route path (e.g., /hello/[name] instead of /src/pages/hello/[name]/index.ts) */
         routePath?: string;
         pathname?: string;
+        /** Public path and query for destination-owned hydration. */
+        url?: string;
         params?: Record<string, string>;
         user?: unknown;
     };

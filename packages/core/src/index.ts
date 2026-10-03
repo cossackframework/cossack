@@ -42,6 +42,7 @@ export { ActionValidationError, ClientVisibleError, isActionValidationError, isC
 export * from './shared/rpc-stream';
 
 export * from './client/navigation';
+export * from './shared/url-state';
 
 export { CossackDurableObject } from './shared/CossackDurableObject';
 export {

@@ -119,6 +119,24 @@ The shared AST classifier resolves canonical factories and local aliases before
 client imports load. CLI inspection reports structural facts and unknown dynamic
 contracts without executing application code.
 
+## Page URL state
+
+Core owns immutable query codecs and declarations at `/url-state`. Request
+parsing and URL construction share defaults, strict encoding, repeated-key rules
+and bounds. They import no framework, Node or renderer APIs. Component readers
+cache immutable parsed values by declaration and request/destination URL.
+SSR metadata carries public path/query only. Browser contexts use their owned
+destination before history commits. Initial application/page hydration uses the
+visible URL, including its fragment. Retained layouts receive each destination.
+
+History replacement runs through the existing navigation owner and retains
+unrelated application history state. URL construction preserves unrelated query
+pairs and fragments. These are page query contracts. RPC methods receive query
+values explicitly because their request URLs identify transport endpoints.
+Draft preservation, overlapping patch intent and retained-layout resource
+handoff remain RT-08 work. Bounded completion and navigation diagnostics remain
+RT-09 work.
+
 ## Application socket registry
 
 Framework AppDurableObject reads the same virtual:cossack-pages registry as the

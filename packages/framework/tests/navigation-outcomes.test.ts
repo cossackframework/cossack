@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
     guard: async () => false,
     bootstrapGate: undefined as Promise<void> | undefined,
     bootstrapStarted: false,
+    bootstrapUrls: [] as string[],
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: fixture.registry }));
 vi.mock('virtual:cossack-lang', () => ({ supportedLocales: [], defaultLocale: 'en', loadCatalog: async () => ({}) }));
@@ -30,6 +31,7 @@ class Component {
     updateHead = () => {};
     updatePath(path: string) { this.path = path; }
     async bootstrap(options: any) {
+        if (options.initialState?.metadata?.url) fixture.bootstrapUrls.push(options.initialState.metadata.url);
         if (options.initialState?.pathname === '/slow' && fixture.bootstrapGate) {
             fixture.bootstrapStarted = true;
             await fixture.bootstrapGate;
@@ -62,7 +64,7 @@ fixture.registry.pages['/src/pages/(group)/error/index.ts'] = async () => ({ def
 const { computeRouteIds } = await import('../src/route-ids');
 const ids = computeRouteIds(Object.keys(fixture.registry.pages), []);
 const { createClientApp } = await import('../src/client/app');
-let navigate: (url: string) => Promise<NavigateResult>;
+let navigate: (url: string, options?: import('@cossackframework/core').NavigateOptions) => Promise<NavigateResult>;
 const handleError = (event: Event) => event.preventDefault();
 function documentResponse(route: string, url?: string) {
     const response = new Response(`<title>${route}</title><script>window.__INITIAL_STATE__ = ${JSON.stringify({
@@ -76,6 +78,7 @@ beforeEach(async () => {
     fixture.guard = async () => false;
     fixture.bootstrapGate = undefined;
     fixture.bootstrapStarted = false;
+    fixture.bootstrapUrls = [];
     (globalThis as any).__cossack_invalidatePageCache?.();
     window.history.replaceState({}, '', '/start');
     document.body.innerHTML = '<div id="app"></div>';
@@ -92,6 +95,20 @@ afterEach(() => {
 });
 
 describe('navigation completion behavior', () => {
+    it('boots a destination with its full query URL before committing history', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
+        expect(await navigate('/fast?search=%E9%9B%AA&page=2')).toMatchObject({ outcome: 'completed' });
+        expect(fixture.bootstrapUrls.at(-1)).toBe('/fast?search=%E9%9B%AA&page=2');
+    });
+    it('replaces history explicitly and preserves unrelated history state', async () => {
+        window.history.replaceState({ applicationKey: 'owned' }, '', '/start');
+        const length = window.history.length;
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
+        expect(await navigate('/fast?sort=name#row', { history: 'replace' })).toEqual({ outcome: 'completed', url: '/fast?sort=name#row' });
+        expect(window.history.length).toBe(length);
+        expect(window.history.state.applicationKey).toBe('owned');
+        expect(window.location.search).toBe('?sort=name'); expect(window.location.hash).toBe('#row');
+    });
     const boundaryDocument = (status: number, type: string, source: string, id = ids.routePathToIdMap.get(source)) => new Response(
         `<script>window.__INITIAL_STATE__ = ${JSON.stringify({ routePath: source, componentPath: source,
             componentRouteId: id, pathname: '/missing', _cossackBoundary: { type, source } })}</script>`, { status });
