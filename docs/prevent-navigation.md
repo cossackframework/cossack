@@ -152,8 +152,12 @@ the existing cancelable `cossack:navigation-error` event.
 
 Module imports resolve before the framework changes the live page or layout
 contexts. A superseded page/layout import cannot publish its state. This does
-not undo arbitrary application effects after publication. Interrupted history,
-shared render ownership and the remaining acceptance matrix stay in RT-09.
+not undo arbitrary application effects after publication. Distinct same-URL
+entries retain their owned history positions during restoration and confirmation.
+A newer intent waits for pending restoration, while a newer navigation can
+supersede a confirmed traversal that is still fetching. A late response cannot
+overwrite its replacement. The remaining ownership matrix and full acceptance
+audit stay in RT-09.
 
 ## Development diagnostics
 

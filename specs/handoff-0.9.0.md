@@ -89,28 +89,29 @@ history, guards and rollback add no reads. Pending SSR, rapid changes and stale
 response release have exact count assertions. See the
 [backend-read verification](./release-0.9.0.md#codex-url-backend-reads-2026-10-03).
 
+Same-URL history acceptance also passes on Node/native workerd. Delayed restoration
+queues a newer intent behind the correct entry. A newer navigation supersedes a
+held confirmation response. Entry positions, history length, page/service/File
+drafts and actual backend counts remain correct after release. See the
+[verification](./release-0.9.0.md#codex-same-url-history-2026-10-03).
+
 Continue in this order:
 
-1. Finish the native ownership matrix for provider/runtime/transport. Compare
-   drafts, resource contexts and service disposal on Node and native workerd.
-   User/scope and parent-layout changes already pass. Use decorated route modules.
-   Bare default re-exports still do not establish compiler transport metadata.
-2. Interrupt restoration and confirmation between two history entries with the
-   same URL. Hold an old lifecycle callback, publish a newer intent, then release
-   it. Assert entry identity, DOM, drafts and service context.
-3. Extend the existing HTTP backend read assertions to the new ownership and
-   same-URL interruption scenarios. The current URL-state matrix already verifies
-   fresh SSR, hydration, retained layouts, rollback, cached history and a held response.
-4. Extend diagnostic acceptance alongside the remaining native ownership/history
-   scenarios. The development event stream and controlled ordering/privacy tests
-   are implemented. Do not replace backend read-count assertions with cache events.
-5. Audit every original RT-08/RT-09 criterion before checking either box.
+1. Finish the native ownership matrix for provider/runtime/transport. User/scope
+   and parent-layout changes already pass. Use decorated route modules; bare
+   default re-exports do not establish compiler transport metadata.
+2. Extend the existing backend-read and diagnostic assertions to those remaining
+   ownership cases. Cache events do not substitute for backend read counts.
+3. Audit every original RT-08/RT-09 criterion against the implementation and
+   evidence before checking either task. Same-URL restoration/confirmation and
+   the existing URL-state read-count matrix are now verified, not pending work.
 
 Start in `packages/core/src/client/navigation.ts`,
 `packages/framework/src/client/app.ts` and `packages/renderer/src/cossack-html.ts`.
 Generated browser fixtures live in `packages/cossack/tests/fixtures/`:
 `url-state-acceptance.js` and `navigation-ownership-acceptance.js`.
-Their runner is `packages/cossack/tests/generated-runtime-build.test.js`.
+Same-URL cases live in `same-url-history-acceptance.js`. Their runner is
+`packages/cossack/tests/generated-runtime-build.test.js`.
 
 ## Remaining release scope and known limits
 
@@ -141,7 +142,7 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The backend-read checkpoint repeats all 4 production navigation cases and root/all
+The same-URL checkpoint repeats all 4 production navigation cases and root/all
 11 package type checks after test-only changes. The
 [diagnostic checkpoint](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03)
 records the latest library builds and unit suites.

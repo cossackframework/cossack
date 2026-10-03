@@ -86,6 +86,42 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-same-url-history-2026-10-03"></a>
+## Codex same-URL history (2026-10-03)
+
+Author: **Codex**. Continued after `2f9b7c3`. The generated production fixture now
+uses separate history entries with identical URLs to test two interruption cases
+on Node and native workerd:
+
+- Delay the forward restoration after a guarded native back traversal. A new
+  intent remains pending until restoration reaches the second entry, then pushes
+  from that entry. Restoration performs no resource reads.
+- Confirm the original back traversal and hold its actual SSR response after
+  backend reads complete. A new navigation supersedes it and commits from the
+  first entry. Releasing the old response changes neither history nor live state.
+
+Assertions compare history group/position, application entry markers, history
+length, page/service/File drafts, page/layout resource values and exact backend
+reads. The two identical URLs are distinguished by entry identity throughout.
+The test temporarily wraps history.go to delay restoration, then invokes the
+real method. Confirmation uses an actual intercepted production SSR response.
+Cleanup restores history methods, releases held responses and closes each page.
+
+Verification:
+
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'parses and navigates typed URL state|isolates navigation ownership'`:
+  4 passed, 26 skipped (49 seconds). Both interruption cases ran on each runtime.
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 package checks passed.
+- `git diff --check -- . ':!reports.md'`: passed.
+
+No runtime fix was required. These are test/documentation changes, so library
+builds and full unit/CLI suites retain their prior evidence.
+**No task closes: 22/58 checked, 36 unchecked.** Continue native provider/runtime/
+transport ownership acceptance and the full RT-08/RT-09 criteria audit. The tested
+same-URL scenarios are complete and removed from the active handoff's pending list.
+Versions remain 0.8.3. No live deployment or publication occurred.
+
 <a id="codex-url-backend-reads-2026-10-03"></a>
 ## Codex URL-state backend reads (2026-10-03)
 

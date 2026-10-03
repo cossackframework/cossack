@@ -2141,6 +2141,23 @@ SSR parity, rapid changes, and Unicode. Dependencies: RT-03, RT-07, and RT-09.
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
 
+Codex same-URL history acceptance (2026-10-03): production Node/native workerd
+now exercise two distinct entries with identical URLs. A blocked traversal is
+held before its actual forward restoration. A newer intent waits, then commits
+after the correct owned entry is restored. A separate confirmed traversal holds
+its actual SSR response after backend reads. A newer navigation supersedes that
+response without allowing it to restore or overwrite newer history.
+
+Assertions cover group/position identity, application entry markers, history
+length, page/service/File drafts, page/layout resource values and exact HTTP
+backend read counts. Releasing the held response adds no reads or state changes.
+The history.go wrapper delays only the test's restoration call; native browser
+traversals still choose the entries. See the
+[verification](./release-0.9.0.md#codex-same-url-history-2026-10-03).
+This completes those two planned native interruption scenarios. Continue the
+provider/runtime/transport ownership matrix and audit all original criteria.
+
+
 Codex diagnostics continuation (2026-10-03): development navigation emits
 `cossack:navigation-diagnostic` with version 1, per-document navigation IDs,
 monotonic timestamps and frozen fixed-field records. Phases describe start,

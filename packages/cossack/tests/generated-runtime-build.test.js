@@ -15,6 +15,7 @@ import { writeWorkerOptimisticStreams, checkWorkerOptimisticStreams } from './fi
 import { writeApiContractAcceptance, checkApiContractAcceptance, checkApiContractAssets } from './fixtures/api-contract-acceptance.js';
 import { createTestHarness } from 'wrangler';
 import { writeRouteBoundaryAcceptance, checkRouteBoundaryAcceptance, checkRouteBoundaryBrowser } from './fixtures/route-boundary-acceptance.js';
+import { checkSameUrlHistory } from './fixtures/same-url-history-acceptance.js';
 import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } from './fixtures/url-state-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
 
@@ -116,11 +117,11 @@ it.each(['node', 'cloudflare'])('parses and navigates typed URL state in a gener
     try {
       if (adapter === 'node') {
         const runtime = await productionServer(root);
-        try { await checkUrlStateBrowser(browser, runtime.origin, backend); }
+        try { await checkUrlStateBrowser(browser, runtime.origin, backend); await checkSameUrlHistory(browser, runtime.origin, backend); }
         finally { await runtime.close(); }
       } else {
         const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-        try { const { url } = await harness.listen(); await checkUrlStateBrowser(browser, new URL(url).origin, backend); }
+        try { const { url } = await harness.listen(); await checkUrlStateBrowser(browser, new URL(url).origin, backend); await checkSameUrlHistory(browser, new URL(url).origin, backend); }
         finally { await harness.close(); }
       }
     } finally { await browser.close(); }
