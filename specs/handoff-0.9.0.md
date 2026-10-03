@@ -19,25 +19,17 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
    Next audit Modal, Sheet, Drawer and Popover.
-   Nineteen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
-   RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup, PasswordInput, InputOTP, Combobox, MultiSelect, Calendar and DatePicker.
-   Calendar and DatePicker now share strict date arithmetic, range limits and keyboard/focus behavior.
-   DatePicker owns a native date field; Studio preserves invalid database text through a text editor.
-   See the [date-control checkpoint](./release-0.9.0.md#codex-date-controls-2026-10-04) for evidence and limits.
-   Audit overlay native attribute/event ownership, controlled close behavior, labels and focus restoration next.
-   Earlier checkpoints retain generated Node/workerd DataTable and navigation-focus evidence.
-   The broader component audit and full release matrix remain open.
+   The audit records 19 reviewed foundations and their remaining coverage limits.
+   Completed control work and tests are in the [verification log](./release-0.9.0.md#verification-log),
+   most recently the [date-control checkpoint](./release-0.9.0.md#codex-date-controls-2026-10-04).
+   Modal, Sheet and Drawer have uncommitted shared dialog changes in the working tree.
+   These changes still need review, regression tests, type checks and migration notes.
+   Popover remains pending. The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
-   Existing tools provide bounded, cancellable static inspection through `cossack-mcp --project <directory>`.
-   `cossack docs` and MCP `read_documentation` expose installed exports, command schemas and package-owned guides.
-   `docs --package <name> --symbols --json` or MCP `symbols: true` adds compiler-backed signatures,
-   props, comments and index signatures through a pinned TypeScript 6 API alias.
-   Wildcard exclusions and partial results remain explicit. Runtime availability remains unverified.
-   Typed route URLs, server HTML and four recipe guides include TypeScript examples.
-   Discovery reads example source without executing it. See [usage](../docs/local-agent-tools.md).
-   Use `--symbol <name>` (MCP `symbol`) with `symbols` for one complete contract. Filtered entries list available names.
+   Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).
    Extend [installed-tarball acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04),
    which covers CLI/MCP parity and discovery with Node networking disabled.
+   Discovery reads examples without executing them. Runtime availability remains unverified.
 3. Continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
    Then follow the remaining checklist and linked plans. Close tasks only against their original acceptance criteria.
 

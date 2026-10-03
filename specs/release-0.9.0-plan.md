@@ -101,50 +101,32 @@ Keep their regression coverage throughout the refactor.
 <a id="cli-01"></a>
 ### CLI-01: Lifecycle flags, help, and creation dry runs
 
-Status: Complete. Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only.
-
-Original plan, acceptance criteria and review history:
-[archived CLI-01](./release-0.9.0-plan-archive.md#cli-01).
+Status: Complete. Preserve lifecycle flags, dispatch command help, and make creation dry runs read-only. [Original criteria and review history](./release-0.9.0-plan-archive.md#cli-01).
 
 <a id="cli-02"></a>
 ### CLI-02: Consistent command validation
 
-Status: Complete. Validate command-specific flags and reject ambiguous/unknown options consistently.
-
-Original plan, acceptance criteria and review history:
-[archived CLI-02](./release-0.9.0-plan-archive.md#cli-02).
+Status: Complete. Validate command-specific flags and reject ambiguous/unknown options consistently. [Original criteria and review history](./release-0.9.0-plan-archive.md#cli-02).
 
 <a id="cli-03"></a>
 ### CLI-03: JSON diagnostics and noninteractive execution
 
-Status: Complete. Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands.
-
-Original plan, acceptance criteria and review history:
-[archived CLI-03](./release-0.9.0-plan-archive.md#cli-03).
+Status: Complete. Versioned JSON output, stable diagnostics, consistent exit codes, and noninteractive behavior across commands. [Original criteria and review history](./release-0.9.0-plan-archive.md#cli-03).
 
 <a id="cli-04"></a>
 ### CLI-04: Inspect, check, and explain project behavior
 
-Status: Complete. Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
-
-Original plan, acceptance criteria and review history:
-[archived CLI-04](./release-0.9.0-plan-archive.md#cli-04).
+Status: Complete. Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons. [Original criteria and review history](./release-0.9.0-plan-archive.md#cli-04).
 
 <a id="cli-05"></a>
 ### CLI-05: Complete application recipes
 
-Status: Complete. Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
-
-Original plan, acceptance criteria and review history:
-[archived CLI-05](./release-0.9.0-plan-archive.md#cli-05).
+Status: Complete. Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. [Original criteria and review history](./release-0.9.0-plan-archive.md#cli-05).
 
 <a id="cli-06"></a>
 ### CLI-06: Structured upgrades
 
-Status: Complete. Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-
-Original plan, acceptance criteria and review history:
-[archived CLI-06](./release-0.9.0-plan-archive.md#cli-06).
+Status: Complete. Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. [Original criteria and review history](./release-0.9.0-plan-archive.md#cli-06).
 
 <a id="cli-07"></a>
 ### CLI-07: Local MCP tools
@@ -669,66 +651,42 @@ second mutation. Type tests prove yielded and final result inference.
 <a id="rt-02"></a>
 ### RT-02: Validated server actions
 
-Status: Complete. Validated server actions with input schemas, field errors, and shared resource policies.
-
-Original plan, acceptance criteria and review history:
-[archived RT-02](./release-0.9.0-plan-archive.md#rt-02).
+Status: Complete. Validated server actions with input schemas, field errors, and shared resource policies. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-02).
 
 <a id="rt-03"></a>
 ### RT-03: Observable server resources
 
-Status: Complete. Public server resource pending/error/retry state and typed refresh/invalidation.
-
-Original plan, acceptance criteria and review history:
-[archived RT-03](./release-0.9.0-plan-archive.md#rt-03).
+Status: Complete. Public server resource pending/error/retry state and typed refresh/invalidation. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-03).
 
 <a id="rt-04"></a>
 ### RT-04: State, store, and computed diagnostics
 
-Status: Complete. State/store/computed guidance and serialization/shallow mutation diagnostics.
-
-Original plan, acceptance criteria and review history:
-[archived RT-04](./release-0.9.0-plan-archive.md#rt-04).
+Status: Complete. State/store/computed guidance and serialization/shallow mutation diagnostics. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-04).
 
 <a id="rt-05"></a>
 ### RT-05: Typed tasks and stale-work cancellation
 
-Status: Complete. Typed task dependencies, contextual failures, and cancellation of stale async work.
-
-Original plan, acceptance criteria and review history:
-[archived RT-05](./release-0.9.0-plan-archive.md#rt-05).
+Status: Complete. Typed task dependencies, contextual failures, and cancellation of stale async work. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-05).
 
 <a id="rt-06"></a>
 ### RT-06: Optimistic updates and rollback
 
-Status: Complete. Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
-
-Original plan, acceptance criteria and review history:
-[archived RT-06](./release-0.9.0-plan-archive.md#rt-06).
+Status: Complete. Consistent optimistic updates and rollback under failure, concurrency, and disconnects. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-06).
 
 <a id="rt-07"></a>
 ### RT-07: Typed routes and effective route metadata
 
-Status: Complete. Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection.
-
-Original plan, acceptance criteria and review history:
-[archived RT-07](./release-0.9.0-plan-archive.md#rt-07).
+Status: Complete. Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-07).
 
 <a id="rt-08"></a>
 ### RT-08: Typed URL state
 
-Status: Complete. Typed URL state for search, filtering, sorting and pagination.
-
-Original plan, acceptance criteria and review history:
-[archived RT-08](./release-0.9.0-plan-archive.md#rt-08).
+Status: Complete. Typed URL state for search, filtering, sorting and pagination. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-08).
 
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
 
-Status: Complete. Navigation completion and cache/scroll/transition diagnostics.
-
-Original plan, acceptance criteria and review history:
-[archived RT-09](./release-0.9.0-plan-archive.md#rt-09).
+Status: Complete. Navigation completion and cache/scroll/transition diagnostics. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-09).
 
 <a id="rt-10"></a>
 ### RT-10: Typed form controller
@@ -847,10 +805,7 @@ The auth library remains independent of framework and database. Related task: RT
 <a id="rt-14"></a>
 ### RT-14: Resource authorization policies
 
-Status: Complete. Typed resource authorization policies and client visibility helpers.
-
-Original plan, acceptance criteria and review history:
-[archived RT-14](./release-0.9.0-plan-archive.md#rt-14).
+Status: Complete. Typed resource authorization policies and client visibility helpers. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-14).
 
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
@@ -926,18 +881,12 @@ connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
 <a id="rt-18"></a>
 ### RT-18: Cache and rate-limit contracts
 
-Status: Complete. Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
-
-Original plan, acceptance criteria and review history:
-[archived RT-18](./release-0.9.0-plan-archive.md#rt-18).
+Status: Complete. Cache/rate-limit capability checks, consistent TTL units, and transport coverage. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-18).
 
 <a id="rt-19"></a>
 ### RT-19: Realtime lifecycle and recovery
 
-Status: Complete. Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
-
-Original plan, acceptance criteria and review history:
-[archived RT-19](./release-0.9.0-plan-archive.md#rt-19).
+Status: Complete. Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-19).
 
 <a id="rt-20"></a>
 ### RT-20: SSR and hydration diagnostics
@@ -1120,10 +1069,7 @@ and catalogs never expose secret values. Dependencies: CLI-04, RT-25, and CF-03.
 <a id="rt-25"></a>
 ### RT-25: Runtime capability checks
 
-Status: Complete. Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
-
-Original plan, acceptance criteria and review history:
-[archived RT-25](./release-0.9.0-plan-archive.md#rt-25).
+Status: Complete. Build-time capability checks across Cloudflare, Node, Deno, and Desktop. [Original criteria and review history](./release-0.9.0-plan-archive.md#rt-25).
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
@@ -1405,10 +1351,7 @@ Dependencies: RT-15, RT-16, and CF-01.
 <a id="cf-03"></a>
 ### CF-03: Secrets, placeholders, and binding types
 
-Status: Complete. Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility.
-
-Original plan, acceptance criteria and review history:
-[archived CF-03](./release-0.9.0-plan-archive.md#cf-03).
+Status: Complete. Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation. Remote secret validation remains Wrangler's deployment responsibility. [Original criteria and review history](./release-0.9.0-plan-archive.md#cf-03).
 
 <a id="cf-04"></a>
 ### CF-04: Resource selection and setup
@@ -1438,26 +1381,17 @@ CLI-03, RT-24, RT-25, and CF-01.
 <a id="cf-05"></a>
 ### CF-05: Distributed SSE coordination
 
-Status: Complete. Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
-
-Original plan, acceptance criteria and review history:
-[archived CF-05](./release-0.9.0-plan-archive.md#cf-05).
+Status: Complete. Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams. [Original criteria and review history](./release-0.9.0-plan-archive.md#cf-05).
 
 <a id="cf-06"></a>
 ### CF-06: Built-artifact runtime tests
 
-Status: Complete. Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
-
-Original plan, acceptance criteria and review history:
-[archived CF-06](./release-0.9.0-plan-archive.md#cf-06).
+Status: Complete. Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime. [Original criteria and review history](./release-0.9.0-plan-archive.md#cf-06).
 
 <a id="cf-07"></a>
 ### CF-07: Public-only SSG and protected assets
 
-Status: Complete. Public-only SSG and correct Worker-first routing for protected assets.
-
-Original plan, acceptance criteria and review history:
-[archived CF-07](./release-0.9.0-plan-archive.md#cf-07).
+Status: Complete. Public-only SSG and correct Worker-first routing for protected assets. [Original criteria and review history](./release-0.9.0-plan-archive.md#cf-07).
 
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets
@@ -1541,10 +1475,7 @@ establish supported Node dev behavior. Track the implementation under REL-03.
 <a id="cf-11"></a>
 ### CF-11: Tracked credential removal
 
-Status: Complete. Remove tracked credential values; report any required external credential rotation without exposing values.
-
-Original plan, acceptance criteria and review history:
-[archived CF-11](./release-0.9.0-plan-archive.md#cf-11).
+Status: Complete. Remove tracked credential values; report any required external credential rotation without exposing values. [Original criteria and review history](./release-0.9.0-plan-archive.md#cf-11).
 
 ## Release gates
 
@@ -1555,10 +1486,7 @@ or the final release audit.
 <a id="rel-01"></a>
 ### REL-01: Reported regressions
 
-Status: Complete. Fix reports.md issues and verify package/SSG regressions.
-
-Original plan, acceptance criteria and review history:
-[archived REL-01](./release-0.9.0-plan-archive.md#rel-01).
+Status: Complete. Fix reports.md issues and verify package/SSG regressions. [Original criteria and review history](./release-0.9.0-plan-archive.md#rel-01).
 
 <a id="rel-02"></a>
 ### REL-02: Executable docs and published packages
