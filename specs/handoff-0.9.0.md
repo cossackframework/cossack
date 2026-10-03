@@ -2,7 +2,38 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex nested drafts (2026-10-03).
+> Latest checkpoint: Codex inactive cache (2026-10-03).
+> Author: **Codex**. Continued after `34592fd`. Read the
+> [verification](./release-0.9.0.md#codex-inactive-cache-2026-10-03),
+> [RT-09 next steps](./release-0.9.0-plan.md#rt-09) and
+> [draft contract](../docs/url-state.md).
+>
+> Hidden cache branches now survive repeated navigation as local draft
+> capabilities. Core forks unconsumed tokens without reading disposed owners;
+> copies keep class binding and independent plain graphs. Renderer recapture
+> rebases parent identities and separates destination/rollback tokens. Old hidden
+> instances retire; matching branches get fresh owners before mount. Ordinary
+> cache toggles retain live DOM. Unit tests cover cache(null), rejection boundaries
+> and isolated forks. Node/native workerd browsers verify hidden branches across
+> navigation/rollback, saved-proxy writes, File drafts and unrelated-page resets.
+>
+> Renderer: 282 tests. Full core: 1,434, plus a final 10-case capability check.
+> Framework: 1,439. Full CLI: 608/44 files, all passing, including the final
+> production Node/native workerd fixture. All package builds passed. Exact
+> commands are in the linked checkpoint. Root TypeScript and all 11 package
+> type checks passed. No owned test/build process remains.
+>
+> **No task closes: 22/58 checked, 36 unchecked.** Next finish native ownership
+> changes, interrupted same-URL restoration/confirmation, actual backend read
+> counts and navigation diagnostics. The RT-09 plan explains the tests and
+> remaining acceptance gaps. Preserve all other tasks; versions remain 0.8.3
+> until REL-04. Do not treat a focused slice as release completion.
+>
+> Preserve reports.md/.zcodeignore. No push, publication, live cloud change,
+> external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex nested drafts (2026-10-03).
 > Author: **Codex**. Continued after `3af248d`. Read the
 > [verification](./release-0.9.0.md#codex-nested-drafts-2026-10-03),
 > [RT-09 next steps](./release-0.9.0-plan.md#rt-09) and

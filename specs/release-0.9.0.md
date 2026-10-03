@@ -86,6 +86,64 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-inactive-cache-2026-10-03"></a>
+## Codex inactive cache (2026-10-03)
+
+Author: **Codex**. Continued after `34592fd`. Inactive cache branches were absent
+from rendered-tree checkpoints. A branch hidden across navigation lost its draft;
+reusing one pending token for destination and rollback would also consume the
+rollback's values.
+
+Core now forks unconsumed local capabilities without reading their former owner.
+Forks keep class binding and copy plain draft graphs independently; File/native
+values retain identity. Unknown, consumed and wrong-class capabilities reject.
+Renderer checkpoints capture hidden stashes and can fork remaining pending trees
+on another navigation, rebasing parent identities to the current owners.
+
+Navigation retires hidden instances and keeps their declared draft capabilities
+until matching branches become visible. Restoration precedes mount. Ordinary
+cache toggles retain live DOM. Both template placeholders and cache(null) work.
+Cache exit, changed key/class/parent/scope, explicit discard and publication
+revocation reject pending restoration. Destroyed owners stay terminal. The renderer
+still imports no core or framework implementation.
+
+Unit tests prove two owner replacements, independent rollback copies, rejection
+boundaries, class-bound one-use tokens, saved-proxy isolation and File identity.
+The renderer fixture throws if a disposed owner is read. Generated production
+Node/native workerd browsers hide two page branches, navigate repeatedly and roll
+back, write through an old proxy, then reveal both drafts and a cached File.
+Leaving and returning resets the cached fields.
+
+Verification on 2026-10-03:
+
+- Final renderer: `pnpm --filter @cossackframework/renderer exec vitest run`:
+  **282 / 21 files**, including 21 navigation-draft cases.
+- Full core: `pnpm --filter @cossackframework/core exec vitest run`:
+  **1,434 / 85 files**. After the constructor comparison was adjusted for
+  declaration emission, the final `tests/url-state-navigation.test.ts` run passed
+  all **10 tests**, including fork rejection and graph/File behavior.
+- Renderer, core and framework builds passed, including framework SSG.
+- Framework: `pnpm --filter @cossackframework/framework exec vitest run`:
+  **1,439 / 68 files**.
+- Generated production Node/native workerd browser matrix:
+  `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'parses and navigates typed URL state'`:
+  **2 passed / 26 skipped**. The full CLI run below also includes the final
+  additional cached-field reset assertions.
+- Final full CLI: `pnpm --filter cossack exec vitest run --maxWorkers=2`:
+  **608 / 44 files**, 297 seconds. No concurrent heavy test/build job ran during
+  this suite. The creation case that timed out at the previous checkpoint passes.
+- Final `pnpm tsc --noEmit` and `pnpm typecheck`: passed, all **11 packages**.
+- `git diff --check -- . ':!reports.md'`: passed. All 58 task IDs and checkbox
+  states match the previous commit. No owned test/build process remains.
+
+No live deployment, publication, push or external message was performed.
+
+**No release checkbox closes: 22/58 checked, 36 unchecked.** Native ownership
+changes, interrupted same-URL history, actual backend resource-read counts and
+navigation diagnostics remain open. The
+[detailed RT-09 plan](./release-0.9.0-plan.md#rt-09) lists the next actions.
+Versions stay 0.8.3 until REL-04.
+
 <a id="codex-nested-drafts-2026-10-03"></a>
 ## Codex nested drafts (2026-10-03)
 

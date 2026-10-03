@@ -696,15 +696,36 @@ interface Part {
 
 type DraftTree = { identity: object; parts: (PartDraft | undefined)[] };
 type PartDraft = {
-  component?: { instance: CossackElement; parent: CossackElement | null | undefined; scope: unknown; token?: object };
+  component?: { instance: CossackElement; clazz: Function; parent: CossackElement | null | undefined; scope: unknown; token?: object; fork?: (token: object) => object | undefined };
   template?: DraftTree;
-  children: PartDraft[];
+  cached: Map<object, DraftTree>;
+  children: (PartDraft | undefined)[];
   keys: unknown[];
   keySet: boolean;
   key: unknown;
 };
 type DraftContext = { active: boolean; current: () => boolean; owners: Map<CossackElement, CossackElement> };
 type DraftBranch = { tree: DraftTree; context: DraftContext };
+const forkDraftTree = (tree: DraftTree, context: DraftContext): DraftTree => ({
+  identity: tree.identity,
+  parts: tree.parts.map(snapshot => {
+    if (!snapshot) return undefined;
+    let component = snapshot.component;
+    if (component) {
+      const token = component.token ? component.fork?.(component.token) : undefined;
+      // Unknown or consumed capabilities cannot be shared with another checkpoint.
+      if (component.token && !token) return undefined;
+      component = { ...component, token,
+        instance: context.owners.get(component.instance) ?? component.instance,
+        parent: component.parent ? context.owners.get(component.parent) ?? component.parent : component.parent };
+    }
+    return { ...snapshot, component,
+      template: snapshot.template ? forkDraftTree(snapshot.template, context) : undefined,
+      cached: new Map([...snapshot.cached].map(([identity, cached]) => [identity, forkDraftTree(cached, context)])),
+      children: forkDraftTree({ identity: tree.identity, parts: snapshot.children }, context).parts,
+      keys: [...snapshot.keys] };
+  }),
+});
 const pendingDrafts = new WeakMap<Node, DraftBranch>();
 const captureParts = (parts: Part[]): (PartDraft | undefined)[] => parts.map(part => part instanceof NodePart ? part.captureDraft() : undefined);
 const applyDrafts = (parts: Part[], branch: DraftBranch | undefined, identity: object) => {
@@ -762,12 +783,21 @@ const templateIdentity = (result: TemplateResult): object => {
 class NodePart implements Part {
   private _draft?: { snapshot: PartDraft; context: DraftContext };
   private _componentDraft?: DraftBranch;
+  private _cacheDrafts = new Map<object, DraftBranch>();
 
   captureDraft(): PartDraft {
     const instance = this.componentInstance as any;
+    const cached = new Map<object, DraftTree>();
+    for (const [identity, branch] of this._cacheDrafts) {
+      if (branch.context.active && branch.context.current()) cached.set(identity, forkDraftTree(branch.tree, branch.context));
+    }
+    for (const [identity, entry] of this._cacheMap) {
+      if (identity !== this._cachedTemplateIdentity) cached.set(identity, { identity, parts: captureParts(entry.parts) });
+    }
     return {
-      component: instance ? { instance, parent: instance.__parent, scope: instance._getServiceScope?.(), token: instance._frameworkCaptureClientDraft?.() } : undefined,
+      component: instance ? { instance, clazz: instance.constructor, parent: instance.__parent, scope: instance._getServiceScope?.(), token: instance._frameworkCaptureClientDraft?.(), fork: instance.constructor._frameworkForkClientDraft?.bind(instance.constructor) } : undefined,
       template: this._cachedParts && this._cachedTemplateIdentity ? { identity: this._cachedTemplateIdentity, parts: captureParts(this._cachedParts) } : undefined,
+      cached,
       children: this._childParts.map(part => part.captureDraft()), keys: [...this._partKeys],
       keySet: this._keySet, key: this._key,
     };
@@ -782,7 +812,7 @@ class NodePart implements Part {
     this._componentDraft = undefined;
     if (!draft || !draft.context.active || !draft.context.current()) return;
     const previous = draft.snapshot.component;
-    if (!previous || previous.instance.constructor !== instance.constructor) return;
+    if (!previous || previous.clazz !== instance.constructor) return;
     const parent = previous.parent && (draft.context.owners.get(previous.parent) ?? previous.parent);
     if (parent !== instance.__parent || previous.scope !== (instance as any)._getServiceScope?.()) return;
     if (instance !== previous.instance && previous.token && !(instance as any)._frameworkRestoreClientDraft?.(previous.token)) return;
@@ -844,6 +874,7 @@ class NodePart implements Part {
 
   update(value: unknown) {
     try {
+      if (!(value instanceof CacheResult) && !(value instanceof GuardResult)) this._cacheDrafts.clear();
       if (this._hydrating) {
         this._hydrating = false;
         this._hydrateValue(value);
@@ -855,12 +886,14 @@ class NodePart implements Part {
       // intact (in-place update) instead of recomputing.
       if (value instanceof GuardResult) {
         value = this._resolveGuard(value);
+        if (!(value instanceof CacheResult)) this._cacheDrafts.clear();
       }
       // `cache`: keep previously-rendered template subtrees alive across swaps so
       // toggling back to a cached template reattaches its DOM/parts rather than
       // rebuilding. Non-template values are unwrapped and handled normally.
       let fromCache = false;
       if (value instanceof CacheResult) {
+        this.prepareCacheDrafts();
         const inner = value.value;
         if (isTemplateResult(inner)) {
           // The cache fast-path returns early, which would otherwise skip the
@@ -890,6 +923,10 @@ class NodePart implements Part {
       // the current subtree so it can be restored later, then clear bookkeeping.
       if (fromCache && this._cacheCurrent) {
         this._stashCurrent();
+        if (this._draft) {
+          for (const entry of this._cacheMap.values()) disposeFailedParts(entry.parts);
+          this._cacheMap.clear();
+        }
         this._cacheCurrent = null;
       }
       if (this.componentInstance && (!isComponentResult(value) || value.clazz !== this.componentInstance.constructor)) {
@@ -1320,6 +1357,26 @@ class NodePart implements Part {
     this.updateNode(result.template);
   }
 
+  private prepareCacheDrafts() {
+    for (const [key, branch] of this._cacheDrafts) {
+      if (!branch.context.active || !branch.context.current()) this._cacheDrafts.delete(key);
+    }
+    if (this._draft && this._draft.context.active && this._draft.context.current()) {
+      const { snapshot, context } = this._draft;
+      // Hidden instances still belong to the outgoing tree. Keep their captured
+      // drafts, not live tasks/DOM owned by a page that may now be retired.
+      for (const [key, entry] of this._cacheMap) {
+        if (key === this._cachedTemplateIdentity) continue;
+        disposeFailedParts(entry.parts);
+        this._cacheMap.delete(key);
+      }
+      for (const [key, tree] of snapshot.cached) {
+        this._cacheDrafts.set(key, { tree, context });
+      }
+      if (snapshot.template) this._cacheDrafts.set(snapshot.template.identity, { tree: snapshot.template, context });
+    }
+  }
+
   /**
    * `cache()` render path. Keeps previously-rendered template subtrees (their
    * DOM nodes AND Part tree) alive across template swaps so toggling back
@@ -1336,9 +1393,11 @@ class NodePart implements Part {
    */
   private updateCache(result: TemplateResult) {
     const identity = templateIdentity(result);
+    const recovery = this._cacheDrafts.get(identity);
+    this._cacheDrafts.delete(identity);
     if (this._cacheCurrent === identity && this._cachedParts) {
       // Same template → update parts in place.
-      if (this._draft?.snapshot.template) applyDrafts(this._cachedParts, { tree: this._draft.snapshot.template, context: this._draft.context }, identity);
+      applyDrafts(this._cachedParts, recovery, identity);
       this._cachedParts.forEach((part, i) => {
         part.update(result.values[i]);
       });
@@ -1350,6 +1409,13 @@ class NodePart implements Part {
     // cache-routed) render that a previous value left here.
     if (this._cacheCurrent || this._cachedParts) {
       this._stashCurrent();
+      if (this._draft) {
+        for (const [key, entry] of this._cacheMap) {
+          if (key === identity) continue;
+          disposeFailedParts(entry.parts);
+          this._cacheMap.delete(key);
+        }
+      }
     }
 
     const entry = this._cacheMap.get(identity);
@@ -1364,7 +1430,7 @@ class NodePart implements Part {
       }
       this._cachedTemplateIdentity = identity;
       this._cachedParts = entry.parts;
-      if (this._draft?.snapshot.template) applyDrafts(entry.parts, { tree: this._draft.snapshot.template, context: this._draft.context }, identity);
+      applyDrafts(entry.parts, recovery, identity);
       for (let i = 0; i < result.values.length; i++) {
         if (entry.parts[i]) entry.parts[i]!.update(result.values[i]);
       }
@@ -1374,7 +1440,7 @@ class NodePart implements Part {
       // (_cachedParts/Strings); we must NOT call _clearTemplateCache() here
       // because that would also wipe the just-stashed `cache()` entries.
       this.clear();
-      this.updateNode(result);
+      this.updateNode(result, recovery ?? null);
     }
     this._cacheCurrent = identity;
   }
@@ -1464,6 +1530,7 @@ class NodePart implements Part {
   dispose() {
     this._draft = undefined;
     this._componentDraft = undefined;
+    this._cacheDrafts.clear();
     this.clear();
     this._clearTemplateCache();
     // Tear down the `cache()` stash: its parts hold detached subtrees (and any

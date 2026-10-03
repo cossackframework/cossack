@@ -107,8 +107,14 @@ descendants receive their drafts before their mount hooks run. Retained live
 instances keep their current values. After failed publication, rollback can
 recreate destroyed children and restore their captured drafts; it never reconnects
 a destroyed instance. A newer publication revokes pending restoration callbacks.
-This covers the rendered tree and active `cache()` template. Inactive cached
-subtrees and the wider ownership-change matrix still need acceptance coverage.
+Inactive `cache()` branches participate too, including branches hidden by
+`cache(null)` across multiple navigations. Navigation retires their old instances
+and keeps independent local draft capabilities for destination and rollback.
+When a matching branch becomes visible, a fresh instance receives its drafts
+before mount. Ordinary cache toggles within one owner still retain live DOM.
+Leaving the cache, changing its key or ownership, or discarding the checkpoint
+drops pending restoration. Only declared drafts transfer; arbitrary DOM state
+and external effects do not.
 
 Unrelated pages and changed ownership start with new drafts. New page tasks,
 transports, onMount and clientInit start at publication. Framework preparation
@@ -132,8 +138,8 @@ previous owned entry. Read the [guard contract](./prevent-navigation.md#guards-d
 for confirmation and history ownership.
 
 Navigation has a 30-second completion budget and restores framework-owned state
-on failure before history commit. Inactive cached drafts, broader ownership
-changes and the resource-read audit remain open in the
+on failure before history commit. Broader ownership changes, interrupted history
+and the resource-read audit remain open in the
 [implementation plan](../specs/release-0.9.0-plan.md#rt-08).
 
 ## Parsing and defaults

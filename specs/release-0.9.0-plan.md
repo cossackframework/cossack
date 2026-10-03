@@ -2303,6 +2303,39 @@ complete them. Continue with:
    events and audit every original RT-08/RT-09 criterion. Preserve all release IDs
    and other unchecked tasks. Versions stay 0.8.3 until REL-04.
 
+Codex inactive-cache checkpoint (2026-10-03), after `34592fd`:
+the inactive-branch work above is implemented. Core forks unconsumed capabilities
+without reading a disposed owner. Each fork keeps its original class binding and
+snapshots the plain graph independently; File/native values keep opaque identity.
+Renderer captures hidden live stashes and pending restored branches. On another
+navigation, it forks remaining tokens and rebases parent ownership to the current
+replacement, so destination and rollback cannot consume one another's values.
+
+Navigation retires old hidden instances and stores draft checkpoints for later
+activation. Ordinary cache toggles retain their existing live-DOM behavior.
+Restoration covers both placeholder templates and cache(null). Changed class,
+parent, scope or key, explicit discard, cache exit and revoked publication reject
+pending restoration. Unit fixtures trap any attempt to recapture a destroyed
+owner; two-owner replacements and independent rollback copies pass. Actual
+Node/native workerd browsers hide two branches, navigate repeatedly and roll back,
+write through a saved old proxy, then reveal both drafts and a File value. Leaving
+and returning resets unrelated cached drafts. See the
+[verification](./release-0.9.0.md#codex-inactive-cache-2026-10-03).
+
+Next actions remain implementation work, not optional release polish:
+
+1. Finish the actual browser ownership matrix (user/scopeKey, runtime/provider,
+   transport and parent layouts), including service disposal and nested resource
+   context. Unit rejection by identity is not the whole native-runtime proof.
+2. Exercise interruption while restoring/confirming same-URL history entries and
+   during nested/keyed render or cleanup failures. Preserve entry metadata and
+   distinguish committed, superseded and failed outcomes without replaying actions.
+3. Count actual backend resource reads and finish cache/layout/scroll/fragment/
+   transition diagnostics. Zero extra /crpc requests alone is insufficient.
+4. Audit all original RT-08/RT-09 criteria and every remaining release gate before
+   closure. All 58 IDs remain in order, with 22 checked and 36 unchecked. Keep
+   versions at 0.8.3 until REL-04.
+
 Done when: Browser tests cover rapid links, back/forward, navigation guards,
 errors, redirects, reused layouts, fragments, and unavailable transition APIs.
 Promises always settle and disposed pages do not receive late updates.

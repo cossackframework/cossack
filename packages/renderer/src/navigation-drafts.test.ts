@@ -8,14 +8,27 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function fixture() {
     const instances: Draft[] = [];
+    const capabilities = new WeakMap<object, { clazz: Function; text: string }>();
     class Draft extends CossackElement {
         text = '';
         destroyed = false;
         scope: unknown;
         _setServiceScope(scope: unknown) { this.scope = scope; }
         _getServiceScope() { return this.scope; }
-        _frameworkCaptureClientDraft() { return { text: this.text }; }
-        _frameworkRestoreClientDraft(token: { text: string }) { this.text = token.text; return true; }
+        static _frameworkForkClientDraft(token: object) {
+            const draft = capabilities.get(token);
+            if (!draft || draft.clazz !== this) return undefined;
+            const fork = {}; capabilities.set(fork, { ...draft }); return fork;
+        }
+        _frameworkCaptureClientDraft() {
+            if (this.destroyed) throw new Error('read destroyed owner');
+            const token = {}; capabilities.set(token, { clazz: this.constructor, text: this.text }); return token;
+        }
+        _frameworkRestoreClientDraft(token: object) {
+            const draft = capabilities.get(token);
+            if (!draft || draft.clazz !== this.constructor) return false;
+            capabilities.delete(token); this.text = draft.text; return true;
+        }
         connectedCallback() { instances.push(this); super.connectedCallback(); }
         destroy() { this.destroyed = true; }
         render() { return html`<span>${this.text}</span>`; }
@@ -31,6 +44,89 @@ function fixture() {
 }
 
 describe('local renderer draft checkpoints', () => {
+    it.each(['scope', 'parent', 'class', 'key', 'revocation', 'discard', 'plain-value'])('rejects hidden recovery after %s changes', async mode => {
+        const f = fixture();
+        const branch = (clazz = f.Draft, parent = f.parent, scope = f.scope) => html`${f.child(clazz, parent, scope)}`;
+        let ownerKey = 'old';
+        const view = (value: unknown) => f.template(key(ownerKey, html`${cache(value)}`));
+        render(view(branch()), f.container); await settle();
+        f.instances[0].text = 'hidden private draft';
+        render(view(null), f.container);
+        const snapshot = captureRenderDrafts(f.container);
+        render(html`elsewhere`, f.container);
+        let current = true;
+        snapshot.restore(() => current);
+        render(view(null), f.container);
+        if (mode === 'key') ownerKey = 'new';
+        if (mode === 'revocation') current = false;
+        if (mode === 'discard') snapshot.discard();
+        if (mode === 'plain-value') render(f.template('uncached'), f.container);
+        class Other extends f.Draft {}
+        render(view(branch(mode === 'class' ? Other : f.Draft,
+            mode === 'parent' ? new CossackElement() : f.parent,
+            mode === 'scope' ? {} : f.scope)), f.container);
+        await settle();
+        expect(f.instances.at(-1)!.text).toBe('');
+    });
+
+    it('restores branches hidden by cache(null) and keeps checkpoints independent', async () => {
+        const f = fixture();
+        const branch = () => html`${f.child()}`;
+        const view = (visible: boolean) => f.template(cache(visible ? branch() : null));
+        render(view(true), f.container); await settle();
+        f.instances[0].text = 'hidden';
+        render(view(false), f.container);
+        const first = captureRenderDrafts(f.container);
+        render(html`elsewhere`, f.container);
+        first.restore(() => true);
+        render(view(false), f.container);
+        const second = captureRenderDrafts(f.container);
+        render(html`elsewhere again`, f.container);
+        second.restore(() => true);
+        render(view(false), f.container);
+        render(view(true), f.container); await settle();
+        expect(f.instances.at(-1)!.text).toBe('hidden');
+    });
+
+    it('preserves hidden branches through two owner replacements with independent rollback capabilities', async () => {
+        const f = fixture();
+        const a = (parent: CossackElement) => html`<section>${f.child(f.Draft, parent)}</section>`;
+        const b = (parent: CossackElement) => html`<aside>${f.child(f.Draft, parent)}</aside>`;
+        const hidden = () => html`<p>hidden</p>`;
+        const view = (branch: unknown) => f.template(cache(branch));
+        render(view(a(f.parent)), f.container); await settle();
+        f.instances[0].text = 'A';
+        render(view(b(f.parent)), f.container); await settle();
+        f.instances[1].text = 'B';
+        render(view(hidden()), f.container);
+        let generation = 0;
+        const first = captureRenderDrafts(f.container);
+        const secondOwner = new CossackElement();
+        generation = 1;
+        first.restore(() => generation === 1, [[f.parent, secondOwner]]);
+        render(view(hidden()), f.container);
+        expect(f.instances.every(instance => instance.destroyed)).toBe(true);
+        // A later snapshot must fork remaining capabilities, never read the
+        // disposed owners or share a token between destination and rollback.
+        const rollback = captureRenderDrafts(f.container);
+        const forward = captureRenderDrafts(f.container);
+        const thirdOwner = new CossackElement();
+        generation = 2;
+        forward.restore(() => generation === 2, [[secondOwner, thirdOwner]]);
+        render(view(hidden()), f.container);
+        render(view(a(thirdOwner)), f.container); await settle();
+        expect(f.instances.at(-1)!.text).toBe('A');
+        f.instances.at(-1)!.text = 'destination edit';
+        render(html`failed destination`, f.container);
+        generation = 1;
+        rollback.restore(() => generation === 1);
+        render(view(hidden()), f.container);
+        render(view(b(secondOwner)), f.container); await settle();
+        expect(f.instances.at(-1)!.text).toBe('B');
+        render(view(a(secondOwner)), f.container); await settle();
+        expect(f.instances.at(-1)!.text).toBe('A');
+    });
+
     it('restores nested drafts into fresh matching owners before their first render', async () => {
         const f = fixture();
         class Parent extends f.Draft {

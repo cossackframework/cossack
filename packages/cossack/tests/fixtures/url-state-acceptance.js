@@ -6,7 +6,7 @@ export async function writeUrlStateAcceptance(root) {
   const directory = path.join(root, 'src/pages/list'); await fs.mkdir(directory, { recursive: true });
   await fs.writeFile(path.join(root, 'src/NestedDraft.ts'), `
     import {Cossack,ClientStore,ClientState,Client} from '@cossackframework/core';
-    import {html,component} from '@cossackframework/renderer';
+    import {html,component,cache} from '@cossackframework/renderer';
     class Leaf extends Cossack {
       props={slot:''};
       @ClientStore() draft={text:''};
@@ -14,6 +14,7 @@ export async function writeUrlStateAcceptance(root) {
       @Client() onMount(){
         const events=(window as any).__nestedMounts??=[];
         events.push({slot:this.props.slot,text:this.draft.text,file:this.file?.name??''});
+        if(this.props.slot==='cache-a' && !(window as any).__lateCachedDraft){const draft=this.draft;(window as any).__lateCachedDraft=()=>{draft.text='obsolete hidden owner';};}
       }
       render(){return html\`<input id=\${this.props.slot+'-leaf'} .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
         <input type="file" id=\${this.props.slot+'-file'} @change=\${(event:Event)=>{this.file=(event.target as HTMLInputElement).files?.[0];}}>
@@ -24,6 +25,15 @@ export async function writeUrlStateAcceptance(root) {
       @ClientStore() draft={text:''};
       render(){return html\`<aside><input id=\${this.props.slot+'-outer'} .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
         \${component(Leaf,{slot:this.props.slot})}</aside>\`;}
+    }
+    export class CachedDraft extends Cossack {
+      @ClientState() branch='a';
+      render(){return html\`<div>
+        <button id="show-cache-a" @click=\${()=>{this.branch='a';}}>A</button>
+        <button id="show-cache-b" @click=\${()=>{this.branch='b';}}>B</button>
+        <button id="hide-cache" @click=\${()=>{this.branch='hidden';}}>Hide</button>
+        \${cache(this.branch==='a'?html\`<section>\${component(NestedDraft,{slot:'cache-a'})}</section>\`:
+          this.branch==='b'?html\`<aside>\${component(NestedDraft,{slot:'cache-b'})}</aside>\`:null)}</div>\`;}
     }
   `);
   await fs.writeFile(path.join(root, 'src/App.ts'), `
@@ -99,7 +109,7 @@ export async function writeUrlStateAcceptance(root) {
     import {Cossack,Page,Client,ClientState,ClientStore,PreventNavigation,server$} from '@cossackframework/core';
     import {html,component} from '@cossackframework/renderer';
     import {filters} from '../../filters';
-    import {NestedDraft} from '../../NestedDraft';
+    import {NestedDraft,CachedDraft} from '../../NestedDraft';
     @Page({transport:'http'}) export default class List extends Cossack {
       @ClientState() blocked=false;
       @ClientState() guardChecks=0;
@@ -134,7 +144,7 @@ export async function writeUrlStateAcceptance(root) {
         <span id="query-outcome">\${this.outcome}</span>
         <button id="rapid-query" @click=\${this.rapid}>Rapid</button><button id="leave-list" @click=\${this.leave}>Leave</button>
         <button id="change-query" @click=\${this.change}>Change</button><button id="replace-query" @click=\${this.replace}>Replace</button>
-        \${component(NestedDraft,{slot:'page-child'})}</main>\`;}
+        \${component(NestedDraft,{slot:'page-child'})}\${component(CachedDraft)}</main>\`;}
     }
   `);
 }
@@ -162,8 +172,18 @@ export async function checkUrlStateBrowser(browser, origin) {
     }
     await page.locator('#page-child-file').setInputFiles({name:'nested.txt',mimeType:'text/plain',buffer:Buffer.from('nested draft')});
     await checkNestedDrafts();
+    await page.locator('#cache-a-outer').fill('cached A outer');
+    await page.locator('#cache-a-leaf').fill('cached A leaf');
+    await page.locator('#cache-a-file').setInputFiles({name:'cached.txt',mimeType:'text/plain',buffer:Buffer.from('cached draft')});
+    await page.locator('#show-cache-b').click();
+    await page.locator('#cache-b-outer').fill('cached B outer');
+    await page.locator('#cache-b-leaf').fill('cached B leaf');
+    await page.locator('#hide-cache').click();
+    await browserExpect(page.locator('#cache-a-leaf')).toHaveCount(0);
+    await browserExpect(page.locator('#cache-b-leaf')).toHaveCount(0);
     await page.locator('#remember-draft').click();
     await page.locator('#change-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
+    await page.evaluate(() => window.__lateCachedDraft());
     // An old closure still holds the disposed page's proxy. Force a new-owner
     // render so shared raw-target corruption cannot hide behind stale DOM.
     await page.evaluate(() => { window.__lateDraftWrite(); delete window.__lateDraftWrite; });
@@ -218,6 +238,14 @@ export async function checkUrlStateBrowser(browser, origin) {
     await page.evaluate(() => { window.__queryTestApp.__updatePromise=new Promise(()=>{}); });
     await page.locator('#replace-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:3:price:a,b');
     expect(await page.evaluate(() => history.length)).toBe(length); await settled(); expect(rpc).toHaveLength(0);
+    await page.locator('#show-cache-a').click();
+    await browserExpect(page.locator('#cache-a-outer')).toHaveValue('cached A outer');
+    await browserExpect(page.locator('#cache-a-leaf')).toHaveValue('cached A leaf');
+    await browserExpect(page.locator('#cache-a-filename')).toHaveText('cached.txt');
+    await page.locator('#show-cache-b').click();
+    await browserExpect(page.locator('#cache-b-outer')).toHaveValue('cached B outer');
+    await browserExpect(page.locator('#cache-b-leaf')).toHaveValue('cached B leaf');
+    await page.locator('#hide-cache').click();
     const copied = await browser.newPage();
     try {
       const response = await copied.goto(page.url()); expect(response.status()).toBe(200);
@@ -310,6 +338,9 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#page-child-outer')).toHaveValue('');
     await browserExpect(page.locator('#page-child-leaf')).toHaveValue('');
     await browserExpect(page.locator('#layout-child-leaf')).toHaveValue('');
+    await browserExpect(page.locator('#cache-a-outer')).toHaveValue('');
+    await browserExpect(page.locator('#cache-a-leaf')).toHaveValue('');
+    await browserExpect(page.locator('#cache-a-filename')).toHaveText('');
     await page.evaluate(async () => {
       window.__scopeEvents=[];
       window.__allowRetire=true;

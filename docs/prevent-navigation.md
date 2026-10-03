@@ -102,8 +102,10 @@ The deadline settles the framework's wait. It cannot stop arbitrary application
 I/O, synchronous blocking code, or undo effects from a custom render or mount
 hook that already ran. Before publication, the renderer captures declared drafts
 from the rendered child tree. Rollback restores them into matching fresh owners
-before mount; destroyed children stay destroyed. Inactive cached subtrees and
-the wider ownership matrix still need their RT-08/RT-09 acceptance audit.
+before mount; destroyed children stay destroyed. Inactive cached branches retain
+local draft capabilities until a matching branch is shown, including across
+another navigation. The wider ownership and history matrix still needs its
+RT-08/RT-09 acceptance audit.
 
 During rollback, abandoned components become destroyed and cancel their tasks
 immediately. During both rollback and successful retirement, their owned service

@@ -147,8 +147,13 @@ Core consumes each draft capability before the replacement child initializes
 state and mounts. Separate destination and rollback checkpoints prevent a failed
 publication from consuming rollback values. Publication predicates reject late
 descendant restores. No serialized state can create a draft checkpoint, and no
-destroyed instance is reactivated. The active cache template participates;
-inactive cached branches remain part of the pending acceptance work.
+destroyed instance is reactivated. Active and inactive cache templates participate.
+Pending inactive branches hold local capabilities instead of live outgoing DOM
+or tasks. Core can fork an unconsumed, class-bound capability into independent
+plain draft graphs without reading its former owner. Renderer recapture rebases
+parent identities and forks those pending trees for another destination/rollback
+pair. A consumed, unknown or wrong-class capability cannot be forked. Cache exit,
+key/owner mismatch, explicit discard and publication revocation prevent restoration.
 Retained layouts keep their service instances and browser drafts. Matching SSR
 resource entries replace the previous map before query dependencies change;
 entry identity rejects late results. This does not abort application I/O.

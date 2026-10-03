@@ -16,6 +16,30 @@ const state = (page = 1) => ({ public: { result: 'SSR' }, metadata: { componentI
 beforeEach(() => window.history.replaceState({}, '', '/list?page=1'));
 afterEach(() => { vi.restoreAllMocks(); Cossack._onUpdateUrlState = undefined; });
 
+it('forks unconsumed class-bound capabilities after owner disposal with independent plain graphs', async () => {
+    const previous = new Inherited();
+    await previous.bootstrap({ initialState: state(), skipInit: true, deferMount: true });
+    const file = new File(['hidden'], 'hidden.txt');
+    previous.file = file; previous.draft.text = 'hidden';
+    const oldProxy = previous.draft;
+    const token = previous._frameworkCaptureClientDraft()!;
+    previous.destroy();
+    oldProxy.text = 'obsolete';
+    expect(Inherited._frameworkForkClientDraft({})).toBeUndefined();
+    expect(Draft._frameworkForkClientDraft(token)).toBeUndefined();
+    const first = Inherited._frameworkForkClientDraft(token)!;
+    const second = Inherited._frameworkForkClientDraft(token)!;
+    const left = new Inherited(); const right = new Inherited(); const original = new Inherited();
+    expect(left._frameworkRestoreClientDraft(first)).toBe(true);
+    expect(Inherited._frameworkForkClientDraft(first)).toBeUndefined();
+    expect(right._frameworkRestoreClientDraft(second)).toBe(true);
+    expect(original._frameworkRestoreClientDraft(token)).toBe(true);
+    for (const instance of [left, right, original]) instance.connectedCallback();
+    left.draft.text = 'new left';
+    expect(right.draft.text).toBe('hidden'); expect(original.draft.text).toBe('hidden');
+    for (const instance of [left, right, original]) { expect(instance.file).toBe(file); instance.destroy(); }
+});
+
 it('restores renderer-created child drafts before mount and releases the consumed initialization map', async () => {
     const previous = new Inherited();
     await previous.bootstrap({ initialState: state(), skipInit: true, deferMount: true });

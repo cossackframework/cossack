@@ -1204,6 +1204,15 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _cossack_params: Record<string, string> = {};
     private _navigationClientDraft?: Map<string, unknown>;
 
+    /** @internal Fork an unconsumed capability without reading its former owner. */
+    public static _frameworkForkClientDraft(token: object): object | undefined {
+        const draft = navigationDrafts.get(token);
+        if (!draft || !Object.is(draft.constructor, this)) return undefined;
+        const fork = Object.freeze({});
+        navigationDrafts.set(fork, { constructor: draft.constructor, values: snapshotNavigationDraft(draft.values) });
+        return fork;
+    }
+
     /** @internal Capture browser-owned declarations without serialization or proxy getters. */
     @Client()
     public _frameworkCaptureClientDraft(): object | undefined {
