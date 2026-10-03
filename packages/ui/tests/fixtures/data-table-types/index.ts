@@ -165,3 +165,18 @@ component(Combobox,{id:'country','.value':'us'});
 component(Combobox,{id:'country',options:[{value:1,label:'One'}]});
 // @ts-expect-error No arbitrary prop index signature.
 component(Combobox,{id:'country',placehoder:'Search'});
+
+import { MultiSelect } from '@cossackframework/ui';
+component(MultiSelect,{id:'skills',name:'skills',value:['TypeScript'] as const,options:['TypeScript','Rust'] as const,required:true,'aria-label':'Skills',onChange:values=>values.map(value=>value.toUpperCase()),validate:value=>value.length>20?'Too long':null,'@input':event=>event.currentTarget.select(),removeLabel:value=>`Delete ${value}`});
+// @ts-expect-error Stable ID is required.
+component(MultiSelect,{value:[]});
+// @ts-expect-error Selection uses string arrays.
+component(MultiSelect,{id:'skills',value:'Rust'});
+// @ts-expect-error Validation returns an error string or null.
+component(MultiSelect,{id:'skills',validate:()=>false});
+// @ts-expect-error Native value binding cannot compete with search ownership.
+component(MultiSelect,{id:'skills','.value':'Rust'});
+// @ts-expect-error ARIA active descendant belongs to the component.
+component(MultiSelect,{id:'skills','aria-activedescendant':'other'});
+// @ts-expect-error No arbitrary prop index signature.
+component(MultiSelect,{id:'skills',placehoder:'Pick'});

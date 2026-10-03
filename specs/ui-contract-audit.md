@@ -96,7 +96,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Message](../packages/ui/src/components/Message.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Modal](../packages/ui/src/components/Modal.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [MultiSelect](../packages/ui/src/components/MultiSelect.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [MultiSelect](../packages/ui/src/components/MultiSelect.ts) | Reviewed foundation | Typed input props/events, stable IDs, controlled/default tags, repeated form values, visible validation, keyboard/chip focus, composition, external form reset and SSR/fresh-render acceptance. |
 | [NativeSelect](../packages/ui/src/components/NativeSelect.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [NavigationMenu](../packages/ui/src/components/NavigationMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Pagination](../packages/ui/src/components/Pagination.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit MultiSelect, then DatePicker. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit DatePicker and its relationship to Calendar. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

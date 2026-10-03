@@ -6705,3 +6705,53 @@ Logs: `/tmp/cossack-combobox-{build,ui,browser,root-types,package-types,agent-do
 
 Sixteen UI foundations are reviewed. Next: MultiSelect, then DatePicker.
 RT-23 and CLI-07/CLI-08 remain open. No release checkbox or package version changed.
+
+<a id="codex-multiselect-2026-10-04"></a>
+## Codex: MultiSelect tags, validation and form values (2026-10-04)
+
+MultiSelect previously ignored native props, used random popup IDs and had no
+native submission or disabled contract. Validation failures were silent, and
+predefined additions bypassed validation. Popup options and removal buttons lacked
+complete keyboard/focus ownership.
+
+The component now requires a stable page-unique id and exposes closed native input
+props/events. Controlled arrays require parent acceptance; defaultValue supplies
+uncontrolled initial tags. Callbacks receive fresh arrays. Repeated hidden inputs
+submit selected values through name/form, including external form associations.
+Required validation depends on tags rather than search text. Disabled fieldsets
+block all edits and omit submitted values; readonly preserves submitted values.
+
+Both predefined and custom additions run validate. Errors are escaped, visible
+through role=alert, linked through aria-describedby and used for native validity.
+Parent error messages persist until cleared; clearing a parent message does not
+leave a copied internal error. Max limits block additions without truncating
+existing parent values. Creation/removal labels and constraint messages are
+localizable. Parent arrays and options require unique nonempty strings.
+
+Arrow keys navigate suggestions while the input retains focus. Composition Enter
+cannot add a tag. Escape/Tab dismiss search. Empty-query Backspace removes the last
+tag; keyboard chip removal moves focus to another removal button or the input.
+Pointer removal returns input focus, with guards against stale asynchronous focus.
+Native event cancellation takes precedence over internal actions. Native and
+canceled reset restore or preserve the appropriate controlled/default selection.
+
+Verification: UI build, 154 UI tests across 14 files, root `pnpm tsc --noEmit` and
+all 11 package type checks pass. Production Chromium checks no-JS SSR, retained
+hydration, fresh rendering, keyboard/pointer and chip focus, validation of known
+and custom values, required/max constraints, repeated FormData, controlled
+acceptance/rejection, composition, parent errors, native/canceled/external form
+reset, readonly/disabled fieldsets and event vetoes. The fixture builds the real
+Tailwind/UI theme and checks the focused field's visible ring.
+
+Installed guidance and the tarball verifier now include MultiSelect props,
+validation signatures and exact-symbol CLI/MCP parity. Installed acceptance passed
+with Node networking disabled during discovery. All six packaged examples compiled
+and executed.
+Logs: `/tmp/cossack-multiselect-{build,ui,browser,root-types,package-types,agent-docs}.log`.
+
+Seventeen foundations are reviewed. DatePicker is next, together with its duplicated
+Calendar behavior. DatePicker currently ignores min/max and native props, retains
+inner selection over parent updates and lacks complete calendar keyboard/focus
+semantics. RT-23 and CLI-07/CLI-08 stay open. The full application, assistive-technology
+and published-runtime matrix remain separate acceptance requirements.
+No release checkbox or package version changed.

@@ -1019,7 +1019,9 @@ handling. See the [review evidence](./release-0.9.0.md#codex-input-otp-2026-10-0
 Combobox now has stable IDs, typed native input props, controlled/default selection,
 accessible popup navigation and native form/reset acceptance. See the
 [Combobox review](./release-0.9.0.md#codex-combobox-2026-10-04).
-Continue MultiSelect and DatePicker through the UI audit. RT-23 stays open.
+MultiSelect now has typed input props, stable IDs, controlled/default tags, repeated
+form values and visible validation. See the [MultiSelect review](./release-0.9.0.md#codex-multiselect-2026-10-04).
+Continue DatePicker and Calendar through the UI audit. RT-23 stays open.
 
 Codex DataTable implementation (2026-10-04): the UI root now exports a generic
 DataTable and typed row/column/query contracts. Columns select a valid row key or
@@ -1063,7 +1065,7 @@ A browser-specific renderer entry removes the SSR parser from normal UI bundles.
 Explicit browser serialization uses `/server`. InputGroup and PasswordInput now
 have native contracts, composed callbacks, ARIA reference types and retained SSR
 hydration. Password reveal respects disabling and pointer/keyboard focus ownership.
-Next: MultiSelect and DatePicker. See the
+Next: DatePicker and Calendar. See the
 [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
 See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).

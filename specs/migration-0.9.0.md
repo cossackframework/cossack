@@ -720,3 +720,31 @@ through a hidden input. Escape, Tab, blur and popup dismissal restore the commit
 label. Form reset restores the initial uncontrolled selection or current controlled
 value. Native `required` needs a selected option, not arbitrary search text.
 Localize `placeholder`, `emptyLabel` and `requiredMessage` as needed.
+
+## MultiSelect submits tags and exposes validation
+
+Provide a stable page-unique `id` and a label through `for` or `aria-label`.
+Native props and `@events` target the editable input. The component owns its
+combobox roles, popup relationships and validation attributes. Use `error` for
+a parent-owned validation message and `aria-describedby` for helper text.
+
+Use `value` with `onChange` for a controlled array. Accept the fresh callback array
+to retain an edit. Use `defaultValue` for uncontrolled initial tags. Supplied arrays
+are never mutated. Options and selected values must be unique nonempty strings.
+`max` must be a nonnegative integer; zero means unlimited. Existing parent values
+are preserved if options change or a new maximum makes the selection invalid.
+
+`name` produces one hidden input per tag. Read selections with `FormData.getAll`.
+`form` supports external forms. Disabled fields are omitted from submission;
+readonly fields keep their values. Native form reset restores initial uncontrolled
+values or the current controlled array without emitting `onChange`.
+
+`validate` now checks predefined and custom additions. Returned errors are visible,
+linked to the input, and block submission until corrected or dismissed. Parent
+`error` messages persist until cleared by the parent. Required validation depends
+on selected tags, not search text. Localize creation/removal labels and validation
+messages with the corresponding props.
+
+Enter during composition never adds a tag. Arrow keys select suggestions, and
+Backspace on an empty query removes the last tag. Keyboard removal moves focus
+to a remaining removal button or the input. Pointer removal returns input focus.

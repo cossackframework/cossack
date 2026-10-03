@@ -966,6 +966,8 @@ export class ComponentsDemo extends Cossack {
                         <div class="w-72">
                             <span class="text-sm text-muted-foreground mb-2 block">Skills (type to search or add new)</span>
                             ${component(MultiSelect, {
+                                id: 'demo-skills',
+                                'aria-label': 'Skills',
                                 options: ['TypeScript', 'JavaScript', 'React', 'Vue', 'Angular', 'Svelte', 'Node.js', 'Python', 'Go', 'Rust'],
                                 value: this.skills,
                                 placeholder: 'Add a skill...',
