@@ -20,7 +20,6 @@ export interface PageOptions {
   /** Services owned by this layout and shared throughout its active subtree. */
   services?: ServiceClass[];
   transport?: CossackTransport;
-  route?: string;
   ssg?: boolean | SsgOptions;
   stateful?: boolean;
   /**
@@ -48,6 +47,10 @@ export interface SsgOptions {
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {
+  if (Object.prototype.hasOwnProperty.call(options, 'route')) {
+    throw Object.assign(new Error('[Cossack] PageOptions.route is not supported. Define the URL through the component file path under src/pages.'),
+      { code: 'COSSACK_ROUTE_ALIAS_UNSUPPORTED' });
+  }
   return (target: object) => {
     const existingOptions = Reflect.hasOwnMetadata('page:options', target)
       ? Reflect.getOwnMetadata('page:options', target)

@@ -174,14 +174,21 @@ function pageRouteCollisionKey(filePath: string): string {
  */
 export function resolvePageRouteFiles(pageKeys: string[]): string[] {
   const candidates = new Map<string, string[]>();
+  const boundaries: string[] = [];
   for (const path of pageKeys) {
+    const kind = classifyRoute(filePathToHttpRoute(path));
+    if (kind === '404' || kind === 'error') {
+      // These components have source identities, not competing public URLs.
+      boundaries.push(path);
+      continue;
+    }
     const key = pageRouteCollisionKey(path);
     const paths = candidates.get(key) ?? [];
     paths.push(path);
     candidates.set(key, paths);
   }
 
-  const resolved: string[] = [];
+  const resolved: string[] = [...new Set(boundaries)];
   for (const [route, paths] of candidates) {
     paths.sort((a, b) => routeGroupCount(a) - routeGroupCount(b) || a.localeCompare(b));
     const winningGroupCount = routeGroupCount(paths[0]!);
@@ -195,6 +202,100 @@ export function resolvePageRouteFiles(pageKeys: string[]): string[] {
     resolved.push(paths[0]!);
   }
   return resolved.sort();
+}
+
+export interface NotFoundSelection {
+  path: string;
+  params: Record<string, string>;
+  /** Matching source scope, or the common source ancestor of equally ranked scopes. */
+  scope: string;
+  ambiguous: boolean;
+}
+
+function prefixMatcher(pattern: string) {
+  const names: string[] = [];
+  const ranks: number[] = [];
+  const segments = pattern === '/' ? [] : pattern.slice(1).split('/');
+  const expression = segments.map(segment => {
+    if (!segment.startsWith(':')) { ranks.push(0); return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    const catchAll = segment.endsWith('{.+}');
+    names.push(segment.slice(1, catchAll ? -4 : undefined)); ranks.push(catchAll ? 2 : 1);
+    return catchAll ? '(.+)' : '([^/]+)';
+  }).join('/');
+  const regex = expression ? new RegExp(`^/${expression}(?=/|$)`) : /^/;
+  return { ranks, match(pathname: string) {
+    const matched = regex.exec(pathname);
+    if (!matched) return null;
+    const params: Record<string, string> = Object.create(null);
+    names.forEach((name, index) => {
+      try { params[name] = decodeURIComponent(matched[index + 1]!); }
+      catch { params[name] = matched[index + 1]!; } // Like Hono, retain malformed escapes for the owning guard.
+    });
+    return { params, depth: matched[0].split('/').filter(Boolean).length };
+  } };
+}
+
+/**
+ * Resolve unknown public paths through effective source branches, including
+ * groups and parameter directories. Equal owners use their common source
+ * ancestor; a public pathname cannot choose an arbitrary private group.
+ * Compile once when the static registry is constructed, never during request I/O.
+ */
+export function createNotFoundResolver(pageKeys: readonly string[]) {
+  const effective = resolvePageRouteFiles([...pageKeys]);
+  const branches = effective.filter(path => classifyRoute(filePathToHttpRoute(path)) !== 'error').map(path => {
+    const boundary = classifyRoute(filePathToHttpRoute(path)) === '404';
+    const parts = path.slice('/src/pages/'.length).split('/');
+    const directories = boundary ? parts.slice(0, -2) : parts.slice(0, -1);
+    const scopes = Array.from({ length: directories.length + 1 }, (_, depth) => {
+      const directory = directories.slice(0, depth).join('/');
+      const source = `/src/pages/${directory ? `${directory}/` : ''}index.ts`;
+      return { source, directoryDepth: depth, ...prefixMatcher(filePathToHttpRoute(source)) };
+    });
+    if (!boundary) scopes.push({ source: path, directoryDepth: directories.length, ...prefixMatcher(filePathToHttpRoute(path)) });
+    return { groups: routeGroupCount(path), scopes };
+  });
+  type Match = { source: string; params: Record<string, string>; depth: number; ranks: number[]; groups: number };
+  const compare = (a: Match, b: Match) => {
+    if (a.depth !== b.depth) return b.depth - a.depth;
+    for (let i = 0; i < Math.min(a.ranks.length, b.ranks.length); i++) if (a.ranks[i] !== b.ranks[i]) return a.ranks[i]! - b.ranks[i]!;
+    return a.groups - b.groups;
+  };
+  return (pathname: string): NotFoundSelection | null => {
+    if (!pathname.startsWith('/')) return null;
+    const matches: Match[] = [];
+    for (const branch of branches) {
+      let best: (Match & { directoryDepth: number }) | null = null;
+      for (const scope of branch.scopes) {
+        const matched = scope.match(pathname);
+        if (matched && (!best || matched.depth > best.depth || matched.depth === best.depth && scope.directoryDepth >= best.directoryDepth)) {
+          best = { source: scope.source, ranks: scope.ranks, directoryDepth: scope.directoryDepth, groups: branch.groups, ...matched };
+        }
+      }
+      if (best) matches.push(best);
+    }
+    matches.sort(compare);
+    if (!matches.length) return null;
+    const ranked = matches.filter(match => compare(match, matches[0]!) === 0);
+    const directoryOf = (match: Match) => match.source.split('/').slice(0, -1).join('/');
+    // An explicit descendant namespace owns a file route's otherwise equal
+    // prefix. Disjoint groups remain ambiguous and use their common ancestor.
+    const winners = ranked.filter(match => !ranked.some(other => directoryOf(other).startsWith(directoryOf(match) + '/')));
+    const directories = winners.map(match => match.source.split('/').slice(0, -1));
+    const common = [...directories[0]!];
+    for (const directory of directories.slice(1)) {
+      let length = 0;
+      while (length < common.length && common[length] === directory[length]) length++;
+      common.length = length;
+    }
+    const scope = common.join('/');
+    const anchor = `${scope}/index.ts`;
+    const path = resolveNearestSpecialPage(anchor, effective, '404');
+    if (!path) return null;
+    const ambiguous = directories.some(directory => directory.join('/') !== scope);
+    const params = ambiguous ? prefixMatcher(filePathToHttpRoute(anchor)).match(pathname)?.params ?? {} : winners[0]!.params;
+    return { path, params, scope, ambiguous };
+  };
 }
 
 export interface RouteIdMaps {
@@ -299,7 +400,8 @@ export function computeRouteIds(pageKeys: string[], layoutKeys: string[]): Route
   // when no page owns that path, so a colocated layout can never overwrite the
   // page selected by SSR and the browser.
   for (const path of resolvedPageKeys) {
-    routePathToFilePathMap.set(filePathToRoutePath(path), path);
+    const kind = classifyRoute(filePathToHttpRoute(path));
+    if (kind !== '404' && kind !== 'error') routePathToFilePathMap.set(filePathToRoutePath(path), path);
   }
   for (const path of [...layoutKeys].sort()) {
     const routePath = filePathToRoutePath(path);

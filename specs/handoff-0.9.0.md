@@ -2,7 +2,54 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-07 native API contracts (2026-10-03). Author: Codex.**
+> Latest checkpoint: Codex RT-07 completion (2026-10-03). Author: Codex.
+> Continued after `b82ba4b`. Read the
+> [completion evidence](./release-0.9.0.md#codex-route-boundaries-2026-10-03),
+> [criterion audit](./release-0.9.0-plan.md#rt-07),
+> [boundary guide](../docs/routing.md#unknown-urls-and-boundary-identity), and
+> [migration notes](./migration-0.9.0.md#file-routes-and-boundary-identities).
+>
+> RT-07 is newly complete. All 58 original task IDs remain:
+> 22 checked and 36 unchecked. No other checkbox changed.
+>
+> The production fixture reproduced grouped/dynamic unknown URLs selecting
+> the root 404 without component policies. The pure source-prefix resolver now
+> selects an effective owner, retains parameters and uses common ancestry for
+> ambiguous groups. Every 404/error component retains its own source ID.
+> Boundary middleware runs before rendering and entered source declarations run
+> once. Guard responses, global scope and after-next headers remain intact.
+> SSR and browser select the same boundary component. Valid 404/500 documents
+> hydrate and navigate without entering the successful-page cache.
+>
+> PageOptions.route never registered an alternate URL and had no in-repo callers.
+> Its public declaration is removed. JavaScript decorators and compiler
+> inspection reject it without evaluating its value. File placement defines URLs.
+> CLI explanations use the exact source path for nonaddressable boundaries.
+> Default-export and decorator import aliases remain supported.
+>
+> Final checks passed: root TypeScript, all 11 package type checks, full core
+> 1,348/78 files, framework 1,404/66 files and CLI 606/44 files. Core/framework
+> full builds finished before these suites. The CLI run includes actual generated
+> Node/native workerd and browser boundary acceptance plus final source/middleware
+> inspection comparisons. The linked evidence records the earlier concurrent
+> CLI timeout and unchanged passing rerun.
+>
+> Next for GLM: implement [RT-08](./release-0.9.0-plan.md#rt-08) from the six
+> concrete starting steps. Define portable query codecs/defaults first, share
+> parsing across SSR/hydration, then integrate push/replace history and resource
+> dependencies. Prove copied URLs, Unicode, invalid numbers, arrays, defaults,
+> unrelated keys, back/forward and rapid edits in real browsers. Native API query
+> contracts do not supply page URL state. RT-09 still owns bounded navigation
+> completion, cancellation and diagnostics.
+>
+> Continue all other 36 unchecked CLI/runtime/service/Cloudflare/release tasks.
+> RT-01/RT-11, plain Node Vite dev and native Deno/Electron gates remain open.
+> Versions stay 0.8.3 until REL-04. Preserve reports.md/.zcodeignore. No push,
+> publication, live cloud changes, external messages or new chats.
+> No owned build/test process remains at this checkpoint.
+>
+
+> **Previous checkpoint — Codex RT-07 native API contracts (2026-10-03). Author: Codex.**
 > Continued after `7f4ce93`. Read the
 > [review/evidence](./release-0.9.0.md#codex-api-contracts-2026-10-03),
 > [detailed RT-07 checkpoint and remaining steps](./release-0.9.0-plan.md#rt-07),
@@ -47,7 +94,7 @@ Prepared on 2026-10-02 for GLM to continue implementation and Codex to review la
 > after this handoff.
 >
 
-> **Latest checkpoint — Codex RT-07 route generation (2026-10-03). Author: Codex.**
+> **Previous checkpoint — Codex RT-07 route generation (2026-10-03). Author: Codex.**
 > Continued after `d3b8c5b`. Read the
 > [review/evidence](./release-0.9.0.md#codex-typed-routes-2026-10-03),
 > [detailed remaining RT-07 plan](./release-0.9.0-plan.md#rt-07), and

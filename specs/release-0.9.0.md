@@ -27,7 +27,7 @@ below link directly to those explanations.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
-- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; Codex continuation (2026-10-03): shared route discovery/manifest, published typed URL construction, virtual generated imports and actual Node/browser handler/middleware/error/404 acceptance now pass. See the [route checkpoint](#codex-typed-routes-2026-10-03). Native declared contracts, generated API types and actual Node/native workerd/D1 acceptance now pass; see the [API checkpoint](#codex-api-contracts-2026-10-03). Remaining: grouped/dynamic unknown-URL boundary acceptance, the unused PageOptions.route decision and the original criterion audit.
+- [x] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. Codex completion (2026-10-03): shared discovery/manifest, published URL and API contracts, actual Node/native workerd/D1 handlers, source-specific boundaries and middleware ownership pass. Grouped/dynamic unknown URLs, literal/catch-all selection, ambiguous source groups, guards, status-preserving browser hydration/navigation and read-only source explanations now meet the original criteria. The unused PageOptions.route is removed with type/runtime/compiler diagnostics and migration guidance. See the [criterion audit](./release-0.9.0-plan.md#rt-07) and [completion review](#codex-route-boundaries-2026-10-03). Broader RPC, session and runtime/release gates remain separate.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
@@ -85,6 +85,65 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-route-boundaries-2026-10-03"></a>
+### Codex completion: typed routes and source boundaries (2026-10-03)
+
+Author: Codex. Continued after `b82ba4b` against the original RT-07 criteria.
+RT-07 is newly checked. The ledger retains all 58 original task IDs:
+22 checked and 36 unchecked. Read the
+[criterion audit and implementation context](./release-0.9.0-plan.md#rt-07),
+[boundary guide](../docs/routing.md#unknown-urls-and-boundary-identity), and
+[migration notes](./migration-0.9.0.md#file-routes-and-boundary-identities).
+
+The new real Node fixture first reproduced the defect: a grouped/dynamic
+unknown URL selected the root 404 and omitted its source middleware. Selection
+now compiles effective source branches once, retains decoded parameters and
+falls back to common ancestry for equally ranked disjoint groups. Boundaries
+retain distinct source IDs and stay out of public URL maps. SSR and browser
+hydration select the same component. Valid 404/500 documents render during
+navigation without entering the successful-page cache. Plain or mismatched
+error documents still fail navigation.
+
+Boundary rendering now applies actual layout/page policies and PageOptions.
+A request-owned source/index token prevents repeated policies during fallthrough
+or error rendering. Short-circuit guards and after-next headers remain intact.
+Real HTTP traces prove one global scope and exact layout/page order. CLI source
+IDs, middleware counts and source stacks match executed boundary state.
+Boundary explanations accept exact source files and reject public aliases.
+
+PageOptions.route never registered a URL and had no in-repository callers.
+Its removal has two published negative type cases, three decorator runtime cases
+and two compiler inspection cases. The getter case proves no value execution.
+File placement remains the URL contract. Import/default aliases remain supported.
+
+Final verification:
+
+- Core full build and framework full build, including SSG, passed after the
+  runtime changes. Builds finished before consumer test suites started.
+- `pnpm tsc --noEmit` passed. `pnpm typecheck` passed all 11 packages.
+- `pnpm --filter @cossackframework/core exec vitest run`: 1,348 tests in 78 files.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,404 tests in 66 files.
+- `pnpm --filter cossack exec vitest run --maxWorkers=2`: 606 tests in 44 files.
+  This includes both new generated Node/native workerd fixtures, the final
+  middleware inspection comparisons, API contracts and existing production gates.
+- The focused production boundary run passed both runtimes before the final
+  inspection assertions. Each runtime covers nine unknown URLs, unsupported
+  POST fallthrough, 500 error selection, guard denial/allowance, and real browser
+  initial hydration, SPA navigation, history and interactive component identity.
+- Seventeen pure resolver cases cover ancestry, ambiguity, namespace ownership,
+  encoded parameters, malformed escapes and unique nonaddressable source IDs.
+  Six navigation cases cover valid documents, identity mismatches and cache rules.
+- One CLI inspection case exceeded its five-second deadline when it ran beside
+  both full unit suites. The final complete CLI run above passed it unchanged.
+- Syntax, whitespace, original task ID/state audit and local documentation links
+  passed. The new boundary inspection command runs in direct CLI tests.
+
+This closes the RT-07 criteria only. It does not certify live deployment,
+REL-03, native Deno/Electron, incoming disconnect handling or session guarantees.
+Versions remain 0.8.3 until REL-04. User-owned reports.md/.zcodeignore are preserved.
+No push, publication, live cloud changes, external messages or new chat occurred.
+Continue RT-08 and all other 36 unchecked tasks from the detailed plan.
 
 <a id="codex-api-contracts-2026-10-03"></a>
 ### Codex checkpoint: native API contracts and generated declarations (2026-10-03)

@@ -12,7 +12,16 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex RT-07 native API contracts (2026-10-03):**
+Latest checkpoint: Codex RT-07 completion (2026-10-03).
+Read the [completion evidence](./release-0.9.0.md#codex-route-boundaries-2026-10-03)
+and [original criterion audit](#rt-07). Source boundaries now retain distinct IDs,
+apply their policies once, preserve parameters and hydrate the correct browser
+component. Actual Node/native workerd and browser fixtures pass. The unused
+PageOptions.route is removed with migration guidance and negative types.
+RT-07 is complete. The ledger records 22/58 checked and 36 unchecked.
+Continue [RT-08](#rt-08) and every remaining task. All release gates remain separate.
+
+**Previous checkpoint — Codex RT-07 native API contracts (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-api-contracts-2026-10-03).
 Portable declared native schemas, parsed guards, correlated failures and owned
 cancellation are implemented. Shared AST inspection recognizes aliases and
@@ -1657,7 +1666,66 @@ execution. Fixtures cover aliases, route groups, catch-alls, API routes, and
 nearest error/404 boundaries. CLI-04 consumes this same manifest.
 
 
-**Codex implementation checkpoint (2026-10-03): native API contracts are implemented.**
+**Codex completion audit (2026-10-03): source boundaries finish RT-07.**
+Author: Codex. Continued after `b82ba4b`. Read the
+[final evidence](./release-0.9.0.md#codex-route-boundaries-2026-10-03),
+[boundary guide](../docs/routing.md#unknown-urls-and-boundary-identity), and
+[migration notes](./migration-0.9.0.md#file-routes-and-boundary-identities).
+The checkpoints below record earlier partial states. This audit supersedes their
+remaining RT-07 steps. All other task IDs and release gates remain in scope.
+
+The new generated Node fixture first reproduced the grouped/dynamic failure.
+`/users/%E9%9B%AA%2Fa/missing` selected the root 404 and omitted component middleware.
+The router derived a fictitious source path from that public URL. The new pure
+resolver compiles effective source prefixes once at application construction.
+It selects the longest match, literal/parameter/catch-all specificity, and fewer
+groups. Equally ranked disjoint groups use their common source ancestor.
+Explicit 404 namespaces can own prefixes without an ordinary page. Matching
+parameters reach component middleware and request-local helpers through the
+same context. Malformed escapes stay in the owning guarded scope.
+
+Route discovery retains every source-specific 404/error component. They have
+unique component IDs and remain excluded from public route maps and builders.
+SSR carries the exact source and a reserved boundary marker. Client hydration
+and navigation select that component rather than another group's `/404` class.
+404/500 navigation documents require matching status, type, ID and known source.
+Accepted boundaries retain HTTP status and do not enter the success cache.
+Plain, mismatched or unknown-module error documents still fail navigation.
+
+Boundary rendering uses actual PageOptions and layout/page middleware.
+Request-owned source/index tokens prevent duplicate execution after normal
+routing or asset fallthrough. Separate declarations of the same function remain
+separate policies. Short-circuit guards and after-next headers survive. A page's
+error boundary adds its own policies while preserving entered page policies.
+Global bootstrap middleware remains owned by the original request.
+
+PageOptions.route had no registration implementation or in-repository callers.
+Alpha removal is explicit: published types reject it, JavaScript decorators
+reject it with a fixed diagnostic, and compiler inspection reports it without executing
+its value. File placement defines the URL. This does not remove supported
+import aliases or default-export aliases. CLI explanations now accept exact
+boundary source files and reject a public boundary alias with candidate sources.
+
+| Original RT-07 criterion | Completion evidence | Result |
+| --- | --- | --- |
+| Generated URLs reach expected handlers | Prior generated Node/browser fixture executes alias, group, dynamic, catch-all and both API styles. Native declared API acceptance executes actual Node/workerd handlers with D1 mutation checks. | Complete for this task. |
+| Missing, extra and incorrect parameters fail type tests | Published core route fixture, generated virtual import negatives and native API contract types. The public route fixture now also rejects two removed PageOptions.route declarations. | Complete. |
+| Manifest middleware order matches actual execution | Vite manifest equals CLI. New production Node/workerd boundary states match source IDs, layout/page counts and source stacks. Exact headers prove global/layout/page ownership, error fallback, unsupported methods and guard short-circuiting. | Complete. |
+| Aliases, groups, catch-alls, APIs and nearest boundaries | Prior route/API acceptance plus nine unknown URLs per runtime, disjoint groups, direct shadowing, literal precedence, catch-all parameters, private denial, error 500, and real browser hydration/navigation/history. Seventeen resolver cases cover remaining source selection rules. | Complete. |
+| Effective transport, error and SSG inspection | Shared compiler facts and existing scan-routes tests report transport/SSG and unresolved expressions. Executed inspection-service SSG acceptance shares source layouts, IDs, service state and disposal with inspection. Both remain in the passing regression suites. | Complete. |
+| CLI-04 consumes the same manifest | Shared Node discovery/pure route identities feed generation and inspection. Real application comparison and source-boundary explanations pass. Dynamic executable facts remain unknown. | Complete. |
+
+This audit closes RT-07 only. Incoming native disconnect delivery, arbitrary
+RPC deadlines and initialization concurrency remain RT-01. Session guarantees
+remain RT-11. Plain Node Vite development and native Deno/Electron acceptance
+remain separate runtime/release gates. Versions stay 0.8.3 until REL-04.
+
+Next for GLM: continue RT-08 from its original plan below and the concrete
+starting steps beside it. Preserve all 36 other unchecked tasks. RT-09 still
+owns bounded navigation completion and diagnostics. Do not label its partial
+implementation complete because boundary navigation now works.
+
+**Previous Codex implementation checkpoint (2026-10-03): native API contracts are implemented.**
 Author: Codex. Continued after `7f4ce93`. This completes the native contract
 portion of the previous seven-step continuation, not the full RT-07 task.
 See [the API guide](../docs/api-routes.md#declared-input-and-output) and
@@ -1834,6 +1902,38 @@ Integrate dependency changes with server resources without duplicate fetches.
 
 Start in core `client/navigation.ts`, framework `client/app.ts`, and route
 metadata from RT-07. Keep this separate from path-parameter generation.
+
+**Codex starting context after RT-07 (2026-10-03):**
+Path parameters and native API query schemas are now separate completed
+contracts. Neither provides page URL state. Core's route builder constructs
+paths only. Framework navigation caches full destinations, including queries.
+SSR hydration already carries public/ClientState separation. Use these existing
+contracts when implementing RT-08.
+
+1. Define a portable declaration and inferred state type for page query values.
+   Start with strings, finite numbers, booleans, repeated arrays and defaults.
+   Decide absent, empty, malformed, repeated scalar and unknown-key behavior.
+   Define one deterministic serializer and bounds before adding browser effects.
+   Do not reuse API coercion silently when its invalid-input policy differs.
+2. Parse the same declaration during SSR and initial browser hydration.
+   Put request parsing in the framework integration and portable codecs in core.
+   Keep database/framework imports out of core. Serialize only allowed values.
+   Define a filtered-list example with search, sort and page number.
+3. Add explicit push/replace operations through existing navigation/history
+   ownership. Preserve unrelated query keys and fragments under a documented
+   policy. Omit defaults consistently. Avoid a second global URL store that can
+   disagree with the existing committed destination.
+4. Integrate query changes with resource dependencies from RT-03. Preserve
+   browser-owned draft state. Ensure one authoritative read for each committed
+   dependency change and no extra read after matching SSR hydration.
+   Rapid changes must supersede obsolete results without reverting URL state.
+5. Run published negative types and actual Node/Worker browser acceptance.
+   Copy a Unicode-filtered URL into a new tab. Exercise invalid page numbers,
+   arrays, defaults, unrelated keys, back/forward, push/replace and rapid edits.
+   Compare SSR and hydration state and count actual resource requests.
+6. Audit the original criteria before checking RT-08. Finish dependent RT-09
+   cancellation/completion contracts as needed, with independent evidence.
+   Keep all remaining CLI, framework, Cloudflare and release tasks in scope.
 
 Done when: A filtered list can be copied into a new tab with identical state.
 Back/forward restores filters and results. Invalid page numbers use the documented

@@ -10,7 +10,13 @@ const routesSpec = inspectRoutesSpec;
 
 /** Explain one route's effective behavior with reasons and source locations. */
 function explainRoute(effective, route) {
-  const page = effective.pages.find(candidate => candidate.route === route);
+  const sourcePage = effective.pages.find(candidate => candidate.filePath === route);
+  const publicPages = effective.pages.filter(candidate => candidate.route === route);
+  const page = sourcePage ?? publicPages.find(candidate => candidate.kind !== '404' && candidate.kind !== 'error');
+  if (!page && publicPages.length) {
+    throw Object.assign(new Error(`Boundaries have source identities. Inspect one of: ${publicPages.map(candidate => candidate.filePath).join(', ')}`),
+      { code: 'COSSACK_ROUTE_BOUNDARY_SOURCE_REQUIRED' });
+  }
   if (!page) return null;
   const reasons = [];
   if (page.routeStyle === 'http-handlers') reasons.push('Functional HTTP handlers use HTTP routing; component decorators, RPC method classification, and layout scopes do not apply.');

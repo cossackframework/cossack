@@ -5,7 +5,7 @@ description: "The @Page decorator marks a class as a Cossack component and confi
 
 # Pages
 
-Use the `@Page` decorator to mark a class as a Cossack page and set its behavior, route, and transport.
+Use the `@Page` decorator to mark a class as a Cossack page and set its behavior and transport. Its file under `src/pages` defines the URL.
 
 ## Usage
 
@@ -30,7 +30,6 @@ The `@Page` decorator accepts an optional object with these properties:
 | `middlewares` | `MiddlewareHandler[]` | An array of Hono middleware handlers to apply to this page's route. |
 | `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
-| `route` | `string` | (Optional) Explicitly define the route. If omitted, the file-system-based route is used. |
 | `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
 | `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry or DO instance) a request connects to. Default is per-user for SSE, per-URL for DO. |
 

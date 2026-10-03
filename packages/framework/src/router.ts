@@ -88,7 +88,7 @@ import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, resolveNearestSpecialPage, classifyRoute, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, resolveNearestSpecialPage, createNotFoundResolver, classifyRoute, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -370,6 +370,26 @@ export function createApp(options: CreateAppOptions = {}) {
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>({ strict: false });
+  const resolveNotFound = createNotFoundResolver(Object.keys(pages));
+  const executedPolicies = Symbol('cossack:executed-route-policies');
+  const policy = (source: string, index: number, middleware: Middleware): Middleware => async (c, next) => {
+    const context = c as Context & { [executedPolicies]?: Set<string> };
+    const executed = context[executedPolicies] ??= new Set();
+    const key = JSON.stringify([source, index]);
+    if (executed.has(key)) return next();
+    executed.add(key);
+    return middleware(c, next);
+  };
+  const getMiddlewares = (componentPath: string): Middleware[] => {
+    const paths = new Set([...getLayoutStack(componentPath), componentPath]);
+    return [...paths].flatMap(path => {
+      const module = pages[path] || layouts[path];
+      const component = path === '/src/App' ? options.AppComponent ?? RouterFallbackApp : module && getModuleDefault(module);
+      const middlewares: Middleware[] = typeof component === 'function'
+        ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? [] : [];
+      return middlewares.map((middleware, index) => policy(path, index, middleware));
+    });
+  };
 
   const resolveRuntimeInfo = async (): Promise<CossackRuntimeInfo> => ({
     platform: 'web',
@@ -388,18 +408,7 @@ export function createApp(options: CreateAppOptions = {}) {
     layouts,
     allowedOrigins: options.allowedOrigins,
     runtimeInfo: resolveRuntimeInfo,
-    getMiddlewares: (componentPath) => {
-      const paths = new Set([...getLayoutStack(componentPath), componentPath]);
-      return [...paths].flatMap((path) => {
-        const module = pages[path] || layouts[path];
-        const component = path === '/src/App'
-          ? options.AppComponent ?? RouterFallbackApp
-          : module && getModuleDefault(module);
-        return typeof component === 'function'
-          ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? []
-          : [];
-      });
-    },
+    getMiddlewares,
   };
 
   // Request-context middleware — scopes the Hono `Context` into
@@ -634,9 +643,14 @@ export function createApp(options: CreateAppOptions = {}) {
           }
         }
 
+        const kind = classifyRoute(filePathToHttpRoute(path));
+        const boundary = kind === '404' || kind === 'error';
+        if (boundary && pageInitialState.metadata) pageInitialState.metadata.routePath = path;
         const finalInitialState = {
           ...pageInitialState,
-          routePath: filePathToRoutePath(path), // Simplified route path (no /src/pages prefix)
+          routePath: boundary ? path : filePathToRoutePath(path),
+          componentPath: path,
+          _cossackBoundary: boundary ? { type: kind, source: path } : undefined,
           componentRouteId: routePathToIdMap.get(path),
           appRouteId: 'cossack_app', // Route ID for the App component (root)
           pathname: c.req.path,
@@ -683,8 +697,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const errorPage = findNearestSpecialPage(path, 'error');
         if (errorPage && path !== errorPage.path) {
           c.status(500);
-          const handler = createSsrHandler(errorPage.component, errorPage.path);
-          return handler(c);
+          return renderBoundary(errorPage.component, errorPage.path, c);
         }
         // Escape the error to prevent XSS via user-controlled content in the
         // message/stack, and only expose detailed traces in development. In
@@ -703,6 +716,23 @@ export function createApp(options: CreateAppOptions = {}) {
         catch (error) { console.error('[Cossack SSR] service cleanup failed:', error); }
       }
     };
+  };
+
+  const renderBoundary = async (component: new () => Cossack, path: string, c: Context) => {
+    const middlewares = getMiddlewares(path);
+    const handler = createSsrHandler(component, path, Reflect.getMetadata('page:options', component));
+    // Preserve Hono's original route index and the selected parameter proxy.
+    let index = -1;
+    const dispatch = async (position: number): Promise<void> => {
+      if (position <= index) throw new Error('next() called multiple times');
+      index = position;
+      const middleware = middlewares[position];
+      if (!middleware) { c.res = await handler(c); return; }
+      const response = await middleware(c, () => dispatch(position + 1));
+      if (response) c.res = response;
+    };
+    await dispatch(0);
+    return c.res;
   };
 
   // Transport routes
@@ -1269,14 +1299,7 @@ export function createApp(options: CreateAppOptions = {}) {
     if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
       const PageComponent = mainExport as new () => Cossack;
       const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
-      const layoutPaths = getLayoutStack(path);
-      const combinedMiddlewares: Middleware[] = [];
-      for (const lPath of layoutPaths) {
-        const LComp = getModuleDefault(layouts[lPath] as object) as new () => Cossack;
-        const lOpts = Reflect.getMetadata('page:options', LComp);
-        if (lOpts?.middlewares) combinedMiddlewares.push(...lOpts.middlewares);
-      }
-      if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
+      const combinedMiddlewares = getMiddlewares(path);
 
       if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
         Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
@@ -1333,11 +1356,12 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   app.notFound(async (c) => {
-    const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
-    const notFoundPage = findNearestSpecialPage(virtualPath, '404');
-    if (notFoundPage) {
+    const selected = resolveNotFound(c.req.path);
+    if (selected) {
+      const component = getModuleDefault(pages[selected.path] as object) as new () => Cossack;
+      const context = withRuntimeRouteParams(c, selected.params);
       c.status(404);
-      return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
+      return runWithContext(context, () => renderBoundary(component, selected.path, context));
     }
     return c.text('404 Not Found', 404);
   });

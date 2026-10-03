@@ -5,6 +5,32 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## File routes and boundary identities
+
+Remove `route` from `@Page` and `@Component` options. This declaration never
+registered an alternate URL. Place the page file under the desired `src/pages`
+path. No in-repository callers require conversion. Published types now reject
+the option. JavaScript callers receive `COSSACK_ROUTE_ALIAS_UNSUPPORTED` before
+the framework reads its value. Static inspection reports the unsupported option
+without executing the initializer.
+
+404 and error components now retain separate source IDs across route groups.
+Their source paths identify them for hydration and transport reconstruction.
+Do not persist generated `cmp_*` values across builds. Rebuild server and browser
+assets together. Boundary `routePath` metadata now contains the full source path.
+Boundaries remain excluded from public typed URLs.
+
+For unknown URLs, selection uses matching effective source prefixes. Equally
+ranked disjoint groups fall back to a common ancestor. Boundary and layout guards
+run before rendering. Already-entered source middleware runs once per request.
+The browser accepts server-selected 404/500 documents and does not cache them
+as successful pages. Plain error documents still fail navigation. Read the
+[boundary guide](../docs/routing.md#unknown-urls-and-boundary-identity) for examples.
+
+For CLI explanations, replace a public boundary pattern such as `/404` with the
+exact source path. `COSSACK_ROUTE_BOUNDARY_SOURCE_REQUIRED` lists the candidates.
+Normal public route explanations retain their existing syntax.
+
 ## Rate-limit configuration and counters reject invalid values
 
 An explicit `rateLimit`/`RATE_LIMIT` now requires a supported non-empty string

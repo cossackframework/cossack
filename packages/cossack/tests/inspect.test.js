@@ -168,4 +168,20 @@ describe('Route inspection and explanation (CLI-04)', () => {
     expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ ok: false,
       diagnostics: [{ code: 'COSSACK_ROUTE_UNKNOWN' }] });
   });
+
+  it('explains boundaries by source identity and rejects a public boundary alias', async () => {
+    const ctx = await routeFixture();
+    roots.push(ctx.cwd);
+    const source = '/src/pages/(group)/dashboard/404/index.ts';
+    await fs.mkdir(path.join(ctx.cwd, 'src/pages/(group)/dashboard/404'), { recursive: true });
+    await fs.writeFile(path.join(ctx.cwd, source.slice(1)), 'export default class GroupNotFound {}');
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await inspectCommand(['routes', source], { ...ctx, flags: { json: true } })).toBe(0);
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ ok: true,
+      data: { kind: '404', source, routeId: expect.any(String) } });
+    output.mockClear();
+    expect(await inspectCommand(['routes', '/dashboard/404'], { ...ctx, flags: { json: true } })).toBe(1);
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ ok: false,
+      diagnostics: [{ code: 'COSSACK_ROUTE_BOUNDARY_SOURCE_REQUIRED' }] });
+  });
 });

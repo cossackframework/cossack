@@ -90,6 +90,23 @@ Default function precedence matches native routing; component modules and plain
 handlers do not invent validated contracts. Source layout ancestry in the manifest
 does not assert that functional API modules execute component layouts.
 
+404 and error components retain source identities rather than competing public
+URLs. Unknown-path selection compiles effective source prefixes at application
+construction. Literal specificity and route-group precedence select an owner.
+Equally ranked disjoint owners use their common source ancestor. The selected
+parameter context also scopes request-local helpers. Boundary rendering composes
+layout/page middleware using request-owned source/index tokens. An entered
+declaration runs once when normal routing, asset fallthrough or error rendering
+reuses its scope. This retains short-circuit responses and after-next headers.
+
+SSR sends the selected source path, component ID and reserved boundary marker.
+The browser validates status/type/source identity for error documents before
+navigation commits. It hydrates the source component and excludes boundaries
+from successful page caches. Shared route IDs retain every boundary, while
+public URL maps and generated builders exclude them. CLI explanations select
+boundary source paths explicitly. PageOptions.route is removed because it never
+participated in registration.
+
 Framework's portable `/api` entry owns declared native HTTP contracts. It reuses
 core input schemas and JSON snapshots, with explicit request locations and
 parsed/raw/wire types. Parsing and authorization precede handler execution.

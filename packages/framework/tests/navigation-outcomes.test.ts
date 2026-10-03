@@ -54,6 +54,13 @@ class App extends Component {
 for (const route of ['start', 'slow', 'fast', 'final']) {
     fixture.registry.pages[`/src/pages/${route}/index.ts`] = async () => ({ default: Component });
 }
+class RootBoundary extends Component { override _getWrappedTemplate() { return 'root-boundary:' + this.path; } }
+class GroupBoundary extends Component { override _getWrappedTemplate() { return 'group-boundary:' + this.path; } }
+fixture.registry.pages['/src/pages/404/index.ts'] = async () => ({ default: RootBoundary });
+fixture.registry.pages['/src/pages/(group)/404/index.ts'] = async () => ({ default: GroupBoundary });
+fixture.registry.pages['/src/pages/(group)/error/index.ts'] = async () => ({ default: GroupBoundary });
+const { computeRouteIds } = await import('../src/route-ids');
+const ids = computeRouteIds(Object.keys(fixture.registry.pages), []);
 const { createClientApp } = await import('../src/client/app');
 let navigate: (url: string) => Promise<NavigateResult>;
 const handleError = (event: Event) => event.preventDefault();
@@ -85,6 +92,36 @@ afterEach(() => {
 });
 
 describe('navigation completion behavior', () => {
+    const boundaryDocument = (status: number, type: string, source: string, id = ids.routePathToIdMap.get(source)) => new Response(
+        `<script>window.__INITIAL_STATE__ = ${JSON.stringify({ routePath: source, componentPath: source,
+            componentRouteId: id, pathname: '/missing', _cossackBoundary: { type, source } })}</script>`, { status });
+
+    it.each([[404, '404'], [500, 'error']] as const)('commits a server-selected %s boundary by source identity and never caches its failure', async (status, type) => {
+        const source = `/src/pages/(group)/${type}/index.ts`;
+        vi.stubGlobal('fetch', vi.fn(async () => boundaryDocument(status, type, source)));
+        expect(await navigate('/missing')).toMatchObject({ outcome: 'completed' });
+        expect(document.querySelector('#app')!.textContent).toBe('group-boundary:/missing');
+        expect(window.location.pathname).toBe('/missing');
+        expect(await navigate('/missing')).toMatchObject({ outcome: 'completed' });
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+        [404, 'error', '/src/pages/(group)/error/index.ts'],
+        [404, '404', '/src/pages/start/index.ts'],
+        [500, 'error', '/src/pages/(group)/404/index.ts'],
+    ])('rejects a failure document with mismatched status/type/module (%#)', async (status, type, source) => {
+        vi.stubGlobal('fetch', vi.fn(async () => boundaryDocument(status as number, type as string, source as string)));
+        expect(await navigate('/missing')).toMatchObject({ outcome: 'failed' }); expect(window.location.pathname).toBe('/start');
+    });
+
+    it('rejects plain failures and a mismatched component ID instead of committing another module', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('missing', { status: 404 })));
+        expect(await navigate('/missing')).toMatchObject({ outcome: 'failed' });
+        vi.stubGlobal('fetch', vi.fn(async () => boundaryDocument(404, '404', '/src/pages/(group)/404/index.ts', ids.routePathToIdMap.get('/src/pages/404/index.ts'))));
+        expect(await navigate('/missing')).toMatchObject({ outcome: 'failed' }); expect(window.location.pathname).toBe('/start');
+    });
+
     it('returns the full URL through the public callback and pushes it to history', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
         expect(await Cossack._onNavigate!('/fast?sort=name#row')).toEqual({ outcome: 'completed', url: '/fast?sort=name#row' });

@@ -1,4 +1,9 @@
 import { createRouteBuilder, type RouteParameters } from '@cossackframework/core/routes';
+import { Page, type PageOptions } from '@cossackframework/core';
+// @ts-expect-error file paths define routes; the unused alias option is removed
+const unusedAlias: PageOptions = { route: '/alias' };
+// @ts-expect-error a decorator cannot silently promise an unregistered URL
+Page({ route: '/alias' });
 
 const widenedRegistry = { user: '/users/:id' };
 // @ts-expect-error erased patterns cannot establish parameter types

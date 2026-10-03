@@ -24,7 +24,7 @@ import {
     getDefaultLocale,
 } from '@cossackframework/core';
 import { CossackElement } from '@cossackframework/renderer';
-import { filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
+import { classifyRoute, computeRouteIds, filePathToHttpRoute, filePathToRoutePath, resolvePageRouteFiles } from '../route-ids.js';
 import registry from 'virtual:cossack-pages';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 // Side-effect: registers `__`, `setLocale`, `getLocale`, `isLocale` as globals.
@@ -35,10 +35,13 @@ import '../i18n-globals.js';
 // installed server-side only (see src/index.ts and src/router.ts).
 
 const { pages, layouts, loadings } = registry;
+const { routeIdMap } = computeRouteIds(Object.keys(pages), Object.keys(layouts));
 
 // Create mapping from route paths to file paths for component loading
 const routeToFilePath = new Map<string, string>();
 for (const filePath of resolvePageRouteFiles(Object.keys(pages))) {
+    const kind = classifyRoute(filePathToHttpRoute(filePath));
+    if (kind === '404' || kind === 'error') continue;
     const routePath = filePathToRoutePath(filePath);
     routeToFilePath.set(routePath, filePath);
 }
@@ -209,11 +212,15 @@ async function fetchPage(url: string) {
   const requestEpoch = pageCacheEpoch;
   const promise = (async () => {
     const response = await fetch(key);
-    if (!response.ok) {
-      throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
-    }
+    if (!response.ok && response.status !== 404 && response.status !== 500) throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
     const html = await response.text();
     const parsed = parseStateFromHTML(html);
+    const boundary = parsed?.state?._cossackBoundary;
+    const source = routeIdMap.get(parsed?.state?.componentRouteId);
+    const expectedKind = response.status === 404 ? '404' : 'error';
+    const validBoundary = Boolean(boundary && boundary.type === expectedKind && boundary.source === source &&
+      source && pages[source] && classifyRoute(filePathToHttpRoute(source)) === expectedKind);
+    if (!response.ok && !validBoundary) throw new Error(`Failed to load page: ${response.status} ${response.statusText}`);
 
     if (parsed) {
       const data = { html, state: parsed.state, url: response.url || new URL(key, window.location.href).href };
@@ -221,7 +228,7 @@ async function fetchPage(url: string) {
       // An RPC may have invalidated the cache while this prefetch was in
       // flight. Return its result to the original caller, but never let that
       // stale document repopulate the post-mutation cache.
-      if (requestEpoch !== pageCacheEpoch) return data;
+      if (!response.ok || requestEpoch !== pageCacheEpoch) return data;
       pageCache.set(key, data);
       // LRU eviction: drop the oldest entry once over capacity. Map iterates in
       // insertion order, so the first key is the least-recently-inserted.
@@ -281,7 +288,7 @@ export async function createClientApp({
 
   // The SSR route is already available without a fetch. Seed it so navigating
   // away and back honours the documented zero-network revisit behaviour.
-  pageCache.set(pageCacheKey(window.location.href), {
+  if (!window.__INITIAL_STATE__?._cossackBoundary) pageCache.set(pageCacheKey(window.location.href), {
     html: document.documentElement.outerHTML,
     state: window.__INITIAL_STATE__,
     url: new URL(pageCacheKey(window.location.href), window.location.href).href,
@@ -440,7 +447,10 @@ export async function createClientApp({
     }
 
     // Convert route path to file path for module lookup
-    const componentPath = routeToFilePath.get(routePath) || routePath;
+    const identified = routeIdMap.get(initialState?.componentRouteId);
+    const componentPath = identified && pages[identified] ? identified
+      : initialState?.componentPath && pages[initialState.componentPath] ? initialState.componentPath
+      : routeToFilePath.get(routePath) || routePath;
 
     appInstance.updatePath(pathname);
 

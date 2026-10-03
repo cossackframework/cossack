@@ -14,6 +14,7 @@ import { writeWorkerOptimisticSse, checkWorkerOptimisticSse } from './fixtures/w
 import { writeWorkerOptimisticStreams, checkWorkerOptimisticStreams } from './fixtures/worker-optimistic-streams.js';
 import { writeApiContractAcceptance, checkApiContractAcceptance, checkApiContractAssets } from './fixtures/api-contract-acceptance.js';
 import { createTestHarness } from 'wrangler';
+import { writeRouteBoundaryAcceptance, checkRouteBoundaryAcceptance, checkRouteBoundaryBrowser } from './fixtures/route-boundary-acceptance.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -86,6 +87,43 @@ async function productionServer(root, environment = {}) {
   }
   return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
 }
+it.each(['node', 'cloudflare'])('selects and hydrates source boundaries in a generated production %s app', async adapter => {
+  const root = await project(adapter); await writeRouteBoundaryAcceptance(root);
+  await vite(root, []);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--json'], { cwd: root, timeout: 30000 });
+  const inspected = JSON.parse(cli.stdout).data;
+  expect(inspected.manifest).toEqual(manifest);
+  const checkInspection = states => {
+    for (const state of states) {
+      expect(manifest.filePathToId[state.componentPath]).toBe(state.componentRouteId);
+      const page = inspected.routes.find(route => route.filePath === state.componentPath);
+      expect(page.routeId).toBe(state.componentRouteId);
+      expect(page.layoutAndPageMiddlewareCount).toBe(state.public.order.split(',').length - 1);
+      expect(page.middlewareStack.map(entry => entry.source.split(':')[0])).toEqual([
+        ...page.layouts, state.componentPath,
+      ]);
+    }
+  };
+  const browser = await chromium.launch({ headless: true });
+  if (adapter === 'node') {
+    const runtime = await productionServer(root);
+    try {
+      const states = await checkRouteBoundaryAcceptance((url, options) => fetch(runtime.origin + url, options));
+      checkInspection(states);
+      await checkRouteBoundaryBrowser(browser, runtime.origin);
+    } finally { await browser.close(); await runtime.close(); }
+  } else {
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+    try {
+      const { url } = await harness.listen();
+      const states = await checkRouteBoundaryAcceptance((path, options) => harness.fetch(path, options));
+      checkInspection(states);
+      await checkRouteBoundaryBrowser(browser, new URL(url).origin);
+    } finally { await browser.close(); await harness.close(); }
+  }
+}, 120000);
 it.each(['node', 'cloudflare'])('executes declared API contracts in a generated production %s app', async adapter => {
   const root = await project(adapter);
   await writeApiContractAcceptance(root);

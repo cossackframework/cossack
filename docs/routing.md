@@ -116,7 +116,9 @@ Parameter names use ASCII letters, digits, underscores or hyphens, and start
 with a letter or underscore.
 Conflicting files with equal precedence stop generation. The direct file wins
 over an equivalent file inside an additional route group, as in the router.
-`PageOptions.route` does not currently register a URL alias.
+`PageOptions.route` is removed in 0.9. It never registered a URL alias. Move the
+file to the intended path under `src/pages`; see the
+[migration guide](../specs/migration-0.9.0.md#file-routes-and-boundary-identities).
 
 The generated browser module contains public patterns and the portable core
 helper. Native API declarations use type-only page references, which disappear
@@ -125,6 +127,43 @@ structural manifest retains source layout ancestry and nearest source boundaries
 Functional API handlers do not execute component layouts. Method and middleware
 facts remain in `cossack routes --json` inspection. See
 [declared API contracts and generated types](./api-routes.md#declared-input-and-output).
+
+### Unknown URLs and boundary identity
+
+For an unknown URL, Cossack selects the longest matching prefix from effective
+source branches. Literal segments take precedence over parameters, followed by
+catch-alls. Fewer route groups win an otherwise equal match. This preserves
+directory names such as `(account)` and `[id]` that a public URL cannot identify.
+An explicit 404 directory can own a namespace without an ordinary page.
+
+For example, `/users/alice/missing` can select
+`src/pages/(account)/users/[id]/404/index.ts`. The boundary and its layout
+middleware receive `id: 'alice'`, including through `getRequestContext()`.
+Encoded parameter values are decoded once. A malformed escape stays in its
+owning scope for the guard to handle.
+
+Equally ranked branches in separate groups use their common source ancestor.
+For example, `(first)/area/one` and `(second)/area/two` do not choose either
+private group for `/area/missing`. The common ancestor's nearest boundary
+handles that URL, or the framework returns a plain 404.
+
+Boundary layout and page middleware run before rendering. A guard can return
+a response such as 403. A source middleware declaration already entered in the
+request runs once, including when a page fails and selects an error boundary.
+Global bootstrap middleware remains part of the same request. Error boundaries
+use the failing page's source ancestry and preserve status 500.
+
+Every 404 and error component has its own source ID. Boundaries have no public
+route alias. Inspect a specific boundary with its source path:
+
+```sh
+pnpm exec cossack inspect routes '/src/pages/(account)/users/[id]/404/index.ts' --json
+```
+
+The browser hydrates the server-selected component and accepts validated
+boundary documents during navigation. Responses retain their 404 or 500 status.
+Boundary documents are not cached as successful pages. A plain error response
+still produces a failed navigation.
 
 ### Route Groups
 

@@ -55,7 +55,9 @@ function readOptionsObject(objectExpression: AstNode, code: string) {
       continue;
     }
     const key = property.key.name ?? property.key.value;
-    if (key === 'transport' && property.value.type === 'Literal' && typeof property.value.value === 'string') {
+    if (key === 'route') {
+      unresolved.push('PageOptions.route is unsupported; define the URL through its src/pages file path');
+    } else if (key === 'transport' && property.value.type === 'Literal' && typeof property.value.value === 'string') {
       options.transport = property.value.value;
     } else if (key === 'stateful' && property.value.type === 'Literal' && typeof property.value.value === 'boolean') {
       options.stateful = property.value.value;
