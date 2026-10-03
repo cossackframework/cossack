@@ -202,7 +202,7 @@ calls expose yields and completion separately on every transport.
     - The Runtime identifies all state properties belonging to the same **channel** as the changed property (e.g., `feeds`).
     - It constructs a **partial state object** containing only the properties for that channel.
     - The Runtime broadcasts this partial state to **all** clients connected to it.
-    - The client-side component receives the partial state, updates its local properties, and automatically re-renders the UI (overwriting any optimistic state).
+    - The client receives partial public state and requests a render. Pending optimistic calls retain their owned field previews until settlement; authoritative values update their confirmed base.
 
  **b) Event-Driven Re-fetch (Manual):**
     - The server method modifies a database or other external source of truth.
@@ -585,6 +585,30 @@ Unknown representations remain subject to real serialization. Diagnostics do not
 normalize snapshots or reject state writes. Core library builds retain consuming
 Vite mode selection, with safe optional env access for direct Node imports.
 Production state and serialization semantics are unchanged.
+
+### Optimistic invocation ownership
+
+Core owns a weak per-target ledger of invocations and resulting reactive-field
+values. Handlers execute once and synchronously. Plain field trees are detached
+for capture, without serialization hooks; native values remain scalar references.
+Each call can remove its own preview without restoring an old whole-component
+snapshot. Newer confirmed replies and later local writes have separate ownership.
+This representation does not infer arithmetic/array operations or provide a
+database transaction. Later nested edits protect the complete reactive field.
+
+Component and service setters record local edits. The shared RPC state applier
+combines call-owned fields with the canonical JSON comparison for unrelated
+request fields. Explicit service replies are filtered by their public metadata
+before merging. HTTP/service request state excludes pending previews and includes
+user-authored public edits. Client-only state stays outside that request overlay.
+Uncorrelated completion broadcasts cannot settle correlated calls. Loading counts
+settle once through the owning call lifecycle.
+
+Process runtime connection snapshots contain flat public state, matching normal
+broadcasts and Cloudflare snapshots. SSR hydration remains a separate wrapped
+record. Uncertain errors retain existing transport codes and cannot prove server
+rollback. Mutation replay is forbidden; a record read or resource refresh supplies
+application-specific authority when no realtime snapshot is available.
 
 The Cloudflare SSE coordinator checks `X-Cossack-Rpc-Response: native` before
 its RPC NDJSON MIME-type branch. A native body may contain arbitrary text/JSON/

@@ -114,6 +114,15 @@ export class InMemoryWebSocketRuntime<
         return this.component.getInitialState();
     }
 
+    /** WebSocket snapshots use the same flat public record as later broadcasts. */
+    getPublicState(): Record<string, unknown> {
+        const initial = this.component.getInitialState();
+        if (!initial?.public || typeof initial.public !== 'object' || Array.isArray(initial.public)) {
+            throw new Error('[Cossack] A WebSocket component must provide a public state record.');
+        }
+        return initial.public;
+    }
+
     async onClientMessage(client: unknown, message: string): Promise<void> {
         const socket = client as Client;
         if (message === 'ping') {

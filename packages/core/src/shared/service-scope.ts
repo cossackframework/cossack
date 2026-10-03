@@ -1,4 +1,6 @@
 import { collectReactiveMetadata } from './reactive-metadata';
+import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers, optimisticHandler, optimisticKeys, ownRpcLoading } from './optimistic-state';
+import { createStateApplier } from './rpc-state';
 import { collectServerMethodMetadata } from './server-method-metadata';
 import './metadata';
 import type { Context } from 'hono';
@@ -332,7 +334,10 @@ export class ServiceScope {
             // promise or iterator consumption, stream frames, cancellation,
             // deadlines, and correlated RpcError failures.
             entry.instance[action] = (...payload: unknown[]) => {
-                this.setLoading(action, 1);
+                const call = beginOptimisticCall(entry.instance, action,
+                    optimisticHandler(entry.instance, optimisticHandlers(entry.serviceClass)[action], payload),
+                    optimisticKeys(entry.serviceClass));
+                const finishLoading = this.beginLoading(action);
                 let requestId: string = crypto.randomUUID();
                 const controller = new AbortController();
                 let timedOut = false;
@@ -341,11 +346,13 @@ export class ServiceScope {
                     controller.abort();
                 }, timeoutMs);
                 let request: Promise<Response>;
+                let requestState: Record<string, unknown> = {};
+                let success = false;
                 try {
-                    const state = snapshotRpcValue(getServiceState(entry.instance), 'state');
+                    requestState = snapshotRpcValue(optimisticRequestState(entry.instance, getServiceState(entry.instance)), 'state') as Record<string, unknown>;
                     const normalized = snapshotRpcPayload(payload);
                     const body = { service: { ownerRouteId: this.ownerRouteId, slot: entry.slot }, action,
-                        payload: normalized.payload, state, scopeKey: this.scopeKey };
+                        payload: normalized.payload, state: requestState, scopeKey: this.scopeKey };
                     request = fetch(normalized.files.size ? '/upload' : '/crpc', {
                         method: 'POST',
                         headers: { 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
@@ -357,7 +364,9 @@ export class ServiceScope {
                         'COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize service request.', { cause }));
                 }
                 void request.catch(() => {});
-                const operation = async function* (scope: ServiceScope): AsyncGenerator<unknown, unknown> {
+                const applyState = createStateApplier(entry.instance, requestState, call);
+                const apply = (state: Record<string, unknown>) => applyState(sanitizeServiceState(entry.serviceClass, state));
+                const operation = async function* (): AsyncGenerator<unknown, unknown> {
                     try {
                         const response = await request;
                         requestId = response.headers.get('X-Cossack-Request-Id') ?? requestId;
@@ -365,25 +374,29 @@ export class ServiceScope {
                             throw await readRpcHttpError(response, controller.signal);
                         }
                         if (response.headers.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
-                            return await readRpcNativeResponse(response, controller.signal);
+                            const value = await readRpcNativeResponse(response, controller.signal);
+                            success = true;
+                            return value;
                         }
                         if (response.headers.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                             for await (const frame of readRpcStream(response, controller.signal)) {
                                 if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                                     { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                                 if (frame.state && typeof frame.state === 'object') {
-                                    hydrateServiceState(entry.instance, frame.state as Record<string, unknown>);
+                                    apply(frame.state as Record<string, unknown>);
                                 }
-                                if (frame.type === 'done') return frame.value;
+                                if (frame.type === 'done') { success = true; return frame.value; }
                                 yield frame.value;
                             }
                         }
                         const data = await readRpcJsonResponse(response, 'service', controller.signal);
                         if (typeof (data as any)._cossack_redirect === 'string') {
+                            success = true;
                             window.location.href = (data as any)._cossack_redirect;
                             return undefined;
                         }
-                        hydrateServiceState(entry.instance, data._cossack_service_state as Record<string, unknown>);
+                        apply(data._cossack_service_state as Record<string, unknown>);
+                        success = true;
                         return (data as any)._cossack_return;
                     } catch (cause) {
                         if (controller.signal.aborted) {
@@ -396,24 +409,40 @@ export class ServiceScope {
                             'Service RPC request failed. The server outcome is unknown and is never retried.', { cause, requestId });
                     } finally {
                         if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
-                        scope.setLoading(action, -1);
+                        finishOptimisticCall(call, success);
+                        finishLoading();
                     }
                 };
-                return createRpcCall(operation(this), () => controller.abort(),
+                return createRpcCall(operation(), () => controller.abort(),
                     error => console.error(`Error calling service action '${action}':`, error), () => requestId);
             };
         }
         this.clientProxyInstalled.add(entry.instance);
     }
 
-    private setLoading(action: string, delta: number): void {
-        for (const { consumer } of this.subscribers) {
-            if (!consumer.loading) continue;
-            const next = (consumer.loading[action] || 0) + delta;
-            if (next > 0) consumer.loading[action] = next;
-            else delete consumer.loading[action];
+    private beginLoading(action: string): () => void {
+        const consumers = [...new Set([...this.subscribers].map(subscription => subscription.consumer))]
+            .filter(consumer => consumer.loading);
+        const releases = consumers.map(consumer => {
+            const release = ownRpcLoading(consumer, action);
+            consumer.loading[action] = (consumer.loading[action] || 0) + 1;
             if (typeof consumer.requestUpdate === 'function') void consumer.requestUpdate();
-        }
+            return () => {
+                release();
+                const next = (consumer.loading[action] || 0) - 1;
+                if (next > 0) consumer.loading[action] = next; else delete consumer.loading[action];
+                // Release the original subscriber even after it unsubscribed,
+                // but do not schedule another render for an exited component.
+                if ([...this.subscribers].some(subscription => subscription.consumer === consumer)
+                    && typeof consumer.requestUpdate === 'function') void consumer.requestUpdate();
+            };
+        });
+        let settled = false;
+        return () => {
+            if (settled) return;
+            settled = true;
+            for (const release of releases) release();
+        };
     }
 }
 

@@ -15,7 +15,7 @@ function deferred() {
   return { promise, resolve };
 }
 function component() {
-  return { _id: 'page', activeComponents: new Map(), getInitialState: () => ({}), destroyAsync: vi.fn(async () => {}) };
+  return { _id: 'page', activeComponents: new Map(), getInitialState: () => ({ public: {} }), destroyAsync: vi.fn(async () => {}) };
 }
 async function connect(adapter: ReturnType<typeof createDenoAdapter>, factory: () => Promise<any>, target = 'one') {
   await adapter.handleWebSocketUpgrade!({} as any, {

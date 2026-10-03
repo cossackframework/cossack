@@ -26,7 +26,7 @@ below link directly to those explanations.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
-- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
+- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Complete authoritative reads for uncertain HTTP outcomes and the real reconnect/contribution-rebasing audit remain open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
@@ -4082,3 +4082,121 @@ detailed plan. Preserve newer local edits, settle loading once, distinguish
 rejection from uncertain completion, and resync without replay. Also fix the
 first-party Node development gap before the final runtime gate. All other original
 unchecked tasks remain; reports.md and .zcodeignore remain user-owned and unstaged.
+
+<a id="codex-optimistic-ownership-2026-10-03"></a>
+## Codex optimistic invocation ownership checkpoint — 2026-10-03
+
+Author: **Codex**. Continued after `83ea5e4`. **No checkbox closes: 20 checked /38
+unchecked**, all 58 original IDs preserved. RT-06 remains open against its
+[original criteria and next plan](./release-0.9.0-plan.md#rt-06). Read the
+[optimistic guide](../docs/optimistic.md) and
+[migration](./migration-0.9.0.md#optimistic-call-ownership-and-flat-connection-snapshots).
+
+The first 20-case controlled matrix reproduced 17 failures across HTTP, SSE and
+socket calls. Previous locks grouped calls by method name, retained failed
+previews, dropped a newer success when an older failure settled last, missed
+nested Store changes, and sent previewed public values back as server input.
+
+Core now owns each invocation and its resulting field layers separately. Known
+plain trees capture before/after values without JSON hooks. Failure removes the
+owned preview; newer confirmed data, another pending call, or a later local edit
+remains. Component/service setters observe local edits, including Store paths.
+Handlers run once and synchronously. Async handlers are refused; synchronous
+promise/throw/over-depth failures restore captured changes while the actual action
+can still dispatch. Native values remain scalar references. Inherited handler
+metadata retains parent action siblings. Uncorrelated completion messages cannot
+settle modern request-scoped loading counts.
+
+HTTP/service request state now excludes pending previews, preventing an action
+from receiving its own optimistic increment as its starting value. Explicit
+services use the same ownership, sanitized state merging and subscriber loading
+settlement. Shared rpc-state.ts removes the service's direct-hydration race and
+keeps canonical JSON equality for unrelated fields, without a Cossack/Node import.
+The current representation is whole-field resulting values. It does not infer
+arithmetic/array contribution operations, transact database updates or stop
+application I/O. A later nested edit protects the full field and can retain older
+preview data it read. These limits are explicit in the remaining RT-06 audit.
+
+Review also found Node/Deno initial WebSocket frames carried wrapped hydration
+state, while clients expect a flat public record. The process runtime now exposes
+getPublicState, and both Node upgrade paths plus Deno send that record. SSR
+hydration remains wrapped. Actual socket/dev/HMR fixtures now inspect flat fields;
+this fixes connection-state delivery, not the separate Node plain Vite dev 404 gap.
+
+Final verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run`: **1197 tests /69 files**.
+  New optimistic matrix has **48** cases; legacy cleanup file now has **5**.
+  Coverage includes overlap/success/failure completion order, independent fields,
+  nested/local values, later user edits, intervening broadcasts, null request
+  values, timeout/cancel/disconnect, inherited/throwing/promise/over-depth handlers,
+  actual component setters and explicit service subscribers.
+- `pnpm --filter @cossackframework/framework exec vitest run`: **1316 /57**.
+  Node adapter suite **16 /4**, Deno adapter suite **16 /2** pass. These Deno
+  fixtures run under Vitest; native Deno execution remains REL-03.
+- Core/framework/Node/Deno package builds pass. Final root `pnpm tsc --noEmit`
+  and `pnpm typecheck` pass all **11** package configurations. Builds complete
+  before consumers run; no declaration-deleting build overlaps those checks.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`:
+  **18/18**, about **111 seconds**. New generated production HTTP/SSE pages prove
+  late older validation rejection after newer success, preview exclusion from
+  actual requests, client-only exclusion, nested authoritative state, correct
+  loading and later user edits. The app passes its own tsc. Existing state DEV/
+  production, task/navigation/scoped service, protected-route, schema/resource,
+  portable builds and actual Node production/dev/HMR socket cases also pass.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js
+  tests/websocket-peer-integration.test.js --maxWorkers=1`: final **2/2**, about
+  **121 seconds** while the full generated suite ran separately. Native Worker
+  HTTP/SSE pages preserve newer count 20 after a held older invalid call, settle
+  loading from 2 to 1 to 0, send confirmed count 0 for both calls, retain local
+  Store edits and a later user count 99. Existing native D1/resource/schema/policy/
+  limiter/stream/socket acceptance remains passing. All fixtures are disposable
+  and local; no remote resource or live deployment changed.
+- Owned whitespace and JS syntax checks pass. reports.md/.zcodeignore remain
+  user-owned and unstaged. Versions remain 0.8.3. No full CLI/monorepo, tarball,
+  native Deno, Electron or release/version/publication gate is claimed.
+
+Intermediate corrections are retained here rather than hidden:
+
+- A first targeted command named a nonexistent service-scope.test.ts; Vitest ran
+  the two matching files only (**59** cases). The subsequent explicit commands
+  included layout-service-scope and service-rpc-security, and final full core
+  verification covers every core file.
+- Review separated local user layers from the authoritative base so an intervening
+  broadcast cannot erase a later edit while a call is pending. Request extraction
+  now preserves an authored null, rather than falling back via nullish coalescing.
+  Plain snapshots preserve enumerable symbol properties in local object trees.
+- A throwing handler can throw undefined; a dedicated failure flag now restores
+  it. Capture failures restore fields instead of escaping before the actual call's
+  lifecycle is installed. Promise rejection is consumed without unhandled errors.
+- The over-depth preview fixture initially also sent the same invalid deep tree
+  as an RPC argument, so canonical validation correctly prevented dispatch. The
+  corrected fixture generates the bad preview locally and sends valid arguments;
+  it proves preview restoration and one actual call independently of RPC rejection.
+- An initial native expanded run passed 2/2; the final rebuilt run after capture
+  edge fixes also passed 2/2. Final full generated acceptance replaces earlier
+  selected 1/18 optimistic and 2/18 adapter snapshots.
+- Late review reproduced explicit service subscriber loading being cleared by an
+  unrelated completion broadcast. Per-call subscriber loading now ignores that
+  broadcast, counts duplicate subscriptions once, and releases the original owner
+  even after unsubscribe without rendering it. The new cleanup regression failed
+  before this fix and passed afterward.
+- A later client-only tree beyond snapshot depth initially made its ordinary
+  setter throw and could mask the RPC error/leak loading. A real Cossack setter
+  regression reproduced it. Unsupported local values now retain references with
+  owner/field diagnostics; cleanup catches per-field failures, drains siblings and
+  settles loading. Public request extraction leaves canonical validation in charge
+  instead of throwing an earlier plain-clone error.
+- Full-state responses initially treated an unrelated echoed input as a newer
+  confirmation, canceling another field's preview. Three transport cases failed
+  before the fix. Unrelated echoes now retain that pending ownership; actual
+  changes and the owning call's response still supply authority. Final source and
+  rebuilt package verification supersede the earlier intermediate green runs.
+
+**Completion audit: RT-06 stays open.** Controlled tests manually applying a
+snapshot after uncertainty do not prove an actual lost-response read/reconnect.
+Define the authoritative HTTP/service read contract, test an already committed
+mutation with a deliberately lost reply and zero replay, finish native socket/SSE
+recovery and late broadcast coverage, and audit operation-aware contribution
+rebasing plus stream failure/cancellation. Follow the detailed next plan before
+checking the task. Preserve all other original unchecked IDs and release gates.

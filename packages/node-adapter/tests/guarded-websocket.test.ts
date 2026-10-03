@@ -88,7 +88,7 @@ it('runs middleware before and after routing, forwards handshake cookies, and di
   });
   const { socket, state } = connected(url);
   const headers = new Promise<any>(resolve => socket.once('upgrade', response => resolve(response.headers)));
-  expect(await state).toEqual({ type: 'state-update', state: { public: { count: 1 } } });
+  expect(await state).toEqual({ type: 'state-update', state: { count: 1 } });
   expect((await headers)['set-cookie']).toEqual(['session=refreshed; HttpOnly', 'flash=done']);
   socket.send(JSON.stringify({ type: 'action', action: 'save', payload: [1] }));
   await vi.waitFor(() => expect(component.executeAction).toHaveBeenCalled());

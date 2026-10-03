@@ -126,7 +126,7 @@ it.each(['node', 'deno'])('builds a generated %s app through its real Vite confi
           socket.once('close', (code, reason) => reject(new Error('Closed before snapshot: ' + code + ' ' + reason)));
           socket.once('error', reject);
         });
-        if (state.type !== 'state-update' || state.state.public.count !== 7) throw new Error('Incorrect WebSocket snapshot: ' + JSON.stringify(state));
+        if (state.type !== 'state-update' || state.state.count !== 7) throw new Error('Incorrect WebSocket snapshot: ' + JSON.stringify(state));
         console.log('NODE_WS_GUARDS_OK');
       } finally {
         await runtime.dispose();
@@ -670,18 +670,18 @@ it('runs generated Node development WebSockets, preserves HMR, and replaces runt
       return { socket, state };
     };
     const first = await connect();
-    expect(first.state.state.public.count).toBe(7);
+    expect(first.state.state.count).toBe(7);
     const closed = once(first.socket, 'close');
     await fs.writeFile(page, source(9));
     await closed;
     await expect.poll(async () => {
-      try { return (await connect()).state.state.public.count; }
+      try { return (await connect()).state.state.count; }
       catch { return undefined; }
     }, { timeout: 15000 }).toBe(9);
     await fs.writeFile(page, source(10));
     await fs.writeFile(page, source(11));
     await expect.poll(async () => {
-      try { return (await connect()).state.state.public.count; }
+      try { return (await connect()).state.state.count; }
       catch { return undefined; }
     }, { timeout: 15000 }).toBe(11);
     expect(hmr.readyState).toBe(WebSocket.OPEN);
@@ -1101,6 +1101,77 @@ async function developmentServer(root) {
   } catch (error) { await close(); throw error; }
   return { origin: /STATE_DEV_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close, output: () => output };
 }
+
+it('owns optimistic rollback across overlapping HTTP/SSE browser calls', async () => {
+  const root = await project('node');
+  for (const transport of ['http', 'sse']) {
+    const directory = path.join(root, 'src/pages/optimistic', transport);
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'index.ts'), `
+      import { Cossack, Page, State, Store, ClientState, Server, Client, Optimistic, input } from '@cossackframework/core';
+      import { html } from '@cossackframework/renderer';
+      @Page({ transport: '${transport}' }) export default class OptimisticPage extends Cossack {
+        @State() count = 0;
+        @Store() cart = { rows: [1] };
+        @ClientState() local = 0;
+        @Optimistic('edit') preview(value: { value: number }) { this.count = value.value; this.cart.rows.push(value.value); this.local = value.value; }
+        @Server({ input: input.object({ value: input.number({ min: 0 }), delay: input.number({ min: 0 }) }) })
+        async edit(value: { value: number; delay: number }) {
+          await new Promise(resolve => setTimeout(resolve, value.delay));
+          this.count = value.value * 10; this.cart.rows.push(this.count); return this.count;
+        }
+        @Client() onMount() { (window as any).__optimistic = this; }
+        @Client() editLocal(value: number) { this.count = value; }
+        render() { return html\`<main><span data-testid="count">\${this.count}</span><span data-testid="rows">\${this.cart.rows.join(',')}</span><span data-testid="local">\${this.local}</span><span data-testid="loading">\${this.loading.edit || 0}</span></main>\`; }
+      }
+    `);
+  }
+  await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, maxBuffer: 1024 * 1024 });
+  await vite(root, []); await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const server = await productionServer(root);
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  try {
+    for (const transport of ['http', 'sse']) {
+      await page.goto(`${server.origin}/optimistic/${transport}`);
+      await page.waitForFunction(() => !!window.__optimistic);
+      if (transport === 'sse') await page.waitForFunction(() => window.__optimistic.realtime.sse.state === 'open');
+      const dispatched = [];
+      let release;
+      const held = new Promise(resolve => { release = resolve; });
+      await page.route('**/crpc**', async route => {
+        const body = route.request().postDataJSON(); dispatched.push(body);
+        if (body.action === 'edit' && body.payload[0].value < 0) await held;
+        await route.continue();
+      });
+      await page.evaluate(() => {
+        window.__old = window.__optimistic.edit({ value: -1, delay: 0 }).catch(error => { window.__oldError = error.code; });
+        window.__next = window.__optimistic.edit({ value: 2, delay: 30 });
+      });
+      await browserExpect(page.getByTestId('count')).toHaveText('20');
+      await browserExpect(page.getByTestId('loading')).toHaveText('1');
+      expect(dispatched.map(body => body.state.count)).toEqual([0, 0]);
+      for (const body of dispatched) expect(body.state).not.toHaveProperty('local');
+      release();
+      await page.evaluate(async () => { await window.__old; await window.__next; });
+      expect(await page.evaluate(() => window.__oldError)).toBe('COSSACK_VALIDATION_FAILED');
+      await browserExpect(page.getByTestId('count')).toHaveText('20');
+      await browserExpect(page.getByTestId('rows')).toHaveText('1,20');
+      await browserExpect(page.getByTestId('local')).toHaveText('2');
+      await browserExpect(page.getByTestId('loading')).toHaveText('0');
+      await page.unroute('**/crpc**');
+      await page.evaluate(() => {
+        window.__pending = window.__optimistic.edit({ value: 3, delay: 75 });
+        window.__optimistic.editLocal(99);
+      });
+      await page.evaluate(async () => { await window.__pending; });
+      await browserExpect(page.getByTestId('count')).toHaveText('99');
+      await browserExpect(page.getByTestId('loading')).toHaveText('0');
+    }
+    expect(errors).toEqual([]);
+  } finally { await browser.close(); await server.close(); }
+}, 120000);
 
 it.each(['development', 'production'])('runs state documentation examples and diagnostics in a published %s app', async mode => {
   const root = await project('node');

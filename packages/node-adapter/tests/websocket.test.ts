@@ -50,7 +50,7 @@ describe('CossackNodeAdapter WebSockets', () => {
                 socket.once('error', reject);
                 socket.once('message', (data) => resolve(JSON.parse(data.toString())));
             });
-            expect(state).toEqual({ type: 'state-update', state: { public: { count: 0 } } });
+            expect(state).toEqual({ type: 'state-update', state: { count: 0 } });
             expect(receivedParams).toEqual({ id: '42' });
         } finally {
             socket.close();

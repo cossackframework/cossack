@@ -1,4 +1,5 @@
 import { collectReactiveMetadata } from './reactive-metadata';
+import { noteOptimisticWrite } from './optimistic-state';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/service-bootstrap.ts
 import './metadata';
@@ -72,6 +73,7 @@ export function bootstrapService(
                         value as Record<PropertyKey, unknown>,
                         key,
                         () => {
+                            noteOptimisticWrite(instance, key);
                             const current = runtime.values.get(key);
                             for (const listener of runtime.listeners) listener(key, current);
                         },
@@ -85,6 +87,7 @@ export function bootstrapService(
                 if (oldValue === newValue) return;
                 runtime.values.set(key, newValue);
                 runtime.proxies.delete(key);
+                noteOptimisticWrite(instance, key);
                 for (const listener of runtime.listeners) listener(key, newValue);
             },
             enumerable: true,

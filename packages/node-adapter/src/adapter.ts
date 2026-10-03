@@ -142,7 +142,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
           ws.close(1013, 'Runtime unavailable');
         }).finally(() => entry.actions.delete(action));
       });
-      ws.send(JSON.stringify({ type: 'state-update', state: entry.runtime.getInitialState() }));
+      ws.send(JSON.stringify({ type: 'state-update', state: entry.runtime.getPublicState() }));
     } catch (error) {
       console.error('[Cossack] Node WebSocket initialization failed:', error);
       ws.close(1013, 'Runtime unavailable');

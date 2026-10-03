@@ -440,3 +440,37 @@ Client-only fields are omitted from serialized state, but their authored initial
 values still exist during SSR and can appear in HTML. Explicit RPC arguments can
 also contain those values. Do not put secrets in client-only fields. Read the
 [state examples and JSON contract](../docs/states.md) before choosing field kinds.
+
+## Optimistic call ownership and flat connection snapshots
+
+Optimistic calls now own their previews separately, including concurrent calls to
+the same method. Rejection removes the failed call's preview; newer confirmed
+state and later user edits remain. Nested plain Store trees are captured as
+whole-field values. This does not infer arithmetic/array contribution rollback or
+undo server mutations. Explicit scoped services use the same ownership rules.
+Unrelated echoed state no longer cancels a pending field preview. Service loading
+is owned by its invocation and cannot settle from an ambient completion message;
+duplicate subscriptions count once and exited subscribers release without render.
+Unsupported later local snapshots retain references with diagnostics and do not
+make client setters throw or block sibling/loading cleanup.
+
+HTTP/service request state now excludes pending optimistic previews. Express the
+actual edit in validated action arguments rather than expecting previewed values
+to arrive as server input. An optimistic increment must not execute twice because
+its preview became the server's starting value. Public user-authored edits remain
+request input; client-only values stay out of the public state overlay.
+
+Optimistic handlers must be synchronous. Declared async handlers no longer run.
+Promise-returning synchronous handlers and throwing handlers restore captured
+changes; their server action can still dispatch. Started application effects cannot
+be canceled by this rule. Native collections/classes remain scalar values.
+
+Node/Deno WebSocket connection snapshots now carry flat public state, matching
+Cloudflare and later broadcasts. Update hand-written adapter tests from
+`state.public.count` to `state.count` for those frames; SSR hydration still uses
+`initial.public`. The process runtime getPublicState checks that record shape.
+
+Timeout, cancellation and network/socket loss still leave the server result
+uncertain. Never retry a mutation automatically. Use an authoritative read or
+resource refresh, and retain the distinction between local preview restoration
+and server rollback. The complete RT-06 uncertainty/reconnect audit is still open.

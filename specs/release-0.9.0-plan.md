@@ -12,7 +12,15 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex state contracts and diagnostics (2026-10-03):**
+**Latest checkpoint — Codex optimistic call ownership (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-optimistic-ownership-2026-10-03).
+RT-06 now has per-call field layers, rollback, confirmed public request state,
+scoped-service parity and flat Node/Deno connection snapshots. The task remains
+open for complete uncertain-outcome reads, actual reconnect acceptance and the
+contribution-rebasing audit. **20/58 checked, 38 unchecked**, all IDs retained.
+Continue the detailed RT-06 plan below; the Node plain Vite dev gap stays open.
+
+**Previous checkpoint — Codex state contracts and diagnostics (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-state-diagnostics-2026-10-03).
 RT-04 now meets its original criteria: **20/58 checked, 38 unchecked**. Executable
 examples, inherited contracts, client-only sanitization and development-only
@@ -1303,6 +1311,89 @@ the complete original criterion audit. Broader RT-01 deadlines remain open.
 
 Also fix the Node development integration described under REL-03 before claiming
 the final runtime matrix. Preserve all other unchecked IDs and release gates.
+
+**Codex ownership continuation (2026-10-03), after `83ea5e4`: still open.**
+
+Twenty initial controlled cases reproduced **17 failures**: rejected previews
+were retained, a late older failure discarded newer confirmed data, same-method
+calls shared one lock, nested Store changes were not captured, and optimistic
+public values were sent back to HTTP/SSE actions. An increment could therefore
+run once in the preview and again on a server that received the previewed value.
+
+Core now holds per-target/per-call field layers. Each handler runs once. Plain
+trees are detached before/after capture; success supplies an authoritative base,
+failure removes that call's layer, and newer successful replies or later local
+edits win on owned fields. Component/store and service setters record local
+writes. Incoming uncorrelated completion messages cannot settle correlated calls.
+Request state excludes pending previews but includes authored local public edits.
+The shared RPC state applier retains canonical snapshot/stale-edit behavior and
+supports explicit services without importing Cossack or Node facilities.
+
+The chosen representation is a resulting whole-field value, not a delta/reducer.
+Newer previews can include older preview data they read. Later nested local edits
+protect the entire field. Native class/collection objects remain scalar references.
+Do not claim arbitrary arithmetic/array-contribution rebasing or transaction
+rollback from these tests. Async handlers are refused; partial synchronous writes
+from errors/promises/over-depth snapshots are restored without preventing the
+actual action dispatch. Local values beyond supported snapshot semantics still
+need a careful audit before claiming a general guarantee.
+
+Explicit scoped services now use this same handler/call ownership, confirmed
+request state, filtered reply merging and loading settlement for every subscriber.
+Their prior direct hydration could erase local edits. Handler metadata collects
+own registrations root-to-child and retains inherited action siblings.
+Subscriber loading now has its own per-call release; ambient completion cannot
+settle it, duplicate subscriptions count once, and unsubscribed owners release
+without another render. Later client-only values that cannot be detached stay
+references with contextual diagnostics; per-field cleanup failures drain the
+remaining fields and never block loading settlement. Unrelated full-state echoes
+do not confirm or cancel a different field's preview.
+
+Node and Deno previously sent a wrapped hydration state object on connection,
+while the client expected a flat public record. Core's process runtime now exposes
+getPublicState for adapters; both Node upgrade paths and Deno send that record.
+Existing production/dev/HMR and adapter assertions now inspect actual flat state.
+Cloudflare already uses flat connection snapshots. Native Deno execution remains
+the separate REL-03 gate.
+
+Coverage now includes rejection, overlap in both completion orders, independent
+fields, later nested/user edits, local exclusion, timeout/cancel/disconnect, shared
+service subscribers, throwing/promise handlers and inheritance. Actual generated
+Node and native Worker HTTP/SSE pages hold an older invalid call until a newer
+success arrives, retain the successful result after rejection, settle loading,
+exclude previews from requests and retain a later public edit. Existing native
+resource/Store/D1/schema/policy/stream/socket acceptance stays intact.
+
+**Required next work, before RT-06 can close:**
+
+1. Audit contribution semantics with dependent increments and array operations.
+   Decide whether an explicit declarative patch/reducer form is needed to remove
+   a failed contribution that later previews incorporated. Never infer arithmetic
+   intent from two numbers or replay arbitrary client handlers with side effects.
+   Whole-field/latest-value semantics must not silently stand in for a stronger
+   original rollback criterion. Add controlled failing cases and document the
+   chosen supported representation before claiming completion.
+2. Define the authoritative read after uncertain HTTP/service results. Existing
+   stable RpcError codes preserve uncertainty and never retry mutations, but the
+   framework does not universally refetch a persisted record. Use a declared
+   read/resource contract or a safe runtime snapshot mechanism. Prove an already
+   committed mutation with a deliberately lost response, one authoritative read,
+   convergence, and zero repeated mutation dispatches. Do not equate rollback of
+   a local preview with rollback of the server effect.
+3. Test actual native socket loss/reconnect and SSE recovery, including snapshots
+   delivered before/after call cleanup, multiple pending calls, retained layouts
+   and explicit service consumers. Current unit calls to applyStateToComponent
+   prove merging, not native reconnect delivery. Preserve server snapshot authority
+   and client-only drafts. Decide how late action-related broadcasts interact with
+   user edits after settlement; the final browser/native acceptance must cover it.
+4. Verify malformed replies, stream errors after yields, cancellation/cleanup and
+   indicators settling once across all transports. Keep RT-01's broader boundary
+   and actual incoming disconnect gates separate. Add a published full example
+   for the final API, then audit every original RT-06 done criterion.
+
+Read the [exact phase evidence](./release-0.9.0.md#codex-optimistic-ownership-2026-10-03)
+and updated [optimistic guide](../docs/optimistic.md). No checkbox closes here.
+Continue all other unchecked tasks, including the Node CLI dev gap, afterward.
 
 <a id="rt-07"></a>
 ### RT-07: Typed routes and effective route metadata

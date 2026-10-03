@@ -1,6 +1,7 @@
 // src/shared/transport-connections.ts
 import { PageStateProvider, StateProvider } from './StateProvider';
 import { applyStateToComponent } from './method-proxy';
+import { hasOptimisticCalls } from './optimistic-state';
 import { isSharedMethod } from './shared-method';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
@@ -179,6 +180,7 @@ export function connectWebSocket(component: any): void {
                 applyStateToComponent(component, data.state || {});
             } else if (data.type === 'action-complete') {
                 const { action } = data;
+                if (hasOptimisticCalls(component, action)) return;
                 if (component.loading[action]) {
                     component.loading[action]--;
                     if (component.loading[action] <= 0) {
@@ -326,6 +328,7 @@ export function connectSSE(component: any): void {
     es.addEventListener('action-complete', (event: MessageEvent) => {
         try {
             const { action } = JSON.parse((event as any).data);
+            if (hasOptimisticCalls(component, action)) return;
             if (component.loading[action]) {
                 component.loading[action]--;
                 if (component.loading[action] <= 0) {

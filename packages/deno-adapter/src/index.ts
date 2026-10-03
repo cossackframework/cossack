@@ -198,7 +198,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
           }
           entry.runtime.addClient(client, upgrade.user, upgrade.context ?? context);
           entry.clients.add(client);
-          const state = entry.runtime.getInitialState();
+          const state = entry.runtime.getPublicState();
           client.send(JSON.stringify({ type: 'state-update', state }));
         } catch (error) {
           console.error('[Cossack] Deno WebSocket upgrade failed:', error);

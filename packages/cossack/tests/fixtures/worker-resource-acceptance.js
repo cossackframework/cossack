@@ -23,7 +23,7 @@ export async function writeWorkerResourceAcceptance(root) {
   `);
   for (const transport of ['http', 'sse']) {
     await write(`src/pages/resource-check/${transport}/index.ts`, `
-      import { Client, ClientState, ClientStore, Computed, Cossack, Page, Server, State, server$ } from '@cossackframework/core';
+      import { Client, ClientState, ClientStore, Computed, Cossack, Page, Server, State, Optimistic, input, server$ } from '@cossackframework/core';
       import { html } from '@cossackframework/renderer';
       import { readResource } from '../../../private-resource';
       class ResourceBase extends Cossack<{}, {Resources:'record'}> {
@@ -32,19 +32,28 @@ export async function writeWorkerResourceAcceptance(root) {
       }
       @Page({transport:'${transport}'})
       export default class ResourcePage extends ResourceBase {
+        @State() optimisticCount = 0;
+        @Optimistic('saveOptimisticCount') preview(value: {value:number}) { this.optimisticCount = value.value; }
+        @Server({input:input.object({value:input.number({min:0}),delay:input.number({min:0})})})
+        async saveOptimisticCount(value:{value:number;delay:number}) {
+          await new Promise(resolve=>setTimeout(resolve,value.delay));
+          this.optimisticCount = value.value * 10; return this.optimisticCount;
+        }
+        @Client() editCount(value:number) { this.optimisticCount = value; }
         @ClientState() override id = 1;
         @ClientStore() local = {labels:['first']};
         @Computed() get localLabel() { return this.local.labels.join(',') + '/' + this.id; }
         @Client() editLocal() { this.local.labels.push('next'); }
         @Server() readLocalState() { return {ownId:this.id,labels:this.local.labels,inherited:this.inherited}; }
         record = server$(async (id:number) => readResource(id), {deps:()=>[this.id] as const, initial:{id:0,actor:''}});
-        onMount() { (window as any).__resourceReady = true; }
+        onMount() { (window as any).__resourceReady = true; (window as any).__resourcePage = this; }
         @Client() select(event:Event) { this.id = Number((event.currentTarget as HTMLSelectElement).value); }
         @Client() async refresh() { await this.refresh$('record'); }
         render() {
           const status = this.resourceStatus$('record');
           return html\`<main>
             <h1>Native resource</h1>
+            <span id="optimistic-count">\${this.optimisticCount}</span><span id="optimistic-loading">\${this.loading.saveOptimisticCount || 0}</span>
             <span id="local-label">\${this.localLabel}</span>
             <button @click=\${this.editLocal}>Edit local state</button>
             <select aria-label="Record" .value=\${String(this.id)} @change=\${this.select}>
@@ -69,7 +78,7 @@ export async function checkWorkerResourceAcceptance(server, serverUrl, sessionCo
       const response = await server.fetch('/resource-check/' + transport, { headers: { cookie: sessionCookie } });
       const rendered = await response.text();
       expect(response.status, transport + '/' + rendered).toBe(200);
-      expect(readHydration(rendered).public).toEqual({inherited:7});
+      expect(readHydration(rendered).public).toEqual({inherited:7,optimisticCount:0});
       expect(readHydration(rendered).serverResources).toEqual({ record: { argsKey: '[1]', value: {id:1,actor:'u1'} } });
       const context = await browser.newContext();
       await context.addCookies([{ name:'session_id', value:sessionCookie.split(';')[0].slice('session_id='.length), url:origin, httpOnly:true }]);
@@ -120,6 +129,34 @@ export async function checkWorkerResourceAcceptance(server, serverUrl, sessionCo
         expect(call.state).toHaveProperty('inherited');
       }
       await browserExpect(page.locator('#local-label')).toHaveText('first,next/3');
+      let release;
+      const held = new Promise(resolve => { release = resolve; });
+      await page.route('**/crpc**', async route => {
+        const body = route.request().postDataJSON();
+        if (body.action === 'saveOptimisticCount' && body.payload[0].value < 0) await held;
+        await route.continue();
+      });
+      await page.evaluate(() => {
+        window.__oldOptimistic = window.__resourcePage.saveOptimisticCount({value:-1,delay:0}).catch(error => {window.__optimisticError=error.code;});
+        window.__newOptimistic = window.__resourcePage.saveOptimisticCount({value:2,delay:30});
+      });
+      await browserExpect(page.locator('#optimistic-count')).toHaveText('20');
+      await browserExpect(page.locator('#optimistic-loading')).toHaveText('1');
+      expect(calls.slice(4).map(call => call.state.optimisticCount)).toEqual([0,0]);
+      release();
+      await page.evaluate(async () => { await window.__oldOptimistic; await window.__newOptimistic; });
+      expect(await page.evaluate(() => window.__optimisticError)).toBe('COSSACK_VALIDATION_FAILED');
+      await browserExpect(page.locator('#optimistic-count')).toHaveText('20');
+      await browserExpect(page.locator('#optimistic-loading')).toHaveText('0');
+      await browserExpect(page.locator('#local-label')).toHaveText('first,next/3');
+      await page.unroute('**/crpc**');
+      await page.evaluate(() => {
+        window.__pendingOptimistic = window.__resourcePage.saveOptimisticCount({value:3,delay:75});
+        window.__resourcePage.editCount(99);
+      });
+      await page.evaluate(async () => { await window.__pendingOptimistic; });
+      await browserExpect(page.locator('#optimistic-count')).toHaveText('99');
+      await browserExpect(page.locator('#optimistic-loading')).toHaveText('0');
       expect(errors).toEqual([]);
       await context.close();
     }

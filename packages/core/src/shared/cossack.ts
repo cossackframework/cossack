@@ -65,6 +65,7 @@ import {
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
 import { collectReactiveMetadata } from './reactive-metadata';
+import { noteOptimisticWrite } from './optimistic-state';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
@@ -1908,6 +1909,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         isPublic: boolean,
         path?: string,
     ): void {
+        if (!this.isServer) noteOptimisticWrite(this, key);
         // Record the dotted path for `@Task({ track })` filtering. For nested
         // store mutations `path` is `storeKey.a.b`; for plain state / top-level
         // assignments it falls back to the property key.

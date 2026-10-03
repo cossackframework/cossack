@@ -2,7 +2,68 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-04 completion (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-06 ownership continuation (2026-10-03). Author: Codex.**
+> Continued after `83ea5e4`. Read the
+> [review/evidence](./release-0.9.0.md#codex-optimistic-ownership-2026-10-03),
+> [RT-06 implementation and remaining plan](./release-0.9.0-plan.md#rt-06),
+> [optimistic guide](../docs/optimistic.md) and
+> [migration](./migration-0.9.0.md#optimistic-call-ownership-and-flat-connection-snapshots).
+>
+> **No task closes: 20/58 checked, 38 unchecked; all original IDs retained.**
+> RT-06 remains open for uncertain authoritative reads, actual reconnect delivery
+> and the contribution-rebasing audit. RT-01/full release gates also remain open.
+>
+> Initial controlled matrix reproduced 17/20 failures. Per-call field ownership
+> now removes a failed preview while retaining other calls/newer confirmed state,
+> including same-method overlap. Plain trees capture nested Stores and local fields.
+> Component/service setter hooks retain later user edits. Request public state
+> excludes pending previews, preventing a previewed increment from running again
+> on that value at the server. Client-only fields remain absent from requests.
+>
+> Handlers execute once and must be synchronous. Async handlers are refused before
+> execution; promise-producing synchronous work, thrown undefined/errors and
+> over-depth previews restore captured fields. This cannot stop already started
+> asynchronous effects. Metadata retains inherited handler siblings. Explicit
+> scoped services share the same ownership/merge/loading behavior for subscribers.
+>
+> The current representation is a whole-field resulting value, not arithmetic or
+> array operations. A newer preview can include earlier preview data. A later
+> nested user edit protects that complete field. Native objects remain scalar
+> references. Do not claim arbitrary contribution rebasing or server transactions.
+> Newer direct replies win for an owned field; ordinary post-settlement snapshots
+> retain server authority. Use client-only fields for persistent browser drafts.
+>
+> Node/Deno connection frames previously wrapped hydration state although clients
+> expect flat public state. The runtime getPublicState helper now serves both Node
+> upgrade paths and Deno; existing adapter/generated snapshot assertions use actual
+> flat keys. Cloudflare already sends flat snapshots. Uncorrelated action-complete
+> messages cannot decrement loading for modern correlated calls.
+> Explicit service subscriber loading also has invocation ownership, so ambient
+> completion cannot clear it. Duplicate subscriptions count once; the original
+> owner is released even after unsubscribe, without rendering an exited consumer.
+> Unrelated response echoes cannot supersede another field's pending preview.
+> Unsupported later local snapshot values retain references with diagnostics;
+> cleanup drains sibling fields and releases loading without masking the RPC error.
+>
+> Generated production Node and native Worker HTTP/SSE acceptance proves delayed
+> older validation rejection, newer result retention, preview exclusion, loading
+> settlement and later user edits. Controlled timeout/socket/network cases prove
+> uncertainty codes and no replay, then manually apply snapshots. They do not yet
+> prove a universal HTTP refetch or actual socket reconnect after a lost mutation.
+> Exact final commands/counts and intermediate corrections are in the review.
+>
+> **Next for GLM: finish RT-06**, following its four remaining steps. Define
+> contribution semantics, choose an authoritative read contract for uncertain
+> results, prove already committed/lost response recovery without repeating the
+> mutation, and test native reconnect/late broadcasts/stream failures. Audit original
+> criteria before checking the task. Continue all remaining IDs and the Node plain
+> Vite dev integration gap; existing dev WebSocket fixtures do not certify CLI dev.
+>
+> Versions remain **0.8.3** until REL-04. Preserve reports.md/.zcodeignore. No
+> push/publication/live deployment/cloud changes/external messages/new chats.
+> Verification processes finish before commit. Native fixtures are local/disposable.
+
+> **Previous checkpoint — Codex RT-04 completion (2026-10-03). Author: Codex.**
 > Continued after `abd80ad`. Read the
 > [review/evidence](./release-0.9.0.md#codex-state-diagnostics-2026-10-03),
 > [RT-04 criterion audit](./release-0.9.0-plan.md#rt-04),

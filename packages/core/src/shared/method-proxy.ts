@@ -1,4 +1,7 @@
 import { collectReactiveMetadata } from './reactive-metadata';
+import { createStateApplier, snapshotTransportState } from './rpc-state';
+export { applyStateToComponent } from './rpc-state';
+import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers as collectOptimisticHandlers, optimisticHandler, optimisticKeys, type OptimisticCall } from './optimistic-state';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
@@ -26,8 +29,7 @@ interface ServerMethodWs extends ServerMethodBase {
  * and client-only state too, not just `@State` keys.
  */
 function getAllReactiveStateKeys(constructor: any): string[] {
-    const { state, store, clientState, clientStore } = collectReactiveMetadata(constructor);
-    return [...new Set([...Object.keys(state), ...Object.keys(store), ...clientState, ...clientStore])];
+    return optimisticKeys(constructor);
 }
 
 /**
@@ -92,90 +94,19 @@ function extractFilesFromArg(arg: any, files: Map<string, File>): any {
 
 /**
  * Run an optimistic UI handler (if registered for `name`) on `target`, then
- * snapshot/diff the component's @State keys to lock the ones the handler
- * changed. Shared by the SSE, HTTP, and WebSocket proxies. Errors in the
+ * snapshot/diff all reactive fields with separate ownership for each call.
+ * Shared by the SSE, HTTP, and WebSocket proxies. Errors in the
  * handler are logged but never propagated (the server action still runs).
  */
 function runOptimisticHandler(
     target: any,
     name: string,
     args: any[],
-    optimisticHandlerName: string | undefined,
+    optimisticHandlerName: string | symbol | undefined,
     stateKeys: string[],
-): void {
-    if (!optimisticHandlerName || !target.hasMethod(optimisticHandlerName)) return;
-    try {
-        const optimisticMethod = target.getMethod(optimisticHandlerName);
-        const snapshot: Record<string, any> = {};
-        for (const key of stateKeys) {
-            snapshot[key] = target[key];
-        }
-        (optimisticMethod as any)(...args);
-        if (!target._optimisticLockedKeys[name]) {
-            target._optimisticLockedKeys[name] = new Set();
-        }
-        for (const key of stateKeys) {
-            if (target[key] !== snapshot[key]) {
-                target._optimisticLockedKeys[name].add(key);
-            }
-        }
-        target.requestUpdate();
-    } catch (e) {
-        console.error(`Error in optimistic handler for '${name}':`, e);
-    }
-}
-
-/**
- * Apply a server-sent state object to a component instance, respecting the
- * optimistic-lock protocol: locked keys are buffered in _optimisticPendingState
- * (applied once the action completes); other keys are set directly. Internal
- * reserved keys (_cossack_*, loading, isServer, params) are skipped. Does NOT
- * call requestUpdate — callers schedule a render as appropriate to their
- * transport. When requestState is provided for a direct /crpc response (HTTP
- * or SSE), fields changed locally since that request began are skipped as stale.
- */
-export function applyStateToComponent(
-    component: any,
-    data: Record<string, any>,
-    requestState?: Record<string, any>,
-): void {
-    for (const key in data) {
-        if (key.startsWith('_cossack_')) continue;
-        if (RESERVED_STATE_KEYS.has(key)) continue;
-        // Direct /crpc responses contain the server's complete public state,
-        // including fields merely echoed from the request. If the local value
-        // no longer matches what this request sent, the client edited it while
-        // the call was in flight (or a newer response already won), so this
-        // field is stale and must not be applied.
-        if (
-            requestState &&
-            Object.prototype.hasOwnProperty.call(requestState, key) &&
-            !transportValuesEqual(component[key], requestState[key], key)
-        ) {
-            continue;
-        }
-        if (component._isOptimisticLocked(key)) {
-            component._optimisticPendingState[key] = data[key];
-        } else {
-            component.setProperty(key, data[key]);
-        }
-    }
-}
-
-/** Clone state exactly as JSON transport will represent it. */
-function snapshotTransportState(state: Record<string, any>): Record<string, any> {
-    return snapshotRpcValue(state, 'state') as Record<string, any>;
-}
-
-/** Compare a live value with its JSON-transport snapshot. */
-function transportValuesEqual(liveValue: unknown, sentValue: unknown, key: string): boolean {
-    try {
-        return JSON.stringify(snapshotTransportState({ [key]: liveValue })[key]) === JSON.stringify(sentValue);
-    } catch {
-        // The request snapshot is JSON-safe, but the live field can become
-        // cyclic or contain a bigint while the request is in flight.
-        return Object.is(liveValue, sentValue);
-    }
+): OptimisticCall {
+    const handler = optimisticHandler(target, optimisticHandlerName, args);
+    return beginOptimisticCall(target, name, handler, stateKeys);
 }
 
 /**
@@ -187,35 +118,14 @@ function invalidateClientPageCache(): void {
     (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
-/**
- * Build the response-state applier shared by every transport proxy: apply the
- * server state, skip fields the client edited while the request was in flight,
- * and advance the request snapshot so later frames do not clobber local edits.
- */
-function createStateApplier(component: any, requestState: Record<string, any>) {
-    return (state: Record<string, unknown>) => {
-        // Advance the snapshot only for fields this response can apply. This
-        // lets later stream frames update the same field without clobbering
-        // edits made locally while the request was in flight.
-        const applicable = Object.keys(state).filter(key => !Object.prototype.hasOwnProperty.call(requestState, key)
-            || transportValuesEqual(component[key], requestState[key], key));
-        applyStateToComponent(component, state, requestState);
-        for (const key of applicable) {
-            if (!key.startsWith('_cossack_') && !RESERVED_STATE_KEYS.has(key)) {
-                requestState[key] = snapshotTransportState({ [key]: component[key] })[key];
-            }
-        }
-        component.requestUpdate();
-    };
-}
-
 /** Per-call loading and optimistic-lock lifecycle shared by the transport proxies. */
-function createCallLifecycle(component: any, name: string) {
+function createCallLifecycle(component: any, name: string, call: OptimisticCall) {
     let cleaned = false;
     let success = false;
     const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
+        finishOptimisticCall(call, success);
         if (component.loading[name] > 0) component.loading[name]--;
         if (!component.loading[name]) {
             delete component.loading[name];
@@ -325,13 +235,13 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
         console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
         return;
     }
-    const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
+    const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const stateKeys = getAllReactiveStateKeys(component.constructor);
     for (const { name } of serverMethods) {
         if (isSharedMethod(component.constructor, name)) continue;
         const timeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
-            runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
+            const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
             let requestId: string = crypto.randomUUID();
@@ -343,7 +253,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 timedOut = true;
                 controller.abort();
             }, timeoutMs);
-            const { cleanup: finish, succeed } = createCallLifecycle(component, name);
+            const { cleanup: finish, succeed } = createCallLifecycle(component, name, optimisticCall);
             const cleanup = () => {
                 if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
                 finish();
@@ -365,7 +275,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 const files = new Map<string, File>();
                 const normalizedArgs = snapshotRpcValue(args, 'payload', { handled: handledByUpload }) as unknown[];
                 payload = normalizedArgs.map(arg => extractFilesFromArg(arg, files));
-                const liveState = component.getPublicState();
+                const liveState = optimisticRequestState(component, component.getPublicState());
                 requestState = liveState;
                 requestState = snapshotTransportState(liveState);
                 if (files.size) {
@@ -412,7 +322,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             }
             // The request starts immediately; selecting a result consumer never dispatches it again.
             void request.catch(() => {});
-            const apply = createStateApplier(component, requestState);
+            const apply = createStateApplier(component, requestState, optimisticCall);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
                 try {
                     if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
@@ -477,7 +387,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
  * the same optimistic and loading lifecycle as HTTP/SSE calls.
  */
 export function proxyServerMethods(component: any, serverMethods: ServerMethodWs[]): void {
-    const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
+    const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const stateKeys = getAllReactiveStateKeys(component.constructor);
 
     for (const method of serverMethods) {
@@ -497,12 +407,12 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `Realtime connection for provider '${provider}' is not open, so '${name}' was not dispatched.`, name);
             }
 
-            runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
+            const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
 
             const requestId = crypto.randomUUID();
-            const { cleanup, succeed } = createCallLifecycle(component, name);
+            const { cleanup, succeed } = createCallLifecycle(component, name, optimisticCall);
             // Keep serializable args (primitives, plain objects, arrays), drop
             // non-transportable UI objects (DOM nodes, Event).
             let payload = args.filter(isWsTransportable);
@@ -510,7 +420,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             let message: string;
             let requestState: Record<string, unknown> = {};
             try {
-                requestState = component.getPublicState();
+                requestState = optimisticRequestState(component, component.getPublicState());
                 payload = snapshotRpcValue(payload, 'payload') as unknown[];
                 requestState = snapshotTransportState(requestState);
                 message = JSON.stringify({
@@ -530,7 +440,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `Cannot serialize the realtime request for '${name}'` +
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
-            const apply = createStateApplier(component, requestState);
+            const apply = createStateApplier(component, requestState, optimisticCall);
             wsPendingCalls(ws).set(requestId, frame => queue.push(frame));
             try {
                 ws.send(message);
@@ -608,7 +518,7 @@ export function setupServerMethodProxies(component: any): void {
     const clientSafeMethods = new Set(
         Object.keys(Reflect.getMetadata('cossack:client-methods', component.constructor) || {})
     );
-    const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
+    const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const computedMethods = Reflect.getMetadata('computed', component.constructor) || {};
 
     // Add client-safe methods to the set
