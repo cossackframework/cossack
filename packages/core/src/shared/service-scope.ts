@@ -31,8 +31,15 @@ export interface ServiceScopeOptions {
 }
 
 type Subscriber = {
+    serviceClass: ServiceClass;
     consumer: any;
     unsubscribe: () => void;
+};
+
+type ServiceLoading = {
+    serviceClass: ServiceClass;
+    action: string;
+    releases: Map<any, () => void>;
 };
 
 type OwnedService = {
@@ -52,6 +59,7 @@ export class ServiceScope {
     private readonly ownedBySlot = new Map<string, OwnedService>();
     private readonly children = new Set<ServiceScope>();
     private readonly subscribers = new Set<Subscriber>();
+    private readonly pendingLoading = new Set<ServiceLoading>();
     private readonly resolving = new Set<ServiceClass>();
     private requestContext: ServiceScopeRequestContext = {};
     private disposed = false;
@@ -202,8 +210,11 @@ export class ServiceScope {
                 void consumer.requestUpdate(`service:${owner.getSlot(serviceClass)}:${key}`);
             }
         });
-        const subscription: Subscriber = { consumer, unsubscribe: unsubscribeState };
+        const subscription: Subscriber = { serviceClass, consumer, unsubscribe: unsubscribeState };
         owner.subscribers.add(subscription);
+        for (const loading of owner.pendingLoading) {
+            if (loading.serviceClass === serviceClass) owner.attachLoading(loading, consumer);
+        }
         return () => {
             unsubscribeState();
             owner.subscribers.delete(subscription);
@@ -337,7 +348,7 @@ export class ServiceScope {
                 const call = beginOptimisticCall(entry.instance, action,
                     optimisticHandler(entry.instance, optimisticHandlers(entry.serviceClass)[action], payload),
                     optimisticKeys(entry.serviceClass));
-                const finishLoading = this.beginLoading(action);
+                const finishLoading = this.beginLoading(entry.serviceClass, action);
                 let requestId: string = crypto.randomUUID();
                 const controller = new AbortController();
                 let timedOut = false;
@@ -420,29 +431,37 @@ export class ServiceScope {
         this.clientProxyInstalled.add(entry.instance);
     }
 
-    private beginLoading(action: string): () => void {
-        const consumers = [...new Set([...this.subscribers].map(subscription => subscription.consumer))]
-            .filter(consumer => consumer.loading);
-        const releases = consumers.map(consumer => {
-            const release = ownRpcLoading(consumer, action);
-            consumer.loading[action] = (consumer.loading[action] || 0) + 1;
-            if (typeof consumer.requestUpdate === 'function') void consumer.requestUpdate();
-            return () => {
-                release();
-                const next = (consumer.loading[action] || 0) - 1;
-                if (next > 0) consumer.loading[action] = next; else delete consumer.loading[action];
-                // Release the original subscriber even after it unsubscribed,
-                // but do not schedule another render for an exited component.
-                if ([...this.subscribers].some(subscription => subscription.consumer === consumer)
-                    && typeof consumer.requestUpdate === 'function') void consumer.requestUpdate();
-            };
-        });
-        let settled = false;
+    private beginLoading(serviceClass: ServiceClass, action: string): () => void {
+        const loading: ServiceLoading = { serviceClass, action, releases: new Map() };
+        this.pendingLoading.add(loading);
+        for (const subscription of this.subscribers) {
+            if (subscription.serviceClass === serviceClass) this.attachLoading(loading, subscription.consumer);
+        }
         return () => {
-            if (settled) return;
-            settled = true;
-            for (const release of releases) release();
+            if (!this.pendingLoading.delete(loading)) return;
+            for (const release of loading.releases.values()) release();
+            loading.releases.clear();
         };
+    }
+
+    private attachLoading(loading: ServiceLoading, consumer: any): void {
+        if (!consumer.loading || loading.releases.has(consumer)) return;
+        const { action, serviceClass } = loading;
+        const release = ownRpcLoading(consumer, action);
+        // Record ownership before rendering: injection may subscribe again
+        // during the update. Rejoining the same invocation must not count twice.
+        loading.releases.set(consumer, () => {
+            release();
+            const next = (consumer.loading[action] || 0) - 1;
+            if (next > 0) consumer.loading[action] = next; else delete consumer.loading[action];
+            // Release exited consumers too, without scheduling an exited render.
+            if ([...this.subscribers].some(subscription => subscription.serviceClass === serviceClass
+                && subscription.consumer === consumer) && typeof consumer.requestUpdate === 'function') {
+                void consumer.requestUpdate();
+            }
+        });
+        consumer.loading[action] = (consumer.loading[action] || 0) + 1;
+        if (typeof consumer.requestUpdate === 'function') void consumer.requestUpdate();
     }
 }
 

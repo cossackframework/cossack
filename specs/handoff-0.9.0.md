@@ -2,7 +2,46 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex native optimistic socket recovery (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex retained service consumers (2026-10-03). Author: Codex.**
+> Continued after `43c189a`. Read the
+> [review/evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03),
+> [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06), and
+> [service lifetime](../docs/services.md#scope-and-lifetime).
+>
+> **20/58 checked, 38 unchecked. All original IDs remain. RT-06 stays open.**
+> Six of eight initial controlled cases failed. A late consumer inherited the
+> shared preview but no loading ownership. Consumers of another declaration
+> received unrelated action counts. ServiceScope now tracks active invocations
+> by declaration, with one loading release per consumer. Late sibling/nested
+> consumers inherit matching counts. Duplicate subscriptions and unsubscribe/
+> rejoin count once. Shadowed scopes and other declarations remain independent.
+> Equal action names can contribute separate component/service counts.
+> Exited consumers release without another render.
+>
+> Production Node/browser acceptance navigates during held success and rejection.
+> New sibling and nested consumers see the shared preview and loading, then
+> converge or roll back. Retained layout disposal still runs once on exit.
+> The shared recovery fixture also consumes a committed service response before
+> holding browser delivery. Navigation creates new consumers before settlement.
+> A real input rejection on the return navigation makes no additional write.
+> These actions use HTTP, including on genuinely connected SSE pages.
+> They do not prove SSE resync delivery or the remaining stream matrix.
+>
+> **Next for GLM: finish RT-06 steps 3–4.** Prove actual SSE resync and different
+> late snapshots before/after cleanup. Extend optimistic post-yield failure,
+> malformed replies and cancellation across HTTP/SSE and explicit services.
+> Preserve server snapshot authority and client-only drafts. Audit every original
+> criterion before checking RT-06. Continue all other unchecked tasks and gates.
+>
+> This change does not cancel an invocation when its owning layout exits,
+> terminate ignored I/O, add deadlines, or prove server rollback. RT-01 remains
+> open for those wider gates. Value fingerprints do not order different server
+> snapshots. RT-11 session gates and the Node plain Vite development 404 remain.
+> Versions stay 0.8.3 until REL-04. Preserve reports.md/.zcodeignore.
+> No push/publication/live cloud changes, external messages or new chats.
+> Exact final verification is recorded in the linked review.
+
+> **Previous checkpoint — Codex native optimistic socket recovery (2026-10-03). Author: Codex.**
 > Continued after `51bef75`. Read the
 > [review/evidence](./release-0.9.0.md#codex-optimistic-socket-2026-10-03),
 > [RT-06 remaining plan](./release-0.9.0-plan.md#rt-06),

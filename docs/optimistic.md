@@ -141,6 +141,15 @@ An unrelated response that only echoes its input does not confirm another field'
 The action's loading count decreases once for each completed, rejected, canceled, or timed-out call.
 Uncorrelated realtime completion broadcasts cannot settle a request-scoped call.
 
+For explicit scoped services, consumers that join during a pending call inherit
+its loading count and the shared preview. Sibling navigation retains the layout's
+service. A new page and its nested consumers receive the same eventual state or
+rollback. Each invocation counts once per consumer, including duplicate injection
+or unsubscribe/rejoin. Other service declarations retain separate ownership.
+Exited consumers release their count without another render.
+See [service lifetime](./services.md#scope-and-lifetime) and
+[shadowed scopes](./services.md#nested-layouts-and-shadowing).
+
 Ownership is at the top-level reactive field.
 Plain object and array trees are copied, so nested Store edits can roll back.
 Snapshots have a maximum depth of 256. A preview beyond that limit is restored and logged.

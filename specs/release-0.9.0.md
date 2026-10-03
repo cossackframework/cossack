@@ -26,7 +26,7 @@ below link directly to those explanations.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
-- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Explicit authoritative resource reads after committed/lost HTTP replies now pass component/service Node and native D1 acceptance. See the [read checkpoint](#codex-optimistic-reconciliation-2026-10-03). Native component socket loss/reconnect, eviction and post-yield failure/cancellation now pass. See the [socket checkpoint](#codex-optimistic-socket-2026-10-03). SSE resync/different late snapshots, retained consumers and the remaining optimistic stream/service matrix stay open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
+- [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex continuation (2026-10-03): per-call field ownership replaces method-level optimistic grouping; nested/local rollback, later user edits, newer successful replies, explicit scoped services and confirmed request state pass controlled and production browser/native HTTP/SSE acceptance. Node/Deno connection snapshots now use flat public state. Explicit increment/append/remove operations now rebase surviving contributions without rerunning handlers; see the [operation checkpoint](#codex-optimistic-operations-2026-10-03). Explicit authoritative resource reads after committed/lost HTTP replies now pass component/service Node and native D1 acceptance. See the [read checkpoint](#codex-optimistic-reconciliation-2026-10-03). Native component socket loss/reconnect, eviction and post-yield failure/cancellation now pass. See the [socket checkpoint](#codex-optimistic-socket-2026-10-03). Retained layouts and late explicit-service consumers now inherit pending loading through navigation, success and rejection. See the [retained-consumer checkpoint](#codex-retained-service-loading-2026-10-03). SSE resync/different late snapshots and the remaining optimistic stream/service matrix stay open. See the [ownership checkpoint](#codex-optimistic-ownership-2026-10-03).
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
@@ -4542,3 +4542,91 @@ is still value-based and does not order different snapshots by server revisions.
 Broader RT-01 incoming disconnect/deadline/init and RT-11 session criteria remain
 open. Continue every unchecked ID and the Node plain Vite development 404 gap.
 Read the [plan](./release-0.9.0-plan.md#rt-06) and [Codex handoff](./handoff-0.9.0.md).
+
+<a id="codex-retained-service-loading-2026-10-03"></a>
+### Codex continuation: retained service consumers and loading (2026-10-03)
+
+Author: Codex. Continued after `43c189a`. No checkbox closes: **20/58 checked,
+38 unchecked**. All original IDs and states remain. RT-06 stays open for actual
+SSE resync/different late snapshots and the remaining optimistic stream matrix.
+
+Six of eight initial controlled regressions failed. A consumer that joined a
+retained service during an action received its preview but no loading count.
+The scope also attached unrelated action counts to consumers of another service.
+ServiceScope now tracks active invocations by declared service class. Each
+invocation records one release per consumer. New subscriptions attach to matching
+pending work, including work that started without subscribers. Duplicate injection
+and unsubscribe/rejoin keep one count. Shadowed scopes remain independent.
+
+The ten final controlled cases cover late consumers, overlapping calls, work
+without initial subscribers, duplicates/rejoin, another declaration, equal action
+names, independent component loading, shadowing, exited consumers and settled work.
+Ambient completion protection uses the same per-consumer RPC ownership guard.
+A consumer that exits releases on settlement without another render. A consumer
+that now only subscribes to another declaration also avoids an unrelated render.
+
+Production Node/browser acceptance extends the actual scoped-service recipe.
+The test adds a declared optimistic increment and observable loading to its
+published application. It holds success and rejection replies during sibling
+navigation. The retained layout, new sibling page and new nested consumer share
+the preview and pending count, then receive confirmed state or rollback. Five
+browser action dispatches remain five. Leaving the layout runs its actual disposal
+hook once. Returning creates fresh service state.
+
+The shared recovery fixture also runs under production Node and native workerd/D1.
+It consumes a real committed service response, then holds delivery to the browser.
+Navigation creates new consumers before settlement. Loading and local preview
+remain visible in each consumer. Releasing the reply settles every count once.
+Backend audit records one additional mutation, with no repeated action dispatch.
+A subsequent real input rejection is held during return navigation. It removes
+only its preview and performs no additional write. Actual HTTP and authenticated
+SSE pages use the same fixture. The SSE connection must open before each relevant
+case. Explicit service mutations still use HTTP. These assertions do not prove
+SSE resync delivery or an optimistic streamed service action.
+
+This change preserves the existing invocation lifetime. Layout exit does not
+cancel that invocation. It does not stop ignored I/O, add a deadline or establish
+transaction rollback. RT-01 retains its wider lifecycle/disconnect criteria.
+Snapshot fingerprints still do not order different server snapshots.
+
+Final verification:
+
+- `pnpm --filter @cossackframework/core run build`: ESM and declarations pass.
+- `pnpm --filter @cossackframework/framework run build`: declarations, library ESM
+  and executed framework SSG pass. Runtime consumers ran after builds completed.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1265 /73 files**,
+  including all **10** new loading regressions and existing optimistic cleanup.
+- `pnpm --filter @cossackframework/framework exec vitest run`: **1326 /60 files**.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`:
+  final **19/19**, about **113 seconds**. Extended recipe and recovery navigation,
+  previous production/browser tests and portable target builds pass. This does
+  not establish native Deno or Electron execution.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js
+  tests/websocket-peer-integration.test.js --maxWorkers=1`: final **2/2**, about
+  **125 seconds**. Native retained-consumer/D1 cases and preceding socket,
+  eviction, stream, session, policy, migration and asset acceptance pass.
+- Final root `pnpm tsc --noEmit` and `pnpm typecheck`: all **11** package
+  configurations pass. Owned whitespace, JS syntax and relative documentation
+  file links pass. Versions remain 0.8.3. reports.md/.zcodeignore remain user-owned
+  and unstaged. No remote/live changes or complete monorepo release gate claim.
+
+Intermediate results: the original controlled suite failed **6/8** before the
+source correction. Initial native acceptance failed **1/2**, and an already
+running generated suite failed **1/19**. Both reached the new navigation/rollback
+assertions but expected the wrong input-validation code. The established code is
+COSSACK_VALIDATION_FAILED. Corrected acceptance preserves that production contract.
+The final native **2/2** and generated **19/19** supersede those runs. An early
+package typecheck overlapped framework declaration rebuilding and observed its
+removed dist entry. Final root/all-package checks ran after rebuilding and pass.
+No source change was needed for that build-order error. Tests were observed through
+their original handles. Reruns followed source, coverage or fixture corrections.
+
+Next for GLM: finish RT-06 steps 3–4. Prove actual SSE resync and different late
+snapshots before/after cleanup. Extend optimistic malformed replies, post-yield
+failure and cancellation across HTTP/SSE and explicit services. Preserve retained
+consumer ownership, server snapshot authority and client-only drafts. Audit every
+original done criterion before checking RT-06. Continue all other unchecked tasks,
+including the Node plain Vite development 404 gap and final release gates.
+Read the [plan](./release-0.9.0-plan.md#rt-06),
+[service lifetime](../docs/services.md#scope-and-lifetime) and
+[Codex handoff](./handoff-0.9.0.md).

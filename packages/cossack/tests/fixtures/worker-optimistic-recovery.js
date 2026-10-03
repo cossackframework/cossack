@@ -34,20 +34,42 @@ export async function writeWorkerOptimisticRecovery(root) {
     }
   `);
   await write('src/services/RecoveryCounter.ts', `
-    import { Service, Server, ClientState, Optimistic, CossackService, input } from '@cossackframework/core';
+    import { Service, Server, ClientState, Optimistic, optimistic, CossackService, input } from '@cossackframework/core';
     import { incrementCounter } from '../private-optimistic-recovery';
     @Service() export default class RecoveryCounter extends CossackService {
       @ClientState() previewCount = 0;
-      @Optimistic('incrementService') preview() { this.previewCount += 1; }
+      @Optimistic('incrementService') preview() { optimistic<RecoveryCounter>(this).increment('previewCount', 1); }
       @Server({input:input.object({scope:input.enum(['http','sse'] as const)})})
       async incrementService(value:{scope:'http'|'sse'}) { return incrementCounter(value.scope); }
     }
   `);
   await write('src/pages/resource-check/recovery/layout.ts', `
-    import { Cossack, Page } from '@cossackframework/core';
+    import { Cossack, Page, Inject } from '@cossackframework/core';
     import { html } from '@cossackframework/renderer';
     import RecoveryCounter from '../../../services/RecoveryCounter';
-    @Page({services:[RecoveryCounter]}) export default class RecoveryLayout extends Cossack { render() { return html\`\${this.children}\`; } }
+    @Page({services:[RecoveryCounter]}) export default class RecoveryLayout extends Cossack {
+      @Inject(RecoveryCounter) service!: RecoveryCounter;
+      render() { return html\`<nav><a href="/resource-check/recovery/watch">Watch retained service</a>
+        <a href="/resource-check/recovery/http">HTTP recovery</a><a href="/resource-check/recovery/sse">SSE recovery</a></nav>
+        <span id="layout-preview">\${this.service.previewCount}</span>
+        <span id="layout-loading">\${this.loading.incrementService ?? 0}</span>\${this.children}\`; }
+    }
+  `);
+  await write('src/pages/resource-check/recovery/watch/index.ts', `
+    import { Cossack, Page, Component, Inject, Client } from '@cossackframework/core';
+    import { html, component } from '@cossackframework/renderer';
+    import RecoveryCounter from '../../../../services/RecoveryCounter';
+    @Component({transport:'http'}) class NestedWatcher extends Cossack {
+      @Inject(RecoveryCounter) service!: RecoveryCounter;
+      render() { return html\`<span id="nested-preview">\${this.service.previewCount}</span>
+        <span id="nested-loading">\${this.loading.incrementService ?? 0}</span>\`; }
+    }
+    @Page({transport:'http'}) export default class ServiceWatcher extends Cossack {
+      @Inject(RecoveryCounter) service!: RecoveryCounter;
+      @Client() onMount() { (window as any).__watcher = this; }
+      render() { return html\`<main><span id="watcher-preview">\${this.service.previewCount}</span>
+        <span id="watcher-loading">\${this.loading.incrementService ?? 0}</span>\${component(NestedWatcher)}</main>\`; }
+    }
   `);
   await write('src/pages/api/rpc-check/recovery.ts', `
     import type { Context } from 'hono';
@@ -140,6 +162,66 @@ export async function checkWorkerOptimisticRecovery(server, serverUrl, sessionCo
         expect(await audit(transport)).toEqual({count:before.count+1,mutations:before.mutations+1,reads:before.reads+1});
         expect(errors).toEqual([]); await page.unroute('**/crpc**');
       }
+      // Consume a real committed service response, but hold browser delivery
+      // until the originating page exits and new consumers inject the service.
+      requests.length = 0;
+      const beforeRetained = await audit(transport);
+      let release, committed;
+      const held = new Promise(resolve => { release = resolve; });
+      const committedReply = new Promise(resolve => { committed = resolve; });
+      await page.route('**/crpc**', async route => {
+        if (route.request().postDataJSON().action !== 'incrementService') return route.continue();
+        const response = await route.fetch({maxRedirects:0,maxRetries:0});
+        expect(response.status()).toBe(200);
+        expect(await response.json()).toMatchObject({_cossack_return:{count:beforeRetained.count+1}});
+        committed(); await held; await route.fulfill({response});
+      });
+      await page.evaluate(scope => {
+        window.__retainedFailure = '';
+        window.__retainedCall = window.__recovery.service.incrementService({scope});
+        window.__retainedDone = Promise.resolve(window.__retainedCall).catch(error => { window.__retainedFailure = error.code; });
+      }, transport);
+      await committedReply;
+      expect(await audit(transport)).toEqual({count:beforeRetained.count+1,mutations:beforeRetained.mutations+1,reads:beforeRetained.reads});
+      await browserExpect(page.locator('#layout-loading')).toHaveText('1');
+      await page.getByRole('link', {name:'Watch retained service',exact:true}).click();
+      await page.waitForFunction(() => !!window.__watcher);
+      for (const name of ['layout','watcher','nested']) {
+        await browserExpect(page.locator('#' + name + '-loading')).toHaveText('1');
+        await browserExpect(page.locator('#' + name + '-preview')).toHaveText('1');
+      }
+      release(); await page.evaluate(() => window.__retainedDone);
+      for (const name of ['layout','watcher','nested']) {
+        await browserExpect(page.locator('#' + name + '-loading')).toHaveText('0');
+        await browserExpect(page.locator('#' + name + '-preview')).toHaveText('1');
+      }
+      expect(await page.evaluate(() => window.__retainedFailure)).toBe('');
+      expect(requests.filter(body => body.action === 'incrementService')).toHaveLength(1);
+      await page.unroute('**/crpc**');
+
+      // A real server input rejection never writes D1. Its preview is removed
+      // after returning to a page that did not start the invocation.
+      let releaseInvalid;
+      const invalidGate = new Promise(resolve => { releaseInvalid = resolve; });
+      await page.route('**/crpc**', async route => { await invalidGate; await route.continue(); });
+      await page.evaluate(() => {
+        window.__retainedCall = window.__watcher.service.incrementService({scope:'invalid'});
+        window.__retainedDone = Promise.resolve(window.__retainedCall).catch(error => { window.__retainedFailure = error.code; });
+      });
+      await browserExpect(page.locator('#watcher-preview')).toHaveText('2');
+      await page.getByRole('link', {name:transport === 'http' ? 'HTTP recovery' : 'SSE recovery',exact:true}).click();
+      if (transport === 'sse') await page.waitForFunction(() => window.__recovery.realtime.sse.state === 'open');
+      await browserExpect(page.locator('#mutation-loading')).toHaveText('1');
+      await browserExpect(page.locator('#service-preview')).toHaveText('2');
+      releaseInvalid(); await page.evaluate(() => window.__retainedDone);
+      await browserExpect(page.locator('#mutation-loading')).toHaveText('0');
+      await browserExpect(page.locator('#layout-loading')).toHaveText('0');
+      await browserExpect(page.locator('#service-preview')).toHaveText('1');
+      expect(await page.evaluate(() => window.__retainedFailure)).toBe('COSSACK_VALIDATION_FAILED');
+      expect(requests.filter(body => body.action === 'incrementService')).toHaveLength(2);
+      const afterRetained = await audit(transport);
+      expect(afterRetained).toMatchObject({count:beforeRetained.count+1,mutations:beforeRetained.mutations+1});
+      expect(errors).toEqual([]); await page.unroute('**/crpc**');
       await context.close();
     }
   } finally { await browser.close(); }

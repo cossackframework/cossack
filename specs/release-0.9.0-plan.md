@@ -12,7 +12,17 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex native optimistic socket recovery (2026-10-03):**
+**Latest checkpoint — Codex retained service consumers (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03).
+Service invocations now attach loading to matching late consumers in the retained
+scope. Duplicate subscriptions/rejoin count once. Other declarations and shadowed
+scopes remain independent. Production Node/browser and the shared Worker/D1
+fixture navigate during pending service replies and actual input rejection.
+**20/58 checked, 38 unchecked. All original IDs remain and RT-06 stays open.**
+Finish actual SSE resync/different late snapshots and the remaining optimistic
+stream matrix across transports/services. Continue every other task and gate.
+
+**Previous checkpoint — Codex native optimistic socket recovery (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-optimistic-socket-2026-10-03).
 RT-06 now has actual committed/lost socket replies, reconnect after DO eviction,
 queued cancellation and post-yield stream error/cancellation acceptance. The default
@@ -1488,6 +1498,28 @@ part of step 4. They do not close SSE resync/different late snapshots, retained
 layout/service consumers or optimistic stream acceptance on remaining transports.
 Native cancellation is not server transaction rollback. Preserve this distinction.
 
+**Codex retained-consumer continuation (2026-10-03), after `43c189a`:**
+
+Initial controlled tests failed 6/8. New consumers missed pending loading counts.
+Consumers of another declared service inherited unrelated action counts.
+Each scope now tracks active invocations by service declaration. Each invocation
+records one release per consumer. A late subscription attaches to matching work,
+including work that started without subscribers. Duplicate injection and rejoin
+retain one count. Shadowed scopes retain independent instances and ownership.
+Component and service calls with the same action name keep separate contributions.
+Exited consumers release on settlement without another render.
+
+The production Node recipe test holds service actions during sibling navigation.
+It covers both success and rejection with retained layout and new nested consumers.
+The shared recovery fixture consumes a real committed service response before
+holding browser delivery. New consumers subscribe before that reply settles.
+A later real input rejection removes only its preview after return navigation.
+Backend counts distinguish one committed action from the rejected action.
+These explicit service actions use HTTP on HTTP and genuinely connected SSE pages.
+They do not establish SSE resync delivery, transaction rollback or layout-exit
+cancellation. Preserve those limits when evaluating remaining criteria.
+Read the [evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03).
+
 **Required next work, before RT-06 can close:**
 
 1. Contribution semantics: implemented for the explicit increment/append/remove
@@ -1498,7 +1530,9 @@ Native cancellation is not server transaction rollback. Preserve this distinctio
    mutation dispatches. Recovery reads do not establish transactional rollback.
 3. Native component socket loss/reconnect, eviction, queued cancellation and
    multiple pending calls now pass. Finish actual SSE resync/recovery, different
-   snapshots before/after cleanup, retained layouts and explicit service consumers.
+   snapshots before/after cleanup. Retained layouts and late explicit-service
+   consumers now have the acceptance above. Preserve their behavior through the
+   remaining reconnect/resync and streaming changes.
    Unit state application does not prove the remaining native SSE delivery. Preserve server snapshot authority
    and client-only drafts. Decide how late action-related broadcasts interact with
    user edits after settlement; the final browser/native acceptance must cover it.
@@ -1508,7 +1542,7 @@ Native cancellation is not server transaction rollback. Preserve this distinctio
    broader boundary and actual incoming disconnect gates separate. Add a published full example
    for the final API, then audit every original RT-06 done criterion.
 
-Read the [latest phase evidence](./release-0.9.0.md#codex-optimistic-socket-2026-10-03)
+Read the [latest phase evidence](./release-0.9.0.md#codex-retained-service-loading-2026-10-03)
 and updated [optimistic guide](../docs/optimistic.md). No checkbox closes here.
 Continue all other unchecked tasks, including the Node CLI dev gap, afterward.
 

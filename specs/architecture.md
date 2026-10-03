@@ -638,6 +638,15 @@ user-authored public edits. Client-only state stays outside that request overlay
 Uncorrelated completion broadcasts cannot settle correlated calls. Loading counts
 settle once through the owning call lifecycle.
 
+Each service scope records active loading ownership by declared service class
+and invocation. Subscriptions identify the declaration they consume. New consumers
+attach to matching pending invocations. Each invocation records one release per
+consumer, so duplicate injection and unsubscribe/rejoin retain a single count.
+Another declaration or a shadowing scope does not inherit that ownership.
+Exited consumers still release when the call settles, without another render.
+Same-named component and service actions retain independent loading contributions.
+This does not cancel service work when its layout exits or prove server rollback.
+
 Public `optimistic<Host>(target)` helpers bind to the exact synchronous handler
 capture. They record finite increment and detached plain-data append/remove
 operations on reactive fields. Internal replay folds data operations over the

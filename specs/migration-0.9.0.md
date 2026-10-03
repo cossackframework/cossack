@@ -451,6 +451,12 @@ undo server mutations. Explicit scoped services use the same ownership rules.
 Unrelated echoed state no longer cancels a pending field preview. Service loading
 is owned by its invocation and cannot settle from an ambient completion message;
 duplicate subscriptions count once and exited subscribers release without render.
+Consumers that join a retained service during a pending invocation now inherit
+its loading count. Sibling pages and nested consumers receive the eventual state
+or rollback without another mutation. Loading attaches only to consumers of that
+declared service. A different service or shadowed scope remains independent,
+including services with the same action name. Each consumer counts once per
+invocation across duplicate subscription and unsubscribe/rejoin.
 Unsupported later local snapshots retain references with diagnostics and do not
 make client setters throw or block sibling/loading cleanup.
 

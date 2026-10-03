@@ -148,6 +148,18 @@ service's `@State` fields or nested `@Store` values changes.
 - Leaving the subtree disposes the scope. Returning later creates a new service
  instance with fresh or newly hydrated state.
 
+Each pending browser service action contributes to `loading[action]` on consumers
+that inject that service. A new consumer inherits the count when it joins the
+retained scope during an action. This includes sibling pages and nested components.
+Consumers of another service do not inherit that action's loading count.
+Duplicate subscriptions and unsubscribe/rejoin count once per invocation.
+
+Each invocation releases its count once when it settles. A consumer that already
+exited also releases its count, without another render. Independent component
+calls and services with the same action name contribute separate counts.
+Navigation within the retained layout does not repeat the mutation. Loading is
+client invocation ownership and does not establish whether a server write committed.
+
 Services can define an optional cleanup hook:
 
 ```typescript

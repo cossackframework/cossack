@@ -419,7 +419,9 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
   const serviceFile = path.join(root, 'src/services/scoped-counter.ts');
   // Observe the framework's actual disposal hook without shipping test counters
   // in the application recipe or replacing its service/ownership declarations.
-  await fs.writeFile(serviceFile, (await fs.readFile(serviceFile, 'utf8')).replace('  @Server()', `
+  await fs.writeFile(serviceFile, (await fs.readFile(serviceFile, 'utf8'))
+    .replace('CossackService, Server,', 'CossackService, optimistic, Optimistic, Server,')
+    .replace('  @Server()', `
   @Shared()
   onDispose() {
     if (typeof window !== 'undefined') {
@@ -427,7 +429,17 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
       observed.__serviceDisposals = (observed.__serviceDisposals ?? 0) + 1;
     }
   }
+  @Optimistic('increment')
+  preview() { optimistic<ScopedCounterService>(this).increment('count', 1); }
   @Server()`));
+  for (const route of ['index.ts', 'other/index.ts', 'layout.ts']) {
+    const file = path.join(root, 'src/pages/scoped-service', route);
+    const source = await fs.readFile(file, 'utf8');
+    const label = route === 'layout.ts' ? 'layout' : route === 'index.ts' ? 'counter' : 'sibling';
+    await fs.writeFile(file, source.replace('<main>', `<main><p data-testid="${label}-service-loading">\${this.loading.increment ?? 0}</p>`)
+      .replace('<section>', `<section><p data-testid="layout-service-loading">\${this.loading.increment ?? 0}</p>`)
+      .replace('<p data-testid="nested-service-count">', '<span data-testid="nested-service-loading">${this.loading.increment ?? 0}</span><p data-testid="nested-service-count">'));
+  }
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
   catch (error) { throw new Error(`Generated service types: ${error.stdout}\n${error.stderr}`); }
   await vite(root, []);
@@ -489,15 +501,56 @@ it('runs the scoped-service recipe across sibling navigation, nested injection, 
     await page.getByRole('button', { name: 'Increment', exact: true }).click();
     await browserExpect(layoutCount).toHaveText('Count: 2');
 
+    // The originating page exits while its service invocation stays pending.
+    // Reused layout, newly injected sibling and nested consumer share ownership.
+    let releaseRetained;
+    const retainedGate = new Promise(resolve => { releaseRetained = resolve; });
+    await page.route('**/crpc', async route => { await retainedGate; await route.continue(); });
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await browserExpect(layoutCount).toHaveText('Count: 3');
+    await browserExpect(page.getByTestId('layout-service-loading')).toHaveText('1');
     await page.getByRole('link', { name: 'Sibling page', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Sibling page', exact: true })).toBeVisible();
-    await browserExpect(count).toHaveText('Count: 2');
-    await browserExpect(page.getByTestId('nested-service-count')).toHaveText('Count: 2');
+    await browserExpect(count).toHaveText('Count: 3');
+    await browserExpect(page.getByTestId('nested-service-count')).toHaveText('Count: 3');
+    await browserExpect(page.getByTestId('sibling-service-loading')).toHaveText('1');
+    await browserExpect(page.getByTestId('nested-service-loading')).toHaveText('1');
+    releaseRetained();
+    await browserExpect(page.getByTestId('layout-service-loading')).toHaveText('0');
+    await browserExpect(page.getByTestId('sibling-service-loading')).toHaveText('0');
+    await browserExpect(page.getByTestId('nested-service-loading')).toHaveText('0');
+    await browserExpect(count).toHaveText('Count: 3');
+    await page.unroute('**/crpc');
     expect(await page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(0);
     await page.getByRole('link', { name: 'Counter page', exact: true }).click();
     await browserExpect(page.getByRole('button', { name: 'Increment', exact: true })).toBeVisible();
-    await browserExpect(count).toHaveText('Count: 2');
+    await browserExpect(count).toHaveText('Count: 3');
+    let rejectRetained;
+    const rejectGate = new Promise(resolve => { rejectRetained = resolve; });
+    await page.route('**/crpc', async route => {
+      await rejectGate;
+      await route.fulfill({ status: 422, contentType: 'application/json', body: JSON.stringify({
+        code: 'COSSACK_RPC_VALIDATION_FAILED', error: 'Invalid counter update',
+      }) });
+    });
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await browserExpect(layoutCount).toHaveText('Count: 4');
+    await page.getByRole('link', { name: 'Sibling page', exact: true }).click();
+    await browserExpect(page.getByTestId('sibling-service-loading')).toHaveText('1');
+    await browserExpect(page.getByTestId('nested-service-loading')).toHaveText('1');
+    await browserExpect(count).toHaveText('Count: 4');
+    rejectRetained();
+    await browserExpect(page.getByTestId('layout-service-loading')).toHaveText('0');
+    await browserExpect(page.getByTestId('sibling-service-loading')).toHaveText('0');
+    await browserExpect(page.getByTestId('nested-service-loading')).toHaveText('0');
+    await browserExpect(layoutCount).toHaveText('Count: 3');
+    await browserExpect(count).toHaveText('Count: 3');
+    await browserExpect(page.getByTestId('nested-service-count')).toHaveText('Count: 3');
+    expect(sent.filter(request => request.action === 'increment')).toHaveLength(5);
+    await page.unroute('**/crpc');
     expect(await page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(0);
+    await page.getByRole('link', { name: 'Counter page', exact: true }).click();
+    await browserExpect(page.getByRole('button', { name: 'Increment', exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Leave the layout', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Layout-scoped service', exact: true })).toHaveCount(0);
     await browserExpect.poll(() => page.evaluate(() => window.__serviceDisposals ?? 0)).toBe(1);
