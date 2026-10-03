@@ -9,6 +9,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(import.meta.dirname, 'src/index.ts'),
+        browser: resolve(import.meta.dirname, 'src/browser.ts'),
         server: resolve(import.meta.dirname, 'src/server.ts'),
       },
       formats: ['es'],
@@ -18,6 +19,7 @@ export default defineConfig({
       // directly instead of copying its internal node_modules layout into the
       // published renderer package.
       external: [
+        'parse5',
         'css-tree/parser',
         'css-tree/generator',
         'css-tree/walker',

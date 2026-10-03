@@ -33,10 +33,10 @@ describe('SSR Fixes & Regressions', () => {
 
     it('handles property binding (.prop) with null/undefined cleanly', () => {
         const template = html`<input .value=${null}>`;
-        expect(renderToString(template)).toBe('<input>');
+        expect(renderToString(template)).toBe('<input value="">');
         
         const template2 = html`<input .value="${undefined}">`;
-        expect(renderToString(template2)).toBe('<input>');
+        expect(renderToString(template2)).toBe('<input value="">');
     });
 
     it('handles mixed attributes with correct spacing', () => {

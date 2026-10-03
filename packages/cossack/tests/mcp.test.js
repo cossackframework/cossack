@@ -211,6 +211,11 @@ it('indexes installed signatures through the cancellable MCP worker', async () =
   const {client}=await connect(root);
   const result=await client.callTool({name:'read_documentation',arguments:{package:'@cossackframework/core',symbols:true}});
   expect(result.structuredContent.data.packages[0].declarations).toMatchObject({status:'indexed',entries:[{symbols:[{name:'find',callSignatures:['<T>(value: T): Promise<T>']}]}]});
+  const filtered=await client.callTool({name:'read_documentation',arguments:{package:'@cossackframework/core',symbols:true,symbol:'find'}});
+  expect(filtered.isError).toBe(false);
+  expect(filtered.structuredContent.data.packages[0].declarations.selection).toEqual({name:'find',matched:true});
+  const invalidFilter=await client.callTool({name:'read_documentation',arguments:{package:'@cossackframework/core',symbol:'find'}});
+  expect(invalidFilter.isError).toBe(true);
   const invalid=await client.callTool({name:'read_documentation',arguments:{symbols:true}});
   expect(invalid.isError).toBe(true);
 },30000);

@@ -30,7 +30,7 @@ function preserveBlocks(html: string): { html: string; blocks: string[] } {
     const htmlWithPlaceholders = html.replace(PRESERVE_TAGS, (match) => {
         // Strip type="text/javascript" and type="text/css" from the opening tag
         // before preserving, so these unnecessary attributes get removed.
-        const cleaned = match.replace(TYPE_JS_CSS, '');
+        const cleaned = match.replace(/^<(?:[^>"']|"[^"]*"|'[^']*')*>/, opening => opening.replace(TYPE_JS_CSS, ''));
         blocks.push(cleaned);
         return `\x00PRESERVE_${blocks.length - 1}\x00`;
     });
@@ -81,11 +81,12 @@ export function minifyHtml(html: string): string {
         return `<${tag}${trimmedAttrs}>`;
     });
 
-    // Step 8: Restore preserved blocks
-    result = restoreBlocks(result, blocks);
+    // Remove inter-tag whitespace while raw-text blocks are still protected.
+    // Doing this after restoration would erase whitespace-only textarea values.
+    result = result.replace(/(>|\x00PRESERVE_\d+\x00)\s+(?=<|\x00PRESERVE_\d+\x00)/g, '$1');
 
-    // Step 9: Remove whitespace between tags introduced by block restoration
-    result = result.replace(/>\s+</g, '><');
+    // Step 8: Restore preserved blocks without modifying their contents.
+    result = restoreBlocks(result, blocks);
 
     // Step 10: Trim leading/trailing whitespace
     result = result.trim();

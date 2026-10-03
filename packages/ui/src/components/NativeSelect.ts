@@ -1,15 +1,14 @@
+import type { SelectAttributes } from "../native-attributes";
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
-export interface NativeSelectProps {
+export type NativeSelectProps = SelectAttributes & {
     /** Control size. Defaults to "default". */
     size?: "default" | "sm" | "lg";
     /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
-    /** Pass-through HTML select attributes (name, value, disabled, ...). */
-    [key: string]: any;
 }
 
 const SIZES: Record<NonNullable<NativeSelectProps["size"]>, string> = {
@@ -27,8 +26,8 @@ const VARIANTS: Record<NonNullable<NativeSelectProps["variant"]>, string> = {
 /**
  * Cossack UI NativeSelect — styled native `<select>` (no popover, no JS).
  *
- * A simpler alternative to the custom `Select` for cases where native OS-level
- * dropdown behavior is preferred (mobile-friendly, accessible by default).
+ * Both Select and NativeSelect use native browser controls. NativeSelect also
+ * sets option-menu theme colors. Use .value to select an initial or reactive value.
  * Pass `<option>` elements as children.
  *
  *   ${component(NativeSelect, { '@change': handler },

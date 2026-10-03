@@ -639,3 +639,29 @@ abort. Late response bodies are discarded. A confirmed yield remains public stat
 unconfirmed client-only previews roll back. No mutation retry or server rollback is
 implied. The [complete example](../docs/optimistic.md#complete-streamed-recovery-example)
 uses a validated streamed mutation, ClientState draft and explicit persisted read.
+
+
+## Textarea and native select values
+
+Use `.value` instead of `value` with Textarea, Select and NativeSelect. Their closed
+prop types reject unsupported native attributes and incorrect event targets.
+Textarea listeners expose `HTMLTextAreaElement` as `currentTarget`; select listeners
+expose `HTMLSelectElement`. Native change events are `Event`, not `InputEvent`.
+
+SSR writes textarea text and selects matching options. Use an option matching the
+initial single-select value; HTML cannot represent `selectedIndex=-1` while options
+exist before JavaScript runs. For multiple selections, supply selected option
+children instead of a scalar `.value`. Use `.value` for textarea content because
+interpolated child text cannot contain hydration comment anchors.
+
+Null/undefined `.value` bindings now serialize explicit empty values, including
+`value=""` on inputs. Plain input/textarea/select spread values preserve user edits
+when the bound value remains unchanged. Use `live()` when parent renders must
+restore the requested value. `bind()` retains native two-way updates.
+
+
+The default browser entry now reports an error when calling root `renderToString`.
+Use `render()` or `hydrate()` for DOM updates. If browser code deliberately needs
+HTML serialization, import `renderToString` from `@cossackframework/renderer/server`.
+That explicit import includes the SSR parser. Node, Deno, Workers and workerd keep
+the existing root serializer.

@@ -101,4 +101,4 @@ export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar
 
 export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';
 
-export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
+export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, TextareaAttributes, SelectAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";

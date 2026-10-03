@@ -143,9 +143,14 @@ export const commandSpecs = {
     markdown: bool('Include Markdown routes. The Vite plugin must configure markdownProcessor.'),
   }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
     ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for routes.' }] : [] }),
-  docs: new CommandSpec({ name: 'docs', globals: readonly, flags: { package: choices('Installed package to inspect.', COSSACK_PACKAGES), symbols: bool('Index declarations for the selected package.') },
-    check: (_args, flags) => flags.symbols === true && !flags.package
-      ? [{ code: 'COSSACK_DOCS_PACKAGE_REQUIRED', severity: 'error', message: '--symbols requires --package.' }] : [] }),
+  docs: new CommandSpec({ name: 'docs', globals: readonly, flags: {
+    package: choices('Installed package to inspect.', COSSACK_PACKAGES), symbols: bool('Index declarations for the selected package.'),
+    symbol: str('Return one exact public symbol; requires --package and --symbols.'),
+  }, check: (_args, flags) => {
+    if (flags.symbols === true && !flags.package) return [{ code: 'COSSACK_DOCS_PACKAGE_REQUIRED', severity: 'error', message: '--symbols requires --package.' }];
+    if (flags.symbol !== undefined && (!flags.symbols || !flags.symbol.trim() || flags.symbol.length > 256)) return [{ code: 'COSSACK_DOCS_SYMBOL_INVALID', severity: 'error', message: '--symbol requires --symbols and a nonempty name of at most 256 characters.' }];
+    return [];
+  } }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {

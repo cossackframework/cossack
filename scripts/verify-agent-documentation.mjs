@@ -134,9 +134,20 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(radio.propsContract.members.some(member => member.name === 'onValueChange' && member.callSignatures.some(signature => signature.includes('HTMLInputElement'))));
     for (const control of [radio, slider]) assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'radio-and-range'));
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true } });
-    assert.equal(uiRemote.isError, false);
-    assert.deepEqual(uiRemote.structuredContent.data, ui.data);
+    for (const [name, element] of [['Textarea','HTMLTextAreaElement'],['Select','HTMLSelectElement'],['NativeSelect','HTMLSelectElement']]) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@change' && member.type.includes(element)));
+      assert.ok(control.propsContract.members.some(member => member.name === '.value'));
+      assert.ok(!control.propsContract.members.some(member => member.name === 'value'));
+    }
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Textarea', '--json']);
+    assert.equal(uiFiltered.ok, true);
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Textarea']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Textarea' } });
+    assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
+    assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');
 
     // A running MCP server must refresh installed facts after a package change.

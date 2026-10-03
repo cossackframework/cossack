@@ -18,10 +18,10 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next: Textarea, Select/NativeSelect, InputGroup and PasswordInput, including initial values across SSR/hydration.
-   Renderer plain/live select values now survive dynamic option commits without overwriting unrelated manual selections.
-   See the [select checkpoint](./release-0.9.0.md#codex-select-values-2026-10-04) for regression and browser evidence.
-   Nine foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable, RadioGroup and Slider.
+   Next audit InputGroup and PasswordInput, including SSR/hydration and native edit ownership.
+   Twelve foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
+   RadioGroup, Slider, Textarea, Select and NativeSelect.
+   See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04) for current evidence and limits.
    Generated Node/workerd DataTable acceptance and stable-ID focus restoration pass.
    The [latest checkpoint](./release-0.9.0.md#codex-choice-controls-2026-10-04) records typed props,
    SSR tests, themed Chromium keyboard/state/disabled-style acceptance and root/package type checks.
@@ -34,6 +34,7 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
    Wildcard exclusions and partial results remain explicit. Runtime availability remains unverified.
    Typed route URLs, server HTML and four recipe guides include TypeScript examples.
    Discovery reads example source without executing it. See [usage](../docs/local-agent-tools.md).
+   Use `--symbol <name>` (MCP `symbol`) with `symbols` for one complete contract. Filtered entries list available names.
    Extend [installed-tarball acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04),
    which covers CLI/MCP parity and discovery with Node networking disabled.
 3. Continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.

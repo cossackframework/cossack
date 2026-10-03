@@ -1,15 +1,14 @@
+import type { SelectAttributes } from "../native-attributes";
 import { html, classMap, component } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
-export interface SelectProps {
+export type SelectProps = SelectAttributes & {
     /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
     /** Control size. Defaults to "default". */
     size?: "default" | "sm" | "lg";
-    /** Pass-through HTML select attributes (name, value, disabled, ...). */
-    [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<SelectProps["variant"]>, string> = {

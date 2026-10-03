@@ -66,3 +66,15 @@ export type FormAttributes = GlobalAttributes<HTMLFormElement> & Attributes<{
 export type RangeAttributes = Omit<GlobalAttributes<HTMLInputElement>, 'role' | 'aria-valuemin' | 'aria-valuemax' | 'aria-valuenow'> & Attributes<{
     name: string; form: string; list: string;
 }>;
+
+/** Multiline text uses .value; HTML has no textarea value attribute. */
+export type TextareaAttributes = GlobalAttributes<HTMLTextAreaElement> & Attributes<{
+    name: string; form: string; placeholder: string; disabled: boolean; readonly: boolean; required: boolean;
+    autocomplete: string; cols: number; minlength: number; maxlength: number; wrap: 'soft' | 'hard';
+    dirname: string; inputmode: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url';
+    enterkeyhint: 'enter' | 'done' | 'go' | 'next' | 'previous' | 'search' | 'send';
+}> & { '.value'?: ValueBinding<string> };
+/** Selection uses .value or selected option children; HTML has no select value attribute. */
+export type SelectAttributes = GlobalAttributes<HTMLSelectElement> & Attributes<{
+    name: string; form: string; disabled: boolean; required: boolean; multiple: boolean; autocomplete: string;
+}> & { '.value'?: ValueBinding<string> };

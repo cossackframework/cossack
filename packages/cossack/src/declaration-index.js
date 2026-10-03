@@ -7,7 +7,7 @@ const format = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.InTypeAlias;
 const signatureFormat = ts.TypeFormatFlags.NoTruncation;
 
 /** Index installed declaration modules, without tsconfig plugins or runtime imports. */
-export async function indexDeclarations(folder, exports) {
+export async function indexDeclarations(folder, exports, { symbol: selectedSymbol } = {}) {
   const canonical = await fs.realpath(folder);
   const compilerOptions = {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
@@ -94,7 +94,7 @@ export async function indexDeclarations(folder, exports) {
     const assignment = sf.statements.find(statement => ts.isExportAssignment(statement) && statement.isExportEquals);
     const assigned = assignment && checker.getSymbolAtLocation(assignment.expression);
     if (assigned) publicExports.push({ name: 'export=', symbol: assigned });
-    const symbols = publicExports.map(({ name, symbol: exported }) => {
+    const symbols = publicExports.filter(item => selectedSymbol === undefined || item.name === selectedSymbol).map(({ name, symbol: exported }) => {
       const target = exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
       const declaration = target.valueDeclaration ?? target.declarations?.[0];
       if (!declaration) return { name, status: 'unresolved', runtime: 'not-verified' };
@@ -116,7 +116,8 @@ export async function indexDeclarations(folder, exports) {
         runtime: 'not-verified',
       };
     }).sort((a,b) => a.name.localeCompare(b.name));
-    return { file: localPath(file), status: symbols.some(symbol => symbol.status === 'unresolved') ? 'partial' : 'indexed', symbols };
+    return { file: localPath(file), status: symbols.some(symbol => symbol.status === 'unresolved') ? 'partial' : 'indexed', symbols,
+      ...(selectedSymbol === undefined ? {} : { availableSymbols: publicExports.map(item => item.name).sort() }) };
   });
   const declarationHash = createHash('sha256');
   for (const file of program.getSourceFiles().filter(file => !program.isSourceFileDefaultLibrary(file)).sort((a,b) => a.fileName.localeCompare(b.fileName))) {

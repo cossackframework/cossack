@@ -374,6 +374,9 @@ importers:
       css-tree:
         specifier: ^3.2.1
         version: 3.2.1
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
     devDependencies:
       happy-dom:
         specifier: ^20.11.1

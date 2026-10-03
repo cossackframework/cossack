@@ -903,3 +903,23 @@ root div attributes/events from input-level form flags and selection callbacks.
 Unique item values key native input identity. Slider owns numeric bounds and value,
 applying constraints before a live value binding so widened bounds can recover a
 previously clamped requested value. Browser-native step/clamping remains authoritative.
+
+
+Renderer SSR serializes `.value` through an HTML parse with source locations, then
+edits only the affected attributes/text. Authored markup and hydration markers are
+preserved. Textarea values become escaped raw text, with an extra leading LF when
+needed by HTML parsing. Select values select the first matching option and remove
+competing selected attributes. Option fallback values follow native whitespace and
+script-exclusion rules. A scalar value selects one option even on a multiple select.
+Hydration treats textarea content as native property state, without child comment
+anchors. Use `.value` rather than interpolated textarea children.
+
+The parser uses parse5 8.0.1 without Node APIs. Its source-location behavior is
+[documented by parse5](https://parse5.js.org/interfaces/parse5.ParserOptions.html).
+Option text semantics follow the [HTML standard](https://html.spec.whatwg.org/multipage/form-elements.html).
+The renderer's browser export replaces root `renderToString` with a diagnostic
+that directs deliberate serialization to `/server`. This lets bundlers remove the
+SSR parser even when core retains its synchronous `_render()` method. Node, Deno,
+worker and workerd export conditions retain the full root serializer. The explicit
+`/server` entry remains available in every environment. Unmatched single-select values cannot encode an
+empty selection in static HTML; a matching option is required for SSR parity.

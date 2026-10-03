@@ -1,3 +1,4 @@
+import { serializeFormValues } from './ssr-form-values';
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
@@ -235,7 +236,7 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       continue;
     }
     if (k.startsWith('.')) {
-      name = k.slice(1);
+      name = k === '.value' ? '.value' : k.slice(1);
       // Unwrap result-wrapper directives routed through the spread (e.g.
       // component(Input, { '.value': bind(this, 'name') }) or
       // { '.value': live(x) }) so SSR emits the underlying value instead of
@@ -247,6 +248,10 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
         val = val.value;
       }
       if (val === nothing) {
+        continue;
+      }
+      if (name === '.value') {
+        ctx.result += ` .value="${escapeHtml(String(val ?? ''))}"`;
         continue;
       }
       if (BOOLEAN_ATTRS.has(name)) {
@@ -598,13 +603,17 @@ class SSRScanner {
             } else {
               propVal = val;
             }
-            const attrName = name.slice(1);
+            const attrName = name === '.value' ? '.value' : name.slice(1);
             // For `bind()` on a known boolean attribute (.checked/.disabled),
             // emit a bare attribute when truthy — matching how a checkbox
             // serializes. Plain (non-bind) property bindings keep their
             // original behavior (value="...") to avoid changing existing usage.
             const isBooleanAttr = isBind && BOOLEAN_ATTRS.has(attrName);
-            if (isBooleanAttr) {
+            if (attrName === '.value') {
+              const current = propVal instanceof LiveResult ? propVal.value : propVal;
+              this.result = this.result.trimEnd();
+              this.result += ` .value="${escapeHtml(String(current ?? ''))}"`;
+            } else if (isBooleanAttr) {
               this.result = this.result.trimEnd();
               if (propVal) this.result += ` ${attrName}`;
             } else if (propVal !== null && propVal !== undefined && propVal !== false) {
@@ -679,7 +688,7 @@ class SSRScanner {
       }
       this.stringIdx++;
     }
-    return this.result;
+    return serializeFormValues(this.result);
   }
 }
 
@@ -1750,7 +1759,8 @@ class SpreadPart implements Part {
           (this.element as any)[propName] = undefined;
         } else if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
           this.applySpreadBind(key, propName, val);
-        } else if (propName === 'value' && this.element instanceof HTMLSelectElement) {
+        } else if (propName === 'value' && (this.element instanceof HTMLSelectElement ||
+          this.element instanceof HTMLTextAreaElement || this.element instanceof HTMLInputElement)) {
           const isLive = val instanceof LiveResult;
           const current = isLive ? val.value : val;
           const strValue = current == null ? '' : String(current);
@@ -1759,7 +1769,9 @@ class SpreadPart implements Part {
           const changed = !(key in this.previousValues) || previous instanceof BindResult ||
             previous === nothing || String(previousValue ?? '') !== strValue;
           if (isLive ? this.element.value !== strValue : changed) this.element.value = strValue;
-          if (isLive || changed || selectPending) this.selectCommit.schedule(this.element, strValue);
+          if (this.element instanceof HTMLSelectElement && (isLive || changed || selectPending)) {
+            this.selectCommit.schedule(this.element, strValue);
+          }
         } else if (val instanceof LiveResult && (propName === 'value' || propName === 'checked')) {
           // live() via the spread: compare against the live DOM value (not the
           // last-rendered value) so an in-progress user edit isn't clobbered,
@@ -2113,13 +2125,13 @@ class AttributePart implements Part {
             this.lastFormKind = 'checked';
           }
         } else {
-          const strValue = String(value);
+          const strValue = value == null ? '' : String(value);
           const shouldWrite = isLive
             ? (this.element as any).value !== strValue // compare against live DOM
             : this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue; // dirty check
           if (shouldWrite) {
             (this.element as any).value = strValue;
-            this.lastFormValue = value;
+            this.lastFormValue = strValue;
             this.lastFormKind = 'value';
           }
           if (this.element instanceof HTMLSelectElement && (isLive || shouldWrite || selectPending)) {
@@ -2621,6 +2633,12 @@ const reconcileNodeLists = (
         throw new HydrateMismatch(`tag mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
       }
       map.set(bpNode, exNode);
+      if (bpNode.nodeName === 'TEXTAREA') {
+        // Native textarea values are text in SSR and properties on the client.
+        // There are no child comment anchors inside this raw-text element.
+        ei++;
+        continue;
+      }
       reconcileNodeLists(
         bpNode.childNodes,
         Array.from(exNode.childNodes),

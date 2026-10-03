@@ -45,3 +45,18 @@ check as proof that remote credentials, bindings or deployment are ready.
 For an MCP host, start `cossack-mcp --project /absolute/path/to/app`. Use
 `inspect_project` for static facts and `read_documentation` for this offline
 catalog. Neither tool builds, executes tests, deploys or provisions the app.
+
+
+For one exported contract, use an exact symbol name:
+
+```sh
+pnpm exec cossack docs --package @cossackframework/ui --symbols --symbol Textarea --json
+```
+
+MCP `read_documentation` accepts `package`, `symbols: true` and `symbol: "Textarea"`.
+Filtering occurs before member expansion. The response retains the selected
+symbol's complete contract and lists `availableSymbols` in each declaration entry.
+`selection.matched` distinguishes a missing name from a contract with no members.
+Unknown names produce `COSSACK_DOCS_SYMBOL_NOT_FOUND` with no fabricated contract.
+The MCP result limit remains 4 MiB; use this filter when a full catalog exceeds it.
+Declaration signatures still do not prove runtime availability.

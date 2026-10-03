@@ -3325,8 +3325,12 @@ and bounds changes. The [component inventory](./ui-contract-audit.md) records al
 remaining audit work, starting with text/select wrappers and their SSR values.
 Renderer plain/live select values now commit after dynamic options, with stale queued
 writes canceled on replacement or removal. Plain spread select values preserve
-manual selection on unrelated renders. SSR value serialization and wrapper contracts
-remain open. See the [select checkpoint](./release-0.9.0.md#codex-select-values-2026-10-04).
+manual selection on unrelated renders. Textarea/select SSR now uses escaped text and selected options. Textarea, Select
+and NativeSelect have closed native contracts and retained-hydration acceptance.
+Plain input/textarea spreads also preserve edits when the bound value is unchanged.
+A browser-specific renderer entry removes the SSR parser from normal UI bundles.
+Explicit browser serialization uses `/server`. InputGroup and PasswordInput remain next.
+See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
 
 

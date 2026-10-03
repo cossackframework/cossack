@@ -122,9 +122,9 @@ export class PragmasTab extends Cossack {
                   size: 'sm',
                   '.value': value,
                   'aria-label': `${pragma.name} value`,
-                  '@change': (event: InputEvent) => this.props.onDraftChange(
+                  '@change': event => this.props.onDraftChange(
                     pragma.name,
-                    (event.target as HTMLSelectElement).value,
+                    event.currentTarget.value,
                   ),
                 }, html`
                   ${pragma.options?.map((option) => html`

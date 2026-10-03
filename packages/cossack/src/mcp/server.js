@@ -41,15 +41,16 @@ export async function startMcpServer(project, options = {}) {
       return { structuredContent, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], isError: !result.ok };
     });
     server.registerTool('read_documentation', {
-      description: 'Read offline installed package export targets, versioned CLI command schemas and agent guidance. No application modules are executed.',
-      inputSchema: z.object({ package: z.enum(COSSACK_PACKAGES).optional(), symbols: z.boolean().default(false) }).strict()
-        .refine(value => !value.symbols || value.package !== undefined, { message: 'symbols requires package.' }),
+      description: 'Read offline installed package export targets, versioned CLI command schemas and agent guidance. Use symbol with symbols:true for one exact export when a full catalog is too large. No application modules are executed.',
+      inputSchema: z.object({ package: z.enum(COSSACK_PACKAGES).optional(), symbols: z.boolean().default(false), symbol: z.string().min(1).max(256).refine(value => value.trim().length > 0).optional() }).strict()
+        .refine(value => !value.symbols || value.package !== undefined, { message: 'symbols requires package.' })
+        .refine(value => value.symbol === undefined || value.symbols, { message: 'symbol requires symbols.' }),
       outputSchema: toolResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async (input, ctx) => {
       let result;
       try { result = await runner.run({ operation: 'documentation', ...input }, ctx.mcpReq.signal); }
-      catch (error) { result = { ok: false, data: null, diagnostics: [{ code: error.code ?? 'COSSACK_DOCS_FAILED', severity: 'error', message: 'Documentation could not be read.' }] }; }
+      catch (error) { result = { ok: false, data: null, diagnostics: [{ code: error.code ?? 'COSSACK_DOCS_FAILED', severity: 'error', message: error.code === 'COSSACK_MCP_RESULT_TOO_LARGE' ? 'Catalog exceeds the response limit. Request one exact export with symbols:true and symbol.' : 'Documentation could not be read.' }] }; }
       const installed = await readInstalledPackage(root, '@cossackframework/framework').catch(() => null);
       const structuredContent = { schemaVersion: 1, versions: { ...versions, framework: installed?.manifest.version ?? null }, ...result };
       return { structuredContent, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], isError: !result.ok };

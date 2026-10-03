@@ -33,6 +33,15 @@ Slider applies numeric bounds before a live value binding, including recovery wh
 widened bounds admit a previously clamped requested value. Browser checks exercise
 keyboard changes, parent resets, callback targets and retained radio DOM identity.
 
+Textarea, Select and NativeSelect now have native prop/event contracts. Their `.value`
+bindings render as textarea text or selected options before JavaScript runs. Chromium
+verifies retained controls/options, leading newlines, escaped text, keyboard input,
+required/disabled behavior and FormData. Null/undefined values serialize as empty
+text. Unmatched single-select values cannot encode `selectedIndex=-1` in static
+HTML; use a matching option for SSR. Interpolated textarea children remain unsupported.
+A browser-specific renderer entry keeps the SSR parser out of normal UI bundles.
+Deliberate browser serialization uses `@cossackframework/renderer/server`.
+
 The following are still follow-up requirements, including for reviewed controls:
 error/description and focus behavior within full application form recipes, and the
 final published-runtime matrix. Type checks cannot prove correct labeling in every app.
@@ -81,7 +90,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Modal](../packages/ui/src/components/Modal.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [MultiSelect](../packages/ui/src/components/MultiSelect.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [NativeSelect](../packages/ui/src/components/NativeSelect.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [NativeSelect](../packages/ui/src/components/NativeSelect.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [NavigationMenu](../packages/ui/src/components/NavigationMenu.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Pagination](../packages/ui/src/components/Pagination.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [PasswordInput](../packages/ui/src/components/PasswordInput.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -90,7 +99,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Foundation reviewed | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Resizable](../packages/ui/src/components/Resizable.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Select](../packages/ui/src/components/Select.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Select](../packages/ui/src/components/Select.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Separator](../packages/ui/src/components/Separator.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Sheet](../packages/ui/src/components/Sheet.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Sidebar](../packages/ui/src/components/Sidebar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -100,7 +109,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Switch](../packages/ui/src/components/Switch.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Table](../packages/ui/src/components/Table.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Tabs](../packages/ui/src/components/Tabs.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Textarea](../packages/ui/src/components/Textarea.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Textarea](../packages/ui/src/components/Textarea.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Toast](../packages/ui/src/components/Toast.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Toggle](../packages/ui/src/components/Toggle.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [ToggleGroup](../packages/ui/src/components/ToggleGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -109,7 +118,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Textarea, Select/NativeSelect, InputGroup and PasswordInput. Audit value/checked ownership after native user edits and during SSR/hydration.
+Next audit InputGroup and PasswordInput, including value ownership during user edits and SSR/hydration.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

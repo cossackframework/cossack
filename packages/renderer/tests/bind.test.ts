@@ -17,13 +17,13 @@ describe('bind() via spread (component() props)', () => {
     expect(out).not.toContain('[object Object]');
   });
 
-  it('SSR omits the value attribute when the field is null/undefined', () => {
+  it('SSR renders an empty value when the field is null/undefined', () => {
     // Consistent with the renderer's null/undefined handling elsewhere.
     const component = { name: undefined };
     const tpl = html`<input ...=${{ '.value': bind(component, 'name') }} />`;
     const out = renderToString(tpl);
     expect(out).not.toContain('[object Object]');
-    expect(out).not.toContain('value=');
+    expect(out).toContain('value=""');
   });
 
   it('SSR renders .checked as a bare presence attribute when truthy', () => {
@@ -82,12 +82,12 @@ describe('bind() with dot-path nested state', () => {
     expect(out).toContain('value="456 Oak"');
   });
 
-  it('SSR omits the value for a missing nested path (no throw)', () => {
+  it('SSR renders an empty value for a missing nested path (no throw)', () => {
     const component = { address: {} };
     const tpl = html`<input ...=${{ '.value': bind(component, 'address.missing') }} />`;
     const out = renderToString(tpl);
     expect(out).not.toContain('[object Object]');
-    expect(out).not.toContain('value=');
+    expect(out).toContain('value=""');
   });
 });
 
@@ -168,11 +168,11 @@ describe('live() via spread (component() props)', () => {
     expect(out).not.toContain('[object Object]');
   });
 
-  it('SSR omits the value when the inner value is null/undefined', () => {
+  it('SSR renders an empty value when the inner value is null/undefined', () => {
     const tpl = html`<input ...=${{ '.value': live(null) }} />`;
     const out = renderToString(tpl);
     expect(out).not.toContain('[object Object]');
-    expect(out).not.toContain('value=');
+    expect(out).toContain('value=""');
   });
 
   it('SSR renders .checked as a bare presence attribute when truthy', () => {

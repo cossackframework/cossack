@@ -17,11 +17,14 @@ function commandCatalog() {
 }
 
 /** Fresh offline facts from the bound project's installed manifests, not workspace sources. */
-export async function readDocumentation(root, { package: selected, symbols = false } = {}) {
+export async function readDocumentation(root, { package: selected, symbols = false, symbol } = {}) {
   if (selected !== undefined && !COSSACK_PACKAGES.includes(selected)) {
     throw Object.assign(new Error('Select a supported Cossack package.'), { code: 'COSSACK_DOCS_PACKAGE_UNKNOWN' });
   }
   if (symbols && !selected) throw Object.assign(new Error('Select one package when requesting symbols.'), { code: 'COSSACK_DOCS_PACKAGE_REQUIRED' });
+  if (symbol !== undefined && (!symbols || typeof symbol !== 'string' || !symbol.trim() || symbol.length > 256)) {
+    throw Object.assign(new Error('symbol requires symbols and a nonempty name of at most 256 characters.'), { code: 'COSSACK_DOCS_SYMBOL_INVALID' });
+  }
   const packages = [], diagnostics = [], installedFolders = new Map();
   for (const name of selected ? [selected] : COSSACK_PACKAGES) {
     let installed;
@@ -62,7 +65,13 @@ export async function readDocumentation(root, { package: selected, symbols = fal
           entries.push({ import: pkg.name, ...await describeExport(folder, '.', { [pkg.legacyEntries.types ? 'types' : 'default']: target }) });
         }
       }
-      pkg.declarations = await indexDeclarations(folder, entries);
+      pkg.declarations = await indexDeclarations(folder, entries, { symbol });
+      if (symbol !== undefined) {
+        const matched = pkg.declarations.entries.some(entry => entry.symbols.some(item => item.name === symbol));
+        pkg.declarations.selection = { name: symbol, matched };
+        if (!matched) diagnostics.push({ code: 'COSSACK_DOCS_SYMBOL_NOT_FOUND', severity: 'warning', package: pkg.name,
+          message: 'The requested public declaration was not found. See availableSymbols in declaration entries.' });
+      }
       if (pkg.declarations.status !== 'indexed') diagnostics.push({
         code: 'COSSACK_DOCS_DECLARATIONS_INCOMPLETE', severity: 'warning', package: pkg.name,
         message: 'Some installed declarations are unavailable, unresolved or have compiler diagnostics. Runtime imports remain unverified.',

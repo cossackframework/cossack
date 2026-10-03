@@ -193,3 +193,22 @@ it('indexes instantiated remapped props without degrading synthetic members to a
     expect(members.find(member=>member.name==='?disabled').type).toBe('boolean | undefined');
   }
 },30000);
+
+it('filters by exact exported alias and keeps names available without expanding unrelated contracts', async () => {
+  const { root } = await fixture({
+    'index.d.ts': `export { Control as Textarea } from './control.js'; export interface Other { count:number; }`,
+    'control.d.ts': `export declare class Control { props: { '.value'?: string; }; run():void; }`,
+  });
+  const result = await readDocumentation(root, { package:'@cossackframework/core', symbols:true, symbol:'Textarea' });
+  const index = result.data.packages[0].declarations;
+  expect(index.selection).toEqual({name:'Textarea',matched:true});
+  expect(index.entries[0].availableSymbols).toEqual(['Other','Textarea']);
+  expect(index.entries[0].symbols.map(symbol=>symbol.name)).toEqual(['Textarea']);
+  expect(index.entries[0].symbols[0].propsContract.members).toMatchObject([{name:'.value',optional:true}]);
+  const missing = await readDocumentation(root, { package:'@cossackframework/core', symbols:true, symbol:'Control' });
+  expect(missing.data.packages[0].declarations.selection).toEqual({name:'Control',matched:false});
+  expect(missing.diagnostics).toContainEqual(expect.objectContaining({code:'COSSACK_DOCS_SYMBOL_NOT_FOUND'}));
+  expect(missing.data.packages[0].declarations.entries[0].symbols).toEqual([]);
+  await expect(readDocumentation(root,{package:'@cossackframework/core',symbol:'Textarea'})).rejects.toMatchObject({code:'COSSACK_DOCS_SYMBOL_INVALID'});
+  await expect(readDocumentation(root,{package:'@cossackframework/core',symbols:true,symbol:' '.repeat(257)})).rejects.toMatchObject({code:'COSSACK_DOCS_SYMBOL_INVALID'});
+});

@@ -222,3 +222,18 @@ The catalog does not prove native attribute forwarding, keyboard behavior, label
 or focus management. Those require authored guidance and browser acceptance.
 The installed UI check currently verifies Button prop descriptions and its index
 signature across CLI and MCP. It retains unresolved platform diagnostics.
+
+
+For one exported contract, use an exact symbol name:
+
+```sh
+pnpm exec cossack docs --package @cossackframework/ui --symbols --symbol Textarea --json
+```
+
+MCP `read_documentation` accepts `package`, `symbols: true` and `symbol: "Textarea"`.
+Filtering occurs before member expansion. The response retains the selected
+symbol's complete contract and lists `availableSymbols` in each declaration entry.
+`selection.matched` distinguishes a missing name from a contract with no members.
+Unknown names produce `COSSACK_DOCS_SYMBOL_NOT_FOUND` with no fabricated contract.
+The MCP result limit remains 4 MiB; use this filter when a full catalog exceeds it.
+Declaration signatures still do not prove runtime availability.

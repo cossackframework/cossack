@@ -275,3 +275,32 @@ it('cancels a pending spread select value when the key is removed', async () => 
   await Promise.resolve();
   expect(select.value).toBe('a');
 });
+
+
+for (const textarea of [false, true]) {
+  it(`preserves a manual ${textarea ? 'textarea' : 'input'} edit through plain spread rerenders`, () => {
+    const container = document.createElement('div');
+    const template = (value: unknown) => textarea ? html`<textarea ...=${{'.value':value}}></textarea>` : html`<input ...=${{'.value':value}}>`;
+    render(template('initial'), container);
+    const control = container.querySelector('input,textarea') as HTMLInputElement | HTMLTextAreaElement;
+    control.value = 'user edit';
+    render(template('initial'), container);
+    expect(control.value).toBe('user edit');
+    render(template(live('initial')), container);
+    expect(control.value).toBe('initial');
+    render(template('updated'), container);
+    expect(control.value).toBe('updated');
+  });
+}
+
+
+it('normalizes a null plain value before dirty checking', () => {
+  const container = document.createElement('div');
+  const template = () => html`<textarea .value=${null}></textarea>`;
+  render(template(), container);
+  const control = container.querySelector('textarea')!;
+  expect(control.value).toBe('');
+  control.value = 'user edit';
+  render(template(), container);
+  expect(control.value).toBe('user edit');
+});

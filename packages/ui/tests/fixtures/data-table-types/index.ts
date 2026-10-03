@@ -88,3 +88,20 @@ component(Slider, {min:'1000'});
 component(Slider, {'.value':1000});
 // @ts-expect-error Range controls cannot change native type through props.
 component(Slider, {type:'text'});
+
+import { Textarea, Select, NativeSelect } from '@cossackframework/ui';
+component(Textarea, {rows:4, cols:40, required:true, wrap:'soft', '.value':live('Notes'),
+    '@input':event=>{const control:HTMLTextAreaElement=event.currentTarget;void control;}});
+component(Select, {name:'choice', required:true, '.value':'b',
+    '@change':event=>{const control:HTMLSelectElement=event.currentTarget;void control;}});
+component(NativeSelect, {multiple:true, '.value':bind({choice:'b'},'choice'), '?disabled':false});
+// @ts-expect-error HTML textarea has no value attribute; use .value.
+component(Textarea, {value:'Notes'});
+// @ts-expect-error HTML select has no value attribute; use .value.
+component(Select, {value:'b'});
+// @ts-expect-error Native select rejects misspelled attributes.
+component(NativeSelect, {requried:true});
+// @ts-expect-error Textarea does not support input checked state.
+component(Textarea, {checked:true});
+// @ts-expect-error Select change handlers target a select, not a text input.
+component(Select, {'@change':event=>event.currentTarget.selectionStart});

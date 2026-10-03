@@ -77,6 +77,10 @@ it('CLI exposes signatures and requires a selected package before compilation',a
   const {root}=await fixture(); const bin=fileURLToPath(new URL('../bin/cossack.js',import.meta.url));
   const {stdout}=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbols','--json'],{cwd:root});
   expect(JSON.parse(stdout)).toMatchObject({ok:true,data:{coverage:{symbols:'installed-declarations'},packages:[{declarations:{status:'indexed',entries:[{symbols:[{name:'present',type:'string'}]}]}}]}});
+  const filtered=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbols','--symbol','present','--json'],{cwd:root});
+  expect(JSON.parse(filtered.stdout).data.packages[0].declarations.selection).toEqual({name:'present',matched:true});
+  const invalidFilter=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbol','present','--json'],{cwd:root}).catch(error=>error);
+  expect(JSON.parse(invalidFilter.stdout).diagnostics[0].code).toBe('COSSACK_DOCS_SYMBOL_INVALID');
   const invalid=await exec(process.execPath,[bin,'docs','--symbols','--json'],{cwd:root}).catch(error=>error);
   expect(invalid.code).toBe(1);
   expect(JSON.parse(invalid.stdout).diagnostics[0].code).toBe('COSSACK_DOCS_PACKAGE_REQUIRED');

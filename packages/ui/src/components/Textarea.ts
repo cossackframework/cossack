@@ -1,15 +1,14 @@
+import type { TextareaAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface TextareaProps {
+export type TextareaProps = TextareaAttributes & {
     /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
     /** Control size. Defaults to "default". */
     size?: "default" | "sm" | "lg";
     /** Number of visible text rows. */
     rows?: number;
-    /** Pass-through HTML textarea attributes (placeholder, name, ...). */
-    [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<TextareaProps["variant"]>, string> = {

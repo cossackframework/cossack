@@ -6518,3 +6518,62 @@ Next: textarea/select SSR value serialization and the Textarea, Select/NativeSel
 InputGroup and PasswordInput contracts. This checkpoint does not close RT-23,
 CLI-08 or the full runtime/release matrix. Status remains 24 complete and 34 open.
 The handoff also consolidates completed history into links, as requested by the user.
+
+<a id="codex-form-ssr-2026-10-04"></a>
+## Codex: SSR form controls and focused agent contracts (2026-10-04)
+
+RT-23 and CLI-08 continuation. Textarea, Select and NativeSelect now declare native
+attributes and exact event targets. Unsupported `value` attributes are rejected;
+use `.value` for text or selection. Studio's select handler now uses the native
+change event and `currentTarget`. The component audit records twelve reviewed
+foundations. InputGroup and PasswordInput remain next.
+
+SSR uses parse5 source locations to convert property values into escaped textarea
+text and selected options without reserializing surrounding markup or hydration
+markers. It preserves leading newlines, nested options, decoded text values and
+first-match selection. Property values override static defaults. Null/undefined
+values serialize as empty text. Plain input/textarea spreads now preserve user
+edits when the bound value stays unchanged. Minification preserves whitespace-only
+textarea values and text resembling attributes.
+
+The renderer's browser entry keeps SSR parsing out of normal UI bundles. Root
+`renderToString` in browsers directs callers to the explicit `/server` entry.
+Node, Deno, worker and workerd conditions retain the root serializer. The migration
+guide records this browser API change. The browser fixture resolves public package
+exports and checks the built module graph, not a hard-coded renderer alias.
+
+Expanded UI declarations exceeded MCP's unchanged 4 MiB response limit. CLI
+`--symbol <name>` and MCP `symbol` now select one exact public export before member
+expansion. Filtered entries list available names and report whether the name matched.
+Unknown names return a diagnostic instead of a fabricated contract. CLI/MCP use
+the same service. Full package indexing remains available when it fits the bound.
+
+Limits: unmatched single-select values cannot encode `selectedIndex=-1` in static
+HTML with options present. Use a matching option for SSR parity. Multiple selections
+use selected option children; a scalar `.value` selects one option. Interpolated
+textarea child text remains unsupported; use `.value`. Broader UI, agent guidance
+and release gates remain open. Status remains 24 complete and 34 open.
+
+Verification for this checkpoint:
+
+- Renderer: 326 tests in 23 files. UI: 124 tests in 10 files, including published
+  declaration checks. Core: 1,442 tests in 85 files.
+- CLI declaration/documentation/MCP suites: 38 tests. Final command-contract,
+  command-spec and Chromium suites: 114 tests in four files.
+- Chromium verifies minified SSR values without JavaScript, the same hydrated
+  controls/options, labels, native event targets, keyboard selection, required
+  validation, disabled FormData exclusion and subsequent updates. Public package
+  resolution selects the browser entry; its built graph excludes parse5 and the
+  SSR form serializer. Existing themed choice/range acceptance also passes.
+- Generated Node and workerd DataTable acceptance: two cases passed. This verifies
+  server rendering and browser navigation under the new renderer export conditions.
+- Renderer production build, root `pnpm tsc --noEmit`, and all 11 package checks
+  through `pnpm typecheck` passed.
+- Real installed-tarball acceptance passed: six existing executable guide examples,
+  new UI prop contracts, exact-symbol CLI/MCP parity, metadata refresh and discovery
+  with Node networking disabled. An initial oversized UI response exposed the need
+  for filtering; the 4 MiB limit was preserved.
+- Logs: `/tmp/cossack-form-{ssr-renderer,ui-tests,core,docs-tests,final-cli,generated,agent-docs,ssr-build,root-types,package-types}.log`.
+
+These focused results do not close the complete UI catalog, cross-browser/form
+recipe acceptance, CLI-07/CLI-08 guidance/runtime requirements or REL-03.

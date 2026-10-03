@@ -83,7 +83,7 @@ window.verifySelectBindings=async()=>{
     await build({root,configFile:false,logLevel:'silent',plugins:[tailwind()],resolve:{alias:{
       '@cossackframework/ui':path.join(repository,'packages/ui/dist/index.js'),
       '@cossackframework/core':path.join(repository,'packages/core/dist/index.js'),
-      '@cossackframework/renderer':path.join(repository,'packages/renderer/dist/index.js'),
+      '@cossackframework/renderer':path.join(repository,'packages/renderer/dist/browser.js'),
     }},build:{outDir:'dist',emptyOutDir:true}});
     server=createServer(async(request,response)=>{
       const url=new URL(request.url,'http://localhost');

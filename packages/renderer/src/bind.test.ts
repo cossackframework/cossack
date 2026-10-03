@@ -219,7 +219,7 @@ describe('bind directive (two-way)', () => {
   it('SSR handles null/undefined field gracefully', () => {
     const component = { email: undefined };
     const template = html`<input .value=${bind(component, 'email')}>`;
-    expect(renderToString(template)).toBe('<input>');
+    expect(renderToString(template)).toBe('<input value="">');
   });
 
   it('SSR emits checked for a true checkbox field', () => {
