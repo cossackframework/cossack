@@ -12,8 +12,9 @@ scopes: `inspect cloudflare` and `inspect providers`.
 Use the catalog's exact public import paths. Do not import repository internals.
 A present export target only proves that a file exists. It does not prove that a
 named symbol exists, that runtime dependencies resolve or that an API works on
-all adapters. The catalog reports those limits explicitly. Wildcard exports are
-patterns, and blocked exports remain blocked.
+all adapters. The catalog reports those limits explicitly. Wildcard entries include
+concrete matches and a discovery status. Read partial-discovery reasons before
+assuming the list is complete. Blocked exports remain blocked.
 
 For named exports and signatures, select a package:
 

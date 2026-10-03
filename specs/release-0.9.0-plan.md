@@ -611,6 +611,27 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex export-discovery checkpoint (2026-10-04): wildcard/implicit declaration
+discovery is implemented. Catalogs add concrete wildcard matches while preserving
+the source pattern. Exact entries, more-specific patterns and null exclusions take
+precedence. Repeated target stars use one capture. Default branches and fallback
+arrays do not invent alternate paths when an earlier target merely lacks a file.
+A native Node resolution fixture verifies public overrides and private exclusions.
+
+Discovery reports partial status for bounded scans, nested symlinks, unreadable
+directories, unsupported URL targets/file names, malformed pattern keys and constant
+pattern targets. The latter can expose infinitely many public names. These limits
+remain explicit rather than producing a false exhaustive catalog. TypeScript finds
+adjacent JS/ESM/CommonJS declarations and legacy main/default-index types. Wildcard
+matches can come from type files even when runtime output is absent. Resolution
+records and unresolvedImports preserve that distinction.
+
+See the [verification](./release-0.9.0.md#codex-export-discovery-2026-10-04).
+Next implement authored API/component/recipe explanations and executable examples,
+verified runtime guidance and offline installed-tarball acceptance. These remain
+required for CLI-08 closure. Previous notes listing wildcard/implicit discovery as
+unimplemented are superseded by this checkpoint and its documented limits.
+
 Codex declaration-index checkpoint (2026-10-04): named exports/signatures are now
 available through `cossack docs --package <name> --symbols --json` and MCP
 `read_documentation` with `symbols: true`. One package must be selected. The CLI

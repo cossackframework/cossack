@@ -1,3 +1,4 @@
+import { discoverExports, describeExport } from './export-discovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -5,22 +6,6 @@ import { readInstalledPackage, COSSACK_PACKAGES } from './installed-packages.js'
 import { commandSpecs } from './command-specs.js';
 import { readPackageVersion } from './pkg.js';
 
-function targets(value, conditions = []) {
-  if (typeof value === 'string' || value === null) return [{ conditions, target: value }];
-  if (Array.isArray(value)) return value.flatMap((entry, index) => targets(entry, [...conditions, `fallback:${index}`]));
-  if (value && typeof value === 'object') return Object.entries(value).flatMap(([key, entry]) => targets(entry, [...conditions, key]));
-  return [];
-}
-async function describeExport(folder, subpath, value) {
-  const entries = await Promise.all(targets(value).map(async entry => {
-    if (entry.target === null) return { ...entry, status: 'blocked' };
-    if (!entry.target.startsWith('./') || entry.target.split(/[\\/]/).includes('..')) return { conditions: entry.conditions, target: null, status: 'invalid' };
-    if (subpath.includes('*') || entry.target.includes('*')) return { ...entry, status: 'pattern-not-expanded' };
-    try { return { ...entry, status: (await fs.stat(path.join(folder, entry.target))).isFile() ? 'present' : 'missing' }; }
-    catch { return { ...entry, status: 'missing' }; }
-  }));
-  return { subpath, targets: entries, runtime: 'not-verified' };
-}
 function commandCatalog() {
   // Command metadata is package-owned. No application configuration is loaded.
   return Object.values(commandSpecs).map(spec => ({
@@ -50,11 +35,12 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     const exports = manifest.exports;
     const map = exports && typeof exports === 'object' && !Array.isArray(exports) && Object.keys(exports).some(key => key.startsWith('.'))
       ? exports : exports === undefined ? {} : { '.': exports };
+    const discovered = await discoverExports(folder, name, map);
+    if (discovered.discovery.status === 'partial') diagnostics.push({ code: 'COSSACK_DOCS_EXPORTS_INCOMPLETE', severity: 'warning', package: name,
+      message: 'Some export patterns cannot be enumerated completely. See exportDiscovery reasons.' });
     packages.push({ name, version: manifest.version, installed: true,
       manifestHash: createHash('sha256').update(source).digest('hex'),
-      exports: await Promise.all(Object.entries(map).map(async ([subpath, value]) => ({
-        import: subpath === '.' ? name : name + subpath.slice(1), ...await describeExport(folder, subpath, value),
-      }))),
+      exports: discovered.entries, exportDiscovery: discovered.discovery,
       legacyEntries: exports === undefined ? { main: manifest.main ?? null, types: manifest.types ?? null } : null,
     });
   }
@@ -63,9 +49,12 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     for (const pkg of packages.filter(pkg => pkg.installed)) {
       const folder = installedFolders.get(pkg.name);
       const entries = [...pkg.exports];
-      if (typeof pkg.legacyEntries?.types === 'string') {
-        const target = pkg.legacyEntries.types.startsWith('./') ? pkg.legacyEntries.types : './' + pkg.legacyEntries.types;
-        entries.push(await describeExport(folder, '.', { types: target }));
+      if (pkg.legacyEntries) {
+        const legacy = pkg.legacyEntries.types ?? pkg.legacyEntries.main ?? 'index.js';
+        if (typeof legacy === 'string') {
+          const target = legacy.startsWith('./') ? legacy : './' + legacy;
+          entries.push({ import: pkg.name, ...await describeExport(folder, '.', { [pkg.legacyEntries.types ? 'types' : 'default']: target }) });
+        }
       }
       pkg.declarations = await indexDeclarations(folder, entries);
       if (pkg.declarations.status !== 'indexed') diagnostics.push({

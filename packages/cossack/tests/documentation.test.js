@@ -29,7 +29,7 @@ it('reads installed versions and conditional public targets without importing co
     {import:'@cossackframework/core',targets:[{conditions:['types'],status:'present'},{conditions:['import'],status:'present'}]},
     {import:'@cossackframework/core/blocked',targets:[{status:'blocked'}]},
     {import:'@cossackframework/core/missing',targets:[{status:'missing'}]},
-    {import:'@cossackframework/core/pattern/*',targets:[{status:'pattern-not-expanded'}]},
+    {import:'@cossackframework/core/pattern/*',targets:[{status:'pattern'}]},
   ]});
   expect(result.data.commands.find(command=>command.name==='docs').options.package.choices).toContain('@cossackframework/core');
 });

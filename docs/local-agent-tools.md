@@ -79,7 +79,11 @@ pnpm exec cossack docs --package @cossackframework/core --json
 The catalog reads installed manifests on each call. Each package includes its
 version, a manifest hash and declared public export targets. Conditions and array
 fallback order remain visible. Targets report present, missing, blocked, invalid
-or an unexpanded pattern. Missing packages report `installed: false`.
+or a declared pattern. Concrete wildcard matches appear as additional entries with
+a `pattern` source. Exact entries and more-specific patterns take precedence,
+including private null exclusions. Array fallbacks are not guesses based on file
+presence: a missing first target does not activate a later one. Missing packages
+report `installed: false`.
 
 For exported symbols and signatures, select one package and request declaration
 indexing. In MCP, set `symbols: true` with `package`. In the CLI:
@@ -89,7 +93,10 @@ pnpm exec cossack docs --package @cossackframework/core --symbols --json
 ```
 
 The index follows declared `.d.ts`, `.d.mts` and `.d.cts` targets, including legacy
-`types` entries. It resolves aliases and re-exports and reports generic/overloaded
+`types` entries. TypeScript also resolves adjacent declarations for `.js`, `.mjs`
+and `.cjs` targets and legacy main/default-index paths. `resolutions` records the
+candidate import, target, conditions and resolved declaration. Missing public type
+coverage remains in `unresolvedImports` and makes the index partial. It resolves aliases and re-exports and reports generic/overloaded
 call signatures, constructors, public instance/static and object/namespace members,
 documentation and
 package-relative declaration locations. Private/protected members and constructors
@@ -106,9 +113,21 @@ even if the package version and manifest do not. Reads do not reuse an old progr
 
 Declaration signatures do not prove runtime exports. For example, a class reached
 through `export type *` has a constructor declaration but provides no runtime value.
-All runtime availability remains `not-verified`. Wildcard expansion and implicit
-types inferred from JavaScript entrypoints remain unsupported. The first 100
-compiler diagnostics are included, alongside the total count.
+All runtime availability remains `not-verified`. Discovery considers matching
+runtime files and declaration siblings, so type-only installations can expose
+signatures while their runtime targets remain missing. It does not execute or infer
+types from JavaScript bodies. A resolver-selected source file is reported as
+`source-not-indexed` instead of silently treated as a declaration. Candidate
+conditions are preserved; the catalog does not select a runtime environment.
+The first 100 compiler diagnostics are included, alongside the total count.
+
+`exportDiscovery` reports completeness. Pattern scans skip nested symlinks and
+`node_modules`, stop after 20,000 directory-entry visits, and report partial results
+for unreadable directories, unsupported URL-encoded targets or filenames, malformed
+pattern keys and patterns mapped to a constant target. Constant mappings can expose
+infinitely many subpath names, so the catalog does not invent a finite list.
+Repeated target stars use the same capture. The precedence rules follow
+[Node's package export resolution](https://nodejs.org/api/esm.html#resolution-algorithm-specification).
 
 Command schemas and the packaged agent guide belong to the reported CLI version,
 which can differ from installed library versions. MCP refreshes framework version

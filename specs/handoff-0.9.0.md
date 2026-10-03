@@ -9,70 +9,39 @@ verification evidence. Read the [detailed plan](./release-0.9.0-plan.md) for eac
 task's purpose, source locations, dependencies, implementation steps and acceptance
 criteria. All unchecked tasks remain in scope, including partially implemented ones.
 
-Completed checkpoint narratives and superseded next steps are condensed below.
-Their evidence remains in the release verification log. The full earlier handoff
-is available with `git show 8f084e0:specs/handoff-0.9.0.md`.
+## Completed work
 
-## Completed release tasks
+The 24 completed tasks are grouped below. Details and acceptance evidence remain
+in the [release checklist](./release-0.9.0.md) and linked task plans.
 
-These are the 24 checked tasks. Use the linked plan sections and their verification
-links when changing these features; do not repeat completed implementation work.
-
-| Task | Completed work |
+| Completed tasks | Summary |
 | --- | --- |
-| [CLI-01](./release-0.9.0-plan.md#cli-01) | Lifecycle flags, command help and read-only creation dry runs. |
-| [CLI-02](./release-0.9.0-plan.md#cli-02) | Shared command metadata, strict flags, aliases, arity and capability checks. |
-| [CLI-03](./release-0.9.0-plan.md#cli-03) | Versioned JSON, stable diagnostics, exit codes and noninteractive command execution. |
-| [CLI-04](./release-0.9.0-plan.md#cli-04) | Compiler-backed inspect/check/explain with source locations and runtime/scaffold facts. |
-| [CLI-05](./release-0.9.0-plan.md#cli-05) | Resource, validated mutation, protected-route and scoped-service recipes. |
-| [CLI-06](./release-0.9.0-plan.md#cli-06) | Versioned upgrades with dependency/file ownership, conflicts and preserved user edits. |
-| [RT-02](./release-0.9.0-plan.md#rt-02) | Typed validated actions, schema migration, field errors and resource policy gates. |
-| [RT-03](./release-0.9.0-plan.md#rt-03) | Typed resource pending/error/retry, refresh, invalidation and SSR hydration. |
-| [RT-04](./release-0.9.0-plan.md#rt-04) | State/store/computed guidance and development mutation/serialization diagnostics. |
-| [RT-05](./release-0.9.0-plan.md#rt-05) | Typed task dependencies, owned commits, cleanup and stale-work cancellation. |
-| [RT-06](./release-0.9.0-plan.md#rt-06) | Owned optimistic updates, rollback, concurrency and uncertain-outcome recovery. |
-| [RT-07](./release-0.9.0-plan.md#rt-07) | Typed routes/API contracts and effective route/boundary inspection. |
-| [RT-08](./release-0.9.0-plan.md#rt-08) | Typed URL state, SSR/hydration, merged query intents, drafts and history. |
-| [RT-09](./release-0.9.0-plan.md#rt-09) | Bounded navigation outcomes, stale ownership, cache/layout/scroll/transition diagnostics and browser acceptance. |
-| [RT-14](./release-0.9.0-plan.md#rt-14) | Typed resource authorization and boolean client visibility projections. |
-| [RT-18](./release-0.9.0-plan.md#rt-18) | Cache/limiter capabilities, millisecond TTL contracts and shared durable budgets. |
-| [RT-19](./release-0.9.0-plan.md#rt-19) | Realtime status, reconnect/resync and pending-call errors without mutation replay. |
-| [RT-25](./release-0.9.0-plan.md#rt-25) | Shared build/scaffold/inspection capability checks for supported runtimes. |
-| [CF-03](./release-0.9.0-plan.md#cf-03) | Secret declarations, placeholder checks, ignore rules and binding types. |
-| [CF-05](./release-0.9.0-plan.md#cf-05) | Distributed Cloudflare SSE coordination, subscriptions and bounded reconnect history. |
-| [CF-06](./release-0.9.0-plan.md#cf-06) | Built-artifact/workerd acceptance for auth, RPC, assets, SSG, bindings and migrations. |
-| [CF-07](./release-0.9.0-plan.md#cf-07) | Public-only SSG and Worker-first protected assets. |
-| [CF-11](./release-0.9.0-plan.md#cf-11) | Removed tracked credential values; external rotation remains unperformed. |
-| [REL-01](./release-0.9.0-plan.md#rel-01) | Original report fixes and package/SSG regressions. |
+| CLI-01–06 | Command contracts, static inspection, feature recipes and safe upgrades. |
+| RT-02–09 | Validated actions, resources, state, tasks, optimistic updates, typed routes, URL state and navigation. |
+| RT-14, RT-18, RT-19, RT-25 | Authorization, cache/limiter contracts, realtime recovery and runtime capability checks. |
+| CF-03, CF-05–07, CF-11 | Secret declarations, distributed SSE, workerd acceptance, protected assets and credential removal. External rotation remains unperformed. |
+| REL-01 | Report fixes and package/SSG regressions. |
+
+RT-08/RT-09 passed their [acceptance audit](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04).
+The [URL-state contract](../docs/url-state.md) records draft and service limits.
+Earlier handoff details remain available with `git show 8f084e0:specs/handoff-0.9.0.md`.
 
 ## Next work
 
-RT-08 and RT-09 are complete. Their [criterion audits](./release-0.9.0-plan.md#rt-08)
-and [acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
-replace the older pending navigation steps. Do not repeat completed ownership work.
-The public [URL-state contract](../docs/url-state.md) records draft and service limits.
+CLI-07 and CLI-08 remain open. Their implemented foundations are:
 
-CLI-07 now has a tested read-only `cossack-mcp --project <directory>` entrypoint.
-See [setup](../docs/local-agent-tools.md) and the
-[checkpoint](./release-0.9.0.md#codex-local-mcp-2026-10-04). It shares static inspection,
-reports installed versions and uses bounded cancellable workers. This task remains open.
+- `cossack-mcp --project <directory>`: static inspection, installed versions and bounded cancellable workers.
+- `cossack docs` and MCP `read_documentation`: installed exports, command schemas and packaged agent guidance.
+- `docs --package <name> --symbols --json` or MCP `symbols: true`: signatures through a pinned TypeScript 6 API alias.
+- Wildcard exports and implicit JS/ESM/CommonJS declarations: exclusions and partial results remain explicit. Runtime availability remains unverified.
 
-CLI-08 now has `cossack docs` and MCP `read_documentation` for fresh installed
-export targets, command schemas and packaged/scaffolded agent guidance. See the
-[catalog checkpoint](./release-0.9.0.md#codex-installed-catalog-2026-10-04).
-
-Named-symbol/signature indexing is now available with `docs --package <name> --symbols --json` or MCP `symbols: true`. It uses a pinned TypeScript 6 API alias,
-reports partial/unavailable declarations and keeps runtime availability unverified.
-See the [declaration checkpoint](./release-0.9.0.md#codex-declaration-index-2026-10-04).
+See [setup and usage](../docs/local-agent-tools.md) and the
+[latest discovery checkpoint](./release-0.9.0.md#codex-export-discovery-2026-10-04).
 
 Next add authored API/component/recipe guidance, verified runtime support and
-executable examples. Finish wildcard/implicit type discovery and prove offline
-behavior from installed tarballs. Then continue CLI-07 stored test results and
-RT-28 snapshots/traces through shared services. Both CLI tasks remain open.
-Preserve the original acceptance criteria.
-
-Keep every other unchecked task in scope. Close tasks only against their original
-criteria. Versions stay 0.8.3 until REL-04.
+executable examples. Prove offline behavior from installed tarballs.
+Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
+Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
 ## Remaining release scope and known limits
 
@@ -101,23 +70,15 @@ Carry these unresolved limits into implementation and review:
   provisioning, publication, push or credential rotation was performed.
   Never copy old credential values from Git history.
 
-## Latest verification
+## Verification references
 
-The [declaration checkpoint](./release-0.9.0.md#codex-declaration-index-2026-10-04) records current CLI results.
-The [navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
-records unchanged runtime/browser evidence. Earlier suites are labeled by checkpoint.
-
-| Check | Result |
-| --- | --- |
-| Documentation / MCP / CLI regressions | 222 passed; final declaration follow-up: 30 passed |
-| Scaffold at `ee1ec7d` | 78 passed; unaffected by declaration indexing |
-| Full generated-runtime matrix | 31 passed |
-| Navigation/guard/transition browser suites | 27 passed |
-| Focused core / framework navigation suites | 70 / 50 passed |
-| Root `pnpm tsc --noEmit` and `pnpm typecheck` | Passed; all 11 package checks |
-| Full core / framework at `bd96db4` | 1,442 / 1,453 passed; not rerun for this audit |
-| Core/framework builds including SSG at `bd96db4` | Passed; not rerun for this audit |
-| Renderer / full CLI at `8f084e0` | 284 / 610 passed; not rerun for this audit |
+Use the [discovery checkpoint](./release-0.9.0.md#codex-export-discovery-2026-10-04)
+for current CLI work and its test logs. The
+[declaration checkpoint](./release-0.9.0.md#codex-declaration-index-2026-10-04)
+records the previous CLI checks. The
+[navigation acceptance record](./release-0.9.0.md#codex-navigation-acceptance-2026-10-04)
+records runtime and browser checks. Older suite results remain in the release log
+under their original checkpoints. They do not prove the current full release matrix.
 
 ## Working rules
 

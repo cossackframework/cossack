@@ -9,15 +9,26 @@ const signatureFormat = ts.TypeFormatFlags.NoTruncation;
 /** Index installed declaration modules, without tsconfig plugins or runtime imports. */
 export async function indexDeclarations(folder, exports) {
   const canonical = await fs.realpath(folder);
-  const files = [...new Set(exports.flatMap(entry => entry.targets
-    .filter(target => target.status === 'present' && /\.d\.[cm]?ts$/.test(target.target))
-    .map(target => path.resolve(folder, target.target))))];
-  if (!files.length) return { compilerVersion: ts.version, status: 'unavailable', entries: [], diagnostics: [], diagnosticCount: 0 };
-  const program = ts.createProgram(files, {
+  const compilerOptions = {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler, noEmit: true,
     strict: true, skipLibCheck: false, types: [], allowImportingTsExtensions: true,
-  });
+  };
+  const resolutions = [];
+  for (const entry of exports) for (const target of entry.targets) {
+    if (!['present', 'missing'].includes(target.status) || !/\.(?:[cm]?js|d\.[cm]?ts)$/.test(target.target)) continue;
+    const resolved = ts.resolveModuleName(target.target, path.join(folder, '__cossack_catalog__.ts'), compilerOptions, ts.sys).resolvedModule;
+    const file = resolved?.resolvedFileName;
+    resolutions.push({ import: entry.import ?? entry.subpath, conditions: target.conditions, target: target.target,
+      file: file ? path.relative(folder, file).split(path.sep).join('/') : null,
+      status: file ? /\.d\.[cm]?ts$/.test(file) ? 'declaration' : 'source-not-indexed' : 'missing',
+    });
+  }
+  const indexedImports = new Set(resolutions.filter(item => item.status === 'declaration').map(item => item.import));
+  const unresolvedImports = [...new Set(resolutions.filter(item => !indexedImports.has(item.import)).map(item => item.import))];
+  const files = [...new Set(resolutions.filter(item => item.status === 'declaration').map(item => path.resolve(folder,item.file)))];
+  if (!files.length) return { compilerVersion: ts.version, status: 'unavailable', resolutions, unresolvedImports, entries: [], diagnostics: [], diagnosticCount: 0 };
+  const program = ts.createProgram(files, compilerOptions);
   const checker = program.getTypeChecker();
   const localPath = file => {
     for (const base of [folder, canonical]) {
@@ -84,8 +95,8 @@ export async function indexDeclarations(folder, exports) {
   for (const file of program.getSourceFiles().filter(file => !program.isSourceFileDefaultLibrary(file)).sort((a,b) => a.fileName.localeCompare(b.fileName))) {
     declarationHash.update(file.fileName).update('\0').update(file.text).update('\0');
   }
-  return { compilerVersion: ts.version,
-    status: diagnostics.length || entries.some(entry => entry.status !== 'indexed') ? 'partial' : 'indexed',
+  return { compilerVersion: ts.version, resolutions, unresolvedImports,
+    status: unresolvedImports.length || diagnostics.length || entries.some(entry => entry.status !== 'indexed') ? 'partial' : 'indexed',
     declarationHash: declarationHash.digest('hex'), entries,
     diagnostics: diagnostics.slice(0, 100).map(diagnostic => ({ code: diagnostic.code,
       category: ts.DiagnosticCategory[diagnostic.category].toLowerCase(),

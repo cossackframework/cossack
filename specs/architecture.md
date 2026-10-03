@@ -62,7 +62,11 @@ conditions and availability are facts. Optional per-package declaration indexing
 uses the CLI's pinned TypeScript 6 API alias, without replacing the project's
 TypeScript 7 compiler. Programs read installed declaration graphs afresh, resolve
 aliases/re-exports and report public signatures with diagnostics and source hashes.
-No project tsconfig plugins or module entrypoints execute. Type-only declarations
+Export discovery expands bounded file/type matches with Node pattern precedence
+and null exclusions, while reporting unsupported or incomplete scans. TypeScript
+extension substitution discovers adjacent declarations without running JavaScript.
+Missing type coverage remains explicit. No project tsconfig plugins or module
+entrypoints execute. Type-only declarations
 do not establish runtime value availability. Runtime compatibility is not inferred
 from file presence or from declaration signatures. Command schemas and packaged guidance belong to
 the CLI version. Stored test results and devtools traces will extend this boundary

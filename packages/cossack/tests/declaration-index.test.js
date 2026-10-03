@@ -109,3 +109,42 @@ it('indexes object helpers, enum values and namespace APIs without primitive pro
   expect(symbols.find(s=>s.name==='Helpers').valueMembers[0].callSignatures).toEqual(['(value: number): string']);
   expect(symbols.find(s=>s.name==='Text').members).toEqual([]);
 },30000);
+it('discovers adjacent declarations for JS, ESM and CommonJS export targets',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare function js():void;','esm.d.mts':'export declare function esm():void;','common.d.cts':'export declare function common():void;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'.':'./index.js','./esm':'./esm.mjs','./common':'./common.cjs'}}));
+  const index=(await read()).data.packages[0].declarations;
+  expect(index.status).toBe('indexed');
+  expect(index.resolutions.map(item=>[item.target,item.file,item.status])).toEqual([
+    ['./index.js','index.d.ts','declaration'],['./esm.mjs','esm.d.mts','declaration'],['./common.cjs','common.d.cts','declaration'],
+  ]);
+  expect(index.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name))).toEqual(['js','esm','common']);
+},30000);
+it('indexes concrete wildcard entries while respecting private exclusions',async()=>{
+  const {folder,read}=await fixture({'public.d.ts':'export declare const visible:string;','private.d.ts':'export declare const secret:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'./*':'./*.d.ts','./private':null}}));
+  const result=await read();
+  expect(result.data.packages[0].exportDiscovery.status).toBe('complete');
+  const names=result.data.packages[0].declarations.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name));
+  expect(names).toEqual(['visible']);
+},30000);
+it('finds legacy main and default index declarations without explicit types fields',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare const fallback:string;','main.d.ts':'export declare const main:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',main:'main.js'}));
+  expect((await read()).data.packages[0].declarations.entries[0].symbols[0].name).toBe('main');
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2'}));
+  expect((await read()).data.packages[0].declarations.entries[0].symbols[0].name).toBe('fallback');
+},30000);
+it('keeps missing public type coverage explicit when another entry indexes successfully',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare const known:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'.':'./index.js','./untyped':'./untyped.js'}}));
+  const index=(await read()).data.packages[0].declarations;
+  expect(index.status).toBe('partial');expect(index.unresolvedImports).toEqual(['@cossackframework/core/untyped']);
+},30000);
+
+it('discovers wildcard type-only files while leaving absent runtime files explicit',async()=>{
+  const {folder,read}=await fixture({'only.d.ts':'export declare const typed:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'./*':'./*.js'}}));
+  const pkg=(await read()).data.packages[0];
+  expect(pkg.exports.find(entry=>entry.subpath==='./only').targets[0]).toMatchObject({target:'./only.js',status:'missing'});
+  expect(pkg.declarations.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name))).toContain('typed');
+},30000);
