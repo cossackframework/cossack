@@ -669,6 +669,7 @@ export class ComponentsDemo extends Cossack {
                         <div class="flex flex-col gap-2">
                             <span class="text-sm text-muted-foreground">Selected: ${this.calendarDate}</span>
                             ${component(Calendar, {
+                                id: 'demo-calendar',
                                 value: this.calendarDate,
                                 onChange: (iso: string) => { this.calendarDate = iso; },
                             })}
@@ -676,8 +677,9 @@ export class ComponentsDemo extends Cossack {
                         <div class="w-56">
                             <span class="text-sm text-muted-foreground mb-2 block">Pick a due date</span>
                             ${component(DatePicker, {
+                                id: 'demo-due-date',
+                                'aria-label': 'Due date',
                                 value: this.datePickerDate,
-                                placeholder: 'Select date...',
                                 onChange: (iso: string) => { this.datePickerDate = iso; },
                             })}
                         </div>

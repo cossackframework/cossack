@@ -6755,3 +6755,56 @@ inner selection over parent updates and lacks complete calendar keyboard/focus
 semantics. RT-23 and CLI-07/CLI-08 stay open. The full application, assistive-technology
 and published-runtime matrix remain separate acceptance requirements.
 No release checkbox or package version changed.
+
+<a id="codex-date-controls-2026-10-04"></a>
+## Codex: Calendar and native DatePicker (2026-10-04)
+
+DatePicker ignored min/max and native attributes, retained its own selection over
+parent updates and duplicated a calendar without keyboard semantics. Calendar
+initialized its selected month only after mount and allowed invalid dates to roll
+into other months. Local Date constructors also mapped early years incorrectly.
+
+The controls now share strict Gregorian date-only helpers for years 0001–9999,
+UTC arithmetic, real-date/range validation and month-end clamping. The public
+isCalendarDate guard checks external data without throwing. Calendar renders the
+selected month before JavaScript, supplies a labeled grid/live heading, and keeps
+one day in the tab sequence. Arrows, Home/End and month/year paging stay within
+bounds. Rapid key actions use the latest cursor state. Focus is preserved when
+month updates replace or move the old button, including parent value changes.
+
+Calendar supports controlled/default values, localized Gregorian labels and a
+configurable week start. onChange reports changed proposals; onSelect reports
+every valid pick. DatePicker composes this Calendar with a native date input and
+a nonmodal popup. Name/form, required/min/max, reset, readonly and disabled
+fieldsets use native semantics. Selection/Escape restore trigger focus; Tab can
+leave the popup. Native date entry and clearing use the same change contract.
+
+Studio consumers now provide stable IDs and associated labels. Invalid stored
+text and timestamp-like values remain editable without truncation or rollover.
+The insert form encodes field IDs so names containing spaces still have usable
+label associations. Migration notes cover the removed DatePicker placeholder,
+input ownership, strict values, UTC reference day and localization.
+
+Verification: UI build, 177 UI tests across 15 files, five Studio editor regressions,
+root `pnpm tsc --noEmit` and all 11 package type checks pass. The production Chromium
+fixture checks no-JS SSR, retained hydration, fresh rendering, leap/month/year
+navigation, bounds, parent changes, controlled rejection/acceptance, repeated keys
+before rendering, native validation/FormData/reset, same-date popup closure,
+Escape/Tab focus and disabled fieldsets. The browser uses America/Los_Angeles;
+unit rendering/arithmetic also runs under UTC and Pacific/Kiritimati settings.
+Tests verify years below 100 rather than relying on Date's local constructor.
+
+The grid keyboard behavior follows the [W3C date-picker example](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/examples/datepicker-dialog/).
+Cossack's custom popup is explicitly nonmodal; it does not claim the example's
+modal focus trap. Full assistive-technology and published-runtime acceptance
+remain broader release requirements.
+
+Installed guidance/catalog acceptance now checks both component contracts,
+isCalendarDate and exact-symbol DatePicker CLI/MCP parity. Installed acceptance
+passed with Node networking disabled during discovery. All six existing packaged
+examples compiled and executed.
+Logs: `/tmp/cossack-dates-{build,ui,studio,browser,root-types,package-types,agent-docs}.log`.
+
+Nineteen foundations are reviewed. Continue Modal, Sheet, Drawer and Popover,
+including native events, controlled closing, labeling and focus restoration.
+RT-23 and CLI-07/CLI-08 remain open. No release checkbox or version changed.

@@ -748,3 +748,31 @@ messages with the corresponding props.
 Enter during composition never adds a tag. Arrow keys select suggestions, and
 Backspace on an empty query removes the last tag. Keyboard removal moves focus
 to a remaining removal button or the input. Pointer removal returns input focus.
+
+## Calendar and DatePicker use strict date-only contracts
+
+Both components now require a stable page-unique `id`. Calendar forwards native
+attributes/events to its root div; DatePicker forwards them to its date input.
+Use `value` with `onChange` for controlled state, or `defaultValue` for uncontrolled
+initial state. Calendar `onSelect` fires for every valid user pick, including an
+unchanged date. Initial and parent values do not emit change callbacks.
+
+Dates must be real Gregorian `yyyy-mm-dd` values from year 0001 through 9999, or
+empty for no selection. Invalid dates and inverted limits throw. Use the public
+`isCalendarDate(value)` guard before passing external data. Empty strings and
+timestamps are not calendar dates. Studio now preserves invalid database text in
+a text field instead of truncating or rolling it into a different date.
+
+DatePicker now renders a native date input plus a button for the shared Calendar.
+Replace selectors that expect a single trigger button. Its removed `placeholder`
+prop does not apply to a browser-formatted date input. Native name/form, required,
+min/max, disabled, readonly and reset behavior now work. Out-of-range real values
+remain visible and fail native validation. The custom popup is nonmodal: Tab can
+leave it, and Escape/selection return focus to the trigger.
+
+Calendar renders the selected month during SSR and supports arrows, Home/End,
+PageUp/PageDown and Shift+PageUp/PageDown. It clamps navigation at date limits and
+month ends. Arithmetic and custom labels use UTC with the Gregorian calendar.
+Use `locale`, `weekStartsOn` and the navigation labels to localize the calendar.
+Pass `today` when the application's local day or deterministic SSR matters; its
+default is the current UTC day. Native date-input formatting follows the browser.

@@ -18,13 +18,13 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit DatePicker and its relationship to Calendar.
-   Seventeen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
-   RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup, PasswordInput, InputOTP, Combobox and MultiSelect.
-   MultiSelect now has stable IDs, native input contracts, repeated form values and visible validation.
-   See the [MultiSelect checkpoint](./release-0.9.0.md#codex-multiselect-2026-10-04) for evidence and limits.
-   DatePicker ignores min/max and native props, uses random IDs and retains inner selection over parent updates.
-   Audit its calendar keyboard/focus semantics and shared date behavior with Calendar.
+   Next audit Modal, Sheet, Drawer and Popover.
+   Nineteen foundations are reviewed: Button, Input, Label, Checkbox, Switch, Form, DataTable,
+   RadioGroup, Slider, Textarea, Select, NativeSelect, InputGroup, PasswordInput, InputOTP, Combobox, MultiSelect, Calendar and DatePicker.
+   Calendar and DatePicker now share strict date arithmetic, range limits and keyboard/focus behavior.
+   DatePicker owns a native date field; Studio preserves invalid database text through a text editor.
+   See the [date-control checkpoint](./release-0.9.0.md#codex-date-controls-2026-10-04) for evidence and limits.
+   Audit overlay native attribute/event ownership, controlled close behavior, labels and focus restoration next.
    Earlier checkpoints retain generated Node/workerd DataTable and navigation-focus evidence.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.

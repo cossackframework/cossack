@@ -180,3 +180,17 @@ component(MultiSelect,{id:'skills','.value':'Rust'});
 component(MultiSelect,{id:'skills','aria-activedescendant':'other'});
 // @ts-expect-error No arbitrary prop index signature.
 component(MultiSelect,{id:'skills',placehoder:'Pick'});
+
+import { Calendar, DatePicker } from '@cossackframework/ui';
+component(Calendar,{id:'calendar',value:'2024-02-29',locale:'de-DE',weekStartsOn:1,onChange:iso=>iso.toUpperCase(),'@keydown':event=>event.currentTarget.classList.add('used')});
+component(DatePicker,{id:'due',name:'due',required:true,min:'2024-01-01',value:'2024-02-29',onChange:iso=>iso.toUpperCase(),'@input':event=>event.currentTarget.checkValidity()});
+// @ts-expect-error Calendar needs a stable ID.
+component(Calendar,{value:'2024-02-29'});
+// @ts-expect-error DatePicker owns its native input type.
+component(DatePicker,{id:'due',type:'text'});
+// @ts-expect-error Use value, not a competing native binding.
+component(DatePicker,{id:'due','.value':'2024-02-29'});
+// @ts-expect-error DatePicker's browser-formatted native date field has no placeholder contract.
+component(DatePicker,{id:'due',placeholder:'Pick'});
+// @ts-expect-error Native events use the input currentTarget.
+component(DatePicker,{id:'due','@input':(event: Event & {currentTarget: HTMLTextAreaElement})=>event.currentTarget.rows});

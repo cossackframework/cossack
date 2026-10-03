@@ -102,3 +102,5 @@ export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar
 export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';
 
 export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, TextareaAttributes, SelectAttributes, PasswordAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
+
+export { isCalendarDate } from './internal/date';
