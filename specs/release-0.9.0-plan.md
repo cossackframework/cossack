@@ -2133,6 +2133,20 @@ contexts or SSR state; delayed obsolete modules cannot create a stale tree.
 A missing history restoration event settles with a typed failure after two
 seconds. This is not a general navigation deadline or a fetch cancellation claim.
 
+Codex terminal disposal follow-up (2026-10-03): core lifecycle restoration now
+keeps Destroyed terminal. Bootstrap checks disposal after its asynchronous
+boundaries and before subsequent activation. Rebootstrap/reconnection cannot
+revive the instance. Read the
+[verification](./release-0.9.0.md#codex-terminal-disposal-2026-10-03).
+This is a prerequisite, not completion of staging. Standard runTasks starts async
+Tasks in the background, so a pending Task alone does not stall bootstrap.
+Use a controlled bootstrap override for the stalled-owner regression. Keep the
+old visible tree active while preparing a new tree. Preserve edits made during
+preparation. Do not rebind retained service request contexts until publication.
+On cancellation, dispose only newly created page/layout/scope instances. Recheck
+ownership after every awaited operation and before publishing into the live tree.
+Arbitrary application I/O is not stopped by the lifecycle fix.
+
 Next: introduce one owned cancellation/deadline contract across guard, response
 body, imports, bootstrap, renderer and transition completion. Shared prefetches
 need consumer ownership so cancellation cannot break another reader. Stage new

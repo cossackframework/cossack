@@ -86,6 +86,44 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-terminal-disposal-2026-10-03"></a>
+## Codex terminal disposal review (2026-10-03)
+
+Author: **Codex**. Reviewed the lifecycle prerequisites for navigation staging
+from `7b40e71`. Bootstrap could resume after destroy(), open a transport, mount,
+and restore a live phase from the lifecycle stack. A later destroy then repeated
+cleanup. Server get/init had the same phase restoration problem across awaits.
+
+Phase restoration now preserves terminal disposal and discards saved phases.
+Bootstrap and connectedCallback return immediately for destroyed components.
+Bootstrap checks disposal after task scheduling, server get/init, DOM mount and
+onMount. Its finally block clears the bootstrapping flag on every exit.
+
+Eight new cases cover an already destroyed instance, disposal at the bootstrap
+microtask boundary for HTTP/SSE/WebSocket pages, synchronous task disposal,
+onMount disposal before clientInit, and disposal while server get/init awaits.
+They verify no late activation, no render or rebootstrap after disposal, and
+exactly one cleanup. An initial test run had four failures from fixture assumptions: the mock
+renderer does not bind inherited task methods, and a socket legitimately starts
+before onMount. Direct fixture declarations and boundary-specific assertions
+corrected those assumptions. All final checks pass:
+
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,412 tests / 83 files**.
+- `pnpm --filter @cossackframework/core build`: ESM and declarations pass.
+- `pnpm --filter @cossackframework/framework exec vitest run`: **1,418 / 66 files**.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all **11 packages** pass.
+
+Consumer checks ran after the core build. CLI/native browser suites were not
+rerun. No release-wide acceptance or navigation deadline claim follows from
+these lifecycle tests. Standard async Tasks run in the background already.
+Staging tests must explicitly hold a bootstrap override to prove commit queue
+independence. Arbitrary application I/O can continue after disposal.
+
+All **58 original IDs** and their order remain unchanged: **22 checked / 36 open**.
+RT-08 and RT-09 stay open. Continue the detailed plan for owned cancellation,
+staged publication, retained service contexts, draft edits during staging,
+interrupted history and the remaining acceptance matrix. Versions stay 0.8.3.
+
 <a id="codex-pending-history-2026-10-03"></a>
 ### Codex checkpoint: pending history and module preflight (2026-10-03)
 

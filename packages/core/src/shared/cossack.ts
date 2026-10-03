@@ -592,6 +592,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     connectedCallback() {
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         // Transition to Mounted phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
 
@@ -858,6 +859,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Used when a lifecycle operation completes.
      */
     private _restorePhase(): void {
+        // Disposal can happen inside a lifecycle hook or across an await.
+        // No enclosing operation may restore a live phase after that point.
+        if (this.isInPhase(LifecyclePhase.Destroyed)) {
+            this._phaseTransitionStack.length = 0;
+            return;
+        }
         const previousPhase = this._phaseTransitionStack.pop();
         if (previousPhase !== undefined) {
             this._phase = previousPhase;
@@ -959,6 +966,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount }: BootstrapOptions = {}) {
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
@@ -1049,6 +1057,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Run tasks after state initialization
         await this.runTasks();
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
 
         if (this.isServer) {
             this.proxyClientMethods();
@@ -1081,8 +1090,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // invoke them during hydration (use clientInit() for client-side setup).
         if (this.isServer) {
             await this.get();
+            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
             if (!skipInit) {
                 await this.init();
+                if (this.isInPhase(LifecyclePhase.Destroyed)) return;
             }
         }
 
@@ -1103,11 +1114,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         }
 
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+
         // Call onMount() and clientInit() for all components (not just those with containers)
         // Page components don't have containers, but they still need their lifecycle hooks
         if (!this.isServer && !this.isMounted && !deferMount) {
             this.isMounted = true;
             this._frameworkMount();
+            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
 
             // Run clientInit() if it exists - for client-only initialization
             // that should show loading state on initial page load
@@ -1119,6 +1133,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         }
         } finally {
+            this.isBootstrapping = false;
             // Restore phase after bootstrap complete
             this._restorePhase();
         }

@@ -2,7 +2,36 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex pending history review (2026-10-03).
+> Latest checkpoint: Codex terminal disposal review (2026-10-03).
+> Author: **Codex**. Continued after `7b40e71`. Read the
+> [verification](./release-0.9.0.md#codex-terminal-disposal-2026-10-03) and
+> [RT-09 continuation](./release-0.9.0-plan.md#rt-09).
+>
+> Fixed component resurrection during bootstrap. Disposal is now terminal across
+> lifecycle phase restoration. A destroyed component cannot restart bootstrap or
+> reconnect through connectedCallback. Bootstrap checks disposal after task
+> scheduling, server get/init, DOM mount and onMount. It does not open transports
+> after disposal at the task boundary or call clientInit after disposal in onMount.
+> The bootstrapping flag clears on every exit, including failure.
+>
+> Eight new regressions pass. Full core: 1,412 tests / 83 files. Full framework:
+> 1,418 / 66 files. Root TypeScript, all 11 package checks and the core ESM/types
+> build pass. CLI/native browser suites were not rerun for this focused change.
+> Their previous results belong to the previous checkpoint.
+>
+> **No checkbox closes: 22/58 checked, 36 unchecked.** This fixes a prerequisite
+> for staged navigation disposal. It does not add navigation cancellation,
+> deadlines, atomic staging or rollback. GLM must continue RT-08/RT-09 using the
+> plan below. Standard runTasks schedules async work in the background; test
+> stalled bootstrap with an explicit delayed bootstrap override, not a normal
+> async Task. Preserve outgoing edits and retained service request ownership.
+> Aborting staged work must dispose only its new page/layout/scope instances.
+>
+> Versions remain 0.8.3 until REL-04. Preserve user-owned reports.md/.zcodeignore.
+> No push, publication, live cloud change, external message or new chat occurred.
+>
+
+> Previous checkpoint: Codex pending history review (2026-10-03).
 > Author: **Codex**. Continued after `f53961e`. Read the
 > [verification](./release-0.9.0.md#codex-pending-history-2026-10-03),
 > [updated RT-08 plan](./release-0.9.0-plan.md#rt-08),
