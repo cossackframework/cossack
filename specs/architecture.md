@@ -154,6 +154,14 @@ plain draft graphs without reading its former owner. Renderer recapture rebases
 parent identities and forks those pending trees for another destination/rollback
 pair. A consumed, unknown or wrong-class capability cannot be forked. Cache exit,
 key/owner mismatch, explicit discard and publication revocation prevent restoration.
+The browser App has its own ownership key. A changed user or navigation scope
+prepares a fresh App and root service scope. The App uses its own transport and
+provider metadata rather than the child page's transport. Owned renderer root
+listeners publish only for the active App. Precommit rollback restores the old
+App and listener, while successful retirement detaches it. Null render output
+clears the former DOM. Root scope disposal waits for component cleanup, including
+asynchronous layout hooks, so cleanup retains its original request facilities.
+Declared scoped services follow this lifecycle. Legacy global injection does not.
 Retained layouts keep their service instances and browser drafts. Matching SSR
 resource entries replace the previous map before query dependencies change;
 entry identity rejects late results. This does not abort application I/O.

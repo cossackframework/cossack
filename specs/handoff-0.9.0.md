@@ -2,7 +2,33 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> Latest checkpoint: Codex inactive cache (2026-10-03).
+> Latest checkpoint: Codex root ownership (2026-10-03).
+> Author: **Codex**. Reviewed after `ee5734a`. Read the
+> [verification](./release-0.9.0.md#codex-root-ownership-2026-10-03) and
+> [next steps](./release-0.9.0-plan.md#rt-09).
+>
+> Fixed root App drafts surviving user/scope changes. New ownership prepares a
+> fresh App and service root. Guarded listeners prevent old roots from publishing.
+> Failed replacement restores the old App. Empty output clears old DOM. Scope
+> disposal waits for asynchronous component cleanup. Child transport changes alone
+> retain the App. Native tests cover explicit layout services, not legacy globals.
+>
+> Node/native workerd acceptance passes for user/scope reset, matching ownership,
+> failed root rendering, stale callbacks, cleanup context and service disposal.
+> Renderer 284, core 1,434 and framework 1,439 tests pass. Root TypeScript and all
+> 11 package type checks pass. Renderer/framework builds and framework SSG pass.
+> Full CLI: 610 tests across 44 files pass. No owned test/build process remains.
+>
+> **No task closes: 22/58 checked, 36 unchecked.** Continue the native
+> provider/runtime/transport and parent-layout ownership matrix, interrupted
+> same-URL history, actual backend read counts and navigation diagnostics.
+> A bare route re-export cannot establish compiler transport metadata. Use valid
+> decorated routes for the parent-layout test. Do not count that attempt as passed.
+> Preserve versions at 0.8.3 until REL-04 and preserve reports.md/.zcodeignore.
+> No push, publication, live cloud change or external message occurred.
+>
+
+> Previous checkpoint: Codex inactive cache (2026-10-03).
 > Author: **Codex**. Continued after `34592fd`. Read the
 > [verification](./release-0.9.0.md#codex-inactive-cache-2026-10-03),
 > [RT-09 next steps](./release-0.9.0-plan.md#rt-09) and

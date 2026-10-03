@@ -116,6 +116,16 @@ Leaving the cache, changing its key or ownership, or discarding the checkpoint
 drops pending restoration. Only declared drafts transfer; arbitrary DOM state
 and external effects do not.
 
+The root App also has navigation ownership. A changed user or navigation scope
+creates a fresh App and root service scope. Its nested children and declared
+layout services start fresh. A child page transport change alone does not replace
+the App. Same-owner navigation retains the App's current drafts.
+Before history commit, a failed replacement restores the previous App and drafts.
+Old root render callbacks cannot overwrite the active root. Empty root output
+clears the old DOM. Retired scope services remain available during asynchronous
+component cleanup, then dispose. Legacy undeclared global dependency injection
+is outside this scoped-service contract.
+
 Unrelated pages and changed ownership start with new drafts. New page tasks,
 transports, onMount and clientInit start at publication. Framework preparation
 keeps the old page editable and does not bind retained services to the destination.

@@ -2116,6 +2116,41 @@ SSR parity, rapid changes, and Unicode. Dependencies: RT-03, RT-07, and RT-09.
 <a id="rt-09"></a>
 ### RT-09: Navigation completion and diagnostics
 
+Codex root ownership review (2026-10-03), after `ee5734a`:
+the root App previously survived user and scope changes. Its private drafts and
+children could cross the ownership boundary even when page/layout owners reset.
+The framework now prepares a fresh App and root service scope for changed root
+ownership. Publication switches the guarded root listener. Failure restores the
+old App before recovery rendering. Successful retirement detaches its listener
+and waits for component cleanup before disposing the old scope.
+Empty root output now clears the previous DOM. Child transport selection stays
+separate from the App's transport, so a child SSE-to-HTTP change retains the root.
+
+The generated Node/native workerd fixture tests user and scope changes, matching
+owner retention, failed root rendering, stale callbacks, and asynchronous layout
+cleanup with the original request context. It uses declared layout services.
+Its query-based user identity is a test fixture, not an authentication recipe.
+Legacy global constructor injection is unchanged.
+
+Next steps for GLM:
+
+1. Finish the native provider/runtime/transport and parent-layout ownership matrix.
+   Use supported decorated route modules. A bare default re-export route failed
+   build validation because its transport was unknown. That attempted parent
+   fixture is excluded from passing evidence. Preserve compiler fail-closed checks.
+2. Interrupt restoration and confirmation between two history entries with the
+   same URL. Hold the old lifecycle callback, publish a newer intent, then release
+   the callback. Assert history entry identity, DOM, drafts and service context.
+3. Count actual backend resource reads before and after retained-layout changes,
+   rollback and interruption. Assert both returned values and read counts.
+4. Add navigation diagnostics for cache, layout retention, scroll, fragment and
+   transition fallback. Verify event fields and ordering without exposing drafts.
+5. Audit every RT-08/RT-09 acceptance criterion before closing either task.
+   This review completes a tested slice. All 36 unchecked release tasks remain.
+
+See the [verification](./release-0.9.0.md#codex-root-ownership-2026-10-03).
+
+
 Purpose: Code that awaits navigation needs a defined completion point. Agents
 also need to understand why cached data, scroll restoration, or a transition
 produced an unexpected page state.

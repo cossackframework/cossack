@@ -86,6 +86,50 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-root-ownership-2026-10-03"></a>
+## Codex root ownership (2026-10-03)
+
+Author: **Codex**. Reviewed after `ee5734a`. Generated production Node and native
+workerd tests reproduced private root App drafts surviving a changed user or
+navigation scope. Page/layout replacement alone did not reset the root tree.
+
+The framework now prepares and publishes a fresh App with a fresh root service
+scope when root ownership changes. Root listeners check the active App identity.
+Rollback restores the prior App, contexts and drafts. Successful retirement
+removes its listener and waits for component cleanup before root scope disposal.
+The renderer clears old DOM when the current root renders null. The App's own
+transport remains independent of its child page's transport.
+
+The new fixture covers retained drafts and service identity for matching owners,
+user/scope changes, failed replacement, stale failed-root updates and empty output.
+A held asynchronous layout cleanup reads its original user, URL and live service.
+Retired declared services dispose exactly once. Legacy global injection is unchanged.
+The fixture uses a query-based identity only for testing, not as authentication.
+
+Verification on the final source:
+
+- `pnpm --filter @cossackframework/renderer exec vitest run`: 284 tests, 22 files.
+- `pnpm --filter @cossackframework/renderer build`: passed.
+- `pnpm --filter @cossackframework/framework build`: passed, including SSG.
+- `pnpm --filter @cossackframework/core exec vitest run`: 1,434 tests, 85 files.
+- `pnpm --filter @cossackframework/framework exec vitest run`: 1,439 tests, 68 files.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation ownership|parses and navigates typed URL state'`:
+  4 passed, 26 skipped. Both fixtures ran in production Node and native workerd.
+- `pnpm --filter cossack exec vitest run --maxWorkers=2`: 610 tests, 44 files,
+  328 seconds. Ran without competing heavy test jobs.
+- `git diff --check -- . ':!reports.md'`: passed.
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 package checks passed.
+
+The attempted parent-layout fixture used bare default re-exports. Compiler
+validation rejected unknown transport metadata before runtime. It was removed
+from this fixture and is not passing evidence. Continue that case with supported
+route declarations. Native provider/runtime/transport changes, interrupted
+same-URL history, backend read counts and diagnostics remain open.
+
+**No task closes: 22/58 checked, 36 unchecked.** Versions remain 0.8.3. This review
+does not close RT-08/RT-09 or the final release gates. See their detailed plans.
+
 <a id="codex-inactive-cache-2026-10-03"></a>
 ## Codex inactive cache (2026-10-03)
 

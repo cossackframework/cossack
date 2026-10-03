@@ -16,6 +16,7 @@ import { writeApiContractAcceptance, checkApiContractAcceptance, checkApiContrac
 import { createTestHarness } from 'wrangler';
 import { writeRouteBoundaryAcceptance, checkRouteBoundaryAcceptance, checkRouteBoundaryBrowser } from './fixtures/route-boundary-acceptance.js';
 import { writeUrlStateAcceptance, checkUrlStateBrowser } from './fixtures/url-state-acceptance.js';
+import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
@@ -88,6 +89,23 @@ async function productionServer(root, environment = {}) {
   }
   return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
 }
+it.each(['node', 'cloudflare'])('isolates navigation ownership in a generated production %s app', async adapter => {
+  const root = await project(adapter); await writeNavigationOwnershipAcceptance(root);
+  await vite(root, []);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    if (adapter === 'node') {
+      const runtime = await productionServer(root);
+      try { await checkNavigationOwnershipBrowser(browser, runtime.origin); }
+      finally { await runtime.close(); }
+    } else {
+      const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+      try { const { url } = await harness.listen(); await checkNavigationOwnershipBrowser(browser, new URL(url).origin); }
+      finally { await harness.close(); }
+    }
+  } finally { await browser.close(); }
+}, 120000);
 it.each(['node', 'cloudflare'])('parses and navigates typed URL state in a generated production %s app', async adapter => {
   const root = await project(adapter); await writeUrlStateAcceptance(root);
   await vite(root, []);

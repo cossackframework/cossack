@@ -20,7 +20,7 @@ vi.mock('@cossackframework/core', async importOriginal => {
     const actual = await importOriginal<typeof import('@cossackframework/core')>();
     return { ...actual,
         createInstance: (Component: new () => any, options: any) => Object.assign(new Component(), { scope: options?.serviceScope }),
-        createRootServiceScope: () => ({}),
+        createRootServiceScope: () => ({ disposeAsync: async () => {} }),
         createLayoutServiceScope: (parent: any) => ({ parent }),
         enableClientNavigation: vi.fn(),
         applyNavigationScroll: vi.fn(),

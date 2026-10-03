@@ -366,8 +366,20 @@ export async function createClientApp({
     }
   }
 
-  const clientServiceRoot = createRootServiceScope();
-  const appInstance = createInstance(AppComponent, { serviceScope: clientServiceRoot });
+  let clientServiceRoot = createRootServiceScope();
+  let appInstance = createInstance(AppComponent, { serviceScope: clientServiceRoot });
+  const rootListeners = new WeakMap<Cossack, () => void>();
+  const attachRoot = (instance: Cossack, hydrate = false) => {
+    if (instance._frameworkAttachRenderRoot) {
+      rootListeners.set(instance, instance._frameworkAttachRenderRoot(containerEl as HTMLElement, () => appInstance === instance, hydrate));
+    } else instance.mount(containerEl as HTMLElement, hydrate);
+  };
+  const releaseRootScope = (scope: ReturnType<typeof createRootServiceScope>, instances: Cossack[]) => {
+    // Scope facilities must outlive every component/layout cleanup, including
+    // asynchronous hooks. Destruction itself still revokes tasks immediately.
+    void Promise.allSettled(instances.map(instance => Promise.resolve().then(() => instance.destroyAsync?.())))
+      .then(() => scope.disposeAsync()).catch(error => console.error('Navigation root cleanup failed:', error));
+  };
   
   let currentPage: Cossack | null = null;
   let currentLayoutInstances: Cossack[] = [];
@@ -390,6 +402,8 @@ export async function createClientApp({
     transport: state?.transport ?? Reflect.getMetadata('page:options', Component)?.transport ?? 'http',
     providerTargets: state?.providerTargets,
   });
+  const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? { metadata: state?.metadata }, state, AppComponent);
+  let rootOwnership = rootOwnershipKey(window.__INITIAL_STATE__);
 
   const composeContent = () => {
     if (!currentPage) return null;
@@ -495,6 +509,7 @@ export async function createClientApp({
     let retire: (() => void) | undefined;
     let rollbackDrafts: ReturnType<typeof captureRenderDrafts> | undefined;
     let destinationDrafts: ReturnType<typeof captureRenderDrafts> | undefined;
+    let preparedRoot: ReturnType<typeof createRootServiceScope> | undefined;
     const dispose = () => {
       owner?.signal.removeEventListener('abort', dispose);
       if (finalized || abandoned) return;
@@ -504,8 +519,11 @@ export async function createClientApp({
       if (rollback) rollback();
       else rollbackDrafts?.discard();
       for (const instance of [...staged].reverse()) {
+        rootListeners.get(instance)?.();
+        rootListeners.delete(instance);
         try { instance.destroy(); } catch (error) { console.error('Navigation cleanup failed:', error); }
       }
+      if (preparedRoot) releaseRootScope(preparedRoot, [...staged]);
       staged.clear();
     };
     owner?.signal.addEventListener('abort', dispose, { once: true });
@@ -522,8 +540,22 @@ export async function createClientApp({
       };
     };
     try {
+      const nextRootOwnership = rootOwnershipKey(initialState);
+      let nextApp = appInstance;
+      if (currentPageState && rootOwnership !== nextRootOwnership) {
+        preparedRoot = createRootServiceScope();
+        nextApp = createInstance(AppComponent, { serviceScope: preparedRoot });
+        staged.add(nextApp);
+        const root = nextApp;
+        root.updateHead = () => { if (appInstance === root) syncHead(); };
+        const appState = initialState._app_state ?? initialState;
+        await root.bootstrap({ container: containerEl as HTMLElement, initialState: { ...appState,
+          metadata: { ...appState?.metadata, url: destinationUrl } }, skipInit: true, stageNavigation: true });
+        assertCurrent();
+      }
       const nextLayouts = new Map<string, Cossack>();
-      let activeServiceScope = clientServiceRoot;
+      const nextRoot = preparedRoot ?? clientServiceRoot;
+      let activeServiceScope = nextRoot;
       for (const { path, state, componentRouteId } of layoutStack) {
         assertCurrent();
         let instance = currentLayoutsMap.get(path);
@@ -581,6 +613,9 @@ export async function createClientApp({
           const oldState = currentPageState;
           const oldInitial = window.__INITIAL_STATE__;
           const oldPublication = publication;
+          const oldApp = appInstance;
+          const oldRoot = clientServiceRoot;
+          const oldRootOwnership = rootOwnership;
           const token = {};
           rollbackDrafts = captureRenderDrafts(containerEl);
           destinationDrafts = captureRenderDrafts(containerEl);
@@ -589,16 +624,22 @@ export async function createClientApp({
           const staleLayouts = oldLayouts.filter(layout => ![...nextLayouts.values()].includes(layout));
           retire = () => {
             const errors: unknown[] = [];
-            const outgoing = [...(oldPage ? [oldPage] : []), ...staleLayouts];
+            const outgoing = [...(oldPage ? [oldPage] : []), ...staleLayouts, ...(oldApp !== nextApp ? [oldApp] : [])];
             for (const instance of outgoing) instance._frameworkRetireNavigationScope?.();
             for (const instance of outgoing) {
+              rootListeners.get(instance)?.();
+              rootListeners.delete(instance);
               try { instance.destroy(); } catch (error) { errors.push(error); }
             }
+            if (oldApp !== nextApp) releaseRootScope(oldRoot, outgoing);
             if (errors.length) throw new AggregateError(errors, '[Cossack] Outgoing navigation cleanup failed.');
           };
           rollback = () => {
             if (publication !== token) return;
             publication = oldPublication;
+            appInstance = oldApp;
+            clientServiceRoot = oldRoot;
+            rootOwnership = oldRootOwnership;
             currentPage = oldPage;
             currentLayoutInstances = oldLayouts;
             currentLayoutsMap.clear();
@@ -616,6 +657,9 @@ export async function createClientApp({
               .catch(error => console.error('Navigation recovery render failed:', error));
           };
           publication = token;
+          appInstance = nextApp;
+          clientServiceRoot = nextRoot;
+          rootOwnership = nextRootOwnership;
           onMutation?.(initialState);
           appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
           appInstance.updatePath(pathname, destinationUrl);
@@ -642,6 +686,7 @@ export async function createClientApp({
             await instance._frameworkPublishNavigation?.();
           }
           assertCurrent();
+          if (oldApp !== nextApp) attachRoot(nextApp);
           destinationDrafts?.restore(() => publication === token,
             samePage && oldPage ? [[oldPage, nextPage]] : []);
           const rendered = await triggerAppUpdate(isCurrent);
@@ -671,7 +716,8 @@ export async function createClientApp({
   // already rendered this exact tree, so we bind to the existing nodes (no
   // flash, no duplicate component initialisation). Subsequent re-renders use
   // the normal reconcile path via the container cache.
-  appInstance.mount(containerEl, true);
+  attachRoot(appInstance, true);
+  if (appInstance._frameworkAttachRenderRoot) void appInstance.requestUpdate();
   appInstance.isMounted = true;
   appInstance._frameworkMount();
   notifyNavigationComplete(window.location.pathname);
