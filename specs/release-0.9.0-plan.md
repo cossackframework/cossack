@@ -611,6 +611,19 @@ version. Startup, shutdown, and interrupted tool calls release resources.
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
+Codex package-guidance checkpoint (2026-10-04): library-owned `agent-docs.json`
+files now supply usage explanations and TypeScript example source through the
+shared CLI/MCP catalog. Guidance carries the installed package identity/version
+and a content hash. The reader validates bounded JSON, rejects escaping paths,
+refreshes content and omits guides whose listed public imports disappear.
+Missing guidance is explicit. Discovery never runs examples.
+
+Initial authored guides cover core typed route URLs and renderer server HTML.
+The tarball acceptance compiles and executes those examples against installed
+exports. This is an initial set, not full API/component/recipe coverage or proof
+for all runtimes. Continue that coverage, runtime guidance, RT-23 and REL-02.
+See the [checkpoint](./release-0.9.0.md#codex-package-guidance-2026-10-04).
+
 Codex installed-tarball checkpoint (2026-10-04): the catalog foundation now passes
 `pnpm test:agent-docs:local` in a generated application with real local tarballs.
 The installed CLI and MCP entrypoints agree on versions, command metadata, the

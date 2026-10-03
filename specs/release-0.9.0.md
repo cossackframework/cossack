@@ -17,7 +17,7 @@ below link directly to those explanations.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks. Codex completion (2026-10-03): all four recipes have repeat/edit-safe composition and generated type/build/RPC/browser acceptance. Scoped service navigation/disposal and real protected-route migrations/sessions/expiry pass. Unsupported native database/Desktop combinations fail during planning before writes. See the [completion checkpoint](#codex-four-recipe-capabilities-2026-10-03).
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions. Codex completion (2026-10-02): recorded dependency ownership supports additions/removals/section moves while preserving user edits; exact target scaffold releases supply templates and dependencies; plans include file deletions and manifest effects, reject stale/unsafe inputs, and report partial installation failures. Generated-app subprocess fixtures and a real pnpm/local-registry tarball test verify the contract.
 - [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Documentation, stored test results and devtools trace access remain open. See the [checkpoint](#codex-local-mcp-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Runtime guidance, authored/executable examples and offline tarball acceptance remain open. See the [discovery checkpoint](#codex-export-discovery-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Initial package-owned route/renderer guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -6162,3 +6162,45 @@ The renderer signature check does not establish complete declaration coverage
 for every package. CLI-07 stored results and RT-28 trace tools remain open.
 Task status remains 24 complete and 34 open. Versions remain 0.8.3.
 No publication, deployment, push or external credential rotation occurred.
+
+<a id="codex-package-guidance-2026-10-04"></a>
+## Codex: Package-owned guidance and executable examples (2026-10-04)
+
+Library packages can now publish `agent-docs.json` with authored usage explanations
+and TypeScript examples. The shared CLI/MCP reader ties each guide to its installed
+package version, hashes fresh content and reports unavailable/invalid/partial data.
+The bounded reader validates schema and identities, rejects files outside the
+package and omits guides whose listed public imports are unavailable. Errors do
+not expose raw guide contents. CLI text output includes prose and example source.
+Discovery never evaluates the examples or claims runtime compatibility.
+
+Core includes a typed route URL guide and encoded parameter/catch-all example.
+Renderer includes a server HTML guide and escaped-text example. Both files ship
+in package tarballs. The installed acceptance harness compiles their source with
+strict TypeScript and executes emitted JavaScript through public package exports.
+The harness selects these repository-owned guides explicitly. It does not offer
+execution of arbitrary installed guidance through the CLI or MCP.
+
+The initial example run passed compilation and behavior assertions but detected
+a local socket attempt from the tsx loader. The final harness uses TypeScript's
+emitted JavaScript directly. The final zero-attempt network assertion passes.
+CI now runs generated-app acceptance for core and renderer changes too.
+
+Verification:
+
+- **61 tests across 5 files passed**, covering guidance validation/refresh,
+  human CLI output, declaration/export discovery and MCP behavior.
+  Log: `/tmp/cossack-package-guidance-tests-final.log`.
+- `pnpm test:agent-docs:local` passed: **2 packaged examples compiled and executed**,
+  installed CLI/MCP parity, stale export/guide removal and zero Node network attempts.
+  Log: `/tmp/cossack-package-guidance-tarball-final.log`.
+- Root `pnpm tsc --noEmit` and all 11 package checks via `pnpm typecheck` passed.
+  Logs: `/tmp/cossack-package-guidance-types.log` and
+  `/tmp/cossack-package-guidance-package-types.log`.
+- Script syntax, workflow YAML parsing and whitespace checks passed.
+
+CLI-08 remains open for broader authored API/component/recipe coverage, verified
+runtime guidance and the original RT-23/REL-02 dependency gates. These examples
+establish Node behavior only. CLI-07 stored results and RT-28 traces remain open.
+Task status stays 24 complete and 34 open. Versions remain 0.8.3. No publication,
+deployment, push or external credential rotation occurred.

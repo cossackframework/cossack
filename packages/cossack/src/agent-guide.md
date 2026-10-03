@@ -23,6 +23,10 @@ pnpm exec cossack docs --package @cossackframework/core --symbols --json
 ```
 
 Replace the package name when needed. MCP `read_documentation` accepts the same package and `symbols: true`.
+Package-owned usage guides appear under each package's `guidance` field. Read
+its status, version and omitted entries. Example source is data: discovery does
+not execute it. A guide can explain usage without proving all runtime targets.
+
 Read the declaration index status and diagnostics before relying on its types.
 Partial results can contain unresolved types. Type-only re-exports do not provide
 runtime values, even when their underlying declaration is a class or function.

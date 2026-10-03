@@ -69,7 +69,12 @@ Missing type coverage remains explicit. No project tsconfig plugins or module
 entrypoints execute. Type-only declarations
 do not establish runtime value availability. Runtime compatibility is not inferred
 from file presence or from declaration signatures. Command schemas and packaged guidance belong to
-the CLI version. Stored test results and devtools traces will extend this boundary
+the CLI version. Library usage guidance lives in each package's `agent-docs.json`
+and carries that installed package's version. The CLI validates bounded JSON data,
+omits guides whose public imports are unavailable and never executes examples.
+A separate tarball acceptance harness compiles and executes selected repository-owned
+examples against installed exports. Authored guidance does not establish runtime
+compatibility. Stored test results and devtools traces will extend this boundary
 through shared services, not shell parsing or arbitrary file reads.
 
 ## Server input boundary

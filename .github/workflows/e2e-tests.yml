@@ -37,6 +37,8 @@ jobs:
               examples/desktop-counter \
               packages/desktop || desktop=true
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              packages/core \
+              packages/renderer \
               packages/scaffold \
               packages/cossack \
               scripts/test-local-scaffold.mjs \

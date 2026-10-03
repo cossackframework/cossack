@@ -39,7 +39,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"

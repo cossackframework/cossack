@@ -12,6 +12,10 @@ export function docsCommand(args, ctx) {
       console.log(`${pkg.name}: ${pkg.installed ? pkg.version : 'not installed'}`);
       for (const entry of pkg.exports ?? []) console.log(`  ${entry.import} (${entry.targets.map(target => target.status).join(', ')})`);
     }
+    for (const pkg of result.data.packages) for (const guide of pkg.guidance?.guides ?? []) {
+      console.log(`\n${pkg.name}@${pkg.version}: ${guide.title}\n${guide.markdown}`);
+      for (const example of guide.examples) console.log(`\nExample: ${example.id}\n${example.source}`);
+    }
     for (const pkg of result.data.packages) for (const entry of pkg.declarations?.entries ?? []) {
       console.log(`Declarations: ${entry.file} (${entry.status})`);
       for (const symbol of entry.symbols) console.log(`  ${symbol.name}: ${symbol.type ?? symbol.status}`);
@@ -26,5 +30,6 @@ export function docsHelp() {
 Read offline installed-version export targets, CLI command schemas and agent guidance.
 No modules are executed and no files are generated. Use --symbols with one --package to index installed declarations and signatures.
 Declaration signatures do not prove runtime exports or adapter compatibility.
-Executable examples and verified runtime guidance remain separate.`);
+Package-owned usage guides include example source when available. Discovery never executes it.
+Verified runtime guidance remains separate.`);
 }

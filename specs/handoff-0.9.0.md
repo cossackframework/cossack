@@ -33,13 +33,14 @@ CLI-07 and CLI-08 remain open. Their implemented foundations are:
 - `cossack-mcp --project <directory>`: static inspection, installed versions and bounded cancellable workers.
 - `cossack docs` and MCP `read_documentation`: installed exports, command schemas and packaged agent guidance.
 - `docs --package <name> --symbols --json` or MCP `symbols: true`: signatures through a pinned TypeScript 6 API alias.
+- Package-owned guides: typed route URLs and server HTML rendering include TypeScript examples. Discovery reads their source without executing it.
 - Wildcard exports and implicit JS/ESM/CommonJS declarations: exclusions and partial results remain explicit. Runtime availability remains unverified.
 
 See [setup and usage](../docs/local-agent-tools.md) and the
-[latest discovery checkpoint](./release-0.9.0.md#codex-export-discovery-2026-10-04).
+[latest guidance checkpoint](./release-0.9.0.md#codex-package-guidance-2026-10-04).
 
-Next add authored API/component/recipe guidance, verified runtime support and
-executable examples. Extend the installed-tarball acceptance to cover that content.
+Next expand authored API/component/recipe guidance and executable examples,
+and add verified runtime support. Extend the installed-tarball acceptance to cover that content.
 Then continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
 Close tasks only against their original acceptance criteria. Every unchecked task remains in scope.
 
@@ -71,6 +72,9 @@ Carry these unresolved limits into implementation and review:
   Never copy old credential values from Git history.
 
 ## Verification references
+
+The [package-guidance checkpoint](./release-0.9.0.md#codex-package-guidance-2026-10-04)
+records 61 focused tests, two compiled/executed tarball examples and root/package type checks.
 
 The [installed documentation acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
 proves CLI/MCP catalog parity, version/export refresh and discovery with Node networking disabled in a generated tarball installation.

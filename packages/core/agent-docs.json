@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "route-urls",
+      "title": "Build typed route URLs",
+      "summary": "Encode named route parameters without concatenating user input into URLs.",
+      "imports": [
+        "@cossackframework/core/routes"
+      ],
+      "markdown": "Use createRouteBuilder with literal patterns. Ordinary parameters accept strings. Catch-all parameters accept a nonempty array of path segments. The builder encodes each segment. It rejects unknown names, missing parameters and unsupported patterns.\n\nThis helper constructs URLs. It does not register routes, authorize requests or prove that a page exists. In an application, prefer the generated route registry when available. Keep authorization on the server. Query state has a separate URL-state API.",
+      "examples": [
+        {
+          "id": "encoded-route",
+          "language": "typescript",
+          "source": "import { createRouteBuilder } from '@cossackframework/core/routes';\n\nconst route = createRouteBuilder({ article: '/articles/:slug', files: '/files/:path{.+}' } as const);\nconst article: string = route('article', { slug: 'hello world' });\nconst files: string = route('files', { path: ['reports', 'October 2026.csv'] });\nif (article !== '/articles/hello%20world') throw new Error('Article URL was not encoded');\nif (files !== '/files/reports/October%202026.csv') throw new Error('Catch-all URL was not encoded');\n"
+        }
+      ]
+    }
+  ]
+}

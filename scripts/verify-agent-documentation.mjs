@@ -64,6 +64,38 @@ require('node:module').syncBuiltinESMExports();
       assert.equal(pkg.version, manifest.version);
     }
 
+    // This harness executes only the repository-owned examples selected here.
+    // The documentation tool itself only returns source text.
+    const installedRequire = createRequire(path.join(projectDir, 'package.json'));
+    const examples = [];
+    for (const [name, id] of [['@cossackframework/core', 'route-urls'], ['@cossackframework/renderer', 'server-html']]) {
+      const pkg = catalog.data.packages.find(pkg => pkg.name === name);
+      assert.equal(pkg.guidance.status, 'available');
+      assert.equal(pkg.guidance.version, pkg.version);
+      assert.equal(pkg.guidance.exampleExecution, 'not-performed');
+      const guide = pkg.guidance.guides.find(guide => guide.id === id);
+      assert.ok(guide, `Missing packaged guide ${name}/${id}`);
+      assert.ok(guide.examples.length, 'Guide must include an executable example');
+      for (const example of guide.examples) {
+        const file = path.join(scratch, `${id}-${example.id}.ts`);
+        await fs.writeFile(file, example.source);
+        examples.push(file);
+      }
+    }
+    const config = path.join(scratch, 'tsconfig.json');
+    await fs.writeFile(config, JSON.stringify({ compilerOptions: {
+      target: 'ES2022', module: 'NodeNext', strict: true, noEmitOnError: true,
+      rootDir: scratch, outDir: path.join(scratch, 'compiled'),
+      types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+    }, files: examples }));
+    const tsc = path.join(path.dirname(installedRequire.resolve('typescript/package.json')), 'bin/tsc');
+    await exec(process.execPath, [...nodeArgs, tsc, '-p', config], { cwd: projectDir, env, timeout: 60_000 });
+    for (const file of examples) {
+      const result = await exec(process.execPath, [...nodeArgs, path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js')], { cwd: projectDir, env, timeout: 30_000 });
+      assert.equal(result.stderr, '');
+    }
+    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports.`);
+
     const args = ['docs', '--package', '@cossackframework/renderer', '--symbols', '--json'];
     const documented = await invoke(args);
     assert.equal(documented.ok, true);
@@ -94,6 +126,8 @@ require('node:module').syncBuiltinESMExports();
       const remoteRefresh = await client.callTool({ name: 'read_documentation', arguments: { package: renderer.name } });
       assert.deepEqual(remoteRefresh.structuredContent.data, refreshed.data);
       assert.equal(refreshed.data.packages[0].version, changed.version);
+      assert.equal(refreshed.data.packages[0].guidance.status, 'partial');
+      assert.deepEqual(refreshed.data.packages[0].guidance.guides, []);
       assert.notEqual(refreshed.data.packages[0].manifestHash, renderer.manifestHash);
       assert.deepEqual(refreshed.data.packages[0].exports.map(entry => entry.import), [renderer.name + '/removed-by-acceptance']);
     } finally { await replaceManifest(original); }

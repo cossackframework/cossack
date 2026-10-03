@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "server-html",
+      "title": "Render escaped HTML on the server",
+      "summary": "Use the server entrypoint to turn an HTML template into a string.",
+      "imports": [
+        "@cossackframework/renderer/server"
+      ],
+      "markdown": "Import html and renderToString from the public server entrypoint. Interpolate text values into html templates. The renderer escapes text rather than interpreting it as markup.\n\nDo not concatenate untrusted text into HTML source or use unsafe raw-HTML helpers for it. Escaping text does not authorize a request or validate application URLs. Server rendering produces an HTML string. It does not attach browser event handlers or hydrate an application.",
+      "examples": [
+        {
+          "id": "escaped-text",
+          "language": "typescript",
+          "source": "import { html, renderToString } from '@cossackframework/renderer/server';\n\nconst name: string = '<script>alert(1)</script>';\nconst output: string = await renderToString(html`<p>Hello ${name}</p>`);\nif (output.includes('<script>')) throw new Error('Text became executable markup');\nif (!output.includes('&lt;script&gt;')) throw new Error('Text was not escaped');\n"
+        }
+      ]
+    }
+  ]
+}

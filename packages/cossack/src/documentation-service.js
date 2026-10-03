@@ -1,3 +1,4 @@
+import { readPackageGuidance } from './package-guidance.js';
 import { discoverExports, describeExport } from './export-discovery.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -38,7 +39,12 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     const discovered = await discoverExports(folder, name, map);
     if (discovered.discovery.status === 'partial') diagnostics.push({ code: 'COSSACK_DOCS_EXPORTS_INCOMPLETE', severity: 'warning', package: name,
       message: 'Some export patterns cannot be enumerated completely. See exportDiscovery reasons.' });
-    packages.push({ name, version: manifest.version, installed: true,
+    const guidance = await readPackageGuidance(folder, name, manifest.version, discovered.entries);
+    if (['invalid', 'partial'].includes(guidance.status)) diagnostics.push({
+      code: 'COSSACK_DOCS_GUIDANCE_INCOMPLETE', severity: 'warning', package: name,
+      message: 'Installed usage guidance is invalid or references unavailable imports.',
+    });
+    packages.push({ guidance, name, version: manifest.version, installed: true,
       manifestHash: createHash('sha256').update(source).digest('hex'),
       exports: discovered.entries, exportDiscovery: discovered.discovery,
       legacyEntries: exports === undefined ? { main: manifest.main ?? null, types: manifest.types ?? null } : null,
@@ -67,6 +73,6 @@ export async function readDocumentation(root, { package: selected, symbols = fal
   return { ok: !diagnostics.some(diagnostic => diagnostic.severity === 'error'), diagnostics, data: {
     schemaVersion: 1, cliVersion: readPackageVersion(), packages,
     commands: commandCatalog(), guide: { version: readPackageVersion(), markdown: guide },
-    coverage: { exportTargets: 'installed-manifests', symbols: symbols ? 'installed-declarations' : 'not-requested', runtimeSupport: 'not-verified', examples: 'not-included' },
+    coverage: { exportTargets: 'installed-manifests', symbols: symbols ? 'installed-declarations' : 'not-requested', runtimeSupport: 'not-verified', examples: 'package-owned-when-available', guidance: 'installed-package-files' },
   } };
 }

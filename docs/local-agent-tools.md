@@ -139,9 +139,10 @@ Unknown package paths are rejected. Malformed manifest diagnostics omit raw cont
 
 ## Current scope
 
-These tools expose static inspection, configuration diagnostics and the initial
-offline catalog with declaration signatures. Authored API/component examples,
-verified runtime guidance and installed-tarball acceptance remain CLI-08 work. Stored test results and development traces
+These tools expose static inspection, configuration diagnostics, declaration
+signatures and available package-owned usage guides. The catalog and initial
+examples have installed-tarball acceptance. Full API/component/recipe coverage
+and verified runtime guidance remain CLI-08 work. Stored test results and development traces
 still need shared services. The server does not build, test, mutate, deploy or
 provision an application.
 
@@ -164,3 +165,31 @@ The test checks packaged and generated guides, installed versions, command
 schemas, renderer declarations, CLI/MCP parity and refreshed exports after a
 package change. It also runs inside `pnpm test:scaffold:local`. These checks do
 not certify every package's examples, runtime support or component guidance.
+
+
+## Package-owned usage guides
+
+Each installed package can ship `agent-docs.json` in its published files. The
+catalog returns that package's guidance beside its export and declaration facts.
+The CLI text output includes the guides and example source. MCP returns the same
+data through `read_documentation`.
+
+`guidance` includes the package name, installed version, content hash, guides and
+omitted entries. Status is `available`, `partial`, `unavailable` or `invalid`.
+Missing files are unavailable. Invalid or oversized files produce a warning with
+no raw contents. A guide whose listed imports are absent or blocked is omitted.
+A hash changes when guide content changes, even if the package version stays the same.
+
+The format is `schemaVersion: 1` with a `guides` array. Each guide supplies a unique
+`id`, `title`, `summary`, `imports`, `markdown` and `examples`. Each example supplies
+a unique `id` within its guide, `language: "typescript"` and `source`. Guide IDs use
+lowercase letters, digits and hyphens. Imports must belong to the owning package.
+The file has a 256 KiB limit and cannot resolve outside its package directory.
+The CLI rejects unknown fields and unsupported schema versions.
+
+The initial guides explain typed route URL construction in core and escaped
+server HTML rendering in renderer. The tarball acceptance compiles and executes
+their examples against installed public exports. Discovery itself reports
+`exampleExecution: "not-performed"` and `runtimeSupport: "not-verified"`.
+The examples currently prove Node behavior. Other APIs, components, recipes and
+runtime targets still need their own guidance and acceptance coverage.
