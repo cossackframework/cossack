@@ -73,6 +73,32 @@ closed. Foreign contract imports cannot also keep that module in the client
 graph, because this file cannot strip its initializers. Shared client form rules
 remain separate from the private typed action contract.
 
+## Server resource lifecycle
+
+Core owns resource entries, status snapshots and lifecycle operations. The
+compiler extracts private loaders into existing Server methods, keeps generated
+field getters and emits each class's reserved __cossackResourceFields registry.
+Core uses that registry, including inherited fields, to bind a named getter for
+status/refresh without invoking arbitrary getters. Refresh binds current
+arguments with loading suppressed, then starts one new entry. Inline render
+resources retain stable compiler IDs and their last declared invocation.
+
+The optional Cossack Resources name union checks lifecycle targets against public
+fields. Status value types come from those fields without branding or wrapping
+application values. Untyped names still fail at runtime when unknown. Serialized
+resources carry settled values and dependency identity; unresolved initial values
+must not become resolved hydration entries. Client hydration reuses matching
+entries and retains stale data when dependencies differ. Entry identity and the
+destroyed phase gate settlement; obsolete failures cannot fail an active SSR pass.
+
+Resource dependencies are public, JSON-preserving finite/plain values. Validation
+runs before custom serialization hooks and rejects undefined dependencies. Generated methods validate results before RPC JSON as well as SSR
+settlement. Cycle checks track ancestors so shared acyclic references remain valid. Unmount discards
+resource completions and forbids new reads; it does not terminate ignored I/O.
+Task identities remain owned after setup settles, and abort before rerun cleanup
+or component/descendant cleanup. Application task writes still require cooperative
+cancellation until RT-05 adds its gated commit contract.
+
 ## Resource authorization boundary
 
 Auth owns the typed `createResourcePolicy<Resource, User>()(rules)` kit. The

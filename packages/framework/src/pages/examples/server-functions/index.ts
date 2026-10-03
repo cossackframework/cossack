@@ -4,7 +4,7 @@ import {
     HeadContext,
     HeadValue,
     Page,
-    State,
+    ClientState,
     server$,
 } from '@cossackframework/core';
 import { html, type TemplateResult, component } from '@cossackframework/renderer';
@@ -19,8 +19,8 @@ interface RegionSummary {
 }
 
 @Page({ transport: 'http' })
-export default class ServerFunctionsExample extends Cossack {
-    @State()
+export default class ServerFunctionsExample extends Cossack<any, { Resources: 'serverInfo' | 'regionSummary' }> {
+    @ClientState()
     private region: Region = 'asia';
 
     serverInfo = server$(

@@ -80,7 +80,7 @@ import type {
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
-import { ServerResourceSerializationError, type ServerResourceOptions } from './server-resource';
+import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus } from './server-resource';
 import type { ServiceClass } from './container';
 import type { ServiceScope } from './service-scope';
 
@@ -178,33 +178,54 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _serviceInjectionCleanups = new Map<string | symbol, () => void>();
     private _cleanupCompletion?: Promise<unknown[]>;
     private _serverResources = new Map<string, ServerResourceEntry>();
+    private _bindingServerResource = false;
+    /** @internal Compiler-owned named resource fields, separately stored per class. */
+    static readonly __cossackResourceFields: readonly string[] = [];
 
     private _serverResourceKey(
         name: string,
         args: readonly unknown[],
         subject: 'dependencies' | 'result' = 'dependencies',
     ): string {
-        const seen = new WeakSet<object>();
+        const ancestors = new WeakSet<object>();
+        // Validate before JSON calls toJSON(), and detect ancestor cycles rather
+        // than treating repeated references in an otherwise acyclic tree as cycles.
+        const normalize = (value: unknown): unknown => {
+            if (value === undefined && subject === 'dependencies') {
+                throw new TypeError('undefined dependency; use null for an absent value');
+            }
+            if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
+                throw new TypeError(`unsupported dependency type ${typeof value}`);
+            }
+            if (typeof value === 'number' && !Number.isFinite(value)) {
+                throw new TypeError('non-finite number');
+            }
+            if (!value || typeof value !== 'object') return value;
+            if (ancestors.has(value)) throw new TypeError('circular dependency');
+            if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+                throw new TypeError(`unsupported dependency ${value.constructor?.name || 'object'}`);
+            }
+            if (typeof (value as { toJSON?: unknown }).toJSON === 'function') {
+                throw new TypeError('custom toJSON hook');
+            }
+            ancestors.add(value);
+            try {
+                return Array.isArray(value)
+                    ? Array.from(value, normalize)
+                    : Object.fromEntries(Object.keys(value).sort().map(key => [key, normalize((value as Record<string, unknown>)[key])]));
+            } finally { ancestors.delete(value); }
+        };
         try {
-            return JSON.stringify(args, (_key, value) => {
-                if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
-                    throw new TypeError(`unsupported dependency type ${typeof value}`);
-                }
-                if (value && typeof value === 'object') {
-                    if (seen.has(value)) throw new TypeError('circular dependency');
-                    seen.add(value);
-                    if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-                        throw new TypeError(`unsupported dependency ${value.constructor?.name || 'object'}`);
-                    }
-                    if (!Array.isArray(value)) {
-                        return Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]));
-                    }
-                }
-                return value;
-            }) ?? '[]';
+            return JSON.stringify(normalize(args)) ?? '[]';
         } catch (error) {
             throw new ServerResourceSerializationError(name, `${subject} is not transport-safe: ${(error as Error).message}`);
         }
+    }
+
+    /** @internal Entry point emitted by the server$ compiler transform. */
+    public __serverResourceResult<Value>(name: string, value: Value): Value {
+        this._serverResourceKey(name, [value], 'result');
+        return value;
     }
 
     /** @internal Entry point emitted by the server$ compiler transform. */
@@ -213,16 +234,18 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         loader: (...args: TArgs) => Promise<TValue> | TValue,
         options: ServerResourceOptions<TValue, TArgs> = {},
     ): TValue | undefined {
+        if (this._phase === LifecyclePhase.Destroyed) {
+            throw new Error(`[Cossack] Cannot read server$ resource "${name}" after ${this.constructor.name} was destroyed.`);
+        }
         const args = (options.deps?.() ?? []) as TArgs;
         const argsKey = this._serverResourceKey(name, args);
         let entry = this._serverResources.get(name);
-        if (entry?.argsKey === '') entry.argsKey = argsKey;
         if (!entry || entry.argsKey !== argsKey) {
             entry = { argsKey, value: entry?.hasValue ? entry.value : options.initial, hasValue: entry?.hasValue || 'initial' in options, resolved: false };
             this._serverResources.set(name, entry);
         }
         entry.loader = () => loader(...args);
-        if (!entry.resolved && !entry.pending && !entry.failed) {
+        if (!this._bindingServerResource && !entry.resolved && !entry.pending && !entry.failed) {
             this._loadServerResource(name, entry);
         }
         return entry.value as TValue | undefined;
@@ -232,9 +255,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Scheduling the invocation also captures synchronous exceptions.
         const loader = entry.loader!;
         entry.pending = Promise.resolve().then(loader).then((value) => {
+                if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return;
                 // Results use the same JSON-safe contract as hydration/RPC.
-                this._serverResourceKey(name, [value], 'result');
-                if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return value;
+                this.__serverResourceResult(name, value);
                 entry.value = value;
                 entry.hasValue = true;
                 entry.resolved = true;
@@ -256,7 +279,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         void this.requestUpdate();
                     }
                 }
-                if (this.isServer) throw error;
+                if (this.isServer && this._serverResources.get(name) === entry && this._phase !== LifecyclePhase.Destroyed) throw error;
             });
         return entry.pending;
     }
@@ -267,31 +290,43 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * the latest data, and `stale` true when a new load runs over existing
      * data. Returns a plain snapshot; unknown resources fail loudly.
      */
-    public resourceStatus$(name: string): {
-        state: 'pending' | 'ready' | 'error';
-        hasValue: boolean;
-        value?: unknown;
-        error?: unknown;
-        stale: boolean;
-    } {
+    public resourceStatus$<Name extends ServerResourceName<T, this>>(name: Name): ServerResourceStatus<ServerResourceValue<T, this, Name>> {
+        this._bindServerResourceField(name);
         const entry = this._serverResources.get(name);
         if (!entry) {
             throw new Error(`[Cossack] Unknown server$ resource "${name}". Declare it with server$() first.`);
         }
         if (entry.pending) {
-            return { state: 'pending', hasValue: entry.hasValue, value: entry.value, stale: entry.hasValue };
+            return { state: 'pending', hasValue: entry.hasValue, value: entry.value, stale: entry.hasValue } as ServerResourceStatus<ServerResourceValue<T, this, Name>>;
         }
         if (entry.failed) {
-            return { state: 'error', hasValue: entry.hasValue, value: entry.value, error: entry.error, stale: false };
+            return { state: 'error', hasValue: entry.hasValue, value: entry.value, error: entry.error, stale: false } as ServerResourceStatus<ServerResourceValue<T, this, Name>>;
         }
         // Not resolved and not failed: either a cold first load or the window
         // between refresh$() clearing the entry and the loader restarting —
         // existing data is stale in both cases.
         return { state: entry.resolved ? 'ready' : 'pending', hasValue: entry.hasValue, value: entry.value,
-            stale: entry.hasValue && !entry.resolved };
+            stale: entry.hasValue && !entry.resolved } as ServerResourceStatus<ServerResourceValue<T, this, Name>>;
     }
 
-    public async refresh$(name: string): Promise<void> {
+    private _bindServerResourceField(name: string, suppressLoad = false): void {
+        // Only compiler-declared fields may be evaluated here. An unknown name
+        // must not execute an unrelated getter. Include inherited declarations.
+        for (let constructor = this.constructor; constructor; constructor = Object.getPrototypeOf(constructor)) {
+            const fields = Object.getOwnPropertyDescriptor(constructor, '__cossackResourceFields')?.value as readonly string[] | undefined;
+            if (!fields?.includes(name)) continue;
+            const previousBinding = this._bindingServerResource;
+            this._bindingServerResource = suppressLoad;
+            try { Reflect.get(this, name); }
+            finally { this._bindingServerResource = previousBinding; }
+            return;
+        }
+    }
+
+    public async refresh$<Name extends ServerResourceName<T, this>>(name: Name): Promise<void> {
+        // Bind current arguments without starting a duplicate load. This also
+        // works before the field is read or immediately after hydration.
+        this._bindServerResourceField(name, true);
         const previous = this._serverResources.get(name);
         if (!previous) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
         // Each refresh owns a new entry, so older loads cannot publish into it.
@@ -303,7 +338,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         await pending;
     }
 
-    public invalidate$(name: string): void {
+    public invalidate$<Name extends ServerResourceName<T, this>>(name: Name): void {
         if (!this._serverResources.delete(name)) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
         if (!this.isServer) void this.requestUpdate();
     }
@@ -929,8 +964,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         this.initializeState(initialState);
 
-        for (const [name, value] of Object.entries(initialState?.serverResources ?? {})) {
-            this._serverResources.set(name, { argsKey: '', value, hasValue: true, resolved: true });
+        for (const [name, resource] of Object.entries(initialState?.serverResources ?? {}) as [string, { argsKey: string; value: unknown }][]) {
+            this._serverResources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
         }
 
         // Bootstrap injected services
@@ -1339,11 +1374,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             if (controller.signal.aborted) return; // cancelled work stops quietly
                             console.error(
                                 `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger}:`, e);
-                        } finally {
-                            if (this._taskExecutions.get(task) === controller) {
-                                this._taskExecutions.delete(task);
-                            }
                         }
+                        // Keep this identity until rerun/disposal: completed setup
+                        // can leave subscriptions that still use its signal.
                     };
                     const started = start();
                     if (started instanceof Promise && typeof (started as any).then === 'function') {
@@ -2467,7 +2500,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
         if (this._serverResources.size) {
             serializedState.serverResources = Object.fromEntries(
-                [...this._serverResources].filter(([, entry]) => entry.hasValue).map(([name, entry]) => [name, entry.value]),
+                [...this._serverResources].filter(([, entry]) => entry.resolved).map(([name, entry]) => [name, { argsKey: entry.argsKey, value: entry.value }]),
             );
         }
 
@@ -2529,6 +2562,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             LifecyclePhase.Updating
         ]);
 
+        // Revoke task ownership before any application/descendant cleanup runs.
+        for (const controller of this._taskExecutions.values()) controller.abort();
+        this._taskExecutions.clear();
+
         const errors: unknown[] = [];
         const pending: Promise<void>[] = [];
         const release = (cleanup: () => unknown) => {
@@ -2551,8 +2588,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._serviceInjectionCleanups.clear();
         // Drain task cleanup functions (React `useEffect` style). Runs on
         // both server and client since tasks themselves run on both.
-        for (const controller of this._taskExecutions.values()) controller.abort();
-        this._taskExecutions.clear();
         for (const taskKey of [...this._taskCleanups.keys()]) {
             release(() => this._runTaskCleanup(taskKey));
         }

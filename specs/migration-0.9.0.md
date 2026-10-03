@@ -359,3 +359,35 @@ Keys/namespaces must be valid bounded UTF-8; final KV/Redis keys are capped at
 Redis REST URLs now require HTTPS without credentials/query/fragment, and manual
 redirect responses reject. Tokens must be bounded ASCII bearer tokens.
 Null/malformed/misspelled limiter options now fail instead of bypassing limits.
+
+
+## Typed server resources and dependency-aware hydration
+
+Add the names of public server$ fields to the second Cossack type parameter:
+`Cossack<Env, { Resources: 'users' | 'selected' }>`. Lifecycle methods then check
+those names and infer status values from the fields, including null/undefined.
+Combine `Resources` with existing `Channels` options. Without this declaration,
+names retain runtime validation. The generated resource recipe includes it.
+
+Named `resourceStatus$` can start a load before render. `refresh$` binds current
+dependencies and starts one invocation before render or after hydration. Neither
+method evaluates unrelated getters for an unknown target. Inline render resources
+still require a render pass; prefer fields for typed lifecycle control.
+
+Serialized `serverResources[name]` now contains `{ argsKey, value }`, only for
+resolved loads. Rebuild server and browser together and update hand-written state
+fixtures; value-only hydration snapshots are no longer supported. Preserve the
+opaque dependency key from the server instead of assigning it to whichever
+arguments the browser reads first. Generated fixtures exercise normal hydration
+without an initial RPC and dependency changes that retain stale data.
+
+Resource validation now runs before toJSON in both SSR and generated RPC methods: convert Dates to ISO strings and
+custom classes to plain values. Non-finite numbers reject. Use null rather than
+undefined anywhere in dependency tuples/objects; JSON otherwise collapses their
+identity. Repeated acyclic object references are supported. Loader results may
+still be undefined. See [server resources](../docs/server-functions.md#refresh-and-invalidation).
+
+Task cancellation signals now remain owned after setup settles. Rerun aborts
+before registered cleanup; destroy aborts all task signals before any application
+cleanup hook. Returned subscriptions can keep checking the signal. Application
+writes remain cooperative; typed paths and framework-gated commits remain RT-05.

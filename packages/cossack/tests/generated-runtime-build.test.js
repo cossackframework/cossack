@@ -698,6 +698,11 @@ it('runs generated Node development WebSockets, preserves HMR, and replaces runt
 
 it('runs generated mutation contracts and hydrated resource/mutation UI with failure recovery', async () => {
   const root = await project('node', ['resource', 'mutation']);
+  const resourceFile = path.join(root, 'src/pages/resource/index.ts');
+  const resourceSource = await fs.readFile(resourceFile, 'utf8');
+  await fs.writeFile(resourceFile, resourceSource
+    .replace('  render() {', '  onCleanup() { if (typeof window === "undefined") return; (window as any).__resourceCleanups = ((window as any).__resourceCleanups ?? 0) + 1; }\n\n  render() {')
+    .replace('<main>', '<main><a id="resource-leave" href="/mutation">Leave resource</a>'));
   const pageFile = path.join(root, 'src/pages/mutation/index.ts');
   const pageSource = await fs.readFile(pageFile, 'utf8');
   await fs.writeFile(pageFile, pageSource
@@ -795,8 +800,12 @@ it('runs generated mutation contracts and hydrated resource/mutation UI with fai
     await submit.click();
     await browserExpect(page.getByRole('status')).toHaveText('Submission received for retry@example.test.');
 
-    await page.goto(origin + '/resource');
+    const beforeHydration = rpcRequests.length;
+    const resourceResponse = await page.goto(origin + '/resource');
+    expect(await resourceResponse.text()).toContain('"argsKey":"[\\"all\\"]"');
     await browserExpect(page.getByText('Framework guide', { exact: true })).toBeVisible();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(rpcRequests).toHaveLength(beforeHydration); // Hydration reuses SSR data without an initial RPC.
     const category = page.getByLabel('Category');
     const delayed = new Promise(resolve => { release = resolve; });
     await page.route('**/crpc', async route => { await delayed; await route.continue(); });
@@ -815,6 +824,46 @@ it('runs generated mutation contracts and hydrated resource/mutation UI with fai
     await page.unroute('**/crpc');
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
     await browserExpect(page.getByText('Project notebook', { exact: true })).toBeVisible();
+
+    // A delayed old dependency response cannot replace a newer empty result.
+    let slowRoute;
+    let slowArrived;
+    const arrived = new Promise(resolve => { slowArrived = resolve; });
+    await page.route('**/crpc', route => {
+      if (route.request().postDataJSON().payload?.[0] === 'books') {
+        slowRoute = route;
+        slowArrived();
+      } else return route.continue();
+    });
+    await category.selectOption('books');
+    await arrived;
+    await category.selectOption('other');
+    await browserExpect(page.getByText('No products in this category.')).toBeVisible();
+    const obsoleteResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/crpc' &&
+      response.request().postDataJSON().payload?.[0] === 'books');
+    await slowRoute.continue();
+    await (await obsoleteResponse).finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await browserExpect(page.getByText('Framework guide', { exact: true })).toHaveCount(0);
+    await browserExpect(page.getByText('No products in this category.')).toBeVisible();
+    expect(rpcRequests.at(-1).state?.public ?? {}).not.toHaveProperty('category');
+    await page.unroute('**/crpc');
+
+    // Navigate within the live client while its next read is still pending.
+    let abandonedRoute;
+    let abandonedArrived;
+    const abandoned = new Promise(resolve => { abandonedArrived = resolve; });
+    await page.route('**/crpc', route => { abandonedRoute = route; abandonedArrived(); });
+    await category.selectOption('tools');
+    await abandoned;
+    await page.getByRole('link', { name: 'Leave resource' }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Validated mutation' })).toBeVisible();
+    expect(await page.evaluate(() => window.__resourceCleanups)).toBe(1);
+    await abandonedRoute.continue();
+    await page.unroute('**/crpc');
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await browserExpect(page.getByRole('heading', { name: 'Validated mutation' })).toBeVisible();
+    await browserExpect(page.getByRole('heading', { name: 'Read-only resource' })).toHaveCount(0);
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();

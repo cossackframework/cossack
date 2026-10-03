@@ -26,6 +26,11 @@ Pass the signal to APIs that support cancellation, such as `fetch`. A cleanup
 returned after cancellation still runs. Repeated executions wait for that task's
 registered cleanup, while unrelated tasks can proceed.
 
+The signal remains owned after setup finishes. A returned subscription or timer
+can keep checking that signal; rerun aborts it before cleanup, and disposal aborts
+all task signals before component cleanup hooks. Completing setup does not release
+the execution's cancellation identity.
+
 ```ts
 @Task({ track: ['query'] })
 async load(signal: AbortSignal) {

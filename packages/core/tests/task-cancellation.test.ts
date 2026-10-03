@@ -14,6 +14,47 @@ function flush(times = 6) {
 }
 
 describe('task cancellation and staleness (RT-05)', () => {
+    it('aborts settled setup signals before rerun cleanup and before component cleanup', async () => {
+        const signals: AbortSignal[] = [];
+        const cleanups: boolean[] = [];
+        let atComponentCleanup = false;
+        class Settled extends Cossack {
+            @State() value = 0;
+            @Task({ track: ['value'] })
+            async subscribe(signal: AbortSignal) {
+                signals.push(signal);
+                await Promise.resolve();
+                return () => { cleanups.push(signal.aborted); };
+            }
+            onCleanup() { atComponentCleanup = signals.every(signal => signal.aborted); }
+        }
+        const page = new Settled();
+        await page.bootstrap({ skipInit: true });
+        await vi.waitFor(() => expect(signals).toHaveLength(1));
+        await flush();
+        page.value = 1;
+        await vi.waitFor(() => expect(signals).toHaveLength(2));
+        expect(signals[0]!.aborted).toBe(true);
+        expect(cleanups).toEqual([true]);
+        await page.destroyAsync();
+        expect(signals[1]!.aborted).toBe(true);
+        expect(atComponentCleanup).toBe(true);
+        expect(cleanups).toEqual([true, true]);
+    });
+
+    it('keeps synchronous setup signals owned until disposal', async () => {
+        let signal!: AbortSignal;
+        const cleanup = vi.fn();
+        class Sync extends Cossack {
+            @Task() subscribe(owned: AbortSignal) { signal = owned; return cleanup; }
+        }
+        const page = new Sync();
+        await page.bootstrap({ skipInit: true });
+        expect(signal.aborted).toBe(false);
+        await page.destroyAsync();
+        expect(signal.aborted).toBe(true);
+        expect(cleanup).toHaveBeenCalledOnce();
+    });
     it('cleans up setup that resolves after disposal', async () => {
         let finish!: (cleanup: () => void) => void;
         const pending = new Promise<() => void>(resolve => { finish = resolve; });

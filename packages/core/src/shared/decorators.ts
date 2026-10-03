@@ -732,7 +732,8 @@ export interface TaskOptions {
  * (via `destroy()` / `onCleanup`). Use it to release timers, subscriptions,
  * observers, etc.
  */
-export type TaskMethod = () => void | Promise<void> | (() => void | Promise<void>);
+export type TaskMethod = (signal: AbortSignal) =>
+    void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>;
 
 /**
  * Registry entry stored under the `cossack:tasks` / `cossack:server-tasks` /

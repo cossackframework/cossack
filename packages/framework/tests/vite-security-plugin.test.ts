@@ -178,16 +178,33 @@ describe('server$ compiler macro', () => {
       }`;
     const result = transformServerResources(source, '/src/pages/users/index.ts');
     expect(result).toContain('get users()');
+    expect(result).toContain('static readonly __cossackResourceFields = ["users"]');
     expect(result).toContain('this.__serverResource("users"');
     expect(result).toContain('this.__serverResource("render:0"');
     expect(result).toContain("import { Server as __CossackServerResource } from '@cossackframework/core'");
     expect(result).toContain('@__CossackServerResource({ serverResource: true })');
     expect(result).toContain('return this.find(id)');
+    expect(result).toContain('return this.__serverResourceResult("users", await');
   });
 
   it('requires initial for fields', () => {
     const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack { x = server$(() => 1); }`;
     expect(() => transformServerResources(source, 'a.ts')).toThrow('requires { initial }');
+  });
+
+  it('rejects a resource compiler registry collision instead of overwriting application members', () => {
+    const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack {
+      static __cossackResourceFields = ['other'];
+      x = server$(() => 1, { initial: 0 });
+    }`;
+    expect(() => transformServerResources(source, 'a.ts')).toThrow('__cossackResourceFields is reserved');
+  });
+
+  it('rejects generator resource loaders with an authored resource diagnostic', () => {
+    const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack {
+      items = server$(async function*() { yield 1; }, { initial: [] });
+    }`;
+    expect(() => transformServerResources(source, 'a.ts')).toThrow('items loader must return data; use @Server for generators');
   });
 
   it('rejects calls in arbitrary methods and ignores unrelated names', () => {

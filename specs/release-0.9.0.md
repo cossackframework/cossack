@@ -23,7 +23,7 @@ below link directly to those explanations.
 
 - [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 421-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 421 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Remaining: actual native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency, plus RT-02/RT-14 resource policies and RT-11 session criteria. RT-18 provider contracts are now complete. See the [latest checkpoint](#codex-sse-cancellation-2026-10-03).
 - [x] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex completion (2026-10-03): schema-only migration, parsed/native/browser signatures, public function-field inference, private compiler imports and callback failures pass the transport matrix and generated Node/native Worker acceptance. Coerced types, nested errors, File/resource guards and explicit cancellation perform no invalid/denied mutation. See the [criterion audit](./release-0.9.0-plan.md#rt-02) and [schema migration review](#codex-schema-migration-2026-10-03). Native calls explicitly parse/authorize; RT-01, RT-07 native API declarations/error mapping and final release/runtime gates remain separate.
-- [ ] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex Group 3 review: status snapshots and refresh preserve dependencies, retain stale data, discard older results, and share serialization/failure handling. Remaining: compile-time resource names and result types, plus expanded SSR/hydration/unmount acceptance coverage.
+- [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
 - [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex Group 3 review: AbortSignal cancellation, ordered cleanup across rapid changes, skipped canceled starts, and late cleanup disposal are covered. Cancellation is cooperative: tasks must check the signal before writes. Remaining: typed dependency paths, framework-gated result application, and navigation/service-disposal acceptance tests.
 - [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
@@ -3868,3 +3868,63 @@ requested guarantees. RT-01's actual pre-header disconnect and arbitrary action
 deadlines, Deno/Electron/live-provider gates and all other remaining criteria
 stay open. Package versions remain 0.8.3 until REL-04. Preserve user-owned
 `reports.md` and `.zcodeignore`.
+
+
+<a id="codex-resource-lifecycle-2026-10-03"></a>
+## Codex resource lifecycle review — 2026-10-03
+
+Author: **Codex**. Continued after `cab1560`. Only **RT-03** newly completes:
+**18 checked / 40 unchecked**, preserving all 58 original IDs. Read the detailed
+[RT-03 audit](./release-0.9.0-plan.md#rt-03),
+[RT-05 continuation](./release-0.9.0-plan.md#rt-05) and
+[migration](./migration-0.9.0.md#typed-server-resources-and-dependency-aware-hydration).
+
+Resource lifecycle calls now support declared public names with value inference.
+The compiler records named fields so status/refresh can bind a getter before
+render or after hydration without running arbitrary getters or duplicate loads.
+Hydration retains dependencies and only settled values. Superseded/disposed
+results and errors cannot replace live data or fail SSR. Refresh failure retains
+last data, retry recovers and invalidation restores declared initial behavior.
+Validation no longer misidentifies repeated references as cycles or invokes
+custom JSON hooks before validating; Dates/class instances/non-finite values and
+undefined dependencies fail clearly. Final review caught generated methods
+serializing before resource validation. The generated method now validates before
+RPC JSON as well as SSR settlement; native forged Date/toJSON calls reject before
+conversion. Generator loaders receive an authored diagnostic.
+
+Review also reproduced two settled task signal failures. Keeping controllers
+until rerun/disposal and aborting before cleanup fixes subscriptions that lost
+cancellation ownership when setup returned. TaskMethod includes signal and async
+cleanup. This does not implement RT-05's typed paths or gated writes.
+
+Native fixture review caught a missing ORM route scope, two implicit status
+roles, and a browser filter declared as shared State. Resource HTTP passed, but
+SSE authoritative state correctly reset that local selection. Fixture/recipe/
+bundled example now use ClientState for local filters; requests carry dependency
+arguments without publishing those filters as shared state. Private loader
+failures stay out of browser output and chunks. Resource checks run early in the
+native suite to expose fixture failures before the large policy/schema matrix.
+An initial generated test had a quoting typo; a serialization assertion's expected
+diagnostic changed while validation order was tightened. These intermediate
+failures were fixed, not treated as passing evidence.
+
+Final evidence:
+
+- Core **1107 tests / 64 files**, framework **1316 / 57**, scaffold **108 / 4**.
+- Published resource declaration fixture rejects invalid names/value use and
+  preserves inherited/null/optional values without Vite.
+- Core/framework builds, `pnpm tsc --noEmit` and all **11** package typecheck configs.
+- Generated production Node/browser selection: **2 passed, 12 skipped / 14**;
+  hydration reuse, stale response, retry and navigation cleanup are observed.
+- Native staging/socket: **2/2**, about **109 seconds**; resource HTTP/SSE SSR,
+  D1/user context, private failure/recovery and four precise dependency calls.
+  Existing schema/policy/stream/counter/socket cases remain passing.
+- Owned whitespace and JS syntax checks pass. User-owned reports.md/.zcodeignore
+  remain untouched by staging. No full CLI, monorepo release, tarball, native Deno
+  or Electron acceptance is claimed. Versions stay 0.8.3 until REL-04.
+
+**Next for GLM:** finish RT-05's typed dependencies, owned commit API, contextual
+cleanup failures and navigation/scoped-service disposal matrix. Then follow the
+remaining original tasks and release gates. Never count cooperative signals as
+proof that arbitrary writes are gated or ignored I/O stops. Do not reintroduce
+controller deletion after setup or weaken authoritative realtime snapshots.

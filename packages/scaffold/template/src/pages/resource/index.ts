@@ -1,12 +1,12 @@
-import { Client, Cossack, Page, State, server$ } from '@cossackframework/core';
+import { Client, ClientState, Cossack, Page, server$ } from '@cossackframework/core';
 import { html, repeat } from '@cossackframework/renderer';
 
 interface Product { id: string; name: string; category: string }
 
 /** Read-only data: replace the loader with your service or selected database. */
 @Page({ transport: 'http' })
-export default class ResourcePage extends Cossack {
-  @State() category = 'all';
+export default class ResourcePage extends Cossack<any, { Resources: 'products' }> {
+  @ClientState() category = 'all';
 
   products = server$(async (category: string): Promise<Product[]> => {
     // Validate public inputs on the server even when the UI uses a select.

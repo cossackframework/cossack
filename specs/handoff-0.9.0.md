@@ -2,7 +2,82 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-02 completion (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-03 completion (2026-10-03). Author: Codex.**
+> Continued after `cab1560`. Read the
+> [review/evidence](./release-0.9.0.md#codex-resource-lifecycle-2026-10-03),
+> [RT-03 criterion audit](./release-0.9.0-plan.md#rt-03),
+> [RT-05 continuation](./release-0.9.0-plan.md#rt-05) and
+> [resource migration](./migration-0.9.0.md#typed-server-resources-and-dependency-aware-hydration).
+>
+> **18/58 checked, 40 unchecked; only RT-03 newly closes.** Keep all original
+> task IDs. RT-02/RT-14/RT-18 are already complete; broader RT-01 and release
+> gates remain open.
+>
+> Declare named public fields with `Cossack<Env, { Resources: 'users' | 'selected' }>`.
+> Status values infer the ordinary field types, including null/undefined; no data
+> wrapper or repeated value type is needed. Published fixtures without Vite reject
+> bad names, missing/nondeclared fields, dynamic strings and invalid value uses.
+> Untyped/inline names remain runtime-checked with unknown status values.
+>
+> The compiler emits a reserved per-class field registry. Core binds only those
+> getters, including inherited declarations. Status starts a field before render;
+> refresh binds current dependencies without loading, then starts exactly one
+> invocation. Cold/hydrated refresh works. Unknown names cannot run unrelated
+> getters. Invalidation drops data until the next read's initial value.
+>
+> Hydration carries `{ argsKey, value }` only for resolved entries. Keep dependency
+> identity so old data cannot become current for changed arguments; matching SSR
+> values hydrate without initial RPC. Only current entries publish data/errors.
+> Superseded SSR failures no longer fail the active render; disposal discards
+> completions and prevents another read. Existing initial/failure/retry/stale
+> behavior is preserved. Rebuild both browser/server and update old state fixtures.
+>
+> Resource validation runs before toJSON, rejects custom hooks/class instances/
+> Dates/non-finite numbers and undefined dependencies, and accepts repeated
+> acyclic references. Generated server methods validate results before RPC JSON,
+> so direct refreshes cannot turn invalid Dates/hooks into accepted JSON. Generator
+> loaders fail clearly; use Server for streams. Use ISO dates and null dependencies. Dependency identities
+> are public hydration data; never place secrets in deps. Browser-owned filters
+> use ClientState in the recipe/example. Native SSE first reproduced shared State
+> resetting a local filter through an authoritative snapshot. Preserve that
+> server authority; do not weaken state merging to retain browser selections.
+> ClientState dependency arguments still reach loaders and stay out of shared state.
+>
+> **RT-05 bug fixed, task still open:** settled sync/async setup deleted its
+> controller, so subscriptions retained signals that never aborted. Two new
+> failing regressions prove this. Controllers now remain owned until rerun or
+> destroy; destroy aborts before component/descendant/service cleanup. Cleanup
+> sees the aborted signal once. Keep this lifetime; do not restore finally-based
+> deletion. TaskMethod includes the signal and promise-returned cleanup.
+>
+> Evidence: core **1107/64 files**, framework **1316/57**, scaffold **108/4**;
+> generated Node production/browser **2 passed, 12 skipped /14**; native workerd
+> staging/socket **2/2**, about 109 seconds. Node browser checks hydration reuse,
+> delayed old responses, empty results, failure/retry and navigation while pending
+> with one cleanup. Native HTTP/SSE resources prove SSR keys, actual D1/request
+> user reads, private failure/recovery and four exact selected/refresh arguments.
+> Client chunks exclude loader failure sentinels. Builds, root tsc and all 11
+> package typechecks pass. No full CLI/monorepo/tarball/native Deno/Electron release
+> gate is claimed. Intermediate fixture/type/quoting/assertion failures and their
+> fixes are recorded in the review. Native resource checks now run before the
+> larger policy/schema matrix for early feedback.
+>
+> **Next for GLM: finish RT-05.** Choose a typed dependency path/tuple declaration
+> style and published negative tests. Add execution-owned synchronous commits
+> that refuse stale/destroyed writes, retaining signals for cancellable I/O.
+> Add component/trigger/stage context to cleanup errors and verify that rejected
+> cleanup drains siblings. Test rapid changes and live navigation with component
+> tasks using layout-scoped services. Avoid a separate service task engine without
+> an architectural reason. Cooperative cancellation cannot undo arbitrary writes,
+> roll back mutations or terminate ignored I/O. Follow the original done criteria
+> before checking RT-05, then continue all remaining task IDs and release gates.
+>
+> Versions stay **0.8.3** until REL-04. Preserve reports.md and .zcodeignore.
+> No push, publication, live deployment, resource/account changes, external
+> messages or new chats. Phase-owned verification is complete at commit time;
+> no test/build session remains running.
+
+> **Previous checkpoint — Codex RT-02 completion (2026-10-03). Author: Codex.**
 > Continued after `cd478f4`. Start with the
 > [review and exact evidence](./release-0.9.0.md#codex-schema-migration-2026-10-03),
 > [RT-02 criterion audit](./release-0.9.0-plan.md#rt-02),

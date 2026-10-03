@@ -70,13 +70,15 @@ export interface SerializedComponentState {
     /** Scope key for SSE/DO transport (computed once during SSR) */
     scopeKey?: string;
     /** Resolved compiler-generated server$ invocations. */
-    serverResources?: Record<string, unknown>;
+    serverResources?: Record<string, { argsKey: string; value: unknown }>;
     /** Runtime-specific, browser-safe metadata contributed by an adapter. */
     runtime?: Record<string, unknown>;
 }
 
 export interface CossackOptions {
   Channels?: string;
+  /** Optional explicit contract for named server$ values and lifecycle methods. */
+  Resources?: string;
 }
 
 export type CossackRuntimePlatform = 'web' | 'desktop';

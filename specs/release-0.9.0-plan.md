@@ -12,7 +12,16 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex schema migration (2026-10-03):**
+**Latest checkpoint — Codex resource lifecycle (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-resource-lifecycle-2026-10-03).
+RT-03 now meets its original criteria: **18/58 checked, 40 unchecked**. Typed
+named lifecycle calls, inferred nullable/optional values, dependency-aware
+hydration, pre-render refresh, stale-result/error disposal and production Node/
+native workerd HTTP/SSE acceptance pass. RT-05 remains open; this review fixes
+settled task signals losing ownership, but typed paths, gated commits and the
+navigation/service disposal matrix still need implementation. Preserve all IDs.
+
+**Previous checkpoint — Codex schema migration (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-schema-migration-2026-10-03).
 RT-02 now passes its original criterion audit below: **17/58 checked, 41
 unchecked**; all task IDs remain. Schema-only actions, parsed signatures/public
@@ -1000,6 +1009,63 @@ change, and unmount behave consistently. A slow old response cannot replace a
 new result. Resource names and result types reject invalid uses at compile time.
 SSR and hydration avoid duplicate initial loads. Dependencies: RT-01 and RT-05.
 
+**Codex criterion audit (2026-10-03), after `cab1560`: complete.**
+
+Chosen API: retain plain server$ field values and declare their public names in
+`Cossack<Env, { Resources: 'users' | 'selected' }>`. The name union checks lifecycle
+calls against actual public fields; status values infer those fields' types.
+No phantom brands or nullable wrappers are needed. Public declaration fixtures
+without Vite reject unknown names, ordinary fields outside the declaration,
+missing fields, arbitrary strings and incorrect value use. Inherited fields,
+arrays, scalars, null-only and optional values retain their types. Untyped/inline
+names retain runtime validation and unknown status values.
+
+The compiler emits a reserved per-class field-name registry and retains private
+loader extraction/stable IDs. Core binds only registered getters, including
+inherited fields. Status can start a named resource before render; refresh binds
+current dependencies with loading suppressed, then starts one new invocation.
+Unknown targets cannot execute unrelated getters. Invalidation drops the entry;
+a new read starts from initial data. Registry collisions fail the compiler.
+
+Hydration now carries `{ argsKey, value }` only for settled resources. It cannot
+mark an unresolved initial value as complete or attach old data to whichever
+arguments the browser happens to read first. Matching dependencies reuse SSR
+without an initial RPC; changed dependencies retain stale data while loading.
+Current failures retain the last good value and permit retry. Entry identity and
+disposal gate results/errors; obsolete SSR failures no longer fail a live pass,
+and destroyed components cannot start another resource read.
+
+Validation runs before custom toJSON, rejects class/Date instances, non-finite
+numbers and undefined dependencies, and tracks ancestors instead of treating
+repeated acyclic references as cycles. Use ISO dates and null dependencies.
+Generated resource methods validate results before RPC serialization as well as
+SSR settlement; direct forged refreshes cannot convert an invalid Date or custom
+toJSON value into acceptable client JSON. Generator loaders fail with an authored
+resource diagnostic; use Server actions for streams.
+Dependency identity is public hydration data; use browser-safe inputs. Use
+ClientState for browser-owned filters. Native SSE acceptance reproduced a filter
+reset with shared State because authoritative snapshots correctly restore server
+state. The fixture, generated recipe and bundled example now use ClientState;
+loader arguments still reach the server while filter fields stay out of RPC state.
+Do not weaken authoritative snapshot handling to preserve local selection.
+
+Exact acceptance: core **1107/64 files** (resource lifecycle **15**, task **9**,
+SSR **11**, published resource type fixture **1**); framework **1316/57**; scaffold
+**108/4**. Two generated Node production/browser cases pass, 12 others skipped.
+Browser evidence covers zero hydration RPC, delayed old response after newer empty
+result, failed load/retry, and live client navigation with pending read and one
+cleanup. Native workerd staging/socket cases **2/2** pass; staging now includes
+HTTP/SSE resource SSR keys, D1/request-user reads, private failures, selected
+arguments, recovery and single refresh. Native resource checks run first for
+useful failure feedback. Builds, root command and all 11 package typechecks pass.
+
+Criterion mapping: initial/success/failure/retry/dependency/invalidation paths are
+covered by controlled unit and browser tests; unmount by units and live navigation;
+slow old result by controlled refresh and delayed browser response; names/results
+by published declarations; SSR/no duplicate hydration by generated Node and native
+Worker cases. RT-01's full boundary/deadline/concurrency gates remain separate.
+RT-05 receives only the relevant cancellation fix; it does not close here.
+
 <a id="rt-04"></a>
 ### RT-04: State, store, and computed diagnostics
 
@@ -1047,6 +1113,24 @@ Done when: A controlled slow-first/fast-second test retains the second result.
 Cleanup runs once, canceled work cannot update destroyed components, and rejected
 cleanup does not skip other cleanup. Type tests reject unknown dependency fields.
 Test rapid dependency changes, navigation, and service disposal.
+
+**Codex ownership review (2026-10-03): still open.** Two new regressions first
+failed because runTasks deleted the controller in setup's finally block. Both
+sync and settled async subscriptions then retained signals that never aborted
+on rerun/disposal. Controllers now stay owned until rerun or destroy. Destroy
+aborts before application/descendant/service cleanup, and cleanup observes the
+aborted signal exactly once. TaskMethod now includes the AbortSignal argument
+and promise-returned cleanup. All nine task cancellation tests pass.
+
+Next implementation: choose a typed path/tuple declaration style, with published
+negative fixtures for missing/nested dependency fields. Add an execution-owned,
+synchronous commit mechanism that declines stale/destroyed writes; preserve
+signals for cancellable I/O. Add component/trigger/stage context to cleanup
+failures, and verify rejected cleanup drains siblings. Test controlled rapid
+changes and live navigation with component tasks that use layout-scoped services;
+do not add a separate service task engine without an architectural reason.
+A signal cannot undo arbitrary application writes or terminate ignored I/O.
+Retain the settled execution identity; do not restore the finally deletion.
 
 <a id="rt-06"></a>
 ### RT-06: Optimistic updates and rollback

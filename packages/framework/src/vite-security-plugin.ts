@@ -330,6 +330,7 @@ export function transformServerResources(code: string, id: string, sources?: Res
     const className = cls.id?.name ?? 'Anonymous';
     let inlineOrdinal = 0;
     const generated: string[] = [];
+    const fields: string[] = [];
     const allowedCalls = new Set<number>();
 
     const compileCall = (call: any, name: string): string => {
@@ -341,13 +342,14 @@ export function transformServerResources(code: string, id: string, sources?: Res
       if (loader.type !== 'ArrowFunctionExpression' && loader.type !== 'FunctionExpression') {
         throw new Error(`[Cossack server$] ${id}: ${name} loader must be an inline function.`);
       }
+      if (loader.generator) throw new Error(`[Cossack server$] ${id}: ${name} loader must return data; use @Server for generators.`);
       const options = call.arguments[1] ? sourceSlice(code, call.arguments[1]) : '{}';
       const method = `__cossack_server_resource_${stableResourceHash(`${id}:${className}:${name}`)}`;
       const args = (loader.params ?? []).map((p: any) => sourceSlice(code, p)).join(', ');
       const body = loader.body.type === 'BlockStatement'
         ? sourceSlice(code, loader.body)
         : `{ return ${sourceSlice(code, loader.body)}; }`;
-      generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) ${body}\n`);
+      generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) { return this.__serverResourceResult(${JSON.stringify(name)}, await (async () => ${body})()); }\n`);
       sources?.push({ className, method, resource: name, offset: loader.body.start });
       hasGeneratedResources = true;
       return `this.__serverResource(${JSON.stringify(name)}, this.${method}.bind(this), ${options})`;
@@ -362,6 +364,7 @@ export function transformServerResources(code: string, id: string, sources?: Res
         const hasInitial = optionsNode?.type === 'ObjectExpression' && (optionsNode.properties ?? []).some((p: any) =>
           !p.computed && (p.key?.name ?? p.key?.value) === 'initial');
         if (!hasInitial) throw new Error(`[Cossack server$] ${id}: class field "${name}" requires { initial }.`);
+        fields.push(name);
         const expression = compileCall(member.value, name);
         const type = member.typeAnnotation ? sourceSlice(code, member.typeAnnotation) : '';
         replacements.push({ start: member.start, end: member.end, replacement: `get ${sourceSlice(code, member.key)}()${type} { return ${expression}; }` });
@@ -396,6 +399,12 @@ export function transformServerResources(code: string, id: string, sources?: Res
     };
     scan(cls.body);
 
+    if (fields.length) {
+      if ((cls.body?.body ?? []).some((member: any) => memberKeyName(member.key) === '__cossackResourceFields')) {
+        throw new Error(`[Cossack server$] ${id}: __cossackResourceFields is reserved for the resource compiler.`);
+      }
+      generated.push(`\n    static readonly __cossackResourceFields = ${JSON.stringify(fields)};\n`);
+    }
     if (generated.length) replacements.push({ start: cls.body.end - 1, end: cls.body.end - 1, replacement: generated.join('') });
   }
   let result = code;

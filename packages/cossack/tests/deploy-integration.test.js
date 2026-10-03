@@ -258,7 +258,7 @@ it('builds a generated staging app and validates deployment without uploading', 
       async (c, next) => {
         if (c.req.path.startsWith('/guarded') && c.req.header('x-role') !== 'admin') return c.text('global denied', 401);
         const path = c.req.path;
-        const needsDatabase = path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/api/rpc-policy') || path.startsWith('/rpc-policy') || path.startsWith('/me') || path.startsWith('/shared');
+        const needsDatabase = path === '/crpc' || path === '/upload' || path.startsWith('/api/auth') || path.startsWith('/api/db') || path.startsWith('/api/rpc-check') || path.startsWith('/rpc-check') || path.startsWith('/api/rpc-policy') || path.startsWith('/rpc-policy') || path.startsWith('/me') || path.startsWith('/shared') || path.startsWith('/resource-check');
         if (needsDatabase) await database(c, next);
         else await next();
         c.header('x-worker-pipeline', 'ran');
@@ -321,6 +321,7 @@ it('builds a generated staging app and validates deployment without uploading', 
     const code=await fs.readFile(path.join(projectDir,'dist/client/assets',file),'utf8');
     expect(code).not.toContain('PRIVATE_RESOURCE_POLICY_SENTINEL');expect(code).not.toContain('policy_posts');
     expect(code).not.toContain('PRIVATE_SCHEMA_REFINEMENT_SENTINEL');
+    expect(code).not.toContain('PRIVATE_RESOURCE_FAILURE_SENTINEL');
     expect(code).not.toContain('PRIVATE_PUBLIC_POLICY_EXCEPTION');
   }
   expect(staticHome).not.toContain('ssg-user');
