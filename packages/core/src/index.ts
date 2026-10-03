@@ -20,6 +20,7 @@ export * from './shared/forms';
 export * from './shared/crypto';
 export * from './shared/flash';
 export * from './shared/server-resource';
+export * from './shared/task';
 export * from './shared/request-context';
 export { cookie } from './shared/cookie';
 export type { CookieOptions } from './shared/cookie';

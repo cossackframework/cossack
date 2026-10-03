@@ -32,14 +32,59 @@ all task signals before component cleanup hooks. Completing setup does not relea
 the execution's cancellation identity.
 
 ```ts
-@Task({ track: ['query'] })
-async load(signal: AbortSignal) {
+import { Task, type TaskContext } from '@cossackframework/core';
+
+@Task<SearchPage>({ track: ['query'] as const })
+async load(signal: AbortSignal, task: TaskContext<SearchPage>) {
     const response = await fetch(`/search?q=${encodeURIComponent(this.query)}`, { signal });
-    const results = await response.json();
-    if (signal.aborted) return;
-    this.results = results;
+    const results: SearchResult[] = await response.json();
+    task.commit({ results });
 }
 ```
+
+`task.commit` applies a plain object of reactive field replacements synchronously.
+It returns `false` when another execution owns the task or the component has
+been destroyed. This also protects results from APIs that ignore cancellation.
+Use a concrete component type, such as `TaskContext<SearchPage>`, to check field
+names and value types. Readonly fields, methods and unknown names fail type
+checking. Runtime commits accept only initialized reactive fields, including
+client-only state and stores. Ordinary fields and injected services are rejected.
+All patch keys are checked before any write; getters, callbacks and promises are
+rejected. Replace a nested store with its complete field shape.
+
+The context is immutable. It exposes `signal`, `isCurrent`, `task`, `component`
+and `trigger`. Ownership lasts after setup settles, so a subscription can retain
+its context and commit while it remains current. A commit cannot roll back writes,
+terminate ignored I/O or guard unrelated asynchronous side effects. Direct writes
+to `this` still require a signal/ownership check. Patches are synchronous; there
+is no transaction or rollback guarantee across reentrant setters.
+
+### Typed dependency paths
+
+Pass the host type to any task decorator to check dependency names:
+
+```ts
+@ClientTask<SearchPage>({ track: ['query', 'form.filters.status', 'rows.0.id'] as const })
+async update(signal: AbortSignal, task: TaskContext<SearchPage>) {
+    // Read the tracked inputs; commit the result when this execution is current.
+}
+```
+
+Paths include public fields, nullable nested objects, array indices and array
+length, up to six segments. Methods are excluded. A path type checks its declared
+shape; the field must still use a reactive state/store decorator to notify tasks.
+For private fields, declare the dependency shape explicitly, for example
+`@Task<{ query: string }>({ track: ['query'] })`. Decorators without a host type
+continue to accept untyped paths. The supplied shape is not inferred or checked
+against private runtime metadata.
+
+Inherited tasks run alongside child declarations. Decorating the same method in
+a child replaces its task kind and dependencies; environment filtering happens
+after that replacement. Setup, commit and cleanup failures identify the task,
+component, trigger and stage. Cleanup failures are logged while other cleanup
+continues. Disposal aborts signals before cleanup hooks and owned service disposal.
+An uncancellable setup may settle after disposal; its returned cleanup still runs,
+but it cannot rely on an already disposed layout service.
 
 ### Usage
 

@@ -12,7 +12,15 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex resource lifecycle (2026-10-03):**
+**Latest checkpoint — Codex typed task ownership (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-task-ownership-2026-10-03).
+RT-05 now meets its original criteria: **19/58 checked, 39 unchecked**. Typed
+paths and patch values pass published declaration fixtures. Execution-owned
+commits reject obsolete/disposed writes; inherited siblings, contextual failures,
+cleanup ordering and production browser navigation/service lifetime pass.
+Continue RT-04 and the remaining tasks; all original IDs remain in scope.
+
+**Previous checkpoint — Codex resource lifecycle (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-resource-lifecycle-2026-10-03).
 RT-03 now meets its original criteria: **18/58 checked, 40 unchecked**. Typed
 named lifecycle calls, inferred nullable/optional values, dependency-aware
@@ -1122,15 +1130,65 @@ aborts before application/descendant/service cleanup, and cleanup observes the
 aborted signal exactly once. TaskMethod now includes the AbortSignal argument
 and promise-returned cleanup. All nine task cancellation tests pass.
 
-Next implementation: choose a typed path/tuple declaration style, with published
-negative fixtures for missing/nested dependency fields. Add an execution-owned,
-synchronous commit mechanism that declines stale/destroyed writes; preserve
-signals for cancellable I/O. Add component/trigger/stage context to cleanup
-failures, and verify rejected cleanup drains siblings. Test controlled rapid
-changes and live navigation with component tasks that use layout-scoped services;
-do not add a separate service task engine without an architectural reason.
-A signal cannot undo arbitrary application writes or terminate ignored I/O.
-Retain the settled execution identity; do not restore the finally deletion.
+The above ownership review is historical. Its remaining work is completed by
+this checkpoint; retain the settled execution identity.
+
+**RT-05 completion audit — Author: Codex (2026-10-03), after `95b2dd4`.**
+
+- Chosen declaration: `@Task<Host>({ track: [...] as const })`, also ServerTask/
+  ClientTask. TaskDependencyPath checks public or explicitly supplied private
+  dependency shapes, nested nullable objects and array indices/length, up to six
+  segments. Methods are excluded. Without Host, paths remain untyped. Shape types
+  do not prove runtime reactive decorators. Published fixtures reject unknown
+  root/nested/array fields, methods and primitive method paths; inherited fields
+  and readonly tuples pass without Vite. Final review also corrected null-only/
+  undefined-only fields being misclassified as functions; both track and commit
+  accept those fields, with published fixture coverage.
+- Result gate: the second task argument is `TaskContext<Host>`. Its immutable
+  identity/signal/trigger and `commit({ field: value })` allow synchronous whole
+  reactive-field replacement only while this execution remains owned. Stale or
+  disposed executions return false. Runtime patches reject callbacks/promises,
+  classes, getters and nonreactive fields; all keys validate before assignments.
+  Published fixtures reject unknown/readonly/method fields and invalid values.
+  This is deliberately a patch API, not an arbitrary callback that could escape
+  ownership through asynchronous work. No transaction or rollback is promised.
+- Controlled slow-first/fast-second test resolves the new result first, then old
+  ignored-cancellation I/O. Only the current context commits; disposal refuses
+  another write and cannot restart tasks. Existing rapid-change cleanup queues
+  still skip canceled starts. Synchronous setup/cleanup stays synchronous when no
+  async cleanup exists; settled controllers stay owned.
+- Setup/commit/cleanup diagnostics name component, task, dependency/bootstrap/
+  render/disposal trigger and stage. Rejected cleanup drains both next setup and
+  sibling cleanup. An owned ServiceScope test proves abort/cleanup completion
+  before service disposal. Late uncancellable setup still releases its returned
+  cleanup once; it cannot rely on an already disposed service.
+- Review fixed inherited task loss: collect own metadata root-to-child; the child
+  declaration replaces the same method's kind/dependencies before environment
+  filtering. Parent siblings still run once. An undeclared override continues to
+  inherit its registration.
+- A generated Node production/browser app uses typed ClientTask/ServerTask and
+  layout service injection. It proves rapid changes, stale refusal, sibling SPA
+  navigation with retained service identity, layout exit with signals aborted
+  before service disposal, and exactly one cleanup for settled/late setups.
+  Generated tsc passes and private ServerTask sentinel is absent from client JS.
+
+Verification: core **1115/65 files**, framework **1316/57**, all 11 package type
+configs, root tsc, core/framework builds, generated browser **1 passed /14 skipped
+of 15**, native staging/socket **2/2**. Task cancellation file has **16** cases.
+Native cases are regressions for existing HTTP/SSE/socket/schema/resource behavior;
+this phase does not add a standalone service-task engine or native Deno/Desktop
+acceptance. Full release gates remain separate.
+
+**Next for GLM — RT-04:** inspect existing State/ClientState/Store/ClientStore/
+Computed behavior and the RT-01 wire normalizer before changing serialization.
+Write a choice table and executable examples with whole-field vs nested writes,
+arrays and computed invalidation. Build diagnostics that name component/field/
+value path for cycles and unsupported values without changing production state
+semantics. Verify client-only fields remain absent from SSR/RPC/shared snapshots,
+including native SSE authoritative updates. Do not apply the stricter resource
+JSON policy to all state as a shortcut. Keep browser filters ClientState and
+preserve authoritative server snapshots. Complete the original criterion audit
+before checking RT-04. Then proceed RT-06 and all other remaining task IDs.
 
 <a id="rt-06"></a>
 ### RT-06: Optimistic updates and rollback

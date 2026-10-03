@@ -705,7 +705,7 @@ export function Optimistic(actionName: string): MethodDecorator {
 /**
  * Options for `@Task`, `@ServerTask`, and `@ClientTask`.
  */
-export interface TaskOptions {
+export interface TaskOptions<Host = any> {
     /**
      * Restrict this task to run only when one of the listed state/store
      * properties changes. Each entry is a property name (`'user'`) or, for a
@@ -720,7 +720,7 @@ export interface TaskOptions {
      * the legacy behavior. A tracked task also runs once during bootstrap
      * (the mount run), regardless of `track`.
      */
-    track?: (string | symbol)[];
+    track?: readonly import('./task').TaskDependencyPath<Host>[];
 }
 
 /**
@@ -732,7 +732,7 @@ export interface TaskOptions {
  * (via `destroy()` / `onCleanup`). Use it to release timers, subscriptions,
  * observers, etc.
  */
-export type TaskMethod = (signal: AbortSignal) =>
+export type TaskMethod<Values extends object = Record<string, unknown>> = (signal: AbortSignal, task: import('./task').TaskContext<Values>) =>
     void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>;
 
 /**
@@ -742,7 +742,7 @@ export type TaskMethod = (signal: AbortSignal) =>
  */
 export interface TaskRegistration {
     propertyKey: string | symbol;
-    track?: (string | symbol)[];
+    track?: readonly (string | symbol)[];
 }
 
 /** Shared registration body for the three task decorators. */
@@ -783,7 +783,7 @@ function registerTask(
  *       return () => clearInterval(id);   // auto cleanup
  *   }
  */
-export function Task(options: TaskOptions = {}): MethodDecorator {
+export function Task<Host = any>(options: TaskOptions<Host> = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     return registerTask('cossack:tasks', target, propertyKey, descriptor, options);
   };
@@ -805,7 +805,7 @@ export function Task(options: TaskOptions = {}): MethodDecorator {
  *       // server-only logic here
  *   }
  */
-export function ServerTask(options: TaskOptions = {}): MethodDecorator {
+export function ServerTask<Host = any>(options: TaskOptions<Host> = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     return registerTask('cossack:server-tasks', target, propertyKey, descriptor, options);
   };
@@ -826,7 +826,7 @@ export function ServerTask(options: TaskOptions = {}): MethodDecorator {
  *       // client-only logic: DOM measurements, event setup, etc.
  *   }
  */
-export function ClientTask(options: TaskOptions = {}): MethodDecorator {
+export function ClientTask<Host = any>(options: TaskOptions<Host> = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     return registerTask('cossack:client-tasks', target, propertyKey, descriptor, options);
   };

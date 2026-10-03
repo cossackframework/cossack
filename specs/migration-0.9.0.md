@@ -391,3 +391,25 @@ Task cancellation signals now remain owned after setup settles. Rerun aborts
 before registered cleanup; destroy aborts all task signals before any application
 cleanup hook. Returned subscriptions can keep checking the signal. Application
 writes remain cooperative; typed paths and framework-gated commits remain RT-05.
+
+## Typed task dependencies and owned commits
+
+Task methods now receive `(signal, task)`; existing methods can omit either
+argument. Opt into checked dependency paths with `@Task<ComponentType>`,
+`@ServerTask<ComponentType>` or `@ClientTask<ComponentType>`. Readonly tuples,
+nested nullable fields and array paths are supported. Private dependency names
+need an explicit shape; no host type retains untyped path behavior.
+
+Use `TaskContext<ComponentType>` for the second argument and apply results with
+`task.commit({ result: value })`. The framework returns false for stale/disposed
+executions, including results of operations that ignore AbortSignal. Runtime
+patches must contain initialized reactive fields and plain data properties;
+functions/promises, ordinary fields and injected services fail with TaskCommitError.
+Use whole-field replacements, not callback commits. Direct application writes
+still need cooperative ownership checks. This API cannot roll back writes or
+cancel external effects. Settled setup remains owned until rerun/disposal.
+
+Inheritance now retains parent task siblings when a subclass declares tasks.
+A child decorator on the same method replaces task kind/dependencies before
+server/client filtering. If code depended on parent tasks disappearing, declare
+the replacement explicitly. Cleanup errors now name component, trigger and stage.

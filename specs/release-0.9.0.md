@@ -25,7 +25,7 @@ below link directly to those explanations.
 - [x] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies. Codex completion (2026-10-03): schema-only migration, parsed/native/browser signatures, public function-field inference, private compiler imports and callback failures pass the transport matrix and generated Node/native Worker acceptance. Coerced types, nested errors, File/resource guards and explicit cancellation perform no invalid/denied mutation. See the [criterion audit](./release-0.9.0-plan.md#rt-02) and [schema migration review](#codex-schema-migration-2026-10-03). Native calls explicitly parse/authorize; RT-01, RT-07 native API declarations/error mapping and final release/runtime gates remain separate.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation. Codex completion (2026-10-03): declared field names and inferred nullable/optional values, current-dependency refresh, dependency-aware SSR hydration, stale result/error disposal, and unit/published-type/production-browser/native Worker HTTP/SSE acceptance pass. See the [criterion audit](./release-0.9.0-plan.md#rt-03) and [review](#codex-resource-lifecycle-2026-10-03). Browser-owned filters use ClientState; broad RT-01/RT-05 and final release gates remain separate.
 - [ ] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex Group 3 review: development warnings now keep stable object identity and observe deeper nested writes. Remaining: the full state/client-state/store/computed documentation and serialization diagnostic matrix, including cycles and client-only misuse.
-- [ ] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex Group 3 review: AbortSignal cancellation, ordered cleanup across rapid changes, skipped canceled starts, and late cleanup disposal are covered. Cancellation is cooperative: tasks must check the signal before writes. Remaining: typed dependency paths, framework-gated result application, and navigation/service-disposal acceptance tests.
+- [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [ ] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects.
 - [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
@@ -3928,3 +3928,54 @@ cleanup failures and navigation/scoped-service disposal matrix. Then follow the
 remaining original tasks and release gates. Never count cooperative signals as
 proof that arbitrary writes are gated or ignored I/O stops. Do not reintroduce
 controller deletion after setup or weaken authoritative realtime snapshots.
+
+<a id="codex-task-ownership-2026-10-03"></a>
+## Codex typed task ownership review — 2026-10-03
+
+Author: **Codex**. Continued after `95b2dd4`. Only **RT-05** newly completes:
+**19 checked / 39 unchecked**, preserving all 58 original task IDs. Read the
+[criterion audit and next plan](./release-0.9.0-plan.md#rt-05),
+[task guide](../docs/tasks.md#typed-dependency-paths) and
+[migration](./migration-0.9.0.md#typed-task-dependencies-and-owned-commits).
+
+Task decorators accept a host/dependency-shape generic and readonly typed paths.
+Methods receive an immutable TaskContext as their second argument. Typed field
+patches commit only while the execution remains current; obsolete/disposed
+contexts return false, including results of ignored-cancellation I/O. Runtime
+patch validation rejects nonreactive fields, promises/callbacks/classes and
+getters before changing any fields. Direct writes remain cooperative; this API
+cannot stop ignored I/O, undo mutations or transact across reentrant setters.
+
+Review found subclass declarations could hide parent task siblings. Root-to-child
+own registration now retains siblings and resolves child kind/track replacement
+before server/client filtering. Signals remain owned after setup, abort before
+cleanup and cannot revive after destruction. Setup, commit and cleanup failures
+name component/task/trigger/stage. Rejected cleanup drains next setup/siblings;
+owned scope disposal awaits cleanup. Late uncancellable setup cleans up once,
+even after disposal, but cannot depend on an already disposed service.
+
+Final evidence:
+
+- Core **1115 tests /65 files**, including **16** task cancellation/ownership cases
+  and a published-export typed dependency/patch fixture; framework **1316 /57**.
+- Core/framework builds, root `pnpm tsc --noEmit` and all **11** package typecheck
+  configs pass. A generated task app also passes its own TypeScript check.
+- Generated Node production/browser **1 passed, 14 skipped /15** proves newer
+  result retention, stale/disposed refusal, live sibling navigation and retained
+  layout service identity, abort-before-service-disposal and exactly-once cleanup.
+  Typed ServerTask private sentinel is absent from client chunks.
+- Native staging/socket **2/2** pass with rebuilt packages, preserving existing
+  HTTP/SSE/resource/schema/D1/counter/stream/socket behavior. No standalone
+  service-task engine or native Deno/Electron acceptance is claimed.
+- Initial declaration build caught TypeScript retaining a phase narrowing across
+  an asynchronous closure. Ownership checks now read live context state rather
+  than assuming the phase remains unchanged. Final type review fixed null-only/
+  undefined-only fields being excluded as functions; published fixtures cover
+  both tracking and commits. Builds/type tests then passed.
+- Owned whitespace and JS syntax checks pass; reports.md has a user-owned trailing
+  blank line and remains unstaged, along with .zcodeignore. Versions remain 0.8.3.
+
+**Next for GLM:** RT-04's state/store/computed guidance and contextual serialization
+matrix, using the concrete continuation plan above. RT-01 and every other original
+unchecked task remain in scope. Full CLI/monorepo, tarball, native Deno/Electron
+and release/version/publication gates are still open.

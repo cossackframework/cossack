@@ -961,3 +961,94 @@ it('builds the resource recipe and executes SSR, filtered reads, empty results, 
   `], { cwd: root, timeout: 20000, maxBuffer: 1024 * 1024 });
   expect(result.stdout).toContain('RESOURCE_RECIPE_OK');
 }, 60000);
+
+it('gates typed task commits across rapid changes, sibling navigation and layout service disposal', async () => {
+  const root = await project('node', ['scoped-service']);
+  const serviceFile = path.join(root, 'src/services/scoped-counter.ts');
+  await fs.writeFile(serviceFile, (await fs.readFile(serviceFile, 'utf8')).replace('  @Server()', `
+  @Shared()
+  onDispose() {
+    if (typeof window !== 'undefined') {
+      const observed = window as any;
+      observed.__taskServiceDisposals = (observed.__taskServiceDisposals ?? 0) + 1;
+      observed.__tasksAtServiceDisposal = observed.__taskRuns.map((run: any) => run.task.signal.aborted);
+    }
+  }
+  @Server()`));
+  await fs.mkdir(path.join(root, 'src/pages/scoped-service/tasks'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src/pages/scoped-service/tasks/index.ts'), `
+    import { Cossack, Page, ClientTask, ServerTask, ClientState, State, Inject, Client, type TaskContext } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { ScopedCounterService } from '../../../services/scoped-counter';
+    @Page({ transport: 'http' })
+    export default class Tasks extends Cossack {
+      @Inject(ScopedCounterService) private counter!: ScopedCounterService;
+      @ClientState() query = 1;
+      @ClientState() result = 'initial';
+      @State() serverResult = '';
+      @ServerTask<Tasks>({ track: ['serverResult'] })
+      setup() { this.serverResult = 'typed-task-private-server-sentinel'; }
+      @ClientTask<Tasks>({ track: ['query'] as const })
+      async load(_signal: AbortSignal, task: TaskContext<Tasks>) {
+        const observed = window as any;
+        observed.__taskRuns ??= [];
+        const run: any = { task, page: this, service: this.counter, query: this.query, cleaned: 0 };
+        observed.__taskRuns.push(run);
+        const value = await new Promise<string>(resolve => { run.resolve = resolve; });
+        run.applied = task.commit({ result: value });
+        return () => { run.cleaned++; run.abortedAtCleanup = task.signal.aborted; };
+      }
+      @Client() next() { this.query++; }
+      render() { return html\
+        \`<h2>Task ownership</h2><span data-testid="task-result">\${this.result}</span>
+          <button @click=\${this.next}>Next query</button>\`; }
+    }
+  `);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated task types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    expect(await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8')).not.toContain('typed-task-private-server-sentinel');
+  }
+  const server = await productionServer(root);
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(server.origin + '/scoped-service/tasks');
+    await browserExpect(page.getByRole('heading', { name: 'Task ownership' })).toBeVisible();
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns?.length)).toBe(1);
+    await page.getByRole('button', { name: 'Next query' }).click();
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns.length)).toBe(2);
+    await page.evaluate(() => window.__taskRuns[1].resolve('new'));
+    await browserExpect(page.getByTestId('task-result')).toHaveText('new');
+    await page.evaluate(() => window.__taskRuns[0].resolve('old'));
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns[0].applied)).toBe(false);
+    await browserExpect(page.getByTestId('task-result')).toHaveText('new');
+    await page.getByRole('button', { name: 'Next query' }).click();
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns.length)).toBe(3);
+    await page.getByRole('link', { name: 'Sibling page', exact: true }).click();
+    await browserExpect(page.getByRole('heading', { name: 'Sibling page', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.__taskRuns.every(run => run.task.signal.aborted))).toBe(true);
+    expect(await page.evaluate(() => window.__taskServiceDisposals ?? 0)).toBe(0);
+    await page.evaluate(() => window.__taskRuns[2].resolve('after-sibling-navigation'));
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns[2].cleaned)).toBe(1);
+    expect(await page.evaluate(() => window.__taskRuns.map(run => ({ applied: run.applied, cleaned: run.cleaned, aborted: run.abortedAtCleanup })))).toEqual([
+      { applied: false, cleaned: 1, aborted: true }, { applied: true, cleaned: 1, aborted: true }, { applied: false, cleaned: 1, aborted: true },
+    ]);
+    await page.evaluate(async () => { await window.__taskRuns[0].page.navigate('/scoped-service/tasks'); });
+    await browserExpect(page.getByRole('heading', { name: 'Task ownership' })).toBeVisible();
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns.length)).toBe(4);
+    expect(await page.evaluate(() => window.__taskRuns[3].service === window.__taskRuns[0].service)).toBe(true);
+    await page.getByRole('link', { name: 'Leave the layout', exact: true }).click();
+    await browserExpect.poll(() => page.evaluate(() => window.__taskServiceDisposals)).toBe(1);
+    expect(await page.evaluate(() => window.__tasksAtServiceDisposal)).toEqual([true, true, true, true]);
+    await page.evaluate(() => window.__taskRuns[3].resolve('after-layout-disposal'));
+    await browserExpect.poll(() => page.evaluate(() => window.__taskRuns[3].cleaned)).toBe(1);
+    expect(await page.evaluate(() => ({ applied: window.__taskRuns[3].applied, value: window.__taskRuns[3].page.result, aborted: window.__taskRuns[3].abortedAtCleanup }))).toEqual({ applied: false, value: 'initial', aborted: true });
+    expect(errors).toEqual([]);
+  } finally { await browser?.close(); await server.close(); }
+}, 120000);

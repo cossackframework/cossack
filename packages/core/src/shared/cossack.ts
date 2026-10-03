@@ -83,6 +83,7 @@ import type { RedirectStatusCode } from 'hono/utils/http-status';
 import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus } from './server-resource';
 import type { ServiceClass } from './container';
 import type { ServiceScope } from './service-scope';
+import { TaskCommitError, type TaskContext } from './task';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
@@ -1316,27 +1317,30 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      *           progress). Callers use the return value to decide whether to
      *           preserve accumulated paths for the in-progress run.
      */
-    private async runTasks(changedPaths?: Set<string>): Promise<boolean> {
+    private async runTasks(changedPaths?: Set<string>, initialTrigger = 'bootstrap'): Promise<boolean> {
+        if ([LifecyclePhase.Destroyed].includes(this._phase)) return true;
         if (this.isRunningTasks) return false;
         this.isRunningTasks = true;
         try {
-            // Regular @Task — always runs (both server and client).
-            const tasks: TaskRegistration[] =
-                Reflect.getMetadata('cossack:tasks', this.constructor) || [];
-            // @ServerTask — only runs on the server (body stripped on client).
-            const serverTasks: TaskRegistration[] = this.isServer
-                ? (Reflect.getMetadata('cossack:server-tasks', this.constructor) || [])
-                : [];
-            // @ClientTask — only runs on the client (skipped on server).
-            const clientTasks: TaskRegistration[] = !this.isServer
-                ? (Reflect.getMetadata('cossack:client-tasks', this.constructor) || [])
-                : [];
-            const allTasks = [...tasks, ...serverTasks, ...clientTasks];
+            // Gather own declarations across inheritance. A child declaration
+            // replaces the same method's kind/track contract, without dropping siblings.
+            const constructors: Function[] = [];
+            for (let ctor = this.constructor; ctor; ctor = Object.getPrototypeOf(ctor)) constructors.unshift(ctor);
+            const registrations = new Map<string | symbol, TaskRegistration & { kind: string }>();
+            for (const ctor of constructors) {
+                for (const kind of ['tasks', 'server-tasks', 'client-tasks']) {
+                    for (const entry of (Reflect.getOwnMetadata(`cossack:${kind}`, ctor) || []) as TaskRegistration[]) {
+                        registrations.set(entry.propertyKey, { ...entry, kind });
+                    }
+                }
+            }
+            const allTasks = [...registrations.values()].filter(entry => entry.kind === 'tasks' ||
+                (this.isServer ? entry.kind === 'server-tasks' : entry.kind === 'client-tasks'));
             const isFilteredRun = changedPaths !== undefined;
             // Each task runs under its own cancellation identity. Dependency
-            // changes abort the previous signal; task code must check it before
-            // writing state. Slow tasks do not block siblings, and registered
-            // cleanup stays ordered per task.
+            // changes abort the previous signal; owned commits gate reactive
+            // writes even when an external operation ignores cancellation. Slow tasks
+            // do not block siblings, and cleanup stays ordered per task.
             const inFlight: Promise<void>[] = [];
             for (const { propertyKey: task, track } of allTasks) {
                 if (isFilteredRun && track && track.length > 0) {
@@ -1347,24 +1351,26 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 if (this.hasMethod(task)) {
                     // Cancel the previous execution before re-invoking, then
                     // run its cleanup (React style, still ordered per task).
+                    const trigger = isFilteredRun
+                        ? `dependency change (${[...changedPaths!].map(String).join(', ')})`
+                        : initialTrigger;
                     this._taskExecutions.get(task)?.abort();
-                    const previousCleanup = this._runTaskCleanup(task);
+                    const previousCleanup = this._runTaskCleanup(task, undefined, trigger);
                     const previousCleanupPromise = previousCleanup ?? undefined;
                     const controller = new AbortController();
                     this._taskExecutions.set(task, controller);
-                    const trigger = isFilteredRun
-                        ? `dependency change (${[...changedPaths!].map(String).join(', ')})`
-                        : 'bootstrap';
+                    const context = this._createTaskContext(task, controller, trigger);
                     const start = async () => {
                         try {
                             if (previousCleanupPromise) await previousCleanupPromise;
-                            if (controller.signal.aborted || this._phase === LifecyclePhase.Destroyed) return;
+                            if (!context.isCurrent) return;
                             const taskMethod = this.getMethod(task);
-                            const result = (taskMethod as any)(controller.signal);
+                            const result = (taskMethod as any)(controller.signal, context);
                             const resolved = result && typeof result.then === 'function' ? await result : result;
                             if (controller.signal.aborted) {
                                 // An async setup can acquire resources before noticing cancellation.
-                                if (typeof resolved === 'function') await this._runTaskCleanup(task, resolved);
+                                if (typeof resolved === 'function') await this._runTaskCleanup(task, resolved,
+                                    this._phase === LifecyclePhase.Destroyed ? 'disposal after cancelled setup' : `${trigger} (cancelled setup)`);
                                 return;
                             }
                             if (typeof resolved === 'function') {
@@ -1373,7 +1379,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                         } catch (e: any) {
                             if (controller.signal.aborted) return; // cancelled work stops quietly
                             console.error(
-                                `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger}:`, e);
+                                `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (${e instanceof TaskCommitError ? 'commit' : 'setup'}):`, e);
                         }
                         // Keep this identity until rerun/disposal: completed setup
                         // can leave subscriptions that still use its signal.
@@ -1393,11 +1399,43 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return true;
     }
 
+    private _createTaskContext(task: string | symbol, controller: AbortController, trigger: string): TaskContext {
+        const current = () => !controller.signal.aborted && this._phase !== LifecyclePhase.Destroyed &&
+            this._taskExecutions.get(task) === controller;
+        return Object.freeze({
+            signal: controller.signal,
+            task,
+            component: this.constructor.name,
+            trigger,
+            get isCurrent() { return current(); },
+            commit: (values: Record<string, unknown>) => {
+                if (!current()) return false;
+                if (!values || typeof values !== 'object' ||
+                    (Object.getPrototypeOf(values) !== Object.prototype && Object.getPrototypeOf(values) !== null)) {
+                    throw new TaskCommitError('pass a plain object of reactive field values, not a callback or promise.');
+                }
+                const fields = Reflect.ownKeys(values).map(key => {
+                    const descriptor = Object.getOwnPropertyDescriptor(values, key)!;
+                    if (typeof key !== 'string' || !this._stateContainer.isInitialized(key)) {
+                        throw new TaskCommitError(`"${String(key)}" is not an initialized reactive field on ${this.constructor.name}.`);
+                    }
+                    if (!('value' in descriptor)) throw new TaskCommitError(`"${key}" must be a data property.`);
+                    return [key, descriptor.value] as const;
+                });
+                for (const [key, value] of fields) {
+                    if (!current()) return false;
+                    if (!Reflect.set(this, key, value)) throw new TaskCommitError(`"${key}" is not writable.`);
+                }
+                return current();
+            },
+        });
+    }
+
     /**
      * Invoke (and drop) the stored cleanup function for a task, if any.
      * Swallows errors so one failing cleanup can't abort sibling tasks.
      */
-    private _runTaskCleanup(task: string | symbol, lateCleanup?: () => unknown): Promise<void> | undefined {
+    private _runTaskCleanup(task: string | symbol, lateCleanup?: () => unknown, trigger = 'disposal'): Promise<void> | undefined {
         const previous = this._taskCleanupPending.get(task);
         const cleanup = lateCleanup ?? this._taskCleanups.get(task);
         if (!cleanup) return previous;
@@ -1407,10 +1445,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 const result = cleanup();
                 if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
                     return Promise.resolve(result).then(() => {}, e =>
-                        console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e));
+                        console.error(`[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (cleanup):`, e));
                 }
             } catch (e) {
-                console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e);
+                console.error(`[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (cleanup):`, e);
             }
         };
         const pending = previous ? previous.then(invoke) : invoke();
@@ -2149,7 +2187,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public _render(): string {
         if (!this.isServer && !this.skipRenderTasks) {
-            this.runTasks();
+            this.runTasks(undefined, 'render');
         }
 
         pushCurrentInstance(this);

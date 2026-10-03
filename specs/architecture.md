@@ -96,8 +96,14 @@ runs before custom serialization hooks and rejects undefined dependencies. Gener
 settlement. Cycle checks track ancestors so shared acyclic references remain valid. Unmount discards
 resource completions and forbids new reads; it does not terminate ignored I/O.
 Task identities remain owned after setup settles, and abort before rerun cleanup
-or component/descendant cleanup. Application task writes still require cooperative
-cancellation until RT-05 adds its gated commit contract.
+or component/descendant cleanup. Each execution receives an immutable TaskContext;
+its synchronous commit validates a plain reactive-field patch before writes and
+checks execution ownership before each assignment. Superseded/destroyed commits
+return false. Direct application writes still require cooperative cancellation;
+this is not an I/O termination or transactional rollback mechanism. Task metadata
+is gathered root-to-child, with child declarations replacing the same method's
+kind/dependencies before environment filtering. Typed decorators check declared
+public/dependency-shape paths; reactive runtime metadata remains authoritative.
 
 ## Resource authorization boundary
 

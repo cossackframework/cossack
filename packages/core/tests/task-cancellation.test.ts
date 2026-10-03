@@ -1,7 +1,12 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';
-import { State, Task } from '../src/shared/decorators';
+import { ClientTask, ServerTask, State, Task } from '../src/shared/decorators';
+
+import { TaskCommitError, type TaskContext } from '../src/shared/task';
+import { createInstance } from '../src/shared/container';
+import { Inject, Service } from '../src/shared/decorators';
+import { ServiceScope } from '../src/shared/service-scope';
 
 /**
  * RT-05 acceptance: a slow first execution cannot overwrite the results of a
@@ -196,4 +201,182 @@ describe('task cancellation and staleness (RT-05)', () => {
         expect(applied).toEqual(['fresh']);
         await page.destroyAsync();
     });
+    it('gates uncancellable slow results and rejects commits after disposal', async () => {
+        const contexts: TaskContext<Search>[] = [];
+        const releases: Array<(value: string) => void> = [];
+        const applied: boolean[] = [];
+        class Search extends Cossack {
+            @State() query = 'first';
+            @State() result = '';
+            @Task<Search>({ track: ['query'] as const })
+            async search(_signal: AbortSignal, task: TaskContext<Search>) {
+                contexts.push(task);
+                const value = await new Promise<string>(resolve => releases.push(resolve));
+                applied.push(task.commit({ result: value }));
+            }
+        }
+        const page = new Search();
+        await page.bootstrap({ skipInit: true });
+        expect(Object.isFrozen(contexts[0])).toBe(true);
+        expect(contexts[0].trigger).toBe('bootstrap');
+        page.query = 'second';
+        await vi.waitFor(() => expect(releases).toHaveLength(2));
+        expect(contexts[0].isCurrent).toBe(false);
+        expect(contexts[1].trigger).toContain('query');
+        releases[1]('new');
+        await vi.waitFor(() => expect(page.result).toBe('new'));
+        releases[0]('old');
+        await vi.waitFor(() => expect(applied).toEqual([true, false]));
+        expect(page.result).toBe('new');
+        await page.destroyAsync();
+        expect(contexts[1].commit({ result: 'disposed' })).toBe(false);
+        expect(contexts[1].isCurrent).toBe(false);
+        expect(page.result).toBe('new');
+        await (page as any).runTasks();
+        expect(releases).toHaveLength(2);
+    });
+
+    it('validates a whole commit before changing fields and never invokes value getters', async () => {
+        let task!: TaskContext<Fields>;
+        const getter = vi.fn(() => 'read');
+        class Fields extends Cossack {
+            @State() result = 'initial';
+            ordinary = 'ordinary';
+            @Task() capture(_signal: AbortSignal, context: TaskContext<Fields>) { task = context; }
+        }
+        const page = new Fields();
+        await page.bootstrap({ skipInit: true });
+        expect(() => task.commit({ result: 'changed', ordinary: 'wrong' })).toThrow(TaskCommitError);
+        expect(page.result).toBe('initial');
+        expect(page.ordinary).toBe('ordinary');
+        expect(() => task.commit(Object.defineProperty({}, 'result', { get: getter }))).toThrow('data property');
+        expect(getter).not.toHaveBeenCalled();
+        expect(() => task.commit((() => {}) as any)).toThrow('plain object');
+        expect(() => task.commit(Promise.resolve({ result: 'wrong' }) as any)).toThrow('plain object');
+        expect(task.commit(Object.assign(Object.create(null), { result: 'valid' }))).toBe(true);
+        expect(page.result).toBe('valid');
+        await page.destroyAsync();
+    });
+
+    it('drains rejected cleanup and siblings with component, trigger and stage diagnostics', async () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const goodCleanup = vi.fn();
+        const runs: number[] = [];
+        class CleanupFailure extends Cossack {
+            @State() value = 0;
+            @Task<CleanupFailure>({ track: ['value'] })
+            work() {
+                runs.push(this.value);
+                return async () => { throw new Error('cleanup failed'); };
+            }
+            @Task() sibling() { return goodCleanup; }
+        }
+        try {
+            const page = new CleanupFailure();
+            await page.bootstrap({ skipInit: true });
+            page.value = 1;
+            await vi.waitFor(() => expect(runs).toEqual([0, 1]));
+            expect(errors.mock.calls.some(([message]) => String(message).includes("'work' on CleanupFailure failed during dependency change (value) (cleanup)"))).toBe(true);
+            await page.destroyAsync();
+            expect(goodCleanup).toHaveBeenCalledTimes(2);
+            expect(errors.mock.calls.some(([message]) => String(message).includes('disposal (cleanup)'))).toBe(true);
+        } finally { errors.mockRestore(); }
+    });
+
+    it('retains inherited sibling tasks and lets child decorators replace execution kind', async () => {
+        const runs: string[] = [];
+        const cleanup = vi.fn();
+        class Parent extends Cossack {
+            @Task() inherited() { runs.push('inherited'); return cleanup; }
+            @Task() changed() { runs.push('parent'); }
+            @ClientTask() skipped() { runs.push('parent-client'); }
+        }
+        class Child extends Parent {
+            @ClientTask<Child>() override changed() { runs.push('child-client'); }
+            @ServerTask<Child>() override skipped() { runs.push('child-server'); }
+            @Task<Child>() own() { runs.push('own'); }
+        }
+        const page = new Child();
+        await page.bootstrap({ skipInit: true });
+        expect(runs).toEqual(['inherited', 'child-client', 'own']);
+        await page.destroyAsync();
+        expect(cleanup).toHaveBeenCalledOnce();
+    });
+
+    it('aborts component work and awaits cleanup before disposing its owned service scope', async () => {
+        const events: string[] = [];
+        let task!: TaskContext<Owner>;
+        let release!: () => void;
+        const cleanup = new Promise<void>(resolve => { release = resolve; });
+        @Service()
+        class Scoped {
+            label = 'owned';
+            onDispose() {
+                expect(task.isCurrent).toBe(false);
+                expect(task.signal.aborted).toBe(true);
+                events.push('service');
+            }
+        }
+        class Owner extends Cossack {
+            @Inject(Scoped) service!: Scoped;
+            @State() result = '';
+            @Task<Owner>() work(_signal: AbortSignal, context: TaskContext<Owner>) {
+                task = context;
+                expect(this.service.label).toBe('owned');
+                return async () => {
+                    expect(context.commit({ result: 'after disposal' })).toBe(false);
+                    events.push('cleanup-start');
+                    await cleanup;
+                    events.push('cleanup-end');
+                };
+            }
+        }
+        const scope = new ServiceScope(undefined, [Scoped]);
+        const page = createInstance(Owner, { serviceScope: scope, ownsServiceScope: true });
+        await page.bootstrap({ skipInit: true });
+        const destroyed = page.destroyAsync();
+        expect(events).toEqual(['cleanup-start']);
+        release();
+        await destroyed;
+        expect(events).toEqual(['cleanup-start', 'cleanup-end', 'service']);
+        expect(page.result).toBe('');
+    });
+
+    it('reports invalid task patches as commit-stage failures', async () => {
+        const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+        class BadPatch extends Cossack {
+            ordinary = '';
+            @Task() load(_signal: AbortSignal, task: TaskContext<BadPatch>) {
+                task.commit({ ordinary: 'invalid' });
+            }
+        }
+        try {
+            const page = new BadPatch();
+            await page.bootstrap({ skipInit: true });
+            expect(errors).toHaveBeenCalledWith(
+                "[Cossack] Task 'load' on BadPatch failed during bootstrap (commit):", expect.any(TaskCommitError));
+            expect(page.ordinary).toBe('');
+            await page.destroyAsync();
+        } finally { errors.mockRestore(); }
+    });
+
+    it('runs synchronous task setup and cleanup immediately without an async cleanup', async () => {
+        const events: string[] = [];
+        class SyncOrdering extends Cossack {
+            @State() value = 0;
+            @Task<SyncOrdering>({ track: ['value'] }) work(signal: AbortSignal) {
+                events.push('setup');
+                return () => { expect(signal.aborted).toBe(true); events.push('cleanup'); };
+            }
+        }
+        const page = new SyncOrdering();
+        await page.bootstrap({ skipInit: true });
+        events.length = 0;
+        const run = (page as any).runTasks(new Set(['value']));
+        expect(events).toEqual(['cleanup', 'setup']);
+        await run;
+        await page.destroyAsync();
+        expect(events).toEqual(['cleanup', 'setup', 'cleanup']);
+    });
+
 });

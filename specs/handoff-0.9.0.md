@@ -2,7 +2,62 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-03 completion (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-05 completion (2026-10-03). Author: Codex.**
+> Continued after `95b2dd4`. Read the
+> [review/evidence](./release-0.9.0.md#codex-task-ownership-2026-10-03),
+> [RT-05 criterion audit and next plan](./release-0.9.0-plan.md#rt-05),
+> [task API](../docs/tasks.md#typed-dependency-paths) and
+> [migration](./migration-0.9.0.md#typed-task-dependencies-and-owned-commits).
+>
+> **19/58 checked, 39 unchecked; only RT-05 newly closes.** All original task
+> IDs remain in scope. RT-03 is already complete; broader RT-01 and release gates
+> stay open. This supersedes the earlier RT-05 remaining-work notes.
+>
+> Use `@Task<Host>({ track: [...] as const })` (also ServerTask/ClientTask) and
+> `(signal, task: TaskContext<Host>)`. Paths check public/dependency-shape names,
+> nullable nesting and arrays, up to six segments. Private fields need an explicit
+> shape; untyped decorators keep untyped paths. Types do not prove reactive metadata.
+> Use concrete Host rather than polymorphic this for typed field patches.
+>
+> `task.commit({ result: value })` synchronously replaces initialized reactive
+> fields only while this execution owns the task. Stale/disposed returns false.
+> All keys validate before writes; callbacks/promises/classes/getters/ordinary
+> fields/injected services reject with TaskCommitError. Retain whole nested-store
+> shape. Frozen contexts expose signal/isCurrent/component/task/trigger. This is
+> not an arbitrary commit callback, transaction, rollback, I/O termination or
+> general side-effect guard. Direct writes still need cooperative checks.
+>
+> Review fixed child task declarations hiding inherited siblings. Gather own
+> metadata root-to-child and replace matching method kind/dependencies before
+> environment filtering. Do not revert this or settled-controller ownership.
+> Sync setup/cleanup remains immediate absent async cleanup. Diagnostic stages
+> distinguish setup/commit/cleanup with component and trigger. Failed cleanup
+> does not block siblings/next setup; owned scopes wait for cleanup. Late ignored
+> I/O still returns one cleanup after disposal, but services may already be disposed.
+>
+> Verification: core **1115/65**, framework **1316/57**, task file **16 cases**,
+> published paths/patch types, core/framework builds, root tsc and all **11**
+> package configs pass. Generated production Node/browser **1 passed, 14 skipped
+> /15** proves controlled old-after-new results, rapid changes, sibling navigation,
+> retained service identity, layout exit and abort before service disposal. Settled
+> and late setups each clean up once. Generated tsc/private ServerTask stripping
+> pass. Rebuilt native staging/socket **2/2** retain existing transport/resource/
+> schema/D1/counter cases. No full monorepo/tarball/native Deno/Electron gate claimed.
+>
+> **Next for GLM: RT-04**, then RT-06 and all remaining tasks. Start with existing
+> state/store/computed docs and RT-01 serialization semantics; add executable
+> mechanism-choice examples and component/field/path diagnostics for unsupported
+> values/cycles. Verify nested object/array writes, computed dependencies and
+> client-only exclusion across SSR/RPC/shared/native SSE state. Preserve production
+> semantics and authoritative server snapshots; do not reuse stricter resource
+> JSON validation for all state. The detailed next plan is in the RT-05 audit.
+>
+> Versions remain **0.8.3** until REL-04. Preserve reports.md/.zcodeignore. No
+> push/publication/live deployment/cloud resource changes/external messages/new
+> chats. All phase-owned checks finished; no test/build process remains running
+> at commit time. Native Worker tests use local disposable fixtures only.
+
+> **Previous checkpoint — Codex RT-03 completion (2026-10-03). Author: Codex.**
 > Continued after `cab1560`. Read the
 > [review/evidence](./release-0.9.0.md#codex-resource-lifecycle-2026-10-03),
 > [RT-03 criterion audit](./release-0.9.0-plan.md#rt-03),
