@@ -83,6 +83,12 @@ transition fallbacks and final outcomes without exposing URLs or application dat
 See the [event contract](../docs/prevent-navigation.md#development-diagnostics) and
 [verification](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03).
 
+The URL-state fixture now reads from a counting HTTP backend on both production
+Node and native workerd. Fresh SSR reads page/layout once each. Hydration, cached
+history, guards and rollback add no reads. Pending SSR, rapid changes and stale
+response release have exact count assertions. See the
+[backend-read verification](./release-0.9.0.md#codex-url-backend-reads-2026-10-03).
+
 Continue in this order:
 
 1. Finish the native ownership matrix for provider/runtime/transport. Compare
@@ -92,8 +98,9 @@ Continue in this order:
 2. Interrupt restoration and confirmation between two history entries with the
    same URL. Hold an old lifecycle callback, publish a newer intent, then release
    it. Assert entry identity, DOM, drafts and service context.
-3. Count actual backend resource reads across retained-layout changes, rollback
-   and interruption. Verify returned values and read counts, not only rendered text.
+3. Extend the existing HTTP backend read assertions to the new ownership and
+   same-URL interruption scenarios. The current URL-state matrix already verifies
+   fresh SSR, hydration, retained layouts, rollback, cached history and a held response.
 4. Extend diagnostic acceptance alongside the remaining native ownership/history
    scenarios. The development event stream and controlled ordering/privacy tests
    are implemented. Do not replace backend read-count assertions with cache events.
@@ -134,8 +141,10 @@ Carry these unresolved limits into implementation and review:
 
 ## Latest verification
 
-The [diagnostic checkpoint](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03)
-records the latest runs. Older unaffected-suite evidence remains linked below.
+The backend-read checkpoint repeats all 4 production navigation cases and root/all
+11 package type checks after test-only changes. The
+[diagnostic checkpoint](./release-0.9.0.md#codex-navigation-diagnostics-2026-10-03)
+records the latest library builds and unit suites.
 
 | Check | Result |
 | --- | --- |

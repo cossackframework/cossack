@@ -86,6 +86,45 @@ below link directly to those explanations.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-url-backend-reads-2026-10-03"></a>
+## Codex URL-state backend reads (2026-10-03)
+
+Author: **Codex**. Continued after `4f6d633`. The generated URL-state fixture now
+runs a real HTTP backend with independent request records. Page and layout
+server resources fetch their values from that backend. The test server starts
+before building and closes after browser/runtime cleanup, including failure paths.
+
+Both production Node and native workerd pass exact read assertions:
+
+- Initial SSR and each fresh query document read page/layout once each. Browser
+  hydration and retained-layout dependency hydration add no reads or RPCs.
+- Cached back/forward, guarded navigation and confirmation use existing data.
+- Failed root rendering counts the destination's SSR reads. Rollback adds none.
+  Post-render layout teardown/recovery also adds no backend reads.
+- Replacement, copied URLs, invalid defaults and coalesced rapid updates return
+  expected values with one read per resource for each fresh document.
+- A held SSR response has already made its two reads. Superseding it through
+  back/replace/forward and a newer query has exact per-destination read counts.
+  Releasing the obsolete response adds no reads and cannot overwrite live data.
+- Leaving and returning creates a fresh document. Subsequent scope cleanup adds
+  no backend reads.
+
+Verification:
+
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'parses and navigates typed URL state|isolates navigation ownership'`:
+  4 passed, 26 skipped (42 seconds), including both production runtimes.
+- `pnpm tsc --noEmit`: passed.
+- `pnpm typecheck`: all 11 package checks passed.
+- `git diff --check -- . ':!reports.md'`: passed.
+
+These are test-only changes. No library rebuild or full unit/CLI rerun is claimed.
+The backend is HTTP, not a database adapter. Delaying an already-produced SSR
+response does not prove cancellation of backend work.
+
+**No task closes: 22/58 checked, 36 unchecked.** Keep native provider/runtime/
+transport ownership, interrupted same-URL history and full acceptance audits open.
+Extend these read assertions with those scenarios. Versions remain 0.8.3.
+
 <a id="codex-navigation-diagnostics-2026-10-03"></a>
 ## Codex navigation diagnostics (2026-10-03)
 

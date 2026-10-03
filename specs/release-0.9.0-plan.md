@@ -1907,6 +1907,23 @@ checks and CLI inspection now share that classification.
 <a id="rt-08"></a>
 ### RT-08: Typed URL state
 
+Codex backend-read acceptance (2026-10-03): the production URL-state fixture now
+uses an actual counting HTTP backend for page and retained-layout resources.
+Node and native workerd each read page/layout once per fresh SSR document.
+Matching hydration, cached back/forward, guards, failed network interception,
+rollback and late response release add no backend reads. Exact assertions also
+cover query replacement, copied URLs, invalid query defaults, coalesced rapid
+updates, held SSR, uncached traversal and leaving/returning to the route.
+
+The backend count is independent of browser RPC logs and rendered output. The
+held request finishes its backend work before its SSR response is delayed, so
+that work is counted even when navigation is superseded. This proves neither
+backend cancellation nor database-specific caching. Extend the same counter
+assertions to the remaining provider/runtime/transport ownership and same-URL
+history interruption cases. See the
+[verification](./release-0.9.0.md#codex-url-backend-reads-2026-10-03).
+
+
 Purpose: Search, sorting, filters, and pagination need shareable URLs. Repeated
 ad hoc parsing causes disagreement between SSR, browser navigation, and back/forward.
 

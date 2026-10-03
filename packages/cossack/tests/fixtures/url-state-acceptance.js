@@ -1,8 +1,27 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createServer } from 'node:http';
 import { expect } from 'vitest';
 import { expect as browserExpect } from '@playwright/test';
-export async function writeUrlStateAcceptance(root) {
+// A real HTTP boundary counts resource reads independently of browser RPC logs.
+export async function createUrlStateBackend() {
+  const reads = [];
+  const server = createServer((request, response) => {
+    const url = new URL(request.url, 'http://localhost');
+    const kind = url.pathname.slice(1);
+    if (!['page','layout'].includes(kind)) { response.writeHead(404); response.end(); return; }
+    const search = url.searchParams.get('search') ?? '';
+    const page = Number(url.searchParams.get('page'));
+    reads.push({kind,search,page});
+    response.setHeader('Content-Type','text/plain; charset=utf-8');
+    response.end(kind==='layout' ? search+':'+page : search+':'+page+':'+url.searchParams.get('sort')+':'+url.searchParams.get('tags'));
+  });
+  await new Promise((resolve,reject) => { server.once('error',reject); server.listen(0,'127.0.0.1',resolve); });
+  return {origin:'http://127.0.0.1:'+server.address().port,reads,
+    close:()=>new Promise((resolve,reject)=>{server.close(error=>error?reject(error):resolve());server.closeAllConnections();})};
+}
+
+export async function writeUrlStateAcceptance(root, backendOrigin) {
   const directory = path.join(root, 'src/pages/list'); await fs.mkdir(directory, { recursive: true });
   await fs.writeFile(path.join(root, 'src/NestedDraft.ts'), `
     import {Cossack,ClientStore,ClientState,Client} from '@cossackframework/core';
@@ -86,7 +105,10 @@ export async function writeUrlStateAcceptance(root) {
     @Page({transport:'http',services:[DraftService]}) export default class Layout extends Cossack {
       @Inject(DraftService) service!:DraftService;
       @ClientStore() draft={text:''};
-      summary=server$(async(search:string,page:number)=>search+':'+page,{initial:'',deps:()=>[this.urlState(filters).search,this.urlState(filters).page] as const});
+      summary=server$(async(search:string,page:number)=>{
+        const response=await fetch(${JSON.stringify(backendOrigin)}+'/layout?'+new URLSearchParams({search,page:String(page)}));
+        if(!response.ok)throw new Error('layout backend failed');return response.text();
+      },{initial:'',deps:()=>[this.urlState(filters).search,this.urlState(filters).page] as const});
       render(){return html\`<section><p id="layout-summary">\${this.summary}</p>
         <input id="layout-draft" .value=\${this.draft.text} @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>
         <input id="service-draft" .value=\${this.service.text} @input=\${(event:Event)=>{this.service.text=(event.target as HTMLInputElement).value;}}>
@@ -119,7 +141,10 @@ export async function writeUrlStateAcceptance(root) {
       @ClientState() file:File|undefined=undefined;
       @ClientStore() draft={text:''};
       get filters(){return this.urlState(filters);}
-      items=server$(async(search:string,page:number,sort:'name'|'price',tags:readonly string[])=>search+':'+page+':'+sort+':'+tags.join(','),
+      items=server$(async(search:string,page:number,sort:'name'|'price',tags:readonly string[])=>{
+        const response=await fetch(${JSON.stringify(backendOrigin)}+'/page?'+new URLSearchParams({search,page:String(page),sort,tags:tags.join(',')}));
+        if(!response.ok)throw new Error('page backend failed');return response.text();
+      },
         {initial:'',deps:()=>[this.filters.search,this.filters.page,this.filters.sort,this.filters.tags] as const});
       @Client() change(){return this.updateUrlState(filters,{search:'雪 & books',page:2,sort:'price',tags:['a','b']});}
       @Client() replace(){return this.updateUrlState(filters,{page:this.filters.page+1},{history:'replace'});}
@@ -148,7 +173,14 @@ export async function writeUrlStateAcceptance(root) {
     }
   `);
 }
-export async function checkUrlStateBrowser(browser, origin) {
+export async function checkUrlStateBrowser(browser, origin, backend) {
+  let observed = backend.reads.length;
+  const expectReads = (...queries) => {
+    const actual = backend.reads.slice(observed); observed = backend.reads.length;
+    const expected = queries.flatMap(([search,page])=>['layout','page'].map(kind=>({kind,search,page})));
+    const order = values => values.map(value=>JSON.stringify(value)).sort();
+    expect(order(actual)).toEqual(order(expected));
+  };
   const page = await browser.newPage(); const rpc = []; let release;
   page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') rpc.push(request); });
   const settled = async () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -162,7 +194,7 @@ export async function checkUrlStateBrowser(browser, origin) {
   try {
     const initial = await page.goto(origin + '/list?search=old&utm=a%20b#rows');
     expect(initial.status()).toBe(200); expect(await initial.text()).toContain('old:1:name:');
-    await browserExpect(page.locator('#query-items')).toHaveText('old:1:name:'); await settled(); expect(rpc).toHaveLength(0);
+    await browserExpect(page.locator('#query-items')).toHaveText('old:1:name:'); await settled(); expect(rpc).toHaveLength(0); expectReads(['old',1]);
     await page.locator('#page-draft').fill('unsaved page'); await page.locator('#layout-draft').fill('unsaved layout'); await page.locator('#service-draft').fill('unsaved service');
     await page.locator('#draft-file').setInputFiles({name:'draft.txt',mimeType:'text/plain',buffer:Buffer.from('draft')});
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
@@ -196,11 +228,12 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#layout-summary')).toHaveText('雪 & books:2');
     await checkNestedDrafts();
     const changed = new URL(page.url()); expect(changed.searchParams.get('utm')).toBe('a b'); expect(changed.hash).toBe('#rows');
-    await settled(); expect(rpc).toHaveLength(0); // Matching SSR data satisfies the same query-derived dependencies.
+    await settled(); expect(rpc).toHaveLength(0); expectReads(['雪 & books',2]); // Matching SSR data satisfies the same query-derived dependencies.
     await page.goBack(); await browserExpect(page.locator('#query-items')).toHaveText('old:1:name:');
     await page.goForward(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:2:price:a,b');
     await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await settled(); expectReads();
     const length = await page.evaluate(() => history.length);
     const beforeRenderFailure = page.url();
     await page.evaluate(() => document.addEventListener('cossack:navigation-error', event => {
@@ -215,6 +248,7 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
+    await settled(); expectReads(['render-failing',2]);
     await page.evaluate(() => { window.__scopeEvents=[]; });
     await page.evaluate(() => { window.__nestedMounts=[]; });
     await page.locator('#fail-retire').click();
@@ -233,11 +267,12 @@ export async function checkUrlStateBrowser(browser, origin) {
       {slot:'page-child',text:'page-child leaf draft',file:'nested.txt'},
       {slot:'layout-child',text:'layout-child leaf draft',file:''},
     ]));
+    await settled(); expectReads();
     // The actual App owns an unrelated promise that never settles. Navigation
     // must render through its own completion path and release the stale cache.
     await page.evaluate(() => { window.__queryTestApp.__updatePromise=new Promise(()=>{}); });
     await page.locator('#replace-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:3:price:a,b');
-    expect(await page.evaluate(() => history.length)).toBe(length); await settled(); expect(rpc).toHaveLength(0);
+    expect(await page.evaluate(() => history.length)).toBe(length); await settled(); expect(rpc).toHaveLength(0); expectReads(['雪 & books',3]);
     await page.locator('#show-cache-a').click();
     await browserExpect(page.locator('#cache-a-outer')).toHaveValue('cached A outer');
     await browserExpect(page.locator('#cache-a-leaf')).toHaveValue('cached A leaf');
@@ -254,12 +289,14 @@ export async function checkUrlStateBrowser(browser, origin) {
       await browserExpect(copied.locator('#page-draft')).toHaveValue(''); await browserExpect(copied.locator('#file-name')).toHaveText('');
       await copied.goto(origin + '/list?page=0'); await browserExpect(copied.locator('#query-items')).toHaveText(':1:name:');
     } finally { await copied.close(); }
+    expectReads(['雪 & books',3],['',1]);
     await page.locator('#rapid-query').click(); await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
     await browserExpect(page.locator('#layout-summary')).toHaveText('rapid:4');
     await browserExpect(page.locator('#page-draft')).toHaveValue('unsaved page');
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
     await settled(); expect(rpc).toHaveLength(0);
+    expectReads(['rapid',4]);
     const beforePrevented = page.url();
     await page.locator('#toggle-guard').click(); await page.locator('#page-only').click();
     await browserExpect(page.locator('#query-outcome')).toHaveText('canceled'); expect(page.url()).toBe(beforePrevented);
@@ -295,7 +332,7 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect.poll(() => page.url()).toBe(beforePrevented);
     await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt');
-    await page.unroute(failedBack);
+    await page.unroute(failedBack); await settled(); expectReads();
     // Hold an actual SSR response, edit the still-active drafts, then commit a
     // newer query before releasing the obsolete response.
     let capturedResolve;
@@ -309,26 +346,31 @@ export async function checkUrlStateBrowser(browser, origin) {
     await page.locator('#page-only').click();
     await browserExpect.poll(() => Boolean(release)).toBe(true); await captured;
     expect(page.url()).toBe(beforePrevented); await browserExpect(page.locator('#query-loading')).toHaveCount(0);
+    expectReads(['rapid',5]);
     // Back supersedes the pending page-5 intent. Replace the restored entry,
     // then traverse forward while the obsolete response remains held.
     await page.evaluate(() => history.back());
     await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:3:price:a,b');
+    await settled(); expectReads(['雪 & books',3]);
     const pendingHistoryLength = await page.evaluate(() => history.length);
     await page.locator('#page-draft').fill('edited while pending');
     await page.locator('#replace-query').click();
     await browserExpect(page.locator('#query-items')).toHaveText('雪 & books:4:price:a,b');
-    expect(await page.evaluate(() => history.length)).toBe(pendingHistoryLength);
+    expect(await page.evaluate(() => history.length)).toBe(pendingHistoryLength); await settled(); expectReads(['雪 & books',4]);
     await page.evaluate(() => history.forward());
     await browserExpect(page.locator('#query-items')).toHaveText('rapid:4:price:a,b');
     await browserExpect(page.locator('#page-draft')).toHaveValue('edited while pending');
+    await settled(); expectReads(['rapid',4]);
     await page.locator('#search-only').click(); await browserExpect(page.locator('#query-items')).toHaveText('latest:4:price:a,b');
     await browserExpect(page.locator('#layout-summary')).toHaveText('latest:4');
+    await settled(); expectReads(['latest',4]);
     release(); await page.unrouteAll({behavior:'wait'}); await settled();
     await browserExpect(page.locator('#query-items')).toHaveText('latest:4:price:a,b');
     await browserExpect(page.locator('#page-draft')).toHaveValue('edited while pending');
     await browserExpect(page.locator('#layout-draft')).toHaveValue('unsaved layout');
     await browserExpect(page.locator('#service-draft')).toHaveValue('unsaved service');
     await browserExpect(page.locator('#file-name')).toHaveText('draft.txt'); expect(rpc).toHaveLength(0);
+    expectReads();
     await page.locator('#leave-list').click(); await page.locator('#return-list').click();
     await browserExpect(page.locator('#query-items')).toHaveText(':1:name:');
     await browserExpect(page.locator('#page-draft')).toHaveValue('');
@@ -341,6 +383,7 @@ export async function checkUrlStateBrowser(browser, origin) {
     await browserExpect(page.locator('#cache-a-outer')).toHaveValue('');
     await browserExpect(page.locator('#cache-a-leaf')).toHaveValue('');
     await browserExpect(page.locator('#cache-a-filename')).toHaveText('');
+    await settled(); expectReads(['',1]);
     await page.evaluate(async () => {
       window.__scopeEvents=[];
       window.__allowRetire=true;
@@ -353,5 +396,6 @@ export async function checkUrlStateBrowser(browser, origin) {
     expect(await page.evaluate(() => window.__scopeEvents)).toEqual([]);
     await page.evaluate(() => { window.__finishScopeCleanup(); delete window.__finishScopeCleanup; });
     await browserExpect.poll(() => page.evaluate(() => window.__scopeEvents)).toEqual(['cleanup-open','disposed']);
+    await settled(); expectReads();
   } finally { release?.(); await page.unrouteAll({behavior:'wait'}); await page.close(); }
 }

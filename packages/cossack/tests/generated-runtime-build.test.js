@@ -15,7 +15,7 @@ import { writeWorkerOptimisticStreams, checkWorkerOptimisticStreams } from './fi
 import { writeApiContractAcceptance, checkApiContractAcceptance, checkApiContractAssets } from './fixtures/api-contract-acceptance.js';
 import { createTestHarness } from 'wrangler';
 import { writeRouteBoundaryAcceptance, checkRouteBoundaryAcceptance, checkRouteBoundaryBrowser } from './fixtures/route-boundary-acceptance.js';
-import { writeUrlStateAcceptance, checkUrlStateBrowser } from './fixtures/url-state-acceptance.js';
+import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } from './fixtures/url-state-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
@@ -107,21 +107,24 @@ it.each(['node', 'cloudflare'])('isolates navigation ownership in a generated pr
   } finally { await browser.close(); }
 }, 120000);
 it.each(['node', 'cloudflare'])('parses and navigates typed URL state in a generated production %s app', async adapter => {
-  const root = await project(adapter); await writeUrlStateAcceptance(root);
-  await vite(root, []);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const browser = await chromium.launch({ headless: true });
+  const backend = await createUrlStateBackend();
   try {
-    if (adapter === 'node') {
-      const runtime = await productionServer(root);
-      try { await checkUrlStateBrowser(browser, runtime.origin); }
-      finally { await runtime.close(); }
-    } else {
-      const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-      try { const { url } = await harness.listen(); await checkUrlStateBrowser(browser, new URL(url).origin); }
-      finally { await harness.close(); }
-    }
-  } finally { await browser.close(); }
+    const root = await project(adapter); await writeUrlStateAcceptance(root, backend.origin);
+    await vite(root, []);
+    if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+    const browser = await chromium.launch({ headless: true });
+    try {
+      if (adapter === 'node') {
+        const runtime = await productionServer(root);
+        try { await checkUrlStateBrowser(browser, runtime.origin, backend); }
+        finally { await runtime.close(); }
+      } else {
+        const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+        try { const { url } = await harness.listen(); await checkUrlStateBrowser(browser, new URL(url).origin, backend); }
+        finally { await harness.close(); }
+      }
+    } finally { await browser.close(); }
+  } finally { await backend.close(); }
 }, 120000);
 it.each(['node', 'cloudflare'])('selects and hydrates source boundaries in a generated production %s app', async adapter => {
   const root = await project(adapter); await writeRouteBoundaryAcceptance(root);
