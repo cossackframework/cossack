@@ -575,6 +575,7 @@ function packageJson(recipe, projectName) {
         'cf-typegen': 'wrangler types --env-interface CloudflareBindings',
         deploy: 'cossack deploy',
       };
+  scripts.typecheck = 'cossack routes --generate && tsc --noEmit';
   if (recipe.resolvedFeatures.includes('desktop')) {
     scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
     scripts['desktop:dev'] = 'cossack-desktop';
@@ -920,7 +921,8 @@ app.use('*', serveStatic({
     ? 'public, max-age=31536000, immutable'
     : 'public, max-age=0, must-revalidate',
 }));
-app.route('/', frameworkApp);
+// Delegation preserves the framework's custom 404 handler and request scope.
+app.all('*', c => frameworkApp.fetch(c.req.raw, c.env));
 
 export const env: Record<string, unknown> = {
   ...process.env,
@@ -1707,7 +1709,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n'),
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n'),
     capability: 'base',
   });
 

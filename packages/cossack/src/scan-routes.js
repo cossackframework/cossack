@@ -6,37 +6,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { extractMethodClassificationsFromAst } from './page-options-ast.js';
 import { extractPageOptionsFromAst, inspectDefaultClassExport, isHttpHandlerModule } from './page-options-ast.js';
-import { computeRouteIds, resolvePageRouteFiles } from '@cossackframework/framework/route-ids';
+import { filePathToHttpRoute, classifyRoute, resolveLayoutPaths, resolveNearestSpecialPage, routeParameters } from '@cossackframework/framework/route-ids';
+import { discoverRoutes, scanPagesDir } from '@cossackframework/framework/route-codegen';
+export { filePathToHttpRoute, classifyRoute, scanPagesDir };
 
-/**
- * Pure route derivation replicated from the framework router
- * (packages/framework/src/router.ts, route-registration loop):
- *
- *   route = filePath
- *     .replace('/src/pages', '')
- *     .replace(/\.(ts|js|md|mdx)$/, '')
- *     .replace(/\/index$/, '')
- *     .replace(/\/\([^)]+\)/g, '')     // strip route groups (auth)
- *     .replace(/\[([^\]]+)\]/g, ':$1') // [name] -> :name
- *     || '/'
- *
- * This is the single place the CLI derives URLs so `cossack routes` always
- * matches what the running app actually registers.
- */
-export function filePathToHttpRoute(filePath) {
-  let route = filePath
-    .replace('/src/pages', '')
-    .replace(/\.(ts|js|md|mdx)$/, '')
-    .replace(/\/index$/, '')
-    .replace(/\/\([^)]+\)/g, '')
-    // Mirror the framework exactly: catch-alls become Hono multi-segment
-    // params before the generic dynamic rule can mangle them.
-    .replace(/\[\.\.\.([^\]]+)\]/g, ':$1{.+}')
-    .replace(/\[([^\]]+)\]/g, ':$1');
-  if (!route) route = '/';
-  if (route === '/index') route = '/';
-  return route;
-}
 
 /** Directory scope of a path, e.g. /src/pages/(auth)/login/index.ts -> /(auth)/login */
 function dirScope(filePath) {
@@ -46,112 +19,26 @@ function dirScope(filePath) {
   return '/src/pages/' + parts.join('/');
 }
 
-export function classifyRoute(routePath) {
-  if (routePath.endsWith('/404') || routePath === '/404') return '404';
-  if (routePath.endsWith('/error') || routePath === '/error') return 'error';
-  if (routePath.includes('/api/') || routePath === '/api' || routePath.startsWith('/api')) return 'api';
-  return 'page';
-}
-
-/**
- * Walk `src/pages` reproducing the Vite glob key set:
- *   pages   = *.ts/*.mdx excluding layout.ts/loading.ts
- *   layouts = layout.ts
- *
- * Returns sorted { pageKeys, layoutKeys } in `/src/pages/<rel>` form
- * (forward slashes), exactly like the framework's scanPagesDir.
- */
-export function scanPagesDir(pagesDir) {
-  const pageKeys = [];
-  const layoutKeys = [];
-  if (!fs.existsSync(pagesDir)) return { pageKeys, layoutKeys };
-
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (entry.isFile()) {
-        const rel = path.relative(pagesDir, full).split(path.sep).join('/');
-        const key = `/src/pages/${rel}`;
-        if (entry.name === 'layout.ts') {
-          layoutKeys.push(key);
-        } else if (entry.name === 'loading.ts') {
-          // excluded, matches glob negation
-        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx')) {
-          pageKeys.push(key);
-        }
-      }
-    }
-  };
-  walk(pagesDir);
-  pageKeys.sort();
-  layoutKeys.sort();
-  return { pageKeys, layoutKeys };
-}
-
 /**
  * Build the route model used by `cossack routes`.
  * pages:  [{ filePath, route, kind }]
  * layouts: [{ filePath, scope }]
  */
-export function buildRouteModel(projectRoot) {
-  const pagesDir = path.join(projectRoot, 'src', 'pages');
-  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir);
-
-  const pages = resolvePageRouteFiles(pageKeys).map((filePath) => {
-    const route = filePathToHttpRoute(filePath);
-    return { filePath, route, kind: classifyRoute(route) };
-  });
-
-  const layouts = layoutKeys.map((filePath) => ({
-    filePath,
-    scope: dirScope(filePath),
+export function buildRouteModel(projectRoot, options = {}) {
+  const manifest = discoverRoutes(projectRoot, options.includeMarkdown ?? false);
+  const pages = manifest.routes.map(descriptor => ({
+    filePath: descriptor.filePath, route: descriptor.pattern, kind: descriptor.kind,
+    name: descriptor.name, routeId: descriptor.routeId, params: descriptor.parameters,
+    layoutPaths: descriptor.layoutPaths, errorBoundary: descriptor.errorBoundary,
+    notFoundBoundary: descriptor.notFoundBoundary, addressable: descriptor.addressable,
   }));
-
-  return { pages, layouts };
+  const layouts = manifest.layoutKeys.map(filePath => ({ filePath, scope: dirScope(filePath), routeId: manifest.filePathToId[filePath] }));
+  return { pages, layouts, manifest };
 }
 
-/**
- * Return the layout stack (filePaths) that wrap a given page, root-first.
- * Replicates router.getLayoutStack: walk parent dirs collecting layout.ts.
- */
-export function layoutStackForPage(pageFilePath, layoutKeys) {
-  const rel = pageFilePath.replace('/src/pages/', '');
-  const parts = rel.split('/');
-  const stack = [];
-  let current = '/src/pages';
-  // root layout
-  if (layoutKeys.includes(`${current}/layout.ts`)) {
-    stack.push(`${current}/layout.ts`);
-  }
-  for (let i = 0; i < parts.length - 1; i++) {
-    current += `/${parts[i]}`;
-    const lp = `${current}/layout.ts`;
-    if (layoutKeys.includes(lp)) stack.push(lp);
-  }
-  return stack;
-}
+export const layoutStackForPage = resolveLayoutPaths;
+export const extractRouteParams = routeParameters;
 
-
-/**
- * Extract dynamic route parameters from a route path: `:name` -> `name`,
- * framework catch-alls (`:name{.+}` from `[...name]`) marked `catchAll: true`.
- * Static segments yield nothing.
- */
-export function extractRouteParams(route) {
-  const params = [];
-  for (const segment of route.split('/')) {
-    const catchAll = segment.match(/^:(\w[\w-]*)\{\.\+\}$/);
-    if (catchAll) {
-      params.push({ name: catchAll[1], catchAll: true });
-      continue;
-    }
-    const dynamic = segment.match(/^:(\w[\w-]*)$/);
-    if (dynamic) params.push({ name: dynamic[1], catchAll: false });
-  }
-  return params;
-}
 
 /**
  * Source-level @Page option extraction WITHOUT executing the module: reads
@@ -204,14 +91,7 @@ function countTopLevelEntries(text) {
  * preferring deeper boundaries.
  */
 export function nearestSpecialPage(pageFilePath, pages, type) {
-  const rel = pageFilePath.replace('/src/pages/', '');
-  const parts = rel.split('/');
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const dir = parts.slice(0, i).join('/');
-    const searchPath = dir ? `/src/pages/${dir}/${type}/index.ts` : `/src/pages/${type}/index.ts`;
-    if (pages.some((page) => page.filePath === searchPath)) return searchPath;
-  }
-  return null;
+  return resolveNearestSpecialPage(pageFilePath, pages.map(page => page.filePath), type);
 }
 
 /**
@@ -221,10 +101,11 @@ export function nearestSpecialPage(pageFilePath, pages, type) {
  * @Page options. Inspection reads facts; it never executes components.
  */
 export async function buildEffectiveRouteModel(projectRoot, options = {}) {
-  const model = buildRouteModel(projectRoot);
+  const scaffold = await inspectScaffoldMetadata(projectRoot);
+  const includeMarkdown = options.includeMarkdown ?? scaffold.recipe?.features?.some(feature => feature.name === 'markdown') ?? false;
+  const model = buildRouteModel(projectRoot, { includeMarkdown });
   const layoutKeys = model.layouts.map((layout) => layout.filePath);
-  const { routePathToIdMap } = computeRouteIds(model.pages.map(page => page.filePath), layoutKeys);
-  const idFor = filePath => routePathToIdMap.get(filePath) ?? null;
+  const idFor = filePath => model.manifest.filePathToId[filePath] ?? null;
   const pages = [];
   for (const page of model.pages) {
     let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
@@ -236,7 +117,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
       const source = fs.readFileSync(absolute, 'utf8');
-      if (page.filePath.includes('/src/pages/api/') && await isHttpHandlerModule(source)) routeStyle = 'http-handlers';
+      if (page.kind === 'api' && await isHttpHandlerModule(source)) routeStyle = 'http-handlers';
       moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
@@ -265,10 +146,10 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       ...page,
       routeStyle,
       routeId: idFor(page.filePath),
-      params: extractRouteParams(page.route),
+      params: page.params,
       layouts: routeStyle === 'http-handlers' ? [] : layoutStackForPage(page.filePath, layoutKeys),
-      errorBoundary: nearestSpecialPage(page.filePath, model.pages, 'error'),
-      notFoundBoundary: nearestSpecialPage(page.filePath, model.pages, '404'),
+      errorBoundary: page.errorBoundary,
+      notFoundBoundary: page.notFoundBoundary,
       transport: options.transport,
       stateful: options.stateful ?? null,
       ssg: options.ssg,
@@ -339,7 +220,6 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     page.layoutAndPageMiddlewareCount = page.middlewareStack.every(entry => entry.count !== null)
       ? page.middlewareStack.reduce((total, entry) => total + entry.count, 0) : null;
   }
-  const scaffold = await inspectScaffoldMetadata(projectRoot);
-  return { pages, layouts, scaffold, runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment,
+  return { pages, layouts, scaffold, manifest: model.manifest, discovery: { includeMarkdown }, runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment,
     scaffold.recipe?.capabilityRequirements?.web ?? []) };
 }

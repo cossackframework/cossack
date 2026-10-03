@@ -2,7 +2,61 @@
 
 Prepared on 2026-10-02 for GLM to continue implementation and Codex to review later.
 
-> **Latest checkpoint — Codex RT-06 completion (2026-10-03). Author: Codex.**
+> **Latest checkpoint — Codex RT-07 route generation (2026-10-03). Author: Codex.**
+> Continued after `d3b8c5b`. Read the
+> [review/evidence](./release-0.9.0.md#codex-typed-routes-2026-10-03),
+> [detailed remaining RT-07 plan](./release-0.9.0-plan.md#rt-07), and
+> [typed URL guide](../docs/routing.md#typed-urls).
+>
+> **21/58 checked, 37 unchecked. RT-06 is complete. RT-07 stays open.**
+> Vite, emitted manifests and CLI now share discovery, URL translation, source
+> ancestry and IDs. Declarations/tests/fixtures are excluded consistently.
+> Markdown follows explicit selection. Client generated code contains public
+> patterns plus core's portable helper and no application module imports.
+>
+> Import `routes` from `virtual:cossack-routes`. It resolves to the generated
+> `.cossack/routes.ts`, which new recipes map in TypeScript and ignore in Git.
+> CLI generation supports dry-run/machine output and does not execute Vite.
+> Watchers update additions/deletions. Generation uses Vite root, not shell cwd.
+>
+> Public types reject missing/wrong/extra parameters, empty catch-alls, hidden
+> union extras, union route names and erased pattern contracts. Runtime checks
+> reject malformed values, sparse arrays and accessors without invoking getters.
+> Catch-all strings are encoded separately. Core remains application-agnostic.
+>
+> Production Node/browser acceptance compares the emitted manifest with actual
+> CLI generation, type-checks the virtual import and executes grouped/dynamic/
+> catch-all pages and functional/class-init APIs. It proves aliased default and
+> decorator imports, Unicode/reserved parameters, ordered root/group/page
+> middleware and nearest grouped error/root 404 rendering. Functional API
+> registration now uses public paths, so route groups no longer cause a 404.
+> Inspection and capability checks use that same classification. It caught Node's
+> outer Hono mounting discarding custom 404 handling. Requests now delegate
+> after static assets, preserving the framework's handler and request scope.
+>
+> **Next for GLM: finish RT-07 API declarations and boundary acceptance.**
+> Define explicit native input/output schemas and error/cancellation behavior.
+> Parse/authorize before mutations. Extend the shared compiler/inspection and
+> generated API types. Keep private factories/schemas out of client bundles.
+> Prove actual Node/native Worker requests and published negative types.
+>
+> Unknown-URL 404 selection still needs grouped/dynamic ancestry acceptance.
+> The router synthesizes a source path from a public URL, which omits groups
+> and parameter directory names. Source manifest ancestry alone does not prove
+> this case. `PageOptions.route` is also unused by registration. Resolve it
+> explicitly; the current alias proof concerns default exports and decorators.
+>
+> Every other unchecked task and release gate remains in scope. RT-01/RT-11,
+> Node plain Vite development and native Deno/Electron gates stay separate.
+> Versions stay 0.8.3. Preserve reports.md/.zcodeignore. No push/publication,
+> live cloud changes, external messages or new chats. Final commands/counts
+> appear in the linked review. Two inspection test bounds now cover their
+> two twenty-second subprocess deadlines. The full pre-fix CLI run passed
+> 599/601; both timed cases and the new production fixture passed afterward.
+> No command deadline or assertion changed. No owned build/test handle remains.
+>
+
+> **Previous checkpoint — Codex RT-06 completion (2026-10-03). Author: Codex.**
 > Continued after `0272cba`. Read the
 > [review/evidence](./release-0.9.0.md#codex-optimistic-completion-2026-10-03),
 > [original RT-06 criterion audit](./release-0.9.0-plan.md#rt-06), and

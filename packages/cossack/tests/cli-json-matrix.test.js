@@ -202,7 +202,8 @@ describe('finite command success / failure / dry-run matrix', () => {
     await fs.writeFile(path.join(root, 'wrangler.jsonc'), '{"APP_SECRET":"parser-private-value"');
     const bad = envelope(await execute([command, 'cloudflare', '--json']), command, false);
     expect(bad.diagnostics[0].code).toBe('COSSACK_WRANGLER_CONFIG_INVALID');
-  });
+    // Two separately bounded CLI processes can exceed Vitest's five-second default.
+  }, 45000);
 
   it.each(['inspect', 'check'])('%s cloudflare succeeds with valid local configuration', async command => {
     await cloudflare();

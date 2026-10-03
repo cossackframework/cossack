@@ -67,6 +67,9 @@ describe('classifyRoute', () => {
   it('defaults to page', () => {
     expect(classifyRoute('/contact')).toBe('page');
   });
+  it('does not classify ordinary API-prefixed names as API routes', () => {
+    expect(classifyRoute('/api-products')).toBe('page');
+  });
 });
 
 describe('scanPagesDir + buildRouteModel', () => {
@@ -78,7 +81,7 @@ describe('scanPagesDir + buildRouteModel', () => {
     mk('src/pages/blog/post.mdx', '');
     mk('src/pages/hello/[name]/index.ts', '');
 
-    const model = buildRouteModel(tmp);
+    const model = buildRouteModel(tmp, { includeMarkdown: true });
     const routes = model.pages.map((p) => p.route).sort();
     expect(routes).toEqual(['/', '/blog/post', '/contact', '/hello/:name']);
     expect(model.layouts.map((l) => l.filePath)).toEqual([

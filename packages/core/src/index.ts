@@ -71,3 +71,5 @@ export type {
     SanitizerFactory,
     CSSResultGroup,
 } from '@cossackframework/renderer';
+
+export { createRouteBuilder, routeParameters, RouteUrlError, type RouteBuilder, type RouteParameters, type RouteParameter } from './shared/routes';

@@ -573,6 +573,15 @@ On Cloudflare deployments, runtime resizing via `/cdn-cgi/image/...` is preferre
 
 List all routes discovered in the project (pages, layouts, API routes).
 
+Run `cossack routes --generate` to write `.cossack/routes.ts` before a standalone
+TypeScript check. Use `--generate --dry-run --json` to preview generation without
+writes. Plain route inspection stays read-only. JSON output includes the shared
+structural manifest and the effective inspection facts.
+
+Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
+For a custom processor, configure the same feature in Vite.
+See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
+
 ### `cossack info`
 
 Print system and environment information (OS, Node version, package versions) for inclusion in bug reports.

@@ -10,6 +10,8 @@
  * This module is intentionally pure (no `fs`, no environment-specific APIs)
  * so it can be imported by both the edge/worker runtime and the Node build.
  */
+import { routeParameters, type RouteParameter } from '@cossackframework/core/routes';
+export { routeParameters };
 
 /** Route ID reserved for the global `App` component. */
 export const APP_ROUTE_ID = 'cossack_app';
@@ -29,6 +31,25 @@ export function resolveLayoutPaths(pageFilePath: string, availableLayouts: reado
     if (available.has(layout)) stack.push(layout);
   }
   return stack;
+}
+
+/** Boundaries follow source ancestry, including directories omitted from the URL. */
+export function resolveNearestSpecialPage(pageFilePath: string, pageKeys: readonly string[], type: '404' | 'error'): string | null {
+  const parts = pageFilePath.replace('/src/pages/', '').split('/');
+  const available = new Set(pageKeys);
+  for (let index = parts.length - 1; index >= 0; index--) {
+    const directory = parts.slice(0, index).join('/');
+    const candidate = `/src/pages/${directory ? `${directory}/` : ''}${type}/index.ts`;
+    if (available.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function classifyRoute(pattern: string): 'page' | 'api' | '404' | 'error' {
+  if (pattern.endsWith('/404')) return '404';
+  if (pattern.endsWith('/error')) return 'error';
+  if (pattern === '/api' || pattern.startsWith('/api/')) return 'api';
+  return 'page';
 }
 
 /** Substitute both ordinary and catch-all static parameters without replacement-string expansion. */
@@ -300,6 +321,23 @@ export interface RoutesManifest {
   layoutKeys: string[];
   /** filePath -> component route id (cmp_N). */
   filePathToId: Record<string, string>;
+  /** Structural facts only. Source decorators and executable policies are not inferred here. */
+  routes: RouteDescriptor[];
+}
+
+export interface RouteDescriptor {
+  /** Public bracket-form identity, with route groups removed. */
+  name: string;
+  pattern: string;
+  filePath: string;
+  routeId: string;
+  kind: 'page' | 'api' | '404' | 'error';
+  addressable: boolean;
+  parameters: RouteParameter[];
+  /** Source layout ancestry. Functional HTTP handlers do not execute component layouts. */
+  layoutPaths: string[];
+  errorBoundary: string | null;
+  notFoundBoundary: string | null;
 }
 
 /**
@@ -316,5 +354,18 @@ export function buildRoutesManifest(pageKeys: string[], layoutKeys: string[], ma
     pageKeys: resolvePageRouteFiles(pageKeys),
     layoutKeys: [...layoutKeys].sort(),
     filePathToId,
+    routes: resolvePageRouteFiles(pageKeys).map(filePath => {
+      const pattern = filePathToHttpRoute(filePath);
+      const kind = classifyRoute(pattern);
+      return {
+        name: filePathToRoutePath(filePath), pattern, filePath,
+        routeId: filePathToId[filePath]!, kind,
+        addressable: kind !== '404' && kind !== 'error',
+        parameters: routeParameters(pattern),
+        layoutPaths: resolveLayoutPaths(filePath, layoutKeys),
+        errorBoundary: resolveNearestSpecialPage(filePath, pageKeys, 'error'),
+        notFoundBoundary: resolveNearestSpecialPage(filePath, pageKeys, '404'),
+      };
+    }),
   };
 }

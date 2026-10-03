@@ -27,7 +27,7 @@ below link directly to those explanations.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics. Codex completion (2026-10-03): executable mechanism examples, read-only development serialization diagnostics, shallow ClientState diagnostics, inherited public/client contracts and forged-state exclusion pass unit, published declarations, development/production browser and native Worker HTTP/SSE acceptance. See the [criterion audit](./release-0.9.0-plan.md#rt-04) and [review](#codex-state-diagnostics-2026-10-03). Production serialization remains unchanged; plain Node Vite development routing remains an open REL-03 integration gap.
 - [x] [RT-05](./release-0.9.0-plan.md#rt-05) Typed task dependencies, contextual failures, and cancellation of stale async work. Codex completion (2026-10-03): published typed paths/patches, execution-owned synchronous commits, inherited task registration, cleanup diagnostics and production browser navigation/scoped-service disposal pass. See the [criterion audit](./release-0.9.0-plan.md#rt-05) and [review](#codex-task-ownership-2026-10-03). Direct writes remain cooperative; commits do not terminate ignored I/O or provide rollback.
 - [x] [RT-06](./release-0.9.0-plan.md#rt-06) Consistent optimistic updates and rollback under failure, concurrency, and disconnects. Codex completion (2026-10-03): per-call ownership, explicit increment/append/remove contributions, later local edits, ordered SSE publications, retained service consumers, declared uncertain-outcome reads and native socket/SSE recovery pass. Component/service cancellation before iteration and stalled response waits now release ownership; 32 controlled stream cases, a 25-case production Node/native Worker browser matrix and the executable published example complete the original criteria. See the [criterion audit](./release-0.9.0-plan.md#rt-06) and [completion review](#codex-optimistic-completion-2026-10-03). Services use HTTP on HTTP/SSE/socket pages. No mutation retry, server rollback, ignored-I/O termination or broader RT-01/RT-11/REL-03 completion is claimed.
-- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; remaining: generated typed URL builders/params from the vite-plugin model and API schema declarations.
+- [ ] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection. GLM (2026-10-02): CLI effective route model — runtime-matching IDs, dynamic/catch-all params (also fixed the CLI's catch-all derivation to `:name{.+}`), layout ancestry, nearest 404/error boundaries, source-level @Page options with decorator line numbers, exposed via `cossack routes --json`; Codex continuation (2026-10-03): shared route discovery/manifest, published typed URL construction, virtual generated imports and actual Node/browser handler/middleware/error/404 acceptance now pass. See the [route checkpoint](#codex-typed-routes-2026-10-03). Remaining: declared native API schemas/generated API types, full grouped/dynamic unknown-URL boundary acceptance and the original criterion audit.
 - [ ] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting, and pagination, with history/defaults.
 - [ ] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics. Codex Group 3 review: public this.navigate()/createClientApp().navigate return outcomes; guards, redirects, full destination URLs, missing modules, and overlapping fetch/bootstrap commits have behavioral tests. Remaining: cancellation/bounded completion for stalled work, cache/layout diagnostics, and the browser matrix for history, fragments, retained layouts, and transition fallback.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
@@ -85,6 +85,86 @@ below link directly to those explanations.
 
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
+
+<a id="codex-typed-routes-2026-10-03"></a>
+### Codex checkpoint: generated typed URLs and shared route discovery (2026-10-03)
+
+**Author: Codex.** Continued after `d3b8c5b` against the original RT-07 plan.
+**21/58 checked, 37 unchecked. No new checkbox closes. RT-07 stays open.**
+The remaining API and boundary work appears in the
+[detailed checkpoint](./release-0.9.0-plan.md#rt-07).
+
+Review found duplicated CLI URL conversion and a discovery walk that included
+co-located tests/declarations and differed on Markdown. Framework `route-codegen`
+now owns that Node-only walk. Vite and CLI use the same structural manifest,
+component IDs, source layout ancestry and nearest source boundary helper.
+Layout/loading globs use the same exclusions. Vite uses its resolved root for
+generation, warnings and output, independent of shell working directory.
+
+Core's `/routes` entry owns portable construction and parameter types. Generated
+`.cossack/routes.ts` contains public patterns and the core helper. It imports no
+application modules. `virtual:cossack-routes` resolves to that actual TypeScript
+file. New recipes provide its path mapping, ignore it and generate before checks.
+`cossack routes --generate` supports machine output and read-only dry runs.
+Ordinary inspection writes nothing. Authored files at the compiler path reject
+replacement. Unchanged contracts keep their modification time. Watcher listeners
+update additions/deletions and release at server shutdown.
+
+The 35-case core suite includes actual Hono requests and published package
+resolution with **16 negative type cases**. Missing, extra, incorrect and erased
+contracts reject. Arguments retain union keys before checks. The runtime rejects
+sparse/accessor-backed arrays, getters, invalid Unicode and dot segments. It
+encodes Unicode, slashes and reserved characters without replacement expansion.
+Six compiler cases cover discovery, ancestry, precedence, conflicts, writes,
+resolved root and watcher ownership. CLI cases prove validation and output.
+
+Production Node/browser acceptance compares Vite and CLI manifests, deletes the
+generated file, regenerates through the actual CLI and type-checks its virtual
+import. Aliased default/decorator components execute grouped dynamic pages and
+catch-alls. Root/group/page middleware execution matches the inspected source
+order. Functional grouped APIs have no component layout stack. Class APIs invoke
+the actual `init` alias. The nearest grouped error and root 404 render, and client
+assets contain neither private error text nor the Node generator dependency.
+
+Two concrete routing defects were fixed. Node's outer Hono mounting discarded
+custom not-found handling. The generated entry now delegates after static assets.
+Functional API registration used raw source directories, so API files inside
+route groups were omitted. Registration, capability checks and CLI classification
+now use the public pattern. Ordinary `/api-products` stays a page.
+
+Final verification:
+
+- `pnpm --filter @cossackframework/core run build` passed.
+- `pnpm --filter @cossackframework/framework run build` passed, including SSG.
+- `pnpm tsc --noEmit` and `pnpm typecheck` passed all 11 package checks.
+- Core Vitest: **1,345/77 files**. Framework Vitest: **1,333/61 files**.
+- Scaffold Vitest: **108/4 files**.
+- `pnpm --filter cossack exec vitest run --maxWorkers=2`: **599/601 passed**
+  before the test-bound fix. All 22 generated production cases and the native
+  Worker/peer regressions passed. Two CLI inspection tests exceeded five seconds.
+- The unchanged isolated CLI machine matrix passed **43/43** before the bound fix.
+- After the fix, `pnpm --filter cossack exec vitest run
+  tests/cli-json-matrix.test.js tests/generated-runtime-build.test.js -t
+  'cloudflare hides vars|generates typed URLs' --maxWorkers=2` passed **3/3**.
+  This reruns both affected inspection cases beside the actual new production app.
+- JavaScript syntax, local document links, original task ledger and
+  `git diff --check -- . ':!reports.md'` passed.
+
+The initial unrestricted CLI run also passed 598/600 before the final API-prefix
+case was added. Reducing workers still left the same two test timeouts. Each
+case starts two CLI subprocesses with individual twenty-second deadlines. Their
+explicit test bound is now forty-five seconds. Assertions and command deadlines
+are unchanged. The focused rerun passed both cases under an actual Vite build.
+The entire CLI command was not repeated after this test-only bound change.
+No unresolved failure remains from those runs, but this is not a final REL-03 audit.
+
+This checkpoint does not declare native API input/output schemas. The grouped
+unknown-URL 404 case and unused `PageOptions.route` declaration still need their
+explicit acceptance/decision. Source ancestry alone does not prove unknown-URL
+selection. Existing native Worker/D1 suites are regressions, not new native typed
+API coverage. Node Vite development, RT-01/RT-11, native Deno/Electron and the
+full release gates remain separate. Versions stay 0.8.3. Preserve user-owned
+reports.md/.zcodeignore. No push/publication/live-cloud changes or external messages.
 
 <a id="codex-schema-migration-2026-10-03"></a>
 ### Codex checkpoint: schema-only actions, function fields and private callbacks (2026-10-03)

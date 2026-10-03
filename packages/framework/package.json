@@ -110,6 +110,10 @@
     "./page-inspection": {
       "types": "./dist/esm/page-inspection.d.ts",
       "import": "./dist/esm/page-inspection.js"
+    },
+    "./route-codegen": {
+      "types": "./dist/esm/route-codegen.d.ts",
+      "import": "./dist/esm/route-codegen.js"
     }
   },
   "files": [

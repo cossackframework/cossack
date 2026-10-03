@@ -84,6 +84,119 @@ async function productionServer(root, environment = {}) {
   }
   return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
 }
+it('generates typed URLs that execute real grouped, dynamic, catch-all and API handlers in production', async () => {
+  const root = await project('node');
+  const write = async (file, source) => {
+    const absolute = path.join(root, file); await fs.mkdir(path.dirname(absolute), { recursive: true }); await fs.writeFile(absolute, source);
+  };
+  await write('src/pages/index.ts', `
+    import { Cossack, Page as View } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { routes } from 'virtual:cossack-routes';
+    @View() class Home extends Cossack {
+      render() { return html\`<a id="user-link" href=\${routes('/users/[id]', {id:'雪/a?b#c'})}>User</a>
+        <a id="docs-link" href=\${routes('/docs/[...path]', {path:['intro','雪/?#%']})}>Docs</a>\`; }
+    }
+    export { Home as default };
+  `);
+  // The minimal recipe uses pages/index/index.ts. Keep one resolved owner.
+  await fs.rm(path.join(root, 'src/pages/index'), { recursive: true, force: true });
+  for (const [file, label] of [['layout.ts', 'root'], ['(account)/layout.ts', 'group']]) {
+    await write('src/pages/' + file, `
+      import { Cossack, Page } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
+      @Page({middlewares:[async(c,next)=>{c.set('urlTrace',[...(c.get('urlTrace')??[]),'${label}']);await next();}]})
+      export default class Layout extends Cossack { render(){return html\`<section>\${this.children}</section>\`;} }
+    `);
+  }
+  await write('src/pages/(account)/users/[id]/index.ts', `
+    import { Cossack, Page as View, State } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
+    @View({middlewares:[async(c,next)=>{c.set('urlTrace',[...(c.get('urlTrace')??[]),'page']);await next();}]})
+    class User extends Cossack {
+      @State() id=''; @State() order='';
+      async init(){this.id=this.c.req.param('id')??'';this.order=(this.c.get('urlTrace') as string[]).join(',');if(this.id==='fail')throw new Error('private-url-error');}
+      render(){return html\`<main><p id="user-id">\${this.id}</p><p id="order">\${this.order}</p></main>\`;}
+    }
+    export {User as default};
+  `);
+  await write('src/pages/docs/[...path]/index.ts', `
+    import { Cossack, Page, State } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
+    @Page() export default class Docs extends Cossack {
+      @State() path=''; async init(){this.path=this.c.req.param('path')??'';}
+      render(){return html\`<p id="doc-path">\${this.path}</p>\`;}
+    }
+  `);
+  await write('src/pages/(account)/api/items/[id].ts', `import type {Context} from 'hono';
+    export const GET=(c:Context)=>c.json({handler:'functional',id:c.req.param('id')});
+  `);
+  await write('src/pages/api/init/[id].ts', `import {Cossack,Page} from '@cossackframework/core';
+    @Page() export default class InitApi extends Cossack { async init(){return this.c.json({handler:'class-init',id:this.c.req.param('id')});} }
+  `);
+  for (const [file, marker] of [['(account)/error/index.ts', 'GROUP_ERROR'], ['error/index.ts', 'ROOT_ERROR'], ['404/index.ts', 'ROOT_NOT_FOUND']]) {
+    await write('src/pages/' + file, `import {Cossack,Page} from '@cossackframework/core';import {html} from '@cossackframework/renderer';
+      @Page() export default class Boundary extends Cossack{render(){return html\`<p>${marker}</p>\`;}}
+    `);
+  }
+  // This source is checked through the generated virtual import and published declarations.
+  // It lives outside the route tree so its negative examples never become handlers.
+  await write('src/route-types.ts', `import {routes} from 'virtual:cossack-routes';
+    routes('/users/[id]',{id:'ok'});routes('/docs/[...path]',{path:['intro']});routes('/');
+    // @ts-expect-error required parameter
+    routes('/users/[id]');
+    // @ts-expect-error invalid ordinary parameter
+    routes('/users/[id]',{id:2});
+    const extra={id:'ok',extra:'bad'};
+    // @ts-expect-error extra variable parameter
+    routes('/users/[id]',extra);
+    // @ts-expect-error empty catch-all
+    routes('/docs/[...path]',{path:[]});
+    // @ts-expect-error boundaries do not have addressable routes
+    routes('/error');
+  `);
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const user = manifest.routes.find(route => route.name === '/users/[id]');
+  expect(user).toMatchObject({ pattern: '/users/:id', layoutPaths: ['/src/pages/layout.ts', '/src/pages/(account)/layout.ts'], errorBoundary: '/src/pages/(account)/error/index.ts' });
+  expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).scripts.typecheck).toBe('cossack routes --generate && tsc --noEmit');
+  await fs.rm(path.join(root, '.cossack/routes.ts'));
+  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--generate', '--json'], { cwd: root, timeout: 30000 });
+  const inspected = JSON.parse(cli.stdout).data;
+  expect(inspected.manifest).toEqual(manifest);
+  expect(inspected.routes.find(route => route.name === '/users/[id]').middlewareStack).toEqual([
+    { source: '/src/pages/layout.ts:3', count: 1 },
+    { source: '/src/pages/(account)/layout.ts:3', count: 1 },
+    { source: '/src/pages/(account)/users/[id]/index.ts:3', count: 1 },
+  ]);
+  expect(inspected.routes.find(route => route.name === '/api/items/[id]').layouts).toEqual([]);
+  const typecheck = await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, timeout: 30000 })
+    .catch(error => { throw new Error(`${error.stdout}\n${error.stderr}`); });
+  expect(typecheck.stderr).toBe('');
+  const runtime = await productionServer(root);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(); await page.goto(runtime.origin);
+    const url = await page.locator('#user-link').getAttribute('href');
+    expect(url).toBe('/users/%E9%9B%AA%2Fa%3Fb%23c');
+    await page.locator('#user-link').click();
+    await browserExpect(page.locator('#user-id')).toHaveText('雪/a?b#c');
+    await browserExpect(page.locator('#order')).toHaveText('root,group,page');
+    await page.goto(runtime.origin); await page.locator('#docs-link').click();
+    await browserExpect(page.locator('#doc-path')).toHaveText('intro/雪/?#%');
+    for (const [name, handler] of [['items', 'functional'], ['init', 'class-init']]) {
+      const response = await fetch(runtime.origin + '/api/' + name + '/%E9%9B%AA%2Fa%3Fb%23c');
+      expect(response.status).toBe(200); expect(await response.json()).toEqual({ handler, id: '雪/a?b#c' });
+    }
+    const failed = await fetch(runtime.origin + '/users/fail');
+    expect(failed.status).toBe(500); const body = await failed.text();
+    expect(body).toContain('GROUP_ERROR'); expect(body).not.toContain('ROOT_ERROR'); expect(body).not.toContain('private-url-error');
+    const missing = await fetch(runtime.origin + '/unknown'); expect(missing.status).toBe(404); expect(await missing.text()).toContain('ROOT_NOT_FOUND');
+    const assets = path.join(root, 'dist/client/assets');
+    for (const file of await fs.readdir(assets)) if (file.endsWith('.js')) {
+      const body = await fs.readFile(path.join(assets, file), 'utf8');
+      expect(body).not.toContain('node:fs'); expect(body).not.toContain('private-url-error');
+    }
+  } finally { await browser.close(); await runtime.close(); }
+}, 120000);
 it.each(['node', 'deno'])('builds a generated %s app through its real Vite configuration', async adapter => {
   const root = await project(adapter);
   if (adapter === 'node') {

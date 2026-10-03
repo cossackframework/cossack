@@ -621,7 +621,7 @@ describe('composition', () => {
     expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");
     expect(productionEntry).toContain("'public, max-age=31536000, immutable'");
     expect(productionEntry.indexOf("app.use('*', serveStatic"))
-      .toBeLessThan(productionEntry.indexOf("app.route('/', frameworkApp)"));
+      .toBeLessThan(productionEntry.indexOf("app.all('*', c => frameworkApp.fetch(c.req.raw, c.env))"));
     expect(productionEntry.indexOf('...process.env')).toBeLessThan(
       productionEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
     );

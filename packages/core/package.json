@@ -28,6 +28,10 @@
     "./runtime-capabilities": {
       "types": "./dist/shared/runtime-capabilities.d.ts",
       "import": "./dist/shared/runtime-capabilities.js"
+    },
+    "./routes": {
+      "types": "./dist/shared/routes.d.ts",
+      "import": "./dist/shared/routes.js"
     }
   },
   "files": [

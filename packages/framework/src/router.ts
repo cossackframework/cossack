@@ -88,7 +88,7 @@ import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, resolveNearestSpecialPage, classifyRoute, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
@@ -332,19 +332,8 @@ function getLayoutStack(pagePath: string) {
  * In production, collects the page chunk and all its transitive JS imports.
  */
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
-  const relativePath = pagePath.replace('/src/pages/', '');
-  const parts = relativePath.split('/');
-
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const dir = parts.slice(0, i).join('/');
-    const searchPath = dir ? `/src/pages/${dir}/${type}/index.ts` : `/src/pages/${type}/index.ts`;
-
-    if (pages[searchPath]) {
-      return { path: searchPath, component: getModuleDefault(pages[searchPath] as object) as new () => Cossack };
-    }
-  }
-
-  return null;
+  const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type);
+  return path ? { path, component: getModuleDefault(pages[path] as object) as new () => Cossack } : null;
 }
 
 export interface CreateAppOptions {
@@ -1328,7 +1317,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
     // 2. Check if it's a functional API Route
-    else if (path.includes('/src/pages/api/')) {
+    else if (classifyRoute(httpRoute) === 'api') {
       // Handle default export as a generic handler
       if (typeof module.default === 'function') {
         app.all(httpRoute, module.default);

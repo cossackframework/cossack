@@ -46,6 +46,9 @@ test-results
 reasonix.toml
 .reasonix
 .zcode
+# Generated route contracts
+**/.cossack/routes.ts
+
 # Planning documents (local scratch)
 plan-*.md
 reviews.md

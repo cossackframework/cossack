@@ -12,7 +12,18 @@ framework and scaffold route trees now have a static default-export contract tes
 keep non-route helper modules outside `src/pages`.
 The handoff records the exact stopping point and commands that passed.
 
-**Latest checkpoint — Codex RT-06 completion (2026-10-03):**
+**Latest checkpoint — Codex RT-07 route generation (2026-10-03):**
+[review and evidence](./release-0.9.0.md#codex-typed-routes-2026-10-03).
+Vite and the CLI now share route discovery, patterns, source ancestry and IDs.
+The virtual route import resolves to a generated TypeScript file. Published
+negative types and real production Node/browser handlers prove path construction.
+Review also found and fixed custom 404 loss in the generated Node wrapper.
+**21/58 checked, 37 unchecked. RT-06 stays complete. RT-07 stays open.**
+Continue declared native API schemas, generated API types and the remaining
+boundary/runtime acceptance described under RT-07. Keep every other original
+task and release gate in scope.
+
+**Previous checkpoint — Codex RT-06 completion (2026-10-03):**
 [review and evidence](./release-0.9.0.md#codex-optimistic-completion-2026-10-03).
 The original RT-06 criteria now pass the explicit audit under that task. Service
 cancellation before iteration releases preview/loading; component/service response
@@ -1634,6 +1645,82 @@ Done when: Generated URLs reach the expected handlers. Missing, extra, and
 incorrect parameters fail type tests. Manifest middleware order matches actual
 execution. Fixtures cover aliases, route groups, catch-alls, API routes, and
 nearest error/404 boundaries. CLI-04 consumes this same manifest.
+
+
+**Codex implementation checkpoint (2026-10-03): path generation is implemented.**
+This is partial RT-07 completion. No release checkbox changes here. Core owns
+`createRouteBuilder`, `RouteParameters`, `routeParameters` and `RouteUrlError`
+at its portable `/routes` entry. Framework `route-ids` owns structural descriptors.
+Its Node-only `route-codegen` owns discovery and `.cossack/routes.ts` emission.
+The Vite plugin and CLI consume that same model. The generated module imports
+only public path patterns and the pure helper.
+
+The route identity is the bracket-form public path. Groups do not change it.
+Ordinary values are strings. Catch-all values are nonempty segment tuples.
+Arguments retain their authored shape before checks, so a union cannot hide
+an extra key. Narrow union route names. Author manual registries with literal
+patterns. Widened strings and selected pattern unions cannot establish one
+parameter contract. Runtime checks reject unsupported patterns, extra/missing
+keys, accessors, sparse arrays, dot segments and invalid Unicode.
+
+`virtual:cossack-routes` resolves to a real generated TypeScript file. It needs
+no permissive ambient declaration that widens names to strings. New recipes
+provide the path mapping, ignore the generated file and generate before type
+checking. Existing apps use `cossack routes --generate` plus the mapping in
+[routing docs](../docs/routing.md#typed-urls). CLI generation stays local and
+does not execute Vite. Custom Markdown processors require explicit CLI selection.
+Vite root now controls generation, warnings and emitted manifests. Watchers
+refresh file additions/deletions and remove their listeners at shutdown.
+
+The generated Node entry now delegates requests after static assets. Hono's
+route mounting copied handlers but discarded the framework's custom not-found
+handler. The production fixture failed with plain `404 Not Found` before the
+fix and renders the authored boundary afterward. Do not reintroduce mounting
+without preserving that behavior and single framework request ownership.
+Functional API selection also uses the public route pattern. A source-path
+check rejected API files inside route groups. Router registration, capability
+checks and CLI inspection now share that classification.
+
+| Original RT-07 criterion | Evidence at this checkpoint | Remaining work |
+| --- | --- | --- |
+| Generated URLs reach handlers | Production Node/browser navigation executes aliased default/decorator components, grouped/dynamic/catch-all pages and functional/class-init APIs. Unicode, encoded slashes and reserved characters survive. | Add explicit native Worker acceptance for the final API contract. No new native typed-API claim here. |
+| Missing, extra and wrong parameters fail types | Published package export and generated virtual import have negative cases. Variable/union extras and empty catch-alls reject. | Keep final API input/output declarations in the same published-type acceptance. |
+| Middleware order matches execution | Generated manifest equals CLI manifest. Root/group/page source counts match the browser's executed trace. Functional handlers inspect with no component layouts. | Preserve global middleware, unknown policies and final native API guard order. |
+| Aliases, groups, catch-alls, APIs and boundaries | Default/decorator aliases and API styles execute. The nearest grouped error boundary and root 404 render through production Node. Structural nearest source boundaries and group collision selection have controlled cases. | Add unknown-URL 404 acceptance under grouped/dynamic ancestry before closing the full boundary claim. |
+| CLI-04 consumes the manifest | CLI discovery/conversion/ancestry duplicates are removed. Generation, inspection and Vite compare equal in the actual app. Read-only/dry-run/flag checks pass. | Extend this model with declared API method/schema facts. Keep uncertain facts explicit. |
+
+**Next implementation steps for GLM:**
+
+1. Declare native API input and output contracts. Decide their request-body,
+   path and query locations explicitly. Reuse core schema parsing, depth/size
+   bounds and existing public error mapping. TypeScript types alone do not run
+   validation. Do not assume `@Server` guards wrap authored native API calls.
+2. Run parsing and authorization before handler work. Define malformed input,
+   unauthorized requests, callback failures, output validation and cancellation.
+   Preserve Hono `Response`, cookies, redirects and middleware ownership.
+   Expected input failures must cause zero handler mutations. Unexpected schema
+   callbacks and output failures must retain private server diagnostics.
+3. Teach the shared compiler classifier and inspection about the chosen API
+   declaration. Follow aliases and static declarations without importing user
+   modules. Keep private schemas/initializers out of client chunks. A factory
+   export must not evade functional-handler stripping because it is a call
+   expression instead of a function expression. Report dynamic contracts unknown.
+4. Generate API method/input/output declarations from those facts. Keep URL
+   names, IDs and source locations in this existing model. Add package-export
+   negative type cases and real generated Node/native Worker requests. Prove
+   that runtime validators run and compare effective middleware execution.
+5. Audit nearest not-found behavior for unknown URLs under route groups and
+   dynamic directories. The current router synthesizes a source path from the
+   public pathname. That path cannot reconstruct omitted groups or `[id]` names.
+   Add actual grouped/dynamic 404 acceptance, then align selection and inspection.
+   Structural source ancestry alone does not establish unknown-URL behavior.
+6. Resolve `PageOptions.route`. It currently does not register an alias. Either
+   remove that unused declaration with migration guidance or implement aliases
+   across SSR, client matching, RPC, SSG and generation. The current acceptance
+   proves decorator/default-export aliases, not authored alternate URL paths.
+7. Re-audit every original criterion before checking RT-07. Continue all other
+   unchecked tasks afterward. Keep versions at 0.8.3 until REL-04.
+
 
 <a id="rt-08"></a>
 ### RT-08: Typed URL state

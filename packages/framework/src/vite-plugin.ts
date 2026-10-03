@@ -1,11 +1,13 @@
 import type { Plugin } from 'vite';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
-import { resolve, dirname, join, relative, sep } from 'path';
-import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { resolve, dirname, relative } from 'path';
+import { generateRoutes, scanPagesDir, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
+export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
 import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
 import { readBuildBindingNames } from './build-bindings.js';
+import { classifyRoute, filePathToHttpRoute } from './route-ids.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -18,15 +20,8 @@ const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
 const PAGE_GLOB_EXCLUDES = [
   '!/src/pages/**/layout.ts',
   '!/src/pages/**/loading.ts',
-  '!/src/pages/**/*.d.ts',
-  '!/src/pages/**/*.test.*',
-  '!/src/pages/**/*.spec.*',
-  '!/src/pages/**/__tests__/**',
-  '!/src/pages/**/__fixtures__/**',
-  '!/src/pages/**/fixtures/**',
+  ...ROUTE_GLOB_EXCLUDES,
 ];
-
-const TEST_DIRECTORIES = new Set(['__tests__', '__fixtures__', 'fixtures']);
 
 function escapeHtmlText(value: string): string {
   return value
@@ -100,7 +95,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let warnedAboutMarkdown = false;
   const warnIfMarkdownIsUnconfigured = (warn: (message: string) => void) => {
     if (markdownEnabled || warnedAboutMarkdown) return;
-    const { markdownKeys } = scanPagesDir(resolve(process.cwd(), 'src', 'pages'), false);
+    const { markdownKeys } = scanPagesDir(resolve(projectRoot, 'src', 'pages'), false);
     if (markdownKeys.length === 0) return;
     warnedAboutMarkdown = true;
     warn(
@@ -144,8 +139,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     configResolved(config) {
       projectRoot = config.root;
+      generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
     },
     async buildStart() {
+      generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
       if (options.capabilities) {
         const { runtime } = options.capabilities;
         const bindings = options.capabilities.bindings ?? (runtime === 'cloudflare'
@@ -161,7 +158,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           let line: number | undefined;
           if (key.endsWith('.ts')) {
             const source = readFileSync(file, 'utf8');
-            if (key.includes('/src/pages/api/') && await isHttpHandlerModule(source)) continue; // All supported runtimes provide HTTP handlers.
+            if (classifyRoute(filePathToHttpRoute(key)) === 'api' && await isHttpHandlerModule(source)) continue; // All supported runtimes provide HTTP handlers.
             const facts = await extractPageOptionsFromAst(source);
             if (facts?.method !== 'ast' || !facts.options) this.error({
               code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,
@@ -187,6 +184,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       warnIfMarkdownIsUnconfigured((message) => this.warn(message));
     },
     resolveId(id) {
+      if (id === ROUTES_MODULE_ID) return resolve(projectRoot, ROUTES_SOURCE_PATH);
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
       }
@@ -213,10 +211,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // every layout on the client would force those deps onto routes that
           // don't use them (e.g. the public landing page loading the dashboard
           // sidebar). The client resolves layouts via dynamic import in app.ts.
-          const layouts = import.meta.glob('/src/pages/**/layout.ts'${isSsrEnvironment ? ', { eager: true }' : ''});
+          const layouts = import.meta.glob(${JSON.stringify(['/src/pages/**/layout.ts', ...ROUTE_GLOB_EXCLUDES])}${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Loading states: always eager (small, needed immediately for UX)
-          const loadings = import.meta.glob('/src/pages/**/loading.ts', { eager: true });
+          const loadings = import.meta.glob(${JSON.stringify(['/src/pages/**/loading.ts', ...ROUTE_GLOB_EXCLUDES])}, { eager: true });
 
           // Components resolve by direct class reference (component(Card, ...)
           // captures the constructor), so no registry glob is needed. Eagerly
@@ -227,6 +225,23 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           export default { pages, layouts, loadings, components };
         `;
       }
+    },
+    configureServer(server) {
+      const pagesDirectory = resolve(projectRoot, 'src/pages');
+      const update = (file: string) => {
+        const path = relative(pagesDirectory, file);
+        if (path.startsWith('..') || path.startsWith('/') || !/\.(?:ts|mdx?)$/.test(path)) return;
+        try {
+          const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+          if (!generated.changed) return;
+          const module = server.moduleGraph.getModuleById(generated.file);
+          if (module) server.moduleGraph.invalidateModule(module);
+        } catch (error) { server.config.logger.error(String(error)); }
+      };
+      server.watcher.on('add', update).on('unlink', update).on('change', update);
+      server.httpServer?.once('close', () => {
+        server.watcher.off('add', update).off('unlink', update).off('change', update);
+      });
     },
     async transform(code, id) {
       // Inject source metadata for DevTools (only in dev mode for client environment)
@@ -301,7 +316,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // environment where the manifest has just been emitted.
       if (this.environment?.name !== 'client') return;
 
-      const clientOutDir = resolve(process.cwd(), 'dist', 'client');
+      const clientOutDir = resolve(projectRoot, 'dist', 'client');
       const src = resolve(clientOutDir, '.vite', 'manifest.json');
       if (!existsSync(src)) return;
 
@@ -321,7 +336,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // reads it instead of re-scanning `src/pages` and re-deriving IDs, so the
       // IDs can never drift from what the SSR router assigns here.
       try {
-        emitRoutesManifest(clientOutDir, markdownEnabled);
+        emitRoutesManifest(projectRoot, clientOutDir, markdownEnabled);
       } catch (e) {
         // Non-fatal: SSG will surface a clear error if the manifest is missing.
         console.warn('[cossack] Could not emit routes manifest:', e);
@@ -330,59 +345,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   };
 }
 
-/**
- * Scan `src/pages` reproducing the same key set as the `import.meta.glob`
- * patterns above (pages = `*.ts`/`*.mdx` excluding `layout.ts`/`loading.ts`;
- * layouts = `layout.ts`). Keys use the `/src/pages/<rel>` format with forward
- * slashes, exactly like Vite's glob keys.
- */
-export function scanPagesDir(
-  pagesDir: string,
-  includeMarkdown: boolean,
-): { pageKeys: string[]; layoutKeys: string[]; markdownKeys: string[] } {
-  const pageKeys: string[] = [];
-  const layoutKeys: string[] = [];
-  const markdownKeys: string[] = [];
-  if (!existsSync(pagesDir)) return { pageKeys, layoutKeys, markdownKeys };
-
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (TEST_DIRECTORIES.has(entry.name)) continue;
-        walk(fullPath);
-      } else if (entry.isFile()) {
-        if (/\.(?:test|spec)\.[^.]+$/.test(entry.name) || entry.name.endsWith('.d.ts')) {
-          continue;
-        }
-        const rel = relative(pagesDir, fullPath).split(sep).join('/');
-        const key = `/src/pages/${rel}`;
-        if (entry.name === 'layout.ts') {
-          layoutKeys.push(key);
-        } else if (entry.name === 'loading.ts') {
-          // Excluded — matches the glob's `!/src/pages/**/loading.ts`.
-        } else if (entry.name.endsWith('.mdx') || entry.name.endsWith('.md')) {
-          markdownKeys.push(key);
-          if (includeMarkdown) pageKeys.push(key);
-        } else if (entry.name.endsWith('.ts')) {
-          pageKeys.push(key);
-        }
-      }
-    }
-  };
-
-  walk(pagesDir);
-  return { pageKeys, layoutKeys, markdownKeys };
-}
-
-function emitRoutesManifest(clientOutDir: string, includeMarkdown: boolean) {
-  const pagesDir = resolve(process.cwd(), 'src', 'pages');
-  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir, includeMarkdown);
-  const maps = computeRouteIds(pageKeys, layoutKeys);
-  const manifest = buildRoutesManifest(pageKeys, layoutKeys, maps);
+function emitRoutesManifest(projectRoot: string, clientOutDir: string, includeMarkdown: boolean) {
+  const { manifest } = generateRoutes(projectRoot, { includeMarkdown });
   if (!existsSync(clientOutDir)) mkdirSync(clientOutDir, { recursive: true });
-  const dest = resolve(clientOutDir, 'cossack-routes.json');
-  writeFileSync(dest, JSON.stringify(manifest, null, 2));
+  writeFileSync(resolve(clientOutDir, 'cossack-routes.json'), JSON.stringify(manifest, null, 2));
 }
 
 /**

@@ -73,6 +73,20 @@ closed. Foreign contract imports cannot also keep that module in the client
 graph, because this file cannot strip its initializers. Shared client form rules
 remain separate from the private typed action contract.
 
+## Route generation boundary
+
+Core owns the portable URL constructor at `core/routes`. It encodes declared
+parameters and rejects unsupported patterns. It imports no framework or Node APIs.
+Framework owns the pure route identity and source ancestry model at `route-ids`.
+The Node-only `route-codegen` entry scans the same files as the Vite registry.
+The CLI consumes that entry and keeps its compiler-based inspection facts.
+
+Vite and `cossack routes --generate` emit `.cossack/routes.ts`. The virtual import
+resolves to this real file, so runtime URLs and TypeScript literals share one
+contract. Generated client code contains public patterns and the core helper.
+It contains no application module imports. Source layout ancestry in the manifest
+does not assert that functional API modules execute component layouts.
+
 ## Application socket registry
 
 Framework AppDurableObject reads the same virtual:cossack-pages registry as the

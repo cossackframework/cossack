@@ -42,6 +42,89 @@ To create a dynamic route, put a URL segment in square brackets `[]` in a direct
 
 For example, a page at `src/pages/users/[id]/index.ts` will match URLs like `/users/123` or `/users/alice`.
 
+### Typed URLs
+
+Import `routes` from `virtual:cossack-routes` to construct URLs from discovered
+page files. The route name uses brackets and omits route groups. A manifest is
+the generated list of route paths and source identities.
+
+For these files:
+
+```text
+src/pages/index.ts
+src/pages/(account)/users/[id]/index.ts
+src/pages/docs/[...path]/index.ts
+src/pages/api/items/[id].ts
+```
+
+Use these calls:
+
+```ts
+import { routes } from 'virtual:cossack-routes';
+
+routes('/');
+routes('/users/[id]', { id: 'alice' });
+routes('/docs/[...path]', { path: ['guide', 'first steps'] });
+routes('/api/items/[id]', { id: '雪/a?b#c' });
+// /api/items/%E9%9B%AA%2Fa%3Fb%23c
+```
+
+An ordinary parameter requires a string. A catch-all requires a nonempty array
+of strings. Each string becomes one encoded path segment. Missing parameters,
+extra parameters, incorrect types, and unknown names fail TypeScript checks.
+Narrow a union of route names before passing its parameters.
+For a manually authored registry, pass literal patterns directly or use `as const`.
+Widened strings and runtime-selected pattern unions cannot establish parameter types.
+
+The runtime also rejects empty strings, dot segments, invalid Unicode, sparse
+catch-all arrays, and parameter getters. It reports `RouteUrlError` with a code,
+route identity, and parameter name where available. The helper constructs path
+URLs. Query state and navigation completion have separate contracts.
+
+Vite generates `.cossack/routes.ts` at startup and build time. The development
+watcher updates it after route-file additions and deletions. Keep that compiler
+file out of Git. Error and 404 boundaries have no addressable route name.
+
+New scaffolded applications map the virtual import in `tsconfig.json`. Their
+`pnpm typecheck` script generates routes before TypeScript runs. For an existing
+application, add this mapping:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "virtual:cossack-routes": ["./.cossack/routes.ts"]
+    }
+  }
+}
+```
+
+Preserve your other path mappings. Before a standalone TypeScript check, run:
+
+```sh
+pnpm exec cossack routes --generate
+pnpm exec tsc --noEmit
+```
+
+CLI generation does not execute your Vite configuration. It includes Markdown
+when the recorded scaffold recipe selects that feature. For a custom
+`markdownProcessor`, add `--markdown` to the generation command. The processor
+must also exist in your Vite configuration.
+
+Only literal segments, `[name]`, and `[...name]` are supported for typed URLs.
+Parameter names use ASCII letters, digits, underscores or hyphens, and start
+with a letter or underscore.
+Conflicting files with equal precedence stop generation. The direct file wins
+over an equivalent file inside an additional route group, as in the router.
+`PageOptions.route` does not currently register a URL alias.
+
+The generated browser module contains public patterns and the portable core
+helper. It imports no page modules, server schemas, or private handlers. The
+structural manifest retains source layout ancestry and nearest source boundaries.
+Functional API handlers do not execute component layouts. Method and middleware
+facts remain in `cossack routes --json` inspection. Explicit API input/output
+schema generation remains release work.
+
 ### Route Groups
 
 To group routes without changing their URLs, put the folder name in parentheses. Use route groups to share layouts.

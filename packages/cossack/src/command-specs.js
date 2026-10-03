@@ -137,7 +137,11 @@ export const commandSpecs = {
     } }),
   check: new CommandSpec({ name: 'check', globals: readonly, positionals: ['scope'],
     minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: { flags: { env } }, providers: { flags: { env } } } }),
-  routes: new CommandSpec({ name: 'routes', globals: readonly, flags: { env, verbose: bool('Include route details.') } }),
+  routes: new CommandSpec({ name: 'routes', globals: ['json', 'help', 'dry-run'], flags: {
+    env, verbose: bool('Include route details.'), generate: bool('Generate .cossack/routes.ts for typed URL imports.'),
+    markdown: bool('Include Markdown routes. The Vite plugin must configure markdownProcessor.'),
+  }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
+    ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for routes.' }] : [] }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {
