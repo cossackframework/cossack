@@ -111,12 +111,12 @@ a:active {
     transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
 }
 
-/* --- Progress: shimmer overlay on the bar --- */
+/* --- Unknown progress: shimmer, with a static reduced-motion fallback --- */
 .cs-progress__bar {
     position: relative;
     overflow: hidden;
 }
-.cs-progress__bar::after {
+.cs-progress[data-state="indeterminate"] .cs-progress__bar::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -133,6 +133,10 @@ a:active {
     100% {
         transform: translateX(100%);
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-progress[data-state="indeterminate"] .cs-progress__bar::after { animation: none; }
 }
 
 /* --- Modal (<dialog>): scale + fade enter/exit --- */

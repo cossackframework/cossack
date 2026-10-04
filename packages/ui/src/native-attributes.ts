@@ -1,9 +1,9 @@
 import type { BindResult, IfDefinedResult, LiveResult, PreventDefaultResult, nothing } from '@cossackframework/renderer';
 
 /** Native listener event. currentTarget is the control; target can be a descendant. */
-export type ControlEvent<Element extends HTMLElement, EventType extends Event = Event> = EventType & { readonly currentTarget: Element };
+export type ControlEvent<Element extends HTMLElement | SVGElement, EventType extends Event = Event> = EventType & { readonly currentTarget: Element };
 /** Renderer spread listeners use @event, not onEvent attributes. */
-export type NativeEvents<Element extends HTMLElement> = {
+export type NativeEvents<Element extends HTMLElement | SVGElement> = {
     [Name in keyof HTMLElementEventMap as `@${Name}`]?:
         ((event: ControlEvent<Element, HTMLElementEventMap[Name]>) => unknown) | PreventDefaultResult | null | typeof nothing;
 };
@@ -92,3 +92,11 @@ export type SelectAttributes = GlobalAttributes<HTMLSelectElement> & Attributes<
 export type PasswordAttributes = Pick<InputAttributes, keyof GlobalAttributes<HTMLInputElement> |
     'name' | 'form' | 'placeholder' | 'readonly' | '?readonly' | 'required' | '?required' |
     'autocomplete' | 'minlength' | 'maxlength' | 'pattern' | 'inputmode' | 'enterkeyhint'>;
+
+/** Native SVG root attributes. HTML form and editable attributes do not apply. */
+export type SvgAttributes = NativeEvents<SVGSVGElement> & AriaAttributes & Attributes<{
+    id: string; class: string; style: string; role: string; lang: string;
+    tabindex: number; focusable: 'true' | 'false';
+    width: number | string; height: number | string; viewBox: string;
+    fill: string; stroke: string; 'stroke-width': number | string;
+}> & { [Name: `data-${string}`]: Attribute<string | number | boolean> | undefined };

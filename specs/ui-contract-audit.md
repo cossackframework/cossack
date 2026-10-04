@@ -58,7 +58,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | Source | Contract audit | Evidence / next action |
 | --- | --- | --- |
 | [Accordion](../packages/ui/src/components/Accordion.ts) | Reviewed foundation | Typed root/trigger/panel contracts, native activation, stable IDs, one-time defaults, focus restoration and SSR/Chromium acceptance. |
-| [Alert](../packages/ui/src/components/Alert.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Alert](../packages/ui/src/components/Alert.ts) | Reviewed foundation | Typed div events/attributes, independent announcement urgency, decorative icons, focus-preserving updates, SSR/Chromium and ejected-source coverage. |
 | [AlertDialog](../packages/ui/src/components/AlertDialog.ts) | Reviewed foundation | Typed native dialog props, linked title/message, Cancel-first focus, controlled/default dismissal, caller-owned actions and SSR/Chromium acceptance. |
 | [AspectRatio](../packages/ui/src/components/AspectRatio.ts) | Reviewed foundation | Typed native wrapper, positive finite ratios, independent CSS ratio box, responsive width/ratio changes, SSR/no-JavaScript/Chromium and ejected-source coverage. |
 | [Attachment](../packages/ui/src/components/Attachment.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -102,7 +102,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Pagination](../packages/ui/src/components/Pagination.ts) | Reviewed foundation | Typed controlled buttons/native links, localized names, safe bounded ranges, empty/stale counts, native Tab/modifiers, keyed focus, disabled targets, SSR/Chromium, scaffold consumers and ejected-source compilation. |
 | [PasswordInput](../packages/ui/src/components/PasswordInput.ts) | Reviewed foundation | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
 | [Popover](../packages/ui/src/components/Popover.ts) | Reviewed foundation | Stable IDs, typed trigger/panel contracts, native accessibility and dismissal, nested-scroll/resize positioning, disabled fieldsets, SSR/hydration and Chromium acceptance. |
-| [Progress](../packages/ui/src/components/Progress.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Progress](../packages/ui/src/components/Progress.ts) | Reviewed foundation | Required name, unknown versus determinate values, validated ranges, owned ARIA, human-readable values, reduced motion, native div events, SSR/Chromium and ejected-source coverage. |
 | [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Resizable](../packages/ui/src/components/Resizable.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -112,7 +112,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Sidebar](../packages/ui/src/components/Sidebar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Skeleton](../packages/ui/src/components/Skeleton.ts) | Reviewed foundation | Typed decorative div with separate rectangle/circle dimensions, native style composition, visible SSR defaults, reduced motion, public types, themed Chromium and ejected-source coverage. |
 | [Slider](../packages/ui/src/components/Slider.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
-| [Spinner](../packages/ui/src/components/Spinner.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Spinner](../packages/ui/src/components/Spinner.ts) | Reviewed foundation | Typed native SVG props/events, validated geometry, decorative/status states, SVG title namespace and updates, reduced motion, SSR/Chromium and ejected-source coverage. |
 | [Switch](../packages/ui/src/components/Switch.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Table](../packages/ui/src/components/Table.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Tabs](../packages/ui/src/components/Tabs.ts) | Reviewed foundation | Typed root/list contracts, controlled/default state, scoped IDs, rich-label names, RTL/manual navigation, keyed focus and responsive indicator browser acceptance. |
@@ -125,11 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Alert, Progress and Spinner. Alert currently hardcodes an assertive
-alert role and has an obsolete string-icon example. Review announcement ownership
-and native attributes. Progress needs a named, explicit determinate/indeterminate
-contract and owned value attributes. Spinner needs typed SVG event targets, valid
-geometry and reduced-motion behavior, with explicit decorative/announced modes.
+Next audit Field and Empty. Field has an open prop index, optional label targets
+and no stable IDs for hint/error text. Define how the caller links the native
+control's description and invalid state, while preserving child ownership of
+required/disabled/form values and validation. Empty accepts arbitrary native props
+but never spreads them; fix native attributes/events and document illustration,
+text and native child-action semantics.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

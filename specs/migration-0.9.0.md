@@ -1140,3 +1140,24 @@ CardBodyProps and CardFooterProps are public. Badge has native span props and
 rejects unsupported variants. Kbd has native HTMLElement props on its kbd tag;
 it describes keys and does not register shortcuts. Use readable text for status
 and key names. The packaged `native-display` guide describes all seven exports.
+
+## Alert, Progress and Spinner
+
+Alert uses typed native div attributes. `announcement` selects `assertive` (the
+existing default), `polite` or `off`; choose `off` for static callouts. Tone remains
+visual. Role and live-region attributes belong to the component. Icons take imported
+entries, not string names; visible title text remains separate from native attributes.
+
+Progress now requires a nonempty `label`. Omitted or null `value` means unknown
+progress and omits `aria-valuenow`; pass zero for determinate zero. Finite values
+still clamp to the range. Invalid/nonfinite values and nonpositive/nonfinite maxima
+now throw instead of silently falling back. Use `valueText` for a human-readable
+value. Naming, range attributes and focus behavior are component-owned. Only unknown
+progress shimmers; reduced motion removes shimmer and width transitions.
+
+Spinner has typed SVG attributes/events, with `SVGSVGElement` currentTarget. HTML
+form props and competing geometry/semantic props are rejected. Its size and stroke
+must be positive and finite, with stroke smaller than size. An omitted label means
+decorative content; a supplied label must be nonempty and supplies status semantics
+and SVG title text. Rotation stops under reduced motion. Use the packaged
+`native-status` guide for announcement and loading ownership.

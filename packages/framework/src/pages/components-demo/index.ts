@@ -181,10 +181,10 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Alerts</h2>
                     <div class="space-y-2 max-w-md">
-                        ${component(Alert, { variant: 'default', title: 'Heads up' }, 'This is an informational alert.')}
-                        ${component(Alert, { variant: 'success', title: 'Success' }, 'Your changes were saved.')}
-                        ${component(Alert, { variant: 'warning', title: 'Warning' }, 'Review before continuing.')}
-                        ${component(Alert, { variant: 'destructive', title: 'Error' }, 'Something went wrong.')}
+                        ${component(Alert, { announcement: 'off', variant: 'default', title: 'Heads up' }, 'This is an informational alert.')}
+                        ${component(Alert, { announcement: 'off', variant: 'success', title: 'Success' }, 'Your changes were saved.')}
+                        ${component(Alert, { announcement: 'off', variant: 'warning', title: 'Warning' }, 'Review before continuing.')}
+                        ${component(Alert, { announcement: 'off', variant: 'destructive', title: 'Error' }, 'Something went wrong.')}
                     </div>
                 </section>
 
@@ -341,9 +341,9 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Progress</h2>
                     <div class="space-y-2 max-w-md">
-                        ${component(Progress, { value: 25, size: 'sm' })}
-                        ${component(Progress, { value: 60, size: 'md' })}
-                        ${component(Progress, { value: 90, size: 'lg' })}
+                        ${component(Progress, { label: 'Upload progress', value: 25, size: 'sm' })}
+                        ${component(Progress, { label: 'Upload progress', value: 60, size: 'md' })}
+                        ${component(Progress, { label: 'Upload progress', value: 90, size: 'lg' })}
                     </div>
                 </section>
 

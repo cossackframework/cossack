@@ -88,6 +88,56 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-status-controls-2026-10-04"></a>
+## Codex Alert, Progress and Spinner (2026-10-04)
+
+Author: Codex. Alert has typed native div props and explicit assertive, polite and
+static announcement modes. Its existing default remains assertive; static demo
+callouts select off. Icons remain decorative and the example no longer passes an
+unsupported string icon name. Announcement changes preserve focus.
+
+Progress requires a name and distinguishes unknown progress (omitted/null value)
+from determinate zero. Unknown progress omits aria-valuenow. Finite values clamp to
+the range; invalid values/maxima now reject instead of silently falling back.
+valueText supplies an optional human-readable value. Only unknown progress shimmers;
+reduced motion removes shimmer and width transitions. Dashboard/demo consumers now
+supply names. The component owns range attributes and adds no keyboard interaction.
+
+Spinner retains its SVG root with typed SVGSVGElement callbacks. Public SvgAttributes
+exclude HTML-only props; Spinner owns geometry, focusability and status semantics.
+It validates positive size/stroke, ordering and representable geometry. Decorative
+and labelled states switch without stale attributes. The SVG title stays inside the
+root template: a separately parsed HTML title template left interpolation markers
+as text, which the browser regression caught. Reduced motion stops rotation.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 330 tests in
+  31 files pass, including public declarations, SSR, rejected contracts and ranges.
+- `pnpm --filter cossack exec vitest run tests/status-controls-browser.test.js tests/ui-ejection.test.js`:
+  24 tests pass (23 source-ejection cases and one themed production Chromium case).
+  Browser coverage includes no-JavaScript semantics, retained hydration, native Tab
+  and Enter, focus-preserving updates, unknown/determinate progress, clamping,
+  SVG namespace/title/currentTarget, stale-attribute removal, reduced motion and
+  unmount/remount cleanup. Geometry checks use layout width, not a rotating bounding
+  box. Ejected sources compile with strict NodeNext settings.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose native-status,
+  the required Progress label, all three native event targets and identical
+  exact-symbol Spinner output. The six existing packaged examples compile and
+  execute. Discovery runs with Node networking disabled.
+
+The [ARIA role definitions](https://www.w3.org/TR/wai-aria-1.2/#progressbar) and
+[alert guidance](https://www.w3.org/WAI/ARIA/apg/patterns/alert/) inform these contracts.
+Browser semantics do not prove screen-reader speech delivery; other engines,
+assistive technologies, generated-app integration and the full release matrix
+remain open. The new native-status guide adds no executable example.
+
+Logs: `/tmp/cossack-status-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
+Forty-eight of 65 component-source foundations are reviewed. Continue Field, Empty
+and every pending row. RT-23 and CLI-07/CLI-08 remain open. The release stays 24 of
+58 complete and package versions remain 0.8.3 until REL-04.
+
 <a id="codex-display-controls-2026-10-04"></a>
 ## Codex Skeleton, Card, Badge and Kbd (2026-10-04)
 

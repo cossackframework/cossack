@@ -305,7 +305,7 @@ export default class DashboardBlocks extends Cossack {
                                         <span class="text-foreground">${s.src}</span>
                                         <span class="text-muted-foreground">${s.pct}%</span>
                                     </div>
-                                    ${component(Progress, { value: s.pct })}
+                                    ${component(Progress, { label: s.src, value: s.pct })}
                                 </div>
                             `)}
                         </div>

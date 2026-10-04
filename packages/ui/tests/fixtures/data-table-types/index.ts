@@ -447,3 +447,24 @@ component(CardHeader,{clas:'header'});
 component(Badge,{variant:'unknown'});
 // @ts-expect-error Kbd is descriptive markup, not a button.
 component(Kbd,{disabled:true});
+
+import { Alert, Progress, Spinner } from '@cossackframework/ui';
+component(Alert, { announcement: 'polite', '@click': event => { const root: HTMLDivElement = event.currentTarget; void root; } }, 'Saved');
+component(Progress, { label: 'Upload', value: null, '@click': event => { const root: HTMLDivElement = event.currentTarget; void root; } });
+component(Spinner, { label: 'Loading', '@click': event => { const svg: SVGSVGElement = event.currentTarget; void svg; } });
+// @ts-expect-error Progress requires a name.
+component(Progress, { value: 10 });
+// @ts-expect-error Progress owns its numeric attributes.
+component(Progress, { label: 'Upload', 'aria-valuenow': 10 });
+// @ts-expect-error Alert announcement controls its role.
+component(Alert, { role: 'button' });
+// @ts-expect-error Spinner has an SVG root, not an HTML input.
+component(Spinner, { disabled: true });
+// @ts-expect-error Spinner size owns its geometry.
+component(Spinner, { width: 20 });
+// @ts-expect-error Spinner owns hidden semantics.
+component(Spinner, { 'aria-hidden': false });
+// @ts-expect-error Spinner cannot enter the Tab order.
+component(Spinner, { tabindex: 0 });
+// @ts-expect-error Event currentTarget is SVG, not HTML.
+component(Spinner, { '@click': (event: MouseEvent & {currentTarget: HTMLDivElement}) => event });
