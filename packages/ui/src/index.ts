@@ -71,7 +71,7 @@ export { AlertDialog, type AlertDialogProps } from "./components/AlertDialog";
 export { HoverCard, type HoverCardProps } from "./components/HoverCard";
 export { ScrollArea, type ScrollAreaProps } from "./components/ScrollArea";
 export { Resizable, type ResizableProps, type ResizablePanelProps, type ResizableHandleProps } from "./components/Resizable";
-export { Carousel, type CarouselProps } from "./components/Carousel";
+export { Carousel, type CarouselProps, type CarouselSlide, type CarouselSlideProps, type CarouselViewportProps } from "./components/Carousel";
 export { NavigationMenu, type NavigationMenuProps, type NavigationMenuSection, type NavigationMenuLink, type NavigationMenuLinkProps, type NavigationMenuTriggerProps, type NavigationMenuPanelProps } from "./components/NavigationMenu";
 export { Menubar, type MenubarProps, type MenubarMenu, type MenubarTriggerProps } from "./components/Menubar";
 export { Command, type CommandProps, type CommandItem } from "./components/Command";

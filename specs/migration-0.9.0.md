@@ -1321,3 +1321,47 @@ announcement attributes and tab order, and accepts no children. Dismissal button
 use `type="button"`. One permanent polite announcer replaces nested live regions.
 Escape dismisses the focused toast; removal repairs focus without focusing new
 messages. The stack fits narrow viewports and removes animation for reduced motion.
+
+## Carousel slide and navigation contracts
+
+Author: Codex, 2026-10-04. Carousel now requires `id`, `label` and `slides`.
+Replace positional children with explicit slide records:
+
+```ts
+component(Carousel, {
+    id: 'product-photos',
+    label: 'Product photos',
+    slideSize: '12rem',
+    slides: photos.map(photo => ({
+        value: photo.id,
+        label: photo.description,
+        content: html`<img src=${photo.url} alt=${photo.description}>`,
+    })),
+});
+```
+
+Values must be unique and stable. Each record requires a nonempty label and a
+content property. The array can be empty. `slideSize` is a CSS flex-basis string,
+defaulting to `100%`; a record's `size` overrides it. Use compact sizes to preserve
+multi-card layouts. Native root props target the outer div, `viewportProps` targets
+the scroll viewport, and each slide's `props` targets its own div. Public types are
+`CarouselSlide`, `CarouselSlideProps` and `CarouselViewportProps`.
+
+The component owns IDs, roles, labels and the viewport tab stop. Localize
+`viewportLabel`, `previousLabel`, `nextLabel` and `emptyLabel` as needed. Root or
+slide `aria-roledescription` can override the default description. Controls retain
+focus with `aria-disabled` at measured scroll boundaries. There is no automatic
+rotation or wrapping. Native slide content remains in reading and tab order.
+
+With the viewport focused, arrows follow RTL/LTR direction and Home/End navigate
+to the ends. Keys inside nested controls remain native. `scrollNext`, `scrollPrev`
+and new `scrollToSlide(value)` target real slide geometry. Remove code that reads
+the old public `viewportRef`; use `viewportProps` for native attributes/events.
+Unknown browser method targets throw. A valid disconnected call has no effect.
+
+`onValueChange` reports the settled visible anchor, not a controlled selection or
+an awaited operation. It uses the nearest leading slide, the last slide at the
+scroll end, and the first when all content fits. It reports `undefined` after the
+list becomes empty and does not fire on initial mounting. Reordering preserves
+identity; removal falls back to the nearest remaining ordinal. Focus recovery,
+reduced motion and observer/frame/timer cleanup now belong to the component.

@@ -6,6 +6,122 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-toast-2026-10-04"></a>
+## Codex Toast (2026-10-04)
+
+Author: Codex. Toast writes and subscriptions now reject on the server before
+changing module state or retaining listeners. The browser convenience API and
+root-exported toastStore share one store. createToastStore supplies isolated,
+bounded queues with frozen readonly snapshots, validated options, generated IDs,
+explicit clear/dismiss/dispose operations and one presenter per store. Full queues
+reject instead of evicting focused messages. A throwing subscriber does not
+prevent other subscribers from receiving the committed update.
+
+Timers start when a presenter connects. Hover, focus, window blur and hidden
+state pause them with elapsed time preserved. Unmount cancels timers and clears
+the queue; disposal also releases store subscriptions. Deferred setup waits for
+refs to reach the live document, and cleanup cancels setup that has not run.
+This fixes a hydration failure exposed by the first browser acceptance run.
+
+Toaster now forwards typed native div props into a named region. Dismissal uses
+native non-submit buttons and Escape, with focus recovery that skips disabled or
+hidden candidates. New messages do not steal focus. A permanent polite announcer
+replaces nested live regions; only added messages request announcements. Responsive
+layout fits narrow viewports, and the theme disables animation for reduced motion.
+
+The [W3C status-message technique](https://www.w3.org/WAI/WCAG22/Techniques/aria/ARIA22)
+informs the permanent announcement container. Timer pause alone does not establish
+accessibility compliance: use persistent messages, user timing preferences or
+another persistent source of the information, as described in
+[W3C timing guidance](https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html).
+Actual assistive-technology and cross-browser acceptance remain open.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 461 tests
+  across 38 files pass. Coverage includes server-write/subscription rejection,
+  isolated immutable snapshots, capacity and option validation, disposal,
+  subscribers, IDs without cryptographic browser APIs, SSR, native props and public
+  declaration failures.
+- `pnpm --filter cossack exec vitest run tests/toast-browser.test.js tests/ui-ejection.test.js`:
+  34 tests pass. Source ejection now compiles Toaster together with other reviewed
+  controls under strict NodeNext. The HTTP/Tailwind Chromium fixture covers
+  retained SSR hydration, one live announcer, responsive/reduced-motion layout,
+  native button events, no form submission, keyboard/fallback focus, elapsed timer
+  pause/resume, isolated queues, duplicate presenters, disposal, early cleanup,
+  cleared timers after unmount and queued messages on remount. Focus and hover use
+  real DOM actions; hidden-document/window events are synthetic timing checks.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose Toaster's native
+  props, isolated-store types, public helpers and authored guide. Exact-symbol
+  Toaster output matches across CLI/MCP. Six existing packaged examples compile
+  and execute. Discovery disables Node networking; installation can use the
+  registry. The new guide adds no executable example. The first run caught a
+  missing guide summary; the corrected guide passes the schema, and acceptance
+  now asserts guidance availability before inspecting individual guide entries.
+
+Logs: `/tmp/cossack-toast-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
+Fifty-nine of 65 UI source rows are reviewed. Continue Carousel, all remaining rows,
+then blocks/icons and the full generated-app/runtime matrix. RT-23 and CLI-07/CLI-08
+remain open. Release status stays 24 of 58 complete; versions remain 0.8.3 until REL-04.
+
+<a id="codex-sidebar-2026-10-04"></a>
+## Codex Sidebar (2026-10-04)
+
+Author: Codex. Sidebar now requires a stable id and navigation label. Item values
+provide globally unique identity across keyed groups and links. Public item,
+link and nav prop types define native event targets. Root props reach the aside;
+navProps reach the named nav. Native details/summary groups retain their own
+optional destination and nested links. Active descendants open groups until the
+user makes an explicit choice, including closing an active group.
+
+The icon rail keeps nested navigation and accessible link names. Controlled
+toggle callbacks propose the next boolean state. Native link handlers run first;
+framework navigation handles only ordinary same-origin HTTP(S) clicks. Modifier,
+new-tab, download, external and inherited base-target behavior stays native.
+Offcanvas mode requires an external restoreFocusTo ID, returns contained focus
+before hiding and makes closed content hidden/inert. It supplies no modal focus
+trap. Keyed updates preserve focus or repair it to a reachable control.
+
+Demo pages, the shared shell and generated dashboard use the new contract.
+Migration notes cover required identity, prop ownership, group markup and callback
+behavior. Sidebar item classes now use cs-sidebar__link at every nesting level.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 435 tests
+  across 37 files pass. SSR and declaration tests cover identity, named native
+  targets, group state, hidden content, invalid inputs and public prop branches.
+- `pnpm --filter cossack exec vitest run tests/sidebar-browser.test.js tests/ui-ejection.test.js`:
+  34 tests pass, including 33 source-ejection checks and strict NodeNext compilation.
+  The final browser-only rerun also passes with a native accessibility-tree check.
+  The HTTP/Tailwind fixture covers no-JavaScript disclosures and links, retained
+  hydration, keyboard group controls, manual collapse, nested/reordered items,
+  icon rail, RTL, native events, callback vetoes, modifier/new-tab/download/base
+  target behavior, focus repair, offcanvas return/Tab exclusion and cleanup.
+  Chromium exposes the named summary as DisclosureTriangle with expanded state.
+- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/home.spec.ts --workers=1 --reporter=line`:
+  all seven tests pass. These cover filtering, SPA links, command palette, desktop
+  collapse, mobile dismissal and retained App-shell hydration on two routes.
+  Old button selectors failed for native summaries; the tests now target summary
+  elements and assert accessible naming instead of requiring a synthetic button role.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: 112 tests across
+  seven files pass. The dashboard test renders the real template with actual UI
+  and renderer code. Stubbed module/account inputs do not prove full generated-app
+  authentication or runtime integration.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose both Sidebar
+  collapse-mode branches, required naming/identity, native targets, public item
+  types and authored guidance. Exact-symbol Sidebar results match across CLI/MCP.
+  Six existing packaged examples compile and execute. Discovery runs with Node
+  networking disabled; installation can use the registry. The Sidebar guide adds
+  no executable example.
+
+Logs: `/tmp/cossack-sidebar-{build,ui,browser-ejection,browser-final,shell,scaffold,root-types,types,agent-docs}.log`.
+Fifty-eight of 65 UI source rows are reviewed. Continue Toast, every pending row,
+then blocks/icons and the full generated-app/runtime matrix. RT-23 and CLI-07/CLI-08
+remain open. Release status stays 24 of 58 complete. Versions stay 0.8.3 until REL-04.
+
 <a id="codex-resizable-2026-10-04"></a>
 ## Codex Resizable (2026-10-04)
 

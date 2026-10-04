@@ -615,3 +615,22 @@ toast.show('Message',{id:'x'});
 component(Toaster,{'aria-live':'assertive'});
 // @ts-expect-error Root events target a div.
 component(Toaster,{'@click':(event:MouseEvent & {currentTarget:HTMLButtonElement})=>event});
+
+import { Carousel, type CarouselSlide, type CarouselSlideProps, type CarouselViewportProps } from '@cossackframework/ui';
+const gallerySlideProps: CarouselSlideProps = {'@click': event => { const slide: HTMLDivElement=event.currentTarget; void slide; }};
+const galleryViewportProps: CarouselViewportProps = {'@scroll': event => { const viewport: HTMLDivElement=event.currentTarget; void viewport; }};
+const gallerySlides: readonly CarouselSlide[] = [{value:'a',label:'Landscape',content:'Image',props:gallerySlideProps}];
+component(Carousel,{id:'gallery',label:'Photos',slides:gallerySlides,slideSize:'12rem',viewportProps:galleryViewportProps,onValueChange:value=>{const selected:string|undefined=value;void selected;}});
+// @ts-expect-error Stable document identity and accessible naming are required.
+component(Carousel,{slides:gallerySlides});
+// @ts-expect-error Explicit slide content is required.
+const missingGalleryContent: CarouselSlide = {value:'a',label:'Landscape'};
+// @ts-expect-error Carousel owns the viewport tab stop.
+const conflictingGalleryViewport: CarouselViewportProps = {tabindex:-1};
+// @ts-expect-error Root callbacks target a div.
+component(Carousel,{id:'gallery',label:'Photos',slides:gallerySlides,'@click':(event:MouseEvent & {currentTarget:HTMLButtonElement})=>event});
+// @ts-expect-error Slide identity cannot be replaced through native props.
+const conflictingGallerySlide: CarouselSlideProps = {id:'override'};
+
+// @ts-expect-error Slide dimensions use explicit CSS lengths or percentages.
+component(Carousel,{id:'gallery',label:'Photos',slides:gallerySlides,slideSize:200});

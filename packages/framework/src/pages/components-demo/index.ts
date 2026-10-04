@@ -606,10 +606,9 @@ export class ComponentsDemo extends Cossack {
                 <!-- Carousel -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Carousel</h2>
-                    ${component(Carousel, {},
-                        html`${[1,2,3,4,5].map(i => html`
-                            <div class="snap-start shrink-0 w-48 h-32 rounded-lg bg-muted flex items-center justify-center text-muted-foreground text-lg font-medium border border-border">Slide ${i}</div>
-                        `)}`)}
+                    ${component(Carousel, { id: 'demo-gallery', label: 'Example cards', slideSize: '12rem',
+                        slides: [1,2,3,4,5].map(i => ({ value: String(i), label: `Card ${i}`,
+                            content: html`<div class="h-32 rounded-lg bg-muted flex items-center justify-center text-muted-foreground text-lg font-medium border border-border">Card ${i}</div>` })) })}
                 </section>
 
                 <!-- NavigationMenu + Menubar -->

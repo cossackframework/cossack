@@ -71,7 +71,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [ButtonGroup](../packages/ui/src/components/ButtonGroup.ts) | Reviewed foundation | Named typed native div, consumed props, direct-control border joining, RTL/vertical layout, focus rings and ordinary native child behavior; SSR/Chromium and ejected-source coverage. |
 | [Calendar](../packages/ui/src/components/Calendar.ts) | Reviewed foundation | Strict UTC Gregorian dates, typed root props, SSR selected month, bounded grid keyboard navigation, controlled/default values, locale/week starts and focus ownership. |
 | [Card](../packages/ui/src/components/Card.ts) | Reviewed foundation | All four exports have typed native div contracts; visual-only hover, root/slot padding, native child actions, reduced motion, SSR/Chromium and ejected-source coverage. |
-| [Carousel](../packages/ui/src/components/Carousel.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Carousel](../packages/ui/src/components/Carousel.ts) | Reviewed foundation | Named keyed slides, native root/viewport/slide targets, full/compact sizing, actual scroll boundaries, keyboard/RTL, native handler veto, focus recovery and owned resize/direction observers; SSR/Chromium/ejection coverage. |
 | [Checkbox](../packages/ui/src/components/Checkbox.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Collapsible](../packages/ui/src/components/Collapsible.ts) | Reviewed foundation | Typed root/trigger/panel contracts, native activation, stable IDs, one-time defaults, focus restoration and SSR/Chromium acceptance. |
 | [Combobox](../packages/ui/src/components/Combobox.ts) | Reviewed foundation | Stable IDs, typed input props/events, listbox/active-descendant semantics, controlled/default selection, form values, required/reset behavior, keyboard/pointer and SSR/fresh-render acceptance. |
@@ -125,12 +125,13 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Carousel. Its open prop signature ignores native attributes, the
-region/viewport have no naming or keyboard contract, and navigation scrolls a
-fixed 0.8 viewport rather than targeting slides. Define slide sizing and identity,
-native root/viewport ownership, boundary controls, keyboard and RTL behavior.
-Verify dynamic content, resize, focus, reduced motion, SSR, themed browser behavior
-and source ejection. Then continue the remaining chat and attachment components.
+Next audit Attachment. Its root ignores native props, the remove callback lacks
+its native event target, and the generic removal label does not identify the file.
+Status colors come from English substring guesses, so localized or ambiguous text
+can select the wrong state. Define explicit status styling and typed root/remove/
+thumbnail ownership. Preserve file-type inference, decorative preview semantics,
+child-content policy and native keyboard/form behavior. Continue Bubble, Marker,
+Message and MessageScroller afterward, then blocks and icons.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a
