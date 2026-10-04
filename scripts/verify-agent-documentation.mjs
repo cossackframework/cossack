@@ -1,5 +1,6 @@
 import { verifyNodeDevelopmentApplication } from '../packages/cossack/tests/fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from '../packages/cossack/tests/fixtures/development-trace-acceptance.js';
+import { verifyApplicationGuidance } from '../packages/cossack/tests/fixtures/application-guidance-acceptance.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -178,6 +179,10 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
       },
     });
     console.log(`Installed ${runtime} HTTP/SSE/WebSocket browser traces, offline CLI/MCP parity and production exclusion passed.`);
+
+    const core = catalog.data.packages.find(pkg => pkg.name === '@cossackframework/core');
+    await verifyApplicationGuidance(projectDir, core.guidance.guides);
+    console.log(`Installed ${runtime} packaged action/resource/task examples passed types, browser behavior and source-map-enabled production stripping.`);
 
     if (runtime === 'node') {
       for (const mode of ['vite', 'script']) await verifyNodeDevelopmentApplication(projectDir, mode);

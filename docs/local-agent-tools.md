@@ -201,15 +201,31 @@ form parsing. The focused `@cossackframework/core/input` entry exports schemas,
 form parsing and validation errors without component or runtime imports.
 Renderer guidance covers escaped server HTML. Scaffold guidance covers resource,
 mutation, scoped-service and protected-route recipes. The tarball acceptance
-compiles and executes ten examples against installed public exports. Input
+compiles and executes ten standalone examples against installed public exports. Input
 examples cover normalization, rejected fields, nested errors, inferred types and
 cancellation of an asynchronous refinement. Discovery itself reports
 `exampleExecution: "not-performed"` and `runtimeSupport: "not-verified"`.
 The recipe examples inspect dependencies and capability requirements through the
 pure scaffold registry without writing files. The protected-route example also
 checks auth/database/UI dependencies, D1 requirements and an unsupported provider.
-The examples currently prove Node behavior. Other APIs, components, recipes and
-runtime targets still need their own guidance and acceptance coverage.
+Three more core examples are complete application pages. They cover validated
+component actions, read-only server resources and lifecycle tasks. These pages
+need the framework Vite plugins, generated entry and a browser. An ordinary
+Node import does not execute their application behavior.
+
+The separate acceptance harness writes the exact packaged source into a generated
+application. It checks types, browser/server behavior and client production builds.
+It drives valid and rejected actions, SSR resource reuse, dependency changes,
+failed-load recovery, refresh and task disposal during navigation. A held task
+operation proves that a stale result cannot overwrite its replacement. The
+harness also makes sure that private server markers stay out of browser JavaScript
+and source maps. It enables maps for the production build and requires map files
+before scanning them. CLI/MCP discovery never invokes this harness.
+
+Standalone examples prove Node execution. The application checks cover local
+Cloudflare and Node development and production client stripping. They do not
+prove live deployment or every transport and runtime combination. Other APIs,
+components, recipes and runtime targets still need their own coverage.
 
 
 ## Component prop declarations

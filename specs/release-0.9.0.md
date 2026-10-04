@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): fresh CLI/MCP catalogs and packaged guides include route URLs, typed query state, schemas, nested forms, renderer output and four feature recipes. Ten examples compile and execute from installed tarballs. Broader authored API/component/recipe coverage and runtime guidance remain open. See the [installed input checkpoint](#codex-cli08-input-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): fresh CLI/MCP catalogs include ten standalone examples and three complete action/resource/task pages. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Broader library/component/recipe coverage and runtime guidance remain open. See [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -93,6 +93,45 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-cli08-application-guidance-2026-10-04"></a>
+### Codex: Executable application guidance (2026-10-04)
+
+Core now packages complete pages for validated component actions, read-only
+server resources and lifecycle tasks. The test harness writes the catalog's
+source verbatim into generated applications. It checks types, runs native
+server/browser interactions and builds clients with source maps enabled.
+Discovery still returns source text without executing it.
+
+Both Cloudflare and Node verify valid and rejected actions, loading settlement,
+SSR resource reuse without a duplicate request, dependency changes, retained
+values after failure, recovery and refresh. A held legacy operation settles
+after its replacement commits, so task ownership is checked without a timing
+assumption. Timer cleanup passes on rerun and navigation. Navigation stays in
+the same document. Production JavaScript and emitted source maps exclude both
+private server markers. Removing the input export also removes its action guide.
+
+- `pnpm test:agent-docs:local`: passes twelve installed tarballs, ten standalone
+  examples, three application examples, offline CLI/MCP parity, reporter types,
+  Cloudflare HTTP/SSE/WebSocket traces, production exclusion and UI catalogs.
+  Log: `/tmp/cossack-cli08-app-guidance-installed.log`.
+- `node scripts/test-local-scaffold.mjs --node-dev-only`: passes the same
+  installed documentation/application acceptance on Node, plus cold WebSocket
+  startup, source reload, HMR and binding parity.
+  Log: `/tmp/cossack-cli08-app-guidance-installed-node.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'executes packaged application guidance'`:
+  **2 runtime cases pass / 54 unrelated cases skipped**.
+  Log: `/tmp/cossack-cli08-app-guidance-workspace.log`.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`:
+  **11 tests pass**. Log: `/tmp/cossack-cli08-app-guidance-reader.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: pass for the root and all eleven packages.
+  Logs: `/tmp/cossack-cli08-app-guidance-root-types.log` and `/tmp/cossack-cli08-app-guidance-package-types.log`.
+
+These pages prove local HTTP application behavior on Cloudflare and Node, with
+production client stripping. They do not prove deployed production behavior,
+every transport, Deno application examples or other library/UI guidance.
+CLI-08, REL-02 and REL-03 remain open. Catalog runtime support remains explicitly
+unverified. Desktop stays closed. Release status remains **27 complete / 31 open**.
 
 <a id="codex-cli08-input-2026-10-04"></a>
 ### Codex: Portable input guidance and installed examples (2026-10-04)

@@ -97,6 +97,7 @@ it('reads the authored core guides and omits input guidance when its installed e
   expect(after).toMatchObject({ status: 'partial', version: '0.9.1', omitted: [
     { id: 'validated-input', reason: 'imports-unavailable' },
     { id: 'nested-form-input', reason: 'imports-unavailable' },
+    { id: 'component-actions', reason: 'imports-unavailable' },
   ] });
   expect(after.guides.map(guide => guide.id)).toContain('typed-url-state');
   expect(after.guides.some(guide => guide.imports.includes(name + '/input'))).toBe(false);

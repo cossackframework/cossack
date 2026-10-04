@@ -1,6 +1,7 @@
 import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
+import { verifyApplicationGuidance } from './fixtures/application-guidance-acceptance.js';
 import { createDataTableBackend, writeDataTableAcceptance, checkDataTableBrowser } from './fixtures/data-table-acceptance.js';
 import { afterEach, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -1737,3 +1738,9 @@ it.skipIf(process.env.COSSACK_DESKTOP_ACCEPTANCE!=='1').each([false,true])('exec
     onRecorded: record => verifyDesktopTraceReaders(root,record,path.join(repository,'packages/cossack')),
   });
 },120000);
+
+it.each(['cloudflare', 'node'])('executes packaged application guidance on %s', async runtime => {
+  const root = await project(runtime);
+  const guides = JSON.parse(await fs.readFile(path.join(repository, 'packages/core/agent-docs.json'), 'utf8')).guides;
+  await verifyApplicationGuidance(root, guides, { additionalAllowedPaths: [repository] });
+}, 180000);

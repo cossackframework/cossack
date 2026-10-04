@@ -35,9 +35,13 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
    Core guidance now includes typed URL state, standalone schemas and nested forms.
    Preserve the focused `core/input` export and
    [ten installed examples](./release-0.9.0.md#codex-cli08-input-2026-10-04).
-   Next add component/action/resource/task usage through executable application
-   fixtures, then expand other library and UI guidance. Pure helpers and recipe
-   plans do not prove RPC, browser or adapter behavior.
+   Packaged action/resource/task pages now run verbatim through generated application
+   fixtures. Preserve their input rejection, hydrated resource reuse, recovery,
+   deterministic stale-task overlap, navigation cleanup and client stripping.
+   [Installed Cloudflare and Node acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04)
+   also requires emitted source maps before scanning for server code.
+   Continue other library and UI guidance and the remaining runtime coverage.
+   Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
 3. Follow the detailed plan for all 31 open tasks. Close each only against its

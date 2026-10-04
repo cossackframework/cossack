@@ -97,6 +97,10 @@ omits guides whose public imports are unavailable and never executes examples.
 A separate tarball acceptance harness compiles and executes selected repository-owned
 examples against installed exports. Authored guidance does not establish runtime
 compatibility.
+Application examples require the framework compiler and a running server/browser.
+The separate acceptance harness writes selected packaged page source verbatim,
+checks generated types, executes browser/RPC/resource/task behavior, and builds
+client output to check server stripping. No discovery entrypoint calls this harness.
 
 Stored test evidence uses the Node-only `test-results-service.js` shared by CLI
 and MCP. The opt-in public Vitest 4 reporter writes versioned project-bound records

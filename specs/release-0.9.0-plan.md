@@ -149,7 +149,12 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples now cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Ten examples compile and execute from installed tarballs. See the
+Ten standalone examples compile and execute from installed tarballs. Three more
+packaged pages exercise component actions, resources and lifecycle tasks in
+generated applications. The harness uses the exact catalog source, owns the
+browser/server lifecycle and requires emitted client source maps before checking
+server stripping. Installed Cloudflare and Node acceptance passes. Discovery never
+invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04) and the
 [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04).
 The RT-23 UI catalog audit is complete.
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
