@@ -402,8 +402,9 @@ No authorization code, verifier or credential enters the state record. Stateless
 mode owns its CSRF and replay policy. Expired abandoned rows need app cleanup.
 
 Callback handlers also clear browser cookies, including early rejection. This
-does not roll back storage or application writes. Persistent request validation
-does not imply identity refresh on an already-open transport connection.
+does not roll back storage or application writes. Authenticated SSE additionally
+uses a server-only session descriptor to revalidate storage, user/roles, inherited
+guards and scope before each delivery. WebSocket freshness remains separate work.
 
 The Node-only database JSON subprocess isolates project output and communicates
 through IPC. Its bootstrap uses dynamic imports under default CommonJS eval mode.
@@ -703,6 +704,14 @@ Page and enclosing layout middleware also run before transport handlers create
 components. Layout-service RPC uses the owning layout guard stack. HTTP RPC and
 uploads require an allowed Origin header. SSE scopes are recomputed on the
 server for subscriptions and actions, including custom scopes.
+Authenticated SSE captures a bounded structural identity descriptor, never a
+bearer token. Each snapshot/replay/event/heartbeat re-enters fresh request, config
+and configured ORM scopes before resolving the current user and guards. The
+original owner and scope must still match. Decoded params/bindings and the
+subscription locale remain available; credential/assertion headers are removed
+and response-header changes reject. A fixed terminal event closes EventSource
+and stops retries. In-flight frames and backpressure remain explicit limits;
+see [SSE authorization](./sse.md#live-subscription-authorization).
 
 Durable Object proxy requests replace client-supplied identity headers with the
 trusted authentication context. WebSocket actions expose the caller's identity

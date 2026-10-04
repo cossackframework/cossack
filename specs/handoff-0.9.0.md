@@ -85,10 +85,26 @@ the required non-Desktop release matrix.
    following requests. Preserve the new `auth-input.ts` owned file, object action
    signatures and real-page regressions. Rotation redirects before a fresh list.
    Registration and reset failures can follow partial writes; do not infer rollback.
-   Next audit concurrent requests/tabs and realtime identity freshness. Signed
-   flash clearing does not provide durable replay protection. The public old-input
-   guide now joins the application guidance harness. Preserve RT-13 regressions.
-   RT-11 stays open for its remaining criteria.
+   [SSE session freshness](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05)
+   now passes generated Node SQLite/Cloudflare D1 and Chromium. Preserve the
+   server-only public-reference/token-fingerprint descriptor, strict shared
+   session validation, fresh request/config/ORM scopes, inherited guards and
+   owner/scope checks before every frame/heartbeat. Credential headers stay out
+   of recheck contexts. Missing/invalid provider configuration and capture/storage
+   failure have distinct fixed codes. Denial closes EventSource, stops retries
+   and requires explicit reload; late old-source callbacks cannot affect a new source.
+   Two tabs verify rotation of their shared cookie, old-stream closure and fresh
+   reload. Native checks cover purpose/expiry/revocation, fresh user metadata for
+   guard/scope changes, authorized peer delivery and an idle storage failure.
+   Preserve replay/heartbeat/backpressure tests, private helper/map exclusion,
+   actual auth-form regressions and the guide's explicit migration contract.
+   Next implement WebSocket action **and outgoing delivery** freshness, including
+   hibernation and per-connection scope. Core socket dispatch still trusts the
+   upgrade user; the SSE contract does not close that gap. Reuse the structural
+   descriptor without retaining bearer credentials. Broader concurrent request
+   semantics remain; signed flash clearing does not provide durable replay protection.
+   RT-11 stays open. In-flight checked frames, slow storage and backpressure
+   prevent a strict elapsed-time revocation guarantee.
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.

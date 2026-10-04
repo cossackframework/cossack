@@ -10,6 +10,8 @@ export {
     type AuthProvider,
     type LoginHandlerOptions,
     type SessionCreator,
+    type AuthRealtimeIdentity,
+    type AuthRealtimeProvider,
 } from './session';
 
 // OAuth 2.0 authentication

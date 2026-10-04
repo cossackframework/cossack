@@ -104,12 +104,13 @@ function createFakeCoordinator() {
     };
 }
 
-const { registry, state } = vi.hoisted(() => ({
+const { registry, state, middlewares } = vi.hoisted(() => ({
     registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} as Record<string, any> },
     state: { coordinator: undefined as ReturnType<typeof createFakeCoordinator> | undefined },
+    middlewares: [] as import('hono').MiddlewareHandler[],
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
-vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
+vi.mock('virtual:cossack-middlewares', () => ({ default: middlewares }));
 vi.mock('virtual:cossack-config', () => ({ default: {} }));
 
 const path = '/src/pages/live/index.ts';
@@ -234,6 +235,8 @@ async function readSseUntil(
 
 afterEach(() => {
     state.coordinator = undefined;
+    middlewares.length = 0;
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
 });
@@ -321,6 +324,46 @@ describe('SSE coordinator transport (/crpc and SSR through the distributed backe
 });
 
 describe('SSE coordinator subscription endpoint', () => {
+    it('denies the first replay frame when authorization changes after response headers', async () => {
+        await page(); await call('increment'); await call('announce');
+        let allowed = true;
+        middlewares.push(async (c, next) => { if (!allowed) return c.json({ denied: true }, 403); await next(); });
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, { headers: { 'Last-Event-ID': '0' } }, env() as any);
+        expect(response.status).toBe(200); allowed = false;
+        const reader = response.body!.getReader(); const first = new TextDecoder().decode((await reader.read()).value);
+        expect(first).toBe('event: authorization-error\ndata: {"code":"COSSACK_REALTIME_AUTH_CHANGED"}\n\n');
+        expect((await reader.read()).done).toBe(true);
+    });
+
+    it('rechecks between replay frames rather than trusting the initial decision', async () => {
+        await page(); await call('increment'); await call('increment');
+        let allowed = true; let checks = 0;
+        middlewares.push(async (c, next) => { checks++; if (!allowed) return c.json({ denied: true }, 403); await next(); });
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, { headers: { 'Last-Event-ID': '0' } }, env() as any);
+        const reader = response.body!.getReader();
+        expect(new TextDecoder().decode((await reader.read()).value)).toContain('"count":1');
+        allowed = false;
+        const terminal = new TextDecoder().decode((await reader.read()).value);
+        expect(terminal).toContain('event: authorization-error'); expect(terminal).not.toContain('"count":2');
+        expect(checks).toBe(3); expect((await reader.read()).done).toBe(true);
+    });
+
+    it('revalidates an idle stream before its heartbeat and awaits scope cleanup', async () => {
+        await page(); vi.useFakeTimers();
+        let allowed = true; let cleaned = 0;
+        middlewares.push(async (c, next) => {
+            if (!allowed) return c.json({ denied: true }, 403);
+            try { await next(); } finally { cleaned++; }
+        });
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {}, env() as any);
+        const reader = response.body!.getReader();
+        await reader.read(); await reader.read(); const before = cleaned;
+        const pending = reader.read(); await vi.advanceTimersByTimeAsync(14800);
+        expect(cleaned).toBe(before); allowed = false; await vi.advanceTimersByTimeAsync(200);
+        expect(new TextDecoder().decode((await pending).value)).toContain('COSSACK_REALTIME_AUTH_CHANGED');
+        expect((await reader.read()).done).toBe(true);
+    });
+
     it('cold starts with layout services even before SSR', async () => {
         const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {}, env() as any);
         expect(response.status).toBe(200);

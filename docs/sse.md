@@ -19,8 +19,7 @@ SSE pages use one of two backends, selected by the runtime:
   inside one process. This is a development convenience, not durable
   coordination; see [Runtime backends](#runtime-backends).
 
-> Authored by GLM (2026-10-02) for the 0.9.0 distributed SSE work; Codex to
-> review against the implementation.
+Reviewed and updated by Codex for the 0.9.0 distributed SSE and session work.
 
 ## Cloudflare setup
 
@@ -116,6 +115,55 @@ export class LiveCounter extends Cossack {
 5. Every subscribed client receives `state-update` events. When the event
    history for a cursor has expired, the subscriber receives a fresh
    authoritative snapshot instead of a gap.
+
+## Session changes on an open subscription
+
+Authenticated SSE needs `createAuth({ realtime: { key, capture, validate }, ... })`.
+The generated auth recipe supplies this provider. An authenticated application
+without the capture hook receives HTTP 409 with
+`COSSACK_REALTIME_AUTH_REQUIRED` when it opens `/sse`. Anonymous pages can still
+subscribe; their middleware and scope are also checked before delivery.
+Capture/storage failures instead return fixed HTTP 503
+`COSSACK_REALTIME_AUTH_UNAVAILABLE`, without the provider exception text.
+
+`key` is a stable application name, such as `app.sessions`. `capture(sessionId,
+userId, context)` returns a server-only JSON descriptor. `validate(data, context)`
+checks current storage and returns the current owner ID, or `null`. Auth then
+loads the current user and roles through `resolveUserById`. The framework keeps
+its auth integration structural and does not import the auth or database package.
+
+The generated descriptor contains the session's independent public reference
+and a SHA-256 fingerprint of its random token. The reference survives rotation;
+the fingerprint changes. Validation checks both against a live, unexpired auth
+session. A reference alone would keep an old subscription valid after rotation.
+Never put a bearer token in the descriptor, public state or event payloads.
+Keep even the fingerprint server-only. Descriptors must be plain JSON, at most
+1024 encoded bytes, with at most 128 visited values and 16 nesting levels.
+Accessors, reserved prototype keys, sparse arrays and unsupported values reject.
+
+Before each snapshot, replay frame, event or heartbeat, the framework runs a
+fresh request/config/ORM scope, global middleware and inherited page/layout
+guards. It resolves fresh user data and requires the same owner and computed
+scope as at subscription time. The original page params and resolved locale
+remain available. Cookie, Authorization and common credential/assertion headers
+are removed from the recheck request. Middleware must use its revalidation
+provider rather than reread a login cookie. It cannot renew a cookie or change
+response headers after the stream has started. Middleware denial, provider
+failure, missing user, revoked/expired/rotated session or changed scope ends delivery.
+
+The server sends `authorization-error` with `COSSACK_REALTIME_AUTH_CHANGED` and
+closes the stream. The browser closes EventSource, stops its automatic retries
+and reports a fixed error in `this.realtime.sse.lastError`. Reload the page to
+open a subscription with the current cookie. Other authorized subscribers in
+the same scope continue receiving updates. This behavior applies to both SSE
+backends. WebSocket session freshness remains separate release work.
+
+Checks run before emission. A frame that passed its check can already be in
+flight when another request revokes the session. An idle stream checks before
+its next 15-second heartbeat while the reader has demand; network buffering,
+backpressure or slow application storage can delay it. There is no atomic
+revocation barrier or fixed wall-clock closure guarantee. Each delivery invokes
+auth storage and guard callbacks, so keep those callbacks read-only and fast.
 
 ## Shared state semantics
 

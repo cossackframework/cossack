@@ -6,6 +6,89 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt11-sse-auth-2026-10-05"></a>
+### Codex: SSE session freshness and tab rotation (2026-10-05)
+
+Author: Codex. Continued after `fa2b2bd`. This completes the SSE delivery slice
+of RT-11, not its WebSocket or broader concurrent-request criteria.
+
+Auth exposes optional typed `AuthRealtimeProvider` capture/validate callbacks.
+Normal middleware registers a server-only capture hook only after session/user
+validation. A restored descriptor cannot fall back to a cookie, retain an earlier
+user or call downstream middleware twice after failure. Validation errors use one
+fixed warning. Framework owns a structural protocol without an auth/ORM dependency.
+Descriptor copying is bounded, detached and rejects accessors, reserved keys,
+sparse arrays, non-JSON values and invalid provider names. Configuration errors
+return fixed HTTP 409 `COSSACK_REALTIME_AUTH_REQUIRED`; provider capture/storage
+failures return fixed HTTP 503 `COSSACK_REALTIME_AUTH_UNAVAILABLE`.
+
+The generated provider captures an independent public session reference and
+SHA-256 fingerprint of its current random bearer token. Neither token nor
+fingerprint enters public state, browser frames or coordinator snapshots. Lookup
+by reference then uses the shared session manager for strict purpose, timestamp,
+expiry and token validation; malformed dates and future-created records reject.
+A rotation retains the reference but changes the fingerprint. Each refresh also
+resolves current user data before inherited guards and scope run.
+
+Framework creates fresh request/config/ORM scopes before every snapshot, replay
+frame, event and heartbeat. It retains decoded page params, bindings and the
+subscription locale, strips common credential/assertion headers and prohibits
+late response-header writes. Global and inherited page/layout middleware must
+finish, including cleanup, before delivery; denial or failure stops it. The
+original owner and computed scope must still match. Node's former interval driver
+now shares the coordinator's pull-driven stream, so cancellation/backpressure
+retire its timers and connection count without queued writes.
+
+Denial emits only the fixed `authorization-error` event with
+`COSSACK_REALTIME_AUTH_CHANGED`, then closes. Core retires EventSource before
+setting fixed closed feedback, ignores late callbacks and stops automatic retries.
+Reload opens a subscription with the current cookie. Unit checks cover denial
+before the first replay frame, denial between frames, idle heartbeat checks,
+fresh/cleaned middleware scopes, config/locale facilities and browser ownership.
+
+Generated production Node SQLite and Cloudflare D1 fixtures use the real auth
+provider/session manager and actual SQL. They verify logout, expiry, purpose
+changes, current user metadata for inherited denial/scope changes, and continued
+peer delivery in a shared room. Chromium opens two tabs with one cookie, rotates
+it from the second tab, observes both old subscriptions close without the new
+state, waits through the normal retry interval, then reloads and receives fresh
+updates with the replacement. Dropping the actual sessions table also closes an
+idle stream before its next heartbeat without disclosing storage text. These
+fixture APIs are setup/fault controls, not published application routes. A
+separate fixture-reader regression requires complete SSE events when the network
+splits event headers/data across chunks. Client JavaScript and emitted source
+maps exclude private auth/storage helpers.
+
+| Command | Verified result |
+| --- | --- |
+| `pnpm --filter @cossackframework/framework exec vitest run` | 1534 tests / 78 files pass, including strict capture diagnostics, replay/heartbeat authorization, middleware scopes and existing RPC/runtime coverage. |
+| `pnpm --filter @cossackframework/auth exec vitest run` | 273 tests / 11 files pass, including restored identity, no bearer fallback, redacted failures and one downstream call. |
+| `pnpm --filter @cossackframework/scaffold exec vitest run` | 148 tests / 8 files pass. Final shared-validator/date regressions also pass the focused 36-test auth-security file. |
+| `pnpm --filter @cossackframework/core exec vitest run tests/realtime-recovery.test.ts tests/sse-snapshot-ordering.test.ts` | 27 tests / 2 files pass. |
+| `pnpm --filter cossack exec vitest run tests/auth-sse-reader.test.js tests/generated-runtime-build.test.js -t 'revalidates generated authenticated SSE sessions\|waits for a complete SSE event'` | Two native Node/Cloudflare and Chromium cases plus one reader regression pass; 62 unrelated runtime cases skipped. Generated types/builds and source maps pass. |
+| `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'operates actual generated auth forms'` | Two real Node/Cloudflare auth-form regressions pass; 62 unrelated cases skipped. |
+| `pnpm --filter cossack exec vitest run tests/package-guidance.test.js` | 12 shared guidance-reader tests pass. Auth's existing guide now describes the SSE provider/migration contract. |
+| `pnpm tsc --noEmit` and `pnpm typecheck` | Root and all 11 package checks pass. |
+
+Logs: `/tmp/cossack-rt11-sse-{build,framework-all,auth-all,scaffold-all,core,native,forms-regression,guidance,root-types,package-types}.log`.
+The final focused scaffold log is `/tmp/cossack-rt11-sse-scaffold.log`.
+Builds that replace dependency dist ran separately from its readers.
+
+Limits: validation and revocation are not an atomic barrier. A checked frame can
+already be in flight, and an already-started action can retain its request actor.
+Idle checks occur before 15-second heartbeats only with reader demand; network
+buffering, slow storage and backpressure prevent a fixed elapsed-time guarantee.
+Fresh guard callbacks must be read-only and fast; ignored application I/O has no
+new deadline. Custom credential/query headers are application-owned and must not
+carry retained secrets. Native permission checks here use fresh user metadata;
+this is not a new claim about a deployed RBAC database or every provider.
+WebSocket actions/outgoing state still trust the upgrade identity and require
+separate native/hybrid hibernation acceptance. Deno production acceptance,
+installed auth-SSE artifacts, live deployment and the final non-Desktop release
+matrix are not established by these workspace fixtures. Signed flash cookies
+remain replayable. Counts stay **28 complete / 30 open**. Desktop remains complete
+by user decision; its platform checks are waived, not reported as passing.
+
 <a id="codex-rt11-forms-2026-10-05"></a>
 ### Codex: Generated auth form privacy and session actions (2026-10-05)
 

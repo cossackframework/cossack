@@ -39,7 +39,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Remaining: broader concurrent request/tab semantics and realtime freshness.
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE now revalidates storage, fresh guards and scope before delivery, and rotation closes subscriptions across browser tabs. Remaining: broader concurrent request semantics and WebSocket freshness. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05).
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -93,6 +93,21 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-rt11-sse-auth-2026-10-05"></a>
+### Codex: SSE session freshness (2026-10-05)
+
+Authenticated SSE now captures a server-only reference/token fingerprint and
+revalidates current storage, user data, inherited guards and scope before every
+snapshot, replay frame, event and heartbeat. Each check owns fresh request,
+config and ORM scopes. Denial closes EventSource with fixed feedback and stops
+retries until reload. Capture configuration and storage failures have distinct codes.
+Generated Node SQLite/Cloudflare D1 and Chromium verify revocation, expiry,
+rotation across tabs, purpose/scope changes, inherited denial, authorized peers
+and idle storage failure. JavaScript and emitted maps exclude private helpers.
+See [commands, migration and precise limits](./release-0.9.0-verification-archive.md#codex-rt11-sse-auth-2026-10-05).
+**28 complete / 30 open.** RT-11 stays open for WebSocket freshness and broader
+concurrency. Desktop stays complete by user decision.
 
 <a id="codex-rt11-forms-2026-10-05"></a>
 ### Codex: Generated auth form privacy and session actions (2026-10-05)

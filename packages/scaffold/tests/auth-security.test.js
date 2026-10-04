@@ -86,6 +86,39 @@ function generatedFormPage(files, name, api) {
 }
 
 describe('generated auth security', () => {
+  it('captures no bearer and rejects the same reference after token rotation', async () => {
+    const { provider, Session } = await generatedAuth();
+    const original = sessionRow(); Session.findOne.mockResolvedValue(original);
+    const captured = await provider.realtime.capture(original.id, original.userId, ownerContext());
+    expect(captured).toEqual({ reference: original.publicId, fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(JSON.stringify(captured)).not.toContain(original.id);
+    expect(await provider.realtime.validate(captured, ownerContext())).toBe(original.userId);
+    expect(Session.findOne).toHaveBeenCalledWith({ where: { publicId: original.publicId } });
+    expect(Session.findOne).toHaveBeenLastCalledWith({ where: { id: original.id } });
+    Session.findOne.mockResolvedValue({ ...original, id: 'ROTATED_PRIVATE_BEARER' });
+    expect(await provider.realtime.validate(captured, ownerContext())).toBeNull();
+    const replacement = await provider.realtime.capture('ROTATED_PRIVATE_BEARER', original.userId, ownerContext());
+    expect(replacement.reference).toBe(captured.reference); expect(replacement.fingerprint).not.toBe(captured.fingerprint);
+    expect(await provider.realtime.validate(replacement, ownerContext())).toBe(original.userId);
+  });
+
+  it('rejects revoked, expired and wrong-purpose realtime identities', async () => {
+    const { provider, Session } = await generatedAuth(); const row = sessionRow();
+    Session.findOne.mockResolvedValue(row); const captured = await provider.realtime.capture(row.id, row.userId, ownerContext());
+    for (const stored of [null, { ...row, expiresAt: new Date(0) }, { ...row, expiresAt: new Date(NaN) },
+      { ...row, createdAt: new Date(Date.now() + 10000) }, { ...row, createdAt: new Date(NaN) }, { ...row, meta: { type: 'password_reset' } },
+      { ...row, meta: { type: 'oauth_state', provider: 'github' } }]) {
+      Session.findOne.mockResolvedValue(stored); expect(await provider.realtime.validate(captured, ownerContext())).toBeNull();
+    }
+    Session.findOne.mockResolvedValue({ ...row, userId: 'another-owner' });
+    await expect(provider.realtime.capture(row.id, row.userId, ownerContext())).rejects.toThrow('Session ended');
+    Session.findOne.mockClear();
+    for (const value of [null, [], {}, { ...captured, fingerprint: row.id }, { ...captured, reference: row.id }]) {
+      expect(await provider.realtime.validate(value, ownerContext())).toBeNull();
+    }
+    expect(Session.findOne).not.toHaveBeenCalled();
+  });
+
   it('creates an independent management reference without changing the auth purpose', async () => {
     const { api, Session } = await generatedAuth();
     const created = await api.authSessions.create('member', ownerContext());

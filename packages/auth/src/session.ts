@@ -1,5 +1,20 @@
 import type { Context, MiddlewareHandler } from 'hono';
 
+/** Server-only, JSON descriptor. Never put a bearer credential in data. */
+export interface AuthRealtimeIdentity {
+    version: 1;
+    provider: string;
+    data: unknown;
+}
+
+export interface AuthRealtimeProvider {
+    /** Stable application-owned name for descriptor validation. */
+    key: string;
+    capture: (sessionId: string, userId: string, c: Context) => unknown | Promise<unknown>;
+    /** Check the descriptor against current storage and return its current owner. */
+    validate: (data: unknown, c: Context) => Promise<string | null>;
+}
+
 export interface AuthProvider<User> {
     extractSessionId: (c: Context) => string | undefined | Promise<string | undefined>;
     validateSessionId: (sessionId: string, c: Context) => Promise<string | null>;
@@ -10,6 +25,7 @@ export interface AuthProvider<User> {
      * other code path) without having to be supplied again.
      */
     createSession?: (user: User, c: Context) => Promise<{ headers: Headers }>;
+    realtime?: AuthRealtimeProvider;
 }
 
 export type SessionCreator<User> = (user: User, c: Context) => Promise<{ headers: Headers }>;
@@ -24,7 +40,11 @@ export type LoginHandlerOptions<User> = {
 };
 
 export type AuthKit<User> = {
-    middleware: MiddlewareHandler<{ Variables: { user?: User } }>;
+    middleware: MiddlewareHandler<{ Variables: {
+        user?: User;
+        'cossack.realtimeIdentity'?: unknown;
+        'cossack.captureRealtimeIdentity'?: () => Promise<AuthRealtimeIdentity>;
+    } }>;
     createLoginHandler: (options: LoginHandlerOptions<User>) => MiddlewareHandler;
     /**
      * The session creator configured on the provider, if any. Reusable by any
@@ -42,7 +62,27 @@ export type AuthKit<User> = {
  *  - `createSession`: the reusable session creator (if configured on the provider).
  */
 export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
-    const middleware: MiddlewareHandler<{ Variables: { user?: User } }> = async (c, next) => {
+    if (provider.realtime && (typeof provider.realtime.key !== 'string' || !/^[a-z][a-z0-9._-]{0,63}$/.test(provider.realtime.key))) {
+        throw new TypeError('Realtime auth needs a stable provider key.');
+    }
+    const middleware: AuthKit<User>['middleware'] = async (c, next) => {
+        // A reused context must not retain an earlier identity after failure.
+        c.set('user', undefined);
+        c.set('cossack.captureRealtimeIdentity', undefined);
+        const restored: unknown = c.get('cossack.realtimeIdentity');
+        if (restored !== undefined) {
+            const matchesProvider = provider.realtime && restored && typeof restored === 'object' &&
+                !Array.isArray(restored) && (restored as AuthRealtimeIdentity).version === 1 &&
+                (restored as AuthRealtimeIdentity).provider === provider.realtime.key && Object.hasOwn(restored, 'data');
+            try {
+                const userId = matchesProvider
+                    ? await provider.realtime!.validate((restored as AuthRealtimeIdentity).data, c) : null;
+                if (userId) c.set('user', await provider.resolveUserById(userId, c) ?? undefined);
+            } catch {
+                console.warn('[Cossack Auth] COSSACK_AUTH_REALTIME_VALIDATION_FAILED: continuing as guest. Check realtime session storage.');
+            }
+            return await next();
+        }
         let sessionId: string | undefined;
         try { sessionId = await provider.extractSessionId(c); }
         catch {
@@ -80,6 +120,12 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
         }
         if (user) {
             c.set('user', user);
+            if (provider.realtime) {
+                c.set('cossack.captureRealtimeIdentity', async (): Promise<AuthRealtimeIdentity> => ({
+                    version: 1, provider: provider.realtime!.key,
+                    data: await provider.realtime!.capture(sessionId!, userId!, c),
+                }));
+            }
         }
 
         await next();

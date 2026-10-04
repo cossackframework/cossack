@@ -143,6 +143,23 @@ describe('realtime recovery: SSE status', () => {
         else { MockEventSource.instances[1].onopen?.(); expect(realtimeStatus(component).sse.state).toBe('open'); }
     });
 
+    it('stops retries after an authorization change and ignores late frames from that source', () => {
+        const component: any = makeComponent(); component.count = 1;
+        connectSSE(component); const source = MockEventSource.instances[0]; source.onopen?.();
+        source.emit('authorization-error', '{"code":"COSSACK_REALTIME_AUTH_CHANGED","private":"ignored"}');
+        expect(source.readyState).toBe(MockEventSource.CLOSED);
+        expect(realtimeStatus(component).sse).toMatchObject({ state: 'closed', attempts: 0,
+            lastError: 'Realtime authorization changed. Reload the page to reconnect.' });
+        source.onerror?.(); source.onopen?.(); source.emit('state-update', '{"count":99}');
+        expect(component.count).toBe(1); expect(realtimeStatus(component).sse.state).toBe('closed');
+        expect(MockEventSource.instances).toHaveLength(1);
+        connectSSE(component); const replacement = MockEventSource.instances[1]; replacement.onopen?.();
+        source.emit('authorization-error', '{}');
+        expect(replacement.readyState).not.toBe(MockEventSource.CLOSED);
+        replacement.emit('state-update', '{"count":2}'); expect(component.count).toBe(2);
+        disconnectSSE(component);
+    });
+
     it('marks a permanently closed source as closed', () => {
         const component: any = makeComponent();
         connectSSE(component);

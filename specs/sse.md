@@ -25,6 +25,32 @@ Cloudflare detection uses `navigator.userAgent === 'Cloudflare-Workers'` (the
 documented Workers identity). Binding presence alone selects the coordinator,
 which keeps the backend unit-testable with a structural fake.
 
+## Live subscription authorization
+
+`framework/realtime-context.ts` owns a structural server-only identity protocol.
+Auth exposes optional `AuthRealtimeProvider` capture/validate callbacks. The
+scaffold captures `{ reference, fingerprint }`, with an independent public UUID
+and SHA-256 of the current random token. Expiry, auth purpose, owner and token
+fingerprint must still match storage; auth resolves user/roles afresh. No token
+or fingerprint enters hydration, coordinator public state or browser frames.
+
+Both subscription backends use one pull-driven stream. Each delivery, including
+replay and heartbeat, re-enters fresh request/config/ORM scopes and global plus
+inherited guard middleware. Decoded params, request bindings and the captured
+locale are available. Credential/assertion headers are removed. Response header
+writes are prohibited. The original owner and computed scope must still match.
+Denial or validation failure emits only the fixed `authorization-error` event
+and closes. Core retires that EventSource before handling any later callback,
+sets fixed closed feedback and stops retries. Explicit reload uses the current
+cookie. Missing authenticated capture support returns coded HTTP 409 at open.
+
+Initial and queued frames are checked again at emission. Checks and revocation
+are not one transaction: a validated frame can be in flight after revocation.
+Idle checks occur before the 15-second heartbeat with reader demand; backpressure
+and slow storage prevent a strict elapsed-time guarantee. An action that already
+started can also retain its request identity. WebSocket delivery/action freshness
+is still open RT-11 work. See the [provider and migration contract](../docs/sse.md#session-changes-on-an-open-subscription).
+
 ## Package and import boundaries
 
 - `packages/framework/src/SseDurableObject.ts` is the only module that imports

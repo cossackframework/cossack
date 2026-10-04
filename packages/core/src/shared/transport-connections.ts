@@ -382,6 +382,14 @@ export function connectSSE(component: any): void {
         } catch { /* keep the flag */ }
     });
 
+    es.addEventListener('authorization-error', () => {
+        if (!isCurrent()) return;
+        disconnectSSE(component);
+        updateStatus(component, 'sse', { state: 'closed', attempts: 0,
+            lastError: 'Realtime authorization changed. Reload the page to reconnect.' });
+        component.requestUpdate();
+    });
+
     es.addEventListener('state-update', (event: MessageEvent) => {
         if (!isCurrent()) return;
         try {

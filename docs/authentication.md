@@ -194,8 +194,12 @@ management reference. The page applies the replacement cookie and redirects to
 `/dashboard/sessions`. The next request lists the new token as current. Two
 rotations using the same token have one winner. An already-started request can
 retain its resolved user; a new HTTP request validates the incoming token again.
-Rotation affects every tab that shares the browser cookie. It does not refresh
-an existing realtime connection's identity.
+Rotation affects every tab that shares the browser cookie. Authenticated SSE
+checks the old token's server-only descriptor before each delivery, closes the
+old subscription and requires a reload with the new cookie. WebSocket identity
+refresh remains separate work. An already-validated frame can be in flight
+when rotation finishes. Read the [SSE session contract](./sse.md#session-changes-on-an-open-subscription)
+for provider setup, guard checks, idle checks and limits.
 
 The dashboard layout guard also protects its logout RPC. Logout expires the
 cookie and redirects only after storage revocation succeeds. Storage failures

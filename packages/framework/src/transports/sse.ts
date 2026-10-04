@@ -1,9 +1,10 @@
 import { getModuleDefault } from '../module-default.js';
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance, isOriginAllowed, sanitizeClientState, createRootServiceScope, createLayoutServiceScope, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
+import { SseRuntime, Cossack, createInstance, getLocale, isOriginAllowed, sanitizeClientState, createRootServiceScope, createLayoutServiceScope, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
 import { resolveLayoutPaths, type RouterContext } from '../route-ids.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
+import { captureRealtimeIdentity, revalidateRealtimeIdentity, RealtimeIdentityConfigurationError } from '../realtime-context.js';
 
 interface SseStoreEntry {
     componentInstance: any;
@@ -287,9 +288,21 @@ export function handleSseEndpoint(ctx: RouterContext) {
             return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
         }
 
+        let identity: Awaited<ReturnType<typeof captureRealtimeIdentity>>;
+        try { identity = await captureRealtimeIdentity(c); }
+        catch (error) {
+            if (error instanceof RealtimeIdentityConfigurationError) return c.json({ code: 'COSSACK_REALTIME_AUTH_REQUIRED',
+                error: 'Realtime authentication needs a valid revalidation provider.' }, 409);
+            return c.json({ code: 'COSSACK_REALTIME_AUTH_UNAVAILABLE', error: 'Realtime authentication is unavailable. Reload to try again.' }, 503);
+        }
+        const originalUserId = c.get('user')?.id;
+        const locale = getLocale();
+        const authorize = () => revalidateRealtimeIdentity(c, params, identity, ctx.getMiddlewares?.(componentPath) ?? [], async fresh =>
+            fresh.get('user')?.id === originalUserId && await resolveSseScopeKey(fresh, pageOptions) === effectiveScopeKey, locale);
+
         const coordinator = getSseCoordinator(c.env);
         if (coordinator) {
-            return handleCoordinatorSubscription(c, ctx, componentRouteId, effectiveScopeKey, PageComponent);
+            return handleCoordinatorSubscription(c, ctx, componentRouteId, effectiveScopeKey, PageComponent, authorize);
         }
         // Cloudflare must not silently fall back to process-local state: the
         // store is not shared between isolates and resets on eviction.
@@ -325,59 +338,26 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         const { componentInstance } = entry;
 
-        // Use TransformStream — the writable end accepts SSE frames,
-        // the readable end is returned as the HTTP response body.
-        // All setInterval callbacks run in THIS request's I/O context.
-        const { readable, writable } = new TransformStream();
-        const writer = writable.getWriter();
-        const encoder = new TextEncoder();
-
-        const send = (eventType: string, data: any, cursor?: number) => {
-            writer.write(encoder.encode(`event: ${eventType}\n${cursor === undefined ? '' : `id: ${cursor}\n`}data: ${JSON.stringify(data)}\n\n`)).catch(() => {});
-        };
-
-        // Send initial state + connected
-        send('state-update', componentInstance.getPublicState(), entry.stateVersion);
-        send('connected', {});
-
-        // Heartbeat every 15s (Cloudflare Workers close idle connections ~30s)
-        const heartbeat = setInterval(() => {
-            writer.write(encoder.encode(': heartbeat\n\n')).catch(() => {});
-        }, 15000);
-
-        // Main driver: polls shared state for changes and writes to this stream.
-        // - stateVersion bumps from /crpc → push state-update to this client
-        //
-        // IMPORTANT: look up the entry from the Map on each tick rather than using a
-        // captured reference. This ensures the driver always uses the current entry
-        // even if another request replaced it in the Map.
+        const pending = [
+            { event: 'state-update', data: JSON.stringify(componentInstance.getPublicState()), cursor: entry.stateVersion },
+            { event: 'connected', data: '{}' },
+        ];
         let lastVersion = entry.stateVersion;
-
-        const driver = setInterval(() => {
-            const currentEntry = sseStateStore.get(storeKey);
-            if (!currentEntry) return;
-
-            // 1. Detect state changes signalled by /crpc (version counter)
-            if (currentEntry.stateVersion !== lastVersion) {
-                lastVersion = currentEntry.stateVersion;
-                send('state-update', { ...currentEntry.componentInstance.getPublicState(),
-                    ...(currentEntry.requestId === undefined ? {} : { _cossack_request_id: currentEntry.requestId }) }, lastVersion);
-            }
-
-        }, 200);
-
+        const poll = async () => {
+            const current = sseStateStore.get(storeKey);
+            if (!current || current.stateVersion === lastVersion) return [];
+            lastVersion = current.stateVersion;
+            return [{ event: 'state-update', cursor: lastVersion, data: JSON.stringify({ ...current.componentInstance.getPublicState(),
+                ...(current.requestId === undefined ? {} : { _cossack_request_id: current.requestId }) }) }];
+        };
         const cleanup = () => {
-            clearInterval(heartbeat);
-            clearInterval(driver);
             const e = sseStateStore.get(storeKey);
             if (e) {
                 e.connectionCount = Math.max(0, e.connectionCount - 1);
                 e.lastActive = Date.now();
             }
         };
-        (c.req.raw as any).signal?.addEventListener('abort', cleanup);
-
-        return new Response(readable, { headers: SSE_HEADERS });
+        return new Response(authorizedSseStream(c.req.raw.signal, pending, poll, authorize, cleanup), { headers: SSE_HEADERS });
     };
 }
 
@@ -394,6 +374,7 @@ async function handleCoordinatorSubscription(
     componentRouteId: string,
     scopeKey: string,
     PageComponent: new () => Cossack,
+    authorize: () => Promise<boolean>,
 ): Promise<Response> {
     const stub = getSseScopeStub(c.env, componentRouteId, scopeKey)!;
     const rawCursor = c.req.header('last-event-id') ?? c.req.query('cursor');
@@ -430,7 +411,6 @@ async function handleCoordinatorSubscription(
         }
     }
 
-    const encoder = new TextEncoder();
     const signal = c.req.raw.signal;
     let after = cursor ?? snapshot.cursor;
     const initial = await stub.updates(after);
@@ -444,6 +424,28 @@ async function handleCoordinatorSubscription(
     pending.push({ event: 'connected', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
     after = initial.snapshot.cursor;
 
+    const poll = async () => {
+        const updates = await stub.updates(after);
+        if (updates.resync) {
+            after = updates.snapshot.cursor;
+            return [{ event: 'resync', data: JSON.stringify({ cursor: updates.snapshot.cursor }) },
+                { event: 'state-update', data: updates.snapshot.state, cursor: updates.snapshot.cursor }];
+        }
+        after = updates.events.at(-1)?.cursor ?? after;
+        return updates.events;
+    };
+    return new Response(authorizedSseStream(signal, pending, poll, authorize), { headers: SSE_HEADERS });
+}
+
+/** No delivery, including replay and heartbeat, bypasses the live middleware check. */
+function authorizedSseStream(
+    signal: AbortSignal,
+    pending: Array<{ event: string; data: string; cursor?: number }>,
+    poll: () => Promise<Array<{ event: string; data: string; cursor?: number }>>,
+    authorize: () => Promise<boolean>,
+    onClose: () => void = () => {},
+): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
     let closed = false;
     let lastWrite = Date.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -452,6 +454,7 @@ async function handleCoordinatorSubscription(
     const cleanup = () => {
         if (closed) return;
         closed = true;
+        onClose();
         signal.removeEventListener('abort', abort);
         if (timer !== undefined) clearTimeout(timer);
         wake?.();
@@ -461,7 +464,7 @@ async function handleCoordinatorSubscription(
         cleanup();
         streamController.close();
     };
-    const body = new ReadableStream<Uint8Array>({
+    return new ReadableStream<Uint8Array>({
         start(controller) {
             streamController = controller;
             signal.addEventListener('abort', abort, { once: true });
@@ -471,13 +474,17 @@ async function handleCoordinatorSubscription(
             try {
                 while (!closed) {
                     const event = pending.shift();
-                    if (event) {
-                        controller.enqueue(encoder.encode(`event: ${event.event}\n${event.cursor === undefined ? '' : `id: ${event.cursor}\n`}data: ${event.data}\n\n`));
-                        lastWrite = Date.now();
-                        return;
-                    }
-                    if (Date.now() - lastWrite >= 15000) {
-                        controller.enqueue(encoder.encode(': heartbeat\n\n'));
+                    const heartbeat = Date.now() - lastWrite >= 15000;
+                    if (event || heartbeat) {
+                        const allowed = await authorize();
+                        if (closed) return;
+                        if (!allowed) {
+                            controller.enqueue(encoder.encode('event: authorization-error\ndata: {"code":"COSSACK_REALTIME_AUTH_CHANGED"}\n\n'));
+                            cleanup(); controller.close(); return;
+                        }
+                        controller.enqueue(encoder.encode(event
+                            ? `event: ${event.event}\n${event.cursor === undefined ? '' : `id: ${event.cursor}\n`}data: ${event.data}\n\n`
+                            : ': heartbeat\n\n'));
                         lastWrite = Date.now();
                         return;
                     }
@@ -485,16 +492,9 @@ async function handleCoordinatorSubscription(
                     wake = undefined;
                     timer = undefined;
                     if (closed) return;
-                    const updates = await stub.updates(after);
+                    const events = await poll();
                     if (closed) return;
-                    if (updates.resync) {
-                        pending.push({ event: 'resync', data: JSON.stringify({ cursor: updates.snapshot.cursor }) });
-                        pending.push({ event: 'state-update', data: updates.snapshot.state, cursor: updates.snapshot.cursor });
-                        after = updates.snapshot.cursor;
-                    } else {
-                        pending.push(...updates.events);
-                        after = updates.events.at(-1)?.cursor ?? after;
-                    }
+                    pending.push(...events);
                 }
             } catch (error) {
                 if (closed) return;
@@ -504,7 +504,6 @@ async function handleCoordinatorSubscription(
         },
         cancel() { cleanup(); },
     }, { highWaterMark: 0 });
-    return new Response(body, { headers: SSE_HEADERS });
 }
 
 /** Sync state changes to the SSE store entry identified by storeKey. */

@@ -5,6 +5,32 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## Authenticated SSE requires live session revalidation
+
+Add `realtime: { key, capture, validate }` to your `createAuth` provider before
+opening authenticated SSE pages. The generated `src/auth.ts` now supplies it.
+Port those helpers after applying `0008_add_session_public_id`; upgrades preserve
+application-owned auth files. HTTP login/session middleware without this option
+still works, but opening an authenticated `/sse` connection returns HTTP 409
+`COSSACK_REALTIME_AUTH_REQUIRED` rather than keeping a stale actor indefinitely.
+
+Use a stable provider key and a bounded server-only JSON descriptor. Capture an
+independent session reference plus a fingerprint of the token; validate live
+storage, purpose, expiry and the current fingerprint before returning the owner.
+A reference alone survives rotation and is insufficient. Never retain a bearer
+credential in the descriptor or expose its fingerprint to a browser.
+
+SSE rechecks current user/roles, inherited guards and scope before every frame
+and heartbeat in fresh request/config/database scopes. Credential headers are
+removed, the subscription locale is retained, and late response-header/cookie
+writes reject. Make guards read-only and use the revalidation provider rather
+than reading the original session cookie. A denial closes EventSource with fixed
+`COSSACK_REALTIME_AUTH_CHANGED` feedback and stops retries until explicit reload.
+Rotation affects subscriptions in every tab sharing that cookie. A validated
+frame can still be in flight; idle checks depend on heartbeat reader demand and
+storage response time. WebSocket freshness is not included in this change.
+Read the [SSE provider contract](../docs/sse.md#session-changes-on-an-open-subscription).
+
 ## Shared credential and session primitives
 
 Generated `src/auth.ts` now consumes `createCredentialVerifier`,

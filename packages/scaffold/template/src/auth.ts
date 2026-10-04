@@ -136,6 +136,25 @@ export const authSessions = createSessionManager({
 });
 
 export const auth = createAuth<PublicUser>({
+  realtime: {
+    key: 'cossack.session',
+    async capture(sessionId, userId) {
+      const stored = await Session.findOne({ where: { id: sessionId } });
+      const row = stored ? await sessionWithReference(stored, userId) : null;
+      if (!row) throw new Error('Session ended before subscription.');
+      return { reference: row.publicId, fingerprint: await sessionFingerprint(sessionId) };
+    },
+    async validate(data, c) {
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+      const { reference, fingerprint } = data as { reference?: unknown; fingerprint?: unknown };
+      if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference) ||
+          typeof fingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(fingerprint)) return null;
+      const row = await Session.findOne({ where: { publicId: reference } });
+      const active = row ? await authSessions.validate(row.id, c) : null;
+      if (!active || await sessionFingerprint(active.id) !== fingerprint) return null;
+      return active.userId;
+    },
+  },
   extractSessionId: (c) => getCookie(c, SESSION_COOKIE),
   validateSessionId: async (sessionId, c) => {
     try {
@@ -162,6 +181,11 @@ export const auth = createAuth<PublicUser>({
     return authSessions.create(full.id, c);
   },
 });
+
+async function sessionFingerprint(token: string): Promise<string> {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token)));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
 
 // --- Credential helpers (used by the page @Server methods) -----------------
 const credentials = createCredentialVerifier<User, PublicUser>({

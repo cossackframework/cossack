@@ -360,13 +360,35 @@ the real-page tests distinct from the helper fixtures. See the
 The package public-form example also passes installed Cloudflare application
 guidance acceptance for native POST, selected restoration, credential exclusion,
 browser clearing and emitted source-map checks.
-Continue broader concurrent request/tab semantics and realtime freshness.
-Already-started requests can retain resolved identity; rotation shares the
-browser cookie across tabs and does not refresh existing connections. Account
-writes, reset consumption and response delivery are separate steps; fixed errors
-do not establish rollback. Signed flash cookies remain replayable until expiry;
-browser clearing is not durable one-use storage. Audit these remaining criteria
-before closing RT-11. CLI-08 retains its broader guidance/runtime coverage.
+Codex SSE checkpoint (2026-10-05): authenticated subscriptions use the optional
+AuthRealtimeProvider and app-owned storage to capture a bounded, server-only
+reference/fingerprint descriptor. Every delivery revalidates the live session
+through the shared session manager and resolves current user data. Fresh request,
+config and ORM scopes run global/inherited guards and require the original owner
+and computed scope. Params/bindings and the subscription locale remain available;
+credential headers are removed and late header writes reject. Distinct fixed codes
+separate missing/invalid capture configuration from storage capture failures.
+
+Node SQLite/Cloudflare D1 and Chromium verify logout, expiry, rotation across two
+tabs, purpose/scope changes, fresh user metadata for inherited guards, authorized
+peer delivery and idle storage failure. The browser retires the old EventSource,
+ignores late callbacks, stops retries and reconnects on explicit reload with the
+new cookie. Preserve replay/heartbeat/backpressure tests and production JS/map
+stripping. See the [checkpoint](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05).
+
+Continue broader concurrent request semantics and WebSocket freshness. Incoming
+socket actions and broadcasts still use the upgrade identity; audit both and
+retain a credential-free hibernation descriptor. Each action/delivery needs fresh
+storage, inherited guards and scope checks. Verify native Workers and Node/Deno
+per-connection behavior and restored sockets before closing RT-11.
+
+Already-started HTTP actions can retain resolved identity. A frame checked before
+revocation can be in flight. SSE idle checks occur before 15-second heartbeats
+with reader demand, so backpressure and slow storage prevent a wall-clock guarantee.
+Account writes, reset consumption and response delivery are separate steps;
+fixed errors do not establish rollback. Signed flash cookies remain replayable
+until expiry; browser clearing is not durable one-use storage. Audit the remaining
+concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.
