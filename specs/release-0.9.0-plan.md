@@ -515,35 +515,35 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 60 UI foundations, including DataTable, have reviewed
+Codex status (2026-10-04): 61 UI foundations, including DataTable, have reviewed
 contracts. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[Carousel verification](./release-0.9.0.md#codex-carousel-2026-10-04) for the latest checkpoint.
+[Attachment verification](./release-0.9.0.md#codex-attachment-2026-10-04) for the latest checkpoint.
 
-Next: Audit Attachment using the source findings in the
+Next: Audit Bubble using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close
 the broader audit or full release matrix. RT-23 remains open.
 
-Codex next batch — Attachment:
+The completed [Attachment plan](./release-0.9.0-plan-archive.md#codex-attachment-plan-2026-10-04)
+and its verification remain archived for regression context.
 
-- Give the root div, removal button and optional thumbnail separate native prop
-  types. Export these types and verify their installed catalog descriptions.
-  Consume component options so they do not leak into HTML attributes.
-- Replace English status-text matching with an explicit visual status variant.
-  Keep the status text caller-owned and localizable. In particular, “upload failed”
-  must never acquire both success and error colors.
-- Name removal with the filename and permit an explicit localized label. Keep
-  a native non-submit button, typed click target and caller cancellation. Define
-  disabled behavior and leave list removal/focus placement with the owning list.
-- Preserve explicit file types, extension inference and decorative thumbnails.
-  Make unsupported positional children explicit rather than silently discarding
-  them. Do not add upload, preview-dialog or storage behavior to this primitive.
-- Prove SSR output, native event targets, keyboard activation, disabled/form
-  behavior, localization, narrow/RTL layout, source ejection and installed CLI/MCP
-  guidance. Add migration notes for the public contract changes. This is an
-  implementation plan; Attachment remains pending until the evidence passes.
+Codex next batch — Bubble:
+
+- Forward typed root div attributes/events and define any additional native
+  target props deliberately. Keep message children as renderer content with
+  independent links, buttons and form controls; a bubble itself is not an action.
+- Move width constraints to the actual outer content box. Verify long words,
+  multiline text and nested Attachment cards at narrow widths, both standalone
+  and inside Message. Use logical edges for sent/received tails and reactions.
+- Define reaction labels/counts and timestamp semantics. Keep display-only
+  reactions noninteractive; do not imply toggling or application-owned mutations.
+  Validate variants and finite counts rather than silently rendering invalid data.
+- Verify SSR/hydration, native event targets, child keyboard actions, focus during
+  updates, RTL/narrow geometry, source ejection and installed guidance. Update
+  migration notes. Then continue Marker, Message and MessageScroller; their source
+  findings are in the UI audit. Component checks do not close RT-23.
 
 Purpose: Applications need a typed table for real server data, and agents need
 reliable component attributes, events, and accessibility guidance.

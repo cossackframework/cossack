@@ -88,6 +88,57 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-attachment-2026-10-04"></a>
+### Codex Attachment (2026-10-04)
+
+Author: Codex. Attachment now requires a filename and forwards separate typed
+native root, removal-button and thumbnail props. Its public types replace the
+ignored arbitrary signature. Positional children reject instead of disappearing.
+Status colors use an explicit neutral/success/error variant; English status words
+no longer select conflicting colors. Final-extension inference is case-insensitive
+and guards inherited object properties; bare and hidden dot-only names use file.
+
+Removal has a filename-specific default name and a localized override. The native
+non-submit button supports keyboard activation, disabled props and fieldsets.
+Native button callbacks run before onRemove and can veto it; callback-time disabling
+also suppresses removal. The owning list removes records and restores focus. Root
+bubbling handlers run after the button action. Decorative previews retain native
+load/error behavior without inventing fallback/retry or upload operations.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 505 tests
+  across 40 files pass. SSR and public declarations cover required filenames,
+  native targets, explicit statuses, icon inference, validation, decoration,
+  localized names, option consumption and unsupported children.
+- `pnpm --filter cossack exec vitest run tests/attachment-browser.test.js tests/ui-ejection.test.js`:
+  36 tests pass, including 35 source-ejection checks and strict NodeNext compilation.
+  The HTTP/Tailwind Chromium fixture checks readable no-JavaScript output,
+  retained hydration, actual root/button/image targets, Tab/Enter/Space, no form
+  submission, native cancellation/directive behavior, disabled fields/buttons,
+  localized names/status, actual image load/error, narrow/RTL layout, reduced
+  motion, retained focus and parent-owned removal/focus recovery. Disabled
+  synthetic dispatch separately verifies the handler guard; native keyboard
+  checks prove disabled Tab exclusion. No global timers/listeners are introduced.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose the required
+  filename, native div/button targets, public helper types, status variants and
+  authored guide. Exact-symbol Attachment output matches across CLI/MCP. Six
+  existing packaged examples compile and execute. Discovery disables Node
+  networking; installation can use the registry. The new guide has no executable
+  example.
+
+The first checks caught fixture syntax and a structurally compatible DOM type in
+an intended negative test. Both fixtures are corrected. The browser motion check
+now accepts the shared theme's near-zero reduced-motion duration instead of
+requiring literal zero. No failing behavior was hidden by changing the contract.
+
+Logs: `/tmp/cossack-attachment-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
+Other engines, assistive technology and the full generated-app/runtime matrix
+remain open. Sixty-one of 65 UI source rows are reviewed. Continue Bubble,
+Marker, Message and MessageScroller, then blocks/icons and the full matrix.
+RT-23 and CLI-07/CLI-08 remain open; release status stays 24 of 58 complete.
+
 <a id="codex-carousel-2026-10-04"></a>
 ### Codex Carousel (2026-10-04)
 

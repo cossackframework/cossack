@@ -1365,3 +1365,45 @@ scroll end, and the first when all content fits. It reports `undefined` after th
 list becomes empty and does not fire on initial mounting. Reordering preserves
 identity; removal falls back to the nearest remaining ordinal. Focus recovery,
 reduced motion and observer/frame/timer cleanup now belong to the component.
+
+## Attachment filenames, status and native props
+
+`Attachment` requires a nonempty `name`. It no longer accepts arbitrary props or
+silently ignores positional children. Root native attributes and `@events` reach
+its div. Use `removeProps` for the button and `thumbnailProps` for the decorative
+image. All three targets have public prop types and typed native events.
+
+Status words no longer select colors. Set `statusVariant` to `neutral` (default),
+`success` or `error`, independently of localized `status` text. A status such as
+“Upload failed” previously selected both success and destructive styles. Status
+text does not automatically announce; the application owns any live region.
+
+```ts
+component(Attachment, {
+  name: file.name,
+  size: file.displaySize,
+  status: 'Upload failed',
+  statusVariant: 'error',
+  removeLabel: `Remove ${file.name}`,
+  removeProps: { disabled: saving },
+  onRemove: event => {
+    // Read event.currentTarget before awaiting. The list owns removal and focus.
+    removeFile(file.id);
+  },
+});
+```
+
+The removal label defaults to `Remove ${name}`. `removeLabel` localizes it.
+The button stays `type="button"`; Enter/Space, disabled props and native disabled
+fieldsets apply. `removeProps['@click']` runs first and can veto `onRemove` with
+`preventDefault()`. The renderer's `preventDefault(handler)` directive also vetoes
+removal. Root bubbling handlers run afterward. The list owner must restore focus
+when removing its focused item; Attachment does not know the replacement target.
+
+File type inference uses a known final extension, case-insensitively. Bare names
+such as `js`, hidden names such as `.js`, and unknown or prototype-property suffixes
+use the generic file icon. Explicit `type` still overrides inference. A thumbnail
+is decorative, with owned `src`, empty `alt` and `aria-hidden`. Its native load/error
+callbacks do not implement retries or fallback icons. The filename remains when
+an image fails. Image source and alternate text cannot be overridden through
+`thumbnailProps`; use a separate informative image if its content needs describing.

@@ -634,3 +634,25 @@ const conflictingGallerySlide: CarouselSlideProps = {id:'override'};
 
 // @ts-expect-error Slide dimensions use explicit CSS lengths or percentages.
 component(Carousel,{id:'gallery',label:'Photos',slides:gallerySlides,slideSize:200});
+
+import { Attachment, type AttachmentRemoveProps, type AttachmentThumbnailProps, type AttachmentType, type AttachmentStatusVariant } from '@cossackframework/ui';
+const attachmentType: AttachmentType = 'image';
+const attachmentStatus: AttachmentStatusVariant = 'error';
+const attachmentRemove: AttachmentRemoveProps = { disabled: true, '@click': event => { const button: HTMLButtonElement=event.currentTarget; void button; } };
+const attachmentThumbnail: AttachmentThumbnailProps = { loading: 'lazy', '@error': event => { const image: HTMLImageElement=event.currentTarget; void image; } };
+component(Attachment, {name:'photo.png',type:attachmentType,statusVariant:attachmentStatus,removeProps:attachmentRemove,thumbnailProps:attachmentThumbnail,
+    '@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;},onRemove:event=>{const button:HTMLButtonElement=event.currentTarget;void button;}});
+// @ts-expect-error Attachment requires a filename.
+component(Attachment, {});
+// @ts-expect-error Removal is always a non-submit button.
+const attachmentSubmit: AttachmentRemoveProps = {type:'submit'};
+// @ts-expect-error Use removeLabel for localized names.
+const attachmentName: AttachmentRemoveProps = {'aria-label':'Delete'};
+// @ts-expect-error Decorative thumbnail alternatives are component-owned.
+const attachmentAlt: AttachmentThumbnailProps = {alt:'Override'};
+// @ts-expect-error Image events target the image, not the root.
+const attachmentImageEvent: AttachmentThumbnailProps = {'@load':(event:Event & {currentTarget:HTMLInputElement})=>event};
+// @ts-expect-error Native removal callback targets a button.
+component(Attachment, {name:'file',onRemove:(event:MouseEvent & {currentTarget:HTMLInputElement})=>event});
+// @ts-expect-error Status words do not select visual states.
+component(Attachment, {name:'file',statusVariant:'uploaded'});

@@ -90,7 +90,7 @@ export { Bubble, type BubbleProps, type BubbleReaction } from "./components/Bubb
 export { Message, type MessageProps } from "./components/Message";
 export { MessageScroller, type MessageScrollerProps } from "./components/MessageScroller";
 export { Marker, type MarkerProps } from "./components/Marker";
-export { Attachment, type AttachmentProps } from "./components/Attachment";
+export { Attachment, type AttachmentProps, type AttachmentType, type AttachmentStatusVariant, type AttachmentRemoveProps, type AttachmentThumbnailProps } from "./components/Attachment";
 export { PasswordInput, type PasswordInputProps } from "./components/PasswordInput";
 export { MultiSelect, type MultiSelectProps } from "./components/MultiSelect";
 

@@ -61,7 +61,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Alert](../packages/ui/src/components/Alert.ts) | Reviewed foundation | Typed div events/attributes, independent announcement urgency, decorative icons, focus-preserving updates, SSR/Chromium and ejected-source coverage. |
 | [AlertDialog](../packages/ui/src/components/AlertDialog.ts) | Reviewed foundation | Typed native dialog props, linked title/message, Cancel-first focus, controlled/default dismissal, caller-owned actions and SSR/Chromium acceptance. |
 | [AspectRatio](../packages/ui/src/components/AspectRatio.ts) | Reviewed foundation | Typed native wrapper, positive finite ratios, independent CSS ratio box, responsive width/ratio changes, SSR/no-JavaScript/Chromium and ejected-source coverage. |
-| [Attachment](../packages/ui/src/components/Attachment.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Attachment](../packages/ui/src/components/Attachment.ts) | Reviewed foundation | Required filename, typed div/button/image targets, explicit localized status, native removal cancellation/disabled behavior, decorative previews, narrow/RTL layout and SSR/Chromium/ejection/installed guidance. |
 | [Avatar](../packages/ui/src/components/Avatar.ts) | Reviewed foundation | Typed span/image callbacks, explicit alternative text, stable fallback names, request-owned failure and cached hydration recovery, native style composition, SSR/Chromium and source-ejection coverage. |
 | [AvatarGroup](../packages/ui/src/components/AvatarGroup.ts) | Reviewed foundation | Named native group, readonly stable keyed items, native props, validated geometry/counts, localized overflow, RTL/reverse overlap, keyed state retention, SSR/Chromium and source-ejection coverage. |
 | [Badge](../packages/ui/src/components/Badge.ts) | Reviewed foundation | Typed native span attributes/events, validated variants, readable status text, SSR/Chromium and ejected-source coverage. |
@@ -125,13 +125,13 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Attachment. Its root ignores native props, the remove callback lacks
-its native event target, and the generic removal label does not identify the file.
-Status colors come from English substring guesses, so localized or ambiguous text
-can select the wrong state. Define explicit status styling and typed root/remove/
-thumbnail ownership. Preserve file-type inference, decorative preview semantics,
-child-content policy and native keyboard/form behavior. Continue Bubble, Marker,
-Message and MessageScroller afterward, then blocks and icons.
+Next audit Bubble, then Marker, Message and MessageScroller. Bubble ignores root
+native props and puts its 75% content width inside an unsized wrapper. Define
+native targets, reaction text/naming, timestamp semantics and RTL geometry; retain
+native child actions. Verify standalone and Message composition in a real browser.
+Marker needs native root props and decorative divider semantics. Message ignores
+root props and drops sent metadata. MessageScroller needs viewport ownership,
+scroll/focus contracts and cleanup for scheduled work. Blocks and icons follow.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

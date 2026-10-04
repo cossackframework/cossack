@@ -4745,3 +4745,28 @@ and keyboard focus. Preserve the full original component and release scope.
 RT-23 remains open against all criteria below.
 
 End of archived checkpoint passages.
+
+<a id="codex-attachment-plan-2026-10-04"></a>
+## Attachment implementation plan — Codex, 2026-10-04
+
+Archived after the [verified component checkpoint](./release-0.9.0.md#codex-attachment-2026-10-04).
+The original plan follows; its pending statements describe the earlier state.
+
+Codex next batch — Attachment:
+
+- Give the root div, removal button and optional thumbnail separate native prop
+  types. Export these types and verify their installed catalog descriptions.
+  Consume component options so they do not leak into HTML attributes.
+- Replace English status-text matching with an explicit visual status variant.
+  Keep the status text caller-owned and localizable. In particular, “upload failed”
+  must never acquire both success and error colors.
+- Name removal with the filename and permit an explicit localized label. Keep
+  a native non-submit button, typed click target and caller cancellation. Define
+  disabled behavior and leave list removal/focus placement with the owning list.
+- Preserve explicit file types, extension inference and decorative thumbnails.
+  Make unsupported positional children explicit rather than silently discarding
+  them. Do not add upload, preview-dialog or storage behavior to this primitive.
+- Prove SSR output, native event targets, keyboard activation, disabled/form
+  behavior, localization, narrow/RTL layout, source ejection and installed CLI/MCP
+  guidance. Add migration notes for the public contract changes. This is an
+  implementation plan; Attachment remains pending until the evidence passes.

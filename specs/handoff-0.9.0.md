@@ -11,25 +11,23 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-Current partial work: RT-23 has **60 of 65 UI source rows reviewed**, through
-[Carousel](./release-0.9.0.md#codex-carousel-2026-10-04).
+Current partial work: RT-23 has **61 of 65 UI source rows reviewed**, through
+[Attachment](./release-0.9.0.md#codex-attachment-2026-10-04).
 These component checkpoints do not close RT-23 or the release matrix.
 Completed Sidebar and Toast reviews are indexed in the
 [archived checkpoints](./release-0.9.0.md#archived-checkpoints); their full evidence is preserved.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with Attachment**, then Bubble, Marker, Message and
-   MessageScroller in the [UI audit](./ui-contract-audit.md). Attachment ignores
-   native root props, has a generic removal name/callback and guesses status
-   colors from English text. Define native targets, explicit status styling and
-   filename-specific removal, while preserving file-type/preview behavior.
-   The [RT-23 plan](./release-0.9.0-plan.md#rt-23) gives the next batch’s contracts
-   and acceptance checks.
+1. Continue **RT-23 with Bubble**, then Marker, Message and MessageScroller in
+   the [UI audit](./ui-contract-audit.md). Bubble ignores native root props and
+   constrains width inside an unsized wrapper. Define native targets, reaction
+   names/counts, timestamps and RTL/narrow layout while preserving child actions.
+   The [RT-23 plan](./release-0.9.0-plan.md#rt-23) gives its purpose and checks.
+   Attachment now has explicit status styling, typed native targets and named
+   removal; the parent owns removing records and restoring focus.
    Keep SSR, themed browser, source ejection and installed CLI/MCP guidance in scope.
-   Carousel now supports full and compact slides with tested navigation, event
-   composition, RTL, sizing, focus and cleanup. Blocks/icons, generated-app and
-   assistive-technology acceptance remain separate gates.
+   Blocks/icons, generated-app and assistive-technology acceptance remain separate gates.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend
