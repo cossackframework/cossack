@@ -66,6 +66,15 @@ Results larger than 4 MiB fail with `COSSACK_MCP_RESULT_TOO_LARGE`. Dependency l
 are drained inside workers and cannot corrupt protocol output. EOF, SIGINT and
 SIGTERM close the server and its active workers.
 
+## Stored test results
+
+`read_test_results` accepts `{}` for the newest started run or `{ "run": "<run-uuid>" }`.
+It shares the reader behind `pnpm exec cossack test-results --json`. Configure the
+opt-in `cossack/vitest-reporter` in Vitest 4 to produce records first. A successful
+read can contain failed or unfinished tests. Inspect the recorded state, selected
+scope and freshness before citing it. These reads never execute tests.
+See [setup, interpretation and limits](./test-results.md).
+
 ## Offline documentation
 
 Use `read_documentation` with an optional `package` name from the Cossack package

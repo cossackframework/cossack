@@ -1,3 +1,5 @@
+import { beginTestReport, writeTestReport, testSourceSnapshot } from '../src/test-results-service.js';
+import { testResultsCommand } from '../src/commands/test-results.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -37,7 +39,7 @@ it('serves the same route facts and diagnostics as CLI with versions and read-on
   const root = await fixture();
   const { client, stderr } = await connect(root);
   const tools = await client.listTools();
-  expect(tools.tools.map(tool => tool.name).sort()).toEqual(['inspect_project', 'read_documentation']);
+  expect(tools.tools.map(tool => tool.name).sort()).toEqual(['inspect_project', 'read_documentation', 'read_test_results']);
   expect(tools.tools[0]).toMatchObject({ name: 'inspect_project', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } });
   const result = await client.callTool({ name: 'inspect_project', arguments: { scope: 'routes' } });
   expect(result.structuredContent).toMatchObject({ schemaVersion: 1, versions: { cli: readPackageVersion(), framework: null }, ok: true });
@@ -219,3 +221,25 @@ it('indexes installed signatures through the cancellable MCP worker', async () =
   const invalid=await client.callTool({name:'read_documentation',arguments:{symbols:true}});
   expect(invalid.isError).toBe(true);
 },30000);
+
+it('reads the same stored evidence through CLI and MCP and refreshes source freshness', async () => {
+  const root = await fixture();
+  const report = await beginTestReport(root, { name: 'vitest', version: '4.1.11' }, 1);
+  await writeTestReport(root, { ...report, state: 'failed', finishedAt: new Date().toISOString(), after: await testSourceSnapshot(root), failedModules: 1 });
+  const { client, stderr } = await connect(root);
+  const remote = await client.callTool({ name: 'read_test_results', arguments: {} });
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await testResultsCommand([], { cwd: root, flags: { json: true } })).toBe(0);
+  const cli = JSON.parse(log.mock.calls[0][0]);
+  expect(remote.structuredContent.data).toEqual(cli.data);
+  expect(cli.data).toMatchObject({ status: 'recorded', report: { state: 'failed' }, freshness: { status: 'matches' } });
+  await fs.writeFile(path.join(root, 'source.ts'), 'changed');
+  const changed = await client.callTool({ name: 'read_test_results', arguments: { run: report.id } });
+  expect(changed.structuredContent.data.freshness.status).toBe('changed');
+  expect((await client.callTool({ name: 'read_test_results', arguments: { run: '../../.env' } })).isError).toBe(true);
+  expect((await client.callTool({ name: 'read_test_results', arguments: { root: '/tmp' } })).isError).toBe(true);
+  await fs.writeFile(path.join(root, '.vitest/cossack', report.id + '.json'), '{"password":"private-invalid-value"');
+  const invalid = await client.callTool({ name: 'read_test_results', arguments: {} });
+  expect(invalid.isError).toBe(true); expect(invalid.structuredContent.diagnostics[0].code).toBe('COSSACK_TEST_REPORT_INVALID');
+  expect(JSON.stringify(invalid)).not.toContain('private-invalid-value'); expect(stderr()).toBe('');
+}, 30_000);

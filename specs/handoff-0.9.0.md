@@ -11,20 +11,20 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 25 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-RT-23 is complete against its [original acceptance criteria](./release-0.9.0.md#codex-rt23-complete-2026-10-04).
-All 65 component-source rows plus Icon and four blocks have reviewed contracts.
-Generated Node/workerd DataTable, published type and keyboard/focus checks pass.
-The completed audit is distinct from the remaining full release gates.
+Latest completion: **RT-23** — DataTable and all 70 UI audit rows reviewed;
+[acceptance evidence and limits](./release-0.9.0-verification-archive.md#codex-rt23-complete-2026-10-04) are archived.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **CLI-07 stored test results and RT-28 snapshots/traces** through shared
-   services. The MCP server currently exposes inspection and documentation only;
-   the CLI has no test-results command or shared report model. Define versioned
-   report provenance, freshness and bounded/redacted reads, then expose the same
-   service through CLI and MCP. Preserve project path boundaries, cancellation
-   and clean stdout. Inspect actual test-runner integration before choosing the
-   report producer; do not parse human terminal output or invent passing results.
+1. Continue **RT-28 snapshots/traces** through shared browser, CLI and MCP services.
+   CLI-07 stored test evidence is implemented: Vitest 4 reporter, versioned records,
+   source freshness and shared reads. See [usage](../docs/test-results.md) and the
+   [verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
+   Trace work still needs real runtime integration. Start with framework
+   `client/navigation-diagnostics.ts`, `client/devtools.ts`, Vite development
+   integration and core `shared/method-proxy.ts`. Reuse existing request IDs;
+   preserve terminal cancellation/disconnect events, bounded/redacted data and
+   production exclusion. CLI-07 and RT-28 remain open.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and
    verified runtime support. UI contracts/guides are reviewed under RT-23; not all
    guides have executable examples. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)

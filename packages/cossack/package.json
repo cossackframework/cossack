@@ -40,5 +40,14 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "exports": {
+    "./vitest-reporter": {
+      "types": "./src/vitest-reporter.d.ts",
+      "import": "./src/vitest-reporter.js"
+    },
+    "./package.json": "./package.json",
+    "./src/*": "./src/*",
+    "./bin/*": "./bin/*"
   }
 }

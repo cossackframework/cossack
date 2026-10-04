@@ -6,6 +6,41 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt23-complete-2026-10-04"></a>
+## Codex RT-23 completion audit (2026-10-04)
+
+Author: Codex. RT-23 is complete against its original acceptance criteria. This
+closes the DataTable/UI contract task, not CLI-08, REL-02 or REL-03. Release status
+is now 25/58 complete, with 33 tasks open. Versions remain 0.8.3.
+
+| Original requirement | Inspected evidence and result |
+| --- | --- |
+| Generated app filters/pages server data without incorrect selection loss | The generated fixture uses a real HTTP data backend, `server$`, URL state and client selection. Node and local workerd both pass copied-page SSR, hydration without duplicate reads, selection across pages/history/filtering, sorting, page sizes, empty data and refresh failure/retry. |
+| Invalid column accessors fail type checks | Published-declaration fixtures reject nonexistent keys, invalid accessor properties and competing key/accessor declarations. Valid generic columns compile. The compiler fixture passes with checked `@ts-expect-error` cases. |
+| Browser keyboard and focus behavior | Generated apps verify Space selection, paging/filter/retry focus and browser history. The standalone browser test adds keyboard sorting/paging, mixed/visible selection, off-page preservation and disabled boundary navigation. |
+| Catalog states attributes, events and accessibility requirements | Shared CLI/MCP documentation reads installed declarations plus 39 authored UI guides. The current installed acceptance verifies DataTable, native targets/events, union branches and reviewed guide availability; SettingsPanel exact-symbol CLI/MCP parity passed before this audit. Native semantics and restrictions are authored, not inferred from export presence. |
+| UI contract audit across the catalog | Inventory paths match all 65 component source files exactly. All 70 component/icon/block rows have reviewed contracts and linked evidence. Current public type fixtures and the latest 636-test UI suite retain their regressions. |
+
+Fresh verification against the current source/build:
+
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'integrates the DataTable' --maxWorkers=1`:
+  2 pass (Node/workerd), 31 unrelated cases skipped; 28.34 seconds.
+  Log: `/tmp/cossack-rt23-generated-final.log`.
+- `pnpm --filter cossack exec vitest run tests/data-table-browser.test.js`:
+  1 passes; 4.48 seconds. Log: `/tmp/cossack-rt23-browser-final.log`.
+- `pnpm --filter @cossackframework/ui exec vitest run tests/data-table.test.ts tests/data-table-types.test.ts`:
+  7 pass across 2 files. Log: `/tmp/cossack-rt23-types-final.log`.
+- The immediately preceding [SettingsPanel checkpoint](#codex-settings-panel-2026-10-04)
+  verifies the final UI build, 636 UI tests, root/all-package types and installed
+  tarballs. No source or package guidance changed during this audit.
+- Inventory/checklist paths and anchors were checked. Only RT-23 changes status.
+
+Limits retained: generated runtime fixtures link workspace packages; installed
+catalog/type/example acceptance is separate. Chromium evidence does not prove
+other browser engines or assistive technologies. No live deployment or remote
+readiness is claimed. These limits remain in the broader release gates rather
+than being substituted for RT-23's original completion criteria.
+
 <a id="codex-settings-panel-2026-10-04"></a>
 ## Codex SettingsPanel (2026-10-04)
 

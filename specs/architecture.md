@@ -80,8 +80,16 @@ and carries that installed package's version. The CLI validates bounded JSON dat
 omits guides whose public imports are unavailable and never executes examples.
 A separate tarball acceptance harness compiles and executes selected repository-owned
 examples against installed exports. Authored guidance does not establish runtime
-compatibility. Stored test results and devtools traces will extend this boundary
-through shared services, not shell parsing or arbitrary file reads.
+compatibility.
+
+Stored test evidence uses the Node-only `test-results-service.js` shared by CLI
+and MCP. The opt-in public Vitest 4 reporter writes versioned project-bound records
+with selected-run outcomes and bounded endpoint file snapshots. Readers validate
+UUID-selected records and compute freshness without executing tests. Free-form
+failures and logs are omitted; test metadata is redacted. A successful read does
+not imply a passing, current or complete suite. MCP reads use the same cancellable
+worker boundary. See [storage, scope and privacy limits](../docs/test-results.md).
+Devtools traces remain planned under RT-28 and must extend shared services.
 
 ## Server input boundary
 

@@ -47,7 +47,32 @@ check as proof that remote credentials, bindings or deployment are ready.
 
 For an MCP host, start `cossack-mcp --project /absolute/path/to/app`. Use
 `inspect_project` for static facts and `read_documentation` for this offline
-catalog. Neither tool builds, executes tests, deploys or provisions the app.
+catalog. `read_test_results` reads stored test evidence through the same service as
+`cossack test-results --json`; pass an optional `run` UUID to select an earlier run.
+These tools do not build, execute tests, deploy or provision the app.
+
+To record Vitest 4 runs, add the public reporter to your Vitest configuration:
+
+```ts
+import { defineConfig } from 'vitest/config';
+import CossackTestReporter from 'cossack/vitest-reporter';
+export default defineConfig({
+  test: { reporters: ['default', new CossackTestReporter()] },
+});
+```
+
+Records live in `.vitest/cossack`; ignore `.vitest/` in Git. The reader's `ok: true`
+means the read succeeded, even when tests failed. Inspect `data.status`,
+`report.state`, `report.scope` and `freshness.status`. The newest started run wins;
+a `running` record means unfinished evidence, not proof of a live process.
+All reports cover selected tests only. `matches` compares bounded project file
+snapshots; dependencies, generated files, secrets, environment and remote services
+remain unverified. Local records are not authenticated and cannot be moved between
+project locations. Raw failures, stacks, assertion values and logs are omitted.
+Metadata redaction covers known secret values and common patterns, not all possible
+secrets. Keep sensitive data out of test titles and paths. Reports have a 2 MiB,
+10,000-test and 128-run limit; remove old `.vitest/cossack` records when full.
+Corrupt reports fail explicitly; reads never invent passing results.
 
 
 For one exported contract, use an exact symbol name:

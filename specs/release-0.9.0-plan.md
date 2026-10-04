@@ -140,9 +140,17 @@ documentation share CLI services. Versioned schemas, redaction, bounded workers,
 cancellation and lifecycle behavior have SDK/CLI tests and installed-tarball evidence.
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and [tool usage](../docs/local-agent-tools.md).
 
-Remaining: Stored test results and RT-28 snapshots/traces need shared models,
-provenance and freshness. Extend native interruption acceptance as tools acquire
-resources. Preserve project path boundaries, secret redaction and clean stdout.
+Stored test results now have a shared CLI/MCP reader and an opt-in Vitest 4
+reporter. Records distinguish selected scope, terminal state, endpoint snapshot
+freshness and local unauthenticated provenance. See [usage and limits](../docs/test-results.md).
+Focused tests cover actual pass/fail/skip and collection failure, CLI/MCP parity,
+newest-started selection, corrupt/linked records and bounded storage. Installed
+reporter/type and CLI/MCP parity acceptance also pass; see the
+[verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
+
+Remaining: RT-28 snapshots/traces need shared models and real runtime event
+integration. Extend native interruption acceptance as tools acquire resources.
+Preserve project path boundaries, secret redaction and clean stdout.
 Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
 
 Purpose: MCP gives coding agents a structured tool interface. The intended server

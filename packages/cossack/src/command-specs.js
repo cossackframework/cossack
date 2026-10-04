@@ -1,3 +1,4 @@
+import { testRunIdSchema } from './test-results-service.js';
 import { COSSACK_PACKAGES } from './installed-packages.js';
 /**
  * Built-in command contracts. Parsing, preflight validation, and help all use
@@ -151,6 +152,10 @@ export const commandSpecs = {
     if (flags.symbol !== undefined && (!flags.symbols || !flags.symbol.trim() || flags.symbol.length > 256)) return [{ code: 'COSSACK_DOCS_SYMBOL_INVALID', severity: 'error', message: '--symbol requires --symbols and a nonempty name of at most 256 characters.' }];
     return [];
   } }),
+  'test-results': new CommandSpec({ name: 'test-results', globals: readonly, flags: {
+    run: str('Read one recorded run UUID; default is the most recently started run.'),
+  }, check: (_args, flags) => flags.run !== undefined && !testRunIdSchema.safeParse(flags.run).success
+    ? [{ code: 'COSSACK_TEST_RUN_INVALID', severity: 'error', message: 'Use a test run UUID, not a file path.' }] : [] }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),
   upgrade: new CommandSpec({ name: 'upgrade', globals: mutations, positionals: ['dir'], flags: {

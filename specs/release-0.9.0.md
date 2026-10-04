@@ -18,7 +18,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Documentation, stored test results and devtools trace access remain open. See the [checkpoint](#codex-local-mcp-2026-10-04).
+- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Shared documentation and stored test evidence are implemented. Devtools trace access remains open. See the [stored evidence checkpoint](#codex-test-evidence-2026-10-04).
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
@@ -88,40 +88,45 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-rt23-complete-2026-10-04"></a>
-### Codex RT-23 completion audit (2026-10-04)
+<a id="codex-test-evidence-2026-10-04"></a>
+### Codex stored test evidence (2026-10-04)
 
-Author: Codex. RT-23 is complete against its original acceptance criteria. This
-closes the DataTable/UI contract task, not CLI-08, REL-02 or REL-03. Release status
-is now 25/58 complete, with 33 tasks open. Versions remain 0.8.3.
+Author: Codex. CLI `test-results` and MCP `read_test_results` use one bounded
+reader. The public `cossack/vitest-reporter` records actual Vitest 4 outcomes,
+including collection failures, with versioned local provenance and endpoint file
+snapshots. Latest-started selection includes unfinished runs. Explicit UUIDs cannot
+select arbitrary files; invalid/linked/corrupt/oversized records fail explicitly.
+Raw errors, assertions and logs are omitted; metadata redaction is bounded.
+Existing CLI deep imports remain available alongside the new reporter export.
 
-| Original requirement | Inspected evidence and result |
-| --- | --- |
-| Generated app filters/pages server data without incorrect selection loss | The generated fixture uses a real HTTP data backend, `server$`, URL state and client selection. Node and local workerd both pass copied-page SSR, hydration without duplicate reads, selection across pages/history/filtering, sorting, page sizes, empty data and refresh failure/retry. |
-| Invalid column accessors fail type checks | Published-declaration fixtures reject nonexistent keys, invalid accessor properties and competing key/accessor declarations. Valid generic columns compile. The compiler fixture passes with checked `@ts-expect-error` cases. |
-| Browser keyboard and focus behavior | Generated apps verify Space selection, paging/filter/retry focus and browser history. The standalone browser test adds keyboard sorting/paging, mixed/visible selection, off-page preservation and disabled boundary navigation. |
-| Catalog states attributes, events and accessibility requirements | Shared CLI/MCP documentation reads installed declarations plus 39 authored UI guides. The current installed acceptance verifies DataTable, native targets/events, union branches and reviewed guide availability; SettingsPanel exact-symbol CLI/MCP parity passed before this audit. Native semantics and restrictions are authored, not inferred from export presence. |
-| UI contract audit across the catalog | Inventory paths match all 65 component source files exactly. All 70 component/icon/block rows have reviewed contracts and linked evidence. Current public type fixtures and the latest 636-test UI suite retain their regressions. |
+Verification:
 
-Fresh verification against the current source/build:
+- `pnpm --filter cossack exec vitest run tests/test-results.test.js tests/vitest-reporter.test.js tests/mcp.test.js tests/command-spec.test.js`:
+  43 tests across 4 files pass. Includes real Vitest pass/fail/skip and collection
+  failure, executable CLI reads, SDK parity, source changes, UTF-8 validation,
+  redaction, copied/linked reports, interrupted records and the 128-run limit.
+  Log: `/tmp/cossack-test-evidence-final.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 package checks pass.
+  Log: `/tmp/cossack-test-evidence-types-final.log` (package checks).
+- `pnpm --filter @cossackframework/framework exec vitest run tests/inspection-service-acceptance.test.ts`:
+  1 passes, including existing CLI deep imports.
+  Log: `/tmp/cossack-test-evidence-framework.log`.
+- `node scripts/test-local-scaffold.mjs --agent-docs-only`: passes after sequential
+  package builds and fresh tarball installation. The installed public reporter
+  declaration compiles without skipping library checks; an actual Vitest run
+  produces evidence read identically by installed CLI/MCP. Editing source changes
+  freshness. Reader networking is disabled. Six packaged examples still compile
+  and execute, and installed UI/catalog parity passes.
+  Log: `/tmp/cossack-test-evidence-installed.log`.
 
-- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'integrates the DataTable' --maxWorkers=1`:
-  2 pass (Node/workerd), 31 unrelated cases skipped; 28.34 seconds.
-  Log: `/tmp/cossack-rt23-generated-final.log`.
-- `pnpm --filter cossack exec vitest run tests/data-table-browser.test.js`:
-  1 passes; 4.48 seconds. Log: `/tmp/cossack-rt23-browser-final.log`.
-- `pnpm --filter @cossackframework/ui exec vitest run tests/data-table.test.ts tests/data-table-types.test.ts`:
-  7 pass across 2 files. Log: `/tmp/cossack-rt23-types-final.log`.
-- The immediately preceding [SettingsPanel checkpoint](#codex-settings-panel-2026-10-04)
-  verifies the final UI build, 636 UI tests, root/all-package types and installed
-  tarballs. No source or package guidance changed during this audit.
-- Inventory/checklist paths and anchors were checked. Only RT-23 changes status.
-
-Limits retained: generated runtime fixtures link workspace packages; installed
-catalog/type/example acceptance is separate. Chromium evidence does not prove
-other browser engines or assistive technologies. No live deployment or remote
-readiness is claimed. These limits remain in the broader release gates rather
-than being substituted for RT-23's original completion criteria.
+Limits: a successful read is not a passing test result. All records cover selected
+tests, not a complete suite. A matching snapshot excludes dependencies, generated
+artifacts, secrets, environment and external services. Start-only records do not
+prove a live runner. Local records are unauthenticated and tied to a project path.
+Metadata redaction cannot recognize every possible secret. Storage has explicit
+limits and manual cleanup; see [usage](../docs/test-results.md).
+CLI-07 remains open for RT-28 snapshots/traces. CLI-08, REL-02 and REL-03 remain
+open for their broader coverage. Checklist status stays 25 complete and 33 open.
 
 ### Archived checkpoints
 
@@ -132,6 +137,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-rt23-complete-2026-10-04"></a>[Codex RT-23 completion audit (2026-10-04)](./release-0.9.0-verification-archive.md#codex-rt23-complete-2026-10-04) |
 | <a id="codex-settings-panel-2026-10-04"></a>[Codex SettingsPanel (2026-10-04)](./release-0.9.0-verification-archive.md#codex-settings-panel-2026-10-04) |
 | <a id="codex-dashboard-stat-2026-10-04"></a>[Codex DashboardStat (2026-10-04)](./release-0.9.0-verification-archive.md#codex-dashboard-stat-2026-10-04) |
 | <a id="codex-command-palette-2026-10-04"></a>[Codex CommandPalette (2026-10-04)](./release-0.9.0-verification-archive.md#codex-command-palette-2026-10-04) |

@@ -1,3 +1,4 @@
+import { testResultsCommand, testResultsHelp } from './commands/test-results.js';
 import { docsCommand, docsHelp } from './commands/docs.js';
 import { commandSpecs } from './command-specs.js';
 /**
@@ -52,6 +53,7 @@ const COMMANDS = {
   schema: { run: schemaCommand, help: schemaHelp },
   studio: { run: studioCommand, help: studioHelp },
   docs: { run: docsCommand, help: docsHelp },
+  'test-results': { run: testResultsCommand, help: testResultsHelp },
   // introspection
   inspect: { run: inspectCommand, help: inspectHelp },
   check: { run: checkCommand, help: checkHelp },
@@ -194,6 +196,7 @@ Commands:
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.
   docs                         Read offline installed-version API export and command catalogs.
+  test-results                 Read recorded test evidence and source freshness.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 

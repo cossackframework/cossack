@@ -1,3 +1,4 @@
+import { testRunIdSchema } from '../test-results-service.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readInstalledPackage, COSSACK_PACKAGES } from '../installed-packages.js';
@@ -51,6 +52,19 @@ export async function startMcpServer(project, options = {}) {
       let result;
       try { result = await runner.run({ operation: 'documentation', ...input }, ctx.mcpReq.signal); }
       catch (error) { result = { ok: false, data: null, diagnostics: [{ code: error.code ?? 'COSSACK_DOCS_FAILED', severity: 'error', message: error.code === 'COSSACK_MCP_RESULT_TOO_LARGE' ? 'Catalog exceeds the response limit. Request one exact export with symbols:true and symbol.' : 'Documentation could not be read.' }] }; }
+      const installed = await readInstalledPackage(root, '@cossackframework/framework').catch(() => null);
+      const structuredContent = { schemaVersion: 1, versions: { ...versions, framework: installed?.manifest.version ?? null }, ...result };
+      return { structuredContent, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], isError: !result.ok };
+    });
+    server.registerTool('read_test_results', {
+      description: 'Read recorded Vitest evidence for the bound project and compare bounded source snapshots. Does not run tests. Missing, unfinished, changed and unknown evidence never imply a current passing suite.',
+      inputSchema: z.object({ run: testRunIdSchema.optional() }).strict(),
+      outputSchema: toolResultSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async (input, ctx) => {
+      let result;
+      try { result = await runner.run({ operation: 'test-results', ...input }, ctx.mcpReq.signal); }
+      catch (error) { result = { ok: false, data: null, diagnostics: [{ code: error.code ?? 'COSSACK_TEST_REPORT_FAILED', severity: 'error', message: 'Stored test evidence could not be read.' }] }; }
       const installed = await readInstalledPackage(root, '@cossackframework/framework').catch(() => null);
       const structuredContent = { schemaVersion: 1, versions: { ...versions, framework: installed?.manifest.version ?? null }, ...result };
       return { structuredContent, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], isError: !result.ok };

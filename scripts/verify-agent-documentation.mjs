@@ -110,6 +110,42 @@ require('node:module').syncBuiltinESMExports();
     assert.equal(remote.isError, false);
     assert.deepEqual(remote.structuredContent.data, documented.data);
 
+    // Compile and execute the public reporter from installed tarballs. Only the
+    // authored fixture runs; CLI and MCP readers themselves never execute tests.
+    const reporterConfig = path.join(scratch, 'reporter.config.ts');
+    await fs.writeFile(reporterConfig, `import { defineConfig } from 'vitest/config';
+import Reporter from 'cossack/vitest-reporter';
+export default defineConfig({ test: {
+  include: ['.agent-docs-acceptance/evidence.test.ts'],
+  reporters: ['default', new Reporter()]
+} });
+`);
+    await fs.writeFile(path.join(scratch, 'evidence.test.ts'), `import { it, expect } from 'vitest';
+it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4));
+`);
+    const reporterTypes = path.join(scratch, 'reporter-tsconfig.json');
+    await fs.writeFile(reporterTypes, JSON.stringify({ compilerOptions: {
+      target: 'ES2022', module: 'NodeNext', strict: true, noEmit: true,
+      types: ['node'], lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+    }, files: [reporterConfig] }));
+    await exec(process.execPath, [...nodeArgs, tsc, '-p', reporterTypes], { cwd: projectDir, env, timeout: 60_000 });
+    const vitest = path.join(path.dirname(installedRequire.resolve('vitest/package.json')), 'vitest.mjs');
+    // Vitest starts its own local infrastructure; the offline guard applies to
+    // evidence readers, not the test runner.
+    await exec(process.execPath, [vitest, 'run', '--config', reporterConfig], { cwd: projectDir, env, timeout: 60_000 });
+    const evidence = await invoke(['test-results', '--json']);
+    assert.equal(evidence.ok, true);
+    assert.equal(evidence.data.report.state, 'passed');
+    assert.equal(evidence.data.report.tests.length, 1);
+    assert.equal(evidence.data.freshness.status, 'matches');
+    const remoteEvidence = await client.callTool({ name: 'read_test_results', arguments: {} });
+    assert.equal(remoteEvidence.isError, false);
+    assert.deepEqual(remoteEvidence.structuredContent.data, evidence.data);
+    await fs.writeFile(path.join(scratch, 'evidence.test.ts'), '// changed after recorded execution');
+    const staleEvidence = await client.callTool({ name: 'read_test_results', arguments: { run: evidence.data.report.id } });
+    assert.equal(staleEvidence.structuredContent.data.freshness.status, 'changed');
+    console.log('Installed Vitest reporter, public types and offline CLI/MCP evidence parity passed.');
+
     // Real UI declarations must expose prop documentation and typed native attributes
     // through both transports, while retaining unresolved platform diagnostics.
     const ui = await invoke(['docs', '--package', '@cossackframework/ui', '--symbols', '--json']);
