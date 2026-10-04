@@ -9980,6 +9980,9 @@ its descriptor. It does not serialize a bearer session ID. `reports.md` and
   `in-memory-websocket-runtime`, `realtime-recovery`).
 - Framework tests: 4 files, **32 tests pass** (`realtime-context`,
   `runtime-websocket-scopes`, `transport-security`, `durable-object-auth`).
+- Concurrent session/flash scope tests: 2 files, **19 tests pass**. Barrier
+  fixtures overlap two requests in one isolate and verify request values and
+  signed output cookies stay separate.
 - Node adapter guarded WebSocket test: **6 tests pass**.
 - Deno adapter WebSocket lifecycle test: **13 tests pass**.
 - Cloudflare WebSocket peer integration test: **1 test passes**, including a
@@ -9997,5 +10000,7 @@ checked in-flight action or frame may finish after revocation; storage latency
 and queue backpressure prevent a strict wall-clock revocation guarantee. Idle
 sockets are rechecked on the next action or outbound frame. Desktop is complete
 for this release by user decision; waived OS-specific checks are not claimed as
-passed. Task count remains **28 complete / 30 open** and package versions remain
-0.8.3. No deployment, publishing or push occurred.
+passed. Overlapping flash requests stay isolated, but a copied valid signed
+cookie can be replayed until expiry; these tests do not claim durable one-use
+semantics. Task count remains **28 complete / 30 open** and package versions
+remain 0.8.3. No deployment, publishing or push occurred.

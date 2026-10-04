@@ -160,6 +160,38 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
         expect((await get.json() as { oldName: string }).oldName).toBe(name);
     });
 
+    it('isolates signed flash values when requests overlap in one isolate', async () => {
+        const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
+        app.use('*', createFlashMiddleware());
+        let arrivals = 0;
+        let release!: () => void;
+        const bothArrived = new Promise<void>(resolve => { release = resolve; });
+        app.post('/parallel/:owner', async c => {
+            const owner = c.req.param('owner');
+            flash('owner', owner);
+            if (++arrivals === 2) release();
+            await bothArrived;
+            return c.text('written');
+        });
+        app.get('/read', c => c.json({ owner: flashed<string>('owner') ?? null }));
+
+        const [aliceWrite, bobWrite] = await Promise.all(['alice', 'bob'].map(owner => app.request(
+            `/parallel/${owner}`, { method: 'POST' }, { APP_SECRET: SECRET },
+        )));
+        const aliceToken = getSetCookie(aliceWrite, 'cossack_flash');
+        const bobToken = getSetCookie(bobWrite, 'cossack_flash');
+        expect(aliceToken).toBeTruthy();
+        expect(bobToken).toBeTruthy();
+        expect(aliceToken).not.toBe(bobToken);
+
+        const [aliceRead, bobRead] = await Promise.all([
+            app.request('/read', { headers: { cookie: `cossack_flash=${aliceToken}` } }, { APP_SECRET: SECRET }),
+            app.request('/read', { headers: { cookie: `cossack_flash=${bobToken}` } }, { APP_SECRET: SECRET }),
+        ]);
+        expect(await aliceRead.json()).toEqual({ owner: 'alice' });
+        expect(await bobRead.json()).toEqual({ owner: 'bob' });
+    });
+
     it('does not set a flash cookie when the handler flashes nothing', async () => {
         const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
         app.use('*', createFlashMiddleware());

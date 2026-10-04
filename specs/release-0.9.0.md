@@ -106,8 +106,8 @@ Generated Node SQLite/Cloudflare D1 and Chromium verify revocation, expiry,
 rotation across tabs, purpose/scope changes, inherited denial, authorized peers
 and idle storage failure. JavaScript and emitted maps exclude private helpers.
 See [commands, migration and precise limits](./release-0.9.0-verification-archive.md#codex-rt11-sse-auth-2026-10-05).
-**28 complete / 30 open.** RT-11 stays open for WebSocket freshness and broader
-concurrency. Desktop stays complete by user decision.
+**28 complete / 30 open.** RT-11 stays open for broader concurrency. Desktop
+stays complete by user decision.
 
 <a id="codex-rt11-websocket-auth-2026-10-05"></a>
 ### Codex: WebSocket session freshness (2026-10-05)
@@ -121,9 +121,15 @@ frame and stop reconnecting. The generated deployment fixture uses a one-way
 session fingerprint instead of retaining the bearer session ID. Desktop remains
 complete by user decision.
 
+Barrier tests confirm generic session and flash scopes stay separate across
+overlapping requests in one isolate. Auth-managed rotation already has an
+atomic single-winner test. Signed flash tokens remain replayable until expiry;
+these request-isolation checks do not claim durable one-use semantics.
+
 The focused core/framework/adapter tests, Cloudflare WebSocket peer integration,
-and generated deployment acceptance pass. Root `pnpm typecheck` and
-`pnpm tsc --noEmit` pass. See the [full verification record](./release-0.9.0-verification-archive.md#codex-rt11-websocket-auth-2026-10-05).
+generated deployment acceptance, and concurrent session/flash scope tests pass.
+Root `pnpm typecheck` and `pnpm tsc --noEmit` pass. See the [full verification
+record](./release-0.9.0-verification-archive.md#codex-rt11-websocket-auth-2026-10-05).
 **28 complete / 30 open.** RT-11 stays open for broader concurrent request
 semantics. A check that passed before revocation can finish in flight; slow
 storage and backpressure prevent a strict time-based revocation guarantee.

@@ -145,6 +145,36 @@ describe('generic session middleware', () => {
     expect(cookieValue(deleted, 'cossack_sid')).toBe('');
   });
 
+  it('keeps request sessions separate while concurrent handlers overlap', async () => {
+    const store = new MemorySessionStore();
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store }));
+    let arrivals = 0;
+    let release!: () => void;
+    const bothArrived = new Promise<void>(resolve => { release = resolve; });
+    app.post('/parallel/:owner', async context => {
+      const owner = context.req.param('owner');
+      const id = session().id();
+      if (++arrivals === 2) release();
+      await bothArrived;
+      await session().set('owner', owner);
+      return context.json({ id, owner: await session().get('owner') });
+    });
+
+    const [aliceResponse, bobResponse] = await Promise.all([
+      app.request('/parallel/alice', { method: 'POST' }),
+      app.request('/parallel/bob', { method: 'POST' }),
+    ]);
+    const alice = await aliceResponse.json() as { id: string; owner: string };
+    const bob = await bobResponse.json() as { id: string; owner: string };
+    expect(alice.owner).toBe('alice');
+    expect(bob.owner).toBe('bob');
+    expect(alice.id).not.toBe(bob.id);
+    expect(await store.get(alice.id, 'owner')).toBe('alice');
+    expect(await store.get(bob.id, 'owner')).toBe('bob');
+  });
+
   it('replaces unknown and expired cookie IDs before writes', async () => {
     const store = new MemorySessionStore();
     const expired = await store.create(-1000);

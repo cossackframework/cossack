@@ -106,7 +106,11 @@ the required non-Desktop release matrix.
    the generated Cloudflare, Node/Deno and framework regressions. RT-11 remains
    open for broader concurrent request semantics. A checked in-flight action or
    frame, slow storage and backpressure prevent a strict wall-clock revocation
-   guarantee; idle sockets are checked on the next action or delivery.
+   guarantee; idle sockets are checked on the next action or delivery. Generic
+   session and signed-flash scopes now have barrier tests that overlap requests
+   in one isolate. Auth-session rotation has an atomic one-winner test, but a
+   copied signed-flash cookie remains replayable until expiry; durable one-use
+   semantics and the remaining concurrency contract are still open.
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.

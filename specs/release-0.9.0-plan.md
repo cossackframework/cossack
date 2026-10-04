@@ -396,7 +396,12 @@ adapter and generated peer tests pass. This closes the WebSocket freshness slice
 not RT-11. Broader concurrent request semantics remain. An action or frame that
 passed its check before revocation may finish, slow storage and queue backpressure
 prevent a wall-clock guarantee, and idle sockets are checked on the next action
-or delivery. Continue those RT-11 concurrency criteria before closing the task.
+or delivery. Barrier tests now prove generic session and signed-flash request
+scopes remain separate while handlers overlap in one isolate. Auth-managed
+session rotation already uses an atomic store replacement with one winner.
+These tests prove request isolation, not durable single-use flash: a copied,
+valid signed cookie can still be replayed until expiry. Continue documenting and
+verifying the remaining concurrency guarantees before closing RT-11.
 
 Already-started HTTP actions can retain resolved identity. A frame checked before
 revocation can be in flight. SSE idle checks occur before 15-second heartbeats
