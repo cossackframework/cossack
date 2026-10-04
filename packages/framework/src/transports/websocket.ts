@@ -1,7 +1,11 @@
 // src/transports/websocket.ts
 import type { Context } from 'hono';
-import { isOriginAllowed } from '@cossackframework/core';
+import { getLocale, isOriginAllowed } from '@cossackframework/core';
 import type { RouterContext } from '../route-ids.js';
+import { getModuleDefault } from '../module-default.js';
+import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
+import { resolveRealtimeScopeKey } from '../realtime-scope.js';
+import { captureRealtimeIdentity } from '../realtime-identity.js';
 
 /** WebSocket proxy handler — forwards WebSocket upgrade requests to the appropriate Durable Object. */
 export function handleWebSocketProxy(ctx: RouterContext) {
@@ -20,12 +24,25 @@ export function handleWebSocketProxy(ctx: RouterContext) {
 
         // Convert route path to file path if needed
         const componentPath = ctx.routePathToFilePathMap.get(componentPathQuery) || componentPathQuery;
-        if (!ctx.pages[componentPath] && !ctx.layouts[componentPath]) {
+        const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
+        if (!module) {
             return new Response('Component not found', { status: 404 });
         }
 
+        const Component = getModuleDefault(module as object) as new () => any;
+        const pageOptions = Reflect.getMetadata('page:options', Component) as { scope?: unknown } | undefined;
+        let params: Record<string, string>;
+        try { params = decodeRuntimeRouteParams(c.req.query('params')); }
+        catch { return new Response('Invalid WebSocket route params', { status: 400 }); }
+        const scopeKey = await resolveRealtimeScopeKey(withRuntimeRouteParams(c, params), pageOptions as any);
+
         const doBinding = c.env.COSSACK_OBJECT;
-        const id = doBinding.idFromString(durableObjectId);
+        let id: unknown;
+        let rejectAuthorization = false;
+        try {
+            if (typeof pageOptions?.scope === 'function' && doBinding.idFromName(scopeKey).toString() !== durableObjectId) rejectAuthorization = true;
+            id = doBinding.idFromString(durableObjectId);
+        } catch { return new Response('Invalid WebSocket target', { status: 400 }); }
         const stub = doBinding.get(id);
         const request = new Request(c.req.raw);
 
@@ -34,10 +51,21 @@ export function handleWebSocketProxy(ctx: RouterContext) {
         // These are internal authentication assertions, never client input.
         request.headers.delete('X-User-ID');
         request.headers.delete('X-User-Data');
+        request.headers.delete('X-Cossack-Realtime-Identity');
+        request.headers.delete('X-Cossack-Realtime-Scope');
+        request.headers.delete('X-Cossack-Realtime-Locale');
+        request.headers.delete('X-Cossack-Realtime-Target-Valid');
         if (user) {
             request.headers.set('X-User-ID', user.id);
             request.headers.set('X-User-Data', JSON.stringify(user));
         }
+        let identity: Awaited<ReturnType<typeof captureRealtimeIdentity>>;
+        try { identity = await captureRealtimeIdentity(c); }
+        catch { identity = null; rejectAuthorization = true; }
+        if (identity) request.headers.set('X-Cossack-Realtime-Identity', JSON.stringify(identity));
+        request.headers.set('X-Cossack-Realtime-Scope', scopeKey);
+        request.headers.set('X-Cossack-Realtime-Locale', getLocale());
+        request.headers.set('X-Cossack-Realtime-Target-Valid', rejectAuthorization ? 'false' : 'true');
 
         return await stub.fetch(request);
     };

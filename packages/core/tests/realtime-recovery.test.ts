@@ -300,6 +300,31 @@ describe('realtime recovery: WebSocket reconnect', () => {
         }
     });
 
+    it('retires a socket after authorization changes and never reconnects it', () => {
+        vi.useFakeTimers();
+        try {
+            const component: any = makeComponent();
+            connectWebSocket(component);
+            const socket = MockWebSocket.instances[0];
+            const pending = vi.fn();
+            wsPendingCalls(socket as any).set('waiting', pending);
+            socket.onmessage?.({ data: JSON.stringify({ type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED' }) });
+            expect(component.websockets.has('page')).toBe(false);
+            expect(realtimeStatus(component).websockets.page).toMatchObject({
+                state: 'closed', attempts: 0,
+                lastError: 'Realtime authorization changed. Reload the page to reconnect.',
+            });
+            expect(pending).toHaveBeenCalledOnce();
+            expect((socket as any).__cossack_intentional_close).toBe(true);
+            expect(socket.readyState).toBe(MockWebSocket.CLOSED);
+            expect(vi.getTimerCount()).toBe(0);
+            vi.advanceTimersByTime(60_000);
+            expect(MockWebSocket.instances).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('does not reconnect a destroyed component', () => {
         vi.useFakeTimers();
         try {

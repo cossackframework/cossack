@@ -45,6 +45,7 @@ export * from './client/navigation';
 export * from './shared/url-state';
 
 export { CossackDurableObject } from './shared/CossackDurableObject';
+export type { SocketPeerAttachment, SocketRequestSnapshot } from './shared/socket-context';
 export {
     focusTrap,
     focusFirst,

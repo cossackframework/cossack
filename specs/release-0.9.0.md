@@ -4,7 +4,7 @@ This release implements the framework, developer experience, agent tooling,
 and Cloudflare work agreed in the feature review. An unchecked item remains
 in scope. Package versions change only after implementation and verification.
 
-**Desktop: completed for 0.9.0 by user decision (2026-10-04).** Remaining
+**Desktop: completed for 0.9.0 by user decision (2026-10-05).** Remaining
 Desktop-only platform checks are waived for this release, not reported as passed.
 Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
 tooling and Cloudflare. This closes Desktop scope within the existing tasks;
@@ -39,7 +39,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE now revalidates storage, fresh guards and scope before delivery, and rotation closes subscriptions across browser tabs. Remaining: broader concurrent request semantics and WebSocket freshness. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05).
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. Remaining: broader concurrent request semantics. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05) and [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05).
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -108,6 +108,25 @@ and idle storage failure. JavaScript and emitted maps exclude private helpers.
 See [commands, migration and precise limits](./release-0.9.0-verification-archive.md#codex-rt11-sse-auth-2026-10-05).
 **28 complete / 30 open.** RT-11 stays open for WebSocket freshness and broader
 concurrency. Desktop stays complete by user decision.
+
+<a id="codex-rt11-websocket-auth-2026-10-05"></a>
+### Codex: WebSocket session freshness (2026-10-05)
+
+WebSocket actions and outbound frames now revalidate current identity and scope
+inside fresh request, config, locale and middleware scopes. Cloudflare Durable
+Object attachments retain a bounded credential-free descriptor so restored
+hibernated sockets follow the same checks. Node/Deno delivery queues are
+serialized per peer and bounded; denied peers receive a terminal authorization
+frame and stop reconnecting. The generated deployment fixture uses a one-way
+session fingerprint instead of retaining the bearer session ID. Desktop remains
+complete by user decision.
+
+The focused core/framework/adapter tests, Cloudflare WebSocket peer integration,
+and generated deployment acceptance pass. Root `pnpm typecheck` and
+`pnpm tsc --noEmit` pass. See the [full verification record](./release-0.9.0-verification-archive.md#codex-rt11-websocket-auth-2026-10-05).
+**28 complete / 30 open.** RT-11 stays open for broader concurrent request
+semantics. A check that passed before revocation can finish in flight; slow
+storage and backpressure prevent a strict time-based revocation guarantee.
 
 <a id="codex-rt11-forms-2026-10-05"></a>
 ### Codex: Generated auth form privacy and session actions (2026-10-05)

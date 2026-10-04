@@ -11,6 +11,10 @@ export interface RuntimeWebSocketUpgrade {
   user?: unknown;
   /** This peer's verified upgrade context, with decoded page route params. */
   context?: Context;
+  /** Revalidate the peer and execute the supplied operation in a fresh request scope. */
+  authorize?: (operation: (context: Context) => Promise<void>) => Promise<boolean>;
+  /** Accept and immediately send the terminal authorization frame; skip component bootstrap. */
+  rejectAuthorization?: boolean;
   env: Record<string, unknown>;
   createComponent(): Promise<Cossack>;
 }

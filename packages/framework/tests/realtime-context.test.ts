@@ -1,7 +1,7 @@
 import { Context, type MiddlewareHandler } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getLocale, getRequestContext, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
-import { captureRealtimeIdentity, revalidateRealtimeIdentity } from '../src/realtime-context';
+import { captureRealtimeIdentity, revalidateRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from '../src/realtime-context';
 import { binding, config } from '../src/config';
 
 const { globalMiddlewares } = vi.hoisted(() => ({ globalMiddlewares: [] as MiddlewareHandler[] }));
@@ -83,5 +83,34 @@ describe('realtime authorization context', () => {
             expect(c.get('cossack.realtimeIdentity')).toEqual({ version: 1, provider: '', data: null }); await next();
         });
         expect(await revalidateRealtimeIdentity(original, {}, null, [], c => !c.get('user'))).toBe(true);
+    });
+
+    it('discards ordinary headers from replayed middleware without rejecting the request', async () => {
+        globalMiddlewares.push(async (_c, next) => { await next(); _c.header('x-worker-pipeline', 'ran'); });
+        expect(await revalidateRealtimeIdentity(context(), {}, null, [], () => true)).toBe(true);
+    });
+
+    it('keeps snapshots credential-free and runs protected work before middleware cleanup', async () => {
+        const original = context();
+        original.set('user', { id: 'old-user' });
+        const snapshot = snapshotRealtimeRequest(original, { room: 'alpha' }, 'fr');
+        expect(JSON.stringify(snapshot)).not.toContain('PRIVATE');
+        let insideMiddleware = false;
+        globalMiddlewares.push(async (c, next) => {
+            insideMiddleware = true;
+            c.set('user', { id: 'fresh-user' });
+            await next();
+            insideMiddleware = false;
+        });
+        const operation = vi.fn(async (c: Context) => {
+            expect(insideMiddleware).toBe(true);
+            expect(getRequestContext()).toBe(c);
+            expect(c.get('user')).toEqual({ id: 'fresh-user' });
+        });
+        const result = await withRealtimeAuthorization(snapshot, identity, [], c => c.get('user')?.id === 'fresh-user', operation);
+        expect(result).not.toBeNull();
+        expect(operation).toHaveBeenCalledOnce();
+        expect(insideMiddleware).toBe(false);
+        expect(original.get('user')).toEqual({ id: 'old-user' });
     });
 });

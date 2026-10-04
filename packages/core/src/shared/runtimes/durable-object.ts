@@ -1,20 +1,31 @@
 import type { CossackServerRuntime } from '../runtime';
 import { dispatchSocketRpcMessage } from '../runtime';
 import type { Cossack } from '../cossack';
-import { socketRequestContext, type SocketRequestSnapshot } from '../socket-context';
+import { socketRequestContext, type SocketPeerAttachment } from '../socket-context';
 import { sendRpcFrame } from '../rpc-stream';
+import { SocketDeliveryQueue, type SocketOperationAuthorizer } from '../socket-delivery';
+
+export type DurableObjectSocketAuthorizer = (
+    client: WebSocket,
+    attachment: SocketPeerAttachment,
+    operation: (context: import('hono').Context) => Promise<void>,
+) => Promise<boolean>;
 
 export class DurableObjectRuntime implements CossackServerRuntime {
     private component: Cossack;
     private state: DurableObjectState;
     private isStateful: boolean;
     private env: unknown;
+    private authorizePeer?: DurableObjectSocketAuthorizer;
+    private delivery = new SocketDeliveryQueue<WebSocket>();
 
-    constructor(component: Cossack, state: DurableObjectState, stateful: boolean = false, env?: unknown) {
+    constructor(component: Cossack, state: DurableObjectState, stateful: boolean = false, env?: unknown,
+        authorizePeer?: DurableObjectSocketAuthorizer) {
         this.component = component;
         this.state = state;
         this.isStateful = stateful;
         this.env = env;
+        this.authorizePeer = authorizePeer;
         (this.component as any)._runtime = this;
     }
 
@@ -30,7 +41,7 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         }
         // The attachment deserializes lazily so non-action frames (broadcasts,
         // pings, malformed payloads) never touch DO storage APIs.
-        let attachment: { user?: unknown; request?: SocketRequestSnapshot } | undefined;
+        let attachment: SocketPeerAttachment | undefined;
         const peer = () => attachment ??= client.deserializeAttachment?.() ?? {};
         if (data?.type === 'action' && typeof data.action === 'string' && Array.isArray(data.payload) && !peer().request) {
             // Connections opened before request snapshots were introduced must
@@ -44,32 +55,38 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         }
         await dispatchSocketRpcMessage(this.component, data, client,
             () => peer().user,
-            () => peer().request ? socketRequestContext(peer().request!, this.env, peer().user) : undefined);
+            () => peer().request ? socketRequestContext(peer().request!, this.env, peer().user) : undefined,
+            this.authorizePeer ? (candidate, operation) => this.authorizePeer!(candidate as WebSocket, peer(), operation) : undefined);
     }
 
     broadcastState(partialState: Record<string, any>): void {
-        const message = JSON.stringify({ type: 'state-update', state: partialState });
+        const message = { type: 'state-update', state: partialState };
+        const deliveries: Promise<void>[] = [];
         for (const ws of this.state.getWebSockets()) {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(message);
-            }
+            deliveries.push(this.sendToClient(ws, message));
         }
+        this.keepAlive(Promise.all(deliveries));
     }
 
     broadcastEvent(eventName: string, payload: any[]): void {
-        const message = JSON.stringify({ type: 'event', eventName, payload });
+        const message = { type: 'event', eventName, payload };
+        const deliveries: Promise<void>[] = [];
         for (const ws of this.state.getWebSockets()) {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(message);
-            }
+            deliveries.push(this.sendToClient(ws, message));
         }
+        this.keepAlive(Promise.all(deliveries));
     }
 
     sendClientAction(client: WebSocket, action: string, payload: any[]): void {
-        const message = JSON.stringify({ type: 'client-action', action, payload });
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
+        this.keepAlive(this.sendToClient(client, { type: 'client-action', action, payload }));
+    }
+
+    async sendToClient(client: WebSocket, message: Record<string, unknown>): Promise<void> {
+        const authorize: SocketOperationAuthorizer<WebSocket> | undefined = this.authorizePeer
+            ? (socket, operation) => this.authorizePeer!(socket, socket.deserializeAttachment?.() ?? {}, operation)
+            : undefined;
+        await this.delivery.send(client, JSON.stringify(message), socket => socket.readyState === 1, authorize,
+            () => console.error('[Cossack] WebSocket delivery authorization failed.'));
     }
 
     get stateful(): boolean {
@@ -80,5 +97,14 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         if (!this.isStateful) return;
         const stateToPersist = this.component.getInitialState();
         await this.state.storage.put('componentState', stateToPersist);
+    }
+
+    retireClient(client: WebSocket): void {
+        this.delivery.remove(client);
+    }
+
+    private keepAlive(work: Promise<unknown>): void {
+        if (typeof this.state.waitUntil === 'function') this.state.waitUntil(work);
+        else void work.catch(() => {});
     }
 }

@@ -4,7 +4,9 @@ import { SseRuntime, Cossack, createInstance, getLocale, isOriginAllowed, saniti
 import type { Context } from 'hono';
 import { resolveLayoutPaths, type RouterContext } from '../route-ids.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
-import { captureRealtimeIdentity, revalidateRealtimeIdentity, RealtimeIdentityConfigurationError } from '../realtime-context.js';
+import { captureRealtimeIdentity, revalidateRealtimeIdentity, RealtimeIdentityConfigurationError, snapshotRealtimeRequest } from '../realtime-context.js';
+import { resolveRealtimeScopeKey } from '../realtime-scope.js';
+export { resolveRealtimeScopeKey as resolveSseScopeKey } from '../realtime-scope.js';
 
 interface SseStoreEntry {
     componentInstance: any;
@@ -198,21 +200,6 @@ export function hydrateSseScopeState(instance: any, state: Record<string, unknow
 }
 
 /**
- * Evaluate the scope function from PageOptions, or return the default SSE scope.
- * Default: per-user (`user:${user?.id || 'anonymous'}`).
- */
-export async function resolveSseScopeKey(
-    c: Context,
-    pageOptions: PageOptions | undefined,
-): Promise<string> {
-    if (pageOptions?.scope) {
-        return pageOptions.scope(c);
-    }
-    const user = c.get('user');
-    return `user:${user?.id || 'anonymous'}`;
-}
-
-/**
  * Register or reset a process-local SSE store entry during SSR (Node/Deno
  * backend only). The fresh component instance replaces any existing entry so
  * that state is re-initialized via init() instead of reusing stale in-memory
@@ -283,7 +270,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
         } catch {
             return new Response('Invalid route params', { status: 400 });
         }
-        const effectiveScopeKey = await resolveSseScopeKey(withRuntimeRouteParams(c, params), pageOptions);
+        const effectiveScopeKey = await resolveRealtimeScopeKey(withRuntimeRouteParams(c, params), pageOptions);
         if (!requestedScopeKey || requestedScopeKey !== effectiveScopeKey) {
             return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
         }
@@ -297,8 +284,9 @@ export function handleSseEndpoint(ctx: RouterContext) {
         }
         const originalUserId = c.get('user')?.id;
         const locale = getLocale();
-        const authorize = () => revalidateRealtimeIdentity(c, params, identity, ctx.getMiddlewares?.(componentPath) ?? [], async fresh =>
-            fresh.get('user')?.id === originalUserId && await resolveSseScopeKey(fresh, pageOptions) === effectiveScopeKey, locale);
+        const authSnapshot = snapshotRealtimeRequest(c, params, locale);
+        const authorize = () => revalidateRealtimeIdentity(authSnapshot, params, identity, ctx.getMiddlewares?.(componentPath) ?? [], async fresh =>
+            fresh.get('user')?.id === originalUserId && await resolveRealtimeScopeKey(fresh, pageOptions) === effectiveScopeKey, locale);
 
         const coordinator = getSseCoordinator(c.env);
         if (coordinator) {

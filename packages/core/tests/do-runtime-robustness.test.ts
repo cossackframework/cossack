@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
 import { DurableObjectRuntime } from '../src/shared/runtimes/durable-object';
-import { snapshotSocketRequest } from '../src/shared/socket-context';
+import { snapshotSocketRequest, socketRequestContext } from '../src/shared/socket-context';
 
 const request = snapshotSocketRequest(new Request('https://example.test/ws?filter=active', {
     headers: { 'cf-connecting-ip': '192.0.2.1' },
@@ -93,6 +93,30 @@ describe('DurableObjectRuntime.onClientMessage robustness', () => {
         expect(context.env).toBe(env);
         expect(context.req.param('tenant')).toBe('example');
         expect(client.deserializeAttachment).toHaveBeenCalledOnce();
+    });
+
+    it('revalidates actions and outgoing frames from the peer attachment', async () => {
+        const attachment = { user: { id: 'upgrade-user' }, request, identity: { version: 1, provider: 'fixture.session', data: {} },
+            componentPath: '/src/pages/room.ts', scopeKey: 'team:alpha' };
+        let allowed = true;
+        const authorize = vi.fn(async (_client: WebSocket, peer: any, operation: (context: any) => Promise<void>) => {
+            expect(peer.scopeKey).toBe('team:alpha');
+            if (!allowed) return false;
+            const fresh = socketRequestContext(peer.request!, {}, { id: 'fresh-user' });
+            await operation(fresh);
+            return true;
+        });
+        const component: any = { _id: 'root', activeComponents: new Map(), executeAction: vi.fn(), getInitialState: () => ({ public: {} }) };
+        const client: any = { readyState: 1, deserializeAttachment: vi.fn(() => attachment), send: vi.fn(), close: vi.fn() };
+        const runtime = new DurableObjectRuntime(component, { getWebSockets: () => [client] } as any, false, {}, authorize);
+
+        await runtime.onClientMessage(client, JSON.stringify({ type: 'action', action: 'inspect', payload: [], requestId: 'fresh-call' }));
+        expect(component.executeAction).toHaveBeenCalledWith('inspect', [], { id: 'fresh-user' }, client, 'fresh-call', expect.anything());
+        allowed = false;
+        await runtime.sendToClient(client, { type: 'state-update', state: { private: true } });
+        expect(client.send).toHaveBeenLastCalledWith(expect.stringContaining('authorization-error'));
+        expect(client.close).toHaveBeenCalledWith(1008, 'Realtime authorization changed');
+        expect(client.deserializeAttachment).toHaveBeenCalledTimes(2);
     });
 
     it('drops actions targeting an unknown component without throwing', async () => {

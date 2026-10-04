@@ -10,8 +10,13 @@ export class NodeWebSocketRuntime extends InMemoryWebSocketRuntime<WebSocket> {
         });
     }
 
-    public override addClient(ws: WebSocket, user?: unknown, context?: Context) {
-        super.addClient(ws, user, context);
+    public override addClient(
+        ws: WebSocket,
+        user?: unknown,
+        context?: Context,
+        authorize?: (client: WebSocket, operation: (context: Context) => Promise<void>) => Promise<boolean>,
+    ) {
+        super.addClient(ws, user, context, authorize);
         ws.on('close', () => {
             this.removeClient(ws);
         });

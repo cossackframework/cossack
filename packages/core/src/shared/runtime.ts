@@ -1,6 +1,9 @@
 import { beginDevelopmentSocketDispatch } from './development-socket-dispatch';
 import { rpcCancellations, sendRpcFrame, type RpcStreamFrame } from './rpc-stream';
+import { closeUnauthorizedSocket, SocketDeliveryQueue, type SocketOperationAuthorizer } from './socket-delivery';
 import type { Context } from 'hono';
+
+export { closeUnauthorizedSocket } from './socket-delivery';
 
 export interface CossackServerRuntime {
     onClientMessage(client: unknown, message: string): Promise<void>;
@@ -21,6 +24,7 @@ export async function dispatchSocketRpcMessage(
     client: unknown,
     getUser?: (client: any) => unknown,
     getContext?: (client: any) => Context | undefined,
+    authorize?: (client: any, operation: (context: Context) => Promise<void>) => Promise<boolean>,
 ): Promise<void> {
     if (!data || typeof data !== 'object') return;
     const message = data as Record<string, unknown>;
@@ -51,16 +55,40 @@ export async function dispatchSocketRpcMessage(
             return;
         }
     }
-    const context = getContext?.(client);
-    if (development) await targetInstance.executeAction(message.action, message.payload, user, client, requestId, context, development);
-    else if (context) await targetInstance.executeAction(message.action, message.payload, user, client, requestId, context);
-    else await targetInstance.executeAction(message.action, message.payload, user, client, requestId);
+    const execute = async (actionUser = user, context = getContext?.(client)) => {
+        if (development) await targetInstance.executeAction(message.action, message.payload, actionUser, client, requestId, context, development);
+        else if (context) await targetInstance.executeAction(message.action, message.payload, actionUser, client, requestId, context);
+        else await targetInstance.executeAction(message.action, message.payload, actionUser, client, requestId);
+    };
+    if (!authorize) {
+        await execute();
+        return;
+    }
+    let operationRan = false;
+    let actionFailed = false;
+    let allowed = false;
+    try {
+        allowed = await authorize(client, async context => {
+            operationRan = true;
+            try { await execute(context.get('user'), context); }
+            catch (error) { actionFailed = true; throw error; }
+        });
+    } catch (error) {
+        if (actionFailed) throw error;
+        console.error('[Cossack] WebSocket authorization check failed.');
+    }
+    if (allowed && operationRan) return;
+    const authChanged = 'Realtime authorization changed. Reload the page to reconnect.';
+    if (requestId?.trim()) send({ v: 1, type: 'error', requestId,
+        code: 'COSSACK_REALTIME_AUTH_CHANGED', message: authChanged });
+    closeUnauthorizedSocket(client as any);
 }
 
 /** Minimal socket surface shared by process runtimes such as Node and Deno. */
 export interface InMemoryWebSocketClient {
     readonly readyState: number;
     send(data: string): void;
+    close?(code?: number, reason?: string): void;
 }
 
 export interface InMemoryWebSocketRuntimeOptions<Client extends InMemoryWebSocketClient> {
@@ -68,6 +96,7 @@ export interface InMemoryWebSocketRuntimeOptions<Client extends InMemoryWebSocke
     getContext?: (client: Client) => Context | undefined;
     isOpen?: (client: Client) => boolean;
     onError?: (error: unknown) => void;
+    authorize?: SocketOperationAuthorizer<Client>;
 }
 
 /**
@@ -84,7 +113,9 @@ export class InMemoryWebSocketRuntime<
     protected readonly component: any;
     private readonly users = new WeakMap<object, unknown>();
     private readonly contexts = new WeakMap<object, Context>();
+    private readonly authorizers = new WeakMap<object, SocketOperationAuthorizer<Client>>();
     private readonly options: InMemoryWebSocketRuntimeOptions<Client>;
+    private readonly delivery = new SocketDeliveryQueue<Client>();
 
     constructor(component: any, options: InMemoryWebSocketRuntimeOptions<Client> = {}) {
         this.component = component;
@@ -92,11 +123,12 @@ export class InMemoryWebSocketRuntime<
         this.component._runtime = this;
     }
 
-    addClient(client: Client, user?: unknown, context?: Context): void {
+    addClient(client: Client, user?: unknown, context?: Context, authorize?: SocketOperationAuthorizer<Client>): void {
         this.clients.add(client);
         if (typeof client === 'object' && client !== null) {
             this.users.set(client, user);
             if (context) this.contexts.set(client, context);
+            if (authorize) this.authorizers.set(client, authorize);
         }
     }
 
@@ -107,7 +139,9 @@ export class InMemoryWebSocketRuntime<
         if (typeof client === 'object' && client !== null) {
             this.users.delete(client);
             this.contexts.delete(client);
+            this.authorizers.delete(client);
         }
+        this.delivery.remove(client);
     }
 
     get clientCount(): number {
@@ -141,11 +175,15 @@ export class InMemoryWebSocketRuntime<
             this.options.onError?.(error);
             return;
         }
+        const authorizer = (candidate: unknown) => typeof candidate === 'object' && candidate !== null
+            ? this.authorizers.get(candidate) ?? this.options.authorize : this.options.authorize;
+        const authorize = authorizer(socket);
         await dispatchSocketRpcMessage(this.component, data, socket, candidate =>
             this.options.getUser?.(candidate as Client) ??
             (typeof candidate === 'object' && candidate !== null ? this.users.get(candidate) : undefined), candidate =>
             this.options.getContext?.(candidate as Client) ??
-            (typeof candidate === 'object' && candidate !== null ? this.contexts.get(candidate) : undefined));
+            (typeof candidate === 'object' && candidate !== null ? this.contexts.get(candidate) : undefined),
+            authorize ? (_candidate, operation) => authorize(socket, operation) : undefined);
     }
 
     broadcastState(partialState: Record<string, any>): void {
@@ -158,7 +196,17 @@ export class InMemoryWebSocketRuntime<
 
     sendClientAction(client: unknown, action: string, payload: any[]): void {
         const socket = client as Client;
-        if (this.isOpen(socket)) socket.send(JSON.stringify({ type: 'client-action', action, payload }));
+        void this.sendToClient(socket, { type: 'client-action', action, payload });
+    }
+
+    async sendInitialState(client: Client): Promise<void> {
+        await this.sendToClient(client, { type: 'state-update', state: this.getPublicState() });
+    }
+
+    async sendToClient(client: Client, message: Record<string, unknown>): Promise<void> {
+        const authorizer = typeof client === 'object' && client !== null ? this.authorizers.get(client) : undefined;
+        await this.delivery.send(client, JSON.stringify(message), candidate => this.isOpen(candidate),
+            authorizer ?? this.options.authorize, error => this.options.onError?.(error));
     }
 
     async persistState(): Promise<void> {
@@ -173,7 +221,9 @@ export class InMemoryWebSocketRuntime<
     private broadcast(message: Record<string, unknown>): void {
         const encoded = JSON.stringify(message);
         for (const client of this.clients) {
-            if (this.isOpen(client)) client.send(encoded);
+            const authorizer = typeof client === 'object' && client !== null ? this.authorizers.get(client) : undefined;
+            void this.delivery.send(client, encoded, candidate => this.isOpen(candidate),
+                authorizer ?? this.options.authorize, error => this.options.onError?.(error));
         }
     }
 }

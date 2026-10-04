@@ -234,8 +234,7 @@ export class CossackNodeAdapter {
             runtime.addClient(ws, user, context);
             
             // Send initial state to the connecting client
-            const initialState = runtime.getPublicState();
-            ws.send(JSON.stringify({ type: 'state-update', state: initialState }));
+            await runtime.sendInitialState(ws);
         });
     }
 

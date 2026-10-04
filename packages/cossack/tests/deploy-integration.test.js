@@ -124,9 +124,14 @@ it('builds a generated staging app and validates deployment without uploading', 
 
     export interface DemoUser { id: string; email: string; tenant: string }
 
+    async function sessionFingerprint(value: string) {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+      return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+
     export async function ensureSchema() {
       await sql\`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL, password_hash TEXT NOT NULL)\`;
-      await sql\`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL)\`;
+      await sql\`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, realtime_fingerprint TEXT NOT NULL)\`;
       await sql\`INSERT OR IGNORE INTO users VALUES ('u1', 'ada@example.test', 'pw-trusted')\`;
     }
 
@@ -141,9 +146,18 @@ it('builds a generated staging app and validates deployment without uploading', 
         const rows = await sql\`SELECT id, email FROM users WHERE id = \${id}\`;
         return rows.rows[0] ? {...rows.rows[0],tenant:'t1'} : null;
       },
+      realtime: {
+        key: 'test.session',
+        capture: async sessionId => ({ fingerprint: await sessionFingerprint(sessionId) }),
+        validate: async data => {
+          if (!data || typeof data !== 'object' || typeof data.fingerprint !== 'string') return null;
+          const rows = await sql\`SELECT user_id FROM sessions WHERE realtime_fingerprint = \${data.fingerprint} AND expires_at > unixepoch()\`;
+          return rows.rows[0]?.user_id ?? null;
+        },
+      },
       createSession: async (user, c) => {
         const id = crypto.randomUUID();
-        await sql\`INSERT INTO sessions VALUES (\${id}, \${user.id}, unixepoch() + 3600)\`;
+        await sql\`INSERT INTO sessions VALUES (\${id}, \${user.id}, unixepoch() + 3600, \${await sessionFingerprint(id)})\`;
         const headers = new Headers();
         setCookie(c, 'session_id', id, { httpOnly: true, path: '/', sameSite: 'Lax', maxAge: 3600 });
         headers.append('Set-Cookie', c.res.headers.getSetCookie().at(-1) ?? '');

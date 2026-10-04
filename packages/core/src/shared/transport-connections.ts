@@ -179,6 +179,7 @@ export function connectWebSocket(component: any): void {
             component.websockets.set(providerName, ws);
             let closed = false;
             let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+            let stopPing = () => {};
             const ownsSocket = () => component.websockets.get(providerName) === ws &&
                 !(ws as any).__cossack_intentional_close && component._phase !== 'Destroyed';
             const isCurrent = () => !closed && ownsSocket();
@@ -206,6 +207,22 @@ export function connectWebSocket(component: any): void {
                 return;
             }
             if (!data || typeof data !== 'object') return;
+            if (data.type === 'authorization-error' && data.code === 'COSSACK_REALTIME_AUTH_CHANGED') {
+                closed = true;
+                stopPing();
+                clearTimeout(reconnectTimer);
+                (ws as any).__cossack_intentional_close = true;
+                if (component.websockets.get(providerName) === ws) component.websockets.delete(providerName);
+                socketDisposers.delete(ws);
+                ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
+                failPendingSocketCalls(ws);
+                try { ws.close(1008, 'Realtime authorization changed'); } catch { /* already closed */ }
+                updateStatus(component, { provider: providerName }, {
+                    state: 'closed', attempts: 0,
+                    lastError: 'Realtime authorization changed. Reload the page to reconnect.',
+                });
+                return;
+            }
             // Request-scoped frames route to their waiting call; broadcasts
             // continue through the handlers below.
             if (routeSocketFrame(ws, data)) return;
@@ -267,7 +284,7 @@ export function connectWebSocket(component: any): void {
                 ws.send('ping');
             }
         }, 25000);
-        const stopPing = () => clearInterval(pingInterval);
+        stopPing = () => clearInterval(pingInterval);
         ws.onclose = () => {
             if (closed) return;
             closed = true;

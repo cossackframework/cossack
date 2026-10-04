@@ -105,7 +105,12 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     app.use('*', async (c, next) => {
       // Test-only auth/edge headers, supplied by this Worker. Browsers cannot
       // choose CF-Connecting-IP in production. No test auth endpoint is shipped.
-      if (c.req.header('x-test-user')) c.set('user', { id: c.req.header('x-test-user'), tenant:'t1' });
+      if (c.req.header('x-test-user')) {
+        const user = { id: c.req.header('x-test-user'), tenant:'t1' };
+        c.set('user', user);
+        c.set('cossack.captureRealtimeIdentity', async () => ({ version: 1, provider: 'fixture.session',
+          data: { reference: user.id, fingerprint: 'fixture-fingerprint' } }));
+      }
       await next();
     });
     app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName(c.req.query('name') || 'shared').toString() }));

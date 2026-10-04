@@ -1,92 +1,82 @@
 import { Context, type MiddlewareHandler } from 'hono';
-import { assertResponseHeadersMutable, getLocale, getLocaleCatalog, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
+import { assertResponseHeadersMutable, getLocaleCatalog, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories from 'virtual:cossack-config';
 import { ensureRequestContextAlsWired, runWithContext } from './request-context-als.js';
 import { withRuntimeRouteParams } from './runtime-websocket.js';
 import { buildConfig, runWithConfig, type EnvFunction } from './config.js';
 import { ensureLocaleAlsWired, runWithLocale } from './i18n-context.js';
+import { cloneRealtimeIdentity, snapshotRealtimeRequest, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-identity.js';
 
-/** Structural auth protocol: the framework does not depend on the auth package. */
-export interface RealtimeIdentity {
-    version: 1;
-    provider: string;
-    data: unknown;
-}
+export { captureRealtimeIdentity, RealtimeIdentityConfigurationError, snapshotRealtimeRequest } from './realtime-identity.js';
+export type { RealtimeIdentity, RealtimeRequestSnapshot } from './realtime-identity.js';
 
-/** Configuration failures differ from temporary provider/storage failures. */
-export class RealtimeIdentityConfigurationError extends TypeError {}
-
-function cloneJson(value: unknown, depth = 0, budget = { visits: 0 }): unknown {
-    if (++budget.visits > 128) throw new RealtimeIdentityConfigurationError('Realtime identity is too large.');
-    if (depth > 16) throw new RealtimeIdentityConfigurationError('Realtime identity exceeds nesting limits.');
-    if (typeof value === 'string' && value.length > 1024) throw new RealtimeIdentityConfigurationError('Realtime identity is too large.');
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (!value || typeof value !== 'object' ||
-        (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
-        throw new RealtimeIdentityConfigurationError('Realtime identity must contain plain JSON data.');
-    }
-    const copy: Record<string, unknown> | unknown[] = Array.isArray(value) ? [] : Object.create(null);
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    if (Reflect.ownKeys(descriptors).some(key => typeof key === 'symbol') || Object.keys(descriptors).length > 128) {
-        throw new RealtimeIdentityConfigurationError('Realtime identity is too large or contains symbol keys.');
-    }
-    if (Array.isArray(value) && Object.keys(descriptors).length !== value.length + 1) throw new RealtimeIdentityConfigurationError('Realtime identity arrays must be dense.');
-    for (const [key, descriptor] of Object.entries(descriptors)) {
-        if (Array.isArray(value) && key === 'length') continue;
-        if (!('value' in descriptor) || !descriptor.enumerable || ['__proto__', 'constructor', 'prototype'].includes(key)) {
-            throw new RealtimeIdentityConfigurationError('Realtime identity cannot contain accessors or reserved keys.');
-        }
-        Object.defineProperty(copy, key, { value: cloneJson(descriptor.value, depth + 1, budget), enumerable: true, writable: true, configurable: true });
-    }
-    return copy;
-}
-
-export async function captureRealtimeIdentity(c: Context): Promise<RealtimeIdentity | null> {
-    const user = c.get('user');
-    if (!user) return null;
-    if (typeof user.id !== 'string' || !user.id) throw new RealtimeIdentityConfigurationError('Realtime authentication needs a user ID.');
-    const capture = c.get('cossack.captureRealtimeIdentity');
-    if (typeof capture !== 'function') throw new RealtimeIdentityConfigurationError('Authenticated realtime needs a revalidation provider.');
-    const identity = cloneJson(await capture()) as RealtimeIdentity;
-    if (!identity || identity.version !== 1 || typeof identity.provider !== 'string' ||
-        !/^[a-z][a-z0-9._-]{0,63}$/.test(identity.provider) || !Object.hasOwn(identity, 'data') ||
-        new TextEncoder().encode(JSON.stringify(identity)).length > 1024) throw new RealtimeIdentityConfigurationError('Invalid realtime identity descriptor.');
-    return identity;
+function contextFromSnapshot(snapshot: RealtimeRequestSnapshot): Context {
+    return withRuntimeRouteParams(new Context(new Request(snapshot.url, { headers: snapshot.headers }), {
+        env: snapshot.env, path: snapshot.path,
+    }), snapshot.params);
 }
 
 /** Run each check in a fresh request/ORM scope, without replaying bearer headers. */
 export async function revalidateRealtimeIdentity(
-    original: Context,
+    original: Context | RealtimeRequestSnapshot,
     params: Record<string, string>,
     identity: RealtimeIdentity | null,
     middlewares: readonly MiddlewareHandler[],
     check: (context: Context) => boolean | Promise<boolean>,
-    locale = getLocale(),
+    locale?: string,
 ): Promise<boolean> {
-    const headers = new Headers(original.req.raw.headers);
-    for (const name of ['cookie', 'authorization', 'proxy-authorization', 'set-cookie', 'x-user-id', 'x-user-data',
-        'x-api-key', 'x-auth-token', 'x-component-path', 'x-provider-name', 'connection', 'upgrade']) headers.delete(name);
-    const c = withRuntimeRouteParams(new Context(new Request(original.req.url, { headers }), {
-        env: original.env, path: original.req.path,
-    }), params);
-    try { c.set('cossack.realtimeIdentity', cloneJson(identity ?? { version: 1, provider: '', data: null })); }
-    catch { return false; }
+    const snapshot = isRealtimeRequestSnapshot(original) ? original : snapshotRealtimeRequest(original, params, locale);
+    return (await withRealtimeAuthorization(snapshot, identity, middlewares, check, async () => true)) !== null;
+}
+
+function isRealtimeRequestSnapshot(value: Context | RealtimeRequestSnapshot): value is RealtimeRequestSnapshot {
+    return typeof (value as RealtimeRequestSnapshot).url === 'string' && Array.isArray((value as RealtimeRequestSnapshot).headers) &&
+        typeof (value as RealtimeRequestSnapshot).path === 'string' && (value as RealtimeRequestSnapshot).params !== undefined;
+}
+
+/** Keep fresh middleware, auth resolution and the action in one request scope. */
+export async function withRealtimeAuthorization<T>(
+    original: RealtimeRequestSnapshot,
+    identity: RealtimeIdentity | null,
+    middlewares: readonly MiddlewareHandler[],
+    check: (context: Context) => boolean | Promise<boolean>,
+    operation: (context: Context) => T | Promise<T>,
+): Promise<{ context: Context; value: T } | null> {
+    const c = contextFromSnapshot(original);
+    try { c.set('cossack.realtimeIdentity', cloneRealtimeIdentity(identity ?? { version: 1, provider: '', data: null })); }
+    catch { return null; }
     c.set(RESPONSE_HEADER_STATE_KEY, { committed: true });
     const writeHeader = c.header.bind(c);
-    c.header = (name, value, options) => { assertResponseHeadersMutable(c); writeHeader(name, value, options); };
+    c.header = (function(name: string, value?: string, options?: Parameters<Context['header']>[2]) {
+        if (arguments.length === 1) return writeHeader(name);
+        // Replayed middleware runs after the live response has been committed.
+        // Benign response headers are local to this synthetic context and are
+        // intentionally discarded; a cookie mutation is a credential side
+        // effect and must still fail closed.
+        if (name.toLowerCase() === 'set-cookie') assertResponseHeadersMutable(c);
+        return c;
+    }) as typeof c.header;
     ensureRequestContextAlsWired();
-    let allowed = false;
+    let outcome: { context: Context; value: T } | null = null;
     let index = -1;
     const stack = [...configuredMiddlewares, ...middlewares];
+    let operationStarted = false;
+    let operationFailed = false;
     const dispatch = async (position: number): Promise<void> => {
         if (position <= index) throw new Error('next() called multiple times');
         index = position;
         const middleware = stack[position];
-        if (!middleware) { allowed = await check(c); return; }
+        if (!middleware) {
+            if (await check(c)) {
+                operationStarted = true;
+                try { outcome = { context: c, value: await operation(c) }; }
+                catch (error) { operationFailed = true; throw error; }
+            }
+            return;
+        }
         const response = await middleware(c, () => dispatch(position + 1));
-        if (response) allowed = false;
+        if (response && !operationStarted) outcome = null;
     };
     try {
         const env = original.env as Record<string, unknown>;
@@ -94,8 +84,11 @@ export async function revalidateRealtimeIdentity(
         const config = buildConfig(configFactories as Record<string, unknown>, envFn);
         ensureLocaleAlsWired();
         await runWithContext(c, () => runWithConfig({ env, config }, () =>
-            runWithLocale({ locale, messages: getLocaleCatalog(locale) ?? {} }, () => dispatch(0))));
+            runWithLocale({ locale: original.locale, messages: getLocaleCatalog(original.locale) ?? {} }, () => dispatch(0))));
     }
-    catch { return false; }
-    return allowed;
+    catch (error) {
+        if (operationFailed) throw error;
+        return null;
+    }
+    return outcome;
 }

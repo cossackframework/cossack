@@ -118,6 +118,7 @@ import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-webs
 import { createAssetsMiddleware } from './assets.js';
 import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './transports/rpc-stream.js';
 import { retainResponseLifetime } from './response-lifetime.js';
+import { captureRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from './realtime-context.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -773,10 +774,20 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       const componentContext = withRuntimeRouteParams(c, routeParams);
       const expectedTarget = await resolveSseScopeKey(componentContext, pageOptions);
-      if (target !== expectedTarget) return c.text('Invalid WebSocket scope', 403);
+      let rejectAuthorization = target !== expectedTarget;
 
       const pathname = c.req.query('pathname') || '/';
       const user = c.get('user');
+      let identity: Awaited<ReturnType<typeof captureRealtimeIdentity>>;
+      try { identity = await captureRealtimeIdentity(c); }
+      catch { identity = null; rejectAuthorization = true; }
+      const originalUserId = (user as { id?: unknown } | undefined)?.id;
+      const authSnapshot = snapshotRealtimeRequest(c, routeParams, getLocale());
+      const authorize = async (operation: (fresh: Context) => Promise<void>) => !rejectAuthorization && (await withRealtimeAuthorization(
+        authSnapshot, identity, getMiddlewares(componentPath), async fresh =>
+          fresh.get('user')?.id === originalUserId && await resolveSseScopeKey(fresh, pageOptions) === expectedTarget,
+        operation,
+      )) !== null;
       const runtimeInfo = await resolveRuntimeInfo();
       return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
         target,
@@ -785,6 +796,8 @@ export function createApp(options: CreateAppOptions = {}) {
         pathname,
         user,
         context: componentContext,
+        authorize,
+        rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
           const rootScope = createRootServiceScope();

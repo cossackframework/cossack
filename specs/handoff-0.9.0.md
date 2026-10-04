@@ -10,7 +10,7 @@ The [verification archive](./release-0.9.0-verification-archive.md) preserves pa
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
 All unchecked tasks remain in scope, subject to the Desktop closure below.
 
-**Desktop: completed for 0.9.0 by user decision (2026-10-04).** Preserve the
+**Desktop: completed for 0.9.0 by user decision (2026-10-05).** Preserve the
 verified implementation. Remaining Desktop-only platform acceptance is waived
 for this release, not a pending task or a claim that those checks passed. Do not
 reopen Desktop work unless requested. Prioritize shared framework behavior,
@@ -98,13 +98,15 @@ the required non-Desktop release matrix.
    guard/scope changes, authorized peer delivery and an idle storage failure.
    Preserve replay/heartbeat/backpressure tests, private helper/map exclusion,
    actual auth-form regressions and the guide's explicit migration contract.
-   Next implement WebSocket action **and outgoing delivery** freshness, including
-   hibernation and per-connection scope. Core socket dispatch still trusts the
-   upgrade user; the SSE contract does not close that gap. Reuse the structural
-   descriptor without retaining bearer credentials. Broader concurrent request
-   semantics remain; signed flash clearing does not provide durable replay protection.
-   RT-11 stays open. In-flight checked frames, slow storage and backpressure
-   prevent a strict elapsed-time revocation guarantee.
+   The [WebSocket freshness checkpoint](./release-0.9.0.md#codex-rt11-websocket-auth-2026-10-05)
+   now rechecks actions and every outbound frame using a credential-free
+   attachment after hibernation. Fresh middleware validates user and per-page
+   scope; denial sends a terminal frame and closes the stale socket. Node/Deno
+   runtime peers use serialized, bounded per-connection delivery queues. Preserve
+   the generated Cloudflare, Node/Deno and framework regressions. RT-11 remains
+   open for broader concurrent request semantics. A checked in-flight action or
+   frame, slow storage and backpressure prevent a strict wall-clock revocation
+   guarantee; idle sockets are checked on the next action or delivery.
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.

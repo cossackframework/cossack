@@ -9955,3 +9955,47 @@ they do not prove live state or remote readiness. RT-28 still needs WebSocket
 server dispatch, native-body terminal evidence and other runtime development
 acceptance. CLI-08 retains broader authored guidance; REL-02/REL-03 retain their
 full package/runtime gates. Versions remain 0.8.3. No deployment or publication occurred.
+
+<a id="codex-rt11-websocket-auth-2026-10-05"></a>
+### Codex RT-11 WebSocket freshness (2026-10-05)
+
+**Behavior completed:** WebSocket actions and all outbound state, event and
+client-action frames revalidate identity, inherited guards, owner and computed
+scope immediately before dispatch or delivery. Cloudflare peers carry bounded,
+credential-free request/identity descriptors through Durable Object
+hibernation. Fresh middleware executes within the new request/config/locale/ORM
+scope. Stale peers receive a terminal authorization frame and close; client
+reconnect stops. Node and Deno peers use per-connection serialized delivery
+queues with bounded pending work. Ordinary response headers set by rechecked
+middleware are discarded on the synthetic context; `Set-Cookie` mutation remains
+a closed failure because it would change credentials after the live response.
+
+The generated Cloudflare auth fixture stores a one-way session fingerprint in
+its descriptor. It does not serialize a bearer session ID. `reports.md` and
+`.zcodeignore` were pre-existing user files and were not included in this work.
+
+**Verification:**
+
+- Core runtime tests: 3 files, **28 tests pass** (`do-runtime-robustness`,
+  `in-memory-websocket-runtime`, `realtime-recovery`).
+- Framework tests: 4 files, **32 tests pass** (`realtime-context`,
+  `runtime-websocket-scopes`, `transport-security`, `durable-object-auth`).
+- Node adapter guarded WebSocket test: **6 tests pass**.
+- Deno adapter WebSocket lifecycle test: **13 tests pass**.
+- Cloudflare WebSocket peer integration test: **1 test passes**, including a
+  forced Durable Object reconstruction with active sockets.
+- Generated Cloudflare deployment/auth/browser acceptance: **1 test passes**.
+- `pnpm typecheck` passes all 11 package type checks; `pnpm tsc --noEmit` passes.
+
+The test commands were run with the checked-in Vitest 4.1.11 and Wrangler
+4.114.0. The generated deployment test takes about 146 seconds in isolation.
+An earlier full `pnpm test:unit` run failed with load-sensitive 5-second CLI
+timeouts and unrelated Deno runner skips/errors; that suite was not rerun here.
+
+**Limits:** RT-11 remains open for broader concurrent request semantics. A
+checked in-flight action or frame may finish after revocation; storage latency
+and queue backpressure prevent a strict wall-clock revocation guarantee. Idle
+sockets are rechecked on the next action or outbound frame. Desktop is complete
+for this release by user decision; waived OS-specific checks are not claimed as
+passed. Task count remains **28 complete / 30 open** and package versions remain
+0.8.3. No deployment, publishing or push occurred.

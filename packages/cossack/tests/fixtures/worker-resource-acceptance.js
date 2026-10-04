@@ -97,7 +97,8 @@ export async function checkWorkerResourceAcceptance(server, serverUrl, sessionCo
       page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') calls.push(request.postDataJSON()); });
       page.on('pageerror', error => errors.push(error.message));
       await page.goto(origin + '/resource-check/' + transport);
-      await page.waitForFunction(() => window.__resourceReady === true);
+      try { await page.waitForFunction(() => window.__resourceReady === true); }
+      catch (error) { throw new Error(`${error.message}; browser errors: ${JSON.stringify(errors)}`); }
       await browserExpect(page.locator('#resource-value')).toHaveText('1/u1');
       await browserExpect(page.getByRole('status')).toHaveText('ready');
       expect(calls).toEqual([]);

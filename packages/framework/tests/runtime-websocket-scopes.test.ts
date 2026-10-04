@@ -3,9 +3,16 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Cossack, CossackService, Inject, Page, Service } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import type { RuntimeWebSocketUpgrade } from '../src/runtime-adapter';
-const { registry } = vi.hoisted(() => ({ registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} } }));
+const { registry, session } = vi.hoisted(() => ({
+  registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
+  session: { userId: 'owner' },
+}));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
-vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: any, next: () => Promise<void>) => { c.set('user', { id: 'owner' }); await next(); }] }));
+vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: any, next: () => Promise<void>) => {
+  c.set('user', { id: session.userId });
+  c.set('cossack.captureRealtimeIdentity', async () => ({ version: 1, provider: 'fixture.session', data: { reference: 'opaque' } }));
+  await next();
+}] }));
 vi.mock('virtual:cossack-config', () => ({ default: {} }));
 const disposed: number[] = [];
 let sequence = 0;
@@ -16,7 +23,7 @@ class Scoped extends CossackService {
   details() { return { team: this.c.req.param('team'), user: this.user, env: this.env }; }
   onDispose() { disposed.push(this.id); }
 }
-@Page({ services: [Scoped] }) class Root extends Cossack {}
+@Page({ services: [Scoped], middlewares: [async (c, next) => { c.set('inheritedGuard', true); await next(); }] }) class Root extends Cossack {}
 @Page({ services: [Scoped] }) class Inner extends Cossack {}
 @Page({ transport: 'http', scope: c => `team:${c.req.param('team')}` })
 class Team extends Cossack {
@@ -27,7 +34,7 @@ registry.layouts['/src/pages/layout.ts'] = { default: Root };
 registry.layouts['/src/pages/team/layout.ts'] = { default: Inner };
 registry.pages['/src/pages/team/[team]/index.ts'] = { default: Team };
 const { createApp } = await import('../src/router');
-afterEach(async () => { await Promise.all(instances.splice(0).map(instance => instance.destroyAsync())); disposed.length = 0; sequence = 0; });
+afterEach(async () => { await Promise.all(instances.splice(0).map(instance => instance.destroyAsync())); disposed.length = 0; sequence = 0; session.userId = 'owner'; });
 async function upgrade(consume: (upgrade: RuntimeWebSocketUpgrade) => Promise<Response>) {
   return createApp({ runtimeAdapter: { name: 'test', handleWebSocketUpgrade: (_context, request) => consume(request) } }).request(
     '/ws/page/team:alpha?' + new URLSearchParams({ routePath: '/team/[team]', pathname: '/team/alpha', params: JSON.stringify({ team: 'alpha' }) }),
@@ -38,6 +45,19 @@ it('constructs nested scopes and preserves page params, auth, and bindings throu
     expect(request.context?.req.param('team')).toBe('alpha');
     expect(request.context?.get('user')).toEqual({ id: 'owner' });
     expect(request.context?.env).toMatchObject({ MARKER: 'request-env' });
+    const operation = vi.fn(async (fresh: any) => {
+      expect(fresh.get('user')).toEqual({ id: 'owner' });
+      expect(fresh.get('inheritedGuard')).toBe(true);
+      expect(fresh.req.param('team')).toBe('alpha');
+      expect(fresh.env).toMatchObject({ MARKER: 'request-env' });
+    });
+    expect(await request.authorize?.(operation)).toBe(true);
+    expect(operation).toHaveBeenCalledOnce();
+    session.userId = 'revoked';
+    const deniedOperation = vi.fn();
+    expect(await request.authorize?.(deniedOperation)).toBe(false);
+    expect(deniedOperation).not.toHaveBeenCalled();
+    session.userId = 'owner';
     const instance = await request.createComponent() as Team;
     expect(instance.__cossack_rpcOwner).toBe('/src/pages/team/[team]/index.ts');
     instances.push(instance);

@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { serveStatic, upgradeWebSocket } from 'hono/deno';
-import { InMemoryWebSocketRuntime } from '@cossackframework/core';
+import { closeUnauthorizedSocket, InMemoryWebSocketRuntime } from '@cossackframework/core';
 import type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/core';
 
 export interface DenoAdapterOptions {
@@ -189,6 +189,11 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
       async onOpen(_event, socket) {
         if (closed) return;
         const client = socket as unknown as DenoSocket;
+        if (upgrade.rejectAuthorization) {
+          closeUnauthorizedSocket(client);
+          closed = true;
+          return;
+        }
         try {
           entryPromise ??= getEntry();
           const entry = await entryPromise;
@@ -196,10 +201,11 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
             if (stopped) client.close(1001, 'Runtime shutting down');
             return;
           }
-          entry.runtime.addClient(client, upgrade.user, upgrade.context ?? context);
+          entry.runtime.addClient(client, upgrade.user, upgrade.authorize ? undefined : upgrade.context ?? context, upgrade.authorize
+            ? (_client, operation) => upgrade.authorize!(operation)
+            : undefined);
           entry.clients.add(client);
-          const state = entry.runtime.getPublicState();
-          client.send(JSON.stringify({ type: 'state-update', state }));
+          await entry.runtime.sendInitialState(client);
         } catch (error) {
           console.error('[Cossack] Deno WebSocket upgrade failed:', error);
           client.close(1013, 'Runtime unavailable');

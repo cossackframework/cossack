@@ -4,8 +4,10 @@ import type { User } from './user';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import './metadata';
-import { snapshotSocketRequest } from './socket-context';
+import { snapshotSocketRequest, socketRequestContext, type SocketPeerAttachment } from './socket-context';
+import type { Context } from 'hono';
 import { rpcCancellations } from './rpc-stream';
+import { closeUnauthorizedSocket } from './socket-delivery';
 
 export abstract class CossackDurableObject {
     state: DurableObjectState;
@@ -37,7 +39,8 @@ export abstract class CossackDurableObject {
             const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
             const isStateful = pageOptions?.stateful === true;
 
-            this.runtime = new DurableObjectRuntime(componentInstance, this.state, isStateful, this.env);
+            this.runtime = new DurableObjectRuntime(componentInstance, this.state, isStateful, this.env,
+                (client, attachment, operation) => this.authorizeWebSocketPeer(client, attachment, operation));
 
             return componentInstance;
         } else {
@@ -100,8 +103,6 @@ export abstract class CossackDurableObject {
             return this.handleStateRequest(request);
         }
 
-        await this.ensureComponentInstance();
-
         const componentPath = request.headers.get('X-Component-Path');
         const providerName = request.headers.get('X-Provider-Name');
 
@@ -130,27 +131,64 @@ export abstract class CossackDurableObject {
         // payloads. Anonymous peers have no user, so the default key uses IP.
         const userId = request.headers.get('X-User-ID');
         const userData = request.headers.get('X-User-Data');
+        const identityHeader = request.headers.get('X-Cossack-Realtime-Identity');
+        const scopeKey = request.headers.get('X-Cossack-Realtime-Scope') ?? undefined;
+        const targetValidity = request.headers.get('X-Cossack-Realtime-Target-Valid');
+        let targetValid = true;
         let user: User | undefined;
+        let identity: unknown;
         try {
             const value = userData ? JSON.parse(userData) : userId ? { id: userId } : undefined;
             if (value !== undefined && (!userId || !value || typeof value !== 'object' || Array.isArray(value) || value.id !== userId)) {
                 throw new TypeError('Invalid identity assertion');
             }
             user = value;
+            if (identityHeader) {
+                if (new TextEncoder().encode(identityHeader).length > 1024) throw new TypeError('Realtime identity exceeds limits');
+                identity = JSON.parse(identityHeader);
+                if (!identity || typeof identity !== 'object' || Array.isArray(identity) ||
+                    (identity as any).version !== 1 || typeof (identity as any).provider !== 'string' || !('data' in (identity as any))) {
+                    throw new TypeError('Invalid realtime identity');
+                }
+            }
+            if (scopeKey !== undefined && (!scopeKey || scopeKey.length > 2048)) throw new TypeError('Invalid realtime scope');
+            if (targetValidity !== null) {
+                if (targetValidity !== 'true' && targetValidity !== 'false') throw new TypeError('Invalid realtime target status');
+                targetValid = targetValidity === 'true';
+            }
         } catch {
             return Response.json({ code: 'COSSACK_WS_CONTEXT_INVALID', error: 'Invalid WebSocket identity context.' }, { status: 400 });
         }
         const { 0: client, 1: server } = new WebSocketPair();
         const channel = url.pathname.split('/').pop() || 'global';
+        const peer: SocketPeerAttachment = {
+            channel, user, request: snapshotSocketRequest(request, params), identity, componentPath, scopeKey,
+        };
         try {
             // Attachment limits depend on the Workers runtime version. Refuse
             // an oversized snapshot; silently dropping headers changes budgets.
-            server.serializeAttachment({ channel, user, request: snapshotSocketRequest(request, params) });
+            server.serializeAttachment(peer);
         } catch {
             // This attachment consists entirely of JSON identity data and
             // string request metadata. The runtime's capacity exception is a
             // plain Error on workerd, rather than a RangeError.
             return Response.json({ code: 'COSSACK_WS_CONTEXT_TOO_LARGE', error: 'WebSocket peer context exceeds the attachment limit.' }, { status: 413 });
+        }
+
+        // Recheck credentials immediately before the DO initializes or joins
+        // component state. Outbound frames and later actions repeat this check.
+        const authorized = targetValid && await this.authorizeWebSocketPeer(server, peer, async () => {});
+        if (!authorized) {
+            // Once upgraded, the browser can distinguish a terminal auth change
+            // from a transient network failure and stop stale reconnect loops.
+            this.state.acceptWebSocket(server);
+            closeUnauthorizedSocket(server);
+            return new Response(null, { status: 101, webSocket: client });
+        }
+
+        await this.ensureComponentInstance();
+        if (this.componentInstance && this.componentInstance.__cossack_rpcOwner !== componentPath) {
+            return Response.json({ code: 'COSSACK_WS_SCOPE_MISMATCH', error: 'WebSocket component does not match its Durable Object scope.' }, { status: 403 });
         }
 
         // For stateless DOs, discard the in-memory component when the DO is idle
@@ -190,13 +228,24 @@ export abstract class CossackDurableObject {
         // receives state updates from real-time broadcasts.
         if (this.runtime?.stateful) {
             const currentState = this.componentInstance.getInitialState();
-            server.send(JSON.stringify({ type: 'state-update', state: currentState.public }));
+            await this.runtime.sendToClient(server, { type: 'state-update', state: currentState.public });
         }
 
         return new Response(null, { status: 101, webSocket: client });
     }
 
     abstract getComponentRegistry(): Promise<Map<string, new () => Cossack>>;
+
+    /** Framework runtimes override this to run fresh auth and inherited middleware. */
+    protected async authorizeWebSocketPeer(
+        _client: WebSocket,
+        peer: SocketPeerAttachment,
+        operation: (context: Context) => Promise<void>,
+    ): Promise<boolean> {
+        if (!peer.request) return false;
+        await operation(socketRequestContext(peer.request, this.env, peer.user));
+        return true;
+    }
 
     /**
      * Handle HTTP requests to the DO (for querying state during SSR)
@@ -253,6 +302,7 @@ export abstract class CossackDurableObject {
     async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
         for (const cancel of rpcCancellations(ws).values()) cancel();
         rpcCancellations(ws).clear();
+        this.runtime?.retireClient(ws);
     }
     async webSocketError(ws: WebSocket) {
         await this.webSocketClose(ws, 1011, 'Socket error', false);

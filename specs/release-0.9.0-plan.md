@@ -13,7 +13,7 @@ Historical status statements inside task sections do not override the checklist.
 Continue CLI-08 as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
-**Desktop: completed for 0.9.0 by user decision (2026-10-04).** Remaining
+**Desktop: completed for 0.9.0 by user decision (2026-10-05).** Remaining
 Desktop-only platform acceptance is waived for this release; it is not pending
 work or evidence of passing those checks. Preserve the verified implementation
 and do not reopen Desktop unless requested. Focus on shared framework behavior,
@@ -376,11 +376,27 @@ ignores late callbacks, stops retries and reconnects on explicit reload with the
 new cookie. Preserve replay/heartbeat/backpressure tests and production JS/map
 stripping. See the [checkpoint](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05).
 
-Continue broader concurrent request semantics and WebSocket freshness. Incoming
-socket actions and broadcasts still use the upgrade identity; audit both and
-retain a credential-free hibernation descriptor. Each action/delivery needs fresh
-storage, inherited guards and scope checks. Verify native Workers and Node/Deno
-per-connection behavior and restored sockets before closing RT-11.
+Codex WebSocket checkpoint (2026-10-05): Cloudflare upgrades now capture a
+bounded, credential-free identity descriptor and attach it with the request,
+route params, locale, user, component owner and computed scope. Each action,
+state/event/client-action delivery replays fresh global and inherited middleware
+inside a new request/config/locale/ORM scope, then checks the current user and
+per-page scope before dispatch or send. Durable Object hibernation restores the
+descriptor from the socket attachment; it does not depend on in-memory peer maps.
+Invalid identity capture and stale target/scope fail closed. The browser receives
+a terminal authorization frame and closes without reconnecting. Node/Deno peers
+also recheck each action and outbound delivery and serialize each peer's queue
+with a bound of 32 pending frames; overflow closes with 1013.
+
+Generated Cloudflare deployment acceptance exercises authenticated sockets and
+the fingerprint provider without putting the bearer session ID in the attachment.
+Framework tests cover restored identity, fresh guards and scope changes; core
+tests cover action/outbound reauthorization and terminal closure; Node/Deno
+adapter and generated peer tests pass. This closes the WebSocket freshness slice,
+not RT-11. Broader concurrent request semantics remain. An action or frame that
+passed its check before revocation may finish, slow storage and queue backpressure
+prevent a wall-clock guarantee, and idle sockets are checked on the next action
+or delivery. Continue those RT-11 concurrency criteria before closing the task.
 
 Already-started HTTP actions can retain resolved identity. A frame checked before
 revocation can be in flight. SSE idle checks occur before 15-second heartbeats

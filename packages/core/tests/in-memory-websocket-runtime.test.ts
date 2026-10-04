@@ -1,11 +1,14 @@
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
+import { Context } from 'hono';
 import { InMemoryWebSocketRuntime } from '../src/shared/runtime';
 
 class Socket {
   readyState = 1;
   sent: string[] = [];
+  closed?: [number | undefined, string | undefined];
   send(message: string) { this.sent.push(message); }
+  close(code?: number, reason?: string) { this.closed = [code, reason]; this.readyState = 3; }
 }
 
 describe('InMemoryWebSocketRuntime', () => {
@@ -48,5 +51,40 @@ describe('InMemoryWebSocketRuntime', () => {
     expect(closed.sent).toEqual([]);
     runtime.removeClient(open);
     expect(runtime.clientCount).toBe(1);
+  });
+
+  it('runs actions and the initial snapshot inside fresh authorization context', async () => {
+    const component = {
+      _id: 'root', activeComponents: new Map(), executeAction: vi.fn(),
+      getInitialState: () => ({ public: { count: 0 } }),
+    };
+    const runtime = new InMemoryWebSocketRuntime(component);
+    const client = new Socket();
+    runtime.addClient(client, { id: 'stale' }, undefined, async (_socket, operation) => {
+      const context = new Context(new Request('http://localhost/ws'));
+      context.set('user', { id: 'fresh' });
+      await operation(context);
+      return true;
+    });
+    await runtime.sendInitialState(client);
+    expect(JSON.parse(client.sent[0]!)).toEqual({ type: 'state-update', state: { count: 0 } });
+    await runtime.onClientMessage(client, JSON.stringify({ type: 'action', action: 'mutate', payload: [] }));
+    expect(component.executeAction).toHaveBeenCalledWith('mutate', [], { id: 'fresh' }, client, undefined, expect.anything());
+  });
+
+  it('stops both an unauthorized action and later outbound delivery', async () => {
+    const component = { _id: 'root', activeComponents: new Map(), executeAction: vi.fn(), getInitialState: () => ({ public: {} }) };
+    const runtime = new InMemoryWebSocketRuntime(component);
+    const client = new Socket();
+    runtime.addClient(client, { id: 'stale' }, undefined, async () => false);
+    await runtime.onClientMessage(client, JSON.stringify({ type: 'action', requestId: 'req-1', action: 'mutate', payload: [] }));
+    expect(component.executeAction).not.toHaveBeenCalled();
+    expect(client.closed?.[0]).toBe(1008);
+    expect(client.sent.map(frame => JSON.parse(frame))).toContainEqual(expect.objectContaining({
+      type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED',
+    }));
+    const before = client.sent.length;
+    await runtime.sendToClient(client, { type: 'state-update', state: { secret: true } });
+    expect(client.sent).toHaveLength(before);
   });
 });

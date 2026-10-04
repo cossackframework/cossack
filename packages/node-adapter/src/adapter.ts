@@ -2,7 +2,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { Context } from 'hono';
-import { InMemoryWebSocketRuntime, type Cossack } from '@cossackframework/core';
+import { closeUnauthorizedSocket, InMemoryWebSocketRuntime, type Cossack } from '@cossackframework/core';
 
 /** Structural router contract: the Node library does not import the framework. */
 export interface NodeWebSocketUpgrade {
@@ -11,6 +11,8 @@ export interface NodeWebSocketUpgrade {
   componentId: string;
   user?: unknown;
   context?: Context;
+  authorize?: (operation: (context: Context) => Promise<void>) => Promise<boolean>;
+  rejectAuthorization?: boolean;
   createComponent(): Promise<Cossack>;
 }
 /** Host event contract for HTTP/1.1 WebSocket upgrade handling. */
@@ -120,11 +122,17 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
   };
   const connect = async (ws: WebSocket, upgrade: NodeWebSocketUpgrade) => {
     ws.on('error', error => console.error('[Cossack] Node WebSocket error:', error));
+    if (upgrade.rejectAuthorization) {
+      closeUnauthorizedSocket(ws);
+      return;
+    }
     try {
       const entry = await acquire(upgrade);
       if (stopped || ws.readyState !== WebSocket.OPEN) { await prune(); return; }
       entry.clients.add(ws);
-      entry.runtime.addClient(ws, upgrade.user, upgrade.context);
+      entry.runtime.addClient(ws, upgrade.user, upgrade.authorize ? undefined : upgrade.context, upgrade.authorize
+        ? (_client, operation) => upgrade.authorize!(operation)
+        : undefined);
       entry.lastActive = Date.now();
       ws.on('close', () => {
         entry.clients.delete(ws);
@@ -142,7 +150,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
           ws.close(1013, 'Runtime unavailable');
         }).finally(() => entry.actions.delete(action));
       });
-      ws.send(JSON.stringify({ type: 'state-update', state: entry.runtime.getPublicState() }));
+      await entry.runtime.sendInitialState(ws);
     } catch (error) {
       console.error('[Cossack] Node WebSocket initialization failed:', error);
       ws.close(1013, 'Runtime unavailable');
