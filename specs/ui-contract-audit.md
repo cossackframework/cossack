@@ -88,7 +88,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Input](../packages/ui/src/components/Input.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [InputGroup](../packages/ui/src/components/InputGroup.ts) | Reviewed foundation | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
 | [InputOTP](../packages/ui/src/components/InputOTP.ts) | Reviewed foundation | One labeled native field, typed props/events, controlled/default values, selection-aware paste, composition, completion, reset, validation, themed focus and SSR/hydration browser acceptance. |
-| [Item](../packages/ui/src/components/Item.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Item](../packages/ui/src/components/Item.ts) | Reviewed foundation | Typed native div props, visual-only hover, native child actions, reduced motion, slot ownership, SSR/Chromium and source-ejection coverage. |
 | [Kbd](../packages/ui/src/components/Kbd.ts) | Reviewed foundation | Typed native HTMLElement attributes/events on descriptive kbd markup, no implicit shortcut behavior, SSR/Chromium and ejected-source coverage. |
 | [Label](../packages/ui/src/components/Label.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Marker](../packages/ui/src/components/Marker.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -121,16 +121,16 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Toggle](../packages/ui/src/components/Toggle.ts) | Reviewed foundation | Typed native button attributes/events, controlled/default pressed state, click veto, native fieldsets and SSR/themed Chromium acceptance. |
 | [ToggleGroup](../packages/ui/src/components/ToggleGroup.ts) | Reviewed foundation | Named native button group, mode-specific public types, SSR/default capture, immutable selection proposals, roving focus, RTL/vertical navigation, keyed focus repair and responsive indicator cleanup. |
 | [Tooltip](../packages/ui/src/components/Tooltip.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
-| [Typography](../packages/ui/src/components/Typography.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Typography](../packages/ui/src/components/Typography.ts) | Reviewed foundation | Six native prop branches for all thirteen variants, exclusive quote/list attributes, native marker types, typed event targets, SSR/Chromium and source-ejection coverage. |
 
 ## Next passes
 
-Next audit Item and Typography. Item documents interactive as making a row
-clickable but only adds visual styles; define native action ownership and typed
-root/slot contracts. Typography needs variant-specific native attributes/events
-for headings, paragraphs, quotes, ordered/unordered lists and inline text, with
-invalid variants rejected and semantic content guidance. Keep all variants in
-public type, SSR, browser and installed-catalog acceptance.
+Next audit Table and ScrollArea. Table needs explicit wrapper/table attribute
+ownership and typed contracts for all six exports, including native captions,
+headers, cell attributes/events and real table-fragment hydration. ScrollArea puts
+native props on an outer wrapper while an inner div actually scrolls; define
+viewport naming, keyboard focus, scroll event targets and sizing/style ownership.
+Preserve native child actions and verify the actual themed browser behavior.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

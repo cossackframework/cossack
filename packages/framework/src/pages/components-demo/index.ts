@@ -916,7 +916,7 @@ export class ComponentsDemo extends Cossack {
                             media: component(Avatar, { src: 'https://i.pravatar.cc/80?img=8', alt: 'Bob', size: 36 }),
                             trailing: html`<svg class="w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
                             divider: false,
-                            interactive: true,
+                            hoverable: true,
                         }, html`<div><p class="text-sm font-medium text-foreground">Bob Smith</p><p class="text-xs text-muted-foreground">bob@cossack.dev</p></div>`)}
                         ${component(Item, {
                             media: html`<span class="w-9 h-9 rounded-md bg-muted inline-flex items-center justify-center text-muted-foreground"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="1.5"/></svg></span>`,

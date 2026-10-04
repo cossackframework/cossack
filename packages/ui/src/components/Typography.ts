@@ -1,24 +1,18 @@
-import { html } from "@cossackframework/renderer";
+import type { GlobalAttributes, QuoteAttributes, OrderedListAttributes } from "../native-attributes";
+import { html, IfDefinedResult } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface TypographyProps {
-    /** Which typographic element to render. */
-    variant?:
-        | "h1"
-        | "h2"
-        | "h3"
-        | "h4"
-        | "p"
-        | "lead"
-        | "small"
-        | "muted"
-        | "blockquote"
-        | "code"
-        | "kbd"
-        | "ul"
-        | "ol";
-    [key: string]: any;
-}
+type TextAttributes<Element extends HTMLElement> = GlobalAttributes<Element> & {
+    cite?: never; start?: never; reversed?: never; '?reversed'?: never; type?: never;
+};
+/** Each variant owns its actual native element and event target. */
+export type TypographyProps =
+    | (TextAttributes<HTMLParagraphElement> & { variant?: 'p' | 'lead' | 'muted' })
+    | (TextAttributes<HTMLHeadingElement> & { variant: 'h1' | 'h2' | 'h3' | 'h4' })
+    | (QuoteAttributes & { variant: 'blockquote'; start?: never; reversed?: never; '?reversed'?: never; type?: never })
+    | (OrderedListAttributes & { variant: 'ol'; cite?: never })
+    | (TextAttributes<HTMLUListElement> & { variant: 'ul' })
+    | (TextAttributes<HTMLElement> & { variant: 'code' | 'kbd' | 'small' });
 
 const STYLES: Record<NonNullable<TypographyProps["variant"]>, string> = {
     h1: "scroll-m-20 text-4xl font-extrabold tracking-tight text-foreground lg:text-5xl",
@@ -33,7 +27,12 @@ const STYLES: Record<NonNullable<TypographyProps["variant"]>, string> = {
     code: "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-medium text-foreground",
     kbd: "inline-flex items-center justify-center rounded border bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground shadow-xs",
     ul: "my-6 ml-6 list-disc [&>li]:mt-2 text-foreground",
-    ol: "my-6 ml-6 list-decimal [&>li]:mt-2 text-foreground",
+    ol: "my-6 ml-6 [&>li]:mt-2 text-foreground",
+};
+
+const LIST_STYLES: Record<string, string> = {
+    '1': 'list-decimal', a: 'list-[lower-alpha]', A: 'list-[upper-alpha]',
+    i: 'list-[lower-roman]', I: 'list-[upper-roman]',
 };
 
 const TAGS: Record<NonNullable<TypographyProps["variant"]>, string> = {
@@ -68,11 +67,14 @@ export class Typography extends Cossack {
 
     render() {
         const { variant = "p", ...rest } = this.props;
-        const tag = TAGS[variant] || "p";
-        const cls = STYLES[variant] || STYLES.p;
+        if (!Object.hasOwn(STYLES, variant)) throw new Error('Typography requires a supported variant.');
+        const tag = TAGS[variant];
+        const rawListType = 'type' in rest ? rest.type : undefined;
+        const listType = rawListType instanceof IfDefinedResult ? rawListType.value : rawListType;
+        const listStyle = typeof listType === 'string' && Object.hasOwn(LIST_STYLES, listType) ? LIST_STYLES[listType] : LIST_STYLES['1'];
+        const cls = STYLES[variant] + (variant === 'ol' ? ` ${listStyle}` : '');
 
-        // lit-html dynamic tag via directive would be cleaner, but spreading
-        // into the explicit element avoids extra imports. We map the common set.
+        // Static templates preserve each native tag through SSR and hydration.
         switch (tag) {
             case "h1":
                 return html`<h1 class=${`cs-typography cs-typography--${variant} ${cls}`} ...=${rest}>${this.children}</h1>`;

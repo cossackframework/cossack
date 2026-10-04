@@ -501,3 +501,24 @@ component(AvatarGroup, {label:'People',items:[{alt:'Alice'}]});
 component(AvatarGroup, {items:people});
 // @ts-expect-error Image callbacks do not target a form input.
 component(Avatar, {alt:'Alice',onImageLoad:(event:Event & {currentTarget: HTMLInputElement})=>event});
+
+import { Typography, Item } from '@cossackframework/ui';
+component(Typography, {'@click': event=>{const p:HTMLParagraphElement=event.currentTarget;void p;}});
+component(Typography, {variant:'h2','@click':event=>{const h:HTMLHeadingElement=event.currentTarget;void h;}});
+component(Typography, {variant:'blockquote',cite:'https://example.test','@click':event=>{const q:HTMLQuoteElement=event.currentTarget;void q;}});
+component(Typography, {variant:'ol',start:3,reversed:true,type:'A','@click':event=>{const ol:HTMLOListElement=event.currentTarget;void ol;}});
+component(Typography, {variant:'ul','@click':event=>{const ul:HTMLUListElement=event.currentTarget;void ul;}});
+component(Typography, {variant:'code','@click':event=>{const inline:HTMLElement=event.currentTarget;void inline;}});
+component(Item, {hoverable:true,'@click':event=>{const row:HTMLDivElement=event.currentTarget;void row;}});
+// @ts-expect-error Default paragraphs have no ordered-list start attribute.
+component(Typography, {start:3});
+// @ts-expect-error A quote source applies only to blockquote.
+component(Typography, {variant:'p',cite:'/source'});
+// @ts-expect-error Unordered lists do not accept reversed numbering.
+component(Typography, {variant:'ul',reversed:true});
+// @ts-expect-error Variants are closed.
+component(Typography, {variant:'h7'});
+// @ts-expect-error Item hover is visual; the old name is removed.
+component(Item, {interactive:true});
+// @ts-expect-error Item is not a native button.
+component(Item, {disabled:true});

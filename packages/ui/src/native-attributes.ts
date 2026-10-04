@@ -100,3 +100,8 @@ export type SvgAttributes = NativeEvents<SVGSVGElement> & AriaAttributes & Attri
     width: number | string; height: number | string; viewBox: string;
     fill: string; stroke: string; 'stroke-width': number | string;
 }> & { [Name: `data-${string}`]: Attribute<string | number | boolean> | undefined };
+
+export type QuoteAttributes = GlobalAttributes<HTMLQuoteElement> & Attributes<{ cite: string }>;
+export type OrderedListAttributes = GlobalAttributes<HTMLOListElement> & Attributes<{
+    start: number; reversed: boolean; type: '1' | 'a' | 'A' | 'i' | 'I';
+}>;

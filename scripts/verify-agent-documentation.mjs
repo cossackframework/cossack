@@ -338,10 +338,22 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(avatar.propsContract.members.some(member => member.name === 'alt' && !member.optional));
     for (const name of ['onImageLoad', 'onImageError']) assert.ok(avatar.propsContract.members.find(member => member.name === name).callSignatures.some(signature => signature.includes('HTMLImageElement')));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-avatar'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Avatar', '--json']);
+    const item = uiSymbols.find(symbol => symbol.name === 'Item');
+    assert.equal(item.propsContract.status, 'declared');
+    assert.ok(item.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
+    const typography = uiSymbols.find(symbol => symbol.name === 'Typography');
+    assert.equal(typography.propsContract.status, 'partial');
+    assert.equal(typography.propsContract.variants.length, 6);
+    for (const target of ['HTMLParagraphElement', 'HTMLHeadingElement', 'HTMLQuoteElement', 'HTMLOListElement', 'HTMLUListElement', 'HTMLElement']) {
+      assert.ok(typography.propsContract.variants.some(variant => variant.members.some(member => member.name === '@click' && member.type.includes(target))));
+    }
+    assert.ok(uiSymbols.some(symbol => symbol.name === 'QuoteAttributes'));
+    assert.ok(uiSymbols.some(symbol => symbol.name === 'OrderedListAttributes'));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-typography-item'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Typography', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Avatar']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Avatar' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Typography']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Typography' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

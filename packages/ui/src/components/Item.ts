@@ -1,18 +1,18 @@
+import type { GlobalAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface ItemProps {
+export type ItemProps = GlobalAttributes<HTMLDivElement> & {
     /** Leading media slot (avatar, icon, image). */
     media?: unknown;
     /** Trailing content slot (badge, chevron, action). */
     trailing?: unknown;
     /** Render a bottom border separator. Default true. */
     divider?: boolean;
-    /** Make the item clickable (adds hover bg + cursor). */
-    interactive?: boolean;
+    /** Add a visual hover background. Native child controls own actions. */
+    hoverable?: boolean;
     /** Compact vertical padding. */
     compact?: boolean;
-    [key: string]: any;
 }
 
 /**
@@ -35,11 +35,12 @@ export class Item extends Cossack {
             media,
             trailing,
             divider = true,
-            interactive = false,
+            hoverable = false,
             compact = false,
             ...rest
         } = this.props;
 
+        if ([divider, hoverable, compact].some(value => typeof value !== 'boolean')) throw new Error('Item divider, hoverable and compact must be boolean.');
         return html`
             <div
                 class=${classMap({
@@ -49,7 +50,7 @@ export class Item extends Cossack {
                     "py-2.5": !compact,
                     "py-1.5": compact,
                     "border-b": divider,
-                    "hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]": interactive,
+                    "hover:bg-accent hover:text-accent-foreground transition-colors motion-reduce:transition-none": hoverable,
                 })}
                 ...=${rest}
             >

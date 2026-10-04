@@ -88,6 +88,59 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-typography-item-2026-10-04"></a>
+## Codex Typography and Item (2026-10-04)
+
+Author: Codex. Typography now declares six native prop branches covering all
+thirteen variants: paragraph, heading, quotation, ordered list, unordered list
+and inline text. Quote/list-only attributes are explicitly excluded from the
+other branches, including the optional default paragraph variant. Unsupported
+variants reject at runtime. Native events target the actual rendered element.
+QuoteAttributes and OrderedListAttributes are public.
+
+Ordered-list marker styles now follow native type=1/a/A/i/I, including optional
+ifDefined attributes. The themed browser fixture exposed that a CSS revert rule
+restored decimal markers rather than the requested alphabetic markers, so explicit
+marker classes map the five native types. Start and reversed remain native.
+
+Item renames interactive to hoverable and makes the visual-only behavior explicit.
+Typed native div props/events and renderer slots retain child links/actions. It
+adds no pointer cursor, focus stop or button behavior. Reduced motion removes its
+color transition. Boolean layout flags are validated and the demo is migrated.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 378 tests in
+  34 files pass. Public declarations cover six native targets and reject attributes
+  on incompatible variants; SSR covers all thirteen tags, consumed props, list/quote
+  attributes, marker directives and invalid variants/flags.
+- Source ejection: 29 tests pass, including strict NodeNext compilation of both
+  controls with the previously reviewed components.
+- `pnpm --filter cossack exec vitest run tests/typography-item-browser.test.js`
+  passes. The real Tailwind/UI theme fixture checks no-JavaScript headings and
+  links, retained hydration, all thirteen tags/event targets, all five ordered-list
+  marker types, quote metadata, native Tab/Enter/link and child-action behavior,
+  no accidental submission, variant updates, padding/borders, reduced motion and
+  unmount/remount cleanup.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the guide,
+  all six Typography prop branches, the new public native attribute types and
+  identical exact-symbol Typography output. Six existing packaged examples
+  compile and execute; discovery runs with Node networking disabled.
+
+The [HTML ordered-list definition](https://html.spec.whatwg.org/multipage/grouping-content.html#the-ol-element)
+and [CSS revert behavior](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/revert)
+inform marker ownership. Callers retain native content-model and document-outline
+responsibilities. The new guide adds no executable example; other engines,
+screen readers and the full generated-app/runtime matrix remain open.
+
+Logs: `/tmp/cossack-typography-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs}.log`.
+The combined browser/ejection log retains a corrected fixture-reference failure;
+the final browser log records its passing rerun. Fifty-four of 65 component-source
+foundations are reviewed. Continue Table, ScrollArea and every pending row.
+RT-23 and CLI-07/CLI-08 remain open. Release status stays 24 of 58 complete and
+versions stay 0.8.3 until REL-04.
+
 <a id="codex-avatar-2026-10-04"></a>
 ## Codex Avatar and AvatarGroup (2026-10-04)
 

@@ -1210,3 +1210,19 @@ a negative margin to a nonnegative pixel distance smaller than size. Logical
 margins support RTL and row-reverse. `overflowLabel(count)` supplies localized
 count text. Use a separate list/action to expose hidden identities. The packaged
 `native-avatar` guide describes ownership and browser/runtime limits.
+
+## Typography and Item
+
+Typography has native prop/event types for each rendered tag. The default remains
+p. Quote `cite` belongs to blockquote; list `start`, `reversed` and `type` belong to
+ol. Incompatible attributes and unknown variants now fail public type checks, and
+unknown variants also reject at runtime. Ordered-list marker styles follow native
+`type` instead of always forcing decimal. QuoteAttributes and OrderedListAttributes
+are public. Keep children valid for the chosen native tag, including li children
+for lists and phrasing content in paragraphs/inline variants.
+
+Rename Item `interactive` to `hoverable`. It controls visual hover colors only and
+no longer suggests a pointer cursor or adds focus styles. Use native child buttons
+and links for actions. Item props/events now target a typed native div; slots keep
+their own native behavior. Boolean layout flags are validated and reduced motion
+removes the hover transition. See the packaged `native-typography-item` guide.
