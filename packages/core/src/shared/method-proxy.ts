@@ -1,3 +1,4 @@
+import { beginDevelopmentRpcTrace, type DevelopmentRpcTrace, type DevelopmentRpcOutcome } from './development-trace';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { createStateApplier, snapshotTransportState, rpcSseCursor } from './rpc-state';
 export { applyStateToComponent } from './rpc-state';
@@ -120,31 +121,41 @@ function invalidateClientPageCache(): void {
 }
 
 /** Per-call loading and optimistic-lock lifecycle shared by the transport proxies. */
-function createCallLifecycle(component: any, name: string, call: OptimisticCall) {
+function createCallLifecycle(component: any, name: string, call: OptimisticCall, trace?: DevelopmentRpcTrace) {
     let cleaned = false;
     let success = false;
+    let outcome: DevelopmentRpcOutcome = 'failed';
     const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
-        finishOptimisticCall(call, success);
-        if (component.loading[name] > 0) component.loading[name]--;
-        if (!component.loading[name]) {
-            delete component.loading[name];
-            const lockedKeys = component._optimisticLockedKeys[name];
-            delete component._optimisticLockedKeys[name];
-            if (lockedKeys) {
-                for (const key of lockedKeys) {
-                    if (component._isOptimisticLocked(key)) continue;
-                    if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
-                        component.setProperty(key, component._optimisticPendingState[key]);
+        try {
+            finishOptimisticCall(call, success);
+            if (component.loading[name] > 0) component.loading[name]--;
+            if (!component.loading[name]) {
+                delete component.loading[name];
+                const lockedKeys = component._optimisticLockedKeys[name];
+                delete component._optimisticLockedKeys[name];
+                if (lockedKeys) {
+                    for (const key of lockedKeys) {
+                        if (component._isOptimisticLocked(key)) continue;
+                        if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
+                            component.setProperty(key, component._optimisticPendingState[key]);
+                        }
+                        delete component._optimisticPendingState[key];
                     }
-                    delete component._optimisticPendingState[key];
                 }
             }
-        }
-        component.requestUpdate();
+            component.requestUpdate();
+        } catch (error) {
+            trace?.finish('failed');
+            throw error;
+        } finally { trace?.finish(success ? 'succeeded' : outcome); }
     };
-    return { cleanup, succeed: () => { success = true; } };
+    return { cleanup, succeed: () => { success = true; }, fail: (code: string) => {
+        outcome = code === 'COSSACK_RPC_CANCELLED' ? 'cancelled' : code === 'COSSACK_RPC_TIMEOUT' ? 'timeout'
+            : code === 'COSSACK_RPC_TRANSPORT_CLOSED' ? 'disconnected' : 'failed';
+    } };
+
 }
 
 /** Ordered frame queue for request-scoped realtime calls. */
@@ -255,7 +266,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 timedOut = true;
                 controller.abort();
             }, timeoutMs);
-            const { cleanup: finish, succeed } = createCallLifecycle(component, name, optimisticCall);
+            const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'http', requestId) : undefined;
+            const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
             const cleanup = () => {
                 if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
                 finish();
@@ -325,13 +337,14 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             // The request starts immediately; selecting a result consumer never dispatches it again.
             request = awaitRpcResponse(request, controller.signal, () => requestId);
             void request.catch(() => {});
-            const apply = createStateApplier(component, requestState, optimisticCall);
+            const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
                 try {
                     if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
                     const response = await request;
                     requestId = response.headers?.get('X-Cossack-Request-Id') ?? requestId;
                     optimisticCall.requestId = requestId;
+                    trace?.response(requestId);
                     if (!response.ok) {
                         throw await readRpcHttpError(response, controller.signal);
                     }
@@ -365,6 +378,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                         return data._cossack_return;
                     }
                 } catch (cause) {
+                    fail(controller.signal.aborted ? (timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED')
+                        : cause instanceof RpcError ? cause.code : 'COSSACK_RPC_NETWORK_FAILED');
                     if (controller.signal.aborted) {
                         if (timedOut) throw new RpcError('COSSACK_RPC_TIMEOUT',
                             `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause, requestId });
@@ -377,6 +392,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             };
             return createRpcCall(operation(), () => {
                 controller.abort();
+                fail('COSSACK_RPC_CANCELLED');
                 cleanup();
             }, error => console.error(`Error calling server action '${name}':`, error), () => requestId);
         };
@@ -400,6 +416,8 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
         if (isSharedMethod(component.constructor, name)) continue;
         const timeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
+            const requestId = crypto.randomUUID();
+            const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
             let ws = component.websockets.get(provider);
             if (!ws) {
                 const root = component.consume(RootContext);
@@ -408,6 +426,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 }
             }
             if (!ws || ws.readyState !== WebSocket.OPEN) {
+                trace?.finish('failed');
                 return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
                     `Realtime connection for provider '${provider}' is not open, so '${name}' was not dispatched.`, name);
             }
@@ -416,8 +435,8 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
 
-            const requestId = crypto.randomUUID();
-            const { cleanup, succeed } = createCallLifecycle(component, name, optimisticCall);
+            optimisticCall.requestId = requestId;
+            const { cleanup, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
             // Keep serializable args (primitives, plain objects, arrays), drop
             // non-transportable UI objects (DOM nodes, Event).
             let payload = args.filter(isWsTransportable);
@@ -445,7 +464,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `Cannot serialize the realtime request for '${name}'` +
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
-            const apply = createStateApplier(component, requestState, optimisticCall);
+            const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
             wsPendingCalls(ws).set(requestId, frame => queue.push(frame));
             try {
                 ws.send(message);
@@ -463,6 +482,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     while (true) {
                         const next = await nextFrameWithDeadline(queue, deadline, requestId, timeoutMs);
                         const frame = next.value;
+                        trace?.response(requestId);
                         if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                             { requestId, fieldErrors: frame.fieldErrors });
                         apply(frame.state);
@@ -470,6 +490,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                         yield frame.value;
                     }
                 } catch (error) {
+                    fail(error instanceof RpcError ? error.code : 'COSSACK_RPC_TRANSPORT_FAILED');
                     if (error instanceof RpcError && ['COSSACK_RPC_TIMEOUT', 'COSSACK_RPC_BUFFER_EXCEEDED',
                         'COSSACK_RPC_STREAM_INVALID', 'COSSACK_RPC_STREAM_TOO_LARGE'].includes(error.code)) {
                         try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
@@ -485,6 +506,9 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 // best effort and cannot interrupt arbitrary application I/O.
                 queue.fail({ v: 1, type: 'error', requestId,
                     code: 'COSSACK_RPC_CANCELLED', message: 'RPC call was cancelled.' });
+                wsPendingCalls(ws).delete(requestId);
+                fail('COSSACK_RPC_CANCELLED');
+                cleanup();
                 try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
             }, error => console.error(`Error calling server action '${name}':`, error), () => requestId);
         };

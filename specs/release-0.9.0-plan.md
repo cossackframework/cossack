@@ -596,6 +596,20 @@ JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.
 <a id="rt-28"></a>
 ### RT-28: Devtools snapshots and timelines
 
+Codex status (2026-10-04): Core now exposes opt-in development capture through
+`@cossackframework/core/devtools`. Component HTTP/SSE and WebSocket proxy lifecycle
+phases share versioned, bounded snapshots with local call IDs and UUID wire IDs.
+Cancellation/disconnect outcomes are terminal, capture replacement preserves call
+ownership, and production proxy bundling removes collection code. See
+[capture semantics and limits](../docs/development-traces.md).
+
+Remaining: correlate navigation and server events with those calls; add state,
+resource, service-scope and transport snapshots; integrate the browser inspector
+and project-bound CLI/MCP reads through shared schemas. Verify an actual generated
+browser action end to end and production endpoint/source-metadata exclusion.
+Service RPC and server execution are not covered by the current client capture.
+This foundation does not complete RT-28 or CLI-07.
+
 Purpose: A developer or agent needs to connect a UI symptom to the navigation,
 resource load, RPC, or state update that caused it.
 

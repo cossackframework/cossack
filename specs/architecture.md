@@ -89,7 +89,14 @@ UUID-selected records and compute freshness without executing tests. Free-form
 failures and logs are omitted; test metadata is redacted. A successful read does
 not imply a passing, current or complete suite. MCP reads use the same cancellable
 worker boundary. See [storage, scope and privacy limits](../docs/test-results.md).
-Devtools traces remain planned under RT-28 and must extend shared services.
+Core now owns a portable, opt-in development RPC capture model, exposed through
+`@cossackframework/core/devtools`. Component HTTP/SSE and WebSocket proxies record
+fixed lifecycle phases, opaque identities and terminal outcomes. Bounded sessions
+never retain application payloads; weak component ownership and detached snapshots
+keep the recorder independent of the application. Production proxy bundles strip
+collection. See [capture semantics](../docs/development-traces.md).
+RT-28 navigation/resource/service/server integration and shared CLI/MCP trace reads
+remain open; the current test-results service does not expose runtime traces.
 
 ## Server input boundary
 

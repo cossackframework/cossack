@@ -36,6 +36,10 @@
     "./routes": {
       "types": "./dist/shared/routes.d.ts",
       "import": "./dist/shared/routes.js"
+    },
+    "./devtools": {
+      "types": "./dist/devtools.d.ts",
+      "import": "./dist/devtools.js"
     }
   },
   "files": [

@@ -16,6 +16,16 @@
           "source": "import { createRouteBuilder } from '@cossackframework/core/routes';\n\nconst route = createRouteBuilder({ article: '/articles/:slug', files: '/files/:path{.+}' } as const);\nconst article: string = route('article', { slug: 'hello world' });\nconst files: string = route('files', { path: ['reports', 'October 2026.csv'] });\nif (article !== '/articles/hello%20world') throw new Error('Article URL was not encoded');\nif (files !== '/files/reports/October%202026.csv') throw new Error('Catch-all URL was not encoded');\n"
         }
       ]
+    },
+    {
+      "id": "development-rpc-traces",
+      "title": "Capture development RPC lifecycle evidence",
+      "summary": "Opt in to bounded client RPC phases without storing arguments or state values.",
+      "imports": [
+        "@cossackframework/core/devtools"
+      ],
+      "markdown": "In Vite development code, import startDevelopmentTrace from @cossackframework/core/devtools and call it with an optional capacity (1–2048 events, default 512). Keep the returned session. Read session.snapshot() for versioned lifecycle events and call session.stop() when finished. Calls are not replayed or executed by snapshot reads.\n\nCapture currently covers component HTTP/SSE and WebSocket proxies. Each call has a local callId, an opaque componentId and a UUID requestId when available. Phases are start, response, state-reconciled and finish. Start means a local attempt, not proof of server dispatch. State reconciliation can skip stale fields and does not prove a DOM commit. Terminal outcomes are succeeded, failed, cancelled, timeout or disconnected. Cancellation does not prove rollback or stop ignored remote work.\n\nNo arguments, returned values, state values, method names, routes, provider names or raw errors are stored. Non-UUID wire request identifiers are omitted. Snapshots are detached. dropped counts evicted events; partial histories must not be presented as complete. Times use the local wall clock and sequence gives event order. Each new session stops the old one; in-flight calls stay with the old session and are not adopted. Stopping capture does not cancel application calls and can leave an unfinished history.\n\nCapture is disabled outside Vite development. Navigation correlation, resources, service scopes, server-side events, browser UI and CLI/MCP trace access remain open under RT-28. This is the shared runtime foundation, not completion of those integrations.",
+      "examples": []
     }
   ]
 }

@@ -95,7 +95,7 @@ function transportValuesEqual(liveValue: unknown, sentValue: unknown, key: strin
  * server state, skip fields the client edited while the request was in flight,
  * and advance the request snapshot so later frames do not clobber local edits.
  */
-export function createStateApplier(component: any, requestState: Record<string, any>, call: OptimisticCall) {
+export function createStateApplier(component: any, requestState: Record<string, any>, call: OptimisticCall, onReconciled?: () => void) {
     return (state: Record<string, unknown>) => {
         // Advance the snapshot only for fields this response can apply. This
         // lets later stream frames update the same field without clobbering
@@ -109,5 +109,6 @@ export function createStateApplier(component: any, requestState: Record<string, 
             }
         }
         component.requestUpdate?.();
+        onReconciled?.();
     };
 }

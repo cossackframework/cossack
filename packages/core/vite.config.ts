@@ -16,6 +16,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
+        devtools: path.resolve(__dirname, 'src/devtools.ts'),
         // `User` is intentionally type-only, but Deno resolves the `.js`
         // specifier in emitted declarations before loading `user.d.ts`.
         // Keep an empty runtime module beside the declaration for strict ESM

@@ -88,45 +88,40 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-test-evidence-2026-10-04"></a>
-### Codex stored test evidence (2026-10-04)
+<a id="codex-rpc-trace-foundation-2026-10-04"></a>
+### Codex development RPC trace foundation (2026-10-04)
 
-Author: Codex. CLI `test-results` and MCP `read_test_results` use one bounded
-reader. The public `cossack/vitest-reporter` records actual Vitest 4 outcomes,
-including collection failures, with versioned local provenance and endpoint file
-snapshots. Latest-started selection includes unfinished runs. Explicit UUIDs cannot
-select arbitrary files; invalid/linked/corrupt/oversized records fail explicitly.
-Raw errors, assertions and logs are omitted; metadata redaction is bounded.
-Existing CLI deep imports remain available alongside the new reporter export.
+Author: Codex. Core exposes `@cossackframework/core/devtools` with opt-in, bounded
+capture for component HTTP/SSE and WebSocket proxy lifecycles. Snapshots retain
+fixed phases, opaque component/call identities and UUID wire request IDs, without
+arguments, values, source paths or raw errors. Replacement sessions do not adopt
+in-flight calls. Terminal events cover success, failure, cancellation, deadlines
+and disconnects. The cancellation regression caught delayed WebSocket cleanup;
+local ownership now releases in the cancellation callback.
 
 Verification:
 
-- `pnpm --filter cossack exec vitest run tests/test-results.test.js tests/vitest-reporter.test.js tests/mcp.test.js tests/command-spec.test.js`:
-  43 tests across 4 files pass. Includes real Vitest pass/fail/skip and collection
-  failure, executable CLI reads, SDK parity, source changes, UTF-8 validation,
-  redaction, copied/linked reports, interrupted records and the 128-run limit.
-  Log: `/tmp/cossack-test-evidence-final.log`.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,454 tests / 87 files pass**.
+  Includes correlation through real proxies/frame dispatch, privacy omissions,
+  bounded/detached snapshots, session replacement and cancellation/disconnects.
+  Log: `/tmp/cossack-trace-core-suite.log`.
+- The production bundle fixture verifies collection symbols and event strings
+  are removed from a production proxy bundle. This does not prove endpoint
+  exclusion for the future Vite development integration.
+- `pnpm --filter @cossackframework/core build`: passes; emitted public export resolves
+  through the package map and refuses non-development capture in plain Node.
+  Log: `/tmp/cossack-trace-core-build.log`.
 - `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 package checks pass.
-  Log: `/tmp/cossack-test-evidence-types-final.log` (package checks).
-- `pnpm --filter @cossackframework/framework exec vitest run tests/inspection-service-acceptance.test.ts`:
-  1 passes, including existing CLI deep imports.
-  Log: `/tmp/cossack-test-evidence-framework.log`.
-- `node scripts/test-local-scaffold.mjs --agent-docs-only`: passes after sequential
-  package builds and fresh tarball installation. The installed public reporter
-  declaration compiles without skipping library checks; an actual Vitest run
-  produces evidence read identically by installed CLI/MCP. Editing source changes
-  freshness. Reader networking is disabled. Six packaged examples still compile
-  and execute, and installed UI/catalog parity passes.
-  Log: `/tmp/cossack-test-evidence-installed.log`.
+  Log: `/tmp/cossack-trace-types.log` (package checks).
+- The CLI exact-symbol catalog from the framework workspace resolves the built
+  `startDevelopmentTrace` declaration and packaged `development-rpc-traces` guide.
+  This uses workspace packages, not a fresh tarball installation.
 
-Limits: a successful read is not a passing test result. All records cover selected
-tests, not a complete suite. A matching snapshot excludes dependencies, generated
-artifacts, secrets, environment and external services. Start-only records do not
-prove a live runner. Local records are unauthenticated and tied to a project path.
-Metadata redaction cannot recognize every possible secret. Storage has explicit
-limits and manual cleanup; see [usage](../docs/test-results.md).
-CLI-07 remains open for RT-28 snapshots/traces. CLI-08, REL-02 and REL-03 remain
-open for their broader coverage. Checklist status stays 25 complete and 33 open.
+RT-28 and CLI-07 remain open. This is client component RPC evidence, not server
+execution or service RPC capture. Navigation correlation, state/resource/service/
+transport snapshots, browser inspector, shared CLI/MCP access, generated-browser
+acceptance and final production endpoint/source-metadata checks remain required.
+See [usage and limits](../docs/development-traces.md). Status stays 25/58 complete.
 
 ### Archived checkpoints
 
@@ -137,6 +132,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-test-evidence-2026-10-04"></a>[Codex stored test evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-test-evidence-2026-10-04) |
 | <a id="codex-rt23-complete-2026-10-04"></a>[Codex RT-23 completion audit (2026-10-04)](./release-0.9.0-verification-archive.md#codex-rt23-complete-2026-10-04) |
 | <a id="codex-settings-panel-2026-10-04"></a>[Codex SettingsPanel (2026-10-04)](./release-0.9.0-verification-archive.md#codex-settings-panel-2026-10-04) |
 | <a id="codex-dashboard-stat-2026-10-04"></a>[Codex DashboardStat (2026-10-04)](./release-0.9.0-verification-archive.md#codex-dashboard-stat-2026-10-04) |
