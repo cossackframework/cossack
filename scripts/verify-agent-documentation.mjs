@@ -240,10 +240,20 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(tabs.propsContract.members.some(member => member.name === 'onChange' && member.type.includes('string')));
     assert.ok(uiSymbols.some(symbol => symbol.name === 'TabsItem'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'typed-tabs'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Tabs', '--json']);
+    for (const [name, event, target] of [['Toggle', '@click', 'HTMLButtonElement'], ['ToggleGroup', '@keydown', 'HTMLDivElement']]) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.ok(control.propsContract);
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === event && member.type.includes(target)));
+      const owned = name === 'Toggle' ? ['role', 'aria-pressed', 'type'] : ['role', 'aria-label', 'aria-labelledby', 'tabindex'];
+      assert.ok(!control.propsContract.members.some(member => owned.includes(member.name)));
+    }
+    assert.ok(uiSymbols.some(symbol => symbol.name === 'ToggleGroupItem'));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-toggles'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'ToggleGroup', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Tabs']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Tabs' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['ToggleGroup']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'ToggleGroup' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

@@ -960,3 +960,29 @@ removing focused content returns focus to an enabled tab or the list fallback.
 Indicator positioning now uses post-render measurement and ResizeObserver instead
 of uncanceled animation frames. Both orientations retain pill/underline variants.
 Reduced motion disables transitions. Cleanup releases observation and queued work.
+
+## Toggle and ToggleGroup
+
+Toggle now owns native `type=button` and `aria-pressed`. Native attributes and
+`@events` target its button. Use stable named children or an icon-only `aria-label`.
+`defaultPressed` is captured once. Controlled `pressed` changes only when the parent
+accepts `onPressedChange`. A native click handler can prevent default to veto it.
+
+ToggleGroup requires a nonempty `label`. Native attributes and events target its
+root div. `ToggleGroupItem` is exported; readonly arrays are accepted. Item values
+must be unique and nonempty. Rich item labels require `ariaLabel` and noninteractive
+content. Single mode uses string values and callbacks; multiple mode uses arrays.
+The default single mode infers the callback parameter without an explicit type.
+
+Replace writes to the old `selected` field with `value` and `onChange`. `value`
+is fully controlled, including SSR. Use `defaultValue` for initial uncontrolled
+selection. Selecting a pressed single item clears it and emits `''`. Multiple-mode
+callbacks receive a new array, preserving disabled and unknown selected values.
+The component does not mutate caller arrays or keep callback arrays as local state.
+
+Arrows and Home/End move focus without selection. Enter/Space activate the focused
+button. Navigation supports RTL and vertical orientation, skips disabled buttons
+and repairs focus when keyed items move or disappear. Native disabled fieldsets
+block activation. Group key handlers can veto navigation with `preventDefault()`.
+ResizeObserver follows the single-selection indicator; cleanup releases observers
+and pending setup. Toggles do not submit values or reset with forms.

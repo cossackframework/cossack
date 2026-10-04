@@ -306,3 +306,39 @@ component(Tabs, { id: 'tabs' });
 component(Tabs, { id: 'tabs', label: 'Sections', items: [{ value: 'a', label: {} }] });
 // @ts-expect-error The component owns the list role.
 component(Tabs, { id: 'tabs', label: 'Sections', listProps: { role: 'listbox' } });
+
+import { Toggle, ToggleGroup, type ToggleGroupItem } from '@cossackframework/ui';
+component(Toggle, { defaultPressed: true, 'aria-label': 'Bold', onPressedChange: value => { const pressed: boolean = value; void pressed; }, '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } });
+const toggleItems: readonly ToggleGroupItem[] = [{ value: 'bold', label: 'Bold' }];
+component(ToggleGroup, { label: 'Format', items: toggleItems, value: 'bold', onChange: value => { const selected: string = value; void selected; } });
+component(ToggleGroup, { label: 'Format', type: 'multiple', value: ['bold'] as const, onChange: values => {
+    const selected: string[] = values;
+    // @ts-expect-error Multiple mode never emits a scalar string.
+    const single: string = values;
+    void selected; void single;
+}, '@keydown': event => { const group: HTMLDivElement = event.currentTarget; void group; } });
+// @ts-expect-error Pressed semantics belong to Toggle.
+component(Toggle, { 'aria-pressed': true });
+// @ts-expect-error Toggles cannot submit a form.
+component(Toggle, { type: 'submit' });
+// @ts-expect-error A group name is required.
+component(ToggleGroup, { items: toggleItems });
+// @ts-expect-error Single mode accepts a string selection.
+component(ToggleGroup, { label: 'Format', type: 'single', value: ['bold'] });
+// @ts-expect-error Multiple mode accepts an array selection.
+component(ToggleGroup, { label: 'Format', type: 'multiple', value: 'bold' });
+// @ts-expect-error Rich labels require explicit names.
+component(ToggleGroup, { label: 'Format', items: [{ value: 'bold', label: {} }] });
+
+// The object overload retains default-mode contextual typing without losing optional props.
+component(ToggleGroup, { label: 'Format', onChange: value => {
+    const selected: string = value;
+    // @ts-expect-error Default single mode never emits an array.
+    const multiple: string[] = value;
+    void selected; void multiple;
+} });
+component(ToggleGroup, { label: 'Format', type: 'single', onChange: value => { const selected: string = value; void selected; } });
+component(ToggleGroup);
+component(ToggleGroup, undefined, 'Children');
+declare const optionalToggleProps: import('@cossackframework/ui').ToggleGroupProps | undefined;
+component(ToggleGroup, optionalToggleProps);

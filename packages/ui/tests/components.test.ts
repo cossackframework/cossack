@@ -673,6 +673,7 @@ describe("Toggle", () => {
 describe("ToggleGroup", () => {
     it("renders a group of toggle buttons", () => {
         const out = renderComp(ToggleGroup, {
+            label: "Formatting",
             type: "single",
             value: "bold",
             items: [{ value: "bold", label: "B" }, { value: "italic", label: "I" }],

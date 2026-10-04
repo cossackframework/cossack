@@ -118,8 +118,8 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Tabs](../packages/ui/src/components/Tabs.ts) | Reviewed foundation | Typed root/list contracts, controlled/default state, scoped IDs, rich-label names, RTL/manual navigation, keyed focus and responsive indicator browser acceptance. |
 | [Textarea](../packages/ui/src/components/Textarea.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Toast](../packages/ui/src/components/Toast.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Toggle](../packages/ui/src/components/Toggle.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [ToggleGroup](../packages/ui/src/components/ToggleGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Toggle](../packages/ui/src/components/Toggle.ts) | Reviewed foundation | Typed native button attributes/events, controlled/default pressed state, click veto, native fieldsets and SSR/themed Chromium acceptance. |
+| [ToggleGroup](../packages/ui/src/components/ToggleGroup.ts) | Reviewed foundation | Named native button group, mode-specific public types, SSR/default capture, immutable selection proposals, roving focus, RTL/vertical navigation, keyed focus repair and responsive indicator cleanup. |
 | [Tooltip](../packages/ui/src/components/Tooltip.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
 | [Typography](../packages/ui/src/components/Typography.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 

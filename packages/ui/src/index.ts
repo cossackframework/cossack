@@ -55,7 +55,7 @@ export { DropdownMenu, type DropdownMenuProps } from "./components/DropdownMenu"
 export { Sheet, type SheetProps } from "./components/Sheet";
 export { Collapsible, type CollapsibleProps } from "./components/Collapsible";
 export { Toggle, type ToggleProps } from "./components/Toggle";
-export { ToggleGroup, type ToggleGroupProps } from "./components/ToggleGroup";
+export { ToggleGroup, type ToggleGroupProps, type ToggleGroupItem } from "./components/ToggleGroup";
 export { Breadcrumb, type BreadcrumbProps } from "./components/Breadcrumb";
 export { Pagination, type PaginationProps } from "./components/Pagination";
 export { AspectRatio, type AspectRatioProps } from "./components/AspectRatio";

@@ -54,11 +54,23 @@ export type SanitizerFactory = (
   type: 'property' | 'attribute',
 ) => ValueSanitizer;
 
-export const component = <T extends CossackElement>(
+// A supplied object gets its own overload so an optional union discriminator can
+// contextually type callbacks without the optional parameter's undefined branch.
+export function component<T extends CossackElement>(
+  clazz: new () => T,
+  props: T['props'],
+  children?: unknown,
+): TemplateResult<1>;
+export function component<T extends CossackElement>(
   clazz: new () => T,
   props?: T['props'],
   children?: unknown,
-): TemplateResult<1> => {
+): TemplateResult<1>;
+export function component<T extends CossackElement>(
+  clazz: new () => T,
+  props?: T['props'],
+  children?: unknown,
+): TemplateResult<1> {
   const raw: ComponentResult = {
     _type: 'COMPONENT',
     clazz,
@@ -67,7 +79,7 @@ export const component = <T extends CossackElement>(
     parent: CossackElement.currentRenderingInstance,
   };
   return html`${raw}`;
-};
+}
 
 export const isTemplateResult = (value: unknown): value is TemplateResult => {
   return typeof value === 'object' && value !== null && (value as any)._cossack_template_result === true;

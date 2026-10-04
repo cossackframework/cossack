@@ -88,6 +88,58 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-toggles-2026-10-04"></a>
+## Codex Toggle and ToggleGroup (2026-10-04)
+
+Author: Codex. Toggle now consumes its state props, forwards typed native button
+attributes/events and owns pressed semantics. Controlled values require parent
+acceptance. Defaults are captured once; native click handlers can veto activation.
+
+ToggleGroup now has a named root and readonly typed items. Single and multiple
+modes have distinct value and callback contracts. Single selection can clear to an
+empty string. Multiple callbacks receive independent arrays and preserve disabled
+and unknown selected values. SSR uses actual selection. Defaults are captured on
+the first render, even when items arrive later. The empty-list regression failed
+before the fix and passes afterward.
+
+Native buttons use pressed semantics and never submit forms. Roving focus supports
+RTL, vertical navigation, Home/End and disabled skipping without selecting on focus.
+Keyed updates retain focus; removal/disabling repairs it without stealing outside
+focus. ResizeObserver tracks the indicator, and cleanup cancels deferred setup.
+
+The public type fixture exposed lost callback inference when a default union mode
+was passed through the optional `component()` props parameter. A supplied-props
+overload restores inference while retaining omitted/undefined props support.
+Type fixtures reject scalar/array confusion, missing names and owned button props.
+
+Verification:
+
+- `pnpm --filter @cossackframework/ui exec vitest run`: 236 tests in 24 files pass.
+- `pnpm --filter @cossackframework/renderer exec vitest run`: 326 tests in 23 files pass.
+- `pnpm --filter cossack exec vitest run tests/toggles-browser.test.js tests/ui-ejection.test.js`:
+  themed Chromium plus six source-ejection cases pass. Browser cases cover retained
+  SSR/hydration, controlled rejection/acceptance, native callback veto, Enter/Space,
+  RTL/vertical/Home/End navigation, readonly inputs, callback mutation isolation,
+  fieldsets, keyed removal/reorder focus, indicator resize, reduced motion and
+  cleanup/remounting. The final run also covers items arriving after the first render.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck` across all 11 package configurations pass.
+- `pnpm test:agent-docs:local` passes on the final source. Installed CLI/MCP
+  catalogs agree on exact ToggleGroup discovery, typed native prop contracts and
+  the new guide. All six existing packaged examples compile and execute.
+  Discovery disables Node networking; package installation can use the registry.
+
+Logs: `/tmp/cossack-toggles-{ui,renderer,browser-ejection,root-types,types,agent-docs-final}.log`.
+The failed-before/fixed-after default regression has separate
+`/tmp/cossack-toggles-empty-default-{regression,fixed}.log` records.
+
+The package guide and migration notes describe attribute ownership, stable names,
+controlled/default values, readonly items, fresh callback arrays and keyboard/focus
+behavior. The guide adds no executable example. Other browser engines, assistive
+technologies and the full UI/runtime/release matrix remain open. Versions remain
+0.8.3 until REL-04. RT-23 and CLI-08 stay open against their original criteria.
+Thirty-four UI foundations are reviewed. Continue Menubar and NavigationMenu, then
+every pending audit row. The release remains at 24 completed tasks and 34 open.
+
 <a id="codex-tabs-2026-10-04"></a>
 ## Codex Tabs (2026-10-04)
 

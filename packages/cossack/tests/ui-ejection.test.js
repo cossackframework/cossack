@@ -5,7 +5,7 @@ import { UI_COMPONENTS } from '../src/templates/ui.js';
 afterEach(() => vi.restoreAllMocks());
 
 describe('UI source ejection', () => {
-  it.each(['accordion', 'collapsible', 'tabs', 'toaster'])('ejects a complete %s component', (name) => {
+  it.each(['accordion', 'collapsible', 'tabs', 'toggle', 'toggle-group', 'toaster'])('ejects a complete %s component', (name) => {
     // Resolve the real UI dependency from a workspace application, as the CLI
     // does from a consuming app. This also catches source/catalog name drift.
     vi.spyOn(process, 'cwd').mockReturnValue(fileURLToPath(new URL('../../framework/', import.meta.url)));

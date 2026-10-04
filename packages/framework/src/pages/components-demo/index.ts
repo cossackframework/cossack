@@ -500,8 +500,8 @@ export class ComponentsDemo extends Cossack {
                         ${component(Collapsible, { id: 'demo-collapsible', trigger: 'Toggle Collapsible' }, html`<p class="text-sm py-3">Content that can be shown or hidden.</p>`)}
                         ${component(Toggle, { defaultPressed: true }, 'Bold')}
                         ${component(ToggleGroup, {
-                            type: 'single',
-                            value: 'left',
+                            label: 'Text alignment', type: 'single',
+                            defaultValue: 'left',
                             items: [
                                 { value: 'left', label: 'Left' },
                                 { value: 'center', label: 'Center' },

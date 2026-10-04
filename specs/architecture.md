@@ -896,6 +896,11 @@ directive result classes have declaration-only private brands, matching the runt
 instance checks instead of accepting structurally similar plain objects.
 This is a compile-time contract, not runtime validation of JavaScript callers.
 See the [UI contract inventory](./ui-contract-audit.md) for coverage and remaining work.
+A separate `component()` overload for supplied props preserves callback inference
+when a union uses an optional default discriminator. The optional-props overload
+still accepts omitted props and variables that can be undefined. Public declaration
+fixtures exercise default, explicit single and multiple ToggleGroup modes.
+
 
 Choice-control wrappers derive disabled styles from native input state, so disabled
 fieldsets do not need duplicated framework state. RadioGroup props distinguish
