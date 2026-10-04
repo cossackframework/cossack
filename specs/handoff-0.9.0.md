@@ -19,6 +19,10 @@ Preserve these regressions; their implementation does not need repeating.
 
 ## Continue here — Codex, 2026-10-04
 
+The [native failure settlement fix](./release-0.9.0.md#codex-native-cancel-settlement-2026-10-04)
+prevents stalled producer cancellation from masking local errors. It does not
+supply native-body server terminal evidence.
+
 1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** native-body server terminal evidence
    and other runtime development acceptance. Preserve the public inspector import
    (filesystem imports duplicate capture owners), ordered WebSocket application

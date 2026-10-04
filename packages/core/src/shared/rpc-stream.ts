@@ -152,7 +152,7 @@ export async function* readRpcStream(
 export async function readRpcNativeResponse(response: Response, signal?: AbortSignal): Promise<Response> {
     const requestId = response.headers.get('X-Cossack-Request-Id') ?? undefined;
     if (signal?.aborted) {
-        await response.body?.cancel().catch(() => {});
+        void response.body?.cancel().catch(() => {});
         throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
     }
     if (!response.body) return new Response(null, response);
@@ -180,7 +180,9 @@ export async function readRpcNativeResponse(response: Response, signal?: AbortSi
         return new Response(buffer.slice(0, size), response);
     } finally {
         signal?.removeEventListener('abort', abort);
-        await reader.cancel().catch(() => {});
+        // Producer cleanup cannot hold local failure settlement or the reader
+        // lock indefinitely. Observe rejection without waiting for the hook.
+        void reader.cancel().catch(() => {});
         reader.releaseLock();
     }
 }

@@ -166,8 +166,11 @@ HTTP rules; `Set-Cookie` remains unavailable to client code.
 The proxy consumes the entire native body before completing the call. This keeps
 deadlines, cancellation and server resource cleanup active through consumption,
 including an unobserved call. It buffers at most 1 MiB and rejects larger bodies
-with `COSSACK_RPC_RESPONSE_TOO_LARGE`. Use an HTTP endpoint for larger downloads
-or continuous streams. The result is a local response, so `url` and `redirected`
+with `COSSACK_RPC_RESPONSE_TOO_LARGE`. On cancellation or a size failure, the
+client requests producer cancellation and releases its reader without waiting
+for a producer cleanup hook that may never settle. Local rejection does not
+prove server cleanup or termination of application I/O. Use an HTTP endpoint for
+larger downloads or continuous streams. The result is a local response, so `url` and `redirected`
 do not describe the original fetch. Repeated awaits return the same response;
 read its body once or call `clone()` before consuming it.
 

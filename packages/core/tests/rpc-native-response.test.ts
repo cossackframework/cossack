@@ -48,6 +48,54 @@ describe('native RPC response completion', () => {
         await expect(pending).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED', requestId: 'cancelled-response' });
         expect(cancel).toHaveBeenCalledOnce(); expect(original.body?.locked).toBe(false);
     });
+    it.each(['already-aborted', 'oversized', 'pending-abort'] as const)(
+        'settles %s without waiting for an uncooperative producer cancellation hook', async (scenario) => {
+            let release!: () => void;
+            const cleanup = new Promise<void>(resolve => { release = resolve; });
+            const cancel = vi.fn(() => cleanup);
+            const abort = new AbortController();
+            const original = new Response(new ReadableStream<Uint8Array>({
+                start(controller) {
+                    if (scenario === 'oversized') controller.enqueue(new Uint8Array(RPC_NATIVE_RESPONSE_MAX_BYTES + 1));
+                }, cancel,
+            }, { highWaterMark: 0 }), { headers: { 'X-Cossack-Request-Id': 'stalled-cleanup' } });
+            if (scenario === 'already-aborted') abort.abort();
+            const pending = readRpcNativeResponse(original, abort.signal);
+            if (scenario === 'pending-abort') abort.abort();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const outcome = await Promise.race([
+                    pending.then(() => 'resolved', error => error),
+                    new Promise(resolve => { timer = setTimeout(() => resolve('still pending'), 100); }),
+                ]);
+                expect(outcome).toMatchObject({
+                    code: scenario === 'oversized' ? 'COSSACK_RPC_RESPONSE_TOO_LARGE' : 'COSSACK_RPC_CANCELLED',
+                    requestId: 'stalled-cleanup',
+                });
+                expect(cancel).toHaveBeenCalledOnce();
+                expect(original.body?.locked).toBe(false);
+            } finally {
+                clearTimeout(timer);
+                release();
+                await pending.catch(() => {});
+            }
+        },
+    );
+    it('observes a late cancellation rejection without replacing the original size error', async () => {
+        let rejectCleanup!: (reason: Error) => void;
+        const cleanup = new Promise<void>((_, reject) => { rejectCleanup = reject; });
+        const original = new Response(new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(new Uint8Array(RPC_NATIVE_RESPONSE_MAX_BYTES + 1)); },
+            cancel() { return cleanup; },
+        }));
+        const pending = readRpcNativeResponse(original);
+        // Attach rejection handling before the producer fails, then verify the
+        // original transport failure survives and the late rejection is observed.
+        const result = pending.catch(error => error);
+        rejectCleanup(new Error('producer cleanup failed'));
+        expect(await result).toMatchObject({ code: 'COSSACK_RPC_RESPONSE_TOO_LARGE' });
+        expect(original.body?.locked).toBe(false);
+    });
     it('preserves a network failure and releases its reader', async () => {
         const failure = new TypeError('connection lost');
         const original = new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.error(failure); } }));

@@ -4,7 +4,7 @@ import { Optimistic, Server, Service, State } from '../src/shared/decorators';
 import { ServiceScope } from '../src/shared/service-scope';
 import { proxyHttpMethods } from '../src/shared/method-proxy';
 import { startDevelopmentTrace, type DevelopmentTraceSession } from '../src/shared/development-trace';
-import { RPC_STREAM_CONTENT_TYPE } from '../src/shared/rpc-stream';
+import { RPC_NATIVE_RESPONSE_HEADER, RPC_NATIVE_RESPONSE_MAX_BYTES, RPC_STREAM_CONTENT_TYPE } from '../src/shared/rpc-stream';
 const scopes: ServiceScope[] = [];
 let capture: DevelopmentTraceSession | undefined;
 afterEach(async () => { capture?.stop(); await Promise.all(scopes.splice(0).map(scope => scope.disposeAsync())); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -103,4 +103,34 @@ it.each(['COSSACK_RPC_CLIENT_ERROR', 'COSSACK_RPC_TRANSPORT_CLOSED'])('preserves
     await expect(iterator.next()).rejects.toMatchObject({code, requestId});
     await expect(call).rejects.toMatchObject({code}); expect(host.loading).toEqual({});
     expect(socket.send).toHaveBeenCalledTimes(1);
+});
+
+it.each(['component', 'service'] as const)('preserves a %s native size failure before its deadline when producer cleanup stalls', async kind => {
+    vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => {});
+    const requestId = crypto.randomUUID();
+    let rejectCleanup!: (reason: Error) => void;
+    const cleanup = new Promise<void>((_, reject) => { rejectCleanup = reject; });
+    const cancel = vi.fn(() => cleanup);
+    const body = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new Uint8Array(RPC_NATIVE_RESPONSE_MAX_BYTES + 1)); }, cancel,
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { headers: {
+        [RPC_NATIVE_RESPONSE_HEADER]: 'native', 'X-Cossack-Request-Id': requestId,
+    } })));
+    capture = startDevelopmentTrace(); const { host, consumer } = target(kind), call = host.run();
+    let failure: unknown;
+    void call.catch((error: unknown) => { failure = error; });
+    try {
+        await vi.advanceTimersByTimeAsync(0);
+        expect(failure).toMatchObject({ code: 'COSSACK_RPC_RESPONSE_TOO_LARGE', requestId });
+        expect(consumer.loading).toEqual({}); expect(host.count).toBe(0);
+        expect(cancel).toHaveBeenCalledOnce(); expect(body.locked).toBe(false);
+        expect(capture.snapshot().events.filter(event => event.phase === 'finish')).toMatchObject([{ outcome: 'failed', requestId }]);
+        await vi.advanceTimersByTimeAsync(100);
+        await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_TOO_LARGE', requestId });
+        await call.cancel(); expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+        rejectCleanup(new Error('late producer cleanup failure'));
+        await call.catch(() => {});
+    }
 });
