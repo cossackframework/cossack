@@ -118,6 +118,12 @@ Framework does not import the ORM. The ORM integration lazily resolves the
 active request scope, while explicitly supplied ORM instances are also
 supported for jobs and tests.
 
+`SessionStore.set()` and `unset()` must mutate one key without replacing
+unrelated concurrent updates. The built-in database store performs each change
+as one dialect-specific JSON update. A custom backend that reads and rewrites
+the whole bag can lose another request's update; same-key writes remain
+last-writer-wins unless the backend provides a stronger operation.
+
 ## Flash and old input
 
 Flash is separate from the persistent session bag. It uses a signed, readable

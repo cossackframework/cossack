@@ -110,7 +110,12 @@ the required non-Desktop release matrix.
    session and signed-flash scopes now have barrier tests that overlap requests
    in one isolate. Auth-session rotation has an atomic one-winner test, but a
    copied signed-flash cookie remains replayable until expiry; durable one-use
-   semantics and the remaining concurrency contract are still open.
+   semantics and the remaining concurrency contract are still open. The built-in
+   database session store now mutates individual JSON keys atomically on
+   SQLite/PostgreSQL/MySQL, with a deterministic lost-update regression and
+   dialect compilation checks; custom stores must preserve the same key-level
+   behavior. Same-key writes remain last-writer-wins. See the
+   [database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.

@@ -403,6 +403,17 @@ These tests prove request isolation, not durable single-use flash: a copied,
 valid signed cookie can still be replayed until expiry. Continue documenting and
 verifying the remaining concurrency guarantees before closing RT-11.
 
+Codex database-session checkpoint (2026-10-05): the built-in database
+`SessionStore.set()` and `unset()` now update one JSON key in one SQL statement
+for SQLite, PostgreSQL and MySQL. They no longer read and rewrite the whole
+session bag, which could erase a different key written concurrently. A SQLite
+regression rejects read-before-write behavior and verifies both keys survive;
+SQL compilation checks cover all three dialects, and SQLite covers unusual
+keys. Custom stores must provide the same key-level atomicity. Same-key writes
+remain last-writer-wins, and RT-11 remains open for signed-flash replay,
+in-flight work and the rest of its concurrency contract. See the
+[database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
+
 Already-started HTTP actions can retain resolved identity. A frame checked before
 revocation can be in flight. SSE idle checks occur before 15-second heartbeats
 with reader demand, so backpressure and slow storage prevent a wall-clock guarantee.

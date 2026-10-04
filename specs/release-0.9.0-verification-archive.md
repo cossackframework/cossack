@@ -10004,3 +10004,41 @@ passed. Overlapping flash requests stay isolated, but a copied valid signed
 cookie can be replayed until expiry; these tests do not claim durable one-use
 semantics. Task count remains **28 complete / 30 open** and package versions
 remain 0.8.3. No deployment, publishing or push occurred.
+
+<a id="codex-rt11-session-concurrency-2026-10-05"></a>
+### Codex RT-11 database session concurrency (2026-10-05)
+
+**Issue reproduced:** database session `set()` and `unset()` used to load and
+replace the entire serialized bag. Two requests writing different keys could
+interleave after their reads, causing the last full-bag write to silently drop
+the other request's value.
+
+**Fix:** each operation now emits one SQLite `json_set`/`json_remove`, PostgreSQL
+`jsonb_set`/key deletion, or MySQL `JSON_SET`/`JSON_REMOVE` statement. Distinct
+keys are preserved by the database update; TTL refresh remains limited to `set`,
+and both operations still update only an existing, live session. SQLite resets
+malformed/non-object JSON, and MySQL validates stored text before casting it;
+null, empty and valid non-object values are normalized to an empty object.
+Malformed non-empty PostgreSQL text remains a storage-corruption error because
+PostgreSQL's JSON cast rejects it. Undefined values remove their key, matching
+JSON bag semantics. The session API and docs state
+that custom stores must mutate one key without replacing concurrent unrelated
+updates. Same-key writes remain last-writer-wins.
+
+**Verification:**
+
+- Before the fix, a deterministic SQLite driver barrier let two `set()` calls
+  read the same bag; the resulting row lost one of the keys.
+- `pnpm --filter @cossackframework/database exec vitest run test/cossack.test.ts`:
+  **11 tests pass**, including the concurrency regression, unusual JSON key and
+  dialect query-shape checks.
+- `pnpm --filter @cossackframework/database exec vitest run`: **15 files / 92
+  tests pass**.
+- Root `pnpm typecheck` passes all **11 package checks** and `pnpm tsc --noEmit`
+  passes.
+
+**Limits:** RT-11 remains open. This prevents distinct-key lost updates in the
+built-in database store; it does not make signed flash durable or one-use,
+enforce stronger same-key ordering than the database, or resolve in-flight
+request/revocation and transport backpressure limits. Desktop remains complete
+by user decision, with its waived OS acceptance not represented as passed.

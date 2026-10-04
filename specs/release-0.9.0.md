@@ -39,7 +39,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. Remaining: broader concurrent request semantics. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05) and [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05).
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Remaining: broader concurrent request semantics. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05) and [database session acceptance](#codex-rt11-session-concurrency-2026-10-05).
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -133,6 +133,36 @@ record](./release-0.9.0-verification-archive.md#codex-rt11-websocket-auth-2026-1
 **28 complete / 30 open.** RT-11 stays open for broader concurrent request
 semantics. A check that passed before revocation can finish in flight; slow
 storage and backpressure prevent a strict time-based revocation guarantee.
+
+<a id="codex-rt11-session-concurrency-2026-10-05"></a>
+### Codex: Atomic database session key updates (2026-10-05)
+
+The database-backed session store previously loaded the complete JSON bag,
+changed one key, then replaced the bag. Concurrent requests updating distinct
+keys could therefore silently erase one another's values. The store now uses a
+single dialect-specific JSON update for `set()` and `unset()` on SQLite,
+PostgreSQL and MySQL, preserving unrelated keys and existing expiry behavior.
+Custom session stores are documented to provide the same per-key atomicity.
+Same-key writes remain last-writer-wins unless a backend offers a stronger
+operation.
+
+The SQLite regression rejects read-before-write behavior and verifies both
+values survive concurrent writes; it also checks an unusual JSON key. Before
+the fix, a driver barrier reproduced the lost-key interleaving. Dialect SQL
+compilation checks confirm SQLite, PostgreSQL and MySQL mutation shapes do not
+issue a read-before-write query.
+
+- `pnpm --filter @cossackframework/database exec vitest run test/cossack.test.ts`:
+  **11 tests pass**.
+- `pnpm --filter @cossackframework/database exec vitest run`: **15 files / 92
+  tests pass**.
+- `pnpm typecheck` passes all 11 package checks; `pnpm tsc --noEmit` passes.
+
+RT-11 remains open. These writes preserve distinct concurrent session keys but
+do not make signed flash cookies durably one-use or resolve in-flight request,
+storage-latency and stream-backpressure limits. Desktop remains completed by
+user decision; waived platform checks are not claimed as passed. The release
+count remains **28 complete / 30 open**.
 
 <a id="codex-rt11-forms-2026-10-05"></a>
 ### Codex: Generated auth form privacy and session actions (2026-10-05)

@@ -18,7 +18,9 @@ export interface SessionStore {
   load(sessionId: string): Promise<Record<string, unknown>>;
   get<T = unknown>(sessionId: string, key: string): Promise<T | undefined>;
   getAll(sessionId: string): Promise<Record<string, unknown>>;
+  /** Mutate one key without replacing unrelated concurrent writes. */
   set(sessionId: string, key: string, value: unknown, ttlMs?: number): Promise<void>;
+  /** Remove one key without replacing unrelated concurrent writes. */
   unset(sessionId: string, key: string): Promise<void>;
   destroy(sessionId: string): Promise<void>;
   bindUser(sessionId: string, userId: string): Promise<void>;

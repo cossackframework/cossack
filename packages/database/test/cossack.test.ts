@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createORM } from "../src/index.js";
 import { MemoryDriver } from "../src/adapter/index.js";
+import type { Driver, QueryOperation, QueryResult } from "../src/adapter/types.js";
 import { nodeSQLite } from "../src/runtime/node.js";
+import type { CompiledQuery } from "../src/sql/fragment.js";
 import {
   createDatabaseCacheStore,
   createDatabaseSessionStore,
@@ -127,6 +129,81 @@ describe("Cossack integration", () => {
           expect(await sessions.getAll(invalid)).toEqual({});
         }
       });
+    } finally {
+      await orm.close();
+    }
+  });
+
+  it("preserves concurrent session bag keys with atomic database updates", async () => {
+    const sqlite = await nodeSQLite();
+    let reads = 0;
+    let gateWrites = true;
+    let release!: () => void;
+    const bothReads = new Promise<void>(resolve => { release = resolve; });
+    const driver: Driver = {
+      ...sqlite.driver,
+      async execute<Row = Record<string, unknown>>(
+        query: CompiledQuery,
+        operation?: QueryOperation,
+        signal?: AbortSignal,
+      ): Promise<QueryResult<Row>> {
+        if (gateWrites && query.text.startsWith('SELECT "data", "expires_at" FROM "sessions"') && reads < 2) {
+          if (++reads === 2) release();
+          await bothReads;
+        }
+        return sqlite.driver.execute<Row>(query, operation, signal);
+      },
+      async close() { await sqlite.driver.close(); },
+    };
+    const orm = createORM({ adapter: { ...sqlite, driver }, entities: [] });
+    try {
+      await orm.run(async () => {
+        await orm.executeFragment(orm.sql.fragment`
+          CREATE TABLE ${orm.sql.id("sessions")} (
+            ${orm.sql.id("id")} TEXT PRIMARY KEY,
+            ${orm.sql.id("user_id")} TEXT,
+            ${orm.sql.id("data")} TEXT,
+            ${orm.sql.id("expires_at")} TEXT NOT NULL
+          )
+        `, "ddl");
+        const sessions = createDatabaseSessionStore();
+        const id = await sessions.create();
+        await Promise.all([
+          sessions.set(id, 'cart', { items: [1, 2] }),
+          sessions.set(id, 'notice', 'ready'),
+        ]);
+        gateWrites = false;
+        expect(reads).toBe(0);
+        expect(await sessions.getAll(id)).toEqual({ cart: { items: [1, 2] }, notice: 'ready' });
+        const unusualKey = 'dot.key"quoted';
+        await sessions.set(id, unusualKey, 'kept');
+        expect(await sessions.get(id, unusualKey)).toBe('kept');
+      });
+    } finally {
+      await orm.close();
+    }
+  });
+
+  it.each([
+    ["sqlite", "json_set", "json_remove"],
+    ["postgres", "jsonb_set", " - "],
+    ["mysql", "JSON_SET", "JSON_REMOVE"],
+  ] as const)("compiles atomic session key mutations for %s", async (dialect, setFunction, unsetFunction) => {
+    const driver = new MemoryDriver(dialect);
+    const orm = memoryORM(driver);
+    try {
+      await orm.run(async () => {
+        const sessions = createDatabaseSessionStore();
+        await sessions.set('session-id', 'cart', { items: [1] });
+        await sessions.unset('session-id', 'notice');
+      });
+      expect(driver.statements).toHaveLength(2);
+      expect(driver.statements[0]!.query.text).toContain(setFunction);
+      expect(driver.statements[1]!.query.text).toContain(unsetFunction);
+      if (dialect === "mysql") {
+        expect(driver.statements[0]!.query.text).toContain("JSON_VALID");
+      }
+      expect(driver.statements.every(({ query }) => !query.text.startsWith('SELECT'))).toBe(true);
     } finally {
       await orm.close();
     }
