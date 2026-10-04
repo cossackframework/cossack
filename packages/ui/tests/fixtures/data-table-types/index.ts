@@ -1,5 +1,5 @@
 import { DataTable, type DataTableColumn, type DataTableProps } from '@cossackframework/ui';
-import { component } from '@cossackframework/renderer';
+import { component, html } from '@cossackframework/renderer';
 type Person = { id: string; name: string; age: number };
 const columns: DataTableColumn<Person>[] = [
     { id:'name', header:'Name', key:'name', sortable:true },
@@ -385,3 +385,19 @@ component(Pagination,{page:1,totalPages:5,href:page=>`/page/${page}`,linkProps:{
 component(Pagination,{page:1,totalPages:5,onPageChange:()=>{},clas:'pages'});
 // @ts-expect-error Native control ownership prevents accidental submit buttons.
 component(Pagination,{page:1,totalPages:5,onPageChange:()=>{},buttonProps:{type:'submit'}});
+
+import { Breadcrumb, type BreadcrumbItem } from '@cossackframework/ui';
+const trail:readonly BreadcrumbItem[]=[{value:'home',label:'Home',href:'/',linkProps:{target:'_blank','@click':event=>{const link:HTMLAnchorElement=event.currentTarget;void link;}}},{value:'current',label:html`<b>Current</b>`,ariaLabel:'Current page',textProps:{'@click':event=>{const text:HTMLSpanElement=event.currentTarget;void text;}}}];
+component(Breadcrumb,{items:trail,label:'Location','@keydown':event=>{const root:HTMLElement=event.currentTarget;void root;},listProps:{'@click':event=>{const list:HTMLOListElement=event.currentTarget;void list;}}});
+// @ts-expect-error Stable identities are required.
+component(Breadcrumb,{items:[{label:'Home',href:'/'}]});
+// @ts-expect-error Rich labels need an accessible text name.
+component(Breadcrumb,{items:[{value:'home',label:html`<b>Home</b>`}]});
+// @ts-expect-error Unlinked text does not accept anchor attributes.
+component(Breadcrumb,{items:[{value:'home',label:'Home',linkProps:{target:'_blank'}}]});
+// @ts-expect-error Link targets and text targets are separate contracts.
+component(Breadcrumb,{items:[{value:'home',label:'Home',href:'/',textProps:{title:'Wrong'}}]});
+// @ts-expect-error Current-page semantics belong to the component.
+component(Breadcrumb,{items:[{value:'home',label:'Home',href:'/',linkProps:{'aria-current':'page'}}]});
+// @ts-expect-error Native root attributes are closed.
+component(Breadcrumb,{clas:'trail'});

@@ -88,6 +88,52 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-breadcrumb-2026-10-04"></a>
+## Codex Breadcrumb (2026-10-04)
+
+Author: Codex. Breadcrumb now forwards typed attributes/events to its native
+navigation, ordered list, links and text items. Readonly items require stable
+values and accessible names. Rich labels require ariaLabel; nonlinked rich labels
+use hidden visual content plus screen-reader text rather than naming a generic
+span. Decorative separators are hidden from the accessibility tree.
+
+The final item has aria-current=page and preserves a supplied native href.
+Unlinked items remain text. Links retain Tab/Shift+Tab, Enter, native callback
+veto, modifiers and new tabs. Keyed reordering preserves focus. Removing a focused
+link or converting it to text falls back to a remaining visible link or root;
+updates preserve outside focus. Cleanup invalidates queued focus repair.
+The demo and scaffold blog layout now provide stable values. The blog imports
+BreadcrumbItem and keeps translated names separate from path-based identity.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 289 tests in 28 files pass.
+  Public types cover each native event target and reject missing identities/names,
+  competing current-page attributes and mixed link/text targets. SSR covers
+  readonly items, linked/plain current pages, rich names, empty trails, separators
+  and invalid values, including explicitly null accessible names.
+- `pnpm --filter cossack exec vitest run tests/breadcrumb-browser.test.js tests/ui-ejection.test.js`:
+  14 tests in two files pass. The themed production browser covers retained
+  hydration, JavaScript-disabled links, native Tab/Enter, modified navigation,
+  callback targets/vetoes, RTL reordering, link removal/conversion, outside focus,
+  empty updates, accessibility snapshots and cleanup/remounting. Ejected source
+  passes strict NodeNext compilation with the other reviewed menu/navigation controls.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` package configurations pass.
+- Scaffold recipe suite: 110 tests in five files pass after the blog-layout update.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the same exact-symbol
+  Breadcrumb contract and native-breadcrumb guide with Node networking disabled
+  during discovery. All six existing packaged examples compile and execute.
+
+The [W3C breadcrumb pattern](https://www.w3.org/WAI/ARIA/apg/patterns/breadcrumb/)
+informs the landmark and current-page semantics. The guide adds no executable
+example. Other browser engines, assistive technologies, generated-app navigation
+and the full release matrix remain open.
+
+Logs: `/tmp/cossack-breadcrumb-{build,ui,browser-ejection,root-types,types,scaffold,agent-docs}.log`.
+Thirty-eight of 65 component-source foundations are reviewed. Continue ButtonGroup,
+then Separator, AspectRatio and every pending audit row. RT-23 and CLI-07/CLI-08
+remain open. The release stays at 24 of 58 complete, with versions at 0.8.3 until REL-04.
+
 <a id="codex-pagination-2026-10-04"></a>
 ## Codex Pagination and union prop catalogs (2026-10-04)
 

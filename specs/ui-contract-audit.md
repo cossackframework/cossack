@@ -65,7 +65,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Avatar](../packages/ui/src/components/Avatar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [AvatarGroup](../packages/ui/src/components/AvatarGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Badge](../packages/ui/src/components/Badge.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Breadcrumb](../packages/ui/src/components/Breadcrumb.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Breadcrumb](../packages/ui/src/components/Breadcrumb.ts) | Reviewed foundation | Typed native root/list/link/text targets, stable readonly items, current-page links/text, rich names, hidden separators, native keyboard/modifiers, keyed focus, SSR/accessibility snapshots/Chromium, scaffold and ejected-source coverage. |
 | [Bubble](../packages/ui/src/components/Bubble.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Button](../packages/ui/src/components/Button.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [ButtonGroup](../packages/ui/src/components/ButtonGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,9 +125,10 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Breadcrumb, then every pending row. Review native attribute targets,
-link behavior, current-page semantics, names, decorative separators and keyed
-focus. Update the components demo and scaffold blog layout together.
+Next audit ButtonGroup, then Separator and AspectRatio. ButtonGroup claims joined
+borders that have no CSS implementation; cover horizontal/vertical joining, RTL,
+focus rings and native child behavior. Separator needs typed orientation targets
+and textual ARIA booleans. AspectRatio needs native forwarding and valid ratios.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

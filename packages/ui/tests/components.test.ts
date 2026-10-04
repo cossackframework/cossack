@@ -688,8 +688,8 @@ describe("Breadcrumb", () => {
     it("renders nav with items and separators", () => {
         const out = renderComp(Breadcrumb, {
             items: [
-                { label: "Home", href: "/" },
-                { label: "Settings" },
+                { value: "home", label: "Home", href: "/" },
+                { value: "settings", label: "Settings" },
             ],
         });
         expect(out).toContain("cs-breadcrumb");

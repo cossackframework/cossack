@@ -1069,3 +1069,27 @@ an enabled control, or the root. Button controls use `type="button"` and honor
 native disabled fieldsets. Anchors retain native semantics, so a disabled fieldset
 does not disable them; pass `disabled` when needed. Disabled links omit URLs and
 leave the Tab order. Use the packaged `native-pagination` guide for full behavior.
+
+## Breadcrumb
+
+Every item now requires a stable, unique `value`. Use values that survive label
+translation and URL changes. `items` accepts readonly `BreadcrumbItem` arrays.
+Plain labels supply names; rich labels require a nonempty `ariaLabel` and must
+contain noninteractive presentation only. Empty labels and URLs reject early.
+
+The final item now preserves a supplied `href` and renders a native current-page
+link. Omit `href` to render plain text. Both forms have `aria-current="page"`.
+Decorative separators are hidden from assistive technology. `separator` defaults
+to `/`; the former comment describing `>` was incorrect.
+
+Native attributes and `@events` now reach the root `HTMLElement`. Use `label` to
+localize its name, `listProps` for the ordered list, `linkProps` for native anchors
+and `textProps` for nonlinked spans. Do not combine link and text prop targets.
+Their public types are exported. Native links retain Tab, Enter, modified-click
+and new-tab behavior; handlers cancel navigation with `preventDefault()`.
+
+Keyed updates preserve link focus. A removed link or link becoming text falls
+back to the first remaining visible link or the root. Outside focus is preserved,
+and cleanup invalidates queued focus repair. The demo and scaffold blog layout
+now use stable item values and the blog imports the shared item type. See the
+packaged `native-breadcrumb` guide for full ownership and accessibility behavior.

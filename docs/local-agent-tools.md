@@ -228,7 +228,7 @@ explicit, and a declared branch does not prove runtime behavior.
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
 The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
-Pagination CLI/MCP parity covering both navigation variants. It retains unresolved
+Breadcrumb CLI/MCP parity and Pagination checks covering both navigation variants. It retains unresolved
 platform diagnostics.
 
 

@@ -517,9 +517,9 @@ export class ComponentsDemo extends Cossack {
                     <h2 class="text-lg font-semibold">Breadcrumb · Pagination · Kbd</h2>
                     <div class="space-y-4">
                         ${component(Breadcrumb, { items: [
-                            { label: 'Home', href: '/' },
-                            { label: 'Components', href: '/components-demo' },
-                            { label: 'Current' },
+                            { value: 'home', label: 'Home', href: '/' },
+                            { value: 'components', label: 'Components', href: '/components-demo' },
+                            { value: 'current', label: 'Current' },
                         ]})}
                         ${component(Pagination, { page: this.paginationPage, totalPages: 10, onPageChange: page => this.paginationPage = page })}
                         <div class="flex items-center gap-1">

@@ -56,7 +56,7 @@ export { Sheet, type SheetProps } from "./components/Sheet";
 export { Collapsible, type CollapsibleProps } from "./components/Collapsible";
 export { Toggle, type ToggleProps } from "./components/Toggle";
 export { ToggleGroup, type ToggleGroupProps, type ToggleGroupItem } from "./components/ToggleGroup";
-export { Breadcrumb, type BreadcrumbProps } from "./components/Breadcrumb";
+export { Breadcrumb, type BreadcrumbProps, type BreadcrumbItem, type BreadcrumbLinkProps, type BreadcrumbTextProps, type BreadcrumbListProps } from "./components/Breadcrumb";
 export { Pagination, type PaginationProps, type PaginationButtonProps, type PaginationLinkProps } from "./components/Pagination";
 export { AspectRatio, type AspectRatioProps } from "./components/AspectRatio";
 export { Field, type FieldProps } from "./components/Field";
