@@ -1093,3 +1093,28 @@ back to the first remaining visible link or the root. Outside focus is preserved
 and cleanup invalidates queued focus repair. The demo and scaffold blog layout
 now use stable item values and the blog imports the shared item type. See the
 packaged `native-breadcrumb` guide for full ownership and accessibility behavior.
+
+## ButtonGroup, Separator and AspectRatio
+
+ButtonGroup now requires a nonempty `label`. Its typed native props/events target
+HTMLDivElement; orientation and naming props are consumed instead of leaking onto
+the DOM. Load the UI base stylesheet for joined borders: only direct native button
+and anchor children are joined. Logical corners/margins support RTL and vertical
+layout, and focused controls are raised above adjacent borders. The group supplies
+no toolbar navigation, selection or child action behavior. Child types, disabled
+state and form behavior remain native.
+
+Separator now types horizontal `<hr>` callbacks as HTMLHRElement and vertical
+`<div>` callbacks as HTMLDivElement. `decorative` controls textual
+`aria-hidden="true"`; false omits it. Decorative vertical dividers have no separator
+role. Roles, orientation, hidden state and tabindex belong to the component.
+This is a static divider, not a focusable splitter. Horizontal lines are one pixel
+high without an additional native border.
+
+AspectRatio forwards native attributes to its outer div and requires a positive
+finite numeric ratio. It now uses an inner CSS `aspect-ratio` box instead of
+percentage padding, so custom wrapper widths size content correctly. Wrapper
+style and ratio style are separate. Update selectors relying on the previous
+internal wrapper/padding structure. Children occupy an absolute content layer;
+keep their image alternatives and object-fit behavior explicit. Use the packaged
+`native-layout` guide for ownership and layout details.

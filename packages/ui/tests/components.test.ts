@@ -713,11 +713,10 @@ describe("Pagination", () => {
 });
 
 describe("AspectRatio", () => {
-    it("renders a container with padding-top for ratio", () => {
+    it("renders a container with a CSS aspect ratio", () => {
         const out = renderComp(AspectRatio, { ratio: 16 / 9 }, "Content");
-        const pct = (9 / 16) * 100;
         expect(out).toContain("cs-aspect-ratio");
-        expect(out).toContain(`padding-top:${pct}%`);
+        expect(out).toContain(`aspect-ratio:${16 / 9}`);
     });
 });
 
@@ -757,7 +756,7 @@ describe("Kbd", () => {
 
 describe("ButtonGroup", () => {
     it("renders a group container with role", () => {
-        const out = renderComp(ButtonGroup, {}, "buttons");
+        const out = renderComp(ButtonGroup, { label: "Actions" }, "buttons");
         expect(out).toContain("cs-button-group");
         expect(out).toContain("role=");
         expect(out).toContain("group");

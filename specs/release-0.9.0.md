@@ -88,6 +88,61 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-layout-controls-2026-10-04"></a>
+## Codex ButtonGroup, Separator and AspectRatio (2026-10-04)
+
+Author: Codex. ButtonGroup now requires a name and forwards typed native div
+attributes/events without leaking component props. New base CSS implements its
+previously claimed joined borders for direct native buttons/anchors. Logical
+corners/margins support horizontal, vertical and RTL layout. Focused controls
+are raised above neighboring borders. The group adds no keyboard or selection
+behavior and preserves child types, disabled state, actions and form semantics.
+The components, localization and HTTP counter demos provide group names.
+
+Separator distinguishes horizontal HTMLHRElement and vertical HTMLDivElement
+attribute/event contracts. Decorative dividers use textual aria-hidden=true;
+false omits it. Decorative vertical dividers omit semantic role/orientation.
+Static separator ownership excludes focusable splitter attributes. Horizontal
+lines no longer combine a native border with the requested one-pixel height.
+
+AspectRatio forwards native props to an outer div and rejects nonpositive or
+nonfinite ratios. An inner CSS aspect-ratio box sizes against its actual available
+width, replacing percentage padding based on the containing block. Native wrapper
+styles remain separate from ratio sizing. An absolute content layer fills the box.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 301 tests in 29 files pass.
+  Public declarations verify group naming, owned attributes, orientation-specific
+  separator event targets and native wrappers. SSR checks semantic/decorative
+  attributes, consumed props, ratio styles and invalid contracts.
+- Source ejection: 16 tests pass, including strict NodeNext compilation of all
+  three controls with the previously reviewed navigation/menu components.
+- `pnpm --filter cossack exec vitest run tests/layout-controls-browser.test.js`:
+  the final themed production Chromium fixture passes. It covers retained
+  hydration, no-JavaScript layout, joined borders, RTL/vertical changes, focus-ring
+  stacking, native Tab/Enter/Space, disabled fieldsets, native child links, semantic
+  versus decorative separator exposure, event targets, ratio resizing, no unwanted
+  form submission and unmount/remount behavior. One-pixel separator event forwarding
+  uses native element.click(); geometry is checked separately rather than relying
+  on a fractional-pixel pointer target.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` package configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the native-layout
+  guide and identical exact-symbol Separator output with both native orientation
+  variants. Discovery runs with Node networking disabled. All six existing
+  packaged examples compile and execute.
+
+The [ARIA separator definition](https://www.w3.org/TR/wai-aria-1.2/#separator)
+and [CSS aspect-ratio specification](https://www.w3.org/TR/css-sizing-4/#aspect-ratio)
+inform these contracts. The guide adds no executable example. Other browser engines,
+assistive technologies and the full release matrix remain open.
+
+Logs: `/tmp/cossack-layout-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs}.log`.
+Forty-one of 65 component-source foundations are reviewed. Continue Skeleton,
+Card (including all its slot exports), Badge, Kbd and every pending audit row.
+RT-23 and CLI-07/CLI-08 remain open; the release remains 24 of 58 complete and
+versions stay at 0.8.3 until REL-04.
+
 <a id="codex-breadcrumb-2026-10-04"></a>
 ## Codex Breadcrumb (2026-10-04)
 

@@ -55,7 +55,7 @@ export class LocalizationDemo extends Cossack {
                     </span>
                 </p>
 
-                <div class="mb-8">${component(ButtonGroup, {}, html`
+                <div class="mb-8">${component(ButtonGroup, { label: __('Language') }, html`
                     ${component(Button, { variant: getLocale() === 'en' ? 'default' : 'outline', '@click': () => this.switchLocale('en') }, 'English')}
                     ${component(Button, { variant: getLocale() === 'es' ? 'default' : 'outline', '@click': () => this.switchLocale('es') }, 'Español')}
                     ${component(Button, { variant: getLocale() === 'ru' ? 'default' : 'outline', '@click': () => this.switchLocale('ru') }, 'Русский')}

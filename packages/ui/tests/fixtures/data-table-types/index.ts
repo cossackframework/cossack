@@ -401,3 +401,23 @@ component(Breadcrumb,{items:[{value:'home',label:'Home',href:'/',textProps:{titl
 component(Breadcrumb,{items:[{value:'home',label:'Home',href:'/',linkProps:{'aria-current':'page'}}]});
 // @ts-expect-error Native root attributes are closed.
 component(Breadcrumb,{clas:'trail'});
+
+import { ButtonGroup, Separator, AspectRatio } from '@cossackframework/ui';
+component(ButtonGroup,{label:'Actions','@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;}},html`<button>Save</button>`);
+component(Separator,{'@click':event=>{const rule:HTMLHRElement=event.currentTarget;void rule;}});
+component(Separator,{orientation:'vertical',decorative:true,'@click':event=>{const divider:HTMLDivElement=event.currentTarget;void divider;}});
+component(AspectRatio,{ratio:16/9,style:'max-width:40rem','@click':event=>{const wrapper:HTMLDivElement=event.currentTarget;void wrapper;}},html`<img alt="Cover">`);
+// @ts-expect-error A named group is required.
+component(ButtonGroup,{});
+// @ts-expect-error Native group semantics belong to the component.
+component(ButtonGroup,{label:'Actions',role:'toolbar'});
+// @ts-expect-error Orientation owns its data attribute.
+component(ButtonGroup,{label:'Actions','data-orientation':'vertical'});
+// @ts-expect-error A static separator is not a keyboard splitter.
+component(Separator,{tabindex:0});
+// @ts-expect-error Use decorative instead of overriding owned ARIA state.
+component(Separator,{'aria-hidden':true});
+// @ts-expect-error Ratios are numeric.
+component(AspectRatio,{ratio:'16/9'});
+// @ts-expect-error Native attributes are closed.
+component(AspectRatio,{clas:'media'});

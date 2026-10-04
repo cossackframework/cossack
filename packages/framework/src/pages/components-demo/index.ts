@@ -550,7 +550,7 @@ export class ComponentsDemo extends Cossack {
                 <!-- ButtonGroup -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">ButtonGroup</h2>
-                    ${component(ButtonGroup, {}, html`
+                    ${component(ButtonGroup, { label: 'Alignment' }, html`
                         ${component(Button, { variant: 'outline' }, 'Left')}
                         ${component(Button, { variant: 'outline' }, 'Center')}
                         ${component(Button, { variant: 'outline' }, 'Right')}

@@ -285,10 +285,21 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(breadcrumb.propsContract.members.some(member => member.name === 'items' && member.type.includes('BreadcrumbItem')));
     for (const name of ['BreadcrumbItem', 'BreadcrumbLinkProps', 'BreadcrumbTextProps', 'BreadcrumbListProps']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-breadcrumb'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Breadcrumb', '--json']);
+    for (const name of ['ButtonGroup', 'AspectRatio']) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
+    }
+    const separator = uiSymbols.find(symbol => symbol.name === 'Separator');
+    assert.equal(separator.propsContract.status, 'partial');
+    assert.equal(separator.propsContract.variants.length, 2);
+    for (const target of ['HTMLHRElement', 'HTMLDivElement']) assert.ok(separator.propsContract.variants.some(variant => variant.members.some(member => member.name === '@click' && member.type.includes(target))));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-layout'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Separator', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Breadcrumb']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Breadcrumb' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Separator']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Separator' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

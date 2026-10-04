@@ -465,3 +465,27 @@ a:active {
 .cs-tabs > div + div .cs-tabs__panel {
     /* fallback for non-vertical */
 }
+
+/* ButtonGroup joins only direct native controls; their actions and Tab order stay native. */
+.cs-button-group[data-orientation="horizontal"] { flex-direction: row; }
+.cs-button-group[data-orientation="vertical"] { flex-direction: column; }
+.cs-button-group > :is(button, a) { position: relative; }
+.cs-button-group > :is(button, a):focus-visible { z-index: 1; }
+.cs-button-group[data-orientation="horizontal"] > :is(button, a):not(:first-child) {
+    margin-inline-start: -1px;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+}
+.cs-button-group[data-orientation="horizontal"] > :is(button, a):not(:last-child) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+}
+.cs-button-group[data-orientation="vertical"] > :is(button, a):not(:first-child) {
+    margin-block-start: -1px;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+}
+.cs-button-group[data-orientation="vertical"] > :is(button, a):not(:last-child) {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+}
