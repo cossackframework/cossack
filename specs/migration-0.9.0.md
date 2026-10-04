@@ -1242,3 +1242,23 @@ remain on this element; update selectors that assumed a nested viewport. It defa
 to `tabindex: 0`; use -1 only when keyboard access is supplied elsewhere. Numeric
 height means nonnegative finite pixels, while strings remain CSS values. Authored
 style follows generated height/overflow and may override them.
+
+## Resizable
+
+Replace positional children with explicit `primary` and `secondary` props. Supply
+an `id` unique in the document and a `label` naming the primary panel and handle.
+The old demo's `defaultWidth` never affected sizing; use `defaultSize` (percentage).
+Defaults are captured once. Optional controlled `size` changes only when its caller
+acknowledges `onSizeChange` proposals. Both panels respect `minSize` (0–50).
+
+Root attributes now reach the root div. Use `primaryProps`, `secondaryProps` and
+`handleProps` for other native targets. IDs, visibility, separator semantics and
+keyboard/pointer handlers are component-owned. `orientation` describes panel
+layout; the separator's ARIA orientation is perpendicular. Root styles may override
+the generated layout, but authors then own its geometry. Give the root a height.
+
+The handle supports Tab, axis arrow keys (including RTL), Shift acceleration,
+Home/End and Enter minimize/restore. Zero-width/height panels become inert and
+hidden from assistive technology; focus inside a collapsed panel moves to the
+handle. Pointer capture replaces document mouse listeners. Interruption, prop
+changes and unmount release capture and the owned window-blur listener.

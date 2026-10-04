@@ -549,3 +549,26 @@ component(TableCell, {scope:'col'});
 component(TableHead, {scope:'column'});
 // @ts-expect-error Row props are closed.
 component(TableRow, {clas:'row'});
+
+import { Resizable, type ResizableHandleProps, type ResizablePanelProps } from '@cossackframework/ui';
+const panelProps:ResizablePanelProps={'@click':event=>{const panel:HTMLDivElement=event.currentTarget;void panel;}};
+const handleProps:ResizableHandleProps={'@focus':event=>{const handle:HTMLDivElement=event.currentTarget;void handle;}};
+component(Resizable,{id:'split',label:'Navigation',primary:'First',secondary:'Second',primaryProps:panelProps,secondaryProps:panelProps,handleProps,size:50,minSize:10,step:2,onSizeChange:value=>{const percent:number=value;void percent;},'@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;}});
+// @ts-expect-error Stable IDs are required.
+component(Resizable,{label:'Navigation',primary:'First',secondary:'Second'});
+// @ts-expect-error Separator naming is required.
+component(Resizable,{id:'split',primary:'First',secondary:'Second'});
+// @ts-expect-error Both explicit panels are required.
+component(Resizable,{id:'split',label:'Navigation',primary:'First'});
+// @ts-expect-error The legacy width prop was never implemented.
+component(Resizable,{id:'split',label:'Navigation',primary:'First',secondary:'Second',defaultWidth:100});
+// @ts-expect-error Layout direction is closed.
+component(Resizable,{id:'split',label:'Navigation',primary:'First',secondary:'Second',orientation:'diagonal'});
+// @ts-expect-error Size callbacks receive percentages.
+component(Resizable,{id:'split',label:'Navigation',primary:'First',secondary:'Second',onSizeChange:(size:string)=>size});
+// @ts-expect-error The component owns handle interaction and state.
+const invalidHandle:ResizableHandleProps={'@keydown':()=>{}};
+// @ts-expect-error Panel IDs belong to the relationship contract.
+const invalidPanel:ResizablePanelProps={id:'override'};
+// @ts-expect-error The separator owns its value.
+const invalidValue:ResizableHandleProps={'aria-valuenow':20};

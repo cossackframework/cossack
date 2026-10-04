@@ -88,6 +88,68 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-resizable-2026-10-04"></a>
+## Codex Resizable (2026-10-04)
+
+Author: Codex. Resizable now requires a stable id, a primary-panel label and
+explicit primary/secondary content. Typed root, panel and handle props replace
+the ignored arbitrary attributes and ambiguous positional children. Public
+ResizablePanelProps and ResizableHandleProps define native div targets while the
+component owns IDs, separator values and its interaction handlers. The demo uses
+two real panels and defaultSize instead of the ineffective defaultWidth prop.
+
+Grid tracks divide available space after the handle. Defaults are captured once;
+returning to 50 no longer resets the user's size. Controlled size changes require
+caller acknowledgement of onSizeChange proposals. Finite numeric validation and
+symmetric minSize bounds apply to both panels; minSize=50 disables resizing.
+
+The separator exposes its primary-panel relationship, name, bounds, value and
+perpendicular orientation. Keyboard controls cover axis arrows, RTL, Shift steps,
+Home/End and Enter minimize/restore. An initially minimized panel restores to 50
+when it has no larger previous value. At zero size, panel content is inert and
+hidden from assistive technology; focus inside either collapsed panel moves to
+the handle. The [WAI window splitter pattern](https://www.w3.org/WAI/ARIA/apg/patterns/windowsplitter/)
+informs these roles and relationships; this checkpoint does not claim full
+assistive-technology or cross-browser acceptance.
+
+Mouse/touch dragging uses primary-pointer capture. Pointer completion/cancellation,
+lost capture, window blur, unmount, disabling, orientation/limit/ID changes and
+synchronous callback failures release capture and the owned blur listener. Computed
+text-direction changes cancel on the next pointer movement. Document cursor and
+selection styles are untouched. Geometry is measured at drag start; applications
+must not alter panel layout dimensions mid-drag. App callbacks own asynchronous
+failures and external effects.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 413 tests
+  in 36 files pass. Public declarations reject missing panels/names/IDs, wrong
+  callback types, unsupported options and conflicting owned attributes. SSR covers
+  panel relationships, bounds, defaults, styles, disabled/collapsed states and
+  invalid numeric/semantic options.
+- `pnpm --filter cossack exec vitest run tests/resizable-browser.test.js tests/ui-ejection.test.js`:
+  33 tests pass, including 32 source-ejection checks and strict NodeNext compilation.
+- A final browser-only rerun also passes after strengthening panel event-target,
+  collapsed-focus and expected-error checks. The real Tailwind/UI HTTP fixture
+  checks no-JavaScript layout, retained hydration, native events/child actions,
+  percentages and handle geometry, controlled rejection/acceptance, stable defaults,
+  keyboard/RTL/vertical movement, out-of-bounds drags, unrelated pointers, actual
+  touch cancellation, disabled/fixed states, both collapsed endpoints, prop-change
+  interruption, blur, synchronous callback failure, unmount/remount, preserved
+  document styles and reduced motion. The browser graph excludes server parsers.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes: installed catalogs expose required panel
+  props, native targets, the numeric callback, public prop types and the guide.
+  Exact-symbol Resizable output matches across CLI/MCP. Six existing packaged
+  examples compile and execute. Discovery uses a Node network guard; installation
+  may use the registry. The new guide adds no executable example.
+
+Logs: `/tmp/cossack-resizable-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs}.log`.
+Fifty-seven of 65 UI source rows are reviewed. Continue Sidebar and every pending
+row, then blocks/icons and the full generated-app/runtime matrix. RT-23 and
+CLI-07/CLI-08 remain open. Release status stays 24 of 58 complete and versions
+stay 0.8.3 until REL-04.
+
 <a id="codex-table-scroll-area-2026-10-04"></a>
 ## Codex Table and ScrollArea (2026-10-04)
 

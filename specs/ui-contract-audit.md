@@ -104,7 +104,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Popover](../packages/ui/src/components/Popover.ts) | Reviewed foundation | Stable IDs, typed trigger/panel contracts, native accessibility and dismissal, nested-scroll/resize positioning, disabled fieldsets, SSR/hydration and Chromium acceptance. |
 | [Progress](../packages/ui/src/components/Progress.ts) | Reviewed foundation | Required name, unknown versus determinate values, validated ranges, owned ARIA, human-readable values, reduced motion, native div events, SSR/Chromium and ejected-source coverage. |
 | [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
-| [Resizable](../packages/ui/src/components/Resizable.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Resizable](../packages/ui/src/components/Resizable.ts) | Reviewed foundation | Explicit typed panels/handle, stable defaults and controlled percentages, native separator semantics, keyboard/RTL, mouse/touch capture, endpoint focus and interruption cleanup; SSR/themed Chromium/ejection coverage. |
 | [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Reviewed foundation | Single named viewport, typed native props/events, keyboard scrolling in both axes, numeric/CSS sizing, SSR/hydration and ejection coverage. |
 | [Select](../packages/ui/src/components/Select.ts) | Reviewed foundation | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Separator](../packages/ui/src/components/Separator.ts) | Reviewed foundation | Orientation-specific hr/div native types, textual decorative ARIA states, static separator ownership, one-pixel geometry, SSR/Chromium and ejected-source coverage. |
@@ -125,12 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Resizable, then Sidebar. Resizable currently resets its initial size
-when state equals 50, ignores native props, accepts ambiguous children, and uses
-mouse-only document listeners without unmount cleanup. Define panel/handle
-ownership, pointer and keyboard resizing, constraints and stable defaults. Sidebar
-needs explicit navigation/disclosure types, accessible collapsed/offcanvas behavior,
-native link semantics and focus handling. Preserve actual themed browser coverage.
+Next audit Sidebar. Its root currently ignores native props, navigation has no
+explicit name, and the active-child fallback prevents manual group collapse.
+Groups use array indexes rather than stable identity. Icon mode drops child
+navigation, offcanvas leaves translated content focusable, and onNavigate cancels
+modifier clicks. Define navigation/disclosure contracts, preserve native links,
+and verify focus recovery, RTL, collapsed modes and source ejection.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

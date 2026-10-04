@@ -10,17 +10,17 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-Current partial work: RT-23 has **56 of 65 UI source rows reviewed**, through
-[Table/ScrollArea](./release-0.9.0.md#codex-table-scroll-area-2026-10-04).
+Current partial work: RT-23 has **57 of 65 UI source rows reviewed**, through
+[Resizable](./release-0.9.0.md#codex-resizable-2026-10-04).
 These component checkpoints do not close RT-23 or the release matrix.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with Resizable**, then Sidebar and every pending
-   [UI audit row](./ui-contract-audit.md). Resizable needs stable initial state,
-   explicit panel/handle contracts, typed props, keyboard/pointer resizing,
-   constraints and cleanup on unmount. Its current mouse listeners lack cleanup;
-   the demo uses an unsupported defaultWidth prop and supplies only one panel.
+1. Continue **RT-23 with Sidebar**, then every pending
+   [UI audit row](./ui-contract-audit.md). Sidebar needs named native targets,
+   stable item identity, correct group toggling, reachable nested links in icon
+   mode, offcanvas focus handling and modifier-aware navigation callbacks.
+   Its current root ignores native props and active-child fallback prevents collapse.
    Preserve public types, SSR, themed browser, source ejection, affected consumers
    and installed CLI/MCP guidance.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable

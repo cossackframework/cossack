@@ -596,8 +596,9 @@ export class ComponentsDemo extends Cossack {
                             `)}
                         </div>
                         <div class="border border-border rounded-lg w-96 h-32">
-                            ${component(Resizable, { defaultWidth: 150 },
-                                html`<div class="p-3 text-sm">Left panel — drag the handle →</div>`)}
+                            ${component(Resizable, { id: 'demo-split', label: 'Navigation panel', defaultSize: 40,
+                                primary: html`<div class="p-3 text-sm">Drag the handle or use its arrow keys.</div>`,
+                                secondary: html`<div class="p-3 text-sm">Content panel</div>` })}
                         </div>
                     </div>
                 </section>
