@@ -6,6 +6,49 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-server-dispatch-evidence-2026-10-04"></a>
+## Codex HTTP server dispatch evidence (2026-10-04)
+
+Author: Codex. Active captures now request bounded server evidence for HTTP/SSE
+component actions and explicit services, including multipart/progress uploads.
+Request-local router instrumentation records receipt, invocation, method return
+and response creation. The client accepts one fixed-field record only when call
+ID, request ID and HTTP status match. A separate dispatch ID identifies the server
+request. The shared Vite/CLI/MCP reader accepts the same `server-rpc` event.
+Arguments, names, state values and raw errors are excluded; production removes
+client capture and server instrumentation.
+
+The broader RPC matrix also exposed a regression in the prior paused-deadline fix:
+an immediate application error could discard its preceding WebSocket yield.
+Local transport interruptions now carry an internal flag; server application
+errors retain ordered delivery after yields, regardless of their error code.
+Disconnects, invalid frames, overflow and deadlines still interrupt paused calls.
+
+Verification:
+
+- Core: **1,491 tests / 92 files pass**, including actual proxy/header correlation,
+  malformed and mismatched evidence, capture replacement, ordered WebSocket errors,
+  paused transport interruptions and production capture exclusion.
+  Command: `pnpm --filter @cossackframework/core exec vitest run`.
+  Log: `/tmp/cossack-server-evidence-core-verified.log`.
+- Framework: **559 tests / 6 files pass**, including the expanded shared RPC
+  matrix, JSON/multipart component and service dispatch, denied/failed/native and
+  generator results, stored-record exclusion, and production bundle checks.
+  Command: `pnpm --filter @cossackframework/framework exec vitest run tests/router-rpc-stream.test.ts tests/rpc-conformance-matrix.test.ts tests/rpc-child-targets.test.ts tests/rpc-resource-reconstruction.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`.
+  Log: `/tmp/cossack-server-evidence-framework-final.log`.
+- MCP: **15 tests pass**, including SDK/CLI parity for stored server evidence.
+  Command: `pnpm --filter cossack exec vitest run tests/mcp.test.js`.
+  Log: `/tmp/cossack-server-evidence-mcp.log`.
+- Core build, framework declaration build, root `pnpm tsc --noEmit` and
+  `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-server-evidence-rebuild.log`, `/tmp/cossack-server-evidence-types-final.log`.
+
+Limits: response creation does not prove generator/native-body completion or
+remote cleanup. Server stream terminals and WebSocket dispatch evidence remain
+open, along with full generated development-trace and installed-tarball acceptance.
+Browser and server clocks are distinct; records are editable local observations,
+not authenticated logs. No task closes: **25 complete, 33 open**.
+
 <a id="codex-paused-rpc-deadlines-2026-10-04"></a>
 ## Codex paused RPC deadlines (2026-10-04)
 

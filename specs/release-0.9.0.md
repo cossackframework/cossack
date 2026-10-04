@@ -18,7 +18,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Shared documentation and stored test evidence are implemented. Stored devtools traces and HTTP server dispatch evidence now share the reader. Server stream/WebSocket correlation and full generated acceptance remain open. See the [dispatch checkpoint](#codex-server-dispatch-evidence-2026-10-04).
+- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Shared documentation and stored test evidence are implemented. Stored devtools traces and HTTP server dispatch evidence now share the reader. Delivered generator terminal evidence is implemented. WebSocket/native-body correlation and full generated acceptance remain open. See the [terminal checkpoint](#codex-stream-terminal-evidence-2026-10-04).
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
@@ -88,48 +88,44 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-server-dispatch-evidence-2026-10-04"></a>
-### Codex HTTP server dispatch evidence (2026-10-04)
+<a id="codex-stream-terminal-evidence-2026-10-04"></a>
+### Codex delivered RPC stream terminal evidence (2026-10-04)
 
-Author: Codex. Active captures now request bounded server evidence for HTTP/SSE
-component actions and explicit services, including multipart/progress uploads.
-Request-local router instrumentation records receipt, invocation, method return
-and response creation. The client accepts one fixed-field record only when call
-ID, request ID and HTTP status match. A separate dispatch ID identifies the server
-request. The shared Vite/CLI/MCP reader accepts the same `server-rpc` event.
-Arguments, names, state values and raw errors are excluded; production removes
-client capture and server instrumentation.
+Author: Codex. Opted-in HTTP/SSE component and service generators now attach a
+bounded record to their terminal frame after request cleanup is attempted. It
+reports outcome and cleanup separately, and joins the call/request/dispatch IDs
+from the earlier response header. Core records one `server-stream` event only
+after normal stream and EOF validation. Untrusted metadata is strictly parsed;
+missing, malformed or mismatched metadata does not change application behavior.
+The shared stored-record reader exposes the same event to CLI and MCP.
 
-The broader RPC matrix also exposed a regression in the prior paused-deadline fix:
-an immediate application error could discard its preceding WebSocket yield.
-Local transport interruptions now carry an internal flag; server application
-errors retain ordered delivery after yields, regardless of their error code.
-Disconnects, invalid frames, overflow and deadlines still interrupt paused calls.
+Serialization snapshots application values once. Optional evidence is omitted at
+the byte limit, with room reserved for an SSE coordinator cursor. Cancellation
+never invents server completion. Production excludes both collection and encoding.
 
 Verification:
 
-- Core: **1,491 tests / 92 files pass**, including actual proxy/header correlation,
-  malformed and mismatched evidence, capture replacement, ordered WebSocket errors,
-  paused transport interruptions and production capture exclusion.
-  Command: `pnpm --filter @cossackframework/core exec vitest run`.
-  Log: `/tmp/cossack-server-evidence-core-verified.log`.
-- Framework: **559 tests / 6 files pass**, including the expanded shared RPC
-  matrix, JSON/multipart component and service dispatch, denied/failed/native and
-  generator results, stored-record exclusion, and production bundle checks.
-  Command: `pnpm --filter @cossackframework/framework exec vitest run tests/router-rpc-stream.test.ts tests/rpc-conformance-matrix.test.ts tests/rpc-child-targets.test.ts tests/rpc-resource-reconstruction.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`.
-  Log: `/tmp/cossack-server-evidence-framework-final.log`.
-- MCP: **15 tests pass**, including SDK/CLI parity for stored server evidence.
-  Command: `pnpm --filter cossack exec vitest run tests/mcp.test.js`.
-  Log: `/tmp/cossack-server-evidence-mcp.log`.
-- Core build, framework declaration build, root `pnpm tsc --noEmit` and
+- `pnpm --filter @cossackframework/core exec vitest run`:
+  **1,497 tests / 92 files pass**, including correlated terminals, stopped captures,
+  malformed/mismatched records, valid error delivery and trailing-data rejection.
+  Log: `/tmp/cossack-stream-evidence-core.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-stream.test.ts tests/router-rpc-stream.test.ts tests/sse-coordinator-transport.test.ts tests/rpc-conformance-matrix.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
+  **572 tests / 6 files pass**. Real JSON/multipart router dispatch, success/action
+  failure/cleanup failure, cancellation, byte-limit omission, one-time application
+  serialization, service-proxy storage and production exclusion pass.
+  Log: `/tmp/cossack-stream-evidence-framework.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`:
+  **15 tests pass**, including CLI/MCP parity for stored dispatch and stream terminals.
+  Log: `/tmp/cossack-stream-evidence-mcp.log`.
+- Core build, framework declarations, root `pnpm tsc --noEmit` and
   `pnpm typecheck` pass (all 11 packages).
-  Logs: `/tmp/cossack-server-evidence-rebuild.log`, `/tmp/cossack-server-evidence-types-final.log`.
+  Logs: `/tmp/cossack-stream-evidence-build-final.log`, `/tmp/cossack-stream-evidence-types.log`.
 
-Limits: response creation does not prove generator/native-body completion or
-remote cleanup. Server stream terminals and WebSocket dispatch evidence remain
-open, along with full generated development-trace and installed-tarball acceptance.
-Browser and server clocks are distinct; records are editable local observations,
-not authenticated logs. No task closes: **25 complete, 33 open**.
+Limits: this reports the producing action's request cleanup, not all downstream
+coordinator/network work. Lost or invalidated delivery has no accepted server
+terminal. WebSocket and native-body server lifecycle evidence, full generated
+application acceptance and installed tarballs remain open under RT-28/CLI-07.
+No task closes: **25 complete, 33 open**.
 
 ### Archived checkpoints
 
@@ -140,6 +136,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-server-dispatch-evidence-2026-10-04"></a>[Codex HTTP server dispatch evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-server-dispatch-evidence-2026-10-04) |
 | <a id="codex-paused-rpc-deadlines-2026-10-04"></a>[Codex paused RPC deadlines (2026-10-04)](./release-0.9.0-verification-archive.md#codex-paused-rpc-deadlines-2026-10-04) |
 | <a id="codex-service-traces-2026-10-04"></a>[Codex explicit service RPC traces (2026-10-04)](./release-0.9.0-verification-archive.md#codex-service-traces-2026-10-04) |
 | <a id="codex-trace-bridge-2026-10-04"></a>[Codex project-bound trace bridge (2026-10-04)](./release-0.9.0-verification-archive.md#codex-trace-bridge-2026-10-04) |

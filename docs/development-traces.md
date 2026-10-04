@@ -33,7 +33,8 @@ history is incomplete and may contain a terminal event without its start.
 
 Events form a discriminated union. Check `event.kind` before reading fields:
 `rpc` describes component calls, `service-rpc` describes explicit layout-service
-calls, `server-rpc` carries server dispatch evidence, and `navigation` describes navigation decisions.
+calls, `server-rpc` carries server dispatch evidence, `server-stream` carries delivered
+RPC stream terminal evidence, and `navigation` describes navigation decisions.
 
 RPC calls share a local `callId` and a UUID `requestId` when available. Component
 calls have an opaque `componentId`; service calls have a separate opaque `serviceId`.
@@ -98,7 +99,8 @@ has an invocation marker but no return marker. A denied dispatch has neither.
 
 Returning a generator records `stream` before its body runs. Returning a native
 Response records `native` before its body completes. Neither proves streaming
-success, cleanup or delivery. Server stream terminal events and WebSocket dispatch
+success, cleanup or delivery. A separate `server-stream` event can report a
+delivered RPC generator terminal. WebSocket dispatch and native-body terminal
 evidence remain pending. Calls interrupted before response headers have no such
 record; absence does not prove that the server did not execute them.
 
@@ -109,6 +111,29 @@ accepts at most one record per call. Evidence follows the original capture owner
 and shares its bounded buffer. CLI and MCP read the same stored event. These are
 response-carried observations, not authenticated server logs; a local browser or
 proxy can edit them. They contain no arguments, state values, names or raw errors.
+
+### Delivered stream terminals
+
+For an opted-in HTTP RPC generator, the terminal `done` or `error` frame may carry
+one bounded `developmentTrace` record. It becomes a `server-stream` event only
+after the client validates the full stream, including end of body. The record must
+match the call ID, request ID and dispatch ID from the earlier `server-rpc` record.
+A done frame reports `outcome: 'succeeded'`; an error frame reports `failed`.
+`cleanup` separately reports `completed` or `failed`, and `finishedAt` uses the
+server clock. Successful terminals require completed request cleanup. An action
+failure may still have completed cleanup.
+
+This record covers the producing action's request cleanup, not all downstream
+coordinator or network work. It does not undo external effects. Cancellation,
+disconnect, truncation or invalid data after the terminal can prevent delivery or
+validation, so no server terminal is inferred from a local finish event. No record
+is sent on intermediate yields. The response encoder omits optional evidence when
+it would crowd the frame byte limit, including space for an SSE coordinator cursor.
+Missing evidence never establishes that the server failed or stopped.
+
+Malformed evidence is ignored without changing application results. Valid records
+share the capture's bounded buffer and are available through the same CLI/MCP
+reader. Production removes the server evidence encoder and client collector.
 
 ## Component snapshots
 

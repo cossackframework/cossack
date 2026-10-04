@@ -10,6 +10,7 @@ interface RpcStreamOptions {
     getStateCursor?: () => number | undefined;
     onState?: (state: Record<string, unknown>) => void | Promise<void>;
     cleanup: () => Promise<void>;
+    developmentTrace?: (outcome: 'succeeded' | 'failed', cleanup: 'completed' | 'failed') => string;
 }
 
 export function isRpcStream(result: unknown): result is AsyncIterable<unknown> {
@@ -81,16 +82,29 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
     let closed = false;
     let finished = false;
     let cleanupPromise: Promise<void> | undefined;
-    const encode = (frame: RpcStreamFrame) => {
+    const snapshot = (frame: RpcStreamFrame) => {
+        try { return snapshotRpcFrame(frame); }
+        catch (cause) {
+            if (cause instanceof RpcError) throw cause;
+            throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED', 'Cannot serialize RPC stream value or state.', { cause });
+        }
+    };
+    const encode = (frame: unknown, development?: string) => {
         let bytes: Uint8Array;
-        try { bytes = encoder.encode(`${JSON.stringify(snapshotRpcFrame(frame))}\n`); }
+        try { bytes = encoder.encode(`${JSON.stringify(frame)}\n`); }
         catch (cause) {
             if (cause instanceof RpcError) throw cause;
             throw new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
-                `Cannot serialize RPC stream ${frame.type} value or state.`, { cause });
+                'Cannot serialize RPC stream value or state.', { cause });
         }
         if (bytes.length - 1 > RPC_STREAM_MAX_FRAME_BYTES) {
             throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC stream frame exceeds the byte limit.');
+        }
+        if (import.meta.env.DEV && development) {
+            const candidate = encoder.encode(`${JSON.stringify({ ...(frame as Record<string, unknown>), developmentTrace: development })}\n`);
+            // Observability must not turn an otherwise valid frame into a size failure.
+            // Leave room for the SSE coordinator to add its numeric state cursor.
+            if (candidate.length - 1 + 64 <= RPC_STREAM_MAX_FRAME_BYTES) return candidate;
         }
         return bytes;
     };
@@ -122,27 +136,32 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                     const state = options.getState();
                     await options.onState?.(state);
                     const cursor = options.getStateCursor?.();
-                    const bytes = encode({ v: 1, type: finished ? 'done' : 'yield',
+                    const frame = snapshot({ v: 1, type: finished ? 'done' : 'yield',
                         requestId: options.requestId, value: next.value,
                         state: cursor === undefined ? state : { ...state, _cossack_sse_cursor: cursor },
                         ...(options.getScopeState ? { scopeState: options.getScopeState() } : {}) });
+                    let bytes = encode(frame);
                     if (finished) await cleanup();
                     if (closed) return;
+                    if (import.meta.env.DEV && finished && options.developmentTrace) {
+                        bytes = encode(frame, options.developmentTrace('succeeded', 'completed'));
+                    }
                     controller.enqueue(bytes);
                     if (finished) { closed = true; controller.close(); }
                 } catch (error) {
                     if (closed) return;
                     console.error('[Cossack RPC] stream failed:', { requestId: options.requestId, error });
+                    let cleanupFailed = false;
                     try { await cleanup(); }
-                    catch (cleanupError) { console.error('[Cossack RPC] cleanup failed:', { requestId: options.requestId, error: cleanupError }); }
+                    catch (cleanupError) { cleanupFailed = true; console.error('[Cossack RPC] cleanup failed:', { requestId: options.requestId, error: cleanupError }); }
                     if (closed) return;
                     closed = true;
-                    controller.enqueue(encode({ v: 1, type: 'error', requestId: options.requestId,
+                    controller.enqueue(encode(snapshot({ v: 1, type: 'error', requestId: options.requestId,
                         code: isActionValidationError(error) ? error.validationCode : isClientVisibleError(error) ? 'COSSACK_RPC_CLIENT_ERROR'
                             : error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR',
                         fieldErrors: isActionValidationError(error) || error instanceof RpcError ? error.fieldErrors : undefined,
                         message: isClientVisibleError(error) || error instanceof RpcError
-                            ? error.message : 'Internal Server Error' }));
+                            ? error.message : 'Internal Server Error' }), import.meta.env.DEV ? options.developmentTrace?.('failed', cleanupFailed ? 'failed' : 'completed') : undefined));
                     controller.close();
                 }
             });

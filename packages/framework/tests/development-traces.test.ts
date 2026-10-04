@@ -129,3 +129,25 @@ it('persists response-carried server evidence and rejects extra server payload f
     expect((await readDevelopmentTraces(dir)).data.record?.snapshot).toEqual(s);
     s.events[0].payload = 'private'; expect(() => parseDevelopmentTrace(JSON.stringify(s))).toThrow();
 });
+
+it('records and stores a real service proxy stream terminal alongside its dispatch', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+        const headers = new Headers(init.headers), callId=headers.get('X-Cossack-Development-Trace'), requestId=headers.get('X-Cossack-Request-Id'), dispatchId=randomUUID();
+        const evidence={schemaVersion:1,callId,requestId,dispatchId,receivedAt:1,invokedAt:2,returnedAt:3,respondedAt:4,result:'stream',status:200};
+        return new Response(JSON.stringify({v:1,type:'done',requestId,state:{count:4},value:4,
+            developmentTrace:JSON.stringify({schemaVersion:1,callId,requestId,dispatchId,finishedAt:5,outcome:'succeeded',cleanup:'completed'})})+'\n',
+            {headers:{'Content-Type':'application/x-cossack-rpc+ndjson','X-Cossack-Request-Id':requestId!,'X-Cossack-Development-Trace':JSON.stringify(evidence)}});
+    });
+    @Service() class Counter { @State() count=0; @Server() edit(){return 0;} }
+    const scope=new ServiceScope(undefined,[Counter],{ownerRouteId:'private'}),capture=startDevelopmentTrace();
+    try {
+        expect(await scope.resolveDeclared(Counter).edit()).toBe(4);
+        const snapshot=capture.snapshot();
+        expect(snapshot.events.map(e=>e.kind)).toEqual(['service-rpc','service-rpc','server-rpc','server-stream','service-rpc','service-rpc']);
+        const dir=await root();await writeDevelopmentTrace(dir,randomUUID(),JSON.stringify(snapshot));
+        expect((await readDevelopmentTraces(dir)).data.record?.snapshot).toEqual(snapshot);
+        const bad=structuredClone(snapshot) as any;bad.events[3].payload='private';
+        expect(()=>parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
+    } finally {capture.stop();await scope.disposeAsync();}
+});

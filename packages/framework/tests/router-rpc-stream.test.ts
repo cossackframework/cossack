@@ -1,4 +1,4 @@
-import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence } from '@cossackframework/core/devtools';
+import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence } from '@cossackframework/core/devtools';
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -136,7 +136,10 @@ describe.each(['json', 'multipart'] as const)('%s router RPC streaming lifecycle
         expect(evidence?.dispatchId).not.toBe(callId);
         expect(effects.closed).toBe(0);
         expect(JSON.stringify(evidence)).not.toMatch(/APP_SECRET|ownerRouteId|serviceStream|scopeKey/);
-        await collect(response); expect(effects.closed).toBe(1);
+        const frames = await collect(response); expect(effects.closed).toBe(1);
+        expect(frames.slice(0,-1).every(frame => frame.developmentTrace === undefined)).toBe(true);
+        expect(parseDevelopmentStreamEvidence(frames.at(-1)?.developmentTrace)).toMatchObject({callId, requestId, dispatchId:evidence?.dispatchId,
+            outcome:'succeeded', cleanup:'completed', finishedAt:expect.any(Number)});
     });
     it('distinguishes method return, denied dispatch and thrown actions; skips inactive captures', async () => {
         const headers = { [DEVELOPMENT_RPC_HEADER]: crypto.randomUUID() };

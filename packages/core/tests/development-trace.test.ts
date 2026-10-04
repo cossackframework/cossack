@@ -185,3 +185,24 @@ it('carries opt-in dispatch evidence through a real HTTP proxy and state reconci
     expect(events[2]).toMatchObject({callId: rpcEvents()[0].callId, requestId:rpcEvents()[0].requestId, result:'value'});
     expect(target.count).toBe(8);
 });
+
+it.each(['done', 'error', 'trailing'] as const)('records server stream completion only after validated %s consumption', async ending => {
+    session = startDevelopmentTrace();
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+        const headers = new Headers(init.headers), callId = headers.get('X-Cossack-Development-Trace'), requestId = headers.get('X-Cossack-Request-Id')!, dispatchId = crypto.randomUUID();
+        const evidence = {schemaVersion:1, callId, requestId, dispatchId, receivedAt:1, invokedAt:2, returnedAt:3, respondedAt:4, result:'stream', status:200};
+        const terminal = {schemaVersion:1,callId,requestId,dispatchId,finishedAt:5,outcome:ending==='error'?'failed':'succeeded',cleanup:'completed'};
+        const body = [
+            {v:1,type:'yield',requestId,state:{count:7},value:7},
+            {...(ending==='error'?{v:1,type:'error',requestId,code:'COSSACK_RPC_CLIENT_ERROR',message:'application failure'}:{v:1,type:'done',requestId,state:{count:8},value:8}),developmentTrace:JSON.stringify(terminal)},
+        ].map(frame=>JSON.stringify(frame)+'\n').join('')+(ending==='trailing'?'unexpected':'');
+        return new Response(body,{headers:{'Content-Type':'application/x-cossack-rpc+ndjson','X-Cossack-Request-Id':requestId,'X-Cossack-Development-Trace':JSON.stringify(evidence)}});
+    }));
+    const target = component(), call = target.run();
+    if(ending==='done') expect(await call).toBe(8);
+    else await expect(call).rejects.toMatchObject({code:ending==='error'?'COSSACK_RPC_CLIENT_ERROR':'COSSACK_RPC_STREAM_INVALID'});
+    expect(target.count).toBe(ending==='done'?8:7);
+    const terminals=session.snapshot().events.filter(event=>event.kind==='server-stream');
+    expect(terminals).toHaveLength(ending==='trailing'?0:1);
+    if(ending!=='trailing')expect(terminals[0]).toMatchObject({outcome:ending==='done'?'succeeded':'failed',cleanup:'completed'});
+});

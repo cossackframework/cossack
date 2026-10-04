@@ -1642,3 +1642,13 @@ the next iterator pull observes the interruption once before later pulls finish.
 Explicit cancellation uses `COSSACK_RPC_CANCELLED`; deadlines use
 `COSSACK_RPC_TIMEOUT`. Already reconciled state is retained. See [RPC failure
 semantics](../docs/rpc.md) for remote-outcome limits.
+
+
+## Development server evidence
+
+Development snapshots now include `server-rpc` dispatch and `server-stream`
+terminal event kinds. Narrow on `kind` before reading fields. Terminal evidence
+joins an earlier dispatch ID and reports cleanup separately from outcome. It is
+optional and does not change RPC results; local cancellation never implies a
+server terminal. Server timestamps use a different clock from browser receipt
+timestamps. See [development traces](../docs/development-traces.md#server-dispatch-evidence).

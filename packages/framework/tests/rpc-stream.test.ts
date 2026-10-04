@@ -107,3 +107,35 @@ describe('response-local RPC streams', () => {
         expect(failed.cleanup).toHaveBeenCalledOnce();
     });
 });
+
+
+it.each(['success', 'action-failure', 'cleanup-failure'] as const)('reports %s terminal evidence only after cleanup', async ending => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let cleaned = false, serialized = 0;
+    const response = createRpcStreamResponse({requestId:'evidence-test',signal:new AbortController().signal,
+        result:(async function* () { yield 1; if (ending === 'action-failure') throw new ClientVisibleError('private failure');
+            return {toJSON(){serialized++;return 2;}}; })(), getState:()=>({count:1}),
+        cleanup:async()=>{cleaned=true;if(ending==='cleanup-failure')throw new Error('private cleanup');},
+        developmentTrace:(outcome,cleanup)=>{expect(cleaned).toBe(true);return JSON.stringify({outcome,cleanup});},
+    });
+    const frames = await collect(response);
+    expect(frames[0].developmentTrace).toBeUndefined();
+    expect(JSON.parse(String(frames.at(-1)!.developmentTrace))).toEqual({outcome:ending==='success'?'succeeded':'failed',cleanup:ending==='cleanup-failure'?'failed':'completed'});
+    expect(frames.at(-1)!.type).toBe(ending==='success'?'done':'error');
+    expect(serialized).toBe(ending==='action-failure'?0:1);
+});
+it('omits optional evidence rather than failing a terminal frame at the byte limit', async () => {
+    const overhead = JSON.stringify({v:1,type:'done',requestId:'a',value:'',state:{}}).length;
+    const value = 'x'.repeat(RPC_STREAM_MAX_FRAME_BYTES-overhead);
+    const response=createRpcStreamResponse({requestId:'a',signal:new AbortController().signal,result:(async function*(){return value;})(),
+        getState:()=>({}),cleanup:async()=>{},developmentTrace:()=>JSON.stringify({outcome:'succeeded'})});
+    const frames=await collect(response);expect(frames).toHaveLength(1);expect(frames[0].type).toBe('done');
+    expect(frames[0].developmentTrace).toBeUndefined();expect((frames[0] as any).value).toBe(value);
+});
+it('does not invent terminal evidence when the response consumer cancels', async () => {
+    const evidence=vi.fn(()=> '{}'), cleanup=vi.fn(async()=>{});
+    const response=createRpcStreamResponse({requestId:'a',signal:new AbortController().signal,result:(async function*(){yield 1;return 2;})(),
+        getState:()=>({}),cleanup,developmentTrace:evidence});
+    const reader=response.body!.getReader();await reader.read();await reader.cancel();reader.releaseLock();
+    expect(cleanup).toHaveBeenCalledTimes(1);expect(evidence).not.toHaveBeenCalled();
+});

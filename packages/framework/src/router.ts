@@ -901,9 +901,9 @@ export function createApp(options: CreateAppOptions = {}) {
         // Generator results stream through the same response-local protocol as
         // component calls; the stream owns request-scope cleanup until it ends.
         if (isRpcStream(actionResult)) {
-          if (import.meta.env.DEV) developmentRpcStream(c);
           const finishResponseLifetime = retainResponseLifetime(c);
           const response = createRpcStreamResponse({
+            ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
             result: actionResult, requestId, signal: c.req.raw.signal,
             getState: () => getServiceState(owned.instance),
             cleanup: async () => {
@@ -1127,10 +1127,10 @@ export function createApp(options: CreateAppOptions = {}) {
           throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
         }
         if (isRpcStream(actionResult)) {
-          if (import.meta.env.DEV) developmentRpcStream(c);
           finishResponseLifetime = retainResponseLifetime(c);
           let localSseCursor: number | undefined;
           const response = createRpcStreamResponse({
+            ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
             result: actionResult, requestId, signal: componentContext.req.raw.signal,
             getState: () => targetInstance.getPublicState(),
             getScopeState: sseStub && targetInstance !== componentInstance

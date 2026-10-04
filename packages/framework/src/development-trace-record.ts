@@ -1,4 +1,4 @@
-import { parseDevelopmentRpcEvidence } from '@cossackframework/core/devtools';
+import { parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence } from '@cossackframework/core/devtools';
 import type { DevelopmentTraceSnapshot } from '@cossackframework/core/devtools';
 
 export const DEVELOPMENT_TRACE_DIRECTORY = '.cossack/development-traces';
@@ -62,6 +62,10 @@ export function parseDevelopmentTrace(json: string): DevelopmentTraceSnapshot {
             const { kind, sequence, timestamp, phase, ...evidence } = e;
             choice(phase, ['response']);
             if (!parseDevelopmentRpcEvidence(JSON.stringify(evidence))) throw invalid();
+        } else if (e.kind === 'server-stream') {
+            const { kind, sequence, timestamp, phase, ...evidence } = e;
+            choice(phase, ['finish']);
+            if (!parseDevelopmentStreamEvidence(JSON.stringify(evidence))) throw invalid();
         } else if (e.kind === 'navigation') {
             const fields: Record<string, string[]> = { start: ['navigationType'], cache: ['decision'], invalidate: ['entries'], layouts: ['retained', 'created', 'retired', 'rootReplaced'], scroll: ['behavior', 'decision'], transition: ['decision'], finish: ['outcome', 'committed'], 'component-prepared': ['componentId', 'role'] };
             if (!Object.hasOwn(fields, e.phase)) throw invalid(); object(e, [...common, 'navigationId', ...fields[e.phase]]);

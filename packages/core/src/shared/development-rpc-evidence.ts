@@ -28,3 +28,26 @@ export function parseDevelopmentRpcEvidence(json: string | null): DevelopmentRpc
         return e;
     } catch { return; }
 }
+
+/** A delivered RPC terminal frame, after request cleanup was attempted. */
+export interface DevelopmentStreamEvidence {
+    schemaVersion: 1;
+    callId: string;
+    requestId: string;
+    dispatchId: string;
+    finishedAt: number;
+    outcome: 'succeeded' | 'failed';
+    cleanup: 'completed' | 'failed';
+}
+export function parseDevelopmentStreamEvidence(json: unknown): DevelopmentStreamEvidence | undefined {
+    if (typeof json !== 'string' || json.length > 1024) return;
+    try {
+        const e = JSON.parse(json);
+        const keys = ['schemaVersion', 'callId', 'requestId', 'dispatchId', 'finishedAt', 'outcome', 'cleanup'];
+        if (!e || typeof e !== 'object' || Array.isArray(e) || Object.keys(e).length !== keys.length || keys.some(k => !Object.hasOwn(e, k))) return;
+        if (e.schemaVersion !== 1 || ['callId', 'requestId', 'dispatchId'].some(k => typeof e[k] !== 'string' || !uuid.test(e[k]))) return;
+        if (!time(e.finishedAt) || !['succeeded', 'failed'].includes(e.outcome) || !['completed', 'failed'].includes(e.cleanup)) return;
+        if (e.outcome === 'succeeded' && e.cleanup !== 'completed') return;
+        return e;
+    } catch { return; }
+}

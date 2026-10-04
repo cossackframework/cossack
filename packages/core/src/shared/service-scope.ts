@@ -421,6 +421,7 @@ export class ServiceScope {
                                     requestId = frame.requestId;
                                     trace?.response(requestId);
                                 }
+                                trace?.stream(frame);
                                 if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                                     { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                                 if (frame.state && typeof frame.state === 'object') {

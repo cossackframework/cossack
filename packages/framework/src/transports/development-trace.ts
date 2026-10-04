@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono';
-import { DEVELOPMENT_RPC_HEADER, type DevelopmentRpcEvidence } from '@cossackframework/core/devtools';
+import { DEVELOPMENT_RPC_HEADER, type DevelopmentRpcEvidence, type DevelopmentStreamEvidence } from '@cossackframework/core/devtools';
 
 const key = 'cossack:development-rpc-evidence';
 /** Request-local only. An explicit browser capture opts in; production installs nothing. */
@@ -30,8 +30,11 @@ export function developmentRpcReturned(c: Context, result: DevelopmentRpcEvidenc
 }
 
 /** Called only after the existing dispatcher has classified a stream; never inspects application objects. */
-export function developmentRpcStream(c: Context): void {
+export function developmentRpcStream(c: Context, requestId: string): ((outcome: DevelopmentStreamEvidence['outcome'], cleanup: DevelopmentStreamEvidence['cleanup']) => string) | undefined {
     if (!import.meta.env.DEV) return;
     const evidence = c.get(key) as DevelopmentRpcEvidence | undefined;
-    if (evidence) evidence.result = 'stream';
+    if (!evidence) return;
+    evidence.result = 'stream';
+    return (outcome, cleanup) => JSON.stringify({ schemaVersion: 1, callId: evidence.callId, requestId, dispatchId: evidence.dispatchId,
+        finishedAt: Date.now(), outcome, cleanup } satisfies DevelopmentStreamEvidence);
 }

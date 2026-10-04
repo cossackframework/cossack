@@ -340,6 +340,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                 optimisticCall.requestId = requestId;
                                 trace?.response(requestId);
                             }
+                            trace?.stream(frame);
                             if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                                 { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                             if (!invalidated) { invalidateClientPageCache(); invalidated = true; }

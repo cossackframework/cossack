@@ -1,4 +1,4 @@
-import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
+import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, type DevelopmentStreamEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
 import { inspectDevelopmentComponent, type DevelopmentInspectionOptions, type DevelopmentComponentSnapshot } from './development-inspection';
 import type { NavigateOutcome, NavigationScrollBehavior, NavigationType } from '../client/navigation';
 
@@ -44,7 +44,13 @@ export interface DevelopmentServerRpcEvent extends DevelopmentRpcEvidence {
     readonly timestamp: number;
     readonly phase: 'response';
 }
-export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent;
+export interface DevelopmentServerStreamEvent extends DevelopmentStreamEvidence {
+    readonly kind: 'server-stream';
+    readonly phase: 'finish';
+    readonly sequence: number;
+    readonly timestamp: number;
+}
+export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent | DevelopmentServerStreamEvent;
 
 export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
@@ -178,6 +184,7 @@ function navigationDiagnostic(event: DevelopmentNavigationDiagnostic): Developme
 export interface DevelopmentRpcTrace {
     readonly requestHeaders: Readonly<Record<string, string>>;
     server(response: Response): void;
+    stream(frame: { type: string; requestId: string; developmentTrace?: unknown }): void;
     response(requestId: string): void;
     state(): void;
     finish(outcome: DevelopmentRpcOutcome): void;
@@ -210,15 +217,24 @@ function rpcTrace(collector: Collector, identity:
         append(collector, event);
     };
     emit('start');
-    let serverRecorded = false;
+    let serverRecorded: DevelopmentRpcEvidence | undefined;
+    let streamRecorded = false;
     return {
         requestHeaders: { [DEVELOPMENT_RPC_HEADER]: identity.callId },
         server: response => {
             if (finished || !collector.collecting || serverRecorded) return;
             const evidence = parseDevelopmentRpcEvidence(response.headers.get(DEVELOPMENT_RPC_HEADER));
             if (!evidence || evidence.callId !== identity.callId || evidence.requestId !== wireId || evidence.status !== response.status) return;
-            serverRecorded = true;
+            serverRecorded = evidence;
             append(collector, { ...evidence, kind: 'server-rpc', phase: 'response', sequence: ++collector.sequence, timestamp: Date.now() });
+        },
+        stream: frame => {
+            if (finished || !collector.collecting || streamRecorded || serverRecorded?.result !== 'stream') return;
+            const evidence = parseDevelopmentStreamEvidence(frame.developmentTrace);
+            if (!evidence || evidence.callId !== identity.callId || evidence.requestId !== wireId || evidence.requestId !== frame.requestId
+                || evidence.dispatchId !== serverRecorded.dispatchId || evidence.outcome !== (frame.type === 'done' ? 'succeeded' : frame.type === 'error' ? 'failed' : null)) return;
+            streamRecorded = true;
+            append(collector, { ...evidence, kind: 'server-stream', phase: 'finish', sequence: ++collector.sequence, timestamp: Date.now() });
         },
         response: request => { wireId = uuid.test(request) ? request : null; emit('response'); },
         state: () => emit('state-reconciled'),

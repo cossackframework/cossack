@@ -5,9 +5,10 @@ export const RPC_STREAM_MAX_FRAME_BYTES = 1024 * 1024;
 export const RPC_NATIVE_RESPONSE_HEADER = 'X-Cossack-Rpc-Response';
 export const RPC_NATIVE_RESPONSE_MAX_BYTES = 1024 * 1024;
 
-export type RpcStreamFrame =
+/** Optional development evidence is ignored by the production protocol consumer. */
+export type RpcStreamFrame = { developmentTrace?: unknown } & (
     | { v: 1; type: 'yield' | 'done'; requestId: string; state: Record<string, unknown>; value?: unknown; scopeState?: Record<string, unknown> }
-    | { v: 1; type: 'error'; requestId: string; code: string; message: string; fieldErrors?: Record<string, unknown> };
+    | { v: 1; type: 'error'; requestId: string; code: string; message: string; fieldErrors?: Record<string, unknown> });
 
 /** Stable transport diagnostics. Application failures reject the RPC call. */
 export class RpcError extends Error {

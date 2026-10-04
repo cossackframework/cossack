@@ -1005,5 +1005,17 @@ result kind and HTTP status. The client validates correlation and fields before
 appending one `server-rpc` event to its original bounded capture. Vite storage,
 CLI and MCP use the same strict event schema. Production removes instrumentation.
 This evidence describes dispatch and response creation, not body completion;
-stream terminals and WebSocket server evidence remain open. See the
+WebSocket and native-body terminal server evidence remain open. See the
 [trace guide](../docs/development-traces.md#server-dispatch-evidence).
+
+
+Opted-in RPC generator terminal frames may carry opaque `developmentTrace`
+metadata. The producing router snapshots application values once, validates their
+encoded size and attempts request cleanup before adding terminal evidence. A done
+record requires completed cleanup; failures distinguish action/encoding outcome
+from cleanup completion. Optional evidence is omitted when it would exceed the
+frame limit, reserving space for coordinator cursor insertion. Cancellation emits
+no invented server terminal. Core only records a matching terminal after normal
+frame and EOF validation; malformed evidence does not alter RPC semantics. It joins
+the earlier dispatch ID as a bounded `server-stream` event. Native body and socket
+server evidence still require separate lifecycle integration and acceptance.
