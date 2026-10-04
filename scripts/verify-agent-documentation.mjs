@@ -113,7 +113,7 @@ require('node:module').syncBuiltinESMExports();
     assert.deepEqual(auth.exports, []);
     assert.equal(auth.implicitEntry.origin, 'legacy-manifest');
     const authExamples = [];
-    for (const [id, exampleId] of [['session-and-role-guards', 'session-role-decisions'], ['resource-policies', 'owned-record-decisions'], ['oauth-failure-stages', 'safe-callback-diagnostics']]) {
+    for (const [id, exampleId] of [['session-and-role-guards', 'session-role-decisions'], ['resource-policies', 'owned-record-decisions'], ['oauth-failure-stages', 'safe-callback-diagnostics'], ['credential-and-session-primitives', 'typed-credential-session-lifecycle']]) {
       const example = auth.guidance.guides.find(guide => guide.id === id)?.examples.find(example => example.id === exampleId);
       assert.ok(example, `Missing packaged auth example ${id}/${exampleId}`);
       const file = path.join(scratch, `${id}-${exampleId}.ts`);
@@ -171,7 +171,7 @@ for (let i = 0; i < sources.length; i++) esbuild.buildSync({
     assert.equal(authDocs.ok, true);
     assert.equal(authDocs.data.coverage.runtimeSupport, 'not-verified');
     const authEntry = authDocs.data.packages[0].declarations.entries.find(entry => entry.sourceKind === 'typescript-source');
-    for (const name of ['createAuth', 'createAuthorizer', 'createResourcePolicy', 'ResourceAuthorizationError', 'OAuthError']) {
+    for (const name of ['createAuth', 'createAuthorizer', 'createResourcePolicy', 'ResourceAuthorizationError', 'OAuthError', 'AuthError', 'createPasswordHasher', 'createCredentialVerifier', 'createSessionManager']) {
       assert.ok(authEntry?.symbols.some(symbol => symbol.name === name && symbol.status === 'indexed'), `Missing auth symbol ${name}`);
     }
     const authRemote = await client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/auth', symbols: true } });

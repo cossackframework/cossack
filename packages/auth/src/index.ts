@@ -1,4 +1,9 @@
 // Session-based authentication
+export { AuthError, type AuthErrorCode, type AuthErrorStage } from './errors';
+export { createPasswordHasher, hashPassword, verifyPassword, type PasswordHasher, type PasswordHasherOptions } from './password';
+export { createCredentialVerifier, type CredentialVerifier, type CredentialVerifierOptions } from './credentials';
+export { createSessionManager, type AuthSessionRecord, type AuthSessionStore, type AuthSessionOptions,
+    type AuthSessionManager, type IssuedAuthSession } from './sessions';
 export {
     createAuth,
     type AuthKit,

@@ -6,6 +6,82 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt13-primitives-2026-10-05"></a>
+### Codex: Shared credentials and persistent sessions (2026-10-05)
+
+Author: Codex. RT-13 now moves password hashing, credential verification and
+persistent session operations out of generated application implementations and
+into the auth library. Typed contracts retain application account lookup, safe
+user mapping, database selection and storage. Auth has no framework/database
+dependency and uses Web Crypto and Hono.
+
+`createPasswordHasher`, `hashPassword` and `verifyPassword` use a random salt and
+an explicit `pbkdf2-sha256$iterations$salt$digest` encoding. Parsing is strict and
+rejects malformed records and excessive work factors before derivation. Passwords
+are nonempty, bounded in UTF-8 bytes and never normalized or truncated. The old
+encoding requires an explicit app migration or reset. Default 100,000 iterations
+preserves the existing Workers setting; it is below OWASP's current 600,000
+guidance. The [primitive guide](../docs/auth-primitives.md#password-hashes) links
+the workerd limit and records the production budget limitation.
+
+`createCredentialVerifier` infers the account and safe-user types. Only boolean
+true verifies credentials. Conditional hash upgrades compare the expected hash
+before replacing it and reject stale writes before mapping the user. Higher
+accepted work factors are not downgraded. `AuthError` gives fixed operation codes,
+stages and messages without raw crypto, account or storage exceptions.
+
+`createSessionManager` creates frozen auth-purpose records, opaque 32-byte tokens,
+numeric timestamps and matching cookie headers. Validation rejects exact expiry
+and does not refresh it. Rotation requires one atomic storage replacement of the
+complete active record. Generated SQL matches token, user, original creation and
+expiry, current expiry and canonical auth metadata; one affected row wins.
+Revocation preserves password-reset rows. Default cookies are Secure, HttpOnly,
+SameSite=Lax and Path=/. Cookie headers are returned after storage succeeds.
+Already-expired completions issue no cookie; later failures do not undo writes.
+
+Generated native fixtures run real Node SQLite and Cloudflare D1 credentials,
+session creation, concurrent rotation, expiry and logout. Reset rows cannot
+validate or rotate, and logout preserves them. The existing protected-route
+browser test still checks registration, nested guards, forged state, revoked
+identity after expiry and denied native RPC. Its status locator now targets the
+auth message rather than the separate toast live region. Production client code
+excludes the new password encoding. An eager root hasher initializer initially
+retained hashing code in the client; lazy helper functions remove that effect.
+
+Auth's fourth packaged guide contains an exact typed credential/session example.
+The catalog retains neutral runtime/execution claims; the separate harness owns
+compilation and execution. Library source discovery indexes the new public APIs.
+The README, architecture and migration notes describe the same contracts.
+
+Verification:
+
+- `pnpm --filter @cossackframework/auth exec vitest run`: **230 tests / 10 files pass**.
+  Log: `/tmp/cossack-rt13-primitives-auth.log`.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: **116 tests / 8 files pass**.
+  Log: `/tmp/cossack-rt13-primitives-scaffold.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'serves generated authentication primitives|runs the protected-route recipe'`:
+  **3 pass, 55 unrelated cases skipped**. Includes generated app type checks,
+  local migration, production builds and native/browser behavior.
+  Log: `/tmp/cossack-rt13-primitives-native.log`.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck`: pass for all **11 packages**.
+  Logs: `/tmp/cossack-rt13-primitives-root-types.log`, `/tmp/cossack-rt13-primitives-package-types.log`.
+- `pnpm test:agent-docs:local`: passes sequential builds, **12 tarballs**,
+  **10 standalone and 4 bundled auth examples**, installed reporter types,
+  offline CLI/MCP parity, Cloudflare HTTP/SSE/WebSocket browser traces,
+  production exclusion, three packaged application pages with source maps and
+  UI catalogs. Installed tools: Wrangler **4.147.0**, Cloudflare Vite plugin
+  **1.62.5**, Vite **8.3.2** and TypeScript **7.0.2**. Auth examples pass strict
+  Bundler checks and execute with the full Node network guard.
+  Log: `/tmp/cossack-rt13-primitives-installed.log`.
+
+Limits: The guide's memory store does not establish durable atomicity. Native
+tests use local SQLite/D1 fixtures and do not establish deployed resource budgets.
+Persistent HTTP validation does not refresh an already-open connection. Storage
+side effects are not rolled back. Atomic OAuth callback replay prevention remains
+RT-13 work. CLI-08 retains broader coverage; REL-02/REL-03 retain final gates.
+No task is newly closed: **27 complete / 31 open**. Desktop remains completed by
+user decision. No remote deployment, provisioning, publication or push occurred.
+
 <a id="codex-rt13-diagnostics-2026-10-05"></a>
 ### Codex: OAuth diagnostics and local D1 JSON tooling (2026-10-05)
 

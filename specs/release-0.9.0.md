@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include ten standalone examples, three bundled auth examples and three complete action/resource/task pages. Auth guidance includes typed OAuth failures, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Broader library/component/recipe coverage and runtime guidance remain open. See [auth diagnostics](#codex-rt13-diagnostics-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include ten standalone examples, four bundled auth examples and three complete action/resource/task pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Broader library/component/recipe coverage and runtime guidance remain open. See [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -41,7 +41,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
-- [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library. Codex (2026-10-05): fixed typed diagnostics, warning redaction, callback cookie cleanup and generated Node/Cloudflare rejection checks pass. Shared credential/session operations, persistent expiry/rotation and atomic replay acceptance remain open. See [diagnostic checkpoint](#codex-rt13-diagnostics-2026-10-05).
+- [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library. Codex (2026-10-05): generated apps now use shared password, credential and persistent session contracts. Node SQLite and Cloudflare D1 verify expiry, single-winner rotation, revocation and reset-token separation. Typed diagnostics and cookie cleanup pass. Atomic OAuth callback replay acceptance remains open. See [primitive checkpoint](#codex-rt13-primitives-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
@@ -93,6 +93,19 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-rt13-primitives-2026-10-05"></a>
+### Codex: Shared credentials and persistent sessions (2026-10-05)
+
+Generated auth now consumes typed password, credential and session operations
+from the auth library. Application models and atomic storage remain app-owned.
+Node SQLite and Cloudflare D1 verify persistent expiry, one rotation winner,
+revocation and reset-token separation. The protected-route browser regression
+passes with the new sessions. Auth's fourth guide explains the contracts and
+the explicit password-format migration.
+See [commands, results and limits](./release-0.9.0-verification-archive.md#codex-rt13-primitives-2026-10-05).
+RT-13 remains open for atomic OAuth callback replay acceptance. CLI-08 remains
+open for broader coverage. Counts stay **27 complete / 31 open**; Desktop stays closed.
 
 <a id="codex-rt13-diagnostics-2026-10-05"></a>
 ### Codex: OAuth diagnostics and local D1 JSON tooling (2026-10-05)

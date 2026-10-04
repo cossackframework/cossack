@@ -1,4 +1,5 @@
 import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
+import { writeAuthPrimitivesAcceptance, checkAuthPrimitives } from './fixtures/auth-primitives-acceptance.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
 import { verifyApplicationGuidance } from './fixtures/application-guidance-acceptance.js';
@@ -839,6 +840,7 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
     expect(code).not.toContain('Authenticated account:');
     expect(code).not.toContain('pbkdf2$');
+    expect(code).not.toContain('pbkdf2-sha256$');
   }
   const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
   const routeId = manifest.filePathToId['/src/pages/protected-route/index.ts'];
@@ -894,7 +896,7 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     await page.getByRole('button', { name: 'Verify session', exact: true }).click();
     await browserExpect(page.getByRole('button', { name: 'Verifying…' })).toBeDisabled();
     release();
-    await browserExpect(page.getByRole('status')).toHaveText('Authenticated account: agent@example.test');
+    await browserExpect(page.getByRole('status').filter({ hasText: 'Authenticated account:' })).toHaveText('Authenticated account: agent@example.test');
     await page.unroute('**/crpc');
     await page.getByRole('link', { name: 'Account details', exact: true }).click();
     await browserExpect(page.getByRole('heading', { name: 'Account details', exact: true })).toBeVisible();
@@ -914,7 +916,7 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     `], { cwd: root, timeout: 10000 });
     await page.getByRole('button', { name: 'Verify session', exact: true }).click();
     await browserExpect(page.getByRole('alert')).toContainText('Your session ended. Sign in again.');
-    await browserExpect(page.getByRole('status')).toHaveCount(0);
+    await browserExpect(page.getByRole('status').filter({ hasText: 'Authenticated account:' })).toHaveCount(0);
     expect((await call(routeId, 'verifyIdentity', [], sessionCookie)).status).toBe(401);
     const expired = await fetch(origin + '/protected-route/details', { headers: { cookie: sessionCookie }, redirect: 'manual' });
     expect(expired.status).toBe(302);
@@ -925,8 +927,9 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     await server.close();
   }
 }, 120000);
-it.each(['node', 'cloudflare'])('serves generated OAuth diagnostics on %s without exposing provider credentials', async adapter => {
+it.each(['node', 'cloudflare'])('serves generated authentication primitives and OAuth diagnostics on %s without exposing credentials', async adapter => {
   const root = await project(adapter, ['auth'], { oauth: 'github' });
+  await writeAuthPrimitivesAcceptance(root);
   if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
     { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
@@ -973,6 +976,7 @@ it.each(['node', 'cloudflare'])('serves generated OAuth diagnostics on %s withou
       } catch (error) { await close(); throw error; }
     }
     try {
+      if (configured) await checkAuthPrimitives(request);
       if (!configured) {
         for (const route of ['redirect', 'callback']) {
           const response = await request(`/auth/github/${route}`);

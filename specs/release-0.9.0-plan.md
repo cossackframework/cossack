@@ -143,7 +143,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
 
-Codex status (2026-10-04): CLI and MCP share fresh installed-package catalogs,
+Codex status (2026-10-05): CLI and MCP share fresh installed-package catalogs,
 command schemas, declaration signatures, exact-symbol queries and packaged guidance.
 Wildcard discovery preserves export precedence and exclusions. Prop catalogs retain
 member documentation and explicit partial results. The examples now cover route URLs,
@@ -157,13 +157,16 @@ server stripping. Installed Cloudflare and Node acceptance passes. Discovery nev
 invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04) and the
 [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04).
 The RT-23 UI catalog audit is complete.
-Auth now contributes session/role and record-policy guides with two executable
-examples. Discovery exposes legacy root targets separately from an exports map
+Auth now contributes session/role, record-policy, OAuth diagnostic and shared
+credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map
 and statically indexes published TypeScript with explicit source-kind markers.
 The auth examples use Bundler type resolution and installed esbuild bundling.
-They use local Hono fixtures and do not prove real sessions, login/cookie issuance
-or native framework authorization. See the
-[auth checkpoint](./release-0.9.0.md#codex-cli08-auth-guidance-2026-10-04).
+They use local Hono fixtures and memory storage. Separate generated Node SQLite
+and Cloudflare D1 tests now verify real credential login, cookie issuance,
+persistent expiry, conditional rotation and revocation. The protected-route
+browser regression verifies native route/RPC rejection after expiry. These
+checks do not establish plain Node imports or production hashing budgets. See the
+[primitive checkpoint](./release-0.9.0.md#codex-rt13-primitives-2026-10-05).
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
 [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
 
@@ -367,9 +370,14 @@ Codex progress (2026-10-05): Fixed OAuth codes, stages and safe statuses now cov
 configuration, callback/state, exchange/profile, account mapping and error handlers.
 Session and generated database warnings omit raw errors. Configured callback
 handlers clear state cookies on early rejection. Generated Node and Cloudflare
-apps verify these paths, with real local migration setup. The auth guide exposes
-the same typed errors. RT-13 remains open for reusable credential/session
-operations, persistent session expiry/rotation and atomic callback replay tests.
+apps verify these paths, with real local migration setup. Shared password hashing,
+typed credential verification and persistent session operations now live in auth.
+Generated apps consume them through application-owned account lookup and atomic
+SQL storage. Unit and generated Node/Cloudflare tests cover malformed hashes,
+conditional hash upgrades, exact expiry, single-winner rotation, revocation and
+reset-token separation. The fourth packaged auth example executes the same typed
+contracts offline. RT-13 remains open for atomic callback replay prevention and
+its full acceptance audit. Cookie deletion does not satisfy that criterion.
 Cookie deletion alone does not satisfy replay acceptance. Preserve the
 [diagnostic checkpoint](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
 

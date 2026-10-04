@@ -1255,8 +1255,8 @@ function applyOauthToAuth(content, providers) {
   }).join('\n');
   return content
     .replace(
-      "import { createAuth } from '@cossackframework/auth';",
-      "import { createAuth, createOAuth, OAuthError, type OAuthKit, type OAuthUser, type TokenSet } from '@cossackframework/auth';\nimport { OAuthAccount } from '@/models/OAuthAccount';",
+      /^(import \{)([^}]*)(\} from '@cossackframework\/auth';)/m,
+      "$1 createOAuth, OAuthError, type OAuthKit, type OAuthUser, type TokenSet, $2$3\nimport { OAuthAccount } from '@/models/OAuthAccount';",
     )
     .concat(`
 

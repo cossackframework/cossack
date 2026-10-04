@@ -359,9 +359,20 @@ warnings identify the failed stage without logging session values or exceptions.
 The auth library uses Web APIs and Hono, without framework or database imports.
 Generated applications retain user models, database selection and account writes.
 
+Auth also owns typed password hashing, credential verification and persistent
+session lifecycle contracts. Password encodings include the algorithm and work
+factor. Application callbacks own account lookup, safe user mapping and conditional
+hash upgrades. Session records use an explicit auth purpose, random tokens and
+Unix-millisecond timestamps. Validation rejects exact expiry without refresh.
+Rotation requires an application store to atomically replace the complete active
+record; the generated SQL adapter enforces a single winner. Default cookies are
+Secure, HttpOnly and SameSite=Lax. Returned headers are applied after storage
+success; a later failure does not undo a committed write.
+
 Callback handlers clear state cookies, including early rejection. This is browser
-cleanup, not an atomic replay store or rollback of application writes. Persistent
-session expiry, rotation and reusable credential operations remain RT-13 work.
+cleanup, not an atomic replay store or rollback of application writes. Atomic
+OAuth callback replay acceptance remains RT-13 work. Persistent request validation
+does not imply identity refresh on an already-open transport connection.
 
 The Node-only database JSON subprocess isolates project output and communicates
 through IPC. Its bootstrap uses dynamic imports under default CommonJS eval mode.

@@ -5,6 +5,38 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## Shared credential and session primitives
+
+Generated `src/auth.ts` now consumes `createCredentialVerifier`,
+`createSessionManager` and the shared password helpers from the auth package.
+Port the generated storage callbacks when updating an existing application.
+User models, role lookup, password reset and database selection remain app-owned.
+
+Password hashes now use `pbkdf2-sha256$iterations$salt$digest`. The old
+`pbkdf2$salt$digest` encoding is rejected. Reset existing passwords or explicitly
+migrate records whose algorithm, work factor and canonical salt/digest sizes are
+known. Do not guess missing parameters. Default hashing remains 100,000 iterations;
+the [primitive guide](../docs/auth-primitives.md#password-hashes) records Workers
+limits and configuration choices. Inputs are nonempty and at most 1,024 UTF-8
+bytes; they are never truncated or normalized.
+
+New auth session tokens contain 32 random bytes rather than UUIDs. Existing
+valid UUID tokens can still be read; validation checks their auth purpose and
+original timestamps. Time fields in `AuthSessionRecord` are Unix milliseconds.
+Translate database Date fields at the storage boundary. Exact expiry is invalid,
+validation does not refresh lifetime, and `rotate` invalidates the previous token
+through one conditional replacement. Apply returned cookie headers only after
+the storage operation succeeds.
+
+Generated rotation and logout use the canonical `{"type":"auth"}` metadata.
+If an existing store uses another JSON representation, adapt its conditional
+matching or explicitly normalize those records. Keep password-reset and other
+token purposes separate. Hash upgrades also need an atomic expected-hash match.
+
+`AuthError` exposes fixed codes, stages and messages for shared primitive
+operations. Raw crypto, database and mapping exceptions are discarded. A failed
+operation does not undo a storage side effect that already committed.
+
 ## OAuth failure diagnostics
 
 OAuth `onError` now receives `OAuthError` instead of an arbitrary thrown value.

@@ -41,21 +41,29 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
    deterministic stale-task overlap, navigation cleanup and client stripping.
    [Installed Cloudflare and Node acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04)
    also requires emitted source maps before scanning for server code.
-   Auth now ships session/role, record-policy and OAuth diagnostic guides.
+   Auth now ships session/role, record-policy, OAuth diagnostic and shared
+   credential/session guides.
    Preserve the separate legacy `implicitEntry`, static TypeScript source indexing
-   and three examples checked with Bundler resolution, bundled from installed
+   and four examples checked with Bundler resolution, bundled from installed
    packages and run offline.
-   [Auth guidance evidence](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05)
-   does not prove plain Node imports, persistent sessions or native RPC authorization.
+   [Primitive evidence](./release-0.9.0.md#codex-rt13-primitives-2026-10-05)
+   separates memory examples from real Node SQLite/Cloudflare D1 session checks
+   and the protected-route browser regression. Bundling does not prove plain
+   Node imports or production hashing limits.
    Continue other library and UI guidance and the remaining runtime coverage.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
-2. Continue **[RT-13](./release-0.9.0-plan.md#rt-13)** with shared credential and
-   persistent session operations. Preserve fixed OAuth codes/stages, safe `onError`
+2. Finish **[RT-13](./release-0.9.0-plan.md#rt-13)** atomic OAuth callback replay
+   prevention and the full acceptance audit. Preserve shared password hashing,
+   typed credential verification and persistent session operations. Generated
+   SQL rotation matches the complete active record and admits one winner.
+   Reset tokens remain a separate purpose. Preserve fixed OAuth codes/stages, safe `onError`
    errors and warning redaction. Generated Node/Cloudflare callbacks pass native
    rejection checks. Cookie deletion does not satisfy atomic replay acceptance.
-   Session expiry/rotation and reusable operations remain open. Keep the database
+   Current expiry/rotation and revocation checks pass on Node and Cloudflare.
+   Preserve the explicit password-format migration. Keep the database
    JSON bootstrap in default CommonJS eval mode so Miniflare's inherited Worker
-   can start. See [diagnostic evidence](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
+   can start. See [primitive evidence](./release-0.9.0.md#codex-rt13-primitives-2026-10-05)
+   and [diagnostic evidence](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
 4. Follow the detailed plan for all 31 open tasks. Close each only against its

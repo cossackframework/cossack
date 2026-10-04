@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { transformSync } from 'esbuild';
 import { renderRecipe, resolveRecipe } from '../src/index.js';
-import { OAuthError } from '../../auth/src/index.ts';
+import { OAuthError, createCredentialVerifier, createSessionManager, hashPassword, verifyPassword } from '../../auth/src/index.ts';
 
 async function generatedAuth() {
   const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth', oauth: 'github' }));
@@ -14,7 +14,8 @@ async function generatedAuth() {
   const createSession = vi.fn();
   const modules = {
     'hono/cookie': { getCookie: vi.fn() },
-    '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError },
+    '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError,
+      createCredentialVerifier, createSessionManager, hashPassword, verifyPassword },
     '@cossackframework/database': { MoreThan: (value) => value, Not: (value) => value, sql: vi.fn() },
     '@cossackframework/core': { ClientVisibleError: Error },
     '@/lib/uuid': { uuidv7: () => 'generated-id' },
@@ -66,7 +67,8 @@ describe('generated auth security', () => {
       Session.findOne.mockResolvedValue({ userId: 'victim', meta });
       expect(await provider.validateSessionId('reset-token')).toBeNull();
     }
-    Session.findOne.mockResolvedValue({ userId: 'member', meta: { type: 'auth' } });
+    Session.findOne.mockResolvedValue({ id: 'session', userId: 'member', meta: { type: 'auth' },
+      createdAt: new Date(Date.now() - 1000), expiresAt: new Date(Date.now() + 10000) });
     expect(await provider.validateSessionId('session')).toBe('member');
   });
 

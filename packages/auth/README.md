@@ -30,56 +30,32 @@ callbacks; the package handles the protocol plumbing.
 
 ## Session authentication
 
-```bash
-pnpm add @cossackframework/auth
-```
+Run `pnpm exec cossack add auth` in a Cossack application. The recipe creates
+`src/auth.ts`, user/session models, login and registration pages, password reset
+and session middleware. Register generated middleware through
+`src/bootstrap/middlewares.ts`.
 
-```ts
-// src/auth.ts
-import { createAuth } from '@cossackframework/auth';
-import { getCookie, setCookie } from 'hono/cookie';
-import { db } from './db';
-import type { User } from './types';
+The generated auth module composes these public APIs:
 
-export const auth = createAuth<User>({
-    extractSessionId: (c) => getCookie(c, 'session_token'),
-    validateSessionId: async (token) => {
-        const session = await db.sessions.findUnique({ where: { token } });
-        if (!session || session.expiresAt < new Date()) return null;
-        return session.userId;
-    },
-    resolveUserById: async (id) => (await db.users.findUnique({ where: { id } })) ?? null,
+- `createPasswordHasher`, `hashPassword` and `verifyPassword` encode the work
+  factor and reject malformed hashes before derivation.
+- `createCredentialVerifier` uses typed account lookup, safe user mapping and
+  optional atomic password-hash upgrades.
+- `createSessionManager` owns tokens, absolute expiry, rotation, revocation and
+  matching cookie headers through an application-owned `AuthSessionStore`.
+- `createAuth` populates `c.get('user')` and exposes `createLoginHandler` and an
+  optional `createSession` for credentials, OAuth and server methods.
 
-    // Optional: configure createSession once and reuse it everywhere
-    // (login handler, OAuth callbacks, etc.).
-    createSession: async (user, c) => {
-        const token = crypto.randomUUID();
-        await db.sessions.create({ data: { token, userId: user.id, expiresAt: tomorrow() } });
-        setCookie(c, 'session_token', token, { httpOnly: true, sameSite: 'Lax', path: '/' });
-        return { headers: new Headers() }; // cookie is already set on the context
-    },
-});
+Apply returned session headers to the response after storage succeeds. The
+application owns persistence and atomic conditional writes. Default session
+cookies are Secure, HttpOnly and SameSite=Lax. Validation does not refresh
+expiry. Password-reset tokens remain a separate purpose.
 
-export const { middleware, createLoginHandler, createSession } = auth;
-```
-
-Wire it into your app:
-
-```ts
-// src/index.ts
-import { createApp } from '@cossackframework/framework';
-import { middleware as authMiddleware, createLoginHandler } from './auth';
-
-const app = createApp({ authMiddleware });
-export default app;
-```
-
-A login handler may omit `createSession` to use the provider's creator, or pass
-one to override it. OAuth cookie payloads and identity-token claims preserve
-UTF-8 text, including non-Latin display names and emoji.
-
-See [`docs/authentication.md`](../../docs/authentication.md) for the full
-credentials/cookie example.
+Read [credential and session primitives](../../docs/auth-primitives.md) for
+configuration, typed composition and the password-format migration. See
+[authentication](../../docs/authentication.md) for middleware and page wiring.
+The packaged `credential-and-session-primitives` agent guide includes an
+executable example from the installed package.
 
 ---
 
@@ -295,7 +271,7 @@ Available factories:
 For **conditional UI** (show/hide elements inside `render()`), use the boolean
 helpers on the same kit: `guard.can(c, permission)`, `guard.hasRole(c, role)`,
 plus their `Async` variants for DB-backed checks. See
-[`docs/authorization.md`](../docs/authorization.md#conditional-ui-in-render)
+[`docs/authorization.md`](../../docs/authorization.md#conditional-ui-in-render)
 for the inline-sync and `init()`/`@State` patterns.
 
 Default failure responses are `401 JSON` (unauthenticated) and `403 JSON`
@@ -304,7 +280,7 @@ Default failure responses are `401 JSON` (unauthenticated) and `403 JSON`
 Works identically for session login and OAuth login : both populate
 `c.get('user')`.
 
-See [`docs/authorization.md`](../docs/authorization.md) for more.
+See [`docs/authorization.md`](../../docs/authorization.md) for more.
 
 ---
 

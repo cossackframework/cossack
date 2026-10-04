@@ -21,6 +21,10 @@ The library allows you to create an **Auth Kit** by providing an **Auth Provider
 
 > **Do not want to wire this by hand?** Run `cossack add auth` to generate a complete, working session-auth setup (PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets) in your project.
 
+The generated application uses the shared password, credential and session APIs.
+Read [credential and session primitives](./auth-primitives.md) for typed storage
+callbacks, atomic rotation, cookie policy and the password-format migration.
+
 ## Example: Email/Password with Cookie Sessions
 
 This example demonstrates a standard authentication flow:
