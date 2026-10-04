@@ -1,3 +1,4 @@
+import { registerDevelopmentInspector, inspectDevelopmentScopes, developmentName, developmentData, type DevelopmentComponentDetails } from './development-inspection';
 import { enforceActionInput } from './action-input';
 import { enforceActionAuthorization, getAuthorizationFailure } from './action-authorization';
 import { collectServerMethodMetadata } from './server-method-metadata';
@@ -594,6 +595,42 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         super();
         this._id = 'root'; // Default for root components (App, Page)
         this.autoBindMethods();
+        if (import.meta.env?.DEV) registerDevelopmentInspector(this, fields => {
+            const metadata = collectReactiveMetadata(this.constructor);
+            const clientKeys = new Set([...metadata.clientState, ...metadata.clientStore]);
+            const resources: DevelopmentComponentDetails['resources'] = { entries: [], truncated: this._serverResources.size > 64 };
+            for (const [name, entry] of this._serverResources) {
+                if (resources.entries.length >= 64) break;
+                resources.entries.push({ name: developmentName(name), state: entry.pending ? 'pending' : entry.failed ? 'error' : entry.resolved ? 'ready' : 'pending',
+                    hasValue: !!entry.hasValue, stale: !!entry.hasValue && (!!entry.pending || (!entry.failed && !entry.resolved)) });
+            }
+            const bound = new Set<string>();
+            let constructor = this.constructor, depth = 0;
+            while (constructor && depth++ < 16) {
+                const declared = Object.getOwnPropertyDescriptor(constructor, '__cossackResourceFields')?.value;
+                if (Array.isArray(declared)) for (const name of declared) {
+                    if (typeof name !== 'string' || bound.has(name) || this._serverResources.has(name)) continue;
+                    if (resources.entries.length >= 64) { resources.truncated = true; break; }
+                    bound.add(name); resources.entries.push({ name: developmentName(name), state: 'unbound', hasValue: false, stale: false });
+                }
+                constructor = Object.getPrototypeOf(constructor);
+            }
+            if (constructor) resources.truncated = true;
+            const transports: DevelopmentComponentDetails['transports'] = { entries: [], truncated: false };
+            const record = developmentData(this, '__realtimeStatus');
+            const sockets = developmentData(record, 'websockets');
+            const statuses = record ? [developmentData(record, 'sse'), ...Object.keys(sockets ?? {}).slice(0, 64).map(key => developmentData(sockets, key))] : [];
+            for (const [index, status] of statuses.entries()) {
+                if (transports.entries.length >= 64) { transports.truncated = true; break; }
+                const state = developmentData(status, 'state'), attempts = developmentData(status, 'attempts');
+                if (!['connecting', 'open', 'reconnecting', 'closed'].includes(state)) continue;
+                transports.entries.push({ transport: index === 0 ? 'sse' : 'websocket', slot: index,
+                    state, attempts: Number.isSafeInteger(attempts) && attempts >= 0 ? attempts : 0,
+                    resynced: developmentData(status, 'resynced') === true });
+            }
+            return { lifecycle: this._phase, state: this._stateContainer.developmentSnapshot(fields, clientKeys),
+                resources, scopes: inspectDevelopmentScopes(this._serviceScope), transports };
+        });
     }
 
     connectedCallback() {

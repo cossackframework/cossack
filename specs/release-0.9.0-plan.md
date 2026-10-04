@@ -609,8 +609,13 @@ Captured navigation callbacks retain session ownership and have one terminal out
 standalone cache/prefetch events retain null navigation IDs. These are client
 observations, not proof of server execution or causation.
 
-Remaining: correlate server events with those calls; add state,
-resource, service-scope and transport snapshots; integrate the browser inspector
+Captures now include passive component snapshots: initialized public/client field
+inventory, resource status, scope ownership/counts and transport summaries. Values
+are omitted by default; explicit selections return bounded, redacted copies. Weak
+tracking, capture timestamps and unavailable/truncated states remain explicit.
+Resource getters/loaders and service resolution do not run during inspection.
+
+Remaining: correlate server events with those calls; integrate the browser inspector
 and project-bound CLI/MCP reads through shared schemas. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.
 Service RPC and server execution are not covered by the current client capture.

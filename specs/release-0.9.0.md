@@ -88,41 +88,45 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-navigation-trace-2026-10-04"></a>
-### Codex shared navigation trace capture (2026-10-04)
+<a id="codex-component-snapshots-2026-10-04"></a>
+### Codex passive component snapshots (2026-10-04)
 
-Author: Codex. Navigation and RPC now share a discriminated event union, bounded
-buffer and sequence. Navigation callbacks retain the capture owner across awaits
-and stop after their terminal event. Prepared app/layout/page/loading instances
-use the same opaque component IDs as RPC calls. This relationship identifies
-candidate instances, not proof of a commit or the cause of later calls. Existing
-DOM navigation diagnostics remain available. Global invalidation/prefetch events
-retain null navigation IDs. Only allowed primitive navigation fields are copied.
+Author: Codex. Development capture now tracks at most 64 weak component references
+and exposes current snapshots with capture timestamps. Framework-owned readers
+inspect initialized public/client field inventory, resource status (including
+unbound declarations), scope ownership/counts and recorded transport status.
+Defaults omit values. Explicit state selections return detached tagged values
+with depth/node/entry/string limits, known-secret redaction and markers for
+accessors, cycles, unsupported values and sparse holes. Selected values are not
+retained by the event buffer. Stops prevent subsequent passive component reads.
 
 Verification:
 
-- `pnpm --filter @cossackframework/core exec vitest run`: **1,457 tests / 87 files pass**.
-  Includes shared ordering, component identity joins, session replacement,
-  metadata validation and the existing RPC ownership regressions.
-  Log: `/tmp/cossack-navigation-trace-core-suite.log`.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,462 tests / 88 files pass**.
+  New fixtures use real Cossack lifecycle/resource records and service scopes.
+  They verify passive unbound/pending/ready/error resource reads, no getter or
+  serialization-hook calls, no service construction during reads, private-state
+  exclusion, redaction, sparse/value limits, detached results and registry bounds.
+  Log: `/tmp/cossack-component-snapshots-core-suite.log`.
 - `pnpm --filter @cossackframework/framework exec vitest run tests/navigation-outcomes.test.ts tests/navigation-owner.test.ts tests/navigation-focus.test.ts tests/navigation-trace-build.test.ts`:
-  **62 tests / 4 files pass**. Actual navigation orchestration records shared
-  phases and prepared components; overlapping navigations retain distinct terminal
-  outcomes. The production navigation bundle removes capture and DOM diagnostics.
-  Log: `/tmp/cossack-navigation-trace-framework.log`.
-- `pnpm --filter @cossackframework/core build`: passes.
-  Log: `/tmp/cossack-navigation-trace-build.log`.
-- `pnpm --filter @cossackframework/framework build:types`: passes with installed
-  Wrangler 4.114.0 type generation and the new public trace declarations.
-  Log: `/tmp/cossack-navigation-trace-framework-build.log`.
-- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 package checks pass.
-  Log: `/tmp/cossack-navigation-trace-types.log` (package checks).
+  **62 tests / 4 files pass**. Log: `/tmp/cossack-component-snapshots-framework.log`.
+- Production proxy bundling also checks removal of inspector registration,
+  selected-value readers and validation text, alongside trace collection.
+- `pnpm --filter @cossackframework/core build`, `pnpm tsc --noEmit` and
+  `pnpm typecheck`: build, root and all 11 package checks pass.
+  Logs: `/tmp/cossack-component-snapshots-build.log`, `/tmp/cossack-component-snapshots-types.log`.
+- The workspace CLI exact-symbol catalog exposes the built `DevelopmentTraceSession`
+  with `inspect`, `snapshot` and `stop`, plus the updated packaged guide.
+  This is workspace package evidence, not a fresh installed-tarball gate.
 
-Limits: navigation orchestration tests use controlled component lifecycle fixtures;
-they do not replace generated-browser/server acceptance. State/resource/service/
-transport snapshots, server correlation, browser inspector and shared CLI/MCP
-trace access remain open. RT-28 and CLI-07 stay unchecked; status remains 25/58.
-See [capture semantics](../docs/development-traces.md).
+Limits: selected values must be appropriate to inspect/share; pattern redaction
+cannot recognize every secret. Reflective JavaScript proxy traps are not sandboxed.
+Snapshots show current reads, not historical reconstruction or server verification.
+Unknown/private/uninitialized selections expose no values. The registry and every
+inventory/value tree have explicit limits. See [usage](../docs/development-traces.md).
+RT-28 still needs browser inspector/Vite integration, server correlation, shared
+CLI/MCP trace reads and generated-browser acceptance. CLI-07 and the full release
+gates remain open. Status stays 25 complete and 33 open.
 
 ### Archived checkpoints
 
@@ -133,6 +137,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-navigation-trace-2026-10-04"></a>[Codex shared navigation trace capture (2026-10-04)](./release-0.9.0-verification-archive.md#codex-navigation-trace-2026-10-04) |
 | <a id="codex-rpc-trace-foundation-2026-10-04"></a>[Codex development RPC trace foundation (2026-10-04)](./release-0.9.0-verification-archive.md#codex-rpc-trace-foundation-2026-10-04) |
 | <a id="codex-test-evidence-2026-10-04"></a>[Codex stored test evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-test-evidence-2026-10-04) |
 | <a id="codex-rt23-complete-2026-10-04"></a>[Codex RT-23 completion audit (2026-10-04)](./release-0.9.0-verification-archive.md#codex-rt23-complete-2026-10-04) |

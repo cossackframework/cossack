@@ -22,9 +22,10 @@ Latest completion: **RT-23** — DataTable and all 70 UI audit rows reviewed;
    [verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
    Core now captures component RPC and framework navigation through one bounded
    event union; prepared component IDs join the two. See [capture semantics](../docs/development-traces.md).
-   Continue with state/resource/service/transport snapshots, server correlation,
-   browser inspector and Vite development integration, shared CLI/MCP reads and
-   generated-browser acceptance. Preserve session ownership, terminal outcomes and
+   Passive state/resource/service/transport snapshots are now available through the
+   session, with values omitted by default and explicit bounded field selection.
+   Continue with server correlation, browser inspector and Vite development
+   integration, shared CLI/MCP reads and generated-browser acceptance. Preserve session ownership, terminal outcomes and
    production-exclusion tests. CLI-07 and RT-28 stay open.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and
    verified runtime support. UI contracts/guides are reviewed under RT-23; not all

@@ -18,7 +18,7 @@ it('removes trace collection from a production proxy bundle', async () => {
     const source = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : [])
         .filter(chunk => chunk.type === 'chunk').map(chunk => chunk.code).join('\n');
     expect(source).toContain('proxyHttpMethods');
-    for (const marker of ['state-reconciled', 'startDevelopmentTrace', 'beginDevelopmentRpcTrace', 'Trace capacity must']) {
+    for (const marker of ['state-reconciled', 'startDevelopmentTrace', 'beginDevelopmentRpcTrace', 'Trace capacity must', 'registerDevelopmentInspector', 'developmentValueReader', 'Select at most 32']) {
         expect(source).not.toContain(marker);
     }
 }, 30000);

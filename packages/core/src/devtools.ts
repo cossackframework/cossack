@@ -4,3 +4,7 @@ export type {
     DevelopmentRpcEvent, DevelopmentRpcOutcome, DevelopmentNavigationEvent,
     DevelopmentNavigationDiagnostic, DevelopmentNavigationTrace, DevelopmentComponentRole,
 } from './shared/development-trace';
+export type {
+    DevelopmentValue, DevelopmentInspectionOptions, DevelopmentComponentSnapshot, DevelopmentComponentDetails,
+    DevelopmentStateSnapshot, DevelopmentResourceSnapshot, DevelopmentScopeSnapshot, DevelopmentTransportSnapshot,
+} from './shared/development-inspection';

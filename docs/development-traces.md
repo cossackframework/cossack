@@ -60,8 +60,8 @@ allowed primitive fields and ignores invalid navigation metadata. Events after a
 navigation's terminal event are excluded from the capture; the existing DOM
 navigation-diagnostic stream keeps its own behavior.
 
-Arguments, return values, state values, method names, route paths, provider names
-and raw errors are omitted. Capture holds component identities weakly. Snapshots
+Trace events omit arguments, return values, state values, method names, route paths,
+provider names and raw errors. Capture holds component identities weakly. Snapshots
 can be edited without changing the internal buffer.
 
 A new capture stops the previous one. In-flight calls keep their original capture
@@ -70,7 +70,56 @@ the bounded snapshot on the session handle. It does not cancel application calls
 a stopped session may therefore have starts without terminal events. Cancellation
 or a timeout does not prove that remote work stopped or external effects rolled back.
 
-RT-28 remains open. State/resource/service/transport snapshots, server-side
-correlation, the browser inspector, CLI/MCP trace access and generated-browser
-acceptance still need integration.
+## Component snapshots
+
+`session.snapshot().components` reports current status for up to 64 component
+instances observed through navigation, RPC or explicit inspection. The registry
+holds weak references; `dropped` counts registry evictions and is separate from
+the event-buffer count. Platforms without `WeakRef` report tracking as unavailable.
+Explicit inspection still works there. Components can be `available`, `unavailable`,
+`collected` or `stopped`. A stopped capture performs no further component reads.
+
+Each result includes `capturedAt`. Component details are read when requested; they
+are not a reconstruction of state at an earlier event. They include:
+
+- The actual framework lifecycle phase.
+- Initialized public and client-only state field names. Values are omitted by default.
+  Undecorated/private fields and other internal state are excluded.
+- Resource states, value-presence and staleness flags, including compiler-declared
+  resources that have not been bound. Inspection does not call resource getters,
+  start loaders, refresh data or expose raw resource errors/results.
+- Up to 16 service scopes with opaque parent IDs, declared service slots/names,
+  initialization, disposal, subscriber and pending-call counts. Reads do not resolve
+  services or expose their state, request context, owner URLs or scope keys.
+- Recorded SSE/WebSocket states, reconnect counts and resynchronization flags.
+  Transport slots are positions within this snapshot, not durable provider IDs.
+  Provider names, event cursors and raw errors are omitted. An empty list means no
+  status was recorded, not proof that the component has no transport configuration.
+
+Given a component reference, select up to 32 state fields explicitly:
+
+```ts
+const selected = session.inspect(component, { state: ['count', 'draft'] });
+```
+
+Only initialized public or client-only fields are eligible. Unknown, private and
+uninitialized selections do not reveal values. Selection does not change subsequent
+default snapshots or store the selected values in the event buffer. Returned values
+are tagged records, such as `{ type: 'number', value: 7 }`, rather than live objects.
+
+Selected values use a shared 256-node budget, depth 4, 32 entries per object/array
+and a 512-character string limit. Truncation, cycles, unsupported native/class values,
+array holes and accessors have explicit markers. Accessors and `toJSON` are not
+called. Each inventory is capped at 64 state/resource/transport entries and 64
+services per scope; truncation is explicit. The registry and output limits do not
+provide a sandbox against malicious JavaScript proxies: reflective inspection can
+invoke proxy traps. Do not select values backed by untrusted proxies.
+
+Recognized secret field names and common credential strings are redacted. This
+cannot identify every secret stored under an ordinary name. Select only fields
+that are appropriate to inspect or share. Component/resource values are never
+included in the default event stream.
+
+RT-28 remains open. Server-side correlation, browser inspector integration,
+CLI/MCP trace access and generated-browser acceptance still need work.
 The separate [stored test-results reader](./test-results.md) does not read traces.

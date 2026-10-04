@@ -1,3 +1,4 @@
+import { inspectDevelopmentComponent, type DevelopmentInspectionOptions, type DevelopmentComponentSnapshot } from './development-inspection';
 import type { NavigateOutcome, NavigationScrollBehavior, NavigationType } from '../client/navigation';
 
 /** Development-only lifecycle evidence. Never accepts application payloads or raw errors. */
@@ -35,13 +36,16 @@ export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
     readonly sessionId: string;
     readonly startedAt: number;
+    readonly capturedAt: number;
     readonly collecting: boolean;
     readonly capacity: number;
     readonly dropped: number;
     readonly events: readonly DevelopmentTraceEvent[];
+    readonly components: { entries: readonly DevelopmentComponentSnapshot[]; dropped: number; tracking: 'weak' | 'unavailable' };
 }
 export interface DevelopmentTraceSession {
     snapshot(): DevelopmentTraceSnapshot;
+    inspect(component: object, options?: DevelopmentInspectionOptions): DevelopmentComponentSnapshot;
     stop(): void;
 }
 interface Collector {
@@ -49,6 +53,8 @@ interface Collector {
     readonly startedAt: number;
     readonly capacity: number;
     readonly components: WeakMap<object, number>;
+    readonly componentRefs: Map<number, WeakRef<object>>;
+    droppedComponents: number;
     componentSequence: number;
     sequence: number;
     dropped: number;
@@ -69,12 +75,22 @@ export function startDevelopmentTrace(options: { capacity?: number } = {}): Deve
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 2048) throw new RangeError('Trace capacity must be an integer from 1 to 2048.');
     if (active) active.collecting = false;
     const collector: Collector = { sessionId: crypto.randomUUID(), startedAt: Date.now(), capacity,
-        components: new WeakMap(), componentSequence: 0, sequence: 0, dropped: 0, collecting: true, events: [] };
+        components: new WeakMap(), componentRefs: new Map(), droppedComponents: 0, componentSequence: 0, sequence: 0, dropped: 0, collecting: true, events: [] };
     active = collector;
     return {
-        snapshot: () => ({ schemaVersion: 1, sessionId: collector.sessionId, startedAt: collector.startedAt,
+        snapshot: () => ({ schemaVersion: 1, sessionId: collector.sessionId, startedAt: collector.startedAt, capturedAt: Date.now(),
             collecting: collector.collecting, capacity, dropped: collector.dropped,
-            events: collector.events.map(event => ({ ...event })) }),
+            events: collector.events.map(event => ({ ...event })),
+            components: { tracking: typeof WeakRef === 'function' ? 'weak' : 'unavailable', dropped: collector.droppedComponents,
+                entries: [...collector.componentRefs].map(([componentId, reference]) => {
+                    if (!collector.collecting) return { componentId, capturedAt: Date.now(), status: 'stopped' };
+                    const component = reference.deref();
+                    return component ? inspectDevelopmentComponent(component, componentId) : { componentId, capturedAt: Date.now(), status: 'collected' };
+                }) } }),
+        inspect: (component, options) => {
+            if (!collector.collecting) return { componentId: collector.components.get(component) ?? null, capturedAt: Date.now(), status: 'stopped' };
+            return inspectDevelopmentComponent(component, componentIdentity(collector, component), options);
+        },
         stop: () => { collector.collecting = false; if (active === collector) active = undefined; },
     };
 }
@@ -82,6 +98,12 @@ export function startDevelopmentTrace(options: { capacity?: number } = {}): Deve
 function componentIdentity(collector: Collector, component: object): number {
     let id = collector.components.get(component);
     if (id === undefined) { id = ++collector.componentSequence; collector.components.set(component, id); }
+    if (typeof WeakRef === 'function' && !collector.componentRefs.has(id)) {
+        if (collector.componentRefs.size >= 64) {
+            collector.componentRefs.delete(collector.componentRefs.keys().next().value!); collector.droppedComponents++;
+        }
+        collector.componentRefs.set(id, new WeakRef(component));
+    }
     return id;
 }
 function append(collector: Collector, event: DevelopmentTraceEvent): void {

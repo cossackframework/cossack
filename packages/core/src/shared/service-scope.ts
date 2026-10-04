@@ -1,3 +1,4 @@
+import { registerDevelopmentScope, developmentName } from './development-inspection';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers, optimisticHandler, optimisticKeys, ownRpcLoading } from './optimistic-state';
 import { createStateApplier } from './rpc-state';
@@ -81,6 +82,16 @@ export class ServiceScope {
         this.ownerRoutePath = options.ownerRoutePath;
         this.scopeKey = options.scopeKey;
         parent?.children.add(this);
+        if (import.meta.env?.DEV) registerDevelopmentScope(this, () => {
+            const services = [];
+            for (const entry of this.owned.values()) {
+                if (services.length >= 64) break;
+                services.push({ slot: entry.slot, name: developmentName(Object.getOwnPropertyDescriptor(entry.serviceClass, 'name')?.value),
+                    initialized: entry.instance !== undefined });
+            }
+            return { parent: this.parent, disposed: this.disposed, pendingCalls: this.pendingLoading.size,
+                subscribers: this.subscribers.size, services, truncated: this.owned.size > 64 };
+        });
 
         const seen = new Set<ServiceClass>();
         declarations.forEach((serviceClass, index) => {

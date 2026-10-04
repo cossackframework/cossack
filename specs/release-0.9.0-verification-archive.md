@@ -6,6 +6,42 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-navigation-trace-2026-10-04"></a>
+## Codex shared navigation trace capture (2026-10-04)
+
+Author: Codex. Navigation and RPC now share a discriminated event union, bounded
+buffer and sequence. Navigation callbacks retain the capture owner across awaits
+and stop after their terminal event. Prepared app/layout/page/loading instances
+use the same opaque component IDs as RPC calls. This relationship identifies
+candidate instances, not proof of a commit or the cause of later calls. Existing
+DOM navigation diagnostics remain available. Global invalidation/prefetch events
+retain null navigation IDs. Only allowed primitive navigation fields are copied.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,457 tests / 87 files pass**.
+  Includes shared ordering, component identity joins, session replacement,
+  metadata validation and the existing RPC ownership regressions.
+  Log: `/tmp/cossack-navigation-trace-core-suite.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/navigation-outcomes.test.ts tests/navigation-owner.test.ts tests/navigation-focus.test.ts tests/navigation-trace-build.test.ts`:
+  **62 tests / 4 files pass**. Actual navigation orchestration records shared
+  phases and prepared components; overlapping navigations retain distinct terminal
+  outcomes. The production navigation bundle removes capture and DOM diagnostics.
+  Log: `/tmp/cossack-navigation-trace-framework.log`.
+- `pnpm --filter @cossackframework/core build`: passes.
+  Log: `/tmp/cossack-navigation-trace-build.log`.
+- `pnpm --filter @cossackframework/framework build:types`: passes with installed
+  Wrangler 4.114.0 type generation and the new public trace declarations.
+  Log: `/tmp/cossack-navigation-trace-framework-build.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 package checks pass.
+  Log: `/tmp/cossack-navigation-trace-types.log` (package checks).
+
+Limits: navigation orchestration tests use controlled component lifecycle fixtures;
+they do not replace generated-browser/server acceptance. State/resource/service/
+transport snapshots, server correlation, browser inspector and shared CLI/MCP
+trace access remain open. RT-28 and CLI-07 stay unchecked; status remains 25/58.
+See [capture semantics](../docs/development-traces.md).
+
 <a id="codex-rpc-trace-foundation-2026-10-04"></a>
 ## Codex development RPC trace foundation (2026-10-04)
 

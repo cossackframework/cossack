@@ -99,8 +99,16 @@ across awaits and reject events after their terminal outcome. Bounded sessions
 never retain application payloads or URLs; weak component ownership and detached
 snapshots keep the recorder independent of the application. Production proxy and
 navigation diagnostic bundles strip collection. See [capture semantics](../docs/development-traces.md).
-RT-28 state/resource/service/transport snapshots, server correlation, browser tools
-and shared CLI/MCP trace reads remain open. Test-results reads do not expose traces.
+Framework constructors register weak, development-only inspection providers for
+components and service scopes. Captures track at most 64 component weak references.
+Default snapshots read current lifecycle, initialized public/client field names,
+passive resource records, service ownership/status and transport summaries, with no
+state values. Explicit selections return detached, bounded, redacted values without
+retaining them in the event buffer. Resource getters, service resolution and custom
+serialization hooks are not used. Reflective selection is not a sandbox against
+malicious proxies. Capture timestamps distinguish current status from past events.
+RT-28 server correlation, browser tools and shared CLI/MCP trace reads remain open.
+Test-results reads do not expose traces.
 
 ## Server input boundary
 
