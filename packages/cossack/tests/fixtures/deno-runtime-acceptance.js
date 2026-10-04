@@ -35,7 +35,7 @@ export async function writeDenoRuntimeAcceptance(root) {
     export const POST=defineApi({handler:async({c})=>{
       const headers=new Headers({'content-type':'application/json'});
       headers.append('set-cookie','first=1; Path=/');headers.append('set-cookie','second=2; Path=/');
-      return new Response(JSON.stringify({runtime:Deno.version.deno,body:await c.req.text(),binding:c.env.DENO_ACCEPTANCE_BINDING}),{headers});
+      return new Response(JSON.stringify({runtime:Deno.version.deno,args:Deno.args,body:await c.req.text(),binding:c.env.DENO_ACCEPTANCE_BINDING}),{headers});
     }});
   `,
   );
@@ -144,4 +144,115 @@ export async function verifyDenoRuntimeApplication(root, binary = process.env.CO
     }
   }
   if (failure) throw failure;
+}
+
+/** Exercise the public CLI against the real generated server, including JSON isolation. */
+export async function verifyDenoCliStartup(root, binary, cli) {
+  const { createServer } = await import('node:net');
+  const { fileURLToPath } = await import('node:url');
+  cli ??= fileURLToPath(new URL('../../bin/cossack.js', import.meta.url));
+  for (const json of [false, true]) {
+    const listener = createServer();
+    await new Promise((resolve, reject) => {
+      listener.once('error', reject);
+      listener.listen(0, '127.0.0.1', resolve);
+    });
+    const port = listener.address().port;
+    await new Promise((resolve, reject) => listener.close((error) => (error ? reject(error) : resolve())));
+    const origin = `http://127.0.0.1:${port}`;
+    const child = spawn(
+      process.execPath,
+      [cli, 'start', ...(json ? ['--json'] : []), '--', '--application-option', 'private argument value'],
+      {
+        // Startup must find the app root before resolving assets and Deno configuration.
+        cwd: path.join(root, 'src'),
+        env: {
+          ...process.env,
+          COSSACK_DENO_BINARY: binary,
+          PORT: String(port),
+          HOST: '127.0.0.1',
+          APP_URL: '',
+          DENO_ACCEPTANCE_BINDING: 'cli-binding',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '',
+      stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    const exited = once(child, 'exit');
+    exited.catch(() => {});
+    let failure;
+    try {
+      await expect
+        .poll(
+          async () => {
+            if (child.exitCode !== null || child.signalCode !== null) throw new Error(stdout + stderr);
+            try {
+              const response = await fetch(origin + '/api/deno-check', {
+                method: 'POST',
+                body: 'cli-body',
+                signal: AbortSignal.timeout(1000),
+              });
+              return response.ok ? response.json() : undefined;
+            } catch {
+              return undefined;
+            }
+          },
+          { timeout: 20000 },
+        )
+        .toMatchObject({
+          runtime: expect.stringMatching(/^2\./),
+          body: 'cli-body',
+          binding: 'cli-binding',
+          args: ['--', '--application-option', 'private argument value'],
+        });
+    } catch (error) {
+      failure = error;
+    } finally {
+      // Test both supported terminal signals through the parent CLI.
+      child.kill(json ? 'SIGINT' : 'SIGTERM');
+      const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
+      const [code, signal] = await exited;
+      clearTimeout(kill);
+      if (!failure) {
+        expect({ code, signal }, stdout + stderr).toEqual({ code: 0, signal: null });
+        if (json) {
+          expect(stderr).toBe('');
+          expect(stdout).not.toContain('private argument value');
+          const events = stdout
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line));
+          expect(events.map((event) => event.data.event)).toEqual(['started', 'stopped']);
+          for (const event of events)
+            expect(event).toMatchObject({
+              schemaVersion: 1,
+              command: 'start',
+              ok: true,
+              data: { adapter: 'deno', tool: 'deno' },
+            });
+          expect(events[1].data.reason).toBe('requested');
+          expect(() => process.kill(events[0].data.pid, 0)).toThrow();
+        } else {
+          expect(stdout).toContain('start   deno dist/server/index.js');
+          expect(stdout).not.toContain('"schemaVersion"');
+        }
+        await expect
+          .poll(() =>
+            fetch(origin, { signal: AbortSignal.timeout(1000) }).then(
+              () => true,
+              () => false,
+            ),
+          )
+          .toBe(false);
+      }
+    }
+    if (failure) throw new Error(`${failure.stack}\nCLI stdout:\n${stdout}\nCLI stderr:\n${stderr}`);
+  }
 }

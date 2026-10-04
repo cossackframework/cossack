@@ -1,4 +1,4 @@
-import { writeDenoRuntimeAcceptance, verifyDenoRuntimeApplication } from '../packages/cossack/tests/fixtures/deno-runtime-acceptance.js';
+import { writeDenoRuntimeAcceptance, verifyDenoRuntimeApplication, verifyDenoCliStartup } from '../packages/cossack/tests/fixtures/deno-runtime-acceptance.js';
 import { verifyAgentDocumentation } from './verify-agent-documentation.mjs';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -624,7 +624,9 @@ try {
     await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
     await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
     await verifyDenoRuntimeApplication(minimalProjectDir);
-    console.log('Installed Deno HTTP/SSE/WebSocket and hydration acceptance passed.');
+    await verifyDenoCliStartup(minimalProjectDir, process.env.COSSACK_DENO_BINARY ?? 'deno',
+      path.join(minimalProjectDir, 'node_modules/cossack/bin/cossack.js'));
+    console.log('Installed Deno HTTP/SSE/WebSocket, hydration and normal/JSON CLI startup acceptance passed.');
   } else {
     await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
   }

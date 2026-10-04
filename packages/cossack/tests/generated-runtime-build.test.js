@@ -1689,7 +1689,7 @@ it.each([true, false])('serves generated Node pages, native requests, cookies an
 }, 60000);
 
 it.skipIf(!process.env.COSSACK_DENO_BINARY)('executes a generated Deno application with HTTP, SSE, WebSockets and browser hydration', async () => {
-  const {writeDenoRuntimeAcceptance,verifyDenoRuntimeApplication}=await import('./fixtures/deno-runtime-acceptance.js');
+  const {writeDenoRuntimeAcceptance,verifyDenoRuntimeApplication,verifyDenoCliStartup}=await import('./fixtures/deno-runtime-acceptance.js');
   const root=await project('deno');
   await writeDenoRuntimeAcceptance(root);
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root }); }
@@ -1698,4 +1698,5 @@ it.skipIf(!process.env.COSSACK_DENO_BINARY)('executes a generated Deno applicati
   await vite(root, ['--ssr','src/index.ts','--outDir','dist/server']);
   await assertPortableChunks(path.join(root,'dist/server'));
   await verifyDenoRuntimeApplication(root);
+  await verifyDenoCliStartup(root, process.env.COSSACK_DENO_BINARY);
 },120000);

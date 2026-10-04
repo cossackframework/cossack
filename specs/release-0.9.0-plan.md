@@ -967,7 +967,7 @@ connection. The script and standalone Vite share their binding factory and
 runtime lifecycle. Normal and JSON CLI development commands supervise shutdown.
 The [socket checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04)
 records generated and installed verification. Complete the final release matrix;
-Deno CLI/development integration and Electron launch/packaging remain open.
+Deno development integration and Electron launch/packaging remain open.
 
 **Deno production progress — Author: Codex (2026-10-04).** Generated and installed
 apps now execute in real Deno with HTTP, SSE, WebSockets, hydration, environment
@@ -978,9 +978,9 @@ and honor `PORT`/`HOST`. Shared adapter contracts live in core; Deno and Desktop
 no longer depend on framework-owned types. See the
 [checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
 
-Next, fix Deno dispatch in `cossack start` (the current non-Cloudflare branch runs
-Node), verify normal/JSON CLI execution and cancellation, and implement actual
-Deno development acceptance. Production execution alone does not verify RT-28
+Deno `cossack start` now dispatches to Deno and supervises normal/JSON execution
+and cancellation; see the [CLI checkpoint](./release-0.9.0.md#codex-deno-cli-start-2026-10-04).
+Next implement actual Deno development acceptance. Production execution alone does not verify RT-28
 development traces, graceful generated-server draining, Deno Deploy, Electron or
 the complete REL-03 matrix.
 

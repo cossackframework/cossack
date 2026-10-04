@@ -20,11 +20,12 @@ Partial acceptance does not close RT-28 or REL-03.
 ## Continue here — Codex, 2026-10-04
 
 1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** other runtime development
-   acceptance, coordinating Deno CLI/development and Desktop verification with REL-03.
+   acceptance, coordinating Deno development and Desktop verification with REL-03.
    Basic Deno production execution now passes; see the
    [checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
-   Next fix Deno `cossack start` dispatch (currently the Node branch), verify its
-   normal/JSON lifecycle, then implement Deno development acceptance.
+   Deno CLI startup now uses the actual runtime with normal/JSON lifecycle
+   supervision; see the [CLI checkpoint](./release-0.9.0.md#codex-deno-cli-start-2026-10-04).
+   Next implement Deno development acceptance through the public CLI/Vite path.
    Preserve the public inspector import
    (filesystem imports duplicate capture owners), ordered WebSocket application
    errors, and capture ownership. Keep the Node adapter and core inside the
@@ -50,7 +51,7 @@ Partial acceptance does not close RT-28 or REL-03.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
-- REL-03 still needs Deno CLI/development integration, Electron launch/packaging and the full runtime/release matrix.
+- REL-03 still needs Deno development integration, Electron launch/packaging and the full runtime/release matrix.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

@@ -6,6 +6,49 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-deno-production-2026-10-04"></a>
+### Codex: Real Deno production acceptance (2026-10-04)
+
+Generated Deno apps now keep pnpm-installed dependencies with
+`nodeModulesDir: "manual"` and honor `PORT`/`HOST` (defaults: 8000/0.0.0.0).
+The first actual run exposed automatic installation replacing linked packages
+and failing to resolve a server import. Generated-app TypeScript checks also
+cover conversion of the environment's `HOST` value to the adapter's string type.
+
+Shared adapter contracts now live in core, with framework re-exports. Deno and
+Desktop no longer depend on framework-owned types. Core publishes the empty
+JavaScript companion required for Deno to resolve the type-only contract;
+Desktop builds consume published declarations instead of pulling core source
+outside their project. The typed Deno smoke test caught the missing companion
+before correction.
+
+Verification:
+
+- `COSSACK_DENO_BINARY=<Deno executable> pnpm test:deno`: builds and packs local
+  packages, installs a generated Deno application, checks its TypeScript and
+  runs it in Deno/Chromium; then runs **2 typed native smoke tests** and the
+  workspace generated-app case (**1 pass / 42 unrelated cases skipped**).
+  HTTP requests, repeated cookies, bindings, HTTP/SSE/WebSocket actions,
+  hydration, origin/scope rejection and process termination pass. Client chunks
+  exclude server method code; both graphs exclude `cloudflare:workers` imports.
+  Log: `/tmp/cossack-deno-gate-complete.log`.
+- Deno adapter: **16 tests / 2 files**; Desktop: **16 / 4**;
+  framework adapter contract: **5 / 1**. Logs:
+  `/tmp/cossack-deno-regressions.log`, `/tmp/cossack-deno-framework-contract.log`.
+- Scaffold: **113 tests / 8 files** (`/tmp/cossack-deno-scaffold-final.log`).
+  Root `pnpm tsc --noEmit` and all **11 package type checks** pass
+  (`/tmp/cossack-deno-root-types-final.log`, `/tmp/cossack-deno-package-types-final.log`).
+- Missing Deno fails immediately with setup guidance; the gate never treats the
+  ordinary suite's optional Deno case as runtime evidence. The CLI test package
+  declares Deno ambient types for its generated TypeScript fixture.
+
+Baseline: Deno 2.9.6 on Linux; installed Vite 8.3.2, Hono 4.13.12 and TypeScript
+7.0.2. Deno's native checker uses its bundled TypeScript 6.0.3. No deployment or
+publication occurred. Process termination does not prove graceful draining of
+arbitrary generated-app work. Deno CLI startup/development, RT-28 development
+traces, Electron launch/packaging and the full release matrix remain open.
+**26 tasks complete, 32 open**; versions stay at 0.8.3.
+
 <a id="codex-node-websocket-development-2026-10-04"></a>
 ### Codex: Unified Node development sockets and bindings (2026-10-04)
 

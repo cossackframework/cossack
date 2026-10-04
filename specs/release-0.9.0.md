@@ -88,48 +88,47 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-deno-production-2026-10-04"></a>
-### Codex: Real Deno production acceptance (2026-10-04)
+<a id="codex-deno-cli-start-2026-10-04"></a>
+### Codex: Deno CLI production startup (2026-10-04)
 
-Generated Deno apps now keep pnpm-installed dependencies with
-`nodeModulesDir: "manual"` and honor `PORT`/`HOST` (defaults: 8000/0.0.0.0).
-The first actual run exposed automatic installation replacing linked packages
-and failing to resolve a server import. Generated-app TypeScript checks also
-cover conversion of the environment's `HOST` value to the adapter's string type.
+`cossack start` now selects the Deno executable for Deno projects instead of
+running the built entry in Node. It uses the generated baseline environment,
+network and read permissions; application arguments retain their ordering and
+literal values. `COSSACK_DENO_BINARY` selects an executable, otherwise the CLI
+uses `deno` on PATH. Missing builds direct the user to `pnpm run build`, which
+includes the generated SSR build.
 
-Shared adapter contracts now live in core, with framework re-exports. Deno and
-Desktop no longer depend on framework-owned types. Core publishes the empty
-JavaScript companion required for Deno to resolve the type-only contract;
-Desktop builds consume published declarations instead of pulling core source
-outside their project. The typed Deno smoke test caught the missing companion
-before correction.
+Normal and JSON startup for Node/Deno now share bounded process supervision.
+JSON output retains its existing event contract and excludes child output and
+arguments. No `started` event is emitted when the executable cannot spawn.
+Cloudflare dispatch is unchanged. Custom Deno permission sets remain available
+through the generated `deno.json` task.
 
 Verification:
 
-- `COSSACK_DENO_BINARY=<Deno executable> pnpm test:deno`: builds and packs local
-  packages, installs a generated Deno application, checks its TypeScript and
-  runs it in Deno/Chromium; then runs **2 typed native smoke tests** and the
-  workspace generated-app case (**1 pass / 42 unrelated cases skipped**).
-  HTTP requests, repeated cookies, bindings, HTTP/SSE/WebSocket actions,
-  hydration, origin/scope rejection and process termination pass. Client chunks
-  exclude server method code; both graphs exclude `cloudflare:workers` imports.
-  Log: `/tmp/cossack-deno-gate-complete.log`.
-- Deno adapter: **16 tests / 2 files**; Desktop: **16 / 4**;
-  framework adapter contract: **5 / 1**. Logs:
-  `/tmp/cossack-deno-regressions.log`, `/tmp/cossack-deno-framework-contract.log`.
-- Scaffold: **113 tests / 8 files** (`/tmp/cossack-deno-scaffold-final.log`).
-  Root `pnpm tsc --noEmit` and all **11 package type checks** pass
-  (`/tmp/cossack-deno-root-types-final.log`, `/tmp/cossack-deno-package-types-final.log`).
-- Missing Deno fails immediately with setup guidance; the gate never treats the
-  ordinary suite's optional Deno case as runtime evidence. The CLI test package
-  declares Deno ambient types for its generated TypeScript fixture.
+- Generated Deno app: **1 pass / 42 unrelated cases skipped**. In addition to
+  browser/runtime acceptance, both CLI output modes start a real Deno server
+  from a project subdirectory, preserve arguments containing spaces and `--`,
+  serve native HTTP, and reclaim the server after SIGTERM/SIGINT. JSON metadata
+  identifies Deno; its child PID and listening port no longer exist after exit.
+  Log: `/tmp/cossack-deno-cli-generated.log`.
+- CLI lifecycle: **13 pass / 38 unrelated cases skipped**, including normal Node
+  cleanup and Deno missing-build/executable diagnostics. Broader CLI subprocess
+  and adapter regressions: **43 tests / 2 files pass**. Logs:
+  `/tmp/cossack-deno-cli-lifecycle.log`, `/tmp/cossack-deno-cli-contracts.log`.
+- Root `pnpm tsc --noEmit` and all **11 package type checks** pass. Logs:
+  `/tmp/cossack-deno-cli-root-types.log`, `/tmp/cossack-deno-cli-package-types.log`.
+- `COSSACK_DENO_BINARY=<Deno executable> pnpm test:deno` passes the full local
+  package build/pack/install gate, generated-app TypeScript, Deno/Chromium
+  HTTP/SSE/WebSocket and normal/JSON CLI startup, **2 typed native smoke tests**,
+  and the workspace generated-app case. The installed check invokes the tarball
+  CLI's own executable. Log: `/tmp/cossack-deno-cli-installed.log`.
 
-Baseline: Deno 2.9.6 on Linux; installed Vite 8.3.2, Hono 4.13.12 and TypeScript
-7.0.2. Deno's native checker uses its bundled TypeScript 6.0.3. No deployment or
-publication occurred. Process termination does not prove graceful draining of
-arbitrary generated-app work. Deno CLI startup/development, RT-28 development
-traces, Electron launch/packaging and the full release matrix remain open.
-**26 tasks complete, 32 open**; versions stay at 0.8.3.
+A `started` event still means process creation, not HTTP readiness. Termination
+and a bounded wait do not prove graceful draining of arbitrary application work.
+Actual Deno development integration, RT-28 development traces, Electron
+launch/packaging and the final release matrix remain open. **26 complete,
+32 open**; versions stay at 0.8.3.
 
 ### Archived checkpoints
 
@@ -140,6 +139,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-deno-production-2026-10-04"></a>[Codex real Deno production acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-production-2026-10-04) |
 | <a id="codex-node-websocket-development-2026-10-04"></a>[Codex unified Node development sockets and bindings (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04) |
 | <a id="codex-node-development-2026-10-04"></a>[Codex Node Vite development HTTP and trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-development-2026-10-04) |
 | <a id="codex-native-trace-evidence-2026-10-04"></a>[Codex native body server trace evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-native-trace-evidence-2026-10-04) |
