@@ -164,3 +164,34 @@ it('persists bounded socket evidence and rejects payloads, HTTP status and incon
         expect(() => parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
     }
 });
+
+it('relays only valid native terminals from server environments and removes listeners on close', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { installDevelopmentTraceBridge, TRACE_BRIDGE_EVENT } = await import('../src/vite-development-traces');
+    const dir = await root(), ws = Object.assign(new EventEmitter(), { send: vi.fn() }), httpServer = new EventEmitter();
+    const serverHot = new EventEmitter(), clientHot = new EventEmitter();
+    const bridge = installDevelopmentTraceBridge({ ws, httpServer, environments: {
+        ssr: { config: { consumer: 'server' }, hot: serverHot }, client: { config: { consumer: 'client' }, hot: clientHot },
+    } } as any, dir);
+    const event = TRACE_BRIDGE_EVENT + ':native';
+    const evidence = JSON.stringify({ schemaVersion: 1, callId: randomUUID(), requestId: randomUUID(), dispatchId: randomUUID(), finishedAt: 10, outcome: 'cancelled', cleanup: 'completed' });
+    ws.emit(event, evidence); clientHot.emit(event, evidence);
+    serverHot.emit(event, JSON.stringify({ ...JSON.parse(evidence), payload: 'private' }));
+    expect(ws.send).not.toHaveBeenCalled(); const runner = { send: vi.fn() }; serverHot.emit(event, evidence, runner);
+    expect(ws.send.mock.calls).toEqual([[event, evidence]]);
+    expect(runner.send.mock.calls).toEqual([[event + ':ack', { dispatchId: JSON.parse(evidence).dispatchId }]]);
+    httpServer.emit('close'); bridge.dispose(); expect(serverHot.listenerCount(event)).toBe(0);
+    serverHot.emit(event, evidence); expect(ws.send).toHaveBeenCalledOnce();
+});
+
+it('stores native terminals with the same strict schema read by CLI and MCP', async () => {
+    const dir = await root(), s = snapshot();
+    const native = { kind: 'server-native', phase: 'finish', schemaVersion: 1, sequence: 1, timestamp: 10,
+        callId: randomUUID(), requestId: randomUUID(), dispatchId: randomUUID(), finishedAt: 9, outcome: 'cancelled', cleanup: 'failed' };
+    s.events = [native] as any;
+    await writeDevelopmentTrace(dir, randomUUID(), JSON.stringify(s));
+    expect((await readDevelopmentTraces(dir)).data.record?.snapshot.events).toEqual([native]);
+    for (const patch of [{ payload: 'private' }, { phase: 'response' }, { outcome: 'succeeded' }]) {
+        await expect(writeDevelopmentTrace(dir, randomUUID(), JSON.stringify({ ...s, events: [{ ...native, ...patch }] }))).rejects.toMatchObject({ code: 'COSSACK_TRACE_INVALID' });
+    }
+});

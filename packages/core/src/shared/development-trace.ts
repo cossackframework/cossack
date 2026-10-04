@@ -1,4 +1,4 @@
-import { DEVELOPMENT_RPC_HEADER, parseDevelopmentSocketEvidence, type DevelopmentSocketEvidence, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, type DevelopmentStreamEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
+import { parseDevelopmentNativeEvidence, type DevelopmentNativeEvidence, DEVELOPMENT_RPC_HEADER, parseDevelopmentSocketEvidence, type DevelopmentSocketEvidence, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, type DevelopmentStreamEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
 import { inspectDevelopmentComponent, type DevelopmentInspectionOptions, type DevelopmentComponentSnapshot } from './development-inspection';
 import type { NavigateOutcome, NavigationScrollBehavior, NavigationType } from '../client/navigation';
 
@@ -56,7 +56,13 @@ export interface DevelopmentServerSocketEvent extends DevelopmentSocketEvidence 
     readonly sequence: number;
     readonly timestamp: number;
 }
-export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent | DevelopmentServerStreamEvent | DevelopmentServerSocketEvent;
+export interface DevelopmentServerNativeEvent extends DevelopmentNativeEvidence {
+    readonly kind: 'server-native';
+    readonly phase: 'finish';
+    readonly sequence: number;
+    readonly timestamp: number;
+}
+export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent | DevelopmentServerStreamEvent | DevelopmentServerSocketEvent | DevelopmentServerNativeEvent;
 
 export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
@@ -88,6 +94,7 @@ interface Collector {
     dropped: number;
     collecting: boolean;
     events: DevelopmentTraceEvent[];
+    readonly nativeReceivers: Map<string, (evidence: DevelopmentNativeEvidence) => void>;
 }
 let active: Collector | undefined;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -101,9 +108,9 @@ export function startDevelopmentTrace(options: { capacity?: number } = {}): Deve
     if (!import.meta.env?.DEV) throw Object.assign(new Error('Development trace capture is disabled outside development.'), { code: 'COSSACK_DEVTOOLS_DISABLED' });
     const capacity = options.capacity ?? 512;
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 2048) throw new RangeError('Trace capacity must be an integer from 1 to 2048.');
-    if (active) active.collecting = false;
+    if (active) { active.collecting = false; active.nativeReceivers.clear(); }
     const collector: Collector = { sessionId: crypto.randomUUID(), startedAt: Date.now(), capacity,
-        components: new WeakMap(), services: new WeakMap(), serviceSequence: 0, componentRefs: new Map(), droppedComponents: 0, componentSequence: 0, sequence: 0, dropped: 0, collecting: true, events: [] };
+        components: new WeakMap(), services: new WeakMap(), serviceSequence: 0, componentRefs: new Map(), droppedComponents: 0, componentSequence: 0, sequence: 0, dropped: 0, collecting: true, events: [], nativeReceivers: new Map() };
     active = collector;
     return {
         snapshot: () => ({ schemaVersion: 1, sessionId: collector.sessionId, startedAt: collector.startedAt, capturedAt: Date.now(),
@@ -119,7 +126,7 @@ export function startDevelopmentTrace(options: { capacity?: number } = {}): Deve
             if (!collector.collecting) return { componentId: collector.components.get(component) ?? null, capturedAt: Date.now(), status: 'stopped' };
             return inspectDevelopmentComponent(component, componentIdentity(collector, component), options);
         },
-        stop: () => { collector.collecting = false; if (active === collector) active = undefined; },
+        stop: () => { collector.nativeReceivers.clear(); collector.collecting = false; if (active === collector) active = undefined; },
     };
 }
 
@@ -186,6 +193,13 @@ function navigationDiagnostic(event: DevelopmentNavigationDiagnostic): Developme
     }
 }
 
+/** Accept a bounded out-of-band native terminal only for its original active capture. */
+export function recordDevelopmentNativeEvidence(json: unknown): void {
+    if (!import.meta.env?.DEV || !active?.collecting) return;
+    const evidence = parseDevelopmentNativeEvidence(json);
+    if (evidence) active.nativeReceivers.get(evidence.callId)?.(evidence);
+}
+
 /** @internal Fixed operations keep arbitrary metadata out of the capture boundary. */
 export interface DevelopmentRpcTrace {
     readonly callId: string;
@@ -227,6 +241,21 @@ function rpcTrace(collector: Collector, identity:
     emit('start');
     let serverRecorded: DevelopmentRpcEvidence | undefined;
     let streamRecorded = false;
+    let pendingNative: DevelopmentNativeEvidence | undefined;
+    const native = (evidence: DevelopmentNativeEvidence) => {
+        if (!collector.collecting || collector.nativeReceivers.get(identity.callId) !== native) return;
+        // A bodyless response may finish cleanup before its headers reach the browser.
+        if (!serverRecorded) { pendingNative ??= evidence; return; }
+        if (serverRecorded.result !== 'native' || evidence.requestId !== wireId || evidence.dispatchId !== serverRecorded.dispatchId) return;
+        collector.nativeReceivers.delete(identity.callId);
+        append(collector, { ...evidence, kind: 'server-native', phase: 'finish', sequence: ++collector.sequence, timestamp: Date.now() });
+    };
+    if (collector.collecting && identity.transport === 'http') {
+        // Retain only recent correlation closures, never components or payloads.
+        if (collector.nativeReceivers.size >= 256) collector.nativeReceivers.delete(collector.nativeReceivers.keys().next().value!);
+        collector.nativeReceivers.set(identity.callId, native);
+    }
+
     let socketDispatch: string | undefined, socketResponse = false, socketTerminal = false;
     return {
         callId: identity.callId,
@@ -248,6 +277,8 @@ function rpcTrace(collector: Collector, identity:
             if (!evidence || evidence.callId !== identity.callId || evidence.requestId !== wireId || evidence.status !== response.status) return;
             serverRecorded = evidence;
             append(collector, { ...evidence, kind: 'server-rpc', phase: 'response', sequence: ++collector.sequence, timestamp: Date.now() });
+            if (evidence.result !== 'native') collector.nativeReceivers.delete(identity.callId);
+            else if (pendingNative) { native(pendingNative); pendingNative = undefined; }
         },
         stream: frame => {
             if (finished || !collector.collecting || streamRecorded || serverRecorded?.result !== 'stream') return;

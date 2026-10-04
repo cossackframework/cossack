@@ -22,13 +22,15 @@ export function connectDevelopmentTraceBridge(token: string, hot: ImportMeta['ho
             lastStopped = pendingStopped;
         }
     };
+    const native = (json: unknown) => { if (!disposed && connected) tools?.recordNativeEvidence(json); };
+    hot.on(event + ':native', native);
     const disconnect = () => { connected = false; pending = undefined; };
     const reconnect = () => { connected = true; pending = undefined; publish(); };
     hot.on(event + ':ack', ack); hot.on('vite:ws:disconnect', disconnect); hot.on('vite:ws:connect', reconnect);
     const timer = setInterval(publish, 1000);
     const dispose = () => {
         if (disposed) return; disposed = true; clearInterval(timer);
-        hot.off(event + ':ack', ack); hot.off('vite:ws:disconnect', disconnect); hot.off('vite:ws:connect', reconnect);
+        hot.off(event + ':native', native); hot.off(event + ':ack', ack); hot.off('vite:ws:disconnect', disconnect); hot.off('vite:ws:connect', reconnect);
         window.removeEventListener('pagehide', pagehide);
     };
     const pagehide = (event: PageTransitionEvent) => { if (!event.persisted) dispose(); };

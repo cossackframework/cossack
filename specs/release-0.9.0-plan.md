@@ -556,13 +556,14 @@ JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.
 ### RT-28: Devtools snapshots and timelines
 
 Codex status (2026-10-04): Capture, passive inspection, browser controls and shared
-CLI/MCP records pass generated and installed Cloudflare HTTP/WebSocket acceptance.
-See [completed work and evidence](./release-0.9.0-plan-archive.md#codex-rt28-socket-handoff-2026-10-04)
+CLI/MCP records pass generated and installed Cloudflare HTTP/SSE/WebSocket acceptance.
+Native bodies now report separate server outcome/cleanup evidence with bounded
+background receipt acknowledgement; see the [native checkpoint](./release-0.9.0.md#codex-native-trace-evidence-2026-10-04).
+See [earlier completed work and evidence](./release-0.9.0-plan-archive.md#codex-rt28-socket-handoff-2026-10-04)
 and [capture contracts](../docs/development-traces.md).
 
-Remaining: Native-body server terminal evidence and other runtime acceptance of
-the shared schema. Header evidence does not prove body completion; a WebSocket
-terminal does not prove later iterator cleanup. Preserve capture ownership,
+Remaining: Other runtime development acceptance of the shared schema. Header
+evidence does not prove body completion; a WebSocket terminal does not prove later iterator cleanup. Preserve capture ownership,
 bounded optional evidence, paused-iterator deadlines, first failure codes,
 confirmed state and one cancellation request. RT-28 remains open.
 

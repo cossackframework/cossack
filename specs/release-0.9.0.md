@@ -50,7 +50,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
-- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs. HTTP/WebSocket capture and installed CLI/MCP parity pass; native-body evidence and other runtime acceptance remain. See the [checkpoint](#codex-socket-trace-evidence-2026-10-04).
+- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs. HTTP/SSE/WebSocket capture, native-body server evidence and installed CLI/MCP parity pass; other runtime development acceptance remains. See the [checkpoint](#codex-native-trace-evidence-2026-10-04).
 - [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite. GLM (2026-10-02): `@cossackframework/test-utils/server` — `withRequestScope` (production request-context ALS + root service scope, awaited disposal, restoration on failure) and `controlledAsync` (settle-once deferred + shared AbortSignal); own suite now runs in root `pnpm test:unit`; remaining: framework-level RPC dispatch fixtures, auth fixtures, hydration helpers, and tarball-import verification.
 
 ## New services
@@ -88,26 +88,57 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-native-cancel-settlement-2026-10-04"></a>
-### Codex: Native response failure settlement (2026-10-04)
+<a id="codex-native-trace-evidence-2026-10-04"></a>
+### Codex: Native body server trace evidence (2026-10-04)
 
-Native body cancellation no longer waits for an application producer's cleanup
-promise before rejecting or releasing the local reader. Regressions reproduced
-indefinite waits for already-aborted and oversized responses before the fix.
-Component and explicit-service proxies now retain the size failure before their
-deadline, clear loading/optimistic state and record one failed trace terminal.
-Late cleanup rejection stays observed; response bytes and headers are unchanged.
+Author: Codex. RT-28 native component and service responses now report fixed-field
+`server-native` evidence after producer cancellation and request disposal settle.
+The Vite server environment channel carries it separately from application bytes
+and headers. Receipt acknowledgements keep background Worker reporting I/O alive through
+execution-context `waitUntil`, with a one-second bound and no replay. Native headers
+and EOF do not wait for reporting.
+Observer errors never replace the application outcome. Production strips reporting.
 
-Verification: core build passes; **1,515 tests / 92 files pass**, including six
-new reader/proxy regressions. Root `pnpm tsc --noEmit` and `pnpm typecheck` pass
-for all 11 packages. Logs: `/tmp/cossack-native-cancel-before.log` (reproduction),
-`/tmp/cossack-native-cancel-core.log`, `/tmp/cossack-native-cancel-build.log` and
-`/tmp/cossack-native-cancel-types.log`.
+Browser capture joins call/request/dispatch IDs to native response headers, accepts
+one terminal before headers or after local finish, and retains at most 256 recent
+HTTP correlations. Stop/replacement clears them. Local success and server cleanup
+failure remain separate facts. A stalled cleanup emits no terminal. See the
+[contract and limits](../docs/development-traces.md#native-body-terminals).
 
-This proves local failure settlement, not server cleanup or ignored I/O termination.
-RT-28 native-body server terminal evidence and other runtime acceptance remain
-open. RT-01's other criteria also remain open. **26 tasks complete, 32 open**;
-versions stay at 0.8.3. Preserve the [HTTP/WebSocket evidence](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04).
+Real browser acceptance also exposed empty readable streams for bodyless HTTP
+statuses. The native client reader now reconstructs those responses with a null
+body instead of throwing. Binary bytes, status, Content-Length and custom headers
+retain their existing semantics.
+
+Verification:
+
+- Core suite: **1,524 tests / 93 files pass**; final correlation/race checks:
+  **34 tests / 3 files pass**. Includes a server-assigned request ID arriving after
+  an early bodyless terminal. Core builds pass. Logs: `/tmp/cossack-native-trace-core.log`,
+  `/tmp/cossack-native-trace-final-core.log` and `/tmp/cossack-native-trace-final-build.log`.
+- Framework lifecycle, background acknowledgement, persistence, router, stream
+  and production checks: **109 tests / 7 files pass**. Headers and EOF finish even
+  when no acknowledgement arrives. Log: `/tmp/cossack-native-trace-background-framework.log`.
+- Generated Cloudflare browser/CLI/MCP acceptance: **3 pass / 33 unrelated cases
+  skipped**, covering HTTP, SSE and WebSocket pages, component/service binary
+  bodies, service 204s and production exclusion. Log: `/tmp/cossack-native-trace-background-generated-final.log`.
+- The local scaffold gate builds packages and packs 12 tarballs. The final core
+  and framework tarballs replace the earlier ones in the isolated installation;
+  its expanded `verifyAgentDocumentation` fixture checks all three transports,
+  exact offline CLI/MCP parity, packaged examples and production client/Worker
+  exclusion. Each fixture run owns a unique scope so repeated checks do not reuse
+  persisted SSE state. Logs: `/tmp/cossack-native-trace-installed.log` and
+  `/tmp/cossack-native-trace-background-installed-final.log`. The temporary
+  installation and tarballs were removed after verification.
+- MCP lifecycle suite: **18 tests pass** (`/tmp/cossack-native-trace-mcp.log`).
+  Root `pnpm tsc --noEmit` and all 11 package type checks pass
+  (`/tmp/cossack-native-trace-types.log`). The final native lifecycle test rerun
+  passes all 10 cases after correcting the mock `waitUntil` promise type
+  (`/tmp/cossack-native-trace-final-test-types.log`).
+
+RT-28 remains open for other runtime development acceptance. Native server cleanup
+evidence does not prove browser consumption, downstream cleanup or ignored I/O
+termination. No task closes: **26 complete, 32 open**; versions remain 0.8.3.
 
 ### Archived checkpoints
 
@@ -118,6 +149,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-native-cancel-settlement-2026-10-04"></a>[Codex native response failure settlement (2026-10-04)](./release-0.9.0-verification-archive.md#codex-native-cancel-settlement-2026-10-04) |
 | <a id="codex-socket-trace-evidence-2026-10-04"></a>[Codex WebSocket server trace evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04) |
 | <a id="codex-cli07-complete-2026-10-04"></a>[Codex installed trace acceptance and CLI-07 completion (2026-10-04)](./release-0.9.0-verification-archive.md#codex-cli07-complete-2026-10-04) |
 | <a id="codex-generated-trace-acceptance-2026-10-04"></a>[Codex generated development-trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-generated-trace-acceptance-2026-10-04) |

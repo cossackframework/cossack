@@ -1,4 +1,4 @@
-import { parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, parseDevelopmentSocketEvidence } from '@cossackframework/core/devtools';
+import { parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, parseDevelopmentSocketEvidence, parseDevelopmentNativeEvidence } from '@cossackframework/core/devtools';
 import type { DevelopmentTraceSnapshot } from '@cossackframework/core/devtools';
 
 export const DEVELOPMENT_TRACE_DIRECTORY = '.cossack/development-traces';
@@ -66,6 +66,10 @@ export function parseDevelopmentTrace(json: string): DevelopmentTraceSnapshot {
             const { kind, sequence, timestamp, phase, ...evidence } = e;
             choice(phase, [e.frame === 'yield' ? 'response' : 'finish']);
             if (!parseDevelopmentSocketEvidence(JSON.stringify(evidence))) throw invalid();
+        } else if (e.kind === 'server-native') {
+            const { kind, sequence, timestamp, phase, ...evidence } = e;
+            choice(phase, ['finish']);
+            if (!parseDevelopmentNativeEvidence(JSON.stringify(evidence))) throw invalid();
         } else if (e.kind === 'server-stream') {
             const { kind, sequence, timestamp, phase, ...evidence } = e;
             choice(phase, ['finish']);

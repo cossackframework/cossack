@@ -35,7 +35,8 @@ Events form a discriminated union. Check `event.kind` before reading fields:
 `rpc` describes component calls, `service-rpc` describes explicit layout-service
 calls, `server-rpc` carries HTTP server dispatch evidence, `server-stream` carries delivered
 RPC stream terminal evidence, `server-socket` carries WebSocket dispatch evidence,
-and `navigation` describes navigation decisions.
+`server-native` reports native-body outcome and cleanup through the development
+channel, and `navigation` describes navigation decisions.
 
 RPC calls share a local `callId` and a UUID `requestId` when available. Component
 calls have an opaque `componentId`; service calls have a separate opaque `serviceId`.
@@ -101,8 +102,9 @@ has an invocation marker but no return marker. A denied dispatch has neither.
 Returning a generator records `stream` before its body runs. Returning a native
 Response records `native` before its body completes. Neither proves streaming
 success, cleanup or delivery. A separate `server-stream` event can report a
-delivered RPC generator terminal. Native-body terminal evidence remains pending. Calls interrupted before response headers have no such
-record; absence does not prove that the server did not execute them.
+delivered RPC generator terminal. Native responses use the separate development
+channel described below. Calls interrupted before response headers have no joined
+server record; absence does not prove that the server did not execute them.
 
 `timestamp` is browser receipt time. The four server markers use the server wall
 clock; do not subtract them from browser timestamps or assume synchronized clocks.
@@ -134,6 +136,41 @@ Missing evidence never establishes that the server failed or stopped.
 Malformed evidence is ignored without changing application results. Valid records
 share the capture's bounded buffer and are available through the same CLI/MCP
 reader. Production removes the server evidence encoder and client collector.
+
+### Native body terminals
+
+With `cossackPages({ developmentTraces: true })`, native component and explicit
+service responses can report one `server-native` event through the Vite server
+environment's development channel. The response body is never framed or rewritten
+for tracing; its bytes, status and application headers retain their normal semantics.
+
+The server emits the record after producer cancellation and request disposal have
+settled. A background reporting promise waits up to one second for a Vite receipt
+acknowledgement, using the execution context’s
+[`waitUntil`](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil)
+where available. It does
+not hold response headers or EOF behind that acknowledgement, and never replays
+the record. Process runtimes retain only the bounded timer. `outcome` is `succeeded`, `failed` or `cancelled`; `cleanup` is `completed`
+or `failed`. Success requires completed cleanup. Cleanup includes the producer
+cancellation attempt: cancelling an already errored stream can reject even when
+request disposal succeeds. A pending cleanup emits no terminal record. The event
+contains only `schemaVersion`, `callId`, `requestId`, `dispatchId`, `finishedAt`,
+`outcome` and `cleanup`, plus the browser event sequence, timestamp, kind and phase.
+
+The browser joins this record to a matching native `server-rpc` header. It may
+arrive before that header or after the local call finishes. The browser timestamp
+marks correlation and recording, which may follow earlier message receipt. Collection
+retains at most 256 recent HTTP call correlations, with one pending terminal per call; older
+correlations are evicted. Stopping or replacing a capture clears them. No terminal
+is added to a stopped capture, and disconnected development messages are not
+replayed. Keep recording until the server event arrives when inspecting cleanup.
+
+The Vite bridge forwards validated records from server environments to connected
+development clients; each capture accepts only its own IDs. CLI and MCP read the
+same persisted event. This is local, editable development evidence, not an
+authenticated audit log. It proves the reported server cleanup attempt, not client
+body consumption, downstream cleanup, rollback, or termination of ignored I/O.
+Server and browser timestamps use separate clocks. Production excludes this channel.
 
 ### WebSocket dispatch evidence
 

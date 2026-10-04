@@ -272,4 +272,6 @@ Declaration signatures still do not prove runtime availability.
 project-local browser records. Supply `--session <uuid>` or `{ "session": "<uuid>" }`
 for one capture. The Vite bridge and browser recording must be enabled explicitly.
 Inspect `freshness.ageMs` and `live: false`; a record is not proof of current state
-or server execution. See [capture setup and limits](./development-traces.md#read-captures-from-cli-and-mcp).
+or server execution by itself. Joined `server-native` events report native-body
+outcome and cleanup over the separate development channel; they do not prove
+client consumption. See [capture setup and limits](./development-traces.md#read-captures-from-cli-and-mcp).

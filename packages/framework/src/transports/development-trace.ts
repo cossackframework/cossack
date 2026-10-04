@@ -1,5 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono';
-import { DEVELOPMENT_RPC_HEADER, type DevelopmentRpcEvidence, type DevelopmentStreamEvidence } from '@cossackframework/core/devtools';
+import { DEVELOPMENT_RPC_HEADER, type DevelopmentRpcEvidence, type DevelopmentStreamEvidence, type DevelopmentNativeEvidence } from '@cossackframework/core/devtools';
 
 const key = 'cossack:development-rpc-evidence';
 /** Request-local only. An explicit browser capture opts in; production installs nothing. */
@@ -37,4 +37,45 @@ export function developmentRpcStream(c: Context, requestId: string): ((outcome: 
     evidence.result = 'stream';
     return (outcome, cleanup) => JSON.stringify({ schemaVersion: 1, callId: evidence.callId, requestId, dispatchId: evidence.dispatchId,
         finishedAt: Date.now(), outcome, cleanup } satisfies DevelopmentStreamEvidence);
+}
+
+/** The Vite runner channel leaves native application bytes and headers untouched. */
+export function developmentRpcNative(c: Context, requestId: string): ((outcome: DevelopmentNativeEvidence['outcome'], cleanup: DevelopmentNativeEvidence['cleanup']) => void) | undefined {
+    if (!import.meta.env.DEV || !import.meta.hot) return;
+    const evidence = c.get(key) as DevelopmentRpcEvidence | undefined;
+    if (!evidence) return;
+    const hot = import.meta.hot;
+    let execution: Pick<Context['executionCtx'], 'waitUntil'> | undefined;
+    try { execution = c.executionCtx; } catch { /* Process adapters may not supply an execution context. */ }
+    return (outcome, cleanup) => queueDevelopmentNativeEvidence(hot, { schemaVersion: 1,
+        callId: evidence.callId, requestId, dispatchId: evidence.dispatchId, finishedAt: Date.now(), outcome, cleanup }, execution);
+}
+
+/** @internal Reporting must not hold native headers or EOF behind the development channel. */
+export function queueDevelopmentNativeEvidence(hot: NonNullable<ImportMeta['hot']>, evidence: DevelopmentNativeEvidence,
+    execution?: Pick<Context['executionCtx'], 'waitUntil'>): void {
+    if (!import.meta.env.DEV) return;
+    const pending = sendDevelopmentNativeEvidence(hot, evidence).catch(() => {});
+    try { execution?.waitUntil(pending); } catch { /* A closing runtime must not change the response. */ }
+    // Process runtimes keep the bounded timer alive without a Worker context.
+    void pending;
+}
+
+/** @internal Keep runner I/O alive until receipt, without retaining a request indefinitely. */
+export function sendDevelopmentNativeEvidence(hot: NonNullable<ImportMeta['hot']>, evidence: DevelopmentNativeEvidence): Promise<void> {
+    if (!import.meta.env.DEV) return Promise.resolve();
+    return new Promise<void>(resolve => {
+        const event = 'cossack:development-trace:native';
+        const ack = (data: { dispatchId?: string }) => { if (data?.dispatchId === evidence.dispatchId) finish(); };
+        const finish = () => {
+            clearTimeout(timer);
+            try { hot.off(event + ':ack', ack); } catch { /* A disposed runner must still release the request. */ }
+            resolve();
+        };
+        const timer = setTimeout(finish, 1000);
+        try {
+            hot.on(event + ':ack', ack);
+            hot.send(event, JSON.stringify(evidence));
+        } catch { finish(); }
+    });
 }

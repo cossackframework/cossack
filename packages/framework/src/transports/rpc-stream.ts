@@ -21,26 +21,41 @@ export function isRpcStream(result: unknown): result is AsyncIterable<unknown> {
 /** Keep a custom Response's request facilities alive through body consumption. */
 export async function retainRpcResponseBody(
     response: Response, signal: AbortSignal, dispose: () => Promise<void>,
+    onCompletion?: (outcome: 'succeeded' | 'failed' | 'cancelled', cleanup: 'completed' | 'failed') => void | Promise<void>,
 ): Promise<Response> {
     const inRequest = AsyncLocalStorage.snapshot();
+    let outcome: 'succeeded' | 'failed' | 'cancelled' = 'succeeded';
+    const report = async (cleanup: 'completed' | 'failed') => {
+        if (import.meta.env.DEV) {
+            try { await onCompletion?.(outcome === 'succeeded' && cleanup === 'failed' ? 'failed' : outcome, cleanup); }
+            catch { /* Observability cannot alter application body or cleanup behavior. */ }
+        }
+    };
     // Always override application-supplied protocol metadata. Native JSON or
     // NDJSON content types must not be mistaken for framework envelopes.
     const headers = new Headers(response.headers);
     headers.set(RPC_NATIVE_RESPONSE_HEADER, 'native');
     response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-    if (!response.body) { await inRequest(dispose); return response; }
+    if (!response.body) {
+        try { await inRequest(dispose); if (import.meta.env.DEV) await report('completed'); }
+        catch (error) { if (import.meta.env.DEV) await report('failed'); throw error; }
+        return response;
+    }
     const reader = response.body.getReader();
     let closed = false;
     let cleanupPromise: Promise<void> | undefined;
     let controller: ReadableStreamDefaultController<Uint8Array>;
     const cleanup = () => cleanupPromise ??= inRequest(async () => {
         signal.removeEventListener('abort', abort);
-        try { await reader.cancel(); }
-        finally { reader.releaseLock(); await dispose(); }
+        try {
+            try { await reader.cancel(); }
+            finally { reader.releaseLock(); await dispose(); }
+            if (import.meta.env.DEV) await report('completed');
+        } catch (error) { if (import.meta.env.DEV) await report('failed'); throw error; }
     });
     const abort = () => {
         if (closed) return;
-        closed = true;
+        closed = true; if (import.meta.env.DEV) outcome = 'cancelled';
         controller.error(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
         void cleanup().catch(error => console.error('[Cossack RPC] response cleanup failed:', error));
     };
@@ -61,13 +76,13 @@ export async function retainRpcResponseBody(
                     if (!closed) { closed = true; streamController.close(); }
                 } catch (error) {
                     if (closed) return;
-                    closed = true;
+                    closed = true; if (import.meta.env.DEV) outcome = 'failed';
                     try { await cleanup(); }
                     finally { streamController.error(error); }
                 }
             });
         },
-        async cancel() { closed = true; await cleanup(); },
+        async cancel() { closed = true; if (import.meta.env.DEV) outcome = 'cancelled'; await cleanup(); },
     }, { highWaterMark: 0 });
     return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }

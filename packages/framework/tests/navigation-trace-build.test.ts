@@ -58,7 +58,7 @@ it('removes server development evidence instrumentation from production output',
     const code = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : [])
         .filter(chunk => chunk.type === 'chunk').map(chunk => chunk.code).join('\n');
     expect(code).toContain('developmentRpcEvidence');
-    for (const marker of ['X-Cossack-Development-Trace', 'finishedAt', 'receivedAt', 'invokedAt', 'randomUUID', 'cossack:development-rpc-evidence']) expect(code).not.toContain(marker);
+    for (const marker of ['cossack:development-trace:native', 'setTimeout', 'X-Cossack-Development-Trace', 'finishedAt', 'receivedAt', 'invokedAt', 'randomUUID', 'cossack:development-rpc-evidence']) expect(code).not.toContain(marker);
 }, 30000);
 
 it('removes server stream evidence from the production response encoder', async () => {

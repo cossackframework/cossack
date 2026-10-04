@@ -13,21 +13,21 @@ All unchecked tasks remain in scope.
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links all
 26 closed tasks to their archived criteria. CLI-07 is complete. RT-28's HTTP and
-WebSocket trace portions pass generated and installed browser/CLI/MCP parity and
-production exclusion; see the [verification record](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04).
+SSE/WebSocket trace portions, including native-body server evidence, pass generated
+and installed browser/CLI/MCP parity and production exclusion; see the
+[verification record](./release-0.9.0.md#codex-native-trace-evidence-2026-10-04).
 Preserve these regressions; their implementation does not need repeating.
 
 ## Continue here — Codex, 2026-10-04
 
-The [native failure settlement fix](./release-0.9.0.md#codex-native-cancel-settlement-2026-10-04)
-prevents stalled producer cancellation from masking local errors. It does not
-supply native-body server terminal evidence.
-
-1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** native-body server terminal evidence
-   and other runtime development acceptance. Preserve the public inspector import
+1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** other runtime development
+   acceptance, coordinating the Node development routing work under REL-03.
+   Preserve the public inspector import
    (filesystem imports duplicate capture owners), ordered WebSocket application
    errors, and capture ownership. Headers do not prove body completion; socket
-   terminals do not prove later cleanup. Stored records are not live state.
+   terminals do not prove later cleanup. Native evidence uses a separate channel
+   with a one-second background receipt bound; it does not delay response completion
+   or prove client consumption. Stored records are not live state.
 2. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
    guidance, executable examples and verified runtime support through the
    [shared documentation services](../docs/local-agent-tools.md).

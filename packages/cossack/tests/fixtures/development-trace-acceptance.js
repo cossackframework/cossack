@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {execFile,spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
@@ -11,6 +12,8 @@ const browserExpect=expect;
 // The browser driver is a repository test client. Vite and every application
 // dependency resolve from root, including when root contains installed tarballs.
 export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[],transport='http'}) {
+  // Repeated installed runs must not inherit the SSE coordinator's durable state.
+  const scope='trace-acceptance-'+randomUUID();
   const files=['vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts',...(transport==='durable-object'?['wrangler.jsonc','src/index.ts']:[])];
   const backups=new Map();
   for(const file of files){
@@ -35,6 +38,8 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     @Service() export default class TraceCounter extends CossackService {
       @State() count=0;
       @Server() async serviceIncrement(value:string){this.count++;return value;}
+      @Server() async nativeBody(){return new Response(new Uint8Array([0,255,128]),{status:201,headers:{'Content-Length':'3','X-Native-Test':'kept'}});}
+      @Server() async nativeEmpty(){return new Response(null,{status:204});}
     }
   `);
   await fs.writeFile(path.join(root,'src/pages/layout.ts'), `
@@ -50,17 +55,28 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     import {html} from '@cossackframework/renderer';
     import {enableDevTools} from '@cossackframework/framework/client/devtools';
     import TraceCounter from '../services/TraceCounter';
-    @Page({transport:'${transport}',stateful:false}) export default class TracePage extends Cossack {
+    @Page({transport:'${transport}',stateful:false,scope:()=>${JSON.stringify(scope)}}) export default class TracePage extends Cossack {
       @State() count=0;
       @ClientState() failure='';
+      @ClientState() nativeResult='';
+      @ClientState() nativeEmptyResult='';
+      @ClientState() componentNativeResult='';
       @Inject(TraceCounter) counter!:TraceCounter;
       @Server() async *componentStream(value:string){this.count++;yield value;this.count++;return value;}
+      @Server() async componentNative(){return new Response(new Uint8Array([0,255,128]),{status:201,headers:{'Content-Length':'3','X-Native-Test':'kept'}});}
       @Server() async componentFailure(){throw new ClientVisibleError('private-error-sentinel');}
       @Client() onMount(){if(import.meta.env.DEV)(window as any).__traceFixture={tools:enableDevTools(),component:this};}
       @Client() async runComponent(){for await(const _value of rpc$(this.componentStream('private-value-sentinel'))){} }
       @Client() async runService(){await this.counter.serviceIncrement('private-value-sentinel');}
+      @Client() async runNative(){const response=await rpc$(this.counter.nativeBody());if(response)this.nativeResult=[response.status,response.headers.get('X-Native-Test'),...new Uint8Array(await response.arrayBuffer())].join(',');}
+      @Client() async runEmpty(){const response=await rpc$(this.counter.nativeEmpty());if(response)this.nativeEmptyResult=String(response.status)+':'+String(response.body===null);}
+      @Client() async runComponentNative(){const response=await rpc$(this.componentNative());if(response)this.componentNativeResult=[response.status,response.headers.get('X-Native-Test'),...new Uint8Array(await response.arrayBuffer())].join(',');}
       @Client() async runFailure(){try{await this.componentFailure();}catch(error){this.failure=(error as {code:string}).code;}}
       render(){return html\`<main><span id="trace-count">\${this.count}</span><span id="trace-service">\${this.counter.count}</span>
+        <span id="trace-native">\${this.nativeResult}</span><span id="trace-empty">\${this.nativeEmptyResult}</span><span id="trace-component-native">\${this.componentNativeResult}</span>
+        <button @click="\${()=>this.runNative()}">Native service</button>
+        <button @click="\${()=>this.runEmpty()}">Empty service</button>
+        <button @click="\${()=>this.runComponentNative()}">Native component</button>
         <span id="trace-failure">\${this.failure}</span>
         <button @click="\${()=>this.runComponent()}">Component stream</button>
         <button @click="\${()=>this.runService()}">Service action</button>
@@ -104,10 +120,19 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     await browserExpect(page.locator('#trace-service')).toHaveText('1');
     await page.getByRole('button',{name:'Failed action',exact:true}).click();
     await browserExpect(page.locator('#trace-failure')).toHaveText('COSSACK_RPC_CLIENT_ERROR');
+    await page.getByRole('button',{name:'Native service',exact:true}).click();
+    await browserExpect(page.locator('#trace-native')).toHaveText('201,kept,0,255,128');
+    await page.getByRole('button',{name:'Empty service',exact:true}).click();
+    await browserExpect(page.locator('#trace-empty')).toHaveText('204:true');
+    if(transport!=='durable-object') {
+      await page.getByRole('button',{name:'Native component',exact:true}).click();
+      await browserExpect(page.locator('#trace-component-native')).toHaveText('201,kept,0,255,128');
+    }
+    await expect.poll(()=>page.evaluate(()=>window.__traceFixture.tools.snapshot().events.filter(event=>event.kind==='server-native').length),{timeout:10000}).toBe(transport!=='durable-object'?3:2);
     await page.getByRole('button',{name:'Stop trace',exact:true}).click();
     const snapshot=await page.evaluate(()=>window.__traceFixture.tools.snapshot());
     const calls=snapshot.events.filter(event=>(event.kind==='rpc'||event.kind==='service-rpc')&&event.phase==='start');
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(transport!=='durable-object'?6:5);
     for(const call of calls){
       const joined=snapshot.events.filter(event=>event.callId===call.callId);
       expect(joined.filter(event=>(event.kind==='rpc'||event.kind==='service-rpc')&&event.phase==='finish')).toHaveLength(1);
@@ -120,11 +145,12 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       } else {
         const dispatch=joined.find(event=>event.kind==='server-rpc');
         expect(dispatch).toMatchObject({requestId:call.requestId,invokedAt:expect.any(Number)});
+        if(dispatch.result==='native')expect(joined.find(event=>event.kind==='server-native')).toMatchObject({requestId:call.requestId,dispatchId:dispatch.dispatchId,outcome:'succeeded',cleanup:'completed'});
         if(dispatch.result==='stream')expect(joined.find(event=>event.kind==='server-stream')).toMatchObject({requestId:call.requestId,dispatchId:dispatch.dispatchId,outcome:'succeeded',cleanup:'completed'});
       }
     }
-    expect(snapshot.events.filter(event=>event.kind==='server-stream')).toHaveLength(transport==='http'?1:0);
-    expect(snapshot.events.filter(event=>event.kind==='server-socket')).toHaveLength(transport==='http'?0:3);
+    expect(snapshot.events.filter(event=>event.kind==='server-stream')).toHaveLength(transport!=='durable-object'?1:0);
+    expect(snapshot.events.filter(event=>event.kind==='server-socket')).toHaveLength(transport!=='durable-object'?0:3);
     expect(snapshot.events.filter(event=>event.phase==='finish'&&event.outcome==='failed')).toHaveLength(1);
     expect(snapshot.sessionId).toMatch(/^[a-f0-9-]{36}$/i);
     const readRecord=async()=>{
@@ -135,6 +161,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     const recorded=await readRecord();
     expect(recorded.snapshot.events).toEqual(snapshot.events);
     for(const secret of ['private-value-sentinel','private-error-sentinel','componentStream','serviceIncrement'])expect(JSON.stringify(recorded)).not.toContain(secret);
+    for(const method of ['nativeBody','nativeEmpty','componentNative'])expect(JSON.stringify(recorded.snapshot.events)).not.toContain(method);
     await onRecorded({snapshot,recorded});
     expect(errors).toEqual([]);
   } catch(error) {throw new Error(`${error.stack}\nGenerated Vite output:\n${output}`);}
@@ -155,7 +182,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       if(entry.isDirectory())await checkProduction(file);
       else if(entry.name.endsWith('.js')){
         const source=await fs.readFile(file,'utf8');
-        for(const marker of ['X-Cossack-Development-Trace','Record trace','server-stream','server-socket','beginDevelopmentSocketDispatch','cossack-start:'])expect(source.includes(marker),`${file}: ${marker}`).toBe(false);
+        for(const marker of ['X-Cossack-Development-Trace','Record trace','server-stream','server-socket','server-native','cossack:development-trace:native','beginDevelopmentSocketDispatch','cossack-start:'])expect(source.includes(marker),`${file}: ${marker}`).toBe(false);
       }
     }
   };

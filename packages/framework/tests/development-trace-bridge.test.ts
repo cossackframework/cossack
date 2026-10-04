@@ -37,3 +37,9 @@ it('avoids disconnected buffering, retries after busy, and cleans up its timer/l
 it('does not install a production bridge', () => {
     vi.stubEnv('DEV', false); const on = vi.fn(); dispose = connectDevelopmentTraceBridge('unused', { on } as any, undefined); expect(on).not.toHaveBeenCalled();
 });
+it('routes native evidence through the shared inspector without reconnect buffering', () => {
+    const { emit, tools } = fixture(); const record = vi.spyOn(tools, 'recordNativeEvidence');
+    emit('cossack:development-trace:native', 'native evidence'); expect(record).toHaveBeenCalledWith('native evidence');
+    emit('vite:ws:disconnect'); emit('cossack:development-trace:native', 'dropped'); expect(record).toHaveBeenCalledOnce();
+    dispose!(); emit('cossack:development-trace:native', 'disposed'); expect(record).toHaveBeenCalledOnce(); record.mockRestore();
+});

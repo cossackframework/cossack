@@ -1,4 +1,4 @@
-import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream } from './transports/development-trace.js';
+import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream, developmentRpcNative } from './transports/development-trace.js';
 import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
@@ -923,7 +923,7 @@ export function createApp(options: CreateAppOptions = {}) {
           return await retainRpcResponseBody(actionResult, c.req.raw.signal, async () => {
             try { await requestScope.disposeAsync(); }
             finally { await finishResponseLifetime?.(); }
-          });
+          }, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined);
         }
         const serviceState = getServiceState(owned.instance);
         const serialized = serializeRpcResult(actionResult, serviceState);
@@ -1175,7 +1175,7 @@ export function createApp(options: CreateAppOptions = {}) {
           await publishScopeState();
           finishResponseLifetime = retainResponseLifetime(c);
           responseOwnsCleanup = true;
-          return await retainRpcResponseBody(actionResult, componentContext.req.raw.signal, cleanup);
+          return await retainRpcResponseBody(actionResult, componentContext.req.raw.signal, cleanup, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined);
         }
 
         // Get the state of the component that was actually modified

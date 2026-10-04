@@ -107,7 +107,8 @@ state values. Explicit selections return detached, bounded, redacted values with
 retaining them in the event buffer. Resource getters, service resolution and custom
 serialization hooks are not used. Reflective selection is not a sandbox against
 malicious proxies. Capture timestamps distinguish current status from past events.
-RT-28 server correlation, browser tools and shared CLI/MCP trace reads remain open.
+Browser tools, HTTP/WebSocket/native server correlation and shared CLI/MCP trace
+reads are implemented. Other runtime development acceptance remains RT-28 work.
 Test-results reads do not expose traces.
 
 ## Server input boundary
@@ -989,7 +990,7 @@ at a time and rejects overload. The strict parsed-JSON schema accepts only fixed
 trace fields and omitted state values. A project path digest, server identity and
 receipt timestamp accompany atomically replaced, bounded session records.
 
-These are sampled local browser observations, not authenticated server events or
+These are local client/server observations, not authenticated audit logs or
 live queries. The reader exposes receipt age and `live: false`; a recorded collecting
 flag cannot establish current liveness. One Vite recording server owns a project
 directory. Selected field values stay in the browser. See [usage and limits](../docs/development-traces.md#read-captures-from-cli-and-mcp).
@@ -1007,7 +1008,7 @@ result kind and HTTP status. The client validates correlation and fields before
 appending one `server-rpc` event to its original bounded capture. Vite storage,
 CLI and MCP use the same strict event schema. Production removes instrumentation.
 This evidence describes dispatch and response creation, not body completion;
-WebSocket and native-body terminal server evidence remain open. See the
+WebSocket dispatch and native-body cleanup use the separate evidence paths described in the trace guide. See the
 [trace guide](../docs/development-traces.md#server-dispatch-evidence).
 
 
@@ -1019,5 +1020,11 @@ from cleanup completion. Optional evidence is omitted when it would exceed the
 frame limit, reserving space for coordinator cursor insertion. Cancellation emits
 no invented server terminal. Core only records a matching terminal after normal
 frame and EOF validation; malformed evidence does not alter RPC semantics. It joins
-the earlier dispatch ID as a bounded `server-stream` event. Native body and socket
-server evidence still require separate lifecycle integration and acceptance.
+the earlier dispatch ID as a bounded `server-stream` event. Native bodies report cleanup separately over the Vite server environment hot
+channel. A bounded receipt acknowledgement runs in background work, using the
+execution context’s `waitUntil` where available; it does not delay headers or EOF.
+The opt-in Node bridge validates fixed fields before forwarding to browsers. Native response bytes and headers never carry terminal framing. A
+bounded map of recent call identities accepts matching native dispatch records
+before headers or after local completion, but never after capture stop/replacement.
+The browser inspector supplies the shared capture owner to the bridge. Socket
+terminal evidence describes frame preparation, not post-send cleanup.

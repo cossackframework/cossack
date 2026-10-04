@@ -6,6 +6,27 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-native-cancel-settlement-2026-10-04"></a>
+## Codex: Native response failure settlement (2026-10-04)
+
+Native body cancellation no longer waits for an application producer's cleanup
+promise before rejecting or releasing the local reader. Regressions reproduced
+indefinite waits for already-aborted and oversized responses before the fix.
+Component and explicit-service proxies now retain the size failure before their
+deadline, clear loading/optimistic state and record one failed trace terminal.
+Late cleanup rejection stays observed; response bytes and headers are unchanged.
+
+Verification: core build passes; **1,515 tests / 92 files pass**, including six
+new reader/proxy regressions. Root `pnpm tsc --noEmit` and `pnpm typecheck` pass
+for all 11 packages. Logs: `/tmp/cossack-native-cancel-before.log` (reproduction),
+`/tmp/cossack-native-cancel-core.log`, `/tmp/cossack-native-cancel-build.log` and
+`/tmp/cossack-native-cancel-types.log`.
+
+This proves local failure settlement, not server cleanup or ignored I/O termination.
+RT-28 native-body server terminal evidence and other runtime acceptance remain
+open. RT-01's other criteria also remain open. **26 tasks complete, 32 open**;
+versions stay at 0.8.3. Preserve the [HTTP/WebSocket evidence](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04).
+
 <a id="codex-socket-trace-evidence-2026-10-04"></a>
 ## Codex: WebSocket server trace evidence (2026-10-04)
 

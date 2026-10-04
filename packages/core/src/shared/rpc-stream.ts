@@ -177,7 +177,9 @@ export async function readRpcNativeResponse(response: Response, signal?: AbortSi
             }
             buffer.set(next.value, size - next.value.byteLength);
         }
-        return new Response(buffer.slice(0, size), response);
+        // Some browser/runtime bridges expose an empty stream for bodyless HTTP
+        // statuses. A locally constructed Response must still have a null body.
+        return new Response(size === 0 && [204, 205, 304].includes(response.status) ? null : buffer.slice(0, size), response);
     } finally {
         signal?.removeEventListener('abort', abort);
         // Producer cleanup cannot hold local failure settlement or the reader

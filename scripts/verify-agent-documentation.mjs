@@ -149,7 +149,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
 
     // The app and dev server use installed packages; CLI/MCP readers retain the
     // network guard while the browser drives real component and service actions.
-    for(const transport of ['http','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
+    for(const transport of ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
       transport,
       async onRecorded({snapshot,recorded}) {
         const trace=await invoke(['traces','--json','--session',snapshot.sessionId]);
@@ -166,7 +166,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
         assert.equal(remote.structuredContent.versions.framework,framework.version);
       },
     });
-    console.log('Installed HTTP/WebSocket browser traces, offline CLI/MCP parity and production exclusion passed.');
+    console.log('Installed HTTP/SSE/WebSocket browser traces, offline CLI/MCP parity and production exclusion passed.');
 
     // Real UI declarations must expose prop documentation and typed native attributes
     // through both transports, while retaining unresolved platform diagnostics.

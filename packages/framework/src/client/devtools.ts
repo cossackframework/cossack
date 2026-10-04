@@ -1,4 +1,4 @@
-import { startDevelopmentTrace, type DevelopmentTraceSession, type DevelopmentTraceSnapshot,
+import { recordDevelopmentNativeEvidence, startDevelopmentTrace, type DevelopmentTraceSession, type DevelopmentTraceSnapshot,
   type DevelopmentComponentSnapshot, type DevelopmentInspectionOptions } from '@cossackframework/core/devtools';
 
 const instances = new Map<string, WeakRef<object>>();
@@ -16,6 +16,7 @@ export function registerDevToolsInstance(file: string, instance: object): () => 
 }
 
 export interface BrowserDevTools {
+  recordNativeEvidence(json: unknown): void;
   startCapture(options?: { capacity?: number }): DevelopmentTraceSession;
   stopCapture(): void;
   snapshot(): DevelopmentTraceSnapshot | null;
@@ -104,6 +105,7 @@ export function enableDevTools(): BrowserDevTools | undefined {
     snapshot.disabled = !capture;
   };
   const tools: BrowserDevTools = {
+    recordNativeEvidence(json) { if (!disposed) recordDevelopmentNativeEvidence(json); },
     startCapture(options) {
       if (disposed) throw new Error('This development inspector has been disposed.');
       capture = startDevelopmentTrace(options); refreshControls(); return capture;

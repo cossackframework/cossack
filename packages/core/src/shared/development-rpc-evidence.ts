@@ -68,3 +68,18 @@ export function parseDevelopmentSocketEvidence(json: unknown): DevelopmentSocket
         return e;
     } catch { return; }
 }
+
+/** Native body outcome reported separately after request cleanup was attempted. */
+export interface DevelopmentNativeEvidence extends Omit<DevelopmentStreamEvidence, 'outcome'> {
+    outcome: 'succeeded' | 'failed' | 'cancelled';
+}
+export function parseDevelopmentNativeEvidence(json: unknown): DevelopmentNativeEvidence | undefined {
+    if (typeof json !== 'string' || json.length > 1024) return;
+    try {
+        const e = JSON.parse(json);
+        if (!e || typeof e !== 'object' || Array.isArray(e)) return;
+        // Reuse the strict terminal shape, including rejection of unknown fields.
+        if (!parseDevelopmentStreamEvidence(JSON.stringify({ ...e, outcome: e.outcome === 'cancelled' ? 'failed' : e.outcome }))) return;
+        return e;
+    } catch { return; }
+}

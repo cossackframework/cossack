@@ -16,6 +16,15 @@ describe('native RPC response completion', () => {
         const response = await readRpcNativeResponse(new Response(null, { status: 204 }));
         expect(response.status).toBe(204); expect(response.body).toBeNull();
     });
+    it.each([204, 205, 304])('preserves status %s when a runtime exposes an empty body stream', async status => {
+        const original = new Response(new ReadableStream({ start(controller) { controller.close(); } }));
+        // Model the browser/bridge response shape without constructing an
+        // invalid status/body pair through the stricter local constructor.
+        Object.defineProperty(original, 'status', { value: status });
+        const response = await readRpcNativeResponse(original);
+        expect(response.status).toBe(status); expect(response.body).toBeNull();
+        expect(original.body?.locked).toBe(false);
+    });
     it('permits exactly the byte limit', async () => {
         const response = await readRpcNativeResponse(new Response(new Uint8Array(RPC_NATIVE_RESPONSE_MAX_BYTES)));
         expect((await response.arrayBuffer()).byteLength).toBe(RPC_NATIVE_RESPONSE_MAX_BYTES);

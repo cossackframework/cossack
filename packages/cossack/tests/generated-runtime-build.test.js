@@ -1697,7 +1697,7 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-it.each(['http','durable-object'])('shares a generated development browser RPC trace over %s with the CLI and MCP', async transport => {
+it.each(['http','sse','durable-object'])('shares a generated development browser RPC trace over %s with the CLI and MCP', async transport => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project('cloudflare');
