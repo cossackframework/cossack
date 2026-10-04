@@ -4876,3 +4876,20 @@ Verification: [Icon checkpoint](./release-0.9.0.md#codex-icon-2026-10-04).
 
 Reviewed foundation: [AuthForm checkpoint](./release-0.9.0.md#codex-auth-form-2026-10-04).
 PasswordInput value/onChange remain supported; the initial handoff claim was corrected.
+
+<a id="codex-command-palette-plan-2026-10-04"></a>
+## Codex CommandPalette plan (2026-10-04)
+
+- Audit CommandPalette using current Modal and Command contracts. Define native
+  prop destinations, controlled/default open state, names, selection, filtered
+  keyboard behavior, focus return and global-shortcut ownership/cleanup. Reuse
+  existing controllers instead of maintaining incompatible menu/dialog behavior.
+  Current Modal still supports onClose/closeOnBackdrop; verify their controlled
+  close/focus contract through the composition. CommandPalette uses a private open field that collides with prop mirroring, leaves search unnamed and
+  tracks a flat activeIndex while rendering grouped buttons. The unconditional
+  window shortcut can compete across instances or override typing. Define opt-in
+  shortcut ownership, stable command IDs and labels, disabled commands, and a
+  single selection/focus owner using the reviewed Command primitive. Keyboard and
+  pointer selection must agree after filtering, regrouping and command updates.
+
+Reviewed foundation: [CommandPalette checkpoint](./release-0.9.0.md#codex-command-palette-2026-10-04).

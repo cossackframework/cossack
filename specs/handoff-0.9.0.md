@@ -11,22 +11,23 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-RT-23: **65/65 component-source foundations plus Icon and AuthForm reviewed**. Completed
+RT-23: **65/65 component-source foundations plus Icon, AuthForm and CommandPalette reviewed**. Completed
 [verification records](./release-0.9.0-verification-archive.md) and
 [batch plans](./release-0.9.0-plan-archive.md) remain archived. The latest
-[AuthForm checkpoint](./release-0.9.0.md#codex-auth-form-2026-10-04) covers native
-credentials, provider callbacks, hydration and request ownership. Three blocks, generated-app
+[CommandPalette checkpoint](./release-0.9.0.md#codex-command-palette-2026-10-04) covers
+shared grouped search, native dialog ownership and shortcut arbitration. Two blocks, generated-app
 acceptance and the release matrix remain open. RT-23 is not complete.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with CommandPalette**, then DashboardStat and SettingsPanel.
-   CommandPalette has conflicting open-state ownership, an unnamed search field
-   and unconditional global shortcut registration. Verify current Modal close/focus behavior. Compose
-   current Modal/Command contracts with stable IDs, explicit shortcut ownership and
-   matching keyboard/pointer selection. The [RT-23 plan](./release-0.9.0-plan.md#rt-23)
-   retains each block's source findings and acceptance. Keep native behavior,
-   published/ejected imports and installed guidance in scope.
+1. Continue **RT-23 with DashboardStat**, then SettingsPanel. DashboardStat drops
+   root props, colors neutral change as success and includes stray literal template
+   text. Define readonly metric contracts, explicit change meaning, native semantics
+   and responsive wrapping. SettingsPanel still needs typed row/value ownership,
+   connected labels and safe native action/reset behavior. The
+   [RT-23 plan](./release-0.9.0-plan.md#rt-23) retains source findings and acceptance.
+   Preserve compiled/ejected consumers and installed guidance; component milestones
+   do not close the broader release criteria.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend

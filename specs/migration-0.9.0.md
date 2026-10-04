@@ -1546,3 +1546,34 @@ changes and cleanup abort the signal and discard stale results. Callbacks must
 honor cancellation themselves; side effects are not rolled back or replayed.
 Safe errors link to fields and focus them without stealing focus from outside.
 The new `cossack add ui auth-form` recipe ejects source with public UI dependencies.
+
+## CommandPalette shared search and dialog ownership
+
+Import from `@cossackframework/ui/blocks`. Supply required `id`, `label`, readonly
+`commands` and `onSelect`. Native props now target HTMLDialogElement, rather than
+an inner div. Use `open` with `onOpenChange` for controlled state or `defaultOpen`
+for local state. The public `setOpen(boolean)` and `toggle()` methods propose
+changes; controlled parents must accept them. Local state no longer collides
+with the mirrored open prop.
+
+The block composes Command instead of maintaining a separate Modal/search loop.
+Grouped visual and keyboard order now agree. Stable IDs preserve the highlighted
+command through updates; disabled commands are skipped. Icons remain supported.
+`shortcut` on an item is only a visible hint and default accessible description.
+An explicit item `description` can replace that supporting text.
+
+Global Ctrl/Meta+K is now opt-in via `shortcut: true`. Command and CommandPalette
+share first-eligible-owner arbitration. Closed owners ignore input, textarea,
+select and contenteditable targets unless `shortcutInEditable` is true. Existing
+active modals take precedence. Use explicit triggers for local palettes alongside
+an app-level shortcut owner. The framework demo and Studio consumers now supply
+identity/naming and connected trigger attributes.
+
+CommandItem fields are readonly; replace records when changing command metadata.
+Command adds `grouped`, presentational `renderItem` and item `description` for
+this composition. Labels still own search and option names; do not put interactive
+controls inside options. Search trims surrounding whitespace. Localize search,
+empty and close text with the existing label props. Native close, Escape, backdrop
+and focus behavior comes from the shared dialog controller. Action callbacks and
+promises remain application-owned; no authorization or command shortcut execution
+is inferred from UI visibility or hint text.

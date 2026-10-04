@@ -1601,7 +1601,8 @@ export default class StudioPage extends Cossack {
             ${component(Button, {
               variant: 'outline',
               class: 'w-full justify-between gap-3 bg-background',
-              'data-testid': 'open-command-palette',
+              'data-testid': 'open-command-palette', type: 'button',
+              'aria-haspopup': 'dialog', 'aria-controls': 'studio-command-palette', 'aria-expanded': this.paletteOpen,
               '@click': () => { this.paletteOpen = true; },
             }, html`
               <span class="inline-flex min-w-0 items-center gap-2">
@@ -1743,6 +1744,7 @@ export default class StudioPage extends Cossack {
         ${this.renderExportSheet(object)}
         ${this.renderBatchUpdateSheet(object)}
         ${component(CommandPalette, {
+          id: 'studio-command-palette', label: 'Database objects', searchLabel: 'Search tables and views', shortcut: true,
           open: this.paletteOpen,
           commands: paletteObjects.map((candidate) => ({
             id: candidate.name,

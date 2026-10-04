@@ -440,10 +440,21 @@ require('node:module').syncBuiltinESMExports();
     }
     for (const name of ['AuthFormMode', 'AuthFormData', 'AuthFormResult', 'AuthFormContext', 'AuthFormProvider', 'AuthFormLabels', 'AuthFormNativeProps']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-auth-form'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'AuthForm', '--json']);
+    const composedPalette = uiSymbols.find(symbol => symbol.name === 'CommandPalette');
+    assert.equal(composedPalette.propsContract.status, 'partial');
+    assert.equal(composedPalette.propsContract.variants.length, 2);
+    for (const branch of composedPalette.propsContract.variants) {
+      assert.ok(!branch.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      for (const name of ['id', 'label', 'commands', 'onSelect']) assert.ok(branch.members.some(member => member.name === name && !member.optional));
+      assert.ok(branch.members.some(member => member.name === '@cancel' && member.type.includes('HTMLDialogElement')));
+      assert.ok(branch.members.some(member => member.name === 'commands' && member.type.includes('readonly')));
+    }
+    for (const name of ['grouped', 'renderItem', 'shortcutInEditable']) assert.ok(commandPalette.propsContract.members.some(member => member.name === name));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'composed-command-palette'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'CommandPalette', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['AuthForm']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'AuthForm' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['CommandPalette']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'CommandPalette' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

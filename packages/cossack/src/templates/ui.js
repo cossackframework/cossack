@@ -58,8 +58,8 @@ function ejectFromPackage(className) {
       );
       const pkgDir = path.resolve(path.dirname(themePath), '../..');
       const sourceName = className === 'Toaster' ? 'Toast' : className;
-      const srcPath = className === 'AuthForm'
-        ? path.join(pkgDir, 'src/blocks/AuthForm/index.ts')
+      const srcPath = ['AuthForm', 'CommandPalette'].includes(className)
+        ? path.join(pkgDir, 'src/blocks', className, 'index.ts')
         : path.join(pkgDir, 'src', 'components', `${sourceName}.ts`);
       return mergeNamedImports(fs.readFileSync(srcPath, 'utf8')
         // Include shared private helpers without imports into the package source tree.
@@ -69,9 +69,9 @@ function ejectFromPackage(className) {
           (_import, name) => fs.readFileSync(path.join(pkgDir, `src/internal/${name}.ts`), 'utf8'),
         )
         .replace(/from ["'](?:\.\.\/)+native-attributes(?:\.js)?["']/g, 'from "@cossackframework/ui"')
-        .replace(/from ["']\.\.\/\.\.\/components\/(?:Button|Input|PasswordInput|Label)\.js["']/g, 'from "@cossackframework/ui"')
+        .replace(/from ["']\.\.\/\.\.\/components\/(?:Button|Input|PasswordInput|Label|Command|Kbd)\.js["']/g, 'from "@cossackframework/ui"')
         .replace(
-          /from ["']\.\.\/icons\/Icon["']/g,
+          /from ["'](?:\.\.\/)+icons\/Icon(?:\.js)?["']/g,
           'from "@cossackframework/ui"',
         )
         .replace(
@@ -95,6 +95,7 @@ const fromPackage = (className) => () => ejectFromPackage(className);
  * `cossack add ui <name>`.
  */
 export const UI_COMPONENTS = {
+  'command-palette': { className: 'CommandPalette', template: fromPackage('CommandPalette') },
   'auth-form': { className: 'AuthForm', template: fromPackage('AuthForm') },
   button: { className: 'Button', template: fromPackage('Button') },
   input: { className: 'Input', template: fromPackage('Input') },

@@ -1,6 +1,6 @@
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { Kbd } from '@cossackframework/ui';
+import { Button } from '@cossackframework/ui';
 import { CommandPalette, type CommandItem } from '@cossackframework/ui/blocks';
 import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu';
 import { SettingsIcon } from '@cossackframework/solar-icons/settings';
@@ -21,6 +21,7 @@ const COMMANDS: CommandItem[] = [
 @Page({ transport: 'http' })
 export default class CommandPaletteBlocksPage extends Cossack {
     @ClientState() lastSelected = '';
+    @ClientState() paletteOpen = false;
 
     render() {
         return html`
@@ -28,13 +29,17 @@ export default class CommandPaletteBlocksPage extends Cossack {
                 <div class="text-center">
                     <h1 class="text-2xl font-bold text-foreground mb-1">Command Palette</h1>
                     <p class="text-sm text-muted-foreground flex items-center justify-center gap-1">
-                        Press ${component(Kbd, {}, '⌘')} ${component(Kbd, {}, 'K')} anywhere to open it.
+                        Search grouped commands and choose an action.
                     </p>
                 </div>
+                ${component(Button, { type: 'button', 'aria-haspopup': 'dialog', 'aria-controls': 'block-command-palette',
+                    'aria-expanded': this.paletteOpen, '@click': () => { this.paletteOpen = true; } }, 'Open command palette')}
                 ${this.lastSelected
-                    ? html`<p class="text-sm text-muted-foreground">Last selected: <span class="font-medium text-foreground">${this.lastSelected}</span></p>`
+                    ? html`<p role="status" class="text-sm text-muted-foreground">Last selected: <span class="font-medium text-foreground">${this.lastSelected}</span></p>`
                     : null}
                 ${component(CommandPalette, {
+                    id: 'block-command-palette', label: 'Application commands', searchLabel: 'Search application commands',
+                    open: this.paletteOpen, onOpenChange: open => { this.paletteOpen = open; },
                     commands: COMMANDS,
                     onSelect: (id) => { this.lastSelected = id; },
                 })}

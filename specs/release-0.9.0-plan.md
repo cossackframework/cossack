@@ -516,9 +516,9 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 ### RT-23: DataTable and UI contracts
 
 Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
-have reviewed contracts. Icon and AuthForm also have reviewed foundations; three composed blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
+have reviewed contracts. Icon, AuthForm and CommandPalette also have reviewed foundations; two blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[AuthForm verification](./release-0.9.0.md#codex-auth-form-2026-10-04) for the latest checkpoint.
+[CommandPalette verification](./release-0.9.0.md#codex-command-palette-2026-10-04) for the latest checkpoint.
 
 Next: Audit the composed blocks using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
@@ -536,26 +536,26 @@ Codex next batch — composed blocks:
 The [Icon plan](./release-0.9.0-plan-archive.md#codex-icon-plan-2026-10-04)
 and [verification](./release-0.9.0.md#codex-icon-2026-10-04) preserve its reviewed
 SVG foundation. The [AuthForm plan](./release-0.9.0-plan-archive.md#codex-auth-form-plan-2026-10-04)
-is also archived. Start with CommandPalette, then DashboardStat and SettingsPanel.
+is also archived, as is [CommandPalette](./release-0.9.0-plan-archive.md#codex-command-palette-plan-2026-10-04).
+Start with DashboardStat, then SettingsPanel.
 
-- Audit CommandPalette using current Modal and Command contracts. Define native
-  prop destinations, controlled/default open state, names, selection, filtered
-  keyboard behavior, focus return and global-shortcut ownership/cleanup. Reuse
-  existing controllers instead of maintaining incompatible menu/dialog behavior.
-  Current Modal still supports onClose/closeOnBackdrop; verify their controlled
-  close/focus contract through the composition. CommandPalette uses a private open field that collides with prop mirroring, leaves search unnamed and
-  tracks a flat activeIndex while rendering grouped buttons. The unconditional
-  window shortcut can compete across instances or override typing. Define opt-in
-  shortcut ownership, stable command IDs and labels, disabled commands, and a
-  single selection/focus owner using the reviewed Command primitive. Keyboard and
-  pointer selection must agree after filtering, regrouping and command updates.
 - Audit DashboardStat's ignored root props, literal rendered markup, neutral trend
   color, readonly stat records, numeric/string values, accessible text and responsive
-  columns. Compose the corrected Icon; do not encode meaning with color alone.
+  columns. The extra literal `)}` after the Card call is inside template text and
+  must not appear in rendered cards. Preserve zero, validate non-finite numbers,
+  wrap long labels/values and check narrow screens. Separate direction from business
+  meaning: an increase is not automatically a favorable metric. Define explicit
+  localized change text and tone instead of relying on color or row-key guesses. Compose the corrected Icon; do not encode meaning with color alone.
 - Audit SettingsPanel's row variants, value types and state ownership. Its private
   values field has the same name as the public prop, so check Cossack prop mirroring
   before choosing controlled/default behavior. Verify native labels/descriptions,
   real input/switch/button callbacks, updates and focus during row changes.
+  Current text controls bind a value attribute rather than a reactive property,
+  label spans are not connected to controls, action buttons lack an explicit type,
+  and the key "delete" implicitly selects a destructive appearance. Replace these
+  with explicit native value ownership, stable field IDs/names/descriptions and
+  declared action intent. Keep immutable sections/rows and callback snapshots;
+  verify SSR defaults, controlled rejection, native edits/reset and disabled state.
 - For every export, prove public type failures, SSR/hydration, themed native browser
   behavior, current primitive composition, published/ejected imports and CLI/MCP
   guidance. Update generated consumers where needed. Then finish the original

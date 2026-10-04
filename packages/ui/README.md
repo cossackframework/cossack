@@ -396,3 +396,25 @@ require explicit `providers` and `onSocial`. Localize text with `labels`.
 The block owns UI behavior, not authentication or session creation. Actions need
 JavaScript; fields remain editable before hydration. `cossack add ui auth-form`
 ejects the block using public UI imports.
+
+### CommandPalette block
+
+```ts
+import { component } from '@cossackframework/renderer';
+import { CommandPalette } from '@cossackframework/ui/blocks';
+
+component(CommandPalette, {
+  id: 'app-commands',
+  label: 'Application commands',
+  shortcut: true,
+  commands: [{ id: 'home', label: 'Go home', group: 'Navigation' }],
+  onSelect: id => { /* Run the application action for this ID. */ },
+});
+```
+
+Use `open` with `onOpenChange` for parent ownership, or `defaultOpen` for local
+state. `setOpen()` and `toggle()` request changes. Native props target the dialog.
+Command owns search, grouping, active options, focus and shortcut arbitration.
+Global shortcuts are opt-in and ignore unrelated editable controls by default.
+Item `shortcut` strings are hints, not registered bindings. `icon` accepts trusted
+Solar artwork. `cossack add ui command-palette` ejects the composed block.

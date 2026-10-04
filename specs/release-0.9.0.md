@@ -88,68 +88,60 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-auth-form-2026-10-04"></a>
-### Codex AuthForm (2026-10-04)
+<a id="codex-command-palette-2026-10-04"></a>
+### Codex CommandPalette (2026-10-04)
 
-Author: Codex. AuthForm now has a stable required identity, closed native root/form
-props, separate controlled/default modes, explicit credential/provider callbacks
-and localized labels/errors. Both modes render on the server. Native field labels,
-IDs, names and autocomplete are connected. Credentials stay in browser fields;
-submission snapshots FormData, including pre-hydration typing and autofill without
-input events. No credential values are copied into block reactive state.
+Author: Codex. CommandPalette now composes the public Command primitive instead
+of maintaining a second Modal, query loop and window shortcut handler. Required
+identity/name/callbacks, readonly commands and separate controlled/default state
+have closed types. Native attributes/events target the actual dialog. setOpen()
+and toggle() propose changes; controlled callers must accept them through props.
+Icons and hint text remain available. Hints are descriptions, not registered actions.
 
-The previous handoff incorrectly said PasswordInput's value/onChange props had
-been removed; they still exist. AuthForm actually omitted its label ID. Review
-also found PasswordInput wrote an empty value when value was omitted. It now
-leaves native ownership intact, while parent-controlled values retain their
-existing behavior. One composed spread preserves native attributes during fresh
-client rendering. Dynamic noscript markup caused a hydration mismatch; a normal
-pre-hydration notice now avoids it.
+Command now supports grouped results and presentational item rendering with stable
+option names/descriptions. Visual grouping and enabled keyboard order share one
+filtered sequence. Blank group labels stay ungrouped. Search trims whitespace.
+Stable IDs preserve highlight through updates; empty/disabled results stay safe.
+Ctrl/Meta+K is opt-in. Closed palettes ignore editable controls unless opted in;
+arbitration can choose a later eligible owner. Active modals retain precedence.
+Existing native close/focus, callback and cleanup semantics remain shared.
 
-Actions stay disabled until hydration, while fields remain editable. Native POST
-and unconditional submit-event prevention avoid accidental credential navigation.
-Applications still own no-JavaScript endpoints, authentication, authorization,
-sessions and server validation. Signup checks its configured minimum against the
-snapshot as well as native attributes: adding minlength after a mode change does
-not always invalidate existing values. Login imposes no new minimum policy.
-
-Provider actions are explicit keyed non-submit controls and never send empty
-credentials. One pending request disables actions and rejects duplicate submits.
-Mode changes and onCleanup abort the owned signal and invalidate late results.
-Callback errors remain observed; thrown messages are replaced with safe localized
-text. Field errors have descriptions and focus recovery that respects outside
-focus. Abort cannot stop ignored I/O or reverse backend effects.
+Framework and Studio consumers supply explicit identity and names. The block demo
+uses a named trigger so it does not compete with the shell's app-level shortcut.
+Studio's trigger advertises the dialog and expanded state. A new CLI source-ejection
+entry imports the same public primitive/types as the compiled block.
 
 Verification:
 
-- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 584 tests
-  across 43 files pass. SSR, contract validation and published type failures cover
-  identities, mode ownership, callbacks, providers, native targets and labels.
-- `pnpm --filter cossack exec vitest run tests/auth-form-browser.test.js tests/ui-ejection.test.js tests/native-controls-browser.test.js tests/native-form-ssr-browser.test.js`:
-  44 tests pass. AuthForm runs through published and ejected implementations with
-  real Tailwind/HTTP Chromium. Checks include no-JavaScript action disabling,
-  pre-hydration edits, native Enter/Space, password reveal, validation, FormData,
-  repeated submits, safe errors, focus, external mode changes, provider identity,
-  fieldset disabling, unmount/remount, stale results and eventless autofill.
-  Existing parent-controlled PasswordInput and native SSR form checks also pass.
-  Forty source-ejection checks include strict NodeNext compilation and AuthForm's
-  new CLI entry. Ejected blocks use public primitive/type imports.
-- Command-spec and command-contract suites passed in the earlier 114-case run;
-  its one failing native-controls case was fixed and rerun in the final browser
-  command above. No CLI contract failure was suppressed.
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 597 tests
+  across 44 files pass. SSR, grouping/filter order, immutable public types,
+  descriptions and controlled/default contract failures are covered.
+- `pnpm --filter cossack exec vitest run tests/command-palette-browser.test.js tests/command-browser.test.js tests/ui-ejection.test.js`:
+  44 tests pass. Both published and ejected palettes run with actual Tailwind,
+  HTTP Chromium and SVG artwork. Checks cover retained hydration, named groups,
+  visible keyboard order, disabled items, filtering/reordering, pointer selection,
+  controlled rejection, Escape veto, backdrop close, editor shortcuts, multiple
+  owners, foreign modals, focus return, imperative methods and listener cleanup.
+  The original Command browser suite also passes. Forty-one ejection checks include
+  strict NodeNext imports. Browser bundles exclude the SSR parser.
+- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/command-palette-block.spec.ts e2e/pages/home.spec.ts --grep 'composed command palette|opens the command palette' --workers=1 --reporter=line`:
+  both real application tests pass (11.1 seconds). The block selects a grouped
+  command and restores trigger focus; the shell still navigates to a demo. The
+  owned Vite server was stopped afterward. Studio is type-checked; no new Studio
+  backend/browser acceptance is claimed.
 - Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
-- `pnpm test:agent-docs:local` passes. Installed declarations expose both mode
-  branches, required callbacks, native targets and public helper types. The
-  authored block guide is discoverable; exact AuthForm CLI/MCP output matches.
-  Six existing packaged examples compile and execute. Discovery disables Node
-  networking; installation can use the registry. No new executable guide example
-  or backend authentication acceptance is claimed.
+- `pnpm test:agent-docs:local` passes. Installed declarations expose the two
+  controlled/default branches, required identity/callbacks, readonly commands and
+  native dialog targets. The authored block guide is discoverable; exact
+  CommandPalette CLI/MCP output matches. Six existing packaged examples compile
+  and execute. Discovery disables Node networking; installation can use the
+  registry. This guide adds no executable example.
 
-Logs: `/tmp/cossack-auth-form-{build,ui-final,browser-final,types-final,regressions,agent-docs}.log`.
-All 65 component foundations plus Icon and AuthForm are reviewed. CommandPalette,
-DashboardStat and SettingsPanel remain pending, along with wider generated-app,
-backend/session, browser/assistive-technology and runtime gates. RT-23 and
-CLI-07/CLI-08 remain open. Status stays 24/58 complete; versions remain 0.8.3.
+Logs: `/tmp/cossack-command-palette-{build,ui-final,browser-final,types-final,demo,dev,agent-docs}.log`.
+All 65 component foundations plus Icon, AuthForm and CommandPalette are reviewed.
+DashboardStat and SettingsPanel remain pending. Broader generated-app/runtime,
+other-engine and assistive-technology gates remain open. RT-23 and CLI-07/CLI-08
+remain open; release status stays 24/58 complete and versions stay 0.8.3.
 
 ### Archived checkpoints
 
@@ -160,6 +152,7 @@ parent task. Status remains 24 complete and 34 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-auth-form-2026-10-04"></a>[Codex AuthForm (2026-10-04)](./release-0.9.0-verification-archive.md#codex-auth-form-2026-10-04) |
 | <a id="codex-icon-2026-10-04"></a>[Codex Icon (2026-10-04)](./release-0.9.0-verification-archive.md#codex-icon-2026-10-04) |
 | <a id="codex-message-scroller-2026-10-04"></a>[Codex MessageScroller (2026-10-04)](./release-0.9.0-verification-archive.md#codex-message-scroller-2026-10-04) |
 | <a id="codex-chat-display-2026-10-04"></a>[Codex Bubble, Marker and Message (2026-10-04)](./release-0.9.0-verification-archive.md#codex-chat-display-2026-10-04) |

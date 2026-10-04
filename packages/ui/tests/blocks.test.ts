@@ -20,6 +20,7 @@ describe('@cossackframework/ui/blocks', () => {
   it('renders every public block on the server', () => {
     expect(renderBlock(AuthForm, { id: 'auth', onSubmit: () => {} })).toContain('cs-auth-form');
     expect(renderBlock(CommandPalette, {
+      id: 'palette', label: 'Commands', onSelect: () => {}, onOpenChange: () => {},
       commands: [{ id: 'home', label: 'Home' }],
       open: true,
     })).toContain('cs-command-palette');

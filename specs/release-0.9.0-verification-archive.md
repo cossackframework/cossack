@@ -6,6 +6,69 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-auth-form-2026-10-04"></a>
+## Codex AuthForm (2026-10-04)
+
+Author: Codex. AuthForm now has a stable required identity, closed native root/form
+props, separate controlled/default modes, explicit credential/provider callbacks
+and localized labels/errors. Both modes render on the server. Native field labels,
+IDs, names and autocomplete are connected. Credentials stay in browser fields;
+submission snapshots FormData, including pre-hydration typing and autofill without
+input events. No credential values are copied into block reactive state.
+
+The previous handoff incorrectly said PasswordInput's value/onChange props had
+been removed; they still exist. AuthForm actually omitted its label ID. Review
+also found PasswordInput wrote an empty value when value was omitted. It now
+leaves native ownership intact, while parent-controlled values retain their
+existing behavior. One composed spread preserves native attributes during fresh
+client rendering. Dynamic noscript markup caused a hydration mismatch; a normal
+pre-hydration notice now avoids it.
+
+Actions stay disabled until hydration, while fields remain editable. Native POST
+and unconditional submit-event prevention avoid accidental credential navigation.
+Applications still own no-JavaScript endpoints, authentication, authorization,
+sessions and server validation. Signup checks its configured minimum against the
+snapshot as well as native attributes: adding minlength after a mode change does
+not always invalidate existing values. Login imposes no new minimum policy.
+
+Provider actions are explicit keyed non-submit controls and never send empty
+credentials. One pending request disables actions and rejects duplicate submits.
+Mode changes and onCleanup abort the owned signal and invalidate late results.
+Callback errors remain observed; thrown messages are replaced with safe localized
+text. Field errors have descriptions and focus recovery that respects outside
+focus. Abort cannot stop ignored I/O or reverse backend effects.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 584 tests
+  across 43 files pass. SSR, contract validation and published type failures cover
+  identities, mode ownership, callbacks, providers, native targets and labels.
+- `pnpm --filter cossack exec vitest run tests/auth-form-browser.test.js tests/ui-ejection.test.js tests/native-controls-browser.test.js tests/native-form-ssr-browser.test.js`:
+  44 tests pass. AuthForm runs through published and ejected implementations with
+  real Tailwind/HTTP Chromium. Checks include no-JavaScript action disabling,
+  pre-hydration edits, native Enter/Space, password reveal, validation, FormData,
+  repeated submits, safe errors, focus, external mode changes, provider identity,
+  fieldset disabling, unmount/remount, stale results and eventless autofill.
+  Existing parent-controlled PasswordInput and native SSR form checks also pass.
+  Forty source-ejection checks include strict NodeNext compilation and AuthForm's
+  new CLI entry. Ejected blocks use public primitive/type imports.
+- Command-spec and command-contract suites passed in the earlier 114-case run;
+  its one failing native-controls case was fixed and rerun in the final browser
+  command above. No CLI contract failure was suppressed.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed declarations expose both mode
+  branches, required callbacks, native targets and public helper types. The
+  authored block guide is discoverable; exact AuthForm CLI/MCP output matches.
+  Six existing packaged examples compile and execute. Discovery disables Node
+  networking; installation can use the registry. No new executable guide example
+  or backend authentication acceptance is claimed.
+
+Logs: `/tmp/cossack-auth-form-{build,ui-final,browser-final,types-final,regressions,agent-docs}.log`.
+All 65 component foundations plus Icon and AuthForm are reviewed. CommandPalette,
+DashboardStat and SettingsPanel remain pending, along with wider generated-app,
+backend/session, browser/assistive-technology and runtime gates. RT-23 and
+CLI-07/CLI-08 remain open. Status stays 24/58 complete; versions remain 0.8.3.
+
 <a id="codex-icon-2026-10-04"></a>
 ## Codex Icon (2026-10-04)
 

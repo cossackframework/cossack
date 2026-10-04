@@ -727,3 +727,20 @@ component(AuthForm, { id:'x', onSubmit:()=>{}, formProps:{method:'get'} });
 // @ts-expect-error Credential data discriminates signup-only names.
 const invalidAuthData:AuthFormData = {mode:'login',email:'a',password:'b',name:'c'};
 void invalidAuthData;
+
+import { CommandPalette, type CommandPaletteProps, type CommandItem as PaletteCommandItem } from '@cossackframework/ui/blocks';
+const paletteCommands: readonly PaletteCommandItem[] = [{id:'home',label:'Home',group:'Navigate',shortcut:'Ctrl+H',disabled:false}] as const;
+const paletteProps: CommandPaletteProps = { id:'palette',label:'Commands',commands:paletteCommands,onSelect:id=>{const selected:string=id;void selected;},defaultOpen:false,shortcut:true,shortcutInEditable:false,
+    '@cancel':event=>{const dialog:HTMLDialogElement=event.currentTarget;void dialog;} };
+component(CommandPalette,paletteProps);
+// @ts-expect-error Palette identity and callback are required.
+component(CommandPalette,{commands:[]});
+// @ts-expect-error Controlled open requires a change callback.
+component(CommandPalette,{id:'x',label:'X',commands:[],onSelect:()=>{},open:true});
+// @ts-expect-error Default and controlled state cannot compete.
+component(CommandPalette,{id:'x',label:'X',commands:[],onSelect:()=>{},open:true,defaultOpen:false,onOpenChange:()=>{}});
+// @ts-expect-error Native palette events target a dialog, not an input.
+component(CommandPalette,{...paletteProps,'@click':(event:MouseEvent & {currentTarget:HTMLInputElement})=>{}});
+// @ts-expect-error Command records are immutable to consumers.
+paletteCommands[0].label='Changed';
+component(Command,{id:'rich',label:'Rich',grouped:true,items:[{id:'x',label:'X',description:'Description'}],renderItem:item=>item.label});
