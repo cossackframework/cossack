@@ -2436,10 +2436,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 : isTemplateResult(output) ? output : html`${output}`;
             attachTemplateOwner(template, this);
 
-            // Inject devtools markers if source info is present
-            // Since __source is injected by the Vite plugin only in DEV mode,
-            // we can safely assume if it exists, we are in DEV.
-            const source = (this.constructor as any).__source;
+            // Exclude source-marker handling from production, even when an
+            // application class happens to retain development metadata.
+            const source = import.meta.env?.DEV ? (this.constructor as any).__source : undefined;
             if (template && source) {
                 const Ctor = this.constructor as any;
                 if (!Ctor.__devStrings) {

@@ -26,17 +26,17 @@ acceptance; see the [checkpoint](./release-0.9.0.md#codex-paused-rpc-deadlines-2
 Preserve first failure codes, confirmed state, one cancellation request and cleanup
 without another iterator pull. Local cancellation cannot undo server writes.
 
-The [stream terminal checkpoint](./release-0.9.0.md#codex-stream-terminal-evidence-2026-10-04)
-records current server evidence. Earlier dispatch and yield-order results remain archived.
+The [generated trace checkpoint](./release-0.9.0.md#codex-generated-trace-acceptance-2026-10-04)
+records current acceptance and bootstrap/production fixes. Earlier evidence remains archived.
 
-1. Finish **RT-28 / CLI-07** server WebSocket/native-body correlation and generated browser/CLI/MCP and
-   published-package acceptance. Preserve capture ownership, terminal outcomes and
-   production exclusion. HTTP/multipart dispatch evidence now joins calls by IDs;
-   generator terminals now join those IDs after cleanup and full stream validation.
-   Header evidence alone does not prove response-body completion. Preserve ordered application error
-   delivery after WebSocket yields; only local transport failures discard queued frames.
-   Stored browser receipt age does not prove live/server state;
-   source markers identify only the latest registered instance per file.
+1. Finish installed-tarball trace acceptance, then audit **CLI-07** against its
+   original tool/parity/lifecycle requirements. Generated Cloudflare browser
+   actions now match stored CLI/MCP evidence; production client/Worker trace and
+   source-marker exclusion passes. **RT-28** retains WebSocket/native-body server
+   evidence and other runtime acceptance. Preserve ordered application error
+   delivery after WebSocket yields; only local transport failures discard queued
+   frames. Header evidence alone does not prove body completion. Stored receipt
+   age does not prove live state; source markers identify the latest instance per file.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
    runtime support through the [shared documentation services](../docs/local-agent-tools.md).
    Follow all 33 open tasks in the detailed plan and retain completed-task regressions.

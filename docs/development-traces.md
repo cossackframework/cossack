@@ -237,8 +237,11 @@ Enable the project bridge in the existing Vite page plugin:
 cossackPages({ developmentTraces: true })
 ```
 
-The option defaults to false. During development it injects the inspector through
-Vite's HTML transformation. Custom HTML servers must call `transformIndexHtml`.
+The option defaults to false. During development the client route registry loads
+the inspector and publisher, including on Worker-rendered pages that bypass Vite's
+HTML transformation. The HTML transform uses the same virtual module URL, so
+using both paths does not install duplicate publishers. Custom HTML servers that
+do not load the client registry must call `transformIndexHtml`.
 It does not start capture. Use **Record trace**, reproduce the interaction, and
 stop recording. While connected, the browser offers its default snapshot once per
 second; only one unacknowledged snapshot is outstanding. A stopped capture is
@@ -278,7 +281,9 @@ HTTP endpoint. That token is available to the development browser and is not an
 authentication claim. Treat records as local browser observations. Production
 HTML does not install the bridge, and production bundling removes the publisher.
 
-RT-28 remains open for server-side correlation and
-full generated-application browser acceptance. Isolated Vite/Chromium coverage
-does not replace that gate. The separate [stored test-results reader](./test-results.md)
+Generated Cloudflare acceptance now follows real component-stream, service and
+failure button actions through browser capture, Vite persistence, CLI and MCP. It
+also checks generated types and production client/Worker bundles. Installed
+tarballs, other runtime development paths and remaining server transport evidence
+still have separate acceptance gates. The separate [stored test-results reader](./test-results.md)
 reads test evidence, not runtime traces.

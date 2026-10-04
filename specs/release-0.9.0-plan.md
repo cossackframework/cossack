@@ -150,8 +150,9 @@ reporter/type and CLI/MCP parity acceptance also pass; see the
 
 RT-28 browser snapshots now have an opt-in Vite bridge and a shared project-local
 CLI/MCP reader with strict default-value exclusion and receipt-age metadata.
-Remaining: server WebSocket/native-body correlation and full generated-runtime
-acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
+Generated Cloudflare browser/CLI/MCP parity and production exclusion now pass.
+Remaining: installed trace-tool acceptance and the CLI-07 completion audit;
+RT-28 retains WebSocket/native-body correlation and other runtime acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
 Preserve project path boundaries, secret redaction and clean stdout.
 Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
 
@@ -641,8 +642,9 @@ and full stream validation, with distinct outcome/cleanup fields. Missing or
 invalid optional metadata does not change action semantics.
 
 Remaining: WebSocket dispatch and native-body terminal evidence, plus
-full generated-runtime use of the shared CLI/MCP schema. Verify an actual generated
-browser action end to end and production endpoint/source-metadata exclusion.
+installed-tarball and other runtime use of the shared CLI/MCP schema. Generated
+Cloudflare actions now pass end-to-end browser, persisted-record, CLI and MCP
+checks, with client/Worker production trace and source-marker exclusion.
 Server execution is not proven by client capture. Paused-iterator deadlines now
 settle HTTP/SSE, service and WebSocket calls without another consumer pull;
 WebSocket failures also release pending ownership. Preserve those regressions

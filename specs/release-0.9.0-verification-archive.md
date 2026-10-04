@@ -6,6 +6,45 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-stream-terminal-evidence-2026-10-04"></a>
+## Codex delivered RPC stream terminal evidence (2026-10-04)
+
+Author: Codex. Opted-in HTTP/SSE component and service generators now attach a
+bounded record to their terminal frame after request cleanup is attempted. It
+reports outcome and cleanup separately, and joins the call/request/dispatch IDs
+from the earlier response header. Core records one `server-stream` event only
+after normal stream and EOF validation. Untrusted metadata is strictly parsed;
+missing, malformed or mismatched metadata does not change application behavior.
+The shared stored-record reader exposes the same event to CLI and MCP.
+
+Serialization snapshots application values once. Optional evidence is omitted at
+the byte limit, with room reserved for an SSE coordinator cursor. Cancellation
+never invents server completion. Production excludes both collection and encoding.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run`:
+  **1,497 tests / 92 files pass**, including correlated terminals, stopped captures,
+  malformed/mismatched records, valid error delivery and trailing-data rejection.
+  Log: `/tmp/cossack-stream-evidence-core.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-stream.test.ts tests/router-rpc-stream.test.ts tests/sse-coordinator-transport.test.ts tests/rpc-conformance-matrix.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
+  **572 tests / 6 files pass**. Real JSON/multipart router dispatch, success/action
+  failure/cleanup failure, cancellation, byte-limit omission, one-time application
+  serialization, service-proxy storage and production exclusion pass.
+  Log: `/tmp/cossack-stream-evidence-framework.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`:
+  **15 tests pass**, including CLI/MCP parity for stored dispatch and stream terminals.
+  Log: `/tmp/cossack-stream-evidence-mcp.log`.
+- Core build, framework declarations, root `pnpm tsc --noEmit` and
+  `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-stream-evidence-build-final.log`, `/tmp/cossack-stream-evidence-types.log`.
+
+Limits: this reports the producing action's request cleanup, not all downstream
+coordinator/network work. Lost or invalidated delivery has no accepted server
+terminal. WebSocket and native-body server lifecycle evidence, full generated
+application acceptance and installed tarballs remain open under RT-28/CLI-07.
+No task closes: **25 complete, 33 open**.
+
 <a id="codex-server-dispatch-evidence-2026-10-04"></a>
 ## Codex HTTP server dispatch evidence (2026-10-04)
 

@@ -981,7 +981,9 @@ service. CLI and MCP call that same reader; neither starts browser work or impor
 application modules. No Node filesystem dependency enters core or the client.
 
 `cossackPages({ developmentTraces: true })` injects a development-only publisher
-through Vite HTML transforms. Explicit browser capture offers default snapshots
+through the client route registry and Vite HTML transforms. Both load the same
+virtual module URL, avoiding duplicate publishers while supporting Worker-rendered
+HTML that bypasses the HTML transform. Explicit browser capture offers default snapshots
 once per second with one outstanding acknowledgement. Vite admits one disk write
 at a time and rejects overload. The strict parsed-JSON schema accepts only fixed
 trace fields and omitted state values. A project path digest, server identity and

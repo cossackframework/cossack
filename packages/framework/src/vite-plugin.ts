@@ -215,7 +215,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ...PAGE_GLOB_EXCLUDES,
         ]);
 
+        // Worker-rendered HTML may bypass transformIndexHtml. The client
+        // registry is the shared bootstrap path for generated applications.
         return `
+          ${!isSsrEnvironment && traceBridge ? `import ${JSON.stringify(TRACE_BRIDGE_MODULE)};` : ''}
           const pages = import.meta.glob(${pagePatterns}${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Layouts: eager on SSR (synchronous server rendering), lazy on the
@@ -241,7 +244,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     transformIndexHtml() {
       if (!traceBridge) return;
-      return [{ tag: 'script', attrs: { type: 'module', src: developmentBase + '@id/' + TRACE_BRIDGE_MODULE }, injectTo: 'body' }];
+      return [{ tag: 'script', attrs: { type: 'module', src: developmentBase + '@id/__x00__' + TRACE_BRIDGE_MODULE }, injectTo: 'body' }];
     },
     closeBundle() { traceBridge?.dispose(); traceBridge = undefined; },
     configureServer(server) {

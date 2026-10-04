@@ -25,6 +25,7 @@ it('captures and inspects in Chromium without invoking an application action or 
             load(id) {
                 if (id !== '\0virtual:inspector-fixture') return;
                 return `
+                    import 'virtual:cossack-pages';
                     import { Cossack, State } from '@cossackframework/core';
                     import { enableDevTools, registerDevToolsInstance } from ${JSON.stringify(entry)};
                     class Page extends Cossack {}
@@ -57,7 +58,10 @@ it('captures and inspects in Chromium without invoking an application action or 
         await server.listen();
         browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
-        const errors: string[] = [], editorRequests: string[] = [], logs: string[] = [];
+        const errors: string[] = [], editorRequests: string[] = [], logs: string[] = [], publications: string[] = [];
+        page.on('websocket', socket => socket.on('framesent', ({ payload }) => {
+            try { const message = JSON.parse(String(payload)); if (message.event === 'cossack:development-trace') publications.push(message.data.id); } catch { /* Vite handshake. */ }
+        }));
         page.on('pageerror', error => errors.push(error.message));
         page.on('request', request => { if (request.url().includes('localhost:3333')) editorRequests.push(request.url()); });
         page.on('console', message => { if (message.type() === 'info') logs.push(message.text()); });
@@ -90,6 +94,8 @@ it('captures and inspects in Chromium without invoking an application action or 
         expect(await page.locator('[data-cossack-devtools]').count()).toBe(0);
         await page.locator('#action').click();
         expect(await page.evaluate(() => (window as any).fixture.calls())).toBe(1);
+        expect(publications.length).toBeGreaterThan(0);
+        expect(new Set(publications).size).toBe(publications.length);
         expect(errors).toEqual([]);
     } finally {
         await browser?.close();

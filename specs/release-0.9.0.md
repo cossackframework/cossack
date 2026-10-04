@@ -88,44 +88,43 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-stream-terminal-evidence-2026-10-04"></a>
-### Codex delivered RPC stream terminal evidence (2026-10-04)
+<a id="codex-generated-trace-acceptance-2026-10-04"></a>
+### Codex generated development-trace acceptance (2026-10-04)
 
-Author: Codex. Opted-in HTTP/SSE component and service generators now attach a
-bounded record to their terminal frame after request cleanup is attempted. It
-reports outcome and cleanup separately, and joins the call/request/dispatch IDs
-from the earlier response header. Core records one `server-stream` event only
-after normal stream and EOF validation. Untrusted metadata is strictly parsed;
-missing, malformed or mismatched metadata does not change application behavior.
-The shared stored-record reader exposes the same event to CLI and MCP.
+Author: Codex. A generated Cloudflare app now exercises real Chromium component
+stream, service and failure buttons through capture, server dispatch/terminal
+evidence, Vite persistence, the CLI process and an MCP SDK stdio client. Shared
+records match; values, action names and raw errors stay excluded. The fixture
+checks generated TypeScript and production client/Worker bundles, and shuts down
+the development server through its awaited close operation.
 
-Serialization snapshots application values once. Optional evidence is omitted at
-the byte limit, with room reserved for an SSE coordinator cursor. Cancellation
-never invents server completion. Production excludes both collection and encoding.
+This exposed and fixed two gaps. Worker-rendered HTML bypassed the HTML-transform
+bridge injection; the client route registry now loads the same canonical virtual
+module, without duplicating the HTML publisher. Core render source markers relied
+on absent metadata rather than an explicit development guard; the guard now
+removes marker handling from production bundles while preserving development markers.
 
 Verification:
 
-- `pnpm --filter @cossackframework/core exec vitest run`:
-  **1,497 tests / 92 files pass**, including correlated terminals, stopped captures,
-  malformed/mismatched records, valid error delivery and trailing-data rejection.
-  Log: `/tmp/cossack-stream-evidence-core.log`.
-- `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-stream.test.ts tests/router-rpc-stream.test.ts tests/sse-coordinator-transport.test.ts tests/rpc-conformance-matrix.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
-  **572 tests / 6 files pass**. Real JSON/multipart router dispatch, success/action
-  failure/cleanup failure, cancellation, byte-limit omission, one-time application
-  serialization, service-proxy storage and production exclusion pass.
-  Log: `/tmp/cossack-stream-evidence-framework.log`.
-- `pnpm --filter cossack exec vitest run tests/mcp.test.js`:
-  **15 tests pass**, including CLI/MCP parity for stored dispatch and stream terminals.
-  Log: `/tmp/cossack-stream-evidence-mcp.log`.
-- Core build, framework declarations, root `pnpm tsc --noEmit` and
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
+  **1 passes, 33 unrelated tests skipped**. Generated types, live development
+  browser/server/CLI/MCP parity and production client/Worker exclusion pass.
+  Log: `/tmp/cossack-generated-trace-final-verified.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools-browser.test.ts tests/development-trace-bridge.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
+  **18 tests / 4 files pass**, including custom-base HTML plus registry bootstrap
+  without duplicate publications and existing capture/storage lifecycle checks.
+  Log: `/tmp/cossack-generated-trace-framework.log`.
+- `pnpm --filter @cossackframework/core exec vitest run tests/development-trace-build.test.ts`:
+  **3 tests pass** for production component/service proxy and renderer exclusion.
+  Log: `/tmp/cossack-generated-trace-core-build-tests.log`.
+- Core/framework declaration builds, root `pnpm tsc --noEmit` and
   `pnpm typecheck` pass (all 11 packages).
-  Logs: `/tmp/cossack-stream-evidence-build-final.log`, `/tmp/cossack-stream-evidence-types.log`.
+  Logs: `/tmp/cossack-generated-trace-final-build.log`, `/tmp/cossack-generated-trace-types-final.log`.
 
-Limits: this reports the producing action's request cleanup, not all downstream
-coordinator/network work. Lost or invalidated delivery has no accepted server
-terminal. WebSocket and native-body server lifecycle evidence, full generated
-application acceptance and installed tarballs remain open under RT-28/CLI-07.
-No task closes: **25 complete, 33 open**.
+Limits: this fixture uses workspace package links. Installed-tarball trace
+acceptance remains before the CLI-07 audit. RT-28 retains WebSocket/native-body
+server evidence and other runtime development acceptance. No task closes:
+**25 complete, 33 open**. No deployment or publication occurred.
 
 ### Archived checkpoints
 
@@ -136,6 +135,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-stream-terminal-evidence-2026-10-04"></a>[Codex delivered RPC stream terminal evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-stream-terminal-evidence-2026-10-04) |
 | <a id="codex-server-dispatch-evidence-2026-10-04"></a>[Codex HTTP server dispatch evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-server-dispatch-evidence-2026-10-04) |
 | <a id="codex-paused-rpc-deadlines-2026-10-04"></a>[Codex paused RPC deadlines (2026-10-04)](./release-0.9.0-verification-archive.md#codex-paused-rpc-deadlines-2026-10-04) |
 | <a id="codex-service-traces-2026-10-04"></a>[Codex explicit service RPC traces (2026-10-04)](./release-0.9.0-verification-archive.md#codex-service-traces-2026-10-04) |
