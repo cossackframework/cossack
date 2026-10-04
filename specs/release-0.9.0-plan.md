@@ -344,15 +344,29 @@ and following SSR state prove selected restoration and credential exclusion.
 The broader Workers HTTP/SSE redirect/late-write gate still passes. See the
 [evidence and limits](./release-0.9.0.md#codex-rt11-input-2026-10-05).
 
-Next inspect the generated login/register/reset form state and real inbound
-actions. `pages/auth/login/index.ts` currently puts password in a public `Store`;
-move credentials to browser-owned fields and keep server arguments local.
-Do not equate helper/API fixtures with actual generated form acceptance. Verify
-failed login/storage, successful redirect, logout and rotation through their
-real pages, cookie headers and subsequent authenticated requests. Document
-concurrent requests/tabs and accepted flash replay behavior, then verify the
-remaining realtime identity guarantees. Include the new public-form guide in
-installed-tarball example acceptance. RT-11 remains open for these criteria.
+Codex generated-form checkpoint (2026-10-05): all four auth pages now use
+ClientStore drafts and client-only validation. App-owned `auth-input.ts` contracts
+accept one explicit object; real RPC gates and repeated native parsing reject
+invalid shapes, unknown fields and excess arguments before storage. Passwords
+are not normalized and fit the shared UTF-8 size limit. Fixed messages replace
+caught storage/transport exceptions. The dashboard layout handles failed logout
+without clearing its cookie. Its sessions page rotates and redirects before
+refreshing with a new cookie. Generated Node SQLite/Cloudflare D1 and Chromium
+acceptance checks actual page SSR/RPC state, browser drafts, reset expiry/replay,
+partial registration failure, login/logout/rotation cookies and redirects. Keep
+the real-page tests distinct from the helper fixtures. See the
+[checkpoint](./release-0.9.0.md#codex-rt11-forms-2026-10-05).
+
+The package public-form example also passes installed Cloudflare application
+guidance acceptance for native POST, selected restoration, credential exclusion,
+browser clearing and emitted source-map checks.
+Continue broader concurrent request/tab semantics and realtime freshness.
+Already-started requests can retain resolved identity; rotation shares the
+browser cookie across tabs and does not refresh existing connections. Account
+writes, reset consumption and response delivery are separate steps; fixed errors
+do not establish rollback. Signed flash cookies remain replayable until expiry;
+browser clearing is not durable one-use storage. Audit these remaining criteria
+before closing RT-11. CLI-08 retains its broader guidance/runtime coverage.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.

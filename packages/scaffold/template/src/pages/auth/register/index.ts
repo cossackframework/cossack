@@ -1,7 +1,8 @@
-import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Cossack, Page, State, ClientStore, Validate, Client, Server, storeRules, isClientVisibleError } from '@cossackframework/core';
 import { Field, Input, PasswordInput, Button, Alert } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
-import { auth, registerUser } from '../../../auth';
+import { authSessions, registerUser } from '../../../auth';
+import { registerInput, type RegisterInput } from '../../../auth-input';
 
 interface RegisterForm {
     name: string;
@@ -11,13 +12,13 @@ interface RegisterForm {
 
 @Page({ transport: 'http' })
 export default class RegisterPage extends Cossack {
-    @Store()
+    @ClientStore()
     @Validate({
         rules: storeRules<RegisterForm>({
             email: { required: true, email: true, message: 'Enter a valid email' },
             password: { required: true, minLength: 8, message: 'Password must be at least 8 characters' },
         }),
-        config: { trigger: 'all', runOn: 'both' }
+        config: { trigger: 'all', runOn: 'client' }
     })
     form: RegisterForm = { name: '', email: '', password: '' };
 
@@ -30,20 +31,26 @@ export default class RegisterPage extends Cossack {
         const ok = await this.validateAll();
         if (!ok) return;
         try {
-            await this.register(this.form.name, this.form.email, this.form.password);
-        } catch (e: any) {
-            this.error = e?.message || 'Registration failed';
+            await this.register({ name: this.form.name, email: this.form.email, password: this.form.password });
+        } catch {
+            this.error = 'Could not create the account. Check your details and try again.';
         }
     }
 
-    @Server()
-    async register(name: string, email: string, password: string) {
-        const user = await registerUser(email, password, name || undefined);
-        if (auth.createSession) {
-            const { headers } = await auth.createSession(user as any, this.c);
+    @Server({ input: registerInput })
+    async register(submitted: RegisterInput) {
+        const { name, email, password } = await registerInput.parse(submitted);
+        this.error = '';
+        try {
+            const user = await registerUser(email, password, name || undefined);
+            const { headers } = await authSessions.create(user.id, this.c);
             headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(config('auth.redirectAfterLogin'));
+        } catch (error) {
+            this.error = isClientVisibleError(error) && error.message === 'An account with this email already exists.'
+                ? 'An account with this email already exists.'
+                : 'Could not create the account. Try again or sign in.';
         }
-        this.redirect(config('auth.redirectAfterLogin'));
     }
 
     render() {

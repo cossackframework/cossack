@@ -1,40 +1,53 @@
-import { Cossack, Page, State, Store, Validate, Client, Server, storeRules } from '@cossackframework/core';
+import { Cossack, Page, ClientState, ClientStore, Validate, Client, Server, storeRules, ClientVisibleError } from '@cossackframework/core';
 import { Field, Input, Button, Alert } from '@cossackframework/ui';
 import { html, component, bind } from '@cossackframework/renderer';
 import { requestPasswordReset } from '../../../auth';
+import { resetRequestInput, type ResetRequestInput } from '../../../auth-input';
 
 @Page({ transport: 'http' })
 export default class ForgotPasswordPage extends Cossack {
-    @Store()
+    @ClientStore()
     @Validate({
         rules: storeRules<{ email: string }>({
             email: { required: true, email: true, message: 'Enter a valid email' },
         }),
-        config: { trigger: 'all', runOn: 'both' }
+        config: { trigger: 'all', runOn: 'client' }
     })
     form: { email: string } = { email: '' };
 
-    @State() submitted = false;
+    @ClientState() submitted = false;
+    @ClientState() error = '';
 
     @Client()
     async handleSubmit(event: Event) {
         event.preventDefault();
+        this.error = '';
         const ok = await this.validateAll();
         if (!ok) return;
-        await this.requestReset(this.form.email);
-        this.submitted = true;
+        try {
+            await this.requestReset({ email: this.form.email });
+            this.submitted = true;
+        } catch {
+            this.error = 'Could not send the reset link. Try again.';
+        }
     }
 
-    @Server()
-    async requestReset(email: string) {
+    @Server({ input: resetRequestInput })
+    async requestReset(submitted: ResetRequestInput) {
+        const { email } = await resetRequestInput.parse(submitted);
         // Build the reset base URL from the request origin.
         const origin = new URL(this.c.req.url).origin;
-        await requestPasswordReset(email, origin);
+        try {
+            await requestPasswordReset(email, origin);
+        } catch {
+            throw new ClientVisibleError('Could not send the reset link. Try again.');
+        }
     }
 
     render() {
         return html`
             <h3 class="mb-6 text-xl font-semibold text-foreground">${__('Forgot Password')}</h3>
+            ${this.error ? component(Alert, { variant: 'destructive' }, this.error) : null}
             ${this.submitted
                 ? component(Alert, { variant: 'success', title: __('Check your email') },
                     __('If an account exists for that email, a reset link has been sent.'))

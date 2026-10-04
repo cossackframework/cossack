@@ -238,6 +238,7 @@ const ORM_PATHS = new Set([
   'src/migrations/0006_create_cache_table.ts',
 ]);
 const AUTH_PATHS = new Set([
+  'src/auth-input.ts',
   'src/auth.ts',
   'src/config/auth.ts',
   'src/lib/uuid.ts',

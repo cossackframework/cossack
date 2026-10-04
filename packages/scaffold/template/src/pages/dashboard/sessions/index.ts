@@ -1,12 +1,14 @@
 import { Cossack, Page, State, Server } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Button, Badge, Tooltip, Icon } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
+import { getCookie } from 'hono/cookie';
 import { MonitorSmartphoneIcon as monitorSmartphoneIconSvg } from '@cossackframework/solar-icons/monitor-smartphone/line';
 import { SmartphoneIcon as smartphoneIconSvg } from '@cossackframework/solar-icons/smartphone/line';
 import { LaptopIcon as laptopIconSvg } from '@cossackframework/solar-icons/laptop/line';
 import { TabletIcon as tabletIconSvg } from '@cossackframework/solar-icons/tablet/line';
 import { MonitorIcon as monitorIconSvg } from '@cossackframework/solar-icons/monitor/line';
 import {
+    authSessions,
     listUserSessions,
     revokeSession,
     revokeAllUserSessions,
@@ -82,6 +84,20 @@ export default class SessionsPage extends Cossack {
             if (!revoked) this.error = 'Could not revoke session.';
         } catch {
             this.error = 'Could not revoke session.';
+        }
+    }
+
+    @Server()
+    async rotateCurrent() {
+        this.error = '';
+        try {
+            const result = await authSessions.rotate(getCookie(this.c, authSessions.cookieName) ?? '', this.c);
+            if (!result) { this.error = 'Could not rotate session. Try again.'; return; }
+            result.headers.forEach((value, key) => this.c.header(key, value));
+            // Refresh with the replacement cookie before listing current sessions.
+            this.redirect('/dashboard/sessions');
+        } catch {
+            this.error = 'Could not rotate session. Try again.';
         }
     }
 
@@ -198,6 +214,8 @@ export default class SessionsPage extends Cossack {
                 `)}
 
                 <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+                    ${component(Button, { variant: 'outline', size: 'sm', '@click': () => this.rotateCurrent() },
+                        __('Rotate current session'))}
                     ${component(Button, { variant: 'outline', size: 'sm', '@click': () => this.revokeAllExceptCurrent() },
                         __('Sign out other sessions'))}
                     ${component(Button, { variant: 'destructive', size: 'sm', '@click': () => this.revokeAll() },

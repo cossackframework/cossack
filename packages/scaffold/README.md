@@ -169,6 +169,20 @@ edited layout, pages, and service files.
 
 ## Protected route recipe
 
+Generated login, register and reset forms keep drafts in `ClientStore`, validate
+locally and send one explicit object to a typed server action. App-owned
+`src/auth-input.ts` contracts validate inbound RPC and native calls. Credentials
+stay outside shared form state; fixed failure messages retain the browser draft.
+Session creation must succeed before the page sets a cookie and redirects.
+
+The sessions dashboard adds rotation and guarded logout. Rotation replaces the
+token and redirects before listing with the new cookie. Storage errors do not
+clear an existing cookie. Account writes, token consumption and HTTP delivery
+are separate steps; failed responses can follow partial writes. Read the
+[auth flow and failure guidance](../../docs/authentication.md) before changing
+these generated application files. Upgrade planning preserves edited files;
+updating a package dependency alone does not update the pages.
+
 Run `cossack add protected-route` to add `/protected-route` and its details page.
 This selects the existing `auth`, `database`, and `ui` features. Choose a database
 supported by the web runtime, install dependencies, and run `cossack migration up`

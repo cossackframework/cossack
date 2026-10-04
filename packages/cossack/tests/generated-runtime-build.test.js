@@ -2,6 +2,7 @@ import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { writeAuthPrimitivesAcceptance, checkAuthPrimitives } from './fixtures/auth-primitives-acceptance.js';
 import { writeSessionDashboardAcceptance, checkSessionDashboard } from './fixtures/session-dashboard-acceptance.js';
 import { writeOldInputAcceptance, checkOldInputAcceptance } from './fixtures/old-input-acceptance.js';
+import { writeAuthFormsAcceptance, checkAuthFormsAcceptance } from './fixtures/auth-forms-acceptance.js';
 import { createOAuthFixtureProvider, writeOAuthReplayAcceptance, checkOAuthReplay } from './fixtures/oauth-replay-acceptance.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
@@ -909,7 +910,7 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     expect(guest.status).toBe(401);
     expect(await guest.json()).toMatchObject({ code: 'COSSACK_RPC_UNAUTHENTICATED' });
     const registerId = manifest.filePathToId['/src/pages/auth/register/index.ts'];
-    const registered = await call(registerId, 'register', ['Agent', 'agent@example.test', 'test-password-123']);
+    const registered = await call(registerId, 'register', [{ name: 'Agent', email: 'agent@example.test', password: 'test-password-123' }]);
     expect(registered.status).toBe(200);
     expect(await registered.json()).toMatchObject({ _cossack_redirect: '/protected-route' });
     const sessionCookie = registered.headers.getSetCookie().find(value => value.startsWith('session_id='))?.split(';')[0];
@@ -973,6 +974,59 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     await server.close();
   }
 }, 120000);
+it.each(['node', 'cloudflare'])('operates actual generated auth forms and session actions on %s without sharing credentials', async adapter => {
+  const root = await project(adapter, ['dashboard'], { dashboardModules: ['sessions'] });
+  await writeAuthFormsAcceptance(root);
+  if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
+    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated auth form types: ${error.stdout}\n${error.stderr}`); }
+  let migrationPlan;
+  if (adapter === 'cloudflare') {
+    const plan = await promisify(execFile)(process.execPath,
+      [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'plan', '--local', '--json'],
+      { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+    migrationPlan = JSON.parse(plan.stdout).data.migrations;
+  }
+  await promisify(execFile)(process.execPath,
+    [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'up', '--local', '--json'],
+    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+  await vite(root, ['--sourcemap']);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const clientFiles = (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => /\.(js|map)$/.test(file));
+  expect(clientFiles.some(file => file.endsWith('.map'))).toBe(true);
+  for (const file of clientFiles) {
+    const text = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+    expect(text, file).not.toContain('Password exceeds its size limit.');
+    expect(text, file).not.toContain('pbkdf2-sha256$');
+    expect(text, file).not.toContain('PRIVATE_AUTH_FORM_STORAGE');
+  }
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const environment = { APP_SECRET: 'fixture-auth-forms-secret-0123456789' };
+  let close, request, origin, diagnostics;
+  if (adapter === 'node') {
+    const server = await productionServer(root, environment);
+    ({ close, origin, diagnostics } = server);
+    request = (url, options = {}) => fetch(origin + url, { redirect: 'manual', ...options });
+  } else {
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json'), secrets: environment }] });
+    close = () => harness.close();
+    diagnostics = () => JSON.stringify(harness.getLogs());
+    request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
+    try {
+      origin = new URL((await harness.listen()).url).origin;
+      const bindings = await harness.getWorker().getEnv();
+      for (const migration of migrationPlan) for (const statement of migration.statements) {
+        expect(statement.parameterCount).toBe(0);
+        await bindings.DB.prepare(statement.text).run();
+      }
+    } catch (error) { await close(); throw error; }
+  }
+  const browser = await chromium.launch({ headless: true });
+  try { await checkAuthFormsAcceptance(request, manifest, browser, origin); }
+  catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics()}`); }
+  finally { await browser.close(); await close(); }
+}, 180000);
 it.each(['node', 'cloudflare'])('serves generated authentication primitives and OAuth diagnostics on %s without exposing credentials', async adapter => {
   const root = await project(adapter, ['dashboard'], { oauth: 'github', dashboardModules: ['sessions'] });
   const fixtureProvider = await createOAuthFixtureProvider();

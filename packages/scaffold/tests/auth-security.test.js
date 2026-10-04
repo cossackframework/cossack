@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { transformSync } from 'esbuild';
 import { renderRecipe, resolveRecipe } from '../src/index.js';
 import { OAuthError, createCredentialVerifier, createSessionManager, hashPassword, verifyPassword } from '../../auth/src/index.ts';
+import { input, isClientVisibleError, ClientVisibleError } from '../../core/dist/index.js';
+
+afterEach(() => vi.unstubAllGlobals());
 
 async function generatedAuth() {
   const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth', oauth: 'github',
@@ -51,11 +54,35 @@ function generatedSessionsPage(files, api) {
   new Function('require', 'module', 'exports', code)(name => {
     if (name === '@cossackframework/core') return { Cossack: class {}, Page: () => () => {}, State: () => () => {}, Server: () => () => {} };
     if (name === '../../../auth') return api;
+    if (name === 'hono/cookie') return { getCookie: c => c?.cookie };
     if (name === '@cossackframework/ui' || name.startsWith('@cossackframework/solar-icons/')) return {};
     if (name === '@cossackframework/renderer') return {};
     throw new Error(`Unexpected page dependency: ${name}`);
   }, module, module.exports);
   return new module.exports.default();
+}
+
+function generatedFormPage(files, name, api) {
+  const module = { exports: {} };
+  const schemaModule = { exports: {} };
+  const schemaCode = transformSync(files.get('src/auth-input.ts').content.toString(), { loader: 'ts', format: 'cjs' }).code;
+  new Function('require', 'module', 'exports', schemaCode)(() => ({ input }), schemaModule, schemaModule.exports);
+  const code = transformSync(files.get(`src/pages/auth/${name}/index.ts`).content.toString(), { loader: 'ts', format: 'cjs',
+    tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } }).code;
+  const decorator = () => () => {};
+  new Function('require', 'module', 'exports', code)(name => {
+    if (name === '@cossackframework/core') return { Cossack: class {}, isClientVisibleError, ClientVisibleError, storeRules: v => v,
+      Page: decorator, State: decorator, ClientState: decorator, ClientStore: decorator,
+      Validate: decorator, Client: decorator, Server: decorator };
+    if (name === '../../../auth') return api;
+    if (name === '../../../auth-input') return schemaModule.exports;
+    if (name === '@cossackframework/ui' || name === '@cossackframework/renderer') return {};
+    throw new Error(`Unexpected form dependency: ${name}`);
+  }, module, module.exports);
+  const page = new module.exports.default();
+  page.c = { header: vi.fn(), req: { url: 'https://fixture.test/auth/login', query: () => 'fixture-token' } };
+  page.redirect = vi.fn();
+  return page;
 }
 
 describe('generated auth security', () => {
@@ -135,6 +162,80 @@ describe('generated auth security', () => {
     expect(page.error).toBe(method === 'init' ? 'Could not load sessions.'
       : method === 'revoke' ? 'Could not revoke session.' : 'Could not revoke sessions.');
     expect(JSON.stringify({ error: page.error, sessions: page.sessions })).not.toContain('PRIVATE_DATABASE_PASSWORD');
+  });
+
+  it('keeps rotation failures out of page state and only redirects after applying the replacement cookie', async () => {
+    const { files } = await generatedAuth();
+    const rotate = vi.fn().mockRejectedValueOnce(new Error('PRIVATE_STORAGE')).mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ headers: new Headers({ 'set-cookie': 'replacement' }) });
+    const page = generatedSessionsPage(files, { authSessions: { cookieName: 'session_id', rotate } });
+    page.c = { ...ownerContext(), header: vi.fn() }; page.redirect = vi.fn();
+    for (let i = 0; i < 2; i++) {
+      await page.rotateCurrent();
+      expect(page.error).toBe('Could not rotate session. Try again.');
+      expect(page.c.header).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
+    }
+    await page.rotateCurrent();
+    expect(rotate).toHaveBeenLastCalledWith(ownerContext().cookie, page.c);
+    expect(page.error).toBe(''); expect(page.c.header).toHaveBeenCalledWith('set-cookie', 'replacement');
+    expect(page.redirect).toHaveBeenCalledWith('/dashboard/sessions');
+    expect(page.c.header.mock.invocationCallOrder[0]).toBeLessThan(page.redirect.mock.invocationCallOrder[0]);
+  });
+
+  it.each([
+    ['login', 'login', { email: 'invalid', password: 'short' }, 'loginUser'],
+    ['login', 'login', { email: 'a'.repeat(180) + '@example.test', password: 'valid-password' }, 'loginUser'],
+    ['register', 'register', { name: '', email: 'valid@example.test', password: '🙂'.repeat(257) }, 'registerUser'],
+    ['forgot-password', 'requestReset', { email: ['invalid'] }, 'requestPasswordReset'],
+    ['reset-password', 'doReset', { token: '', password: 'valid-password' }, 'resetPassword'],
+  ])('validates native generated %s calls before touching credentials or storage', async (name, method, submitted, helper) => {
+    const { files } = await generatedAuth();
+    const api = { [helper]: vi.fn() };
+    const page = generatedFormPage(files, name, api);
+    await expect(page[method](submitted)).rejects.toThrow();
+    expect(api[helper]).not.toHaveBeenCalled(); expect(page.c.header).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['login', 'login', { email: 'valid@example.test', password: 'valid-password' }, 'loginUser', 'Could not sign in. Try again.'],
+    ['register', 'register', { name: '', email: 'valid@example.test', password: 'valid-password' }, 'registerUser', 'Could not create the account. Try again or sign in.'],
+    ['reset-password', 'doReset', { token: 'token', password: 'valid-password' }, 'resetPassword', 'Could not reset the password. Request a new reset link.'],
+  ])('redacts storage failures in the actual generated %s method', async (name, method, submitted, helper, message) => {
+    const { files } = await generatedAuth();
+    const page = generatedFormPage(files, name, { [helper]: vi.fn().mockRejectedValue(new Error('PRIVATE_DATABASE')) });
+    await page[method](submitted);
+    expect(page.error).toBe(message); expect(page.c.header).not.toHaveBeenCalled(); expect(page.redirect).not.toHaveBeenCalled();
+  });
+
+  it('only preserves the known duplicate account error and does not copy arbitrary visible errors', async () => {
+    const { files } = await generatedAuth();
+    const registerUser = vi.fn().mockRejectedValueOnce(new ClientVisibleError('An account with this email already exists.'))
+      .mockRejectedValueOnce(new ClientVisibleError('PRIVATE_VISIBLE_ERROR'));
+    const page = generatedFormPage(files, 'register', { registerUser });
+    const data = { name: '', email: 'valid@example.test', password: 'valid-password' };
+    await page.register(data); expect(page.error).toBe('An account with this email already exists.');
+    await page.register(data); expect(page.error).toBe('Could not create the account. Try again or sign in.');
+  });
+
+  it('discards reset-request storage exceptions at the server boundary', async () => {
+    const { files } = await generatedAuth();
+    const page = generatedFormPage(files, 'forgot-password', {
+      requestPasswordReset: vi.fn().mockRejectedValue(new Error('PRIVATE_DATABASE')),
+    });
+    await expect(page.requestReset({ email: 'valid@example.test' }))
+      .rejects.toThrow('Could not send the reset link. Try again.');
+  });
+
+  it.each(['login', 'register', 'forgot-password', 'reset-password'])('retains a browser draft and fixed feedback after a failed %s request', async name => {
+    const { files } = await generatedAuth();
+    const page = generatedFormPage(files, name, {});
+    page.form = { name: 'Draft', email: 'draft@example.test', password: 'PRIVATE_DRAFT' };
+    page.validateAll = vi.fn().mockResolvedValue(true);
+    for (const method of ['login', 'register', 'requestReset', 'doReset']) page[method] = vi.fn().mockRejectedValue(new Error('PRIVATE_TRANSPORT'));
+    await page.handleSubmit({ preventDefault() {} });
+    expect(page.error).not.toContain('PRIVATE_TRANSPORT'); expect(page.error).toMatch(/^Could not /);
+    expect(page.form.password).toBe('PRIVATE_DRAFT');
+    if (name === 'forgot-password') expect(page.submitted).toBe(false);
   });
 
   it('protects the current stable reference during bulk revocation and rejects an already-rotated caller', async () => {

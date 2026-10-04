@@ -6,6 +6,87 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt11-forms-2026-10-05"></a>
+### Codex: Generated auth form privacy and session actions (2026-10-05)
+
+Author: Codex. Continued after `a2d064e`. This completes the actual generated-form
+slice of RT-11. All four auth pages use ClientStore drafts and client-only
+validation. Forgot-password confirmation/error fields are also browser-owned.
+App-owned `src/auth-input.ts` schemas accept one object, reject unknown fields
+and enforce field/password limits. The email bound matches the generated
+VARCHAR(191) column; the contract rejects values wider than that column. Each
+method parses again before storage for native calls, which bypass decorator gates. Passwords are preserved without
+normalization/truncation and limited to 1024 UTF-8 bytes. AUTH_PATHS owns the new
+file for creation and incremental composition.
+
+Login/register require successful session creation before applying cookie headers
+and redirecting. Storage/transport catches use fixed feedback, with only the exact
+known duplicate-account ClientVisibleError retained by registration. The reset
+request throws a fixed ClientVisibleError after a storage/mail failure, so the
+framework does not log the original exception. Failed browser submissions retain
+the draft; a failed reset request does not show success. Credentials appear only
+in explicit action arguments, not serialized public form state or validation RPCs.
+Browser acceptance waits for hydration before interacting with these forms.
+
+The dashboard layout catches failed logout and renders fixed `logoutError` state.
+It retains the cookie when revocation fails. The sessions module adds
+`rotateCurrent()`, applies its returned headers and redirects to a fresh request
+before re-listing. Atomic storage keeps its independent public reference stable.
+An expired/revoked incoming token fails the guarded layout action even with a
+forged actor in public state.
+
+The new fixture API performs setup, inspection and fault injection only. The
+original generated page classes, form markup and RPC dispatcher remain unchanged
+inside production Node SQLite/Cloudflare D1 artifacts. Real SQL triggers exercise
+user creation, session creation, rotation and deletion failures. Checks cover
+malformed/extra/oversized action input before writes, fixed failures/no cookies,
+partial registration plus recovery by login, known/unknown reset confirmation,
+invalid/expired/concurrent/replayed reset tokens, stable rotation references and
+next-request identity, logout clearing/redirect and invalid old tokens. Chromium
+uses actual login/register/forgot/reset forms and account-menu/session actions.
+Requests prove drafts/tokens stay outside shared state and client validation
+makes no server validation calls. Client JavaScript and emitted source-map scans exclude the server
+schema/hasher/private fixture markers.
+
+The `safe-old-input/public-form-fields` source now joins application guidance
+acceptance verbatim. The harness types/builds it, posts native multipart data,
+decodes the flash cookie, reads the following SSR state, and drives the browser
+form to selected restoration/credential exclusion and clearing on reload.
+The installed-guide runner calls this same harness, including emitted source-map
+checks. This is an explicit acceptance test; CLI/MCP discovery never executes
+examples. The auth guide and migration notes remove the public password example
+and record object signatures, rotation, URL-token secrecy and partial outcomes.
+
+| Command | Verified result |
+| --- | --- |
+| `pnpm --filter @cossackframework/scaffold exec vitest run` | 146 tests / 8 files pass, including generated native parsing, fixed errors and browser-handler failure state. |
+| `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'operates actual generated auth forms'` | 2 production Node/Cloudflare and Chromium cases pass; 60 unrelated cases skipped. Both generated apps type-check/build with client source maps enabled. |
+| `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'executes packaged application guidance\|serves generated authentication\|protects.*route'` | 4 guidance/auth/OAuth/dashboard cases pass; 58 unrelated cases skipped. The last pattern did not select the separately named protected-route test. |
+| `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'runs the protected-route recipe'` | 1 actual protected-route session/browser case passes; 61 unrelated cases skipped. Registration call uses the new object signature. |
+| `COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` | Fresh tarballs pass 10 standalone and 4 bundled auth examples, offline CLI/MCP/reporter parity, native Cloudflare HTTP/SSE/WebSocket traces, four actual application guides, emitted source maps and UI prop contracts. |
+| `pnpm tsc --noEmit` | Root types pass. |
+| `pnpm typecheck` | All 11 package checks pass. |
+
+Logs: `/tmp/cossack-rt11-forms-{scaffold,native,regression,protected,root-types,package-types}.log`.
+Installed log: `/tmp/cossack-rt11-forms-installed.log`. Retained tarballs/app:
+`/tmp/cossack-local-pack-D6vyM3`. Its installed baseline is Wrangler 4.147.0,
+Cloudflare Vite plugin 1.62.5, Vite 8.3.2 and TypeScript 7.0.2. Dist-replacing
+installed-gate builds ran only after dependent tests completed.
+
+Limits: Registration can create an account before session insertion fails; login
+can recover. Reset consumes its token before hashing, updating the password and
+revoking sessions; later failures can require a new link and leave partial writes.
+Lost responses also do not imply rollback. Cookies are shared across tabs;
+an already-started request can retain its resolved identity. Existing realtime
+connections do not gain freshness merely through rotation/revocation. Signed
+flash cookies remain readable and replayable until expiry. Broader concurrent
+request/tab and realtime criteria remain for RT-11; CLI-08 retains broader
+library/UI/runtime guidance coverage. Actual auth-form production acceptance uses workspace packages on Node/Cloudflare;
+this installed guide gate covers Cloudflare guidance, not installed Node auth
+forms or deployed readiness. No Deno Deploy or final
+release-matrix claim is made. Counts remain **28 complete / 30 open**. Desktop
+stays complete by user decision; no native Desktop gate was run here.
+
 <a id="codex-rt11-input-2026-10-05"></a>
 ### Codex: Explicit public old-input selection (2026-10-05)
 

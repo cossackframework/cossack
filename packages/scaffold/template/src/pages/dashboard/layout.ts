@@ -36,6 +36,7 @@ export default class DashboardLayout extends Cossack {
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
     @State() isAdmin = false;
+    @State() logoutError = '';
     @State() account: { name: string; email: string; avatar: string | null } = {
         name: '',
         email: '',
@@ -76,9 +77,14 @@ export default class DashboardLayout extends Cossack {
 
     @Server()
     async doLogout() {
-        const { headers } = await logout(this.c);
-        headers.forEach((value, key) => this.c.header(key, value));
-        this.redirect(config('auth.redirectAfterLogout'));
+        this.logoutError = '';
+        try {
+            const { headers } = await logout(this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(config('auth.redirectAfterLogout'));
+        } catch {
+            this.logoutError = 'Could not sign out. Try again.';
+        }
     }
 
     async init() {
@@ -217,6 +223,7 @@ export default class DashboardLayout extends Cossack {
                 })}
                 <div class="flex-1 min-w-0 flex flex-col overflow-x-hidden">
                     <main class="flex-1 p-6 sm:p-8 overflow-x-hidden">
+                        ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}
                     </main>
                     <footer class="border-t border-border px-6 sm:px-8 py-4 text-xs text-muted-foreground">

@@ -13,6 +13,7 @@ export const applicationGuidanceExamples = [
   { guide: 'component-actions', example: 'validated-counter', route: 'guidance-actions' },
   { guide: 'server-resources', example: 'resource-page', route: 'guidance-resource' },
   { guide: 'lifecycle-tasks', example: 'owned-task', route: 'guidance-task' },
+  { guide: 'safe-old-input', example: 'public-form-fields', route: 'guidance-old-input' },
 ];
 
 export async function verifyApplicationGuidance(root, guides, { additionalAllowedPaths = [] } = {}) {
@@ -149,6 +150,41 @@ export async function verifyApplicationGuidance(root, guides, { additionalAllowe
     await expect.poll(() => page.evaluate(() => window.__guideTimers.size)).toBe(0);
     // A reload would also remove timers, so require navigation in the same document.
     assert.equal(await page.evaluate(() => window.__guideDocumentId), documentId);
+
+    const formSecret = 'PRIVATE_GUIDE_FORM_PASSWORD';
+    const formData = new FormData();
+    formData.set('name', 'Guide reader'); formData.set('email', 'invalid');
+    formData.set('profile[city]', 'Tokyo'); formData.set('password', formSecret);
+    const posted = await fetch(origin + '/guidance-old-input', { method: 'POST', headers: { origin }, body: formData, redirect: 'manual' });
+    assert.equal(posted.status, 302);
+    assert.equal(posted.headers.get('location'), '/guidance-old-input');
+    const cookieHeader = posted.headers.getSetCookie().find(value => value.startsWith('cossack_flash='));
+    assert.match(cookieHeader, /HttpOnly;.*SameSite=Lax/);
+    const cookie = cookieHeader.split(';')[0];
+    const payload = JSON.parse(Buffer.from(cookie.slice('cossack_flash='.length).split('.')[0], 'base64url').toString('utf8'));
+    assert.deepEqual(payload, { __input: { name: 'Guide reader', email: 'invalid', profile: { city: 'Tokyo' } }, errors: { email: 'Enter a valid email.' } });
+    assert.ok(!JSON.stringify(payload).includes(formSecret));
+    const restored = await fetch(origin + '/guidance-old-input', { headers: { cookie } });
+    assert.equal(restored.status, 200);
+    const restoredText = await restored.text();
+    assert.ok(!restoredText.includes(formSecret));
+    const state = JSON.parse(restoredText.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]).public;
+    assert.deepEqual(state, { name: 'Guide reader', email: 'invalid', city: 'Tokyo', errors: { email: 'Enter a valid email.' }, notice: '' });
+    assert.match(restored.headers.get('set-cookie'), /cossack_flash=;.*Max-Age=0/);
+    await page.goto(origin + '/guidance-old-input');
+    await page.waitForFunction(() => window.__cossackReady === true);
+    await page.getByLabel('Name', { exact: true }).fill('Browser reader');
+    await page.getByLabel('Email', { exact: true }).fill('invalid');
+    await page.getByLabel('City', { exact: true }).fill('Kyoto');
+    await page.getByLabel('Password', { exact: true }).fill(formSecret);
+    await page.getByRole('button', { name: 'Submit', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('Enter a valid email.');
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Browser reader');
+    await expect(page.getByLabel('City', { exact: true })).toHaveValue('Kyoto');
+    await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
+    await page.reload();
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('');
+    await expect(page.getByRole('alert')).toHaveText('');
     assert.deepEqual(errors, []);
 
     child.send('close');

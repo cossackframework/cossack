@@ -238,7 +238,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
 
     const core = catalog.data.packages.find(pkg => pkg.name === '@cossackframework/core');
     await verifyApplicationGuidance(projectDir, core.guidance.guides);
-    console.log(`Installed ${runtime} packaged action/resource/task examples passed types, browser behavior and source-map-enabled production stripping.`);
+    console.log(`Installed ${runtime} packaged action/resource/task/public-form examples passed types, browser behavior and source-map-enabled production stripping.`);
 
     if (runtime === 'node') {
       for (const mode of ['vite', 'script']) await verifyNodeDevelopmentApplication(projectDir, mode);

@@ -383,6 +383,15 @@ visitor state does not create rows/cookies or prevent public SSG. Standalone SSG
 initializes bare translation/config helpers before component lifecycle hooks;
 its existing public-response checks still reject visitor cookies.
 
+Generated auth pages keep browser drafts in ClientStore with client-only
+validation. App-owned input contracts accept one explicit submission object;
+server methods parse again because native calls bypass decorator gates. Passwords
+and reset tokens do not enter shared form state. Fixed page messages redact
+storage failures. Session cookies and redirects are applied after storage
+success. The dashboard rotates then redirects before listing with a fresh cookie.
+Registration/reset/session writes and response delivery are not one transaction;
+an error can follow a committed account write or consumed reset token.
+
 Cookie-based OAuth requires an application-owned `OAuthStateStore`. Auth prepares
 a provider-scoped SHA-256 state key with absolute timestamps, registers it before
 issuing the signed cookie, and atomically consumes it before token exchange.

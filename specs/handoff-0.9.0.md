@@ -75,13 +75,21 @@ the required non-Desktop release matrix.
    following SSR checks. Preserve explicit field lists, credential exclusions,
    detached copies, namespace protection and the errors-only form default.
    The packaged `safe-old-input` example runs verbatim in generated production
-   fixtures; its new source still needs inclusion in installed example acceptance.
-   Next audit generated auth pages: login currently keeps its password in a public
-   `@Store()` form. Keep credentials in browser-owned fields and server-local
-   arguments, validate the actual inbound actions, and verify real form failure,
-   login/logout/rotation flows. Finish concurrent request semantics and realtime
-   freshness; cookie clearing does not provide durable flash replay protection.
-   Preserve RT-13's shared-library regressions. This slice does not close RT-11.
+   fixtures and installed Cloudflare guide acceptance, including decoded-cookie,
+   browser clearing and source-map checks.
+   [Generated auth pages](./release-0.9.0.md#codex-rt11-forms-2026-10-05) now keep
+   drafts in ClientStore, use client-only validation and validate one explicit
+   object at RPC and native boundaries. Fixed errors preserve drafts and avoid
+   raw storage text. Actual Node/Cloudflare pages and Chromium verify registration,
+   login, reset expiry/replay, logout and rotation through cookies/redirects and
+   following requests. Preserve the new `auth-input.ts` owned file, object action
+   signatures and real-page regressions. Rotation redirects before a fresh list.
+   Registration and reset failures can follow partial writes; do not infer rollback.
+   Next audit concurrent requests/tabs and realtime identity freshness. Signed
+   flash clearing does not provide durable replay protection. The public old-input
+   guide now joins the application guidance harness. Preserve RT-13 regressions.
+   RT-11 stays open for its remaining criteria.
+
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
 4. Follow the detailed plan for all 30 open tasks. Close each only against its

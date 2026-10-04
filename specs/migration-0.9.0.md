@@ -78,6 +78,42 @@ Read the [session guide](../docs/session.md) for registration and the auth bridg
 Standalone SSG rendering now installs the same bare translation/config helpers
 as the SSR entry before component lifecycle hooks run.
 
+## Generated auth drafts and action contracts
+
+Generated login/register/forgot/reset pages now use `ClientStore` and client-only
+validation. Replace public `Store` or `State` credential fields with browser-owned
+drafts. The server receives credentials only in an explicit submission object.
+Add the app-owned `src/auth-input.ts` contracts when porting the new pages.
+`cossack upgrade` preserves edited files; changing dependencies does not migrate
+an application's auth pages.
+
+The generated action signatures change from positional arguments to one object:
+
+```typescript
+await this.login({ email, password });
+await this.register({ name, email, password });
+await this.requestReset({ email });
+await this.doReset({ token, password });
+```
+
+Each action declares `@Server({ input })` and parses the same schema inside its
+body for native calls. Unknown fields, invalid shapes and extra RPC arguments
+reject before storage. Passwords keep their original bytes and must fit the
+shared hasher's 1024-byte UTF-8 limit. Fixed messages replace arbitrary caught
+exception text; the register page preserves only its known duplicate-account
+message. Reset-request confirmation stays generic.
+
+The sessions dashboard adds `rotateCurrent()`. It applies the replacement cookie
+and redirects before listing through the next request. Its public reference
+remains stable. Dashboard logout uses fixed failure state and clears the cookie
+only after revocation succeeds. Apply these layout changes as well as auth pages.
+
+Account writes, token consumption and response delivery are separate steps.
+Registration may have created the account when session creation fails. Reset
+may have consumed the token or updated the password before a later failure.
+An error is not proof of rollback. Read the [auth failure guidance](../docs/authentication.md)
+before adding retries or transactional behavior.
+
 ## Explicit public old input
 
 `getFormData()` no longer flashes submitted values by default. Nonempty
