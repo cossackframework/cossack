@@ -11,17 +11,17 @@ const browserExpect=expect;
 
 // The browser driver is a repository test client. Vite and every application
 // dependency resolve from root, including when root contains installed tarballs.
-export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[],transport='http'}) {
+export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[],transport='http',runtime='cloudflare'}) {
   // Repeated installed runs must not inherit the SSE coordinator's durable state.
   const scope='trace-acceptance-'+randomUUID();
-  const files=['vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts',...(transport==='durable-object'?['wrangler.jsonc','src/index.ts']:[])];
+  const files=['vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts',...(transport==='durable-object'&&runtime==='cloudflare'?['wrangler.jsonc','src/index.ts']:[])];
   const backups=new Map();
   for(const file of files){
     try{backups.set(file,await fs.readFile(path.join(root,file)));}
     catch(error){if(error.code!=='ENOENT')throw error;backups.set(file,null);}
   }
   try {
-  if(transport==='durable-object') {
+  if(transport==='durable-object'&&runtime==='cloudflare') {
     const configPath=path.join(root,'wrangler.jsonc'), config=JSON.parse(await fs.readFile(configPath,'utf8'));
     config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'TraceAcceptanceObject'});
     config.migrations.push({tag:'trace-acceptance-v2',new_sqlite_classes:['TraceAcceptanceObject']});
@@ -186,7 +186,10 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       }
     }
   };
-  await checkProduction(path.join(root,'dist/client/assets'));await checkProduction(path.join(root,'dist/ssr'));
+  if(runtime==='node')await promisify(execFile)(process.execPath,[vite,'build','--ssr','src/index.ts','--outDir','dist/server'],{
+    cwd:root,env:{...process.env,NODE_ENV:'production',VITEST:''},timeout:120000,maxBuffer:8*1024*1024,
+  });
+  await checkProduction(path.join(root,'dist/client/assets'));await checkProduction(path.join(root,runtime==='node'?'dist/server':'dist/ssr'));
   } finally {
     for(const [file,content] of backups){
       if(content===null)await fs.rm(path.join(root,file),{force:true});

@@ -29,7 +29,9 @@ export function runLifecycle(command, executable, args, options = {}) {
       clearTimeout(timer);
       process.removeListener('SIGINT', stop);
       process.removeListener('SIGTERM', stop);
-      const ok = !forced && (code === 0 || stopping && signal === 'SIGTERM');
+      // Vite performs cleanup and exits with 128 + SIGTERM instead of being
+      // terminated by the signal. Accept that code only after our own stop.
+      const ok = !forced && (code === 0 || stopping && (signal === 'SIGTERM' || code === 143));
       resolve({ exitCode: ok ? 0 : 1, data: {
         event: ok ? 'stopped' : 'failed', exitCode: code, signal,
         reason: stopping ? 'requested' : 'process-exit', ...(options.metadata ?? {}),

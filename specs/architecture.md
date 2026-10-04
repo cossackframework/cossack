@@ -1028,3 +1028,14 @@ bounded map of recent call identities accepts matching native dispatch records
 before headers or after local completion, but never after capture stop/replacement.
 The browser inspector supplies the shared capture owner to the bridge. Socket
 terminal evidence describes frame preparation, not post-send cleanup.
+
+### Node Vite development HTTP boundary
+
+The Node adapter's separate `/vite` entry owns the standalone development HTTP
+listener integration. It consumes only structural `app.fetch`, `env`, and runtime
+lifecycle exports; it never imports the framework. Scaffold includes it only in
+Node web Vite configuration. Vite's module runner loads the application after
+Vite's asset handlers, and the Hono Node server bridge preserves request streams
+and repeated cookies. Runtime imports do not load Vite. Embedded servers retain
+their own listener and lifecycle. Standalone socket-only startup and proactive
+socket reload remain separate acceptance work under REL-03.

@@ -1360,30 +1360,10 @@ it('gates typed task commits across rapid changes, sibling navigation and layout
 async function developmentServer(root) {
   const child = spawn(process.execPath, ['--input-type=module', '-e', `
     import { createServer } from 'vite';
-    import { getRequestListener } from '@hono/node-server';
-    const runtimes = new Set();
-    // The harness serves the generated app through Vite's real SSR loader.
-    // Node scaffold currently has no first-party Vite HTTP middleware (CF-10).
-    const bridge = {
-      name: 'state-example-ssr-harness',
-      configureServer(viteServer) {
-        const handle = getRequestListener(async request => {
-          const { app, env, runtime } = await viteServer.ssrLoadModule('/src/index.ts');
-          runtimes.add(runtime);
-          env.APP_URL = new URL(request.url).origin;
-          return app.fetch(request, env);
-        });
-        viteServer.middlewares.use((request, response, next) => {
-          const pathname = new URL(request.url, 'http://localhost').pathname;
-          if (['/state-example', '/crpc'].includes(pathname)) return handle(request, response);
-          next();
-        });
-      },
-    };
-    const server = await createServer({ root: process.cwd(), server: { port: 0, host: '127.0.0.1' }, plugins: [bridge] });
+    const server = await createServer({ root: process.cwd(), server: { port: 0, host: '127.0.0.1' } });
     await server.listen();
     console.log('STATE_DEV_ORIGIN=http://127.0.0.1:' + server.httpServer.address().port);
-    process.on('message', async message => { if (message === 'STOP') { for (const runtime of runtimes) await runtime.dispose(); await server.close(); process.exit(0); } });
+    process.on('message', async message => { if (message === 'STOP') { await server.close(); process.exit(0); } });
   `], { cwd: root, env: { ...process.env, NODE_ENV: 'development', VITEST: '' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   let output = '';
   child.stdout.on('data', data => { output += data; });
@@ -1697,12 +1677,12 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-it.each(['http','sse','durable-object'])('shares a generated development browser RPC trace over %s with the CLI and MCP', async transport => {
+it.each([['cloudflare','http'],['cloudflare','sse'],['cloudflare','durable-object'],['node','http'],['node','sse']])('shares a generated %s development browser RPC trace over %s with the CLI and MCP', async (runtime, transport) => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
-  const root=await project('cloudflare');
+  const root=await project(runtime);
   await verifyDevelopmentTraceApplication(root,{
-    additionalAllowedPaths:[repository],transport,
+    additionalAllowedPaths:[repository],transport,runtime,
     async onRecorded({snapshot,recorded}) {
       const {stdout,stderr:cliStderr}=await promisify(execFile)(process.execPath,[path.join(repository,'packages/cossack/bin/cossack.js'),'traces','--json','--session',snapshot.sessionId],{cwd:root,timeout:15000,maxBuffer:2*1024*1024});
       const cli=JSON.parse(stdout);
@@ -1719,3 +1699,48 @@ it.each(['http','sse','durable-object'])('shares a generated development browser
     },
   });
 },180000);
+
+it('serves generated Node pages, native requests, cookies and source reload through cossack dev', async () => {
+  const { createServer } = await import('node:net');
+  const reservation = createServer();
+  await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
+  const port = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  const root = await project('node');
+  const endpoint = path.join(root, 'src/pages/api/dev-check.ts');
+  await fs.mkdir(path.dirname(endpoint), { recursive: true });
+  const source = value => `
+    import { defineApi } from '@cossackframework/framework/api';
+    export const POST = defineApi({ handler: async ({c}) => {
+      const headers = new Headers();
+      headers.append('set-cookie', 'first=1; Path=/'); headers.append('set-cookie', 'second=2; Path=/');
+      return new Response(${JSON.stringify(value)} + ':' + await c.req.text(), { headers });
+    } });
+  `;
+  await fs.writeFile(endpoint, source('first'));
+  const child = spawn(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'dev', '--json', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
+    cwd: root, env: { ...process.env, PATH: path.join(repository, 'node_modules/.bin') + path.delimiter + process.env.PATH, NODE_ENV: 'development', VITEST: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = ''; child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
+  const exited = once(child, 'exit'); const origin = `http://127.0.0.1:${port}`;
+  const post = () => fetch(origin + '/api/dev-check', { method: 'POST', body: 'body' });
+  try {
+    await expect.poll(async () => {
+      if (child.exitCode !== null) throw new Error(output);
+      try { return await (await post()).text(); } catch { return ''; }
+    }, { timeout: 30000 }).toBe('first:body');
+    expect((await post()).headers.getSetCookie()).toEqual(['first=1; Path=/', 'second=2; Path=/']);
+    expect(await (await fetch(origin)).text()).toContain('window.__INITIAL_STATE__');
+    expect((await fetch(origin + '/@vite/client')).status).toBe(200);
+    await fs.writeFile(endpoint, source('second'));
+    await expect.poll(async () => (await post()).text(), { timeout: 15000 }).toBe('second:body');
+  } finally {
+    child.kill('SIGTERM');
+    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
+    const [code, signal] = await exited; clearTimeout(kill);
+    expect({code,signal},output).toEqual({code:0,signal:null});
+    const events = output.trim().split('\n').map(line => JSON.parse(line));
+    expect(events.at(-1)).toMatchObject({ok:true,data:{event:'stopped',reason:'requested'}});
+  }
+}, 60000);

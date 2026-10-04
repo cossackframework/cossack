@@ -373,6 +373,19 @@ describe('lifecycle process event contract', () => {
     expect(() => process.kill(events[0].data.pid, 0)).toThrow();
   });
 
+  it.each([true, false])('classifies a signal exit code only after requested shutdown (%s)', async requested => {
+    const tools = path.join(root, 'tools'); await fs.mkdir(tools);
+    const source = requested
+      ? 'process.on("SIGTERM", () => process.exit(143)); setInterval(() => {}, 10000);'
+      : 'process.exit(143);';
+    await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\n' + source, { mode: 0o755 });
+    const result = await execute(['dev', '--json'], { stopOnStarted: requested, stopDelay: 500,
+      env: { PATH: tools + path.delimiter + process.env.PATH } });
+    expect(result.code).toBe(requested ? 0 : 1);
+    const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+    expect(events.at(-1)).toMatchObject({ ok: requested, data: { event: requested ? 'stopped' : 'failed', exitCode: 143 } });
+  });
+
   it('bounds shutdown of a running server that ignores termination', async () => {
     await fs.mkdir(path.join(root, 'dist/server'), { recursive: true });
     await fs.writeFile(path.join(root, 'dist/server/index.js'),

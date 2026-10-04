@@ -562,7 +562,9 @@ background receipt acknowledgement; see the [native checkpoint](./release-0.9.0.
 See [earlier completed work and evidence](./release-0.9.0-plan-archive.md#codex-rt28-socket-handoff-2026-10-04)
 and [capture contracts](../docs/development-traces.md).
 
-Remaining: Other runtime development acceptance of the shared schema. Header
+Node standalone Vite HTTP/SSE browser traces also pass the shared schema checks;
+see the [Node development checkpoint](./release-0.9.0.md#codex-node-development-2026-10-04).
+Remaining: Node standalone WebSocket lifecycle and other runtime development acceptance. Header
 evidence does not prove body completion; a WebSocket terminal does not prove later iterator cleanup. Preserve capture ownership,
 bounded optional evidence, paused-iterator deadlines, first failure codes,
 confirmed state and one cancellation request. RT-28 remains open.
@@ -891,10 +893,10 @@ or manually patching generated configuration. Supported combinations pass build
 and dry-run tests. Unsupported combinations fail clearly. Dependencies: CF-01,
 CF-06, CF-09, and REL-02.
 
-Codex RT-04 acceptance (2026-10-03) also found generated Node plain Vite dev
-returns 404. Development guide claims must be tested with the actual CLI and
-generated configuration; an acceptance fixture's private SSR bridge does not
-establish supported Node dev behavior. Track the implementation under REL-03.
+Codex RT-04 acceptance (2026-10-03) found a plain Vite Node 404. The Node adapter
+plugin now serves this path, and the diagnostic fixture uses the generated
+configuration without a private bridge. Remaining development acceptance is
+tracked under REL-03.
 
 ## Release gates
 
@@ -950,20 +952,21 @@ Runtime/browser gates cover the changed features. Missing external evidence
 remains explicitly open. A source-only prototype test cannot substitute for a
 published application test. Dependencies: REL-02 and completed feature work.
 
-**Open Node development gate — Author: Codex (2026-10-03).** A generated Node
-app's plain Vite dev command serves no Cossack page and returns 404. The RT-04
-diagnostic fixture supplies a test-only getRequestListener/ssrLoadModule bridge
-to exercise consuming-app DEV behavior; production uses the real generated Node
-server. This bridge is not present in scaffold/CLI development support.
+**Node development progress — Author: Codex (2026-10-04).** Generated Node
+Vite configurations now include the Node adapter's separate `/vite` plugin.
+Plain Vite and `cossack dev` serve SSR pages and RPC through the public application
+entry. The state diagnostic fixture no longer supplies a private HTTP bridge.
+Node HTTP/SSE traces and native response evidence pass browser/CLI/MCP parity;
+see the [checkpoint](./release-0.9.0.md#codex-node-development-2026-10-04).
 
-Implement first-party Node Vite HTTP/SSR integration in Node-specific adapter or
-tooling, preserving the rule that core and libraries cannot depend on framework
-or import Node request APIs into shared runtime code. Compose generated Vite
-configuration, asset handling and framework routing without swallowing Vite's
-module/HMR endpoints. Verify initial page rendering, RPC, cookies, source reload,
-startup errors and bounded shutdown through the actual generated CLI dev command.
-Then remove the fixture's redundant private bridge and use the supported path.
-Recheck production and Cloudflare development before completing this gate.
+Remaining: verify direct WebSocket startup before any HTTP request, proactively
+replace socket runtimes after source edits, and unify the generated script's
+binding/environment behavior with standalone Vite. The plugin currently attaches
+on the first HTTP application request and replaces runtimes on later requests.
+Embedded Vite leaves listener and lifecycle ownership with its host; the existing
+script's WebSocket acceptance remains a separate path. Complete the final
+installed runtime matrix, recheck Cloudflare development and production, then
+close this gate. Deno execution and Electron launch/packaging remain open.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

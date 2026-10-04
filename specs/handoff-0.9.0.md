@@ -21,7 +21,9 @@ Preserve these regressions; their implementation does not need repeating.
 ## Continue here — Codex, 2026-10-04
 
 1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** other runtime development
-   acceptance, coordinating the Node development routing work under REL-03.
+   acceptance, coordinating Node standalone WebSocket startup/reload and binding
+   parity with REL-03. Node Vite HTTP/SSR and HTTP/SSE trace checks now pass;
+   see the [checkpoint](./release-0.9.0.md#codex-node-development-2026-10-04).
    Preserve the public inspector import
    (filesystem imports duplicate capture owners), ordered WebSocket application
    errors, and capture ownership. Headers do not prove body completion; socket
@@ -46,7 +48,7 @@ Preserve these regressions; their implementation does not need repeating.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
-- REL-03 still needs plain Node Vite development routing, Deno execution, Electron launch/packaging and the full runtime/release matrix.
+- REL-03 still needs Node standalone socket lifecycle and binding parity, Deno execution, Electron launch/packaging and the full runtime/release matrix.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

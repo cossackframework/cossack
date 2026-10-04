@@ -597,6 +597,7 @@ export default class PackagingSsgPage extends Cossack {
 
 const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
 const keep = process.env.COSSACK_KEEP_SMOKE === '1';
+const nodeDevelopmentOnly = process.argv.includes('--node-dev-only');
 
 try {
   const tarballDirectory = path.join(temporaryRoot, 'tarballs');
@@ -608,15 +609,15 @@ try {
     path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
     'create',
     'minimal-production',
-    '--adapter=cloudflare',
+    nodeDevelopmentOnly ? '--adapter=node' : '--adapter=cloudflare',
     '--preset=minimal',
     '--yes',
   ], { cwd: temporaryRoot });
   const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
   await useTarballs(minimalProjectDir, tarballs, { documentation: true });
   await installGeneratedProject(minimalProjectDir);
-  await verifyAgentDocumentation(minimalProjectDir);
-  if (!process.argv.includes('--agent-docs-only')) {
+  await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
+  if (!nodeDevelopmentOnly && !process.argv.includes('--agent-docs-only')) {
     await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
   }
 } finally {

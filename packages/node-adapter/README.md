@@ -15,6 +15,7 @@ Cossack and its packages.
 - `serveStatic` : Node `fs`-based Hono middleware for serving static assets.
 - `NodeWebSocketRuntime` : the WebSocket runtime used by the adapter.
 - `createNodeEmailSender` : Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
+- `cossackNode` from `/vite`: standalone Vite HTTP development integration; see the lifecycle limits below.
 
 ## Unified `env.EMAIL` (Cloudflare email binding polyfill)
 
@@ -103,3 +104,40 @@ not trust forwarded scheme headers. Configure origin policy for a trusted proxy
 in the application. Generated production and development entries attach the adapter automatically.
 The dev server disposes the previous runtime on source reload while Vite retains
 its HMR connection; clients reconnect to a fresh process-local scope.
+
+## Vite development HTTP server
+
+Generated Node Vite configurations include the separate tooling entry:
+
+```ts
+import { cossackNode } from '@cossackframework/node-adapter/vite';
+
+// Add to the existing Vite plugins, alongside the Cossack framework plugins.
+cossackNode();
+```
+
+This makes `cossack dev` and plain `vite dev` serve the exported `app` from
+`/src/index.ts`. The entry can also export `env` and a runtime with `dispose()`
+and `attach()`. The adapter imports no framework code. Vite remains an optional
+peer dependency and is not imported by the main runtime entry.
+
+The middleware runs after Vite's public asset and module handlers. Each application
+request loads the entry through the SSR module runner, so source edits take effect
+on the next request. Replaced runtimes detach their upgrade listeners and begin
+cleanup. Vite shutdown waits up to five seconds for cleanup; use
+`cossackNode({ entry: '/src/custom.ts', shutdownTimeoutMs: 2000 })` to change these
+settings. The deadline stops waiting; it cannot terminate application I/O.
+
+The plugin uses the entry's exported bindings as supplied. Configure environment
+values in that entry or the launching process. It does not infer an application
+URL from untrusted request headers or configure SMTP automatically.
+
+Embedded Vite servers (`server.middlewareMode`) keep ownership of their HTTP
+listener and lifecycle. The existing generated `scripts/dev.js` continues to use
+that path. Standalone WebSocket attachment currently begins when the application
+first receives an HTTP request, and a runtime replacement happens on a subsequent
+request. Direct socket-only startup and proactive socket reload acceptance remain
+open; use the generated script for its existing WebSocket development workflow.
+
+This plugin applies only to development. Production keeps the generated Node
+server and static-file middleware. The plugin is omitted from Desktop mode.

@@ -7,14 +7,14 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: path.resolve(__dirname, 'src/index.ts'),
+      entry: { index: path.resolve(__dirname, 'src/index.ts'), vite: path.resolve(__dirname, 'src/vite.ts') },
       name: '@cossackframework/node-adapter',
-      fileName: 'index',
+      fileName: (_format, entryName) => `${entryName}.js`,
       formats: ['es'],
     },
     outDir: 'dist',
     rolldownOptions: {
-        external: ['ws', 'http', 'url', 'fs', 'path', 'os', 'nodemailer', '@cossackframework/core']
+        external: ['vite', '@hono/node-server', 'node:http', 'ws', 'http', 'url', 'fs', 'path', 'os', 'nodemailer', '@cossackframework/core']
     }
   },
 });

@@ -12,7 +12,7 @@ const require = createRequire(new URL('../packages/cossack/package.json', import
 const { Client } = await import(require.resolve('@modelcontextprotocol/client'));
 const { StdioClientTransport } = await import(require.resolve('@modelcontextprotocol/client/stdio'));
 
-export async function verifyAgentDocumentation(projectDir) {
+export async function verifyAgentDocumentation(projectDir, { runtime = 'cloudflare' } = {}) {
   const cliFolder = await fs.realpath(path.join(projectDir, 'node_modules/cossack'));
   assert.ok(cliFolder.startsWith(projectDir + path.sep), 'CLI must come from the tarball installation');
   const cli = path.join(cliFolder, 'bin/cossack.js');
@@ -149,8 +149,8 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
 
     // The app and dev server use installed packages; CLI/MCP readers retain the
     // network guard while the browser drives real component and service actions.
-    for(const transport of ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
-      transport,
+    for(const transport of runtime === 'node' ? ['http','sse'] : ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
+      transport,runtime,
       async onRecorded({snapshot,recorded}) {
         const trace=await invoke(['traces','--json','--session',snapshot.sessionId]);
         assert.equal(trace.ok,true);
@@ -166,7 +166,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
         assert.equal(remote.structuredContent.versions.framework,framework.version);
       },
     });
-    console.log('Installed HTTP/SSE/WebSocket browser traces, offline CLI/MCP parity and production exclusion passed.');
+    console.log(`Installed ${runtime} ${runtime === 'node' ? 'HTTP/SSE' : 'HTTP/SSE/WebSocket'} browser traces, offline CLI/MCP parity and production exclusion passed.`);
 
     // Real UI declarations must expose prop documentation and typed native attributes
     // through both transports, while retaining unresolved platform diagnostics.

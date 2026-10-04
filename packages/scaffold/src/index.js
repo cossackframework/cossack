@@ -1644,6 +1644,10 @@ export async function renderRecipe(recipe, options = {}) {
     }
     if (rel === 'vite.config.ts') {
       let viteConfig = content.toString('utf8');
+      if (recipe.adapter === 'node') {
+        viteConfig = "import { cossackNode } from '@cossackframework/node-adapter/vite';\n" + viteConfig;
+        viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackNode()]),");
+      }
       const webRequirements = JSON.stringify(recipeCapabilityRequirements(recipe));
       const desktopRequirements = JSON.stringify(recipeCapabilityRequirements(recipe, 'desktop'));
       const runtimeCapability = `capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${recipe.adapter}', requirements: mode === 'desktop' ? ${desktopRequirements} : ${webRequirements} }`;

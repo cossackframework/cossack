@@ -16,6 +16,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
     }
   },
   "files": [
@@ -31,7 +35,8 @@
   "dependencies": {
     "@cossackframework/core": "workspace:*",
     "nodemailer": "^10.0.6",
-    "ws": ">=8.21.0"
+    "ws": ">=8.21.0",
+    "@hono/node-server": "^2.1.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1",
@@ -42,6 +47,12 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "hono": "^4.13.7"
+    "hono": "^4.13.7",
+    "vite": "^8.1.4"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   }
 }
