@@ -935,3 +935,28 @@ focus inside it, focus returns to that trigger before the panel becomes inert.
 Open content retains auto height after animation. Cleanup cancels animations and
 releases refs. Source ejection now imports native attribute types through the public
 UI package while retaining the shared disclosure helper inline.
+
+## Tabs
+
+Tabs requires `id` and a nonempty `label` for its tab list. IDs now include the
+instance prefix and encoded item value. Update selectors that used `tab-value`
+or `panel-value`. Native attributes/events target the root div; `listProps`
+targets the tab list. Rich item labels remain supported but require `ariaLabel`.
+`TabsItem` and `TabsListProps` are public types. Item values must be unique and
+nonempty; `disabled` excludes a tab from activation and arrow navigation.
+
+Replace writes to the old public `active` field with controlled `value`/`onChange`.
+Use `defaultValue` for initial uncontrolled selection. Local clicks no longer
+supersede controlled updates. Invalid/disabled requested values fall back to the
+first enabled item without emitting a callback. All-disabled lists select nothing.
+
+Automatic activation remains the default; `activation: 'manual'` moves focus with
+arrows and waits for Enter/Space to select. Horizontal navigation honors RTL.
+Focus and selection remain separate when a parent rejects a proposal. Native
+list key handlers can veto built-in handling. Panels remain keyed and mounted,
+so switching retains edits. Reordering repairs focus after DOM moves; hiding or
+removing focused content returns focus to an enabled tab or the list fallback.
+
+Indicator positioning now uses post-render measurement and ResizeObserver instead
+of uncanceled animation frames. Both orientations retain pill/underline variants.
+Reduced motion disables transitions. Cleanup releases observation and queued work.

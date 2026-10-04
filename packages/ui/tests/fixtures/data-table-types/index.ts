@@ -294,3 +294,15 @@ component(Collapsible, { id: 'more', trigger: {} });
 component(Collapsible, { id: 'more', trigger: 'More', triggerProps: { 'aria-expanded': true } });
 // @ts-expect-error Panel animation style belongs to the disclosure.
 component(AccordionItem, { id: 'section', summary: 'Details', panelProps: { style: 'height:20px' } });
+
+import { Tabs, type TabsItem } from '@cossackframework/ui';
+const tabItems: readonly TabsItem[] = [{ value: 'a', label: 'A' }, { value: 'b', label: { text: 'B' }, ariaLabel: 'B' }];
+component(Tabs, { id: 'tabs', label: 'Sections', items: tabItems, activation: 'manual', onChange: value => { const selected: string = value; void selected; }, listProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
+// @ts-expect-error Stable IDs are required.
+component(Tabs, { label: 'Sections' });
+// @ts-expect-error Named tab lists are required.
+component(Tabs, { id: 'tabs' });
+// @ts-expect-error Rich labels need an explicit accessible name.
+component(Tabs, { id: 'tabs', label: 'Sections', items: [{ value: 'a', label: {} }] });
+// @ts-expect-error The component owns the list role.
+component(Tabs, { id: 'tabs', label: 'Sections', listProps: { role: 'listbox' } });

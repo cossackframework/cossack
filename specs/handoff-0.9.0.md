@@ -19,10 +19,10 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit Tabs, then the remaining pending rows.
-   Thirty-one foundations are reviewed. Accordion and Collapsible now have typed
-   native trigger/panel contracts, stable identities and collapse focus handling.
-   See the [disclosure checkpoint](./release-0.9.0.md#codex-disclosures-2026-10-04) for tests and limits.
+   Next audit Toggle and ToggleGroup, then the remaining pending rows.
+   Thirty-two foundations are reviewed. Tabs now has controlled/default selection,
+   instance-scoped identities, keyed focus recovery and responsive indicators.
+   See the [Tabs checkpoint](./release-0.9.0.md#codex-tabs-2026-10-04) for tests and limits.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).

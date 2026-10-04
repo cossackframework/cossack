@@ -88,6 +88,51 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-tabs-2026-10-04"></a>
+## Codex Tabs (2026-10-04)
+
+Author: Codex. Tabs now has closed root/list props, required instance identity and
+a named list. Readonly TabsItem values support disabled items, icons and rich labels
+with explicit accessible names. Derived IDs encode values rather than interpolating
+them into selectors. Keyed panels remain mounted and preserve edits.
+
+Controlled values now retain ownership after local interaction. defaultValue is
+captured once; invalid/disabled values fall back to an enabled item without callbacks.
+Roving focus is separate from selected state, including rejected controlled changes
+and manual activation. Native buttons supply Enter/Space and form safety. Horizontal
+arrows respect RTL; vertical arrows, Home/End and disabled skipping are explicit.
+Native list callbacks can veto handling. Pointer focus and click produce one proposal.
+
+The production browser fixture exposed focus loss when keyed DOM nodes move during
+reordering. Focus now returns to a retained tab or panel input after a move. Removed,
+disabled or hidden focused content returns to an enabled selected tab or the list.
+Focus moved elsewhere is preserved. ResizeObserver tracks indicator geometry without
+animation frames. Both variants/orientations remain supported, with reduced-motion
+handling and cleanup of observation and queued connection/focus work.
+
+Verification:
+
+- UI build and 226 tests across 23 files pass, including public declaration fixtures,
+  SSR identities, rich labels, disabled fallback and controlled/default ownership.
+- Production themed Chromium passes retained hydration, two-instance identity,
+  controlled rejection/updates, one pointer proposal, keyboard veto, RTL/vertical
+  navigation, manual activation, retained edits, tab/panel reordering focus,
+  removal/disabled fallbacks, measured indicator width/position/height after resize,
+  vertical underlines, reduced motion and cleanup/remounting. The old mocked
+  geometry test is replaced by these real DOM checks and state-ownership tests.
+- `pnpm test:agent-docs:local` passes installed CLI/MCP native prop contracts,
+  exact Tabs discovery and packaged guidance with Node networking disabled.
+  Six existing usage examples compile and execute. The new UI guide has no
+  executable examples; broader UI examples/platform declarations remain open.
+- Root `pnpm tsc --noEmit` and all 11 package configurations pass.
+- Four CLI source-ejection regression tests pass, including Tabs.
+
+Logs: `/tmp/cossack-tabs-{build,ui,browser,root-types,types,ejection,agent-docs}.log`.
+Thirty-two foundations are reviewed. RT-23, CLI-08, other browser engines,
+assistive technologies and the full runtime/release matrix remain open. Continue
+Toggle and ToggleGroup, then all remaining pending rows. Versions remain 0.8.3
+until REL-04.
+
 <a id="codex-disclosures-2026-10-04"></a>
 ## Codex Accordion and Collapsible (2026-10-04)
 

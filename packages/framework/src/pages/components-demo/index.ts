@@ -352,6 +352,7 @@ export class ComponentsDemo extends Cossack {
                     <div class="space-y-2">
                         <span class="text-xs text-muted-foreground">Pill variant (animated slide)</span>
                         ${component(Tabs, {
+                            id: 'demo-tabs-pill', label: 'Account settings',
                             variant: 'pill',
                             items: [
                                 { value: 'account', label: 'Account', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.5"/></svg>`, content: html`<p class="text-sm">Account settings content. The pill indicator slides smoothly.</p>` },
@@ -363,6 +364,7 @@ export class ComponentsDemo extends Cossack {
                     <div class="space-y-2">
                         <span class="text-xs text-muted-foreground">Underline variant</span>
                         ${component(Tabs, {
+                            id: 'demo-tabs-underline', label: 'Project details',
                             variant: 'underline',
                             items: [
                                 { value: 'overview', label: 'Overview', content: html`<p class="text-sm">Overview content. The underline indicator slides between tabs.</p>` },
@@ -376,6 +378,7 @@ export class ComponentsDemo extends Cossack {
                         <span class="text-xs text-muted-foreground">Vertical orientation</span>
                         <div class="border border-border rounded-lg p-4" style="min-height: 180px;">
                             ${component(Tabs, {
+                            id: 'demo-tabs-vertical', label: 'Settings categories',
                                 orientation: 'vertical',
                                 items: [
                                     { value: 'general', label: 'General', icon: html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/></svg>`, content: html`<p class="text-sm">General settings. Vertical tabs are great for settings pages.</p>` },

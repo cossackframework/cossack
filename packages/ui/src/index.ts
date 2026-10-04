@@ -36,7 +36,7 @@ export { AvatarGroup, type AvatarGroupProps, type AvatarGroupItem } from "./comp
 export { Separator, type SeparatorProps } from "./components/Separator";
 export { Skeleton, type SkeletonProps } from "./components/Skeleton";
 export { Progress, type ProgressProps } from "./components/Progress";
-export { Tabs, type TabsProps } from "./components/Tabs";
+export { Tabs, type TabsProps, type TabsItem, type TabsListProps } from "./components/Tabs";
 export { Tooltip, type TooltipProps } from "./components/Tooltip";
 export { Popover, type PopoverProps, type PopoverContentProps } from "./components/Popover";
 export { RadioGroup, type RadioGroupProps, type RadioGroupItem } from "./components/RadioGroup";

@@ -115,7 +115,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Spinner](../packages/ui/src/components/Spinner.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Switch](../packages/ui/src/components/Switch.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Table](../packages/ui/src/components/Table.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Tabs](../packages/ui/src/components/Tabs.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Tabs](../packages/ui/src/components/Tabs.ts) | Reviewed foundation | Typed root/list contracts, controlled/default state, scoped IDs, rich-label names, RTL/manual navigation, keyed focus and responsive indicator browser acceptance. |
 | [Textarea](../packages/ui/src/components/Textarea.ts) | Foundation reviewed | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Toast](../packages/ui/src/components/Toast.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Toggle](../packages/ui/src/components/Toggle.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Tabs, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Toggle and ToggleGroup, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

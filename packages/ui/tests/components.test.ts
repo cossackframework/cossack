@@ -406,6 +406,7 @@ describe("Progress", () => {
 describe("Tabs", () => {
     it("renders every controlled panel and hides only inactive panels", () => {
         const out = renderComp(Tabs, {
+            id: "tabs", label: "Sections",
             value: "a",
             items: [
                 { value: "a", label: "Tab A", content: "Content A" },
@@ -424,6 +425,7 @@ describe("Tabs", () => {
 
     it("marks the active tab with aria-selected", () => {
         const out = renderComp(Tabs, {
+            id: "tabs", label: "Sections",
             value: "b",
             items: [
                 { value: "a", label: "A" },
@@ -437,6 +439,7 @@ describe("Tabs", () => {
 
     it("renders one sliding underline without static trigger borders", () => {
         const out = renderComp(Tabs, {
+            id: "tabs", label: "Sections",
             variant: "underline",
             items: [
                 { value: "a", label: "A" },

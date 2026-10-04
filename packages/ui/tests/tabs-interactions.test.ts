@@ -1,26 +1,31 @@
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, expect, it, vi } from 'vitest';
 
-// Client decorators preserve method bodies only in a browser environment.
-vi.stubGlobal("window", { document: {} });
-const { Tabs } = await import("../src/components/Tabs");
-const { renderToString } = await import("@cossackframework/renderer");
+vi.stubGlobal('window', { document: {} });
+const { Tabs } = await import('../src/components/Tabs');
+const { renderToString } = await import('@cossackframework/renderer');
 afterAll(() => vi.unstubAllGlobals());
-
-describe("Tabs underline", () => {
-    it("positions one underline using the selected trigger's width and offset", () => {
-        const tabs = new Tabs();
-        tabs.props = { variant: "underline", value: "a",
-            items: [{ value: "a", label: "A" }, { value: "b", label: "B" }] };
-        tabs.tablistRef.value = { querySelector: (selector: string) => selector === "#tab-a"
-            ? { offsetLeft: 4, offsetWidth: 80 }
-            : { offsetLeft: 88, offsetWidth: 60 } } as unknown as HTMLDivElement;
-        tabs.onMount();
-        expect(renderToString(tabs.render())).toContain("left:4px;width:80px;bottom:0;height:2px;");
-        tabs.props.value = "b";
-        tabs.onMount();
-        const out = renderToString(tabs.render());
-        expect(out).toContain("left:88px;width:60px;bottom:0;height:2px;");
-        expect(out.match(/cs-tabs__indicator/g)).toHaveLength(1);
-        expect(out).not.toContain("border-b-2");
-    });
+const items = [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }];
+function selected(tabs: InstanceType<typeof Tabs>, value: string) {
+    expect(renderToString(tabs.render())).toMatch(new RegExp(`id="tabs-tab-${value}"[^>]*aria-selected="true"`));
+}
+it('proposes controlled selection without overriding the parent', () => {
+    const tabs = new Tabs(), onChange = vi.fn();
+    tabs.props = { id: 'tabs', label: 'Sections', value: 'a', items, onChange };
+    (tabs as any).select('b');
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('b');
+    selected(tabs, 'a');
+    tabs.props = { ...tabs.props, value: 'b' };
+    selected(tabs, 'b');
+    tabs.props = { ...tabs.props, value: 'a' };
+    selected(tabs, 'a');
+});
+it('captures the uncontrolled default once and commits user selection', () => {
+    const tabs = new Tabs(), onChange = vi.fn();
+    tabs.props = { id: 'tabs', label: 'Sections', defaultValue: 'a', items, onChange };
+    selected(tabs, 'a');
+    tabs.props = { ...tabs.props, defaultValue: 'b' };
+    selected(tabs, 'a');
+    (tabs as any).select('b');
+    selected(tabs, 'b');
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('b');
 });
