@@ -88,39 +88,51 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-browser-inspector-2026-10-04"></a>
-### Codex browser inspector integration (2026-10-04)
+<a id="codex-trace-bridge-2026-10-04"></a>
+### Codex project-bound trace bridge (2026-10-04)
 
-Author: Codex. The browser inspector now uses the core passive snapshot reader.
-It no longer logs live instances or raw public state. Capture starts explicitly
-through Record trace or Ctrl-Shift-click; Ctrl-click retains source opening.
-The controller owns stop/read/dispose operations. Source registrations are weak,
-limited to 128 files and unregister by identity. Highlighting uses viewport
-coordinates and the Control key. Disposal removes controls/listeners, restores
-its cursor and stops only its own capture; bfcache suspension retains capture.
+Author: Codex. `cossackPages({ developmentTraces: true })` now installs a development
+publisher through Vite HTML transformation. Explicit browser capture offers its
+default snapshot once per second with one outstanding acknowledgement; stopped
+snapshots are acknowledged before suppressing further sends. Disconnect/reconnect,
+page exit and HMR remove or suspend publishing without replaying application work.
+The injected module honors the development base path and is empty in production.
+
+The framework's Node-only `/development-traces` service owns strict parsed-JSON
+validation, bounded project-local storage and reads. Selected state values and
+extra payload fields are rejected. Records carry project/server identity and
+receipt time, use atomic replacement and retain up to 16 capture sessions.
+`cossack traces --json` and MCP `read_development_traces` share that reader, expose
+record age with `live: false`, and accept an optional capture session UUID.
 
 Verification:
 
-- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools.test.ts tests/devtools-browser.test.ts tests/navigation-outcomes.test.ts tests/navigation-trace-build.test.ts`:
-  **59 tests / 4 files pass**. DOM tests cover controls, identity, bounds, page exit,
-  external capture ownership and cursor restoration. Chromium runs a real Vite
-  fixture with a Cossack instance: inspection redacts selected sensitive state,
-  suppresses the application action, avoids editor requests and disposes cleanly.
-  Production bundling excludes inspector controls, source endpoint and collector.
-  Log: `/tmp/cossack-browser-inspector-final-tests.log`.
-- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 packages pass.
-  Log: `/tmp/cossack-browser-inspector-types.log`.
-- `pnpm --filter @cossackframework/framework build:types`: passes; built public
-  declarations expose `BrowserDevTools` and the identity-safe unregister callback.
-  Log: `/tmp/cossack-browser-inspector-build.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/devtools-browser.test.ts tests/devtools.test.ts tests/navigation-trace-build.test.ts`:
+  **20 tests / 5 files pass**. Real core snapshots round-trip through storage.
+  Chromium exercises the actual opt-in page plugin under `/debug/`, receives
+  default component snapshots on disk and records the stopped capture. Tests also
+  cover schema limits, selected-value exclusion, links/corrupt/copied records,
+  retention, acknowledgement races, overload, cleanup, default-off installation
+  and production publisher/virtual-module exclusion.
+  Log: `/tmp/cossack-trace-bridge-final-tests.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js tests/dispatch.test.js tests/flags.test.js tests/documentation.test.js`:
+  **64 tests / 4 files pass**, including real stdio SDK/CLI trace parity, project
+  binding, unknown-field/path rejection and existing tool/command regressions.
+  Log: `/tmp/cossack-trace-cli-tests.log`.
+- `pnpm tsc --noEmit`, `pnpm typecheck` and
+  `pnpm --filter @cossackframework/framework build:types`: root, all 11 package
+  checks and public declaration build pass.
+  Logs: `/tmp/cossack-trace-bridge-types.log`, `/tmp/cossack-trace-bridge-build.log`.
 
-Limits: the Chromium fixture is isolated, not a generated application. Automatic
-source registration currently covers rendered pages; repeated instances sharing
-one source file cannot be distinguished. Generated custom client entries require
-explicit inspector installation. The existing editor service is separate and
-was not launched by these tests. Server correlation, Vite/shared CLI/MCP trace
-reads, service RPC capture and generated-browser acceptance remain open. No
-release task is closed: status remains 25 complete and 33 open.
+Limits: these are sampled local browser observations, not authenticated server
+execution or a live query. A collecting flag can outlive the browser/server.
+Source/environment freshness is not verified. One recording Vite server owns a
+project directory; custom HTML servers must run Vite's HTML transform. Page exit
+can precede the final write; captures replaced within one sampling interval can
+remain unpublished. This uses workspace builds and an isolated Vite/Chromium
+fixture, not fresh tarball/generated-application acceptance. RT-28 still needs
+server correlation, service RPC capture and full generated runtime acceptance.
+CLI-07 and release gates stay open. Status remains 25 complete and 33 open.
 
 ### Archived checkpoints
 
@@ -131,6 +143,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-browser-inspector-2026-10-04"></a>[Codex browser inspector integration (2026-10-04)](./release-0.9.0-verification-archive.md#codex-browser-inspector-2026-10-04) |
 | <a id="codex-component-snapshots-2026-10-04"></a>[Codex passive component snapshots (2026-10-04)](./release-0.9.0-verification-archive.md#codex-component-snapshots-2026-10-04) |
 | <a id="codex-navigation-trace-2026-10-04"></a>[Codex shared navigation trace capture (2026-10-04)](./release-0.9.0-verification-archive.md#codex-navigation-trace-2026-10-04) |
 | <a id="codex-rpc-trace-foundation-2026-10-04"></a>[Codex development RPC trace foundation (2026-10-04)](./release-0.9.0-verification-archive.md#codex-rpc-trace-foundation-2026-10-04) |

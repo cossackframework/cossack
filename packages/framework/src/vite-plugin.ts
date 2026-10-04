@@ -1,4 +1,6 @@
 import type { Plugin } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, scanPagesDir, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -64,6 +66,8 @@ export type MarkdownProcessor = (
 ) => MarkdownResult | Promise<MarkdownResult>;
 
 export interface CossackPagesOptions {
+  /** Opt in to project-local browser trace records for CLI/MCP. Development only. */
+  developmentTraces?: boolean;
   /** Selected build features. Bindings are names only, never secret values. */
   capabilities?: {
     runtime: Exclude<RuntimeName, 'unknown'>;
@@ -88,6 +92,8 @@ export function getConfiguredMarkdownProcessor(): MarkdownProcessor | undefined 
 
 export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let projectRoot = process.cwd();
+  let developmentBase = '/';
+  let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
   if (options.markdownProcessor) {
     configuredMarkdownProcessor = options.markdownProcessor;
   }
@@ -139,6 +145,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     configResolved(config) {
       projectRoot = config.root;
+      developmentBase = config.base;
       generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
     },
     async buildStart() {
@@ -184,12 +191,18 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       warnIfMarkdownIsUnconfigured((message) => this.warn(message));
     },
     resolveId(id) {
+      if (id === TRACE_BRIDGE_MODULE) return '\0' + id;
       if (id === ROUTES_MODULE_ID) return resolve(projectRoot, ROUTES_SOURCE_PATH);
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
       }
     },
     load(id) {
+      if (id === '\0' + TRACE_BRIDGE_MODULE) {
+        if (!traceBridge) return 'export {};';
+        const entry = fileURLToPath(new URL('./client/development-trace-bridge.js', import.meta.url)).replaceAll('\\', '/');
+        return `import { connectDevelopmentTraceBridge } from ${JSON.stringify(entry)}; connectDevelopmentTraceBridge(${JSON.stringify(traceBridge.token)}, import.meta.hot);`;
+      }
       if (id === resolvedVirtualModuleId) {
         // Detect environment via the Vite 6 Environment API
         // SSR/worker environment: eager loading (synchronous access needed for server routes)
@@ -226,7 +239,13 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         `;
       }
     },
+    transformIndexHtml() {
+      if (!traceBridge) return;
+      return [{ tag: 'script', attrs: { type: 'module', src: developmentBase + '@id/' + TRACE_BRIDGE_MODULE }, injectTo: 'body' }];
+    },
+    closeBundle() { traceBridge?.dispose(); traceBridge = undefined; },
     configureServer(server) {
+      if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
       const pagesDirectory = resolve(projectRoot, 'src/pages');
       const update = (file: string) => {
         const path = relative(pagesDirectory, file);

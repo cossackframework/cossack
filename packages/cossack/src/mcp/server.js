@@ -1,3 +1,4 @@
+import { DEVELOPMENT_TRACE_SESSION } from '@cossackframework/framework/development-traces';
 import { testRunIdSchema } from '../test-results-service.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -65,6 +66,19 @@ export async function startMcpServer(project, options = {}) {
       let result;
       try { result = await runner.run({ operation: 'test-results', ...input }, ctx.mcpReq.signal); }
       catch (error) { result = { ok: false, data: null, diagnostics: [{ code: error.code ?? 'COSSACK_TEST_REPORT_FAILED', severity: 'error', message: 'Stored test evidence could not be read.' }] }; }
+      const installed = await readInstalledPackage(root, '@cossackframework/framework').catch(() => null);
+      const structuredContent = { schemaVersion: 1, versions: { ...versions, framework: installed?.manifest.version ?? null }, ...result };
+      return { structuredContent, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], isError: !result.ok };
+    });
+    server.registerTool('read_development_traces', {
+      description: 'Read bounded browser development snapshots for the bound project. No recording, code execution or live server query. Values are omitted; age and provenance distinguish historical capture from current state.',
+      inputSchema: z.object({ session: z.string().regex(DEVELOPMENT_TRACE_SESSION).optional() }).strict(),
+      outputSchema: toolResultSchema,
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async (input, ctx) => {
+      let result;
+      try { result = await runner.run({ operation: 'traces', ...input }, ctx.mcpReq.signal); }
+      catch (error) { result = { ok: false, data: null, diagnostics: [{ code: error.code ?? 'COSSACK_TRACE_FAILED', severity: 'error', message: 'Stored development trace could not be read.' }] }; }
       const installed = await readInstalledPackage(root, '@cossackframework/framework').catch(() => null);
       const structuredContent = { schemaVersion: 1, versions: { ...versions, framework: installed?.manifest.version ?? null }, ...result };
       return { structuredContent, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], isError: !result.ok };

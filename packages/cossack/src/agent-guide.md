@@ -88,3 +88,10 @@ symbol's complete contract and lists `availableSymbols` in each declaration entr
 Unknown names produce `COSSACK_DOCS_SYMBOL_NOT_FOUND` with no fabricated contract.
 The MCP result limit remains 4 MiB; use this filter when a full catalog exceeds it.
 Declaration signatures still do not prove runtime availability.
+
+`read_development_traces` and `cossack traces --json` read project-local browser
+capture records from the opt-in Vite `cossackPages({ developmentTraces: true })`
+bridge. Browser recording is explicit. An optional session UUID selects one
+capture. Inspect snapshot events/components and freshness.ageMs; live is always
+false. Records omit selected state values and do not prove server execution,
+current source/environment state or that a collecting browser remains connected.

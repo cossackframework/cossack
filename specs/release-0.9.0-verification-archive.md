@@ -6,6 +6,40 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-browser-inspector-2026-10-04"></a>
+## Codex browser inspector integration (2026-10-04)
+
+Author: Codex. The browser inspector now uses the core passive snapshot reader.
+It no longer logs live instances or raw public state. Capture starts explicitly
+through Record trace or Ctrl-Shift-click; Ctrl-click retains source opening.
+The controller owns stop/read/dispose operations. Source registrations are weak,
+limited to 128 files and unregister by identity. Highlighting uses viewport
+coordinates and the Control key. Disposal removes controls/listeners, restores
+its cursor and stops only its own capture; bfcache suspension retains capture.
+
+Verification:
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools.test.ts tests/devtools-browser.test.ts tests/navigation-outcomes.test.ts tests/navigation-trace-build.test.ts`:
+  **59 tests / 4 files pass**. DOM tests cover controls, identity, bounds, page exit,
+  external capture ownership and cursor restoration. Chromium runs a real Vite
+  fixture with a Cossack instance: inspection redacts selected sensitive state,
+  suppresses the application action, avoids editor requests and disposes cleanly.
+  Production bundling excludes inspector controls, source endpoint and collector.
+  Log: `/tmp/cossack-browser-inspector-final-tests.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 packages pass.
+  Log: `/tmp/cossack-browser-inspector-types.log`.
+- `pnpm --filter @cossackframework/framework build:types`: passes; built public
+  declarations expose `BrowserDevTools` and the identity-safe unregister callback.
+  Log: `/tmp/cossack-browser-inspector-build.log`.
+
+Limits: the Chromium fixture is isolated, not a generated application. Automatic
+source registration currently covers rendered pages; repeated instances sharing
+one source file cannot be distinguished. Generated custom client entries require
+explicit inspector installation. The existing editor service is separate and
+was not launched by these tests. Server correlation, Vite/shared CLI/MCP trace
+reads, service RPC capture and generated-browser acceptance remain open. No
+release task is closed: status remains 25 complete and 33 open.
+
 <a id="codex-component-snapshots-2026-10-04"></a>
 ## Codex passive component snapshots (2026-10-04)
 

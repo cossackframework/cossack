@@ -148,8 +148,10 @@ newest-started selection, corrupt/linked records and bounded storage. Installed
 reporter/type and CLI/MCP parity acceptance also pass; see the
 [verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
 
-Remaining: RT-28 snapshots/traces need shared models and real runtime event
-integration. Extend native interruption acceptance as tools acquire resources.
+RT-28 browser snapshots now have an opt-in Vite bridge and a shared project-local
+CLI/MCP reader with strict default-value exclusion and receipt-age metadata.
+Remaining: server correlation, service RPC capture and full generated-runtime
+acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
 Preserve project path boundaries, secret redaction and clean stdout.
 Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
 
@@ -620,8 +622,13 @@ controls, separate inspection/source gestures and disposal. DOM, production-bund
 and isolated Vite/Chromium tests cover its behavior. Source markers resolve only
 the latest registered instance per file; this is not a complete component tree.
 
-Remaining: correlate server events with those calls; integrate Vite and
-project-bound CLI/MCP reads through shared schemas. Verify an actual generated
+Vite now publishes explicitly recorded browser snapshots through its existing HMR
+transport. The shared Node-only reader powers `cossack traces` and MCP
+`read_development_traces`. Records omit selected values, bound storage and expose
+receipt age with `live: false`; see the development trace guide.
+
+Remaining: correlate server events with those calls; cover service RPC and
+full generated-runtime use of the shared CLI/MCP schema. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.
 Service RPC and server execution are not covered by the current client capture.
 This foundation does not complete RT-28 or CLI-07.

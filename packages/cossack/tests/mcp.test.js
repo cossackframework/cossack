@@ -1,3 +1,6 @@
+import { writeDevelopmentTrace } from '@cossackframework/framework/development-traces';
+import { tracesCommand } from '../src/commands/traces.js';
+import { randomUUID } from 'node:crypto';
 import { beginTestReport, writeTestReport, testSourceSnapshot } from '../src/test-results-service.js';
 import { testResultsCommand } from '../src/commands/test-results.js';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -39,7 +42,7 @@ it('serves the same route facts and diagnostics as CLI with versions and read-on
   const root = await fixture();
   const { client, stderr } = await connect(root);
   const tools = await client.listTools();
-  expect(tools.tools.map(tool => tool.name).sort()).toEqual(['inspect_project', 'read_documentation', 'read_test_results']);
+  expect(tools.tools.map(tool => tool.name).sort()).toEqual(['inspect_project', 'read_development_traces', 'read_documentation', 'read_test_results']);
   expect(tools.tools[0]).toMatchObject({ name: 'inspect_project', annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } });
   const result = await client.callTool({ name: 'inspect_project', arguments: { scope: 'routes' } });
   expect(result.structuredContent).toMatchObject({ schemaVersion: 1, versions: { cli: readPackageVersion(), framework: null }, ok: true });
@@ -243,3 +246,20 @@ it('reads the same stored evidence through CLI and MCP and refreshes source fres
   expect(invalid.isError).toBe(true); expect(invalid.structuredContent.diagnostics[0].code).toBe('COSSACK_TEST_REPORT_INVALID');
   expect(JSON.stringify(invalid)).not.toContain('private-invalid-value'); expect(stderr()).toBe('');
 }, 30_000);
+
+it('reads the same bounded development record through MCP and CLI without starting capture', async () => {
+  const root = await fixture(), session = randomUUID();
+  await writeDevelopmentTrace(root, randomUUID(), JSON.stringify({ schemaVersion: 1, sessionId: session,
+    startedAt: Date.now(), capturedAt: Date.now(), collecting: true, capacity: 512, dropped: 0,
+    events: [], components: { entries: [], dropped: 0, tracking: 'weak' } }));
+  const { client, stderr } = await connect(root);
+  const response = await client.callTool({ name: 'read_development_traces', arguments: { session } });
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  await tracesCommand([], { cwd: root, flags: { json: true, session } });
+  const cli = JSON.parse(log.mock.calls[0][0]);
+  expect(response.structuredContent).toMatchObject({ ok: true, data: { status: 'recorded', record: cli.data.record, freshness: { live: false, status: 'recorded-snapshot' } } });
+  expect(cli.data.freshness.ageMs).toBeGreaterThanOrEqual(0);
+  expect((await client.callTool({ name: 'read_development_traces', arguments: { session: '../../.env' } })).isError).toBe(true);
+  expect((await client.callTool({ name: 'read_development_traces', arguments: { root: '/tmp' } })).isError).toBe(true);
+  expect(stderr()).toBe('');
+}, 30000);

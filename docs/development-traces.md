@@ -164,7 +164,56 @@ its identity-safe unregister callback. Reinstalling after disposal requires new
 registrations. Core capture can still observe other instances through navigation
 and RPC without a source registration.
 
-RT-28 remains open. Server-side correlation, Vite integration, CLI/MCP trace access
-and generated-application browser acceptance still need work. The inspector has
-isolated Vite/Chromium coverage, which does not replace the generated-app gate.
-The separate [stored test-results reader](./test-results.md) does not read traces.
+## Read captures from CLI and MCP
+
+Enable the project bridge in the existing Vite page plugin:
+
+```ts
+cossackPages({ developmentTraces: true })
+```
+
+The option defaults to false. During development it injects the inspector through
+Vite's HTML transformation. Custom HTML servers must call `transformIndexHtml`.
+It does not start capture. Use **Record trace**, reproduce the interaction, and
+stop recording. While connected, the browser offers its default snapshot once per
+second; only one unacknowledged snapshot is outstanding. A stopped capture is
+published once after acknowledgement. Disconnects suppress periodic publishing;
+reconnection offers the current snapshot. Page exit may occur before a final
+snapshot reaches disk. A new capture within a sampling interval can replace an
+unpublished capture.
+
+Read the most recently received record from the application directory:
+
+```sh
+pnpm exec cossack traces --json
+pnpm exec cossack traces --session <capture-uuid> --json
+```
+
+The project-bound MCP tool is `read_development_traces`, with an optional `session`
+UUID. Both interfaces use the framework's Node-only `/development-traces` reader.
+They do not start recording, execute application modules, query the browser or
+replay actions. Read `data.record.snapshot` for the shared event/component schema.
+`data.freshness.ageMs` is elapsed time since Vite received that record;
+`live: false` is explicit. A saved `collecting: true` flag does not prove that the
+browser or development server is still running. Source/environment freshness and
+server execution are not verified.
+
+Vite writes at most 16 session records under `.cossack/development-traces`, with a
+2 MiB snapshot limit, private file modes where supported and atomic replacement.
+Use one recording Vite server per project directory. Writers serialize accepted
+updates and reject overload rather than queueing unlimited messages. Invalid or
+unavailable writes are retried on a later sampling interval. Readers reject linked
+directories/files, malformed data, extra payload fields and records from another
+project location. Explicitly selected state values never enter these records;
+only default field inventory is accepted. Do not commit `.cossack` output.
+
+The bridge uses Vite's existing [custom HMR events](https://vite.dev/guide/api-plugin.html#client-server-communication),
+with a per-server token to separate server instances. It does not add a deployed
+HTTP endpoint. That token is available to the development browser and is not an
+authentication claim. Treat records as local browser observations. Production
+HTML does not install the bridge, and production bundling removes the publisher.
+
+RT-28 remains open for server-side correlation, service RPC capture and
+full generated-application browser acceptance. Isolated Vite/Chromium coverage
+does not replace that gate. The separate [stored test-results reader](./test-results.md)
+reads test evidence, not runtime traces.

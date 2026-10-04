@@ -22,18 +22,17 @@ Implemented portions of the still-open CLI-07/RT-28 tasks:
   shared component IDs and passive state/resource/service/transport snapshots.
   Values are omitted by default; explicit selections are bounded and redacted.
 
-Browser inspector integration is also verified; see the [latest checkpoint](./release-0.9.0.md#codex-browser-inspector-2026-10-04)
+Browser inspector and the opt-in Vite/CLI/MCP bridge are verified; see the [latest checkpoint](./release-0.9.0.md#codex-trace-bridge-2026-10-04)
 for results and limits. These portions do not close CLI-07 or RT-28.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Finish **RT-28 / CLI-07**: Vite integration, server correlation,
-   shared CLI/MCP trace reads and generated-browser acceptance. Preserve session
-   ownership, terminal outcomes and production-exclusion tests.
-   The inspector now uses passive snapshots with explicit controls and disposal.
-   Its 59-test checkpoint includes isolated Vite/Chromium and production exclusion.
-   Next connect capture to project-bound development tooling; do not treat source
-   markers as complete instance identity or the isolated fixture as generated-app acceptance.
+1. Finish **RT-28 / CLI-07**: server correlation, service RPC capture and generated
+   application acceptance across browser, CLI and MCP. Preserve capture ownership,
+   terminal outcomes, production exclusion and published-package boundaries.
+   Vite's opt-in bridge now records default snapshots for the shared CLI/MCP reader.
+   Stored receipt age is explicit; records do not prove live or server state.
+   Source markers identify only the latest registered instance per file.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
    runtime support. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
    through the [shared documentation services](../docs/local-agent-tools.md).

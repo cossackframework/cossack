@@ -1,3 +1,4 @@
+import { DEVELOPMENT_TRACE_SESSION } from '@cossackframework/framework/development-traces';
 import { testRunIdSchema } from './test-results-service.js';
 import { COSSACK_PACKAGES } from './installed-packages.js';
 /**
@@ -152,6 +153,9 @@ export const commandSpecs = {
     if (flags.symbol !== undefined && (!flags.symbols || !flags.symbol.trim() || flags.symbol.length > 256)) return [{ code: 'COSSACK_DOCS_SYMBOL_INVALID', severity: 'error', message: '--symbol requires --symbols and a nonempty name of at most 256 characters.' }];
     return [];
   } }),
+  traces: new CommandSpec({ name: 'traces', globals: readonly, flags: { session: str('Read one capture session UUID; default is the most recently received capture.') },
+    check: (_args, flags) => flags.session !== undefined && !DEVELOPMENT_TRACE_SESSION.test(flags.session)
+      ? [{ code: 'COSSACK_TRACE_SESSION_INVALID', severity: 'error', message: 'Use a capture session UUID, not a path.' }] : [] }),
   'test-results': new CommandSpec({ name: 'test-results', globals: readonly, flags: {
     run: str('Read one recorded run UUID; default is the most recently started run.'),
   }, check: (_args, flags) => flags.run !== undefined && !testRunIdSchema.safeParse(flags.run).success

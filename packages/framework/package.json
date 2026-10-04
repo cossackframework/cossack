@@ -118,6 +118,10 @@
     "./api": {
       "types": "./dist/esm/api.d.ts",
       "import": "./dist/esm/api.js"
+    },
+    "./development-traces": {
+      "types": "./dist/esm/development-traces.d.ts",
+      "import": "./dist/esm/development-traces.js"
     }
   },
   "files": [

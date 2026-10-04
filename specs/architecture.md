@@ -955,3 +955,22 @@ SSR parser even when core retains its synchronous `_render()` method. Node, Deno
 worker and workerd export conditions retain the full root serializer. The explicit
 `/server` entry remains available in every environment. Unmatched single-select values cannot encode an
 empty selection in static HTML; a matching option is required for SSR parity.
+
+## Project-local development trace records
+
+Core owns browser trace capture and passive component snapshot DTOs. The framework
+owns the opt-in Vite transport and the Node-only `/development-traces` storage
+service. CLI and MCP call that same reader; neither starts browser work or imports
+application modules. No Node filesystem dependency enters core or the client.
+
+`cossackPages({ developmentTraces: true })` injects a development-only publisher
+through Vite HTML transforms. Explicit browser capture offers default snapshots
+once per second with one outstanding acknowledgement. Vite admits one disk write
+at a time and rejects overload. The strict parsed-JSON schema accepts only fixed
+trace fields and omitted state values. A project path digest, server identity and
+receipt timestamp accompany atomically replaced, bounded session records.
+
+These are sampled local browser observations, not authenticated server events or
+live queries. The reader exposes receipt age and `live: false`; a recorded collecting
+flag cannot establish current liveness. One Vite recording server owns a project
+directory. Selected field values stay in the browser. See [usage and limits](../docs/development-traces.md#read-captures-from-cli-and-mcp).

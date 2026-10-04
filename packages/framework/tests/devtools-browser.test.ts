@@ -2,14 +2,24 @@
 import { expect, it } from 'vitest';
 import { createServer } from 'vite';
 import { chromium } from '@playwright/test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { cossackPages } from '../src/vite-plugin';
+import { readDevelopmentTraces } from '../src/development-traces';
 import { fileURLToPath } from 'node:url';
 
 it('captures and inspects in Chromium without invoking an application action or opening the editor', async () => {
     const entry = fileURLToPath(new URL('../src/client/devtools.ts', import.meta.url));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-trace-browser-'));
+    await fs.mkdir(path.join(root, 'src/pages'), { recursive: true });
+    await fs.writeFile(path.join(root, 'package.json'), '{"name":"trace-fixture","type":"module"}');
+    await fs.symlink(fileURLToPath(new URL('../node_modules', import.meta.url)), path.join(root, 'node_modules'), 'dir');
     const server = await createServer({
+        root, base: '/debug/',
         configFile: false, logLevel: 'error', mode: 'development',
-        server: { host: '127.0.0.1', port: 0 },
-        plugins: [{
+        server: { host: '127.0.0.1', port: 0, fs: { allow: [root, fileURLToPath(new URL('../../../', import.meta.url))] } },
+        plugins: [cossackPages({ developmentTraces: true }), {
             name: 'devtools-browser-fixture',
             resolveId(id) { if (id === 'virtual:inspector-fixture') return '\0' + id; },
             load(id) {
@@ -33,9 +43,9 @@ it('captures and inspects in Chromium without invoking an application action or 
             },
             configureServer(vite) {
                 vite.middlewares.use(async (req, res, next) => {
-                    if (req.url !== '/') return next();
+                    if (req.url !== '/debug/') return next();
                     try {
-                        const html = await vite.transformIndexHtml('/', '<!doctype html><html><body><script type="module" src="/@id/virtual:inspector-fixture"></script></body></html>');
+                        const html = await vite.transformIndexHtml('/debug/', '<!doctype html><html><body><script type="module" src="/@id/virtual:inspector-fixture"></script></body></html>');
                         res.setHeader('Content-Type', 'text/html'); res.end(html);
                     } catch (error) { next(error); }
                 });
@@ -52,7 +62,7 @@ it('captures and inspects in Chromium without invoking an application action or 
         page.on('request', request => { if (request.url().includes('localhost:3333')) editorRequests.push(request.url()); });
         page.on('console', message => { if (message.type() === 'info') logs.push(message.text()); });
         await page.goto(server.resolvedUrls!.local[0]);
-        await page.waitForFunction(() => !!(window as any).fixture);
+        await page.waitForFunction(() => !!(window as any).fixture, undefined, { timeout: 10000 }).catch(async error => { throw new Error(`${error.message}\n${page.url()}\n${await page.content()}\n${errors.join('\n')}`); });
         expect(await page.evaluate(() => (window as any).fixture.tools.snapshot())).toBeNull();
         await page.locator('#action').click({ modifiers: ['Control', 'Shift'] });
         const result = await page.evaluate(() => ({
@@ -69,8 +79,13 @@ it('captures and inspects in Chromium without invoking an application action or 
         expect(JSON.stringify(result)).not.toContain('browser-fixture-secret');
         expect(logs.some(log => log.includes('Component snapshot'))).toBe(true);
         expect(editorRequests).toEqual([]);
+        await expect.poll(async () => (await readDevelopmentTraces(root)).data.record?.snapshot.sessionId, { timeout: 10000 }).toBe(result.snapshot.sessionId);
+        const recorded = (await readDevelopmentTraces(root)).data.record!;
+        expect(recorded.snapshot.components.entries).toHaveLength(1);
+        expect(JSON.stringify(recorded)).not.toContain('browser-fixture-secret');
         await page.getByRole('button', { name: 'Stop trace', exact: true }).click();
         expect(await page.evaluate(() => (window as any).fixture.tools.snapshot().collecting)).toBe(false);
+        await expect.poll(async () => (await readDevelopmentTraces(root)).data.record?.snapshot.collecting, { timeout: 10000 }).toBe(false);
         await page.evaluate(async () => { (window as any).fixture.tools.dispose(); await (window as any).fixture.destroy(); });
         expect(await page.locator('[data-cossack-devtools]').count()).toBe(0);
         await page.locator('#action').click();
@@ -79,5 +94,6 @@ it('captures and inspects in Chromium without invoking an application action or 
     } finally {
         await browser?.close();
         await server.close();
+        await fs.rm(root, { recursive: true, force: true });
     }
 }, 60000);

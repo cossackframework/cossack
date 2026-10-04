@@ -19,6 +19,8 @@
     "src/api.ts",
     "src/cache.ts",
     "src/client/devtools.ts",
+    "src/client/development-trace-bridge.ts",
+    "src/development-traces.ts",
     "src/client/index.ts",
     "src/config.ts",
     "src/DurableObject.ts",
