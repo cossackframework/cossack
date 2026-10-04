@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createAuth } from '../src/session';
 
@@ -19,6 +19,27 @@ function buildApp(kit: ReturnType<typeof createAuth<User>>, loginHandler?: any) 
 }
 
 describe('createAuth — middleware', () => {
+    it.each(['extractSessionId', 'validateSessionId', 'resolveUserById'] as const)('redacts %s failures and continues as guest', async stage => {
+        const privateValue = 'PRIVATE_SESSION_PASSWORD_TOKEN';
+        const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const fail = vi.fn(async () => { throw new Error(privateValue); });
+            const kit = createAuth<User>({
+                extractSessionId: () => privateValue,
+                validateSessionId: async () => 'fixture-user',
+                resolveUserById: async () => ({ id: 'fixture-user', email: 'fixture@example.invalid', name: 'Fixture' }),
+                [stage]: fail,
+            });
+            const response = await buildApp(kit).request('/me');
+            expect(response.status).toBe(200);
+            expect(await response.json()).toEqual({ user: null });
+            expect(fail).toHaveBeenCalledOnce();
+            expect(warning).toHaveBeenCalledOnce();
+            expect(warning.mock.calls[0]).toHaveLength(1);
+            expect(JSON.stringify(warning.mock.calls)).not.toContain(privateValue);
+            expect(warning.mock.calls[0][0]).toMatch(/COSSACK_AUTH_.*_FAILED: continuing as guest/);
+        } finally { warning.mockRestore(); }
+    });
     it('passes through when no session id is present', async () => {
         let extracted = false;
         const kit = createAuth<User>({

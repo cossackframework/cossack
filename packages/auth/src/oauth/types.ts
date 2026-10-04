@@ -155,7 +155,7 @@ export type OAuthUserCallback = (
 ) => Promise<Response | void> | Response | void;
 
 export type OAuthErrorCallback = (
-    err: unknown,
+    err: import('./errors').OAuthError,
     c: Context,
 ) => Promise<Response | void> | Response | void;
 

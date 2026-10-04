@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import type { OAuthProviderConfig, OAuthProviderDefinition, TokenSet } from './types';
+import { OAuthError, runOAuthStage } from './errors';
 
 const RESERVED_AUTHORIZE_KEYS = new Set([
     'state',
@@ -91,43 +92,43 @@ export interface ExchangeCodeArgs {
  * Throws on non-2xx or malformed response.
  */
 export async function exchangeCode(args: ExchangeCodeArgs): Promise<TokenSet> {
-    const { definition, config, redirectUrl, code, codeVerifier } = args;
+    return runOAuthStage('COSSACK_OAUTH_TOKEN_EXCHANGE_FAILED', async () => {
+        const { definition, config, redirectUrl, code, codeVerifier } = args;
 
-    const body: Record<string, string> = {
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: redirectUrl,
-        client_id: config.clientId,
-        client_secret: config.clientSecret,
-    };
-    // Only include the PKCE verifier when the authorize request was sent with
-    // a matching challenge. Sending an empty/missing verifier to a provider
-    // that expects one causes a hard failure.
-    if (codeVerifier) {
-        body.code_verifier = codeVerifier;
-    }
-    const extras = definition.tokenParams?.(config) ?? {};
-    for (const [key, value] of Object.entries(extras)) {
-        body[key] = value;
-    }
+        const body: Record<string, string> = {
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: redirectUrl,
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+        };
+        // Only include the PKCE verifier when the authorize request was sent with
+        // a matching challenge. Sending an empty/missing verifier to a provider
+        // that expects one causes a hard failure.
+        if (codeVerifier) {
+            body.code_verifier = codeVerifier;
+        }
+        const extras = definition.tokenParams?.(config) ?? {};
+        for (const [key, value] of Object.entries(extras)) {
+            body[key] = value;
+        }
 
-    const response = await fetch(definition.tokenUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Accept: 'application/json',
-        },
-        body: new URLSearchParams(body).toString(),
+        const response = await fetch(definition.tokenUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'application/json',
+            },
+            body: new URLSearchParams(body).toString(),
+        });
+
+        if (!response.ok) {
+            await response.body?.cancel().catch(() => {});
+            throw new OAuthError('COSSACK_OAUTH_TOKEN_EXCHANGE_FAILED', response.status);
+        }
+
+        return parseTokenResponse(await response.text());
     });
-
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
-            `OAuth token exchange failed: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`,
-        );
-    }
-
-    return parseTokenResponse(await response.text());
 }
 
 /**
@@ -144,9 +145,12 @@ export function parseTokenResponse(body: string): TokenSet {
         parsed = Object.fromEntries(params.entries());
     }
 
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new OAuthError('COSSACK_OAUTH_TOKEN_EXCHANGE_FAILED');
+    }
     const accessToken = parsed.access_token;
-    if (typeof accessToken !== 'string') {
-        throw new Error('OAuth token exchange: missing access_token in response');
+    if (typeof accessToken !== 'string' || !accessToken.trim()) {
+        throw new OAuthError('COSSACK_OAUTH_TOKEN_EXCHANGE_FAILED');
     }
 
     return {
@@ -188,29 +192,31 @@ export async function fetchUserInfo(args: FetchUserInfoArgs): Promise<{
     raw: Record<string, unknown>;
     user: import('./types').OAuthUser;
 }> {
-    const { definition, tokens } = args;
-    const url = new URL(definition.userInfoUrl);
+    return runOAuthStage('COSSACK_OAUTH_USER_INFO_FAILED', async () => {
+        const { definition, tokens } = args;
+        const url = new URL(definition.userInfoUrl);
 
-    const extras = definition.userInfoParams?.() ?? {};
-    for (const [key, value] of Object.entries(extras)) {
-        url.searchParams.set(key, value);
-    }
+        const extras = definition.userInfoParams?.() ?? {};
+        for (const [key, value] of Object.entries(extras)) {
+            url.searchParams.set(key, value);
+        }
 
-    const response = await fetch(url.toString(), {
-        headers: {
-            Authorization: `Bearer ${tokens.accessToken}`,
-            Accept: 'application/json',
-        },
+        const response = await fetch(url.toString(), {
+            headers: {
+                Authorization: `Bearer ${tokens.accessToken}`,
+                Accept: 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            await response.body?.cancel().catch(() => {});
+            throw new OAuthError('COSSACK_OAUTH_USER_INFO_FAILED', response.status);
+        }
+
+        const raw = (await response.json()) as Record<string, unknown>;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new OAuthError('COSSACK_OAUTH_USER_INFO_FAILED');
+        const user = await definition.normalizeUser(raw, tokens);
+        if (!user || typeof user.id !== 'string' || !user.id.trim()) throw new OAuthError('COSSACK_OAUTH_USER_INFO_FAILED');
+        return { raw, user };
     });
-
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
-            `OAuth user-info fetch failed: ${response.status} ${response.statusText}${text ? ` - ${text}` : ''}`,
-        );
-    }
-
-    const raw = (await response.json()) as Record<string, unknown>;
-    const user = await definition.normalizeUser(raw, tokens);
-    return { raw, user };
 }

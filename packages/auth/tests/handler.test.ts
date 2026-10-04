@@ -73,7 +73,7 @@ describe('createOAuth — redirect handler', () => {
                 secret: SECRET,
                 providers: {},
             }).redirect('totally-unknown-provider'),
-        ).toThrow(/Unknown OAuth provider "totally-unknown-provider"/);
+        ).toThrow(/Unknown OAuth provider/);
     });
 
     it('throws if the provider has no credentials configured', () => {
@@ -82,7 +82,7 @@ describe('createOAuth — redirect handler', () => {
                 secret: SECRET,
                 providers: {},
             }).redirect('github'),
-        ).toThrow(/No credentials configured for OAuth provider "github"/);
+        ).toThrow(/OAuth credentials are missing/);
     });
 
     it('rejects a too-short secret', () => {
@@ -123,10 +123,8 @@ describe('createOAuth — redirect handler', () => {
             },
         });
         const res = await app.request('/auth/github/redirect');
-        expect(res.status).toBe(502);
-        expect((await res.json()) as { error: string }).toMatchObject({
-            error: expect.stringMatching(/at least 16 characters/),
-        });
+        expect(res.status).toBe(500);
+        expect(await res.json()).toMatchObject({ code: 'COSSACK_OAUTH_SECRET_INVALID', stage: 'configuration' });
     });
 });
 
@@ -177,7 +175,7 @@ describe('createOAuth — callback handler (happy path)', () => {
         expect(seen.tokens).toMatchObject({ accessToken: 'at', scope: 'user:email' });
     });
 
-    it('clears the state cookie after the callback (single-use)', async () => {
+    it('clears the state cookie after the callback', async () => {
         const { app } = buildApp();
         const redirectRes = await app.request('/auth/github/redirect');
         const cookieHeader = getSetCookieHeader(redirectRes);
@@ -207,9 +205,9 @@ describe('createOAuth — callback handler (failure modes)', () => {
         const { app } = buildApp();
         mockFetch({ body: { access_token: 'at' } });
         const res = await app.request('/auth/github/callback?code=c&state=anything');
-        expect(res.status).toBe(502);
+        expect(res.status).toBe(400);
         const body = (await res.json()) as { error: string };
-        expect(body.error).toMatch(/state cookie missing/i);
+        expect(body.error).toMatch(/state cookie is missing/i);
     });
 
     it('rejects when state does not match (CSRF defense)', async () => {
@@ -223,27 +221,27 @@ describe('createOAuth — callback handler (failure modes)', () => {
         const res = await app.request('/auth/github/callback?code=c&state=attacker-state', {
             headers: { cookie: `cossack_oauth_state=${token}` },
         });
-        expect(res.status).toBe(502);
+        expect(res.status).toBe(400);
         const body = (await res.json()) as { error: string };
         expect(body.error).toMatch(/state mismatch/i);
     });
 
-    it('surfaces provider error params', async () => {
+    it('reports consent denial without echoing provider error params', async () => {
         const { app } = buildApp();
         const res = await app.request(
             '/auth/github/callback?error=access_denied&error_description=user+cancelled',
         );
-        expect(res.status).toBe(502);
-        const body = (await res.json()) as { error: string };
-        expect(body.error).toMatch(/access_denied/);
-        expect(body.error).toMatch(/user cancelled/);
+        expect(res.status).toBe(403);
+        const body = await res.json();
+        expect(body).toMatchObject({ code: 'COSSACK_OAUTH_CONSENT_DENIED', stage: 'callback' });
+        expect(JSON.stringify(body)).not.toContain('user cancelled');
     });
 
     it('rejects when code or state query param is missing', async () => {
         const { app } = buildApp();
         const res = await app.request('/auth/github/callback');
-        expect(res.status).toBe(502);
-        expect(((await res.json()) as { error: string }).error).toMatch(/missing required/);
+        expect(res.status).toBe(400);
+        expect(((await res.json()) as { error: string }).error).toMatch(/missing required code or state/);
     });
 
     it('invokes onError when provided', async () => {
@@ -421,6 +419,6 @@ describe('createOAuth — custom providers', () => {
                     },
                 },
             }),
-        ).toThrow(/shadows a first-party provider/);
+        ).toThrow(/OAuth configuration is invalid/);
     });
 });

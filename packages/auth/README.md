@@ -159,7 +159,7 @@ app.get('/auth/github/callback', oauth.callback('github', {
         return c.redirect('/dashboard', { headers });
     },
     onError: async (err, c) => {
-        console.error('OAuth failed:', err);
+        console.error('OAuth failed:', err.toJSON());
         return c.redirect('/login?error=oauth_failed');
     },
 }));
@@ -236,7 +236,14 @@ callback (e.g. by passing `state` through a signed query param you verify
 yourself). Use only when cookies are not an option : the default stateful mode
 is strictly more secure.
 
-See [`docs/oauth.md`](../docs/oauth.md) for the complete guide.
+OAuth failures expose an `OAuthError` with a fixed `code`, `stage`, `status`
+and safe message. Provider failures can include a numeric `providerStatus`.
+The error omits provider response bodies, authorization codes, credentials
+and raw exception causes. Use `err.toJSON()` in `onError` for structured logs.
+Callback handlers clear the browser state cookie on rejection. Cookie deletion
+does not provide atomic replay prevention across concurrent requests.
+
+See [`docs/oauth.md`](../../docs/oauth.md) for the complete guide.
 
 ---
 

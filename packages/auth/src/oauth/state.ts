@@ -147,11 +147,17 @@ export async function consumeStateCookie(
     secret: string,
     options: StateCookieOptions,
 ): Promise<OAuthStatePayload | null> {
+    try {
+        const token = getCookie(c, options.name ?? DEFAULT_COOKIE_NAME);
+        if (!token) return null;
+        return await verifyCookieValue(token, secret);
+    } finally { clearStateCookie(c, options); }
+}
+
+/** Clear the matching browser cookie even when the callback cannot read state. */
+export function clearStateCookie(c: Context, options: StateCookieOptions): void {
     const name = options.name ?? DEFAULT_COOKIE_NAME;
-    const token = getCookie(c, name);
     // Always delete, even on failure, to finish the browser round-trip. Pass the same domain
     // (if any) used at set time so the deletion actually matches the cookie.
     deleteCookie(c, name, { path: options.path ?? '/', domain: options.domain });
-    if (!token) return null;
-    return verifyCookieValue(token, secret);
 }

@@ -28,10 +28,10 @@ import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } f
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
-async function project(adapter, features = []) {
+async function project(adapter, features = [], options = {}) {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-runtime-build-'));
   roots.push(parent);
-  const { projectDir } = await createApp('app', { cwd: parent, adapter, preset: 'minimal', features, interactive: false });
+  const { projectDir } = await createApp('app', { cwd: parent, adapter, preset: 'minimal', features, interactive: false, ...options });
   const modules = path.join(projectDir, 'node_modules');
   await fs.mkdir(modules);
   for (const name of await fs.readdir(path.join(repository, 'node_modules'))) {
@@ -923,6 +923,83 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
   } finally {
     await browser?.close();
     await server.close();
+  }
+}, 120000);
+it.each(['node', 'cloudflare'])('serves generated OAuth diagnostics on %s without exposing provider credentials', async adapter => {
+  const root = await project(adapter, ['auth'], { oauth: 'github' });
+  if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
+    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated OAuth types: ${error.stdout}\n${error.stderr}`); }
+  let migrationPlan;
+  if (adapter === 'cloudflare') {
+    const plan = await promisify(execFile)(process.execPath,
+      [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'plan', '--local', '--json'],
+      { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+    const result = JSON.parse(plan.stdout);
+    expect(result).toMatchObject({ ok: true, data: { complete: true } });
+    migrationPlan = result.data.migrations;
+    expect(migrationPlan.length).toBeGreaterThan(0);
+  }
+  try { await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'up', '--local', '--json'],
+    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated OAuth migrations (${error.code}, ${error.signal}): ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const privateValue = 'PRIVATE_OAUTH_CREDENTIAL_CODE_DESCRIPTION';
+  for (const configured of [true, false]) {
+    const environment = { APP_SECRET: 'fixture-application-secret-0123456789', OAUTH_SECRET: 'fixture-state-secret-01234567890123456789',
+      GITHUB_CLIENT_ID: configured ? 'fixture-client' : '', GITHUB_CLIENT_SECRET: privateValue };
+    let close, request;
+    if (adapter === 'node') {
+      const server = await productionServer(root, environment);
+      close = server.close;
+      request = (url, options = {}) => fetch(server.origin + url, { redirect: 'manual', ...options });
+    } else {
+      const configPath = path.join(root, 'dist/ssr/wrangler.json');
+      const harness = createTestHarness({ root, workers: [{ configPath, secrets: environment }] });
+      close = () => harness.close();
+      request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
+      try {
+        await harness.listen();
+        // The harness deliberately uses fresh in-memory bindings, separate from
+        // the CLI's persistent database. Apply the generated CLI SQL plan here.
+        const bindings = await harness.getWorker().getEnv();
+        expect(bindings.APP_SECRET).toBe(environment.APP_SECRET);
+        for (const migration of migrationPlan) for (const statement of migration.statements) {
+          expect(statement.parameterCount).toBe(0);
+          await bindings.DB.prepare(statement.text).run();
+        }
+      } catch (error) { await close(); throw error; }
+    }
+    try {
+      if (!configured) {
+        for (const route of ['redirect', 'callback']) {
+          const response = await request(`/auth/github/${route}`);
+          expect(response.status).toBe(500);
+          const body = await response.json();
+          expect(body).toMatchObject({ code: 'COSSACK_OAUTH_CREDENTIALS_MISSING', stage: 'configuration' });
+          expect(JSON.stringify(body)).not.toContain(privateValue);
+        }
+        continue;
+      }
+      const redirect = await request('/auth/github/redirect');
+      expect(redirect.status, await redirect.clone().text()).toBe(302);
+      expect(new URL(redirect.headers.get('location')).searchParams.get('code_challenge_method')).toBe('S256');
+      const cookie = redirect.headers.get('set-cookie').split(';')[0];
+      for (const [query, code, stage, status] of [
+        ['', 'COSSACK_OAUTH_CALLBACK_INVALID', 'callback', 400],
+        [`?error=access_denied&error_description=${privateValue}`, 'COSSACK_OAUTH_CONSENT_DENIED', 'callback', 403],
+        [`?code=${privateValue}&state=wrong-state`, 'COSSACK_OAUTH_STATE_MISMATCH', 'state', 400],
+      ]) {
+        const response = await request('/auth/github/callback' + query, { headers: { cookie } });
+        expect(response.status).toBe(status);
+        const body = await response.json();
+        expect(body).toMatchObject({ code, stage, status });
+        expect(JSON.stringify(body)).not.toContain(privateValue);
+        expect(response.headers.get('set-cookie')).toMatch(/cossack_oauth_state=;.*Max-Age=0/i);
+      }
+    } finally { await close(); }
   }
 }, 120000);
 it('builds the generated Node application Desktop side target with its HTTP boundary', async () => {

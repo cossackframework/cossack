@@ -1,8 +1,9 @@
-# Cossack 0.9.0 agent handoff
+# Cossack 0.9.0 continuation notes
 
-Author: Codex. Compacted on 2026-10-04. Branch: `fix-084`.
+Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
 27 of 58 release tasks are complete. 31 remain open.
 Versions stay at 0.8.3 until REL-04.
+Codex owns the remaining work. The user no longer plans a GLM handoff.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -25,7 +26,7 @@ Latest completed checkpoint: [Desktop development and RT-28 audit](./release-0.9
 The installed native gate, trace parity, production exclusion and relevant
 regressions pass. REL-03 remains open for the required non-Desktop release matrix.
 
-## Continue here — Codex, 2026-10-04
+## Continue here — Codex, 2026-10-05
 
 1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
    guidance, executable examples and verified runtime support through the
@@ -40,23 +41,25 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
    deterministic stale-task overlap, navigation cleanup and client stripping.
    [Installed Cloudflare and Node acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04)
    also requires emitted source maps before scanning for server code.
-   Auth now ships session/role and record-policy guides. Preserve the separate
-   legacy `implicitEntry`, static TypeScript source indexing and two examples
-   checked with Bundler resolution, bundled from installed packages and run offline.
-   [Auth guidance evidence](./release-0.9.0.md#codex-cli08-auth-guidance-2026-10-04)
+   Auth now ships session/role, record-policy and OAuth diagnostic guides.
+   Preserve the separate legacy `implicitEntry`, static TypeScript source indexing
+   and three examples checked with Bundler resolution, bundled from installed
+   packages and run offline.
+   [Auth guidance evidence](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05)
    does not prove plain Node imports, persistent sessions or native RPC authorization.
    Continue other library and UI guidance and the remaining runtime coverage.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
-2. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
+2. Continue **[RT-13](./release-0.9.0-plan.md#rt-13)** with shared credential and
+   persistent session operations. Preserve fixed OAuth codes/stages, safe `onError`
+   errors and warning redaction. Generated Node/Cloudflare callbacks pass native
+   rejection checks. Cookie deletion does not satisfy atomic replay acceptance.
+   Session expiry/rotation and reusable operations remain open. Keep the database
+   JSON bootstrap in default CommonJS eval mode so Miniflare's inherited Worker
+   can start. See [diagnostic evidence](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
+3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
-3. Follow the detailed plan for all 31 open tasks. Close each only against its
+4. Follow the detailed plan for all 31 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
-
-Desktop development is verified and ready to preserve. Use the exported
-`startDesktop(factory)` bootstrap and restrict full SSR bundling to production
-builds. Page repair must recheck capabilities; opaque RPC bodies must bypass HTML
-transformation. The main-process supervisor owns restarts and shutdown. Keep the
-public inspector import and its single capture owner; do not add renderer IPC.
 
 ## Limits to retain
 
@@ -95,5 +98,5 @@ public inspector import and its single capture owner; do not add renderer IPC.
   Run heavy CLI/generated suites without competing heavy jobs.
 - Preserve the user's `reports.md` and `.zcodeignore`. Do not stage them.
   Use `git diff --check -- . ':!reports.md'` for the known report whitespace exception.
-- The user arranges GLM continuation. This handoff does not authorize delegation, new chats, messages, publishing or deployment.
+- Codex continues the remaining tasks. These notes do not authorize delegation, new chats, messages, publishing or deployment.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.

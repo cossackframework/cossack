@@ -6,6 +6,77 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt13-diagnostics-2026-10-05"></a>
+### Codex: OAuth diagnostics and local D1 JSON tooling (2026-10-05)
+
+Author: Codex. RT-13 now has a public `OAuthError` contract with fixed codes,
+stages, HTTP statuses and messages. Diagnostics omit raw exception causes,
+provider bodies/status text, callback descriptions and credential values.
+Provider HTTP failures retain only a validated numeric status and cancel the
+response body. Token/profile shape and network/normalization failures are
+classified before application `onError`. Account/session mapping and failing
+error handlers have separate stages. Configured callback handlers clear their
+state cookie on early rejection as well as after reading it.
+
+Session middleware warnings now use fixed stage messages. Extraction failures
+also continue as a guest. Generated auth no longer logs raw database exceptions
+and uses the library's configuration diagnostics. User models, account writes
+and database selection remain application-owned. Auth has no framework/database
+dependency. The migration guide records changed statuses and the typed callback.
+
+The generated Cloudflare fixture exposed two existing issues. ORM request
+factories now declare Hono `Context`, preserving `.env` when the database
+library's structural context type cannot infer it. The isolated JSON ORM process
+no longer starts with `--input-type=module`. Miniflare inherits that flag in a
+CommonJS eval Worker. The Worker fails before notifying its waiting parent,
+so local migration commands stall. A minimal D1 configuration also reproduced
+the stall; disabling metadata fetch did not fix it. Default CommonJS eval mode
+preserves dynamic imports, IPC and output isolation. The new Worker regression
+and actual generated local CLI migration now pass.
+
+Cloudflare's test harness deliberately starts fresh in-memory bindings. Its
+fixture applies the complete, parameter-free generated CLI migration plan to
+that fresh D1 database. It also checks the CLI's separate persistent migration.
+Fixture secrets use the harness's secret overrides, preserving required secret
+declarations. Node uses its generated migrated SQLite database. Both production
+builds verify PKCE redirects, callback parameter rejection, denied consent,
+state mismatch, cookie cleanup and missing configuration without provider I/O.
+
+Auth now ships a third guide and example for typed callback diagnostics. The
+example checks denied/malformed callbacks locally. Discovery still reports
+runtime support as unverified and example execution as not performed. A separate
+tarball harness compiles, bundles and executes the exact example source offline.
+
+Verification:
+
+- `pnpm --filter @cossackframework/auth exec vitest run`: **168 tests / 9 files pass**.
+  Log: `/tmp/cossack-rt13-auth-suite.log`.
+- `pnpm --filter @cossackframework/scaffold exec vitest run tests/auth-security.test.js tests/scaffold.test.js`:
+  **85 tests / 2 files pass**. Log: `/tmp/cossack-rt13-auth-scaffold.log`.
+- `pnpm --filter @cossackframework/database exec vitest run test/tooling.test.ts test/cloudflare-tooling.test.ts`:
+  **32 tests / 2 files pass**, including real local D1 and JSON output isolation.
+  Log: `/tmp/cossack-rt13-database-regression.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'serves generated OAuth diagnostics'`:
+  **2 pass, 56 unrelated cases skipped**. Log: `/tmp/cossack-rt13-oauth-native.log`.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck`: pass for all **11 packages**.
+  Logs: `/tmp/cossack-rt13-root-types.log`, `/tmp/cossack-rt13-package-types.log`.
+- `pnpm test:agent-docs:local`: passes sequential package builds, **12 tarballs**,
+  **10 standalone and 3 bundled auth examples**, the three packaged application
+  pages, reporter types, offline CLI/MCP parity, Cloudflare HTTP/SSE/WebSocket
+  traces, production stripping and UI catalogs. Installed tools: Wrangler
+  **4.147.0**, Cloudflare Vite plugin **1.62.5**, Vite **8.3.2** and TypeScript
+  **7.0.2**. The auth examples retain strict Bundler checks and the full network guard.
+  Log: `/tmp/cossack-rt13-installed-guidance.log`.
+
+Limits: Cookie cleanup is not an atomic replay store. Errors do not undo account
+writes or sessions already created. Persistent session expiry/rotation, callback
+replay prevention and reusable credential/session operations remain RT-13 work.
+Native checks use workspace links; bundled installed examples do not prove plain
+Node imports, persistent authentication or provider exchange on Cloudflare.
+No live provider request, deployment, provisioning or publication occurred.
+RT-13, CLI-08, REL-02 and REL-03 remain open. Counts stay **27 complete, 31 open**.
+Desktop remains completed by user decision; its waived platform checks stay waived.
+
 <a id="codex-cli08-auth-guidance-2026-10-04"></a>
 ### Codex: Auth guidance and published TypeScript discovery (2026-10-04)
 

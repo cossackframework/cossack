@@ -43,7 +43,12 @@ export type AuthKit<User> = {
  */
 export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
     const middleware: MiddlewareHandler<{ Variables: { user?: User } }> = async (c, next) => {
-        const sessionId = await provider.extractSessionId(c);
+        let sessionId: string | undefined;
+        try { sessionId = await provider.extractSessionId(c); }
+        catch {
+            console.warn('[Cossack Auth] COSSACK_AUTH_SESSION_EXTRACTION_FAILED: continuing as guest. Check session extraction.');
+            return await next();
+        }
         if (!sessionId) {
             return await next();
         }
@@ -58,8 +63,8 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
         let userId: string | null;
         try {
             userId = await provider.validateSessionId(sessionId, c);
-        } catch (err) {
-            console.warn('[Cossack Auth] validateSessionId threw — treating as guest:', err);
+        } catch {
+            console.warn('[Cossack Auth] COSSACK_AUTH_SESSION_VALIDATION_FAILED: continuing as guest. Check session storage and validation.');
             return await next();
         }
         if (!userId) {
@@ -69,8 +74,8 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
         let user: User | null;
         try {
             user = await provider.resolveUserById(userId, c);
-        } catch (err) {
-            console.warn('[Cossack Auth] resolveUserById threw — treating as guest:', err);
+        } catch {
+            console.warn('[Cossack Auth] COSSACK_AUTH_USER_RESOLUTION_FAILED: continuing as guest. Check user lookup.');
             return await next();
         }
         if (user) {

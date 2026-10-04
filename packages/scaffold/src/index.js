@@ -825,9 +825,9 @@ function ormMiddlewareModule(recipe) {
     ? `const orm = await getORM();
 export const ormRequestMiddleware = ormMiddleware(orm);`
     : recipe.adapter === 'deno'
-      ? `export const ormRequestMiddleware = ormMiddleware((context) =>
+      ? `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
   createRequestORM(context.env as ORMEnvironment));`
-      : `export const ormRequestMiddleware = ormMiddleware((context) =>
+      : `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
   createRequestORM(context.env as ORMEnvironment));`;
   const factoryImport = recipe.adapter === 'node'
     ? "import { getORM } from '../orm/factory';"
@@ -840,6 +840,7 @@ export const ormRequestMiddleware = ormMiddleware(orm);`
 import { extendCacheDriver } from '@cossackframework/framework/cache';
 import { createSessionMiddleware } from '@cossackframework/framework/session';
 ${factoryImport}
+${recipe.adapter === 'node' ? '' : "import type { Context } from 'hono';\n"}
 
 ${runtime}
 
@@ -1255,7 +1256,7 @@ function applyOauthToAuth(content, providers) {
   return content
     .replace(
       "import { createAuth } from '@cossackframework/auth';",
-      "import { createAuth, createOAuth, type OAuthKit, type OAuthUser, type TokenSet } from '@cossackframework/auth';\nimport { OAuthAccount } from '@/models/OAuthAccount';",
+      "import { createAuth, createOAuth, OAuthError, type OAuthKit, type OAuthUser, type TokenSet } from '@cossackframework/auth';\nimport { OAuthAccount } from '@/models/OAuthAccount';",
     )
     .concat(`
 
@@ -1263,11 +1264,11 @@ const oauthProviderEnvironment = {
 ${providerEnvironment}
 } as const;
 
-function oauthConfigurationError(c: Context, provider: string): string | null {
+function oauthConfigurationError(c: Context, provider: string): OAuthError | null {
   const providerEnvironment =
     oauthProviderEnvironment[provider as keyof typeof oauthProviderEnvironment];
   if (!providerEnvironment) {
-    return \`Provider "\${provider}" is not enabled for this application.\`;
+    return new OAuthError('COSSACK_OAUTH_PROVIDER_UNKNOWN');
   }
 
   const missing = [
@@ -1275,22 +1276,19 @@ function oauthConfigurationError(c: Context, provider: string): string | null {
     providerEnvironment.clientSecret,
   ].filter((name) => !String(c.env[name] ?? '').trim());
   if (missing.length) {
-    return \`Set \${missing.join(' and ')} before using \${provider} OAuth.\`;
+    return new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING');
   }
 
   if (String(c.env.OAUTH_SECRET ?? '').length < 16) {
-    return 'Set OAUTH_SECRET to a random value of at least 16 characters (32+ bytes recommended).';
+    return new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
   }
   return null;
 }
 
-function oauthUnavailable(c: Context, provider: string, message: string): Response {
-  console.warn(\`[Cossack OAuth] \${provider} is unavailable: \${message}\`);
-  return c.json({
-    error: 'OAuth is not configured',
-    provider,
-    message,
-  }, 503);
+function oauthUnavailable(c: Context, error: OAuthError): Response {
+  console.warn('[Cossack OAuth]', error.toJSON());
+  const { message, ...diagnostic } = error.toJSON();
+  return c.json({ error: message, ...diagnostic }, error.status);
 }
 
 function createOAuthForRequest(c: Context): OAuthKit {
@@ -1305,12 +1303,12 @@ ${providerConfig}
 export const oauth: OAuthKit = {
   redirect: (provider) => async (c, next) => {
     const error = oauthConfigurationError(c, provider);
-    if (error) return oauthUnavailable(c, provider, error);
+    if (error) return oauthUnavailable(c, error);
     return createOAuthForRequest(c).redirect(provider)(c, next);
   },
   callback: (provider, options) => async (c, next) => {
     const error = oauthConfigurationError(c, provider);
-    if (error) return oauthUnavailable(c, provider, error);
+    if (error) return oauthUnavailable(c, error);
     return createOAuthForRequest(c).callback(provider, options)(c, next);
   },
 };

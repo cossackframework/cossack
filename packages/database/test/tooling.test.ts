@@ -9,6 +9,17 @@ import {
 } from "../src/tooling/index.js";
 
 describe("ORM tooling API", () => {
+  it("allows CommonJS eval Workers inside isolated JSON adapter factories", async () => {
+    const stdout: string[] = [];
+    expect(await runORMCommand(["migration", "plan", "--json"], {
+      configPath: resolve("test/fixtures/worker.config.ts"), stdout: message => stdout.push(message),
+    })).toBe(0);
+    expect(stdout).toHaveLength(1);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: true, data: {
+      complete: true, migrations: [{ name: "001_queued", complete: true }],
+    } });
+  });
+
   it("isolates imports, adapters, callbacks, disposal and inherited subprocess output from JSON", async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];

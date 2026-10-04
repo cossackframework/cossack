@@ -7,6 +7,7 @@ import type {
     OAuthUser,
 } from './types';
 import { createOAuthHandlers } from './handler';
+import { OAuthError, safeOAuthError } from './errors';
 import {
     facebookProvider,
     createGoogleProvider,
@@ -76,9 +77,7 @@ function buildDefinitions(
     if (config.customProviders) {
         for (const [id, def] of Object.entries(config.customProviders)) {
             if (defs[id]) {
-                throw new Error(
-                    `OAuth custom provider "${id}" shadows a first-party provider. Use a unique id.`,
-                );
+                throw new OAuthError('COSSACK_OAUTH_CONFIGURATION_INVALID');
             }
             defs[id] = def;
         }
@@ -94,13 +93,19 @@ function buildDefinitions(
  * @param config.customProviders - additional {@link OAuthProviderDefinition}s keyed by id.
  */
 export function createOAuth(config: CreateOAuthConfig): OAuthKit {
+    try { return buildOAuthKit(config); }
+    catch (error) { throw safeOAuthError(error, 'COSSACK_OAUTH_CONFIGURATION_INVALID'); }
+}
+
+function buildOAuthKit(config: CreateOAuthConfig): OAuthKit {
+    if (!config || !config.providers || typeof config.providers !== 'object' || Array.isArray(config.providers)) {
+        throw new OAuthError('COSSACK_OAUTH_CONFIGURATION_INVALID');
+    }
     if (
         (typeof config.secret === 'string' && config.secret.length < 16) ||
         (typeof config.secret !== 'string' && typeof config.secret !== 'function')
     ) {
-        throw new Error(
-            'createOAuth: `secret` must be a string of at least 16 characters (use a 32+ byte random value from env).',
-        );
+        throw new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
     }
 
     const definitions = buildDefinitions(config);
@@ -112,8 +117,8 @@ export function createOAuth(config: CreateOAuthConfig): OAuthKit {
         path: config.cookie?.path,
     };
 
-    const factory = (providerId: string) =>
-        createOAuthHandlers(providerId, {
+    const factory = (providerId: string) => {
+        try { return createOAuthHandlers(providerId, {
             config,
             definitions,
             cookieOptions,
@@ -122,7 +127,9 @@ export function createOAuth(config: CreateOAuthConfig): OAuthKit {
                 if (url.protocol === 'https:') return true;
                 return c.req.raw.headers.get('x-forwarded-proto') === 'https';
             },
-        });
+        }); }
+        catch (error) { throw safeOAuthError(error, 'COSSACK_OAUTH_CONFIGURATION_INVALID'); }
+    };
 
     return {
         redirect: (providerId) => factory(providerId).redirect(),
@@ -131,6 +138,7 @@ export function createOAuth(config: CreateOAuthConfig): OAuthKit {
 }
 
 export { defineOAuthProvider } from './provider';
+export { OAuthError, type OAuthErrorCode, type OAuthErrorStage } from './errors';
 export type {
     CreateOAuthConfig,
     OAuthCookieOptions,

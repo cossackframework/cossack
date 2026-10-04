@@ -523,7 +523,7 @@ describe('composition', () => {
     expect(files.get('src/auth.ts').content.toString()).toContain('c.env.OAUTH_SECRET');
     expect(files.get('src/auth.ts').content.toString()).toContain('GITHUB_CLIENT_ID');
     expect(files.get('src/auth.ts').content.toString())
-      .toContain("error: 'OAuth is not configured'");
+      .toContain("new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING')");
     expect(files.get('src/auth.ts').content.toString())
       .toContain('[Cossack OAuth]');
     const login = files.get('src/pages/auth/login/index.ts').content.toString();

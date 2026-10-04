@@ -5,6 +5,24 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## OAuth failure diagnostics
+
+OAuth `onError` now receives `OAuthError` instead of an arbitrary thrown value.
+Branch on `error.code` or `error.stage`; use `error.toJSON()` for safe logs.
+Raw provider bodies, descriptions, status text and exception causes are omitted.
+An upstream HTTP rejection exposes only its numeric `providerStatus`.
+
+Default responses include `error`, `code`, `stage` and `status`. Invalid callback
+parameters and state return 400, denied consent returns 403, provider exchange
+or profile failures return 502, and configuration or application mapping failures
+return 500. Generated missing-configuration responses also use this contract.
+Replace checks for the old generic 502 or generated 503 response.
+
+Rejected callbacks clear the state cookie. Do not treat this as a replay store:
+concurrent requests can still present the same signed cookie. Session middleware
+continues as a guest after extraction, validation or user lookup exceptions and
+logs a fixed stage code. Raw exception details are no longer logged.
+
 ## File routes and boundary identities
 
 Remove `route` from `@Page` and `@Component` options. This declaration never

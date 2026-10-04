@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { transformSync } from 'esbuild';
 import { renderRecipe, resolveRecipe } from '../src/index.js';
+import { OAuthError } from '../../auth/src/index.ts';
 
 async function generatedAuth() {
   const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'auth', oauth: 'github' }));
@@ -13,7 +14,7 @@ async function generatedAuth() {
   const createSession = vi.fn();
   const modules = {
     'hono/cookie': { getCookie: vi.fn() },
-    '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn() },
+    '@cossackframework/auth': { createAuth: (options) => { provider = options; return { createSession }; }, createOAuth: vi.fn(), OAuthError },
     '@cossackframework/database': { MoreThan: (value) => value, Not: (value) => value, sql: vi.fn() },
     '@cossackframework/core': { ClientVisibleError: Error },
     '@/lib/uuid': { uuidv7: () => 'generated-id' },
@@ -31,6 +32,34 @@ async function generatedAuth() {
 }
 
 describe('generated auth security', () => {
+  it.each(['redirect', 'callback'])('uses library configuration diagnostics for the generated OAuth %s route', async method => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { api } = await generatedAuth();
+      const context = { env: { GITHUB_CLIENT_ID: '', GITHUB_CLIENT_SECRET: 'PRIVATE_PROVIDER_SECRET', OAUTH_SECRET: 'fixture-state-secret-0123456789' },
+        json: (body, status) => Response.json(body, { status }) };
+      const response = await api.oauth[method]('github', { onUser() {} })(context);
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body).toMatchObject({ code: 'COSSACK_OAUTH_CREDENTIALS_MISSING', stage: 'configuration' });
+      expect(JSON.stringify(body)).not.toContain('PRIVATE_PROVIDER_SECRET');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_PROVIDER_SECRET');
+      expect(warn.mock.calls[0][1]).toEqual(new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING').toJSON());
+    } finally { warn.mockRestore(); }
+  });
+  it('keeps session database exceptions out of generated warnings', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { provider, Session, User } = await generatedAuth();
+      Session.findOne.mockRejectedValue(new Error('PRIVATE_DATABASE_PASSWORD_TOKEN'));
+      User.findOne.mockRejectedValue(new Error('PRIVATE_DATABASE_PASSWORD_TOKEN'));
+      expect(await provider.validateSessionId('fixture')).toBeNull();
+      expect(await provider.resolveUserById('fixture')).toBeNull();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_DATABASE_PASSWORD_TOKEN');
+      expect(warn.mock.calls[0][0]).toContain('pnpm migrate');
+    } finally { warn.mockRestore(); }
+  });
   it('does not accept reset tokens as login sessions', async () => {
     const { provider, Session } = await generatedAuth();
     for (const meta of [{ type: 'password_reset' }, null, '{', { type: 'unknown' }]) {

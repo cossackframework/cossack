@@ -36,14 +36,12 @@ let warnedAboutSessionDatabase = false;
  * database binding or auth migrations are not ready yet. The auth middleware
  * treats the request as a guest and emits one actionable warning per isolate.
  */
-function warnAboutSessionDatabase(error: unknown): void {
+function warnAboutSessionDatabase(): void {
   if (warnedAboutSessionDatabase) return;
   warnedAboutSessionDatabase = true;
-  const detail = error instanceof Error ? ` (${error.message})` : '';
   console.warn(
     '[Cossack Auth] Session database is unavailable; continuing as guest. ' +
-    'Configure the DB binding and run `pnpm migrate` before using auth.' +
-    detail,
+    'Configure the DB binding and run `pnpm migrate` before using auth.',
   );
 }
 
@@ -188,8 +186,8 @@ export const auth = createAuth<PublicUser>({
         where: { id: sessionId, expiresAt: MoreThan(new Date()) },
       });
       return row && parseMeta(row.meta)?.type === 'auth' ? row.userId : null;
-    } catch (error) {
-      warnAboutSessionDatabase(error);
+    } catch {
+      warnAboutSessionDatabase();
       return null;
     }
   },
@@ -199,8 +197,8 @@ export const auth = createAuth<PublicUser>({
       if (!row) return null;
       const roles = await loadUserRoles(userId);
       return publicUser(row, roles);
-    } catch (error) {
-      warnAboutSessionDatabase(error);
+    } catch {
+      warnAboutSessionDatabase();
       return null;
     }
   },

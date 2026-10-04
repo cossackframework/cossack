@@ -125,13 +125,41 @@ app.get('/auth/github/callback', oauth.callback('github', {
         return c.redirect('/dashboard', { headers });
     },
     onError: async (err, c) => {
-        console.error('GitHub OAuth failed:', err);
+        console.error('GitHub OAuth failed:', err.toJSON());
         return c.redirect('/login?error=oauth_failed');
     },
 }));
 
 export default app;
 ```
+
+## Failure diagnostics
+
+`OAuthError` has a stable `code`, `stage`, HTTP `status` and optional numeric
+`providerStatus`. Messages are fixed library text. Raw provider bodies, exceptions,
+authorization codes, tokens and credentials are not retained. `onError` receives
+this immutable error. Log `error.toJSON()` instead of the callback URL or context.
+
+| Failure | Stage | Status |
+| --- | --- | --- |
+| Missing configuration or invalid state secret | `configuration` | 500 |
+| Redirect preparation | `redirect` | 500 |
+| Missing callback parameters | `callback` | 400 |
+| Denied consent | `callback` | 403 |
+| Provider authorization rejection | `callback` | 502 |
+| Missing, expired, invalid or mismatched state | `state` | 400 |
+| Token exchange | `token-exchange` | 502 |
+| Profile fetch or normalization | `user-info` | 502 |
+| Application `onUser`, account lookup or session creation | `account-mapping` | 500 |
+| Application `onError` | `error-handler` | 500 |
+
+Configuration errors throw when constructing a kit or route. Redirect failures
+use the default diagnostic response. Callback errors call `onError`. Returning
+no response keeps the default response; a throwing handler gets its own diagnostic.
+Configured cookie-based callbacks clear their state cookie on success and failure,
+including denied consent and missing parameters. Cookie deletion does not provide
+an atomic server replay store. An error cannot undo application effects already
+performed by `onUser`.
 
 ## The `onUser` callback
 

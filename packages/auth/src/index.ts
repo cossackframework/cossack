@@ -11,6 +11,9 @@ export {
 export {
     createOAuth,
     defineOAuthProvider,
+    OAuthError,
+    type OAuthErrorCode,
+    type OAuthErrorStage,
     type CreateOAuthConfig,
     type OAuthCookieOptions,
     type OAuthErrorCallback,

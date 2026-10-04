@@ -54,7 +54,11 @@ export async function runJSONORMCommand(
     const require = createRequire(import.meta.url);
     const loaderURL = pathToFileURL(require.resolve("tsx/esm/api")).href;
     exitCode = await new Promise<number | null>((resolve) => {
-      const child = spawn(process.execPath, ["--input-type=module", "--eval", BOOTSTRAP], {
+      // Keep eval in its default CommonJS mode. Miniflare's synchronous binding
+      // bridge starts a CommonJS eval Worker which inherits these Node flags.
+      // --input-type=module makes that Worker fail before it can notify the
+      // blocked parent thread, so local D1 commands never return.
+      const child = spawn(process.execPath, ["--eval", BOOTSTRAP], {
         cwd: options.cwd ?? process.cwd(),
         stdio: ["ignore", "ignore", "ignore", "ipc"],
         shell: false,

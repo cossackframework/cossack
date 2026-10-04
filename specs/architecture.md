@@ -348,6 +348,26 @@ is gathered root-to-child, with child declarations replacing the same method's
 kind/dependencies before environment filtering. Typed decorators check declared
 public/dependency-shape paths; reactive runtime metadata remains authoritative.
 
+## Authentication diagnostic boundary
+
+Auth owns `OAuthError` and its fixed code, stage, HTTP status and message
+contracts. OAuth configuration, callback/state, provider exchange/profile and
+application mapping failures discard raw exceptions before reaching `onError`
+or the default JSON response. Failed provider response bodies are cancelled;
+only the numeric provider status can enter the diagnostic. Session middleware
+warnings identify the failed stage without logging session values or exceptions.
+The auth library uses Web APIs and Hono, without framework or database imports.
+Generated applications retain user models, database selection and account writes.
+
+Callback handlers clear state cookies, including early rejection. This is browser
+cleanup, not an atomic replay store or rollback of application writes. Persistent
+session expiry, rotation and reusable credential operations remain RT-13 work.
+
+The Node-only database JSON subprocess isolates project output and communicates
+through IPC. Its bootstrap uses dynamic imports under default CommonJS eval mode.
+It must not set `--input-type=module`: Miniflare's synchronous binding proxy
+inherits that flag in a CommonJS eval Worker and stalls before reporting a result.
+
 ## Resource authorization boundary
 
 Auth owns the typed `createResourcePolicy<Resource, User>()(rules)` kit. The

@@ -200,8 +200,8 @@ same APIs as the tested release. Dependencies: REL-02 and RT-23.
 ## Runtime and application APIs
 
 Runtime tasks continue below. Each status describes the checkpoint only.
-Reinspect the source before extending it, because GLM can complete tasks in any
-dependency-compatible order.
+Reinspect the source before extending it. Codex now owns the remaining work and
+follows task dependencies.
 
 <a id="rt-01"></a>
 ### RT-01: One RPC contract across transports
@@ -362,6 +362,16 @@ Done when: Generated auth apps consume the shared primitives. Tests cover expiry
 rotation, callback replay, failed provider exchange, and account-mapping errors.
 Error messages identify the failing stage without leaking sensitive values.
 The auth library remains independent of framework and database. Related task: RT-11.
+
+Codex progress (2026-10-05): Fixed OAuth codes, stages and safe statuses now cover
+configuration, callback/state, exchange/profile, account mapping and error handlers.
+Session and generated database warnings omit raw errors. Configured callback
+handlers clear state cookies on early rejection. Generated Node and Cloudflare
+apps verify these paths, with real local migration setup. The auth guide exposes
+the same typed errors. RT-13 remains open for reusable credential/session
+operations, persistent session expiry/rotation and atomic callback replay tests.
+Cookie deletion alone does not satisfy replay acceptance. Preserve the
+[diagnostic checkpoint](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
 
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
@@ -1021,7 +1031,7 @@ They supplement each task's tests. They do not introduce separate product scope.
    migration plan to the intended test target, tests protected assets and RPC,
    and cleans preview-owned resources. Production resources remain unchanged.
 
-## How GLM records progress
+## How Codex records progress
 
 For each implementation slice, record the task IDs and the actual behavior changed.
 Record unresolved design choices before publishing an API. Keep the explanation
@@ -1042,4 +1052,4 @@ Remaining work and known limits:
 Update completion boxes only when the complete row meets its acceptance criteria.
 Keep prototype status visible until the published application path uses the feature.
 Preserve unrelated user files, including the uncommitted reports and tool settings.
-Use the final review to audit GLM's commits against this plan and the checkpoint.
+Use the final review to audit implementation commits against this plan and its checkpoints.
