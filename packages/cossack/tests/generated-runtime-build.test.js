@@ -1,5 +1,6 @@
 import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { writeAuthPrimitivesAcceptance, checkAuthPrimitives } from './fixtures/auth-primitives-acceptance.js';
+import { createOAuthFixtureProvider, writeOAuthReplayAcceptance, checkOAuthReplay } from './fixtures/oauth-replay-acceptance.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
 import { verifyApplicationGuidance } from './fixtures/application-guidance-acceptance.js';
@@ -929,7 +930,10 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
 }, 120000);
 it.each(['node', 'cloudflare'])('serves generated authentication primitives and OAuth diagnostics on %s without exposing credentials', async adapter => {
   const root = await project(adapter, ['auth'], { oauth: 'github' });
+  const fixtureProvider = await createOAuthFixtureProvider();
+  try {
   await writeAuthPrimitivesAcceptance(root);
+  await writeOAuthReplayAcceptance(root, fixtureProvider.origin);
   if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
     { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
@@ -976,7 +980,7 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
       } catch (error) { await close(); throw error; }
     }
     try {
-      if (configured) await checkAuthPrimitives(request);
+      if (configured) { await checkAuthPrimitives(request); await checkOAuthReplay(request, fixtureProvider); }
       if (!configured) {
         for (const route of ['redirect', 'callback']) {
           const response = await request(`/auth/github/${route}`);
@@ -1005,6 +1009,7 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
       }
     } finally { await close(); }
   }
+  } finally { await fixtureProvider.close(); }
 }, 120000);
 it('builds the generated Node application Desktop side target with its HTTP boundary', async () => {
   const root = await project('node', ['desktop']);

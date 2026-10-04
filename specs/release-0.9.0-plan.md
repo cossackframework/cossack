@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. The release has 58 tasks: 27 complete and 31 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 28 complete and 30 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -95,7 +95,7 @@ Add focused tests during each group, and run broader gates after integration.
 | 1. Finish current runtime work | RT-01, RT-12 | Distributed SSE works through generated apps and retains request ownership. |
 | 2. Establish shared metadata and diagnostics | RT-24, RT-29 | Tools and types describe the behavior that the compiler and runtime execute. |
 | 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
-| 4. Complete data and content features | RT-13, RT-15 through RT-17, RT-20 through RT-22, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
+| 4. Complete data and content features | RT-15 through RT-17, RT-20 through RT-22, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
@@ -125,6 +125,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="rt-07"></a>RT-07 | [Typed routes and effective route metadata](./release-0.9.0-plan-archive.md#rt-07) |
 | <a id="rt-08"></a>RT-08 | [Typed URL state](./release-0.9.0-plan-archive.md#rt-08) |
 | <a id="rt-09"></a>RT-09 | [Navigation completion and diagnostics](./release-0.9.0-plan-archive.md#rt-09) |
+| <a id="rt-13"></a>RT-13 | [Shared credentials/sessions, safe diagnostics and atomic OAuth state](./release-0.9.0-plan-archive.md#codex-rt13-final-plan-2026-10-05) |
 | <a id="rt-14"></a>RT-14 | [Resource authorization policies](./release-0.9.0-plan-archive.md#rt-14) |
 | <a id="rt-18"></a>RT-18 | [Cache and rate-limit contracts](./release-0.9.0-plan-archive.md#rt-18) |
 | <a id="rt-19"></a>RT-19 | [Realtime lifecycle and recovery](./release-0.9.0-plan-archive.md#rt-19) |
@@ -166,7 +167,7 @@ and Cloudflare D1 tests now verify real credential login, cookie issuance,
 persistent expiry, conditional rotation and revocation. The protected-route
 browser regression verifies native route/RPC rejection after expiry. These
 checks do not establish plain Node imports or production hashing budgets. See the
-[primitive checkpoint](./release-0.9.0.md#codex-rt13-primitives-2026-10-05).
+[RT-13 completion audit](./release-0.9.0.md#codex-rt13-complete-2026-10-05).
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
 [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
 
@@ -309,6 +310,15 @@ and late-cookie diagnostics work through the real artifact. Continue sensitive
 old-input filtering, complete failure/login/logout/rotation recipes and documented
 concurrent request behavior; this runtime slice does not close RT-11.
 
+Codex next-step audit (2026-10-05): RT-13's shared auth primitives are complete.
+The generated session-management application still copies `SessionInfo.id`
+(the auth bearer token) into dashboard `@State()`. Its single-session revoke
+helper deletes by ID without actor/purpose constraints, and dashboard catches
+copy raw storage error messages into public state. Replace exposed tokens with
+safe public references, enforce owner and auth-purpose checks on the server,
+and use fixed errors. Native SSR/RPC tests must reject disclosure and forged
+cross-user/reset-token revocation before completing the rest of this task.
+
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.
 
@@ -341,45 +351,6 @@ Done when: Concurrent users cannot share request facilities. Missing declaration
 show an actionable owner location. Leaving a layout cleans its services once.
 Failures in one hook do not skip others. Inspection matches actual ownership.
 Dependencies: RT-01, RT-09, and CLI-04.
-
-<a id="rt-13"></a>
-### RT-13: Authentication primitives and OAuth diagnostics
-
-Purpose: Application authors need reusable authentication behavior and clear
-provider failures. Agents must not copy large authentication implementations from
-templates and then maintain divergent versions.
-
-Baseline: The auth library contains sessions, OAuth flow helpers/providers, and
-authorization middleware. Scaffolding supplies application-specific credential flows.
-
-Approach: Identify reusable credential/session operations in generated code and
-move those operations behind typed library contracts. Keep application user models,
-database selection, and presentation in the application. Classify expected OAuth
-failures such as missing configuration, state mismatch, denied consent, and
-provider exchange failure. Redact codes, tokens, passwords, and provider secrets.
-
-Start in `packages/auth/src/session.ts`, `oauth/`, `index.ts`, and auth recipe
-generation in `packages/scaffold/src/index.js`.
-
-Done when: Generated auth apps consume the shared primitives. Tests cover expiry,
-rotation, callback replay, failed provider exchange, and account-mapping errors.
-Error messages identify the failing stage without leaking sensitive values.
-The auth library remains independent of framework and database. Related task: RT-11.
-
-Codex progress (2026-10-05): Fixed OAuth codes, stages and safe statuses now cover
-configuration, callback/state, exchange/profile, account mapping and error handlers.
-Session and generated database warnings omit raw errors. Configured callback
-handlers clear state cookies on early rejection. Generated Node and Cloudflare
-apps verify these paths, with real local migration setup. Shared password hashing,
-typed credential verification and persistent session operations now live in auth.
-Generated apps consume them through application-owned account lookup and atomic
-SQL storage. Unit and generated Node/Cloudflare tests cover malformed hashes,
-conditional hash upgrades, exact expiry, single-winner rotation, revocation and
-reset-token separation. The fourth packaged auth example executes the same typed
-contracts offline. RT-13 remains open for atomic callback replay prevention and
-its full acceptance audit. Cookie deletion does not satisfy that criterion.
-Cookie deletion alone does not satisfy replay acceptance. Preserve the
-[diagnostic checkpoint](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
 
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities

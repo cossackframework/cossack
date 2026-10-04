@@ -27,6 +27,8 @@ export {
     type OAuthProviderDefinition,
     type OAuthUser,
     type OAuthUserCallback,
+    type OAuthStateRecord,
+    type OAuthStateStore,
     type TokenSet,
 } from './oauth';
 export type {

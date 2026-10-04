@@ -1,4 +1,22 @@
 import { vi, type Mock } from 'vitest';
+import type { OAuthStateRecord, OAuthStateStore } from '../src/index';
+
+/** Fixture only: synchronous Map deletion models the atomic boundary in one process. */
+export function memoryOAuthStates() {
+    const rows = new Map<string, OAuthStateRecord>();
+    const store: OAuthStateStore = {
+        create: vi.fn(async record => {
+            if (rows.has(record.key)) throw new Error('Duplicate fixture state');
+            rows.set(record.key, record);
+        }),
+        consume: vi.fn(async (key, provider, now) => {
+            const record = rows.get(key);
+            if (!record || record.provider !== provider || record.expiresAt <= now) return false;
+            rows.delete(key); return true;
+        }),
+    };
+    return { store, rows };
+}
 
 /**
  * A single mocked fetch response.

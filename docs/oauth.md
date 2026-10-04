@@ -48,10 +48,45 @@ Browser                   Cossack app              OAuth provider
 - **PKCE S256** is on for every provider (RFC 9700 recommendation, even for
  confidential clients). A fresh `code_verifier` is generated per redirect.
 - **CSRF `state`**: 128-bit random nonce, stored in an HttpOnly
- `SameSite=Lax` cookie signed with HMAC-SHA256, compared in **constant time**,
- and deleted on callback read. The signed payload also enforces expiration on the server.
+ `SameSite=Lax` cookie signed with HMAC-SHA256, compared without an early mismatch exit,
+ and deleted on callback read. The required server state store atomically consumes
+ the provider-bound state before token exchange. Both the cookie and store enforce expiry.
 - **Exact `redirect_uri` match**: the same value is sent on the authorize and
  token-exchange requests.
+
+## Atomic state storage
+
+Cookie-based `createOAuth` requires an `OAuthStateStore`. The generated
+`src/auth.ts` exports `oauthStateStore`; `cossack add auth --oauth github`
+composes it automatically. Handwritten applications supply these callbacks:
+
+| Callback | Contract |
+| --- | --- |
+| `create(record, context)` | Insert a new provider-scoped record without overwriting a collision. |
+| `consume(key, provider, now, context)` | Atomically remove the matching unexpired record. Return boolean `true` for one winner only. |
+
+`OAuthStateRecord` has a SHA-256 `key`, `provider`, `createdAt` and `expiresAt`.
+Times are Unix milliseconds. The key hashes the library purpose, provider ID and
+random state; rows contain no authorization code, PKCE verifier or credential.
+The signed cookie still binds the nonce and verifier to the browser.
+
+The generated store writes anonymous `sessions` rows with
+`meta: { type: 'oauth_state', provider }`. One conditional SQL `DELETE` checks the
+key, provider, purpose, anonymous owner and current expiry. A read followed by
+delete is insufficient. OAuth state cannot authenticate as a session or act as
+a password-reset token. Remove abandoned expired rows through application cleanup.
+
+Consumption happens after signed-cookie and state validation, before token
+exchange. Concurrent callbacks have one winner. Failed exchange, profile or
+account mapping does not restore the state; start a new flow to retry. Cookie
+cleanup alone cannot provide this property. Stateless mode deliberately leaves
+CSRF and replay protection to the application.
+
+This store supplies the one-time state boundary described in
+[OAuth Security BCP](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.7.1).
+Storage atomicity remains the application's responsibility. The native local
+tests verify the generated SQLite/D1 composition; they do not prove a live
+provider registration or deployed database configuration.
 
 ## 1. Register an OAuth app with your provider
 
@@ -76,6 +111,7 @@ or `vars` in `wrangler.jsonc`).
 import { createOAuth } from '@cossackframework/auth';
 
 export const oauth = createOAuth({
+    stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
     secret: env.OAUTH_STATE_SECRET, // ⚠️ at least 16 chars; use a 32-byte random value
     providers: {
         github: {
@@ -89,6 +125,8 @@ export const oauth = createOAuth({
 
 The `secret` signs the state cookie. Generate one with, for example,
 `openssl rand -base64 32`. Keep it out of version control.
+`oauthStateStore` is the application's implementation described above. In the
+generated auth module it is declared before constructing the OAuth kit.
 
 ## 3. Mount the routes
 
@@ -144,10 +182,12 @@ this immutable error. Log `error.toJSON()` instead of the callback URL or contex
 | --- | --- | --- |
 | Missing configuration or invalid state secret | `configuration` | 500 |
 | Redirect preparation | `redirect` | 500 |
+| State record insertion | `state-create` | 500 |
+| Atomic state consumption | `state-consume` | 500 |
 | Missing callback parameters | `callback` | 400 |
 | Denied consent | `callback` | 403 |
 | Provider authorization rejection | `callback` | 502 |
-| Missing, expired, invalid or mismatched state | `state` | 400 |
+| Missing, expired, invalid, mismatched or consumed state | `state` | 400 |
 | Token exchange | `token-exchange` | 502 |
 | Profile fetch or normalization | `user-info` | 502 |
 | Application `onUser`, account lookup or session creation | `account-mapping` | 500 |
@@ -157,8 +197,8 @@ Configuration errors throw when constructing a kit or route. Redirect failures
 use the default diagnostic response. Callback errors call `onError`. Returning
 no response keeps the default response; a throwing handler gets its own diagnostic.
 Configured cookie-based callbacks clear their state cookie on success and failure,
-including denied consent and missing parameters. Cookie deletion does not provide
-an atomic server replay store. An error cannot undo application effects already
+including denied consent and missing parameters. The separate required state store
+provides atomic server consumption. An error cannot undo application effects already
 performed by `onUser`.
 
 ## The `onUser` callback
@@ -281,6 +321,7 @@ const discord = defineOAuthProvider({
 });
 
 export const oauth = createOAuth({
+    stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
     secret: env.OAUTH_STATE_SECRET,
     providers: {
         discord: { clientId: '...', clientSecret: '...', redirectUrl: '/auth/discord/callback' },
@@ -294,8 +335,13 @@ Custom provider ids must not shadow a first-party id (`github`, `google`,
 
 ## Overriding cookie defaults
 
+Names and paths are checked before state storage. `__Host-` and `__Secure-`
+names require explicit `secure: true`; `__Host-` also requires `path: '/'`.
+Clearing preserves these flags, including for raw or immutable custom Responses.
+
 ```ts
 createOAuth({
+    stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
     secret: env.OAUTH_STATE_SECRET,
     cookie: {
         name: 'my_oauth_state',  // default: 'cossack_oauth_state'
@@ -328,6 +374,10 @@ createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* .
 The flow layer is unit-tested with mocked `fetch` (`vi.stubGlobal('fetch', ...)`).
 The full redirect→callback round-trip (state cookie, PKCE, token exchange,
 userinfo, `onUser`) is covered in `packages/auth/tests/handler.test.ts`.
+Replay, storage failure and custom-response cookie checks are in
+`packages/auth/tests/oauth-replay.test.ts`. Generated Node SQLite and Cloudflare
+D1 tests run a loopback provider that accepts repeated codes, then verify that
+the application's state store admits one exchange and one account/session only.
 
 For end-to-end testing against a real provider, set the credentials via env
 and gate the test behind `process.env.E2E_OAUTH === '1'` so it is opt-in.
@@ -337,5 +387,6 @@ It does not link an existing account by email alone. Add an authenticated accoun
 linking flow if users need multiple login providers for the same account.
 
 Deleting an OAuth state cookie ends the normal browser round-trip. It does not
-provide a server-side replay ledger. Authorization codes remain subject to the
-provider's one-time exchange rules.
+provide the server-side replay boundary. The required `OAuthStateStore` supplies
+atomic consumption before exchange. Authorization codes also remain subject to
+the provider's one-time exchange rules.

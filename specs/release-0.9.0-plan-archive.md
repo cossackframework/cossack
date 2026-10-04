@@ -4,6 +4,33 @@ Historical snapshot saved by Codex on 2026-10-04. Status statements below reflec
 earlier checkpoints. Use the [active plan](./release-0.9.0-plan.md) and
 [release checklist](./release-0.9.0.md) for current status.
 
+<a id="codex-rt13-final-plan-2026-10-05"></a>
+## Codex: Completed RT-13 context (2026-10-05)
+
+RT-13 is complete against its [original criteria](#rt-13). The purpose was to
+share authentication behavior across generated apps and expose useful failures
+without copying credential/session implementations or leaking sensitive values.
+The [criterion audit](./release-0.9.0-verification-archive.md#codex-rt13-complete-2026-10-05)
+links the source, exact checks and limits. The current release has 28 complete
+and 30 open tasks; historical counts below describe their original checkpoints.
+
+Auth owns typed password hashing, conditional credential upgrades, persistent
+session expiry/rotation/revocation, fixed diagnostics and OAuth state lifecycle.
+Generated apps retain user models, safe-user mapping, role queries and atomic SQL
+storage. Cookie-based OAuth requires an `OAuthStateStore`; it consumes state
+before exchange and does not restore it after exchange/profile/mapping failure.
+Native SQLite/D1 tests prove one exchange, linked account and session despite a
+loopback provider accepting repeated codes. The four installed auth examples
+compile and execute offline. Auth has no framework/database dependency.
+
+Preserve the [password-format and state-store migrations](./migration-0.9.0.md),
+cookie flags and raw-response cleanup, complete-record rotation comparison,
+purpose separation, exact expiry and neutral catalog execution claims.
+Applications own store atomicity, expired-state cleanup and stronger account
+transactions. Stateless mode owns CSRF/replay policy. Native connection freshness
+remains RT-11 work; live-provider/deployment and production hashing budgets are
+not established by local fixtures. Broader CLI-08 and release gates remain open.
+
 This document explains all 58 tasks in the release checklist. It gives GLM the
 reason for each task, the intended result, a starting implementation approach,
 and the evidence needed to finish it. The implementation baseline is commit

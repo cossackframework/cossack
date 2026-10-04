@@ -1,7 +1,7 @@
 # Cossack 0.9.0 continuation notes
 
 Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
-27 of 58 release tasks are complete. 31 remain open.
+28 of 58 release tasks are complete. 30 remain open.
 Versions stay at 0.8.3 until REL-04.
 Codex owns the remaining work. The user no longer plans a GLM handoff.
 
@@ -20,11 +20,15 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 27 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 28 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
-Latest completed checkpoint: [Desktop development and RT-28 audit](./release-0.9.0.md#codex-rt28-complete-2026-10-04).
-The installed native gate, trace parity, production exclusion and relevant
-regressions pass. REL-03 remains open for the required non-Desktop release matrix.
+Latest completed checkpoint: [RT-13 credentials, sessions and atomic OAuth state](./release-0.9.0.md#codex-rt13-complete-2026-10-05).
+Generated Node SQLite and Cloudflare D1 verify persistent session expiry/rotation,
+callback replay, failed exchange and account mapping. Preserve required state
+storage, fixed diagnostics, cookie policy and explicit migration instructions.
+The full [criterion audit](./release-0.9.0-verification-archive.md#codex-rt13-complete-2026-10-05)
+separates local native fixtures from deployed readiness. REL-03 remains open for
+the required non-Desktop release matrix.
 
 ## Continue here — Codex, 2026-10-05
 
@@ -46,27 +50,26 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
    Preserve the separate legacy `implicitEntry`, static TypeScript source indexing
    and four examples checked with Bundler resolution, bundled from installed
    packages and run offline.
-   [Primitive evidence](./release-0.9.0.md#codex-rt13-primitives-2026-10-05)
+   [Auth acceptance evidence](./release-0.9.0.md#codex-rt13-complete-2026-10-05)
    separates memory examples from real Node SQLite/Cloudflare D1 session checks
-   and the protected-route browser regression. Bundling does not prove plain
+   and the protected-route browser regression. OAuth examples now provide typed
+   state storage, and native fixtures prove one exchange/account/session despite
+   a provider that accepts repeated codes. Bundling does not prove plain
    Node imports or production hashing limits.
    Continue other library and UI guidance and the remaining runtime coverage.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
-2. Finish **[RT-13](./release-0.9.0-plan.md#rt-13)** atomic OAuth callback replay
-   prevention and the full acceptance audit. Preserve shared password hashing,
-   typed credential verification and persistent session operations. Generated
-   SQL rotation matches the complete active record and admits one winner.
-   Reset tokens remain a separate purpose. Preserve fixed OAuth codes/stages, safe `onError`
-   errors and warning redaction. Generated Node/Cloudflare callbacks pass native
-   rejection checks. Cookie deletion does not satisfy atomic replay acceptance.
-   Current expiry/rotation and revocation checks pass on Node and Cloudflare.
-   Preserve the explicit password-format migration. Keep the database
-   JSON bootstrap in default CommonJS eval mode so Miniflare's inherited Worker
-   can start. See [primitive evidence](./release-0.9.0.md#codex-rt13-primitives-2026-10-05)
-   and [diagnostic evidence](./release-0.9.0.md#codex-rt13-diagnostics-2026-10-05).
+2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
+   recipes. Review found concrete gaps in the generated session dashboard:
+   `listUserSessions` exposes bearer token IDs through `SessionInfo.id` into
+   `@State()`, `revokeSession` deletes by ID without owner/purpose checks, and
+   dashboard catches copy raw storage messages into public error state.
+   Add safe public references, server ownership/purpose enforcement and fixed
+   errors, with native SSR/RPC tests for disclosure and forged revocation.
+   Then finish sensitive old-input filtering and the remaining RT-11 criteria.
+   Preserve RT-13's shared-library regression coverage during these changes.
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
-4. Follow the detailed plan for all 31 open tasks. Close each only against its
+4. Follow the detailed plan for all 30 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 
 ## Limits to retain
@@ -106,5 +109,7 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
   Run heavy CLI/generated suites without competing heavy jobs.
 - Preserve the user's `reports.md` and `.zcodeignore`. Do not stage them.
   Use `git diff --check -- . ':!reports.md'` for the known report whitespace exception.
+- Keep the database JSON bootstrap in default CommonJS eval mode. Miniflare
+  Workers inherit eval flags; `--input-type=module` stalls the synchronous bridge.
 - Codex continues the remaining tasks. These notes do not authorize delegation, new chats, messages, publishing or deployment.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.

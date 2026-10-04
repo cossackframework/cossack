@@ -130,8 +130,9 @@ the separate `OAuthError` contract.
 
 Operations that fail after a committed write do not roll that write back. A
 session that expires during storage completion issues no cookie. Request
-validation does not refresh the identity of an already-open WebSocket. Callback
-cookie deletion does not provide atomic OAuth replay protection.
+validation does not refresh the identity of an already-open WebSocket. OAuth
+uses the separate required `OAuthStateStore` for atomic callback consumption;
+cookie deletion alone does not supply that guarantee.
 
 The packaged `credential-and-session-primitives` agent guide includes an
 executable typed example. Its memory store illustrates callbacks; generated

@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
 Desktop-only platform checks are waived for this release, not reported as passed.
 Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
 tooling and Cloudflare. This closes Desktop scope within the existing tasks;
-the release count remains 27 of 58 complete.
+the release now has 28 of 58 tasks complete, including RT-13 below.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -41,7 +41,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
-- [ ] [RT-13](./release-0.9.0-plan.md#rt-13) Auth/OAuth failure diagnostics and reusable credential/session primitives in the auth library. Codex (2026-10-05): generated apps now use shared password, credential and persistent session contracts. Node SQLite and Cloudflare D1 verify expiry, single-winner rotation, revocation and reset-token separation. Typed diagnostics and cookie cleanup pass. Atomic OAuth callback replay acceptance remains open. See [primitive checkpoint](#codex-rt13-primitives-2026-10-05).
+- [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
 - [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
@@ -93,6 +93,19 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-rt13-complete-2026-10-05"></a>
+### Codex: Atomic OAuth state and RT-13 completion (2026-10-05)
+
+Cookie flows now require an atomic state store. Generated apps consume a
+provider-bound state record before token exchange, with one concurrent winner.
+Native SQLite/D1 fixtures verify replay rejection independently of provider code
+reuse, failed exchange/mapping, expiry and purpose separation. Cookie clearing
+also survives prefixed cookies and raw or immutable custom Responses.
+The original RT-13 criteria are all verified. Auth **261/11**, scaffold **116/8**,
+native/browser checks, root/package types and the installed guide gate pass.
+See [criterion audit, commands and limits](./release-0.9.0-verification-archive.md#codex-rt13-complete-2026-10-05).
+**28 complete / 30 open.** CLI-08 and broader release gates stay open; Desktop stays closed.
 
 <a id="codex-rt13-primitives-2026-10-05"></a>
 ### Codex: Shared credentials and persistent sessions (2026-10-05)
@@ -285,7 +298,7 @@ are waived by the user's decision to mark Desktop complete for this release.
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
 remain in the [verification archive](./release-0.9.0-verification-archive.md). Existing checkpoint
 anchors below link to those records. Archiving a checkpoint does not complete its
-parent task. Current status is 27 complete and 31 open.
+parent task. Current status is 28 complete and 30 open.
 
 | Recorded checkpoint and full evidence |
 | --- |

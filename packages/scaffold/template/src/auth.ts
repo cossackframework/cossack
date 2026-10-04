@@ -23,11 +23,9 @@ import { Session } from '@/models/Session';
 const SESSION_COOKIE = 'session_id';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-// The sessions table stores BOTH auth sessions and password-reset tokens (both
-// are just rows keyed by a random id with a user_id + expiry). We use the
-// `meta` JSON column to discriminate them so session listings only show real
-// auth sessions.
-type SessionMeta = { type: 'auth' } | { type: 'password_reset' };
+// Purpose tags separate auth sessions, password-reset tokens and the OAuth
+// recipe's anonymous state records. Session listings show only auth rows.
+type SessionMeta = { type: 'auth' } | { type: 'password_reset' } | { type: 'oauth_state'; provider: string };
 
 let warnedAboutSessionDatabase = false;
 

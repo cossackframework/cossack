@@ -369,9 +369,17 @@ record; the generated SQL adapter enforces a single winner. Default cookies are
 Secure, HttpOnly and SameSite=Lax. Returned headers are applied after storage
 success; a later failure does not undo a committed write.
 
-Callback handlers clear state cookies, including early rejection. This is browser
-cleanup, not an atomic replay store or rollback of application writes. Atomic
-OAuth callback replay acceptance remains RT-13 work. Persistent request validation
+Cookie-based OAuth requires an application-owned `OAuthStateStore`. Auth prepares
+a provider-scoped SHA-256 state key with absolute timestamps, registers it before
+issuing the signed cookie, and atomically consumes it before token exchange.
+The generated store uses anonymous state-purpose session rows and one conditional
+SQL delete against provider, purpose and expiry. A read followed by deletion is
+insufficient. State remains consumed after exchange, profile or mapping failure.
+No authorization code, verifier or credential enters the state record. Stateless
+mode owns its CSRF and replay policy. Expired abandoned rows need app cleanup.
+
+Callback handlers also clear browser cookies, including early rejection. This
+does not roll back storage or application writes. Persistent request validation
 does not imply identity refresh on an already-open transport connection.
 
 The Node-only database JSON subprocess isolates project output and communicates

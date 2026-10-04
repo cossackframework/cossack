@@ -11,7 +11,9 @@ import {
     constantTimeEqual,
     consumeStateCookie,
     clearStateCookie,
+    withClearedStateCookie,
     generateState,
+    stateKey,
     setStateCookie,
     type StateCookieOptions,
 } from './state';
@@ -87,36 +89,27 @@ export function createOAuthHandlers(
             try {
                 const usePkce = !deps.config.stateless;
                 const secret = usePkce ? await resolveSecret(deps.config, c) : undefined;
-                return await runOAuthStage('COSSACK_OAUTH_REDIRECT_FAILED', async () => {
+                const prepared = await runOAuthStage('COSSACK_OAUTH_REDIRECT_FAILED', async () => {
                     const state = generateState();
                     const redirectUrl = resolveRedirectUrl(config.redirectUrl, c);
-
-                    // PKCE requires recovering the verifier across the round-trip,
-                    // which needs the state cookie. In stateless mode there is no
-                    // cookie store, so PKCE is skipped — the developer is then
-                    // responsible for CSRF protection (see docs/oauth.md).
                     const pkce = usePkce ? await createPkcePair() : null;
-
-                    const authorizeUrl = buildAuthorizeUrl({
-                        definition,
-                        config,
-                        redirectUrl,
-                        state,
-                        codeChallenge: pkce?.codeChallenge,
-                    });
-
-                    if (usePkce) {
-                        await setStateCookie(
-                            c,
-                            { state, codeVerifier: pkce!.codeVerifier },
-                            secret!,
-                            deps.cookieOptions,
-                            deps.requestIsSecure(c),
-                        );
-                    }
-
-                    return c.redirect(authorizeUrl);
+                    const authorizeUrl = buildAuthorizeUrl({ definition, config, redirectUrl, state,
+                        codeChallenge: pkce?.codeChallenge });
+                    return { state, pkce, authorizeUrl };
                 });
+                if (usePkce) {
+                    const createdAt = Date.now();
+                    const expiresAt = createdAt + (deps.cookieOptions.maxAge ?? 600) * 1000;
+                    await runOAuthStage('COSSACK_OAUTH_STATE_CREATE_FAILED', async () => {
+                        const key = await stateKey(providerId, prepared.state);
+                        await deps.config.stateStore!.create(Object.freeze({ key, provider: providerId, createdAt, expiresAt }), c);
+                    });
+                    if (expiresAt <= Date.now()) throw new OAuthError('COSSACK_OAUTH_STATE_UNAVAILABLE');
+                    await runOAuthStage('COSSACK_OAUTH_REDIRECT_FAILED', () => setStateCookie(c,
+                        { state: prepared.state, codeVerifier: prepared.pkce!.codeVerifier }, secret!,
+                        deps.cookieOptions, deps.requestIsSecure(c), expiresAt));
+                }
+                return c.redirect(prepared.authorizeUrl);
             } catch (err) {
                 return defaultErrorHandler(safeOAuthError(err, 'COSSACK_OAUTH_REDIRECT_FAILED'), c);
             }
@@ -131,6 +124,7 @@ export function createOAuthHandlers(
         }): MiddlewareHandler =>
         async (c: Context, next): Promise<Response | void> => {
             const onError = opts.onError ?? defaultErrorHandler;
+            const finish = (response: Response) => deps.config.stateless ? response : withClearedStateCookie(response, c, deps.cookieOptions);
             let stateCookieConsumed = false;
             try {
                 const url = new URL(c.req.raw.url);
@@ -146,6 +140,7 @@ export function createOAuthHandlers(
                 }
 
                 let storedVerifier: string | undefined;
+                let storedExpiry: number | undefined;
                 if (!deps.config.stateless) {
                     const secret = await resolveSecret(deps.config, c);
                     stateCookieConsumed = true;
@@ -156,13 +151,22 @@ export function createOAuthHandlers(
                     if (!constantTimeEqual(stored.state, state)) {
                         throw new OAuthError('COSSACK_OAUTH_STATE_MISMATCH');
                     }
+                    const consumed = await runOAuthStage('COSSACK_OAUTH_STATE_CONSUME_FAILED', async () => {
+                        const key = await stateKey(providerId, stored.state);
+                        return deps.config.stateStore!.consume(key, providerId, Date.now(), c);
+                    });
+                    if (consumed !== true) throw new OAuthError('COSSACK_OAUTH_STATE_UNAVAILABLE');
                     storedVerifier = stored.codeVerifier;
+                    storedExpiry = stored.expiresAt;
                 }
                 // In stateless mode there is no verifier to recover (PKCE was
                 // not sent on the redirect). `exchangeCode` omits the
                 // `code_verifier` field when `storedVerifier` is undefined.
 
                 const redirectUrl = await runOAuthStage('COSSACK_OAUTH_CONFIGURATION_INVALID', () => resolveRedirectUrl(config.redirectUrl, c));
+                // Storage may await queued I/O. Recheck the signed absolute
+                // deadline before any provider request, even if consumption won.
+                if (storedExpiry !== undefined && storedExpiry <= Date.now()) throw new OAuthError('COSSACK_OAUTH_STATE_UNAVAILABLE');
                 const tokens = await exchangeCode({
                     definition,
                     config,
@@ -175,7 +179,7 @@ export function createOAuthHandlers(
 
                 const result = await runOAuthStage('COSSACK_OAUTH_ACCOUNT_MAPPING_FAILED', () => opts.onUser(user, tokens, c));
                 if (result instanceof Response) {
-                    return result;
+                    return finish(result);
                 }
                 return opts.successRedirect
                     ? c.redirect(opts.successRedirect)
@@ -185,7 +189,7 @@ export function createOAuthHandlers(
                 const diagnostic = safeOAuthError(err, 'COSSACK_OAUTH_CALLBACK_INVALID');
                 try {
                     const result = await onError(diagnostic, c);
-                    if (result instanceof Response) return result;
+                    if (result instanceof Response) return finish(result);
                     return defaultErrorHandler(diagnostic, c);
                 } catch {
                     return defaultErrorHandler(new OAuthError('COSSACK_OAUTH_ERROR_HANDLER_FAILED'), c);

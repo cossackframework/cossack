@@ -3,13 +3,14 @@ import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createOAuth } from '../src/oauth';
 import { signCookieValue } from '../src/oauth/state';
-import { mockFetch, restoreFetch } from './helpers';
+import { mockFetch, restoreFetch, memoryOAuthStates } from './helpers';
 
 const SECRET = 'test-secret-0123456789-abcdef-0123456789';
 
 function buildApp(opts?: Parameters<typeof createOAuth>[0]) {
     const oauth = createOAuth(
         opts ?? {
+            stateStore: memoryOAuthStates().store,
             secret: SECRET,
             providers: {
                 github: {
@@ -70,6 +71,7 @@ describe('createOAuth — redirect handler', () => {
     it('throws if the provider is unknown', () => {
         expect(() =>
             createOAuth({
+                stateStore: memoryOAuthStates().store,
                 secret: SECRET,
                 providers: {},
             }).redirect('totally-unknown-provider'),
@@ -79,6 +81,7 @@ describe('createOAuth — redirect handler', () => {
     it('throws if the provider has no credentials configured', () => {
         expect(() =>
             createOAuth({
+                stateStore: memoryOAuthStates().store,
                 secret: SECRET,
                 providers: {},
             }).redirect('github'),
@@ -88,6 +91,7 @@ describe('createOAuth — redirect handler', () => {
     it('rejects a too-short secret', () => {
         expect(() =>
             createOAuth({
+                stateStore: memoryOAuthStates().store,
                 secret: 'short',
                 providers: {},
             }),
@@ -97,6 +101,7 @@ describe('createOAuth — redirect handler', () => {
     it('supports request-scoped secret resolvers', async () => {
         const resolver = vi.fn(() => SECRET);
         const { app } = buildApp({
+            stateStore: memoryOAuthStates().store,
             secret: resolver,
             providers: {
                 github: {
@@ -113,6 +118,7 @@ describe('createOAuth — redirect handler', () => {
 
     it('reports an invalid resolved secret at request time', async () => {
         const { app } = buildApp({
+            stateStore: memoryOAuthStates().store,
             secret: () => '',
             providers: {
                 github: {
@@ -246,6 +252,7 @@ describe('createOAuth — callback handler (failure modes)', () => {
 
     it('invokes onError when provided', async () => {
         const oauth = createOAuth({
+            stateStore: memoryOAuthStates().store,
             secret: SECRET,
             providers: {
                 github: {
@@ -270,6 +277,7 @@ describe('createOAuth — callback handler (failure modes)', () => {
 
     it('honors an onUser Response return value', async () => {
         const oauth = createOAuth({
+            stateStore: memoryOAuthStates().store,
             secret: SECRET,
             providers: {
                 github: {
@@ -406,6 +414,7 @@ describe('createOAuth — custom providers', () => {
     it('rejects custom provider that shadows a first-party id', () => {
         expect(() =>
             createOAuth({
+                stateStore: memoryOAuthStates().store,
                 secret: SECRET,
                 providers: {},
                 customProviders: {

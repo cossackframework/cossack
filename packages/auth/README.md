@@ -17,7 +17,8 @@ Cossack and its packages.
 - **OAuth 2.0** : `createOAuth()` with first-party providers for **GitHub,
  Google, GitLab, Facebook, and Microsoft**, plus a `defineOAuthProvider()`
  helper for any custom provider. Implements the full Authorization Code flow
- with PKCE (S256) and signed-cookie CSRF state by default.
+ with PKCE (S256), signed-cookie CSRF state and required atomic state storage
+ for cookie flows.
 - **Authorization** : `createAuthorizer()` returns role/permission middleware
  factories (`requireUser`, `requireRole`, `requirePermission`, plus AND/OR
  variants) driven by your own callbacks.
@@ -72,11 +73,18 @@ the **authorized redirect URL** to e.g. `https://yourapp.example/auth/github/cal
 
 ### 2. Configure `createOAuth()`
 
+Cookie flows require application-owned `OAuthStateStore` callbacks. The generated
+auth module exports `oauthStateStore`, which inserts anonymous state-purpose rows
+and consumes them through one conditional SQL delete. Handwritten applications
+must provide the same atomic create/consume contract. See
+[atomic state storage](../../docs/oauth.md#atomic-state-storage).
+
 ```ts
 // src/auth.ts (continue from above)
 import { createOAuth } from '@cossackframework/auth';
 
 export const oauth = createOAuth({
+    stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
     secret: env.OAUTH_STATE_SECRET, // at least 16 chars; use a 32+ byte random value
     providers: {
         github: {
@@ -188,6 +196,7 @@ const discord = defineOAuthProvider({
 });
 
 export const oauth = createOAuth({
+    stateStore: oauthStateStore, // application-owned atomic create/consume callbacks
     secret: env.OAUTH_STATE_SECRET,
     providers: { discord: { clientId: '...', clientSecret: '...', redirectUrl: '/auth/discord/callback' } },
     customProviders: { discord },
@@ -198,8 +207,9 @@ export const oauth = createOAuth({
 
 - **PKCE (S256)** is on by default for every provider (RFC 9700 recommendation).
 - **State** is a 128-bit random nonce, stored in an HttpOnly `SameSite=Lax`
- cookie signed with HMAC-SHA256, compared in **constant time**, and
- deleted on callback read, with expiration enforced in the signed payload.
+ cookie signed with HMAC-SHA256, compared without an early mismatch exit, and
+ deleted on callback read. The required server store atomically consumes
+ provider-bound state before token exchange; cookie and storage expiry are checked.
 - The `redirect_uri` sent on the authorize request is reused unchanged on the
  token-exchange request (exact string match).
 

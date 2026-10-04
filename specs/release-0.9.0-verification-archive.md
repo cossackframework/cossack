@@ -6,6 +6,88 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt13-complete-2026-10-05"></a>
+### Codex: Atomic OAuth state and RT-13 acceptance audit (2026-10-05)
+
+Author: Codex. Cookie-based OAuth now requires typed `OAuthStateStore` callbacks.
+`create` inserts a frozen provider-scoped SHA-256 key and absolute timestamps.
+Rows contain no authorization code, PKCE verifier or provider credential.
+`consume` must atomically remove a matching unexpired provider record; only
+boolean true grants token exchange. The generated adapter uses anonymous
+`sessions` rows with canonical `oauth_state` metadata and one conditional SQL
+delete. Auth/reset records cannot satisfy this purpose. The existing schema
+requires no new columns. Expired abandoned state requires application cleanup.
+
+State is consumed after signed-cookie and nonce validation, before provider I/O.
+It stays consumed after failed exchange, profile processing or account mapping.
+The handler also rechecks the signed absolute deadline after awaited storage.
+Concurrent requests cannot repeat exchange or account/session creation. An old
+cookie without a registered server state is rejected. Explicit stateless mode
+retains application-owned CSRF/replay behavior and does not accept a state store.
+The migration guide records the required callbacks and new-flow retry policy.
+
+State-storage failures have fixed `state-create`/`state-consume` diagnostics.
+Used, expired or missing records get `COSSACK_OAUTH_STATE_UNAVAILABLE` and 400.
+Cookie names, paths, same-site policy and prefix constraints are checked before
+storage effects. Cookie clearing preserves Secure/HttpOnly/same-site flags.
+Raw and immutable custom Responses now retain state clearing, application cookies
+and streaming bodies. Before this fix, a raw Response could discard the clear
+that Hono had prepared. Signed-cookie parsing rejects oversized values,
+noncanonical signatures and invalid absolute timestamps before expensive work.
+JavaScript comparison documentation no longer claims a formal constant-time guarantee.
+
+Native generated Node SQLite and Cloudflare D1 fixtures use a loopback provider.
+That provider deliberately accepts repeated authorization codes, so its policy
+cannot mask app replay failures. Two concurrent callbacks yield one success and
+one state rejection; a later replay is rejected before provider I/O. There is
+one exchange, one profile request, one linked account and one auth session.
+The fixture independently checks the PKCE challenge and verifier. Failed exchange
+and mapping remain consumed and expose safe stages. Wrong provider, expired
+database state and reset-purpose rows cannot exchange. These are local fixture
+checks, not live provider or remote deployment evidence.
+
+Original RT-13 acceptance audit:
+
+| Criterion | Authoritative evidence |
+| --- | --- |
+| Generated apps consume shared credential/session primitives | [Generated auth](../packages/scaffold/template/src/auth.ts), OAuth composition in [scaffold](../packages/scaffold/src/index.js), and real generated Node/Cloudflare login/session tests. |
+| Expiry and rotation | [Primitive tests](../packages/auth/tests/auth-primitives.test.ts) and [native fixture](../packages/cossack/tests/fixtures/auth-primitives-acceptance.js): exact expiry, delayed completion, one rotation winner, old-token invalidation, revocation and reset-purpose separation. |
+| Callback replay | [Replay tests](../packages/auth/tests/oauth-replay.test.ts) and [native fixture](../packages/cossack/tests/fixtures/oauth-replay-acceptance.js): one winner before provider I/O, later replay rejection and one account/session. |
+| Failed exchange and account mapping | [Diagnostic tests](../packages/auth/tests/oauth-diagnostics.test.ts), replay tests and native loopback cases check stages, raw-error redaction and irreversible state consumption. |
+| Useful diagnostics without sensitive values | Fixed OAuth/Auth error contracts; crypto/storage/provider/model failure tests omit causes, bodies, codes, tokens and credentials. Prefixed and custom-response cookies clear correctly. |
+| Library independent of framework/database | Auth source imports Web APIs, Hono and local modules only; no framework/database imports or dependencies. User models, SQL and persistence stay in the generated application. |
+
+Verification:
+
+- `pnpm --filter @cossackframework/auth exec vitest run`: **261 tests / 11 files pass**.
+  Log: `/tmp/cossack-rt13-replay-auth.log`.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: **116 tests / 8 files pass**.
+  Log: `/tmp/cossack-rt13-replay-scaffold.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'serves generated authentication primitives|runs the protected-route recipe'`:
+  **3 pass, 55 unrelated cases skipped**. Includes generated app type checks,
+  local migrations, production builds, loopback OAuth and protected-route browser
+  behavior. Log: `/tmp/cossack-rt13-replay-native.log`.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck` pass for all **11 packages**.
+  Logs: `/tmp/cossack-rt13-replay-root-types.log`, `/tmp/cossack-rt13-replay-package-types.log`.
+- `pnpm test:agent-docs:local`: passes sequential builds, **12 tarballs**,
+  **10 standalone and 4 bundled auth examples**, reporter types, offline CLI/MCP
+  parity, Cloudflare HTTP/SSE/WebSocket browser traces, production exclusion,
+  three packaged application pages with source maps and UI catalogs. Installed
+  tools: Wrangler **4.147.0**, Cloudflare Vite plugin **1.62.5**, Vite **8.3.2**
+  and TypeScript **7.0.2**. The final gate includes upfront cookie validation.
+  Log: `/tmp/cossack-rt13-replay-installed.log`.
+
+Limits to retain: Storage callbacks own atomicity and durable consistency. The
+offline memory guide does not establish cross-Worker atomicity. Local fixtures do
+not prove provider registration, production hashing budgets or remote readiness.
+State consumption does not roll back later account/session writes. Persistent
+HTTP validation does not refresh existing sockets; that remains RT-11 transport
+policy. CLI-08 and REL-02/REL-03 retain their broader acceptance gates. Desktop
+stays closed by user decision. No deployment, provisioning, publication or push occurred.
+
+**RT-13 is complete against its original criteria. The release has 28 complete
+tasks and 30 open tasks out of 58.** The full goal remains active.
+
 <a id="codex-rt13-primitives-2026-10-05"></a>
 ### Codex: Shared credentials and persistent sessions (2026-10-05)
 

@@ -1,4 +1,4 @@
-import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { getCookie, setCookie, generateCookie } from 'hono/cookie';
 import type { Context } from 'hono';
 
 /**
@@ -14,9 +14,8 @@ export function base64url(bytes: ArrayBuffer | Uint8Array): string {
 }
 
 /**
- * Constant-time string comparison. Defends against timing attacks on the OAuth
- * `state` parameter. Iterates the full length every time; safe even for
- * unequal-length inputs (returns false without leaking length info).
+ * Compare all bytes without an early mismatch exit. JavaScript does not provide
+ * a formal constant-time guarantee; the loop length depends on the input lengths.
  */
 export function constantTimeEqual(a: string, b: string): boolean {
     const encoder = new TextEncoder();
@@ -43,11 +42,19 @@ export function generateState(): string {
     return base64url(bytes);
 }
 
+/** Provider-scoped digest for persistent storage; raw nonces stay out of database rows. */
+export async function stateKey(provider: string, state: string): Promise<string> {
+    const input = new TextEncoder().encode(JSON.stringify(['cossack-oauth-state', provider, state]));
+    return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', input)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /** Shape persisted in the signed cookie across the OAuth round-trip. */
 export interface OAuthStatePayload {
     state: string;
     codeVerifier: string;
 }
+
+export interface VerifiedStateCookie extends OAuthStatePayload { readonly expiresAt: number; }
 
 /**
  * HMAC-SHA256 sign a message with a secret, returning a base64url signature.
@@ -70,8 +77,8 @@ async function hmac(message: string, secret: string): Promise<string> {
  * Serialize + sign a payload. Format: `base64url(payload).base64url(hmac)`.
  * Tampering with either segment fails verification.
  */
-export async function signCookieValue(payload: OAuthStatePayload, secret: string, maxAge = 600): Promise<string> {
-    const json = JSON.stringify({ ...payload, expiresAt: Date.now() + maxAge * 1000 });
+export async function signCookieValue(payload: OAuthStatePayload, secret: string, maxAge = 600, expiresAt = Date.now() + maxAge * 1000): Promise<string> {
+    const json = JSON.stringify({ ...payload, expiresAt });
     const encoded = base64url(new TextEncoder().encode(json));
     const sig = await hmac(encoded, secret);
     return `${encoded}.${sig}`;
@@ -81,11 +88,13 @@ export async function signCookieValue(payload: OAuthStatePayload, secret: string
  * Verify the signature and decode the payload. Returns `null` on any failure
  * (bad format, signature mismatch, invalid JSON).
  */
-export async function verifyCookieValue(token: string, secret: string): Promise<OAuthStatePayload | null> {
+export async function verifyCookieValue(token: string, secret: string): Promise<VerifiedStateCookie | null> {
+    if (typeof token !== 'string' || token.length > 4096) return null;
     const dot = token.lastIndexOf('.');
     if (dot <= 0) return null;
     const encoded = token.slice(0, dot);
     const sig = token.slice(dot + 1);
+    if (!/^[A-Za-z0-9_-]{43}$/.test(sig)) return null;
 
     const expected = await hmac(encoded, secret);
     if (!constantTimeEqual(sig, expected)) return null;
@@ -97,8 +106,8 @@ export async function verifyCookieValue(token: string, secret: string): Promise<
         );
         const parsed = JSON.parse(json) as OAuthStatePayload & { expiresAt: number };
         if (typeof parsed.state !== 'string' || typeof parsed.codeVerifier !== 'string') return null;
-        if (!Number.isFinite(parsed.expiresAt) || parsed.expiresAt <= Date.now()) return null;
-        return { state: parsed.state, codeVerifier: parsed.codeVerifier };
+        if (!Number.isSafeInteger(parsed.expiresAt) || parsed.expiresAt <= Date.now() || parsed.expiresAt > 8_640_000_000_000_000) return null;
+        return Object.freeze({ state: parsed.state, codeVerifier: parsed.codeVerifier, expiresAt: parsed.expiresAt });
     } catch {
         return null;
     }
@@ -125,15 +134,17 @@ export async function setStateCookie(
     secret: string,
     options: StateCookieOptions,
     requestSecure: boolean,
+    expiresAt?: number,
 ): Promise<void> {
-    const value = await signCookieValue(payload, secret, options.maxAge ?? DEFAULT_MAX_AGE);
+    const value = await signCookieValue(payload, secret, options.maxAge ?? DEFAULT_MAX_AGE, expiresAt);
+    if (expiresAt !== undefined && expiresAt <= Date.now()) throw new Error('OAuth state expired before cookie creation.');
     const name = options.name ?? DEFAULT_COOKIE_NAME;
     setCookie(c, name, value, {
         httpOnly: true,
         secure: options.secure ?? requestSecure,
         sameSite: options.sameSite ?? 'Lax',
         path: options.path ?? '/',
-        maxAge: options.maxAge ?? DEFAULT_MAX_AGE,
+        maxAge: expiresAt === undefined ? options.maxAge ?? DEFAULT_MAX_AGE : Math.ceil((expiresAt - Date.now()) / 1000),
         domain: options.domain,
     });
 }
@@ -146,7 +157,7 @@ export async function consumeStateCookie(
     c: Context,
     secret: string,
     options: StateCookieOptions,
-): Promise<OAuthStatePayload | null> {
+): Promise<VerifiedStateCookie | null> {
     try {
         const token = getCookie(c, options.name ?? DEFAULT_COOKIE_NAME);
         if (!token) return null;
@@ -156,8 +167,23 @@ export async function consumeStateCookie(
 
 /** Clear the matching browser cookie even when the callback cannot read state. */
 export function clearStateCookie(c: Context, options: StateCookieOptions): void {
+    c.header('Set-Cookie', clearedStateCookie(c, options), { append: true });
+}
+
+function clearedStateCookie(c: Context, options: StateCookieOptions): string {
     const name = options.name ?? DEFAULT_COOKIE_NAME;
     // Always delete, even on failure, to finish the browser round-trip. Pass the same domain
     // (if any) used at set time so the deletion actually matches the cookie.
-    deleteCookie(c, name, { path: options.path ?? '/', domain: options.domain });
+    const secure = options.secure ?? (new URL(c.req.raw.url).protocol === 'https:' || c.req.header('x-forwarded-proto') === 'https');
+    return generateCookie(name, '', { path: options.path ?? '/', domain: options.domain,
+        secure, httpOnly: true, sameSite: options.sameSite ?? 'Lax', maxAge: 0 });
+}
+
+/** Raw/immutable application Responses do not inherit Hono's prepared cookies. */
+export function withClearedStateCookie(response: Response, c: Context, options: StateCookieOptions): Response {
+    const value = clearedStateCookie(c, options);
+    if (response.headers.getSetCookie().includes(value)) return response;
+    const headers = new Headers(response.headers);
+    headers.append('Set-Cookie', value);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }

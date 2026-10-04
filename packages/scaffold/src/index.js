@@ -1256,7 +1256,7 @@ function applyOauthToAuth(content, providers) {
   return content
     .replace(
       /^(import \{)([^}]*)(\} from '@cossackframework\/auth';)/m,
-      "$1 createOAuth, OAuthError, type OAuthKit, type OAuthUser, type TokenSet, $2$3\nimport { OAuthAccount } from '@/models/OAuthAccount';",
+      "$1 createOAuth, OAuthError, type OAuthKit, type OAuthUser, type OAuthStateStore, type TokenSet,$2$3\nimport { OAuthAccount } from '@/models/OAuthAccount';",
     )
     .concat(`
 
@@ -1291,9 +1291,26 @@ function oauthUnavailable(c: Context, error: OAuthError): Response {
   return c.json({ error: message, ...diagnostic }, error.status);
 }
 
+export const oauthStateStore: OAuthStateStore = {
+  async create(record) {
+    await Session.insert({ id: record.key, userId: null, data: null,
+      meta: { type: 'oauth_state', provider: record.provider },
+      createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
+      location: null, userAgent: null, ipAddress: null });
+  },
+  async consume(key, provider, now) {
+    // One conditional write owns callback replay. Never read then delete.
+    const result = await sql\`DELETE FROM sessions WHERE id = \${key}
+      AND user_id IS NULL AND meta = \${JSON.stringify({ type: 'oauth_state', provider })}
+      AND expires_at > \${new Date(Math.max(now, Date.now())).toISOString()}\`;
+    return result.meta.rowsAffected === 1;
+  },
+};
+
 function createOAuthForRequest(c: Context): OAuthKit {
   return createOAuth({
     secret: String(c.env.OAUTH_SECRET ?? ''),
+    stateStore: oauthStateStore,
     providers: {
 ${providerConfig}
     },

@@ -22,7 +22,7 @@ import {
  *
  * @example
  * ```ts
- * const oauth = createOAuth({ secret: env.SECRET, providers: { github: {...} } });
+ * const oauth = createOAuth({ secret: env.SECRET, stateStore, providers: { github: {...} } });
  * app.get('/auth/github/redirect', oauth.redirect('github'));
  * app.get('/auth/github/callback', oauth.callback('github', {
  *   async onUser(user, tokens, c) { /* ...create session... *\/; return c.redirect('/'); },
@@ -108,6 +108,26 @@ function buildOAuthKit(config: CreateOAuthConfig): OAuthKit {
         throw new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
     }
 
+    if (config.stateless !== undefined && typeof config.stateless !== 'boolean') throw new OAuthError('COSSACK_OAUTH_CONFIGURATION_INVALID');
+    if (config.stateless) {
+        if (config.stateStore !== undefined) throw new OAuthError('COSSACK_OAUTH_STATE_STORE_INVALID');
+    } else if (!config.stateStore || typeof config.stateStore.create !== 'function' || typeof config.stateStore.consume !== 'function') {
+        throw new OAuthError('COSSACK_OAUTH_STATE_STORE_INVALID');
+    }
+    const maxAge = config.cookie?.maxAge ?? 600;
+    if (!Number.isSafeInteger(maxAge) || maxAge < 1 || maxAge > 400 * 24 * 60 * 60) throw new OAuthError('COSSACK_OAUTH_CONFIGURATION_INVALID');
+    const name = config.cookie?.name ?? 'cossack_oauth_state';
+    const path = config.cookie?.path ?? '/';
+    const sameSite = config.cookie?.sameSite ?? 'lax';
+    const secure = config.cookie?.secure;
+    if (typeof name !== 'string' || !/^[!#$%&'*+.^_\x60|~0-9a-zA-Z-]+$/.test(name) ||
+        typeof path !== 'string' || !path.startsWith('/') || /[;\x00-\x20\x7f]/.test(path) ||
+        typeof sameSite !== 'string' || !['lax', 'strict', 'none'].includes(sameSite.toLowerCase()) ||
+        (secure !== undefined && typeof secure !== 'boolean') ||
+        (sameSite.toLowerCase() === 'none' && secure === false) ||
+        ((name.startsWith('__Host-') || name.startsWith('__Secure-')) && secure !== true) ||
+        (name.startsWith('__Host-') && path !== '/')) throw new OAuthError('COSSACK_OAUTH_CONFIGURATION_INVALID');
+
     const definitions = buildDefinitions(config);
     const cookieOptions = {
         name: config.cookie?.name,
@@ -147,6 +167,8 @@ export type {
     OAuthProviderDefinition,
     OAuthUser,
     OAuthUserCallback,
+    OAuthStateRecord,
+    OAuthStateStore,
     TokenSet,
 } from './types';
 export type {

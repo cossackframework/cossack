@@ -171,7 +171,7 @@ for (let i = 0; i < sources.length; i++) esbuild.buildSync({
     assert.equal(authDocs.ok, true);
     assert.equal(authDocs.data.coverage.runtimeSupport, 'not-verified');
     const authEntry = authDocs.data.packages[0].declarations.entries.find(entry => entry.sourceKind === 'typescript-source');
-    for (const name of ['createAuth', 'createAuthorizer', 'createResourcePolicy', 'ResourceAuthorizationError', 'OAuthError', 'AuthError', 'createPasswordHasher', 'createCredentialVerifier', 'createSessionManager']) {
+    for (const name of ['createAuth', 'createAuthorizer', 'createResourcePolicy', 'ResourceAuthorizationError', 'OAuthError', 'OAuthStateStore', 'OAuthStateRecord', 'AuthError', 'createPasswordHasher', 'createCredentialVerifier', 'createSessionManager']) {
       assert.ok(authEntry?.symbols.some(symbol => symbol.name === name && symbol.status === 'indexed'), `Missing auth symbol ${name}`);
     }
     const authRemote = await client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/auth', symbols: true } });

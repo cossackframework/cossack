@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { createOAuth, defineOAuthProvider, OAuthError, type OAuthErrorCallback, type OAuthProviderDefinition, type OAuthUserCallback } from '../src/index';
 import { exchangeCode, fetchUserInfo, parseTokenResponse } from '../src/oauth/flow';
 import { signCookieValue } from '../src/oauth/state';
-import { mockFetch, restoreFetch } from './helpers';
+import { mockFetch, restoreFetch, memoryOAuthStates } from './helpers';
 
 const secret = 'fixture-state-secret-01234567890123456789';
 const privateValue = 'PRIVATE_PASSWORD_TOKEN_CLIENT_SECRET';
@@ -17,7 +17,7 @@ const config = { clientId: 'fixture-id', clientSecret: privateValue, redirectUrl
 
 function fixture(options: { definition?: OAuthProviderDefinition; onUser?: OAuthUserCallback; onError?: OAuthErrorCallback } = {}) {
     const onUser = options.onUser ?? vi.fn();
-    const oauth = createOAuth({ secret, providers: { fixture: config }, customProviders: { fixture: options.definition ?? provider } });
+    const oauth = createOAuth({ stateStore: memoryOAuthStates().store, secret, providers: { fixture: config }, customProviders: { fixture: options.definition ?? provider } });
     const app = new Hono();
     app.get('/start', oauth.redirect('fixture'));
     app.get('/callback', oauth.callback('fixture', { onUser, onError: options.onError }));
@@ -33,18 +33,18 @@ function fixture(options: { definition?: OAuthProviderDefinition; onUser?: OAuth
 afterEach(() => { restoreFetch(); vi.restoreAllMocks(); });
 
 it.each(['clientId', 'clientSecret', 'redirectUrl'] as const)('identifies missing %s configuration without echoing its values', field => {
-    const oauth = createOAuth({ secret, providers: { fixture: { ...config, [field]: '' } }, customProviders: { fixture: provider } });
+    const oauth = createOAuth({ stateStore: memoryOAuthStates().store, secret, providers: { fixture: { ...config, [field]: '' } }, customProviders: { fixture: provider } });
     expect(() => oauth.redirect('fixture')).toThrowError(new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING'));
 });
 
 it('keeps unknown provider names and resolved-secret exceptions out of diagnostics', async () => {
-    const oauth = createOAuth({ secret, providers: {} });
+    const oauth = createOAuth({ stateStore: memoryOAuthStates().store, secret, providers: {} });
     let failure: unknown;
     try { oauth.redirect(privateValue); } catch (error) { failure = error; }
     expect(failure).toMatchObject({ code: 'COSSACK_OAUTH_PROVIDER_UNKNOWN', stage: 'configuration', status: 500 });
     expect(String(failure)).not.toContain(privateValue);
     const app = new Hono();
-    const failing = createOAuth({ secret: () => { throw new Error(privateValue); }, providers: { fixture: config }, customProviders: { fixture: provider } });
+    const failing = createOAuth({ stateStore: memoryOAuthStates().store, secret: () => { throw new Error(privateValue); }, providers: { fixture: config }, customProviders: { fixture: provider } });
     app.get('/start', failing.redirect('fixture'));
     const response = await app.request('/start');
     expect(response.status).toBe(500);

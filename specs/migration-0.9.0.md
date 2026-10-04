@@ -37,6 +37,27 @@ token purposes separate. Hash upgrades also need an atomic expected-hash match.
 operations. Raw crypto, database and mapping exceptions are discarded. A failed
 operation does not undo a storage side effect that already committed.
 
+## Atomic OAuth state storage
+
+Cookie-based `createOAuth` now requires `stateStore`. Its `create` callback
+inserts the library's provider-scoped digest and absolute timestamps. Its
+`consume` callback atomically removes a matching unexpired record and returns
+boolean true for one winner only. Missing or incomplete stores fail at the type
+and runtime boundaries. The explicit `stateless: true` mode has no state store
+and remains responsible for its own CSRF and replay protection.
+
+Port generated `oauthStateStore` from `src/auth.ts` when upgrading existing
+OAuth applications. It uses anonymous `sessions` rows with canonical
+`{"type":"oauth_state","provider":"..."}` metadata and one conditional SQL
+delete. The existing sessions schema needs no new columns. Reset and auth rows
+cannot satisfy this state purpose. Expired abandoned records need app cleanup.
+
+Old signed cookies have no registered server state and are rejected. Users must
+start a new authorization flow. State remains consumed if provider exchange,
+profile processing or account mapping fails; retry through a new redirect.
+Use `COSSACK_OAUTH_STATE_UNAVAILABLE` for used, expired or missing records and
+the `state-create`/`state-consume` stages for safe storage diagnostics.
+
 ## OAuth failure diagnostics
 
 OAuth `onError` now receives `OAuthError` instead of an arbitrary thrown value.
@@ -50,8 +71,8 @@ or profile failures return 502, and configuration or application mapping failure
 return 500. Generated missing-configuration responses also use this contract.
 Replace checks for the old generic 502 or generated 503 response.
 
-Rejected callbacks clear the state cookie. Do not treat this as a replay store:
-concurrent requests can still present the same signed cookie. Session middleware
+Rejected callbacks clear the state cookie. The separate required state store
+provides atomic consumption before provider exchange. Session middleware
 continues as a guest after extraction, validation or user lookup exceptions and
 logs a fixed stage code. Raw exception details are no longer logged.
 
