@@ -1161,3 +1161,30 @@ must be positive and finite, with stroke smaller than size. An omitted label mea
 decorative content; a supplied label must be nonempty and supplies status semantics
 and SVG title text. Rotation stops under reduced motion. Use the packaged
 `native-status` guide for announcement and loading ownership.
+
+## Field and Empty
+
+Field now requires `label`, `for` and a `control` callback. Move the native control
+from the third argument into that callback and spread the supplied attributes:
+
+```ts
+component(Field, {
+    label: 'Email', for: 'email', hint: 'Use work email', error, required: true,
+    control: attributes => component(Input, {
+        ...attributes, name: 'email', type: 'email', '.value': value,
+    }),
+});
+```
+
+The callback receives `FieldControlAttributes`: the control ID, required state,
+linked descriptions and invalid state. Hint and error now render together with
+stable IDs derived from `for`. Error text sets `aria-invalid`; it does not change
+native validity or run validation. Keep native type/value/events and form ownership
+on the actual control. Separate children are rejected. Root attributes/events target
+the wrapper div; use a different ID for that wrapper. All scaffold Field consumers
+use the callback, including password controls that previously lacked matching IDs.
+
+Empty now forwards native div attributes/events instead of silently discarding them.
+Visible title and description remain component props. The caller owns illustration
+alternatives and native child buttons/links. Neither wrapper adds focus management
+or automatic announcements. See the packaged `native-field-empty` guide.

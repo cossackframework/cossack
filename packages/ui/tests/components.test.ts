@@ -717,7 +717,7 @@ describe("AspectRatio", () => {
 
 describe("Field", () => {
     it("renders label, control, and hint", () => {
-        const out = renderComp(Field, { label: "Email", hint: "We never share" }, "input");
+        const out = renderComp(Field, { label: "Email", for: "email", hint: "We never share", control: () => "input" });
         expect(out).toContain("cs-field");
         expect(out).toContain("Email");
         expect(out).toContain("We never share");
@@ -725,7 +725,7 @@ describe("Field", () => {
     });
 
     it("renders error in destructive color when present", () => {
-        const out = renderComp(Field, { label: "X", error: "Required" });
+        const out = renderComp(Field, { label: "X", for: "x", error: "Required", control: () => "input" });
         expect(out).toContain("text-destructive");
         expect(out).toContain("Required");
     });

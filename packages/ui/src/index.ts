@@ -62,7 +62,7 @@ export { ToggleGroup, type ToggleGroupProps, type ToggleGroupItem } from "./comp
 export { Breadcrumb, type BreadcrumbProps, type BreadcrumbItem, type BreadcrumbLinkProps, type BreadcrumbTextProps, type BreadcrumbListProps } from "./components/Breadcrumb";
 export { Pagination, type PaginationProps, type PaginationButtonProps, type PaginationLinkProps } from "./components/Pagination";
 export { AspectRatio, type AspectRatioProps } from "./components/AspectRatio";
-export { Field, type FieldProps } from "./components/Field";
+export { Field, type FieldProps, type FieldControlAttributes } from "./components/Field";
 export { Form, type FormProps } from "./components/Form";
 export { Empty, type EmptyProps } from "./components/Empty";
 export { Kbd, type KbdProps } from "./components/Kbd";

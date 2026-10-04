@@ -81,8 +81,8 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [DatePicker](../packages/ui/src/components/DatePicker.ts) | Reviewed foundation | Shared Calendar, typed native date input, min/max/required/form/reset behavior, stable labels, controlled/default values, nonmodal popup focus and browser acceptance. |
 | [Drawer](../packages/ui/src/components/Drawer.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [DropdownMenu](../packages/ui/src/components/DropdownMenu.ts) | Reviewed foundation | Stable IDs, typed actions/native events, menu semantics, keyboard/typeahead, disabled actions, focus restoration, bounded placement and SSR/Chromium acceptance. |
-| [Empty](../packages/ui/src/components/Empty.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Field](../packages/ui/src/components/Field.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Empty](../packages/ui/src/components/Empty.ts) | Reviewed foundation | Typed native div props/events now forwarded, visible content and caller-owned illustrations/actions, SSR/Chromium and ejected-source coverage. |
+| [Field](../packages/ui/src/components/Field.ts) | Reviewed foundation | Required linked control callback, typed native div props, stable hint/error IDs, native required/invalid state, generated login rendering, SSR/Chromium and ejected-source coverage. |
 | [Form](../packages/ui/src/components/Form.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [HoverCard](../packages/ui/src/components/HoverCard.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
 | [Input](../packages/ui/src/components/Input.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
@@ -125,12 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Field and Empty. Field has an open prop index, optional label targets
-and no stable IDs for hint/error text. Define how the caller links the native
-control's description and invalid state, while preserving child ownership of
-required/disabled/form values and validation. Empty accepts arbitrary native props
-but never spreads them; fix native attributes/events and document illustration,
-text and native child-action semantics.
+Next audit Avatar and AvatarGroup. Avatar retains its failed flag when src changes;
+review recovery, stale image events, SSR/hydration and meaningful fallback names.
+AvatarGroup drops native props and lacks stable item identities. Define typed root
+and image targets, immutable items, validated size/count/overlap, overflow naming
+and logical overlap for RTL/reverse layouts. Keep decorative and meaningful images
+explicit, including initials and caller-supplied fallback content.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

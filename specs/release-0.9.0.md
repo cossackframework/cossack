@@ -88,6 +88,61 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-field-empty-2026-10-04"></a>
+## Codex Field and Empty (2026-10-04)
+
+Author: Codex. Field now requires a label, unique control target and typed control
+callback. The callback receives the native control ID, required flag, linked hint
+and error descriptions, and invalid state. Both nonempty hint and error text remain
+visible, with stable IDs. The callback spreads those attributes onto the actual
+control; the wrapper does not inspect or mutate child DOM. Native value/events,
+validation and form behavior remain with the caller. Separate control children are
+rejected with a migration diagnostic. The required marker is decorative.
+
+All 22 framework/scaffold consumers use the callback. This also fixes missing
+native input IDs on scaffolded password fields. Empty now forwards typed div
+attributes/events instead of discarding them. Its title/description remain visible
+text and native child buttons/links retain their behavior. Migration and installed
+guidance describe ownership, description merging and limits.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 340 tests in
+  32 files pass, including public callback inference, native targets, SSR links,
+  rejected contracts and a composed password input.
+- Source ejection: 25 tests pass, including strict NodeNext compilation of Field
+  and Empty with previously reviewed controls.
+- `pnpm --filter cossack exec vitest run tests/field-empty-browser.test.js` passes.
+  The themed production Chromium fixture covers SSR without JavaScript, retained
+  hydration, labels/descriptions, native Tab/Enter, password reveal, native
+  validation and FormData, focus-preserving error updates, removal of stale
+  attributes/description nodes, disabled fieldsets, native child links/actions,
+  changed IDs and unmount/remount cleanup. The initial test selected label text
+  without accounting for its visual required marker; the final check clicks the
+  actual label and separately verifies its accessible name.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: 111 tests pass.
+  A new case renders the generated login method with the real renderer/UI and
+  checks both email and password label/error links, then error clearing. Its auth
+  submission boundary is not exercised by this focused composition test.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the new guide,
+  Field's required label/target/control callback, both native div event targets
+  and identical exact-symbol Field output. Six existing packaged examples compile
+  and execute. Discovery runs with Node networking disabled.
+
+The WAI guidance on [control labels](https://www.w3.org/WAI/tutorials/forms/labels/)
+and [inline feedback](https://www.w3.org/WAI/tutorials/forms/notifications/) informs
+the relationships. Neither component adds focus management or automatic error
+announcements. The new guide adds no executable example; other browser engines,
+screen readers and the full generated-app/runtime matrix remain separate gates.
+
+Logs: `/tmp/cossack-field-{build,ui,browser-ejection,browser-final,root-types,types,scaffold,agent-docs}.log`.
+The combined browser/ejection log retains the earlier label-selector failure;
+the final browser log records its passing rerun. Fifty of 65 component-source
+foundations are reviewed. Continue Avatar, AvatarGroup and every pending row.
+RT-23 and CLI-07/CLI-08 remain open. Release status stays 24 of 58 complete;
+versions stay 0.8.3 until REL-04.
+
 <a id="codex-status-controls-2026-10-04"></a>
 ## Codex Alert, Progress and Spinner (2026-10-04)
 

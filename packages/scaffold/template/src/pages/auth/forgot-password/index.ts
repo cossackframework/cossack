@@ -39,8 +39,8 @@ export default class ForgotPasswordPage extends Cossack {
                 ? component(Alert, { variant: 'success', title: __('Check your email') },
                     __('If an account exists for that email, a reset link has been sent.'))
                 : html`<form @submit="${(e: Event) => this.handleSubmit(e)}" class="space-y-4">
-                    ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email') },
-                        component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }))}
+                    ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
+                        control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
                     ${component(Button, { type: 'submit', block: true }, __('Send Reset Link'))}
                 </form>`}
             <p class="mt-6 text-center text-sm text-muted-foreground">

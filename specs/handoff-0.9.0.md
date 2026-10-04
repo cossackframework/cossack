@@ -10,18 +10,19 @@ Completed tasks link to the [original plan archive](./release-0.9.0-plan-archive
 
 Completed work is reference-only: use the [archived completion details](./release-0.9.0-plan-archive.md#codex-completed-handoff-2026-10-04)
 and [verification log](./release-0.9.0.md#verification-log). Keep its regression coverage.
-RT-23 has 48 reviewed UI foundations through the
-[status controls checkpoint](./release-0.9.0.md#codex-status-controls-2026-10-04);
+RT-23 has 50 reviewed UI foundations through the
+[Field/Empty checkpoint](./release-0.9.0.md#codex-field-empty-2026-10-04);
 component checkpoints do not close RT-23 or the release matrix.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with Field and Empty**, then every pending
-   [UI audit row](./ui-contract-audit.md). Field needs typed native props, stable
-   label/description/error relationships and clear ownership between wrapper and
-   native child control. Empty accepts native props but drops them; fix forwarding
-   and review illustration, text and child-action semantics. Preserve public
-   types, SSR, themed browser, ejected-source and installed-guidance acceptance.
+1. Continue **RT-23 with Avatar and AvatarGroup**, then every pending
+   [UI audit row](./ui-contract-audit.md). Avatar's failed state survives src
+   changes; review recovery, stale events and meaningful fallback names.
+   AvatarGroup drops native props and lacks stable item identities. Define native
+   targets, immutable items, sizing/count/overlap validation, overflow names and
+   RTL/reverse layout. Preserve public types, SSR, themed browser, ejected-source,
+   affected scaffold consumers and installed-guidance acceptance.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend

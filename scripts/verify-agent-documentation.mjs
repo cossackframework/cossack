@@ -317,10 +317,21 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(uiSymbols.find(symbol => symbol.name === 'Progress').propsContract.members.some(member => member.name === 'label' && !member.optional));
     assert.ok(uiSymbols.some(symbol => symbol.name === 'SvgAttributes'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-status'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Spinner', '--json']);
+    for (const name of ['Field', 'Empty']) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
+    }
+    const field = uiSymbols.find(symbol => symbol.name === 'Field');
+    for (const name of ['label', 'for', 'control']) assert.ok(field.propsContract.members.some(member => member.name === name && !member.optional));
+    assert.ok(field.propsContract.members.find(member => member.name === 'control').callSignatures.length);
+    assert.ok(uiSymbols.some(symbol => symbol.name === 'FieldControlAttributes'));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-field-empty'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Field', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Spinner']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Spinner' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Field']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Field' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

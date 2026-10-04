@@ -468,3 +468,20 @@ component(Spinner, { 'aria-hidden': false });
 component(Spinner, { tabindex: 0 });
 // @ts-expect-error Event currentTarget is SVG, not HTML.
 component(Spinner, { '@click': (event: MouseEvent & {currentTarget: HTMLDivElement}) => event });
+
+import { Field, Empty, type FieldControlAttributes } from '@cossackframework/ui';
+component(Field, { label: 'Email', for: 'email', control: attributes => {
+    const shared: FieldControlAttributes = attributes;
+    return component(Input, { ...shared, type: 'email', '@input': event => { const input: HTMLInputElement = event.currentTarget; void input; } });
+}, '@click': event => { const root: HTMLDivElement = event.currentTarget; void root; } });
+component(Empty, { title: 'No results', '@click': event => { const root: HTMLDivElement = event.currentTarget; void root; } });
+// @ts-expect-error Field requires a target ID.
+component(Field, { label: 'Email', control: () => '' });
+// @ts-expect-error Field requires a visible label.
+component(Field, { for: 'email', control: () => '' });
+// @ts-expect-error Field requires an explicitly linked control callback.
+component(Field, { label: 'Email', for: 'email' }, component(Input));
+// @ts-expect-error Field does not own input values.
+component(Field, { label: 'Email', for: 'email', control: () => '', value: 'text' });
+// @ts-expect-error Empty has a native div, not a button.
+component(Empty, { disabled: true });

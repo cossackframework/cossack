@@ -538,8 +538,8 @@ export class ComponentsDemo extends Cossack {
                             ${component(AspectRatio, { ratio: 16 / 9 }, html`<div class="w-full h-full bg-muted rounded-md flex items-center justify-center text-muted-foreground text-xs">16:9</div>`)}
                         </div>
                         <div class="flex-1 min-w-50 max-w-xs">
-                            ${component(Field, { label: 'Username', hint: '3-20 characters', for: 'username-demo' },
-                                component(Input, { id: 'username-demo', placeholder: 'username' }))}
+                            ${component(Field, { label: 'Username', hint: '3-20 characters', for: 'username-demo',
+                                control: attributes => component(Input, { ...attributes, placeholder: 'username' }) })}
                         </div>
                         <div class="border border-border rounded-lg w-56">
                             ${component(Empty, { title: 'No items', description: 'Add your first item to get started.' })}

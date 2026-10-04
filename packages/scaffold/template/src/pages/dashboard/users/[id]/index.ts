@@ -126,12 +126,12 @@ export default class EditUserPage extends Cossack {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
                             <div class="flex flex-col space-y-6">
-                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name') },
-                                component(Input, { id: 'name', type: 'text', '.value': bind(this.userDetail, 'name') }))}
-                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email') },
-                                component(Input, { id: 'email', type: 'email', '.value': bind(this.userDetail, 'email') }))}
-                            ${component(Field, { label: __('Avatar URL'), for: 'avatar', error: this.getError('avatar') },
-                                component(Input, { id: 'avatar', type: 'url', placeholder: 'https://...', '.value': bind(this.userDetail, 'avatar') }))}
+                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('name'),
+                                control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.userDetail, 'name') }) })}
+                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('email'),
+                                control: attributes => component(Input, { ...attributes, type: 'email', '.value': bind(this.userDetail, 'email') }) })}
+                            ${component(Field, { label: __('Avatar URL'), for: 'avatar', error: this.getError('avatar'),
+                                control: attributes => component(Input, { ...attributes, type: 'url', placeholder: 'https://...', '.value': bind(this.userDetail, 'avatar') }) })}
                             <div>
                                 ${component(Button, { type: 'submit' }, __('Save changes'))}
                             </div>
@@ -147,12 +147,12 @@ export default class EditUserPage extends Cossack {
                             submit: (e: Event) => this.handleChangePassword(e),
                         }, html`
                             <div class="flex flex-col space-y-4">
-                                ${component(Field, { label: __('New password'), for: 'new-password', hint: __('Leave the user a way back in — they\'ll need the new password to sign in.') },
-                                    component(PasswordInput, {
-                                        id: 'new-password',
+                                ${component(Field, { label: __('New password'), for: 'new-password', hint: __('Leave the user a way back in — they\'ll need the new password to sign in.'),
+                                    control: attributes => component(PasswordInput, {
+                                        ...attributes,
                                         value: this.newPassword,
                                         onChange: (v: string) => this.newPassword = v,
-                                    }))}
+                                    }) })}
                                 <div>
                                     ${component(Button, { type: 'submit', variant: 'outline' }, __('Update password'))}
                                 </div>
