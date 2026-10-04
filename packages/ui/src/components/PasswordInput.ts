@@ -13,7 +13,7 @@ import { EyeIcon } from "@cossackframework/solar-icons/eye";
 import { EyeClosedIcon } from "@cossackframework/solar-icons/eye-closed";
 
 export type PasswordInputProps = PasswordAttributes & {
-    /** Parent value. Unchanged values preserve native edits, including on reveal. */
+    /** Optional parent value. Omit for native ownership, including pre-hydration edits and autofill. */
     value?: string;
     /** Disable the input and its reveal button. Fieldset disabling also applies. */
     disabled?: boolean;
@@ -69,7 +69,6 @@ export class PasswordInput extends Cossack {
                 <input
                     ref=${this.inputRef}
                     type=${this.revealed ? "text" : "password"}
-                    .value=${value ?? ""}
                     placeholder=${placeholder}
                     autocomplete=${autocomplete}
                     ?disabled=${disabled}
@@ -86,7 +85,7 @@ export class PasswordInput extends Cossack {
                         [SIZES[size]]: true,
                     })}
                     @input=${inputHandler}
-                    ...=${rest}
+                    ...=${value === undefined ? rest : { ...rest, '.value': value }}
                 />
                 <button
                     type="button"

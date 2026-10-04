@@ -4856,3 +4856,23 @@ DOM behavior. Existing export presence does not establish those contracts.
   Update real callers, migration notes, source ejection and installed guidance.
 
 Verification: [Icon checkpoint](./release-0.9.0.md#codex-icon-2026-10-04).
+
+<a id="codex-auth-form-plan-2026-10-04"></a>
+## Codex AuthForm plan (2026-10-04)
+
+- Audit AuthForm next: actual form/control ownership, SSR login/signup mode,
+  stable labels/error relationships, disabled/loading states, submitted data,
+  callback failure/concurrency and social actions. The current submit comment
+  mentions false although its type does not allow that result. Source review also
+  finds duplicate hardcoded field IDs, a PasswordInput consumer missing its label ID, no input name/autocomplete contract, and handleSocial ignoring
+  provider identity while invoking credential submission with empty credentials.
+  Require a stable instance ID, use current native input bindings, separate typed
+  provider actions from credentials, and make social options explicit. Preserve
+  browser autofill and pre-hydration edits by reading actual form values at submit.
+  Guard repeated submission, observe asynchronous failures and prevent settled
+  callbacks from mutating an unmounted instance. Avoid exposing raw callback error
+  messages as UI text; define caller-owned safe errors and localization. Keep authentication
+  and authorization in application/library services; a block must not imply them.
+
+Reviewed foundation: [AuthForm checkpoint](./release-0.9.0.md#codex-auth-form-2026-10-04).
+PasswordInput value/onChange remain supported; the initial handoff claim was corrected.

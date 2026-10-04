@@ -58,7 +58,9 @@ function ejectFromPackage(className) {
       );
       const pkgDir = path.resolve(path.dirname(themePath), '../..');
       const sourceName = className === 'Toaster' ? 'Toast' : className;
-      const srcPath = path.join(pkgDir, 'src', 'components', `${sourceName}.ts`);
+      const srcPath = className === 'AuthForm'
+        ? path.join(pkgDir, 'src/blocks/AuthForm/index.ts')
+        : path.join(pkgDir, 'src', 'components', `${sourceName}.ts`);
       return mergeNamedImports(fs.readFileSync(srcPath, 'utf8')
         // Include shared private helpers without imports into the package source tree.
         // Merge their named imports with the component imports afterward.
@@ -66,7 +68,8 @@ function ejectFromPackage(className) {
           /^import .* from ["']\.\.\/internal\/(disclosure|menu)["'];$/gm,
           (_import, name) => fs.readFileSync(path.join(pkgDir, `src/internal/${name}.ts`), 'utf8'),
         )
-        .replace(/from ["']\.\.\/native-attributes["']/g, 'from "@cossackframework/ui"')
+        .replace(/from ["'](?:\.\.\/)+native-attributes(?:\.js)?["']/g, 'from "@cossackframework/ui"')
+        .replace(/from ["']\.\.\/\.\.\/components\/(?:Button|Input|PasswordInput|Label)\.js["']/g, 'from "@cossackframework/ui"')
         .replace(
           /from ["']\.\.\/icons\/Icon["']/g,
           'from "@cossackframework/ui"',
@@ -92,6 +95,7 @@ const fromPackage = (className) => () => ejectFromPackage(className);
  * `cossack add ui <name>`.
  */
 export const UI_COMPONENTS = {
+  'auth-form': { className: 'AuthForm', template: fromPackage('AuthForm') },
   button: { className: 'Button', template: fromPackage('Button') },
   input: { className: 'Input', template: fromPackage('Input') },
   card: { className: 'Card', template: fromPackage('Card') },

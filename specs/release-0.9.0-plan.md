@@ -516,9 +516,9 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 ### RT-23: DataTable and UI contracts
 
 Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
-have reviewed contracts. Icon also has a reviewed foundation; four composed blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
+have reviewed contracts. Icon and AuthForm also have reviewed foundations; three composed blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[Icon verification](./release-0.9.0.md#codex-icon-2026-10-04) for the latest checkpoint.
+[AuthForm verification](./release-0.9.0.md#codex-auth-form-2026-10-04) for the latest checkpoint.
 
 Next: Audit the composed blocks using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
@@ -535,26 +535,20 @@ Codex next batch — composed blocks:
 
 The [Icon plan](./release-0.9.0-plan-archive.md#codex-icon-plan-2026-10-04)
 and [verification](./release-0.9.0.md#codex-icon-2026-10-04) preserve its reviewed
-SVG foundation. Start with AuthForm, then the other three blocks.
+SVG foundation. The [AuthForm plan](./release-0.9.0-plan-archive.md#codex-auth-form-plan-2026-10-04)
+is also archived. Start with CommandPalette, then DashboardStat and SettingsPanel.
 
-- Audit AuthForm next: actual form/control ownership, SSR login/signup mode,
-  stable labels/error relationships, disabled/loading states, submitted data,
-  callback failure/concurrency and social actions. The current submit comment
-  mentions false although its type does not allow that result. Source review also
-  finds duplicate hardcoded field IDs, a PasswordInput consumer still using removed
-  value/onChange props, no input name/autocomplete contract, and handleSocial ignoring
-  provider identity while invoking credential submission with empty credentials.
-  Require a stable instance ID, use current native input bindings, separate typed
-  provider actions from credentials, and make social options explicit. Preserve
-  browser autofill and pre-hydration edits by reading actual form values at submit.
-  Guard repeated submission, observe asynchronous failures and prevent settled
-  callbacks from mutating an unmounted instance. Avoid exposing raw callback error
-  messages as UI text; define caller-owned safe errors and localization. Keep authentication
-  and authorization in application/library services; a block must not imply them.
 - Audit CommandPalette using current Modal and Command contracts. Define native
   prop destinations, controlled/default open state, names, selection, filtered
   keyboard behavior, focus return and global-shortcut ownership/cleanup. Reuse
   existing controllers instead of maintaining incompatible menu/dialog behavior.
+  Current Modal still supports onClose/closeOnBackdrop; verify their controlled
+  close/focus contract through the composition. CommandPalette uses a private open field that collides with prop mirroring, leaves search unnamed and
+  tracks a flat activeIndex while rendering grouped buttons. The unconditional
+  window shortcut can compete across instances or override typing. Define opt-in
+  shortcut ownership, stable command IDs and labels, disabled commands, and a
+  single selection/focus owner using the reviewed Command primitive. Keyboard and
+  pointer selection must agree after filtering, regrouping and command updates.
 - Audit DashboardStat's ignored root props, literal rendered markup, neutral trend
   color, readonly stat records, numeric/string values, accessible text and responsive
   columns. Compose the corrected Icon; do not encode meaning with color alone.

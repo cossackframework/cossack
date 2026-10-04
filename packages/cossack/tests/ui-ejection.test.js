@@ -6,7 +6,7 @@ import { UI_COMPONENTS } from '../src/templates/ui.js';
 afterEach(() => vi.restoreAllMocks());
 
 describe('UI source ejection', () => {
-  it.each(['accordion', 'collapsible', 'tabs', 'toggle', 'toggle-group', 'toaster', 'message-scroller', 'bubble', 'marker', 'message', 'attachment', 'carousel', 'menubar', 'navigation-menu', 'pagination', 'breadcrumb', 'button-group', 'separator', 'aspect-ratio', 'skeleton', 'card', 'badge', 'kbd', 'alert', 'progress', 'spinner', 'field', 'empty', 'avatar', 'avatar-group', 'item', 'typography', 'table', 'scroll-area', 'resizable', 'sidebar', 'dropdown-menu', 'context-menu'])('ejects a complete %s component', (name) => {
+  it.each(['auth-form', 'accordion', 'collapsible', 'tabs', 'toggle', 'toggle-group', 'toaster', 'message-scroller', 'bubble', 'marker', 'message', 'attachment', 'carousel', 'menubar', 'navigation-menu', 'pagination', 'breadcrumb', 'button-group', 'separator', 'aspect-ratio', 'skeleton', 'card', 'badge', 'kbd', 'alert', 'progress', 'spinner', 'field', 'empty', 'avatar', 'avatar-group', 'item', 'typography', 'table', 'scroll-area', 'resizable', 'sidebar', 'dropdown-menu', 'context-menu'])('ejects a complete %s component', (name) => {
     // Resolve the real UI dependency from a workspace application, as the CLI
     // does from a consuming app. This also catches source/catalog name drift.
     vi.spyOn(process, 'cwd').mockReturnValue(fileURLToPath(new URL('../../framework/', import.meta.url)));
@@ -24,7 +24,7 @@ describe('UI source ejection', () => {
 it('type-checks the combined helper and component imports after menu ejection', () => {
   const root=fileURLToPath(new URL('../../framework/',import.meta.url));
   vi.spyOn(process,'cwd').mockReturnValue(root);
-  const files=new Map(['message-scroller', 'bubble', 'marker', 'message', 'attachment', 'carousel','toaster','menubar','navigation-menu', 'pagination', 'breadcrumb', 'button-group', 'separator', 'aspect-ratio', 'skeleton', 'card', 'badge', 'kbd', 'alert', 'progress', 'spinner', 'field', 'empty', 'avatar', 'avatar-group', 'item', 'typography', 'table', 'scroll-area', 'resizable', 'sidebar','dropdown-menu','context-menu','accordion','collapsible'].map(name=>[root+`.ejected-${name}.ts`,UI_COMPONENTS[name].template()]));
+  const files=new Map(['auth-form', 'message-scroller', 'bubble', 'marker', 'message', 'attachment', 'carousel','toaster','menubar','navigation-menu', 'pagination', 'breadcrumb', 'button-group', 'separator', 'aspect-ratio', 'skeleton', 'card', 'badge', 'kbd', 'alert', 'progress', 'spinner', 'field', 'empty', 'avatar', 'avatar-group', 'item', 'typography', 'table', 'scroll-area', 'resizable', 'sidebar','dropdown-menu','context-menu','accordion','collapsible'].map(name=>[root+`.ejected-${name}.ts`,UI_COMPONENTS[name].template()]));
   const options={target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,strict:true,skipLibCheck:true,noEmit:true,experimentalDecorators:true};
   const host=ts.createCompilerHost(options),read=host.readFile.bind(host),exists=host.fileExists.bind(host),getSourceFile=host.getSourceFile.bind(host);
   host.readFile=file=>files.get(file)??read(file);

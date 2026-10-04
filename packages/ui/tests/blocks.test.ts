@@ -18,7 +18,7 @@ function renderBlock(
 
 describe('@cossackframework/ui/blocks', () => {
   it('renders every public block on the server', () => {
-    expect(renderBlock(AuthForm, { social: false })).toContain('cs-auth-form');
+    expect(renderBlock(AuthForm, { id: 'auth', onSubmit: () => {} })).toContain('cs-auth-form');
     expect(renderBlock(CommandPalette, {
       commands: [{ id: 'home', label: 'Home' }],
       open: true,

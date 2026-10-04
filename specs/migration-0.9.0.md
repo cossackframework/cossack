@@ -1518,3 +1518,31 @@ Native attributes and labels use renderer escaping. Only `entry` artwork is raw,
 explicitly trusted SVG; this change does not sanitize arbitrary user artwork.
 Renderer creation and artwork updates now retain SVG namespaces and HTML
 integration inside foreignObject instead of creating HTML path elements.
+
+## AuthForm native fields and explicit callbacks
+
+Import the block and its types from `@cossackframework/ui/blocks`. Supply a stable
+unique `id` and `onSubmit(data, { signal })`. Data now includes a discriminating
+`mode`; only signup data has `name`. Credentials stay in native fields and are read
+at submit time. PasswordInput now omits its value binding when `value` is omitted,
+so uncontrolled hydration and autofill preserve browser edits.
+
+Use `defaultMode` for local mode or `mode` plus `onModeChange` for controlled mode.
+The initial mode renders on the server. Replace `social: true` with explicit
+`providers: [{ id, label }]` and `onSocial(providerId, { signal })`. Provider clicks
+no longer send empty credentials through onSubmit. There are no default providers.
+Root native props target a div; `formProps` targets the form. All labels and IDs
+are connected, including PasswordInput. Localize text through `labels`.
+
+Login accepts existing shorter passwords. Signup uses native and snapshot length
+checks, with configurable `signupPasswordMinLength` (default eight). The server
+still owns password policy and validation. Return safe `AuthFormResult` errors;
+raw thrown messages are no longer displayed. `false` is not a supported result.
+The native form uses POST and disables actions before hydration. Applications
+needing no-JavaScript login must provide their own native server POST form.
+
+Pending requests disable controls and suppress duplicate submissions. Parent mode
+changes and cleanup abort the signal and discard stale results. Callbacks must
+honor cancellation themselves; side effects are not rolled back or replayed.
+Safe errors link to fields and focus them without stealing focus from outside.
+The new `cossack add ui auth-form` recipe ejects source with public UI dependencies.

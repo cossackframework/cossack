@@ -429,10 +429,21 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(icon.propsContract.members.some(member => member.name === '@click' && member.type.includes('SVGSVGElement')));
     for (const name of ['variant', 'style', 'size', 'label']) assert.ok(icon.propsContract.members.some(member => member.name === name));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-icon'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Icon', '--json']);
+    const authForm = uiSymbols.find(symbol => symbol.name === 'AuthForm');
+    assert.equal(authForm.propsContract.status, 'partial');
+    assert.equal(authForm.propsContract.variants.length, 2);
+    for (const branch of authForm.propsContract.variants) {
+      assert.ok(!branch.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      for (const name of ['id', 'onSubmit']) assert.ok(branch.members.some(member => member.name === name && !member.optional));
+      assert.ok(branch.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
+      assert.ok(branch.members.some(member => member.name === 'formProps'));
+    }
+    for (const name of ['AuthFormMode', 'AuthFormData', 'AuthFormResult', 'AuthFormContext', 'AuthFormProvider', 'AuthFormLabels', 'AuthFormNativeProps']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-auth-form'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'AuthForm', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Icon']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Icon' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['AuthForm']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'AuthForm' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

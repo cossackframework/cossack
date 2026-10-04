@@ -706,3 +706,24 @@ component(Icon, { entry: {}, width: 20 });
 component(Icon, { entry: {}, 'aria-label': 'Next' });
 // @ts-expect-error SVG events do not target HTML buttons.
 component(Icon, { entry: {}, '@click': (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {} });
+
+import { AuthForm, type AuthFormProps, type AuthFormData } from '@cossackframework/ui/blocks';
+const authProps: AuthFormProps = { id: 'login', defaultMode: 'signup', providers: [{id:'sso', label:'Company account'}] as const,
+    onSocial: (provider, context) => { const id:string = provider; const signal:AbortSignal = context.signal; void [id,signal]; },
+    onSubmit: (data, context) => { if(data.mode === 'signup') { const name:string = data.name; void name; } return {fieldErrors:{email:'Check your email'}}; },
+    formProps: { '@submit': event => { const form:HTMLFormElement = event.currentTarget; void form; } },
+    '@click': event => { const root:HTMLDivElement = event.currentTarget; void root; } };
+component(AuthForm, authProps);
+// @ts-expect-error AuthForm requires identity and an application callback.
+component(AuthForm, {});
+// @ts-expect-error Controlled mode requires a change callback.
+component(AuthForm, { id:'x', mode:'login', onSubmit:()=>{} });
+// @ts-expect-error Controlled and default mode cannot compete.
+component(AuthForm, { id:'x', mode:'login', defaultMode:'signup', onModeChange:()=>{}, onSubmit:()=>{} });
+// @ts-expect-error Old social boolean cannot invent a provider implementation.
+component(AuthForm, { id:'x', social:true, onSubmit:()=>{} });
+// @ts-expect-error Native submission method belongs to the callback-based form.
+component(AuthForm, { id:'x', onSubmit:()=>{}, formProps:{method:'get'} });
+// @ts-expect-error Credential data discriminates signup-only names.
+const invalidAuthData:AuthFormData = {mode:'login',email:'a',password:'b',name:'c'};
+void invalidAuthData;

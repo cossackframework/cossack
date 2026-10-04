@@ -88,51 +88,68 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-icon-2026-10-04"></a>
-### Codex Icon (2026-10-04)
+<a id="codex-auth-form-2026-10-04"></a>
+### Codex AuthForm (2026-10-04)
 
-Author: Codex. Icon now binds closed native SVG props/events rather than building
-attribute strings. `variant` selects artwork; `style` is native CSS. Required
-trusted entries, positive finite size and informative/decorative names have
-explicit contracts. Unknown variants and missing/empty artwork reject. A missing
-variant may use own line artwork. Named icons use an SVG title, role and label;
-interactive behavior remains on native parent controls. Framework/Studio callers
-and repository skill examples now use direct entries and canonical variants.
-Studio's unsupported bold-duotone selection becomes bold.
+Author: Codex. AuthForm now has a stable required identity, closed native root/form
+props, separate controlled/default modes, explicit credential/provider callbacks
+and localized labels/errors. Both modes render on the server. Native field labels,
+IDs, names and autocomplete are connected. Credentials stay in browser fields;
+submission snapshots FormData, including pre-hydration typing and autofill without
+input events. No credential values are copied into block reactive state.
 
-The renderer now parses raw children in SVG context, keeping HTML integration
-points and inert script insertion. Fresh and updated artwork renders as actual
-SVG paths. This does not sanitize trusted raw artwork. Review also found SSR class
-merging failed to escape caller text and interpreted replacement dollar patterns.
-It now escapes incoming class text once and preserves literal replacement text.
-Icon's default fill also has one binding so caller fill survives SSR.
+The previous handoff incorrectly said PasswordInput's value/onChange props had
+been removed; they still exist. AuthForm actually omitted its label ID. Review
+also found PasswordInput wrote an empty value when value was omitted. It now
+leaves native ownership intact, while parent-controlled values retain their
+existing behavior. One composed spread preserves native attributes during fresh
+client rendering. Dynamic noscript markup caused a hydration mismatch; a normal
+pre-hydration notice now avoids it.
+
+Actions stay disabled until hydration, while fields remain editable. Native POST
+and unconditional submit-event prevention avoid accidental credential navigation.
+Applications still own no-JavaScript endpoints, authentication, authorization,
+sessions and server validation. Signup checks its configured minimum against the
+snapshot as well as native attributes: adding minlength after a mode change does
+not always invalidate existing values. Login imposes no new minimum policy.
+
+Provider actions are explicit keyed non-submit controls and never send empty
+credentials. One pending request disables actions and rejects duplicate submits.
+Mode changes and onCleanup abort the owned signal and invalidate late results.
+Callback errors remain observed; thrown messages are replaced with safe localized
+text. Field errors have descriptions and focus recovery that respects outside
+focus. Abort cannot stop ignored I/O or reverse backend effects.
 
 Verification:
 
-- Renderer build and `pnpm --filter @cossackframework/renderer exec vitest run`:
-  330 tests across 24 files pass. New regressions cover creation, hydration update,
-  SVG/HTML namespaces and literal class quotes/entities/dollar patterns.
-- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 568 tests
-  across 42 files pass. Public declaration fixtures reject missing entries,
-  invalid variants, competing geometry/naming and incorrect event targets.
-- `pnpm --filter cossack exec vitest run tests/icon-browser.test.js tests/ui-ejection.test.js`:
-  40 tests pass. The HTTP Chromium fixture covers no-JavaScript SSR escaping and
-  naming, retained hydration, fresh and updated SVG path geometry, title namespaces,
-  foreignObject HTML, inert scripts, native event targets, CSS updates and literal
-  attribute payloads. Browser bundles exclude the SSR parser. The other 39 checks
-  verify supported component source ejection and NodeNext imports. Icon remains a
-  published import used by ejected consumers; no new standalone CLI icon recipe is claimed.
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 584 tests
+  across 43 files pass. SSR, contract validation and published type failures cover
+  identities, mode ownership, callbacks, providers, native targets and labels.
+- `pnpm --filter cossack exec vitest run tests/auth-form-browser.test.js tests/ui-ejection.test.js tests/native-controls-browser.test.js tests/native-form-ssr-browser.test.js`:
+  44 tests pass. AuthForm runs through published and ejected implementations with
+  real Tailwind/HTTP Chromium. Checks include no-JavaScript action disabling,
+  pre-hydration edits, native Enter/Space, password reveal, validation, FormData,
+  repeated submits, safe errors, focus, external mode changes, provider identity,
+  fieldset disabling, unmount/remount, stale results and eventless autofill.
+  Existing parent-controlled PasswordInput and native SSR form checks also pass.
+  Forty source-ejection checks include strict NodeNext compilation and AuthForm's
+  new CLI entry. Ejected blocks use public primitive/type imports.
+- Command-spec and command-contract suites passed in the earlier 114-case run;
+  its one failing native-controls case was fixed and rerun in the final browser
+  command above. No CLI contract failure was suppressed.
 - Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
-- `pnpm test:agent-docs:local` passes: installed native SVG declarations and the
-  authored guide are discoverable; exact-symbol Icon output matches CLI/MCP. Six
-  existing packaged examples compile and execute. Discovery disables Node networking;
-  installation can use the registry. The new guide adds no executable example.
+- `pnpm test:agent-docs:local` passes. Installed declarations expose both mode
+  branches, required callbacks, native targets and public helper types. The
+  authored block guide is discoverable; exact AuthForm CLI/MCP output matches.
+  Six existing packaged examples compile and execute. Discovery disables Node
+  networking; installation can use the registry. No new executable guide example
+  or backend authentication acceptance is claimed.
 
-Logs: `/tmp/cossack-icon-{renderer,renderer-build,ui,ui-build,browser,types,agent-docs,agent-docs-final}.log`.
-Final UI/browser/type checks include the fill correction and no-JavaScript fixture.
-All 65 component-source foundations plus Icon are reviewed. Four composed blocks,
-other engines/assistive technologies and full generated-app/runtime acceptance
-remain open. RT-23 and CLI-07/CLI-08 remain open; status stays 24/58 complete.
+Logs: `/tmp/cossack-auth-form-{build,ui-final,browser-final,types-final,regressions,agent-docs}.log`.
+All 65 component foundations plus Icon and AuthForm are reviewed. CommandPalette,
+DashboardStat and SettingsPanel remain pending, along with wider generated-app,
+backend/session, browser/assistive-technology and runtime gates. RT-23 and
+CLI-07/CLI-08 remain open. Status stays 24/58 complete; versions remain 0.8.3.
 
 ### Archived checkpoints
 
@@ -143,6 +160,7 @@ parent task. Status remains 24 complete and 34 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-icon-2026-10-04"></a>[Codex Icon (2026-10-04)](./release-0.9.0-verification-archive.md#codex-icon-2026-10-04) |
 | <a id="codex-message-scroller-2026-10-04"></a>[Codex MessageScroller (2026-10-04)](./release-0.9.0-verification-archive.md#codex-message-scroller-2026-10-04) |
 | <a id="codex-chat-display-2026-10-04"></a>[Codex Bubble, Marker and Message (2026-10-04)](./release-0.9.0-verification-archive.md#codex-chat-display-2026-10-04) |
 | <a id="codex-attachment-2026-10-04"></a>[Codex Attachment (2026-10-04)](./release-0.9.0-verification-archive.md#codex-attachment-2026-10-04) |

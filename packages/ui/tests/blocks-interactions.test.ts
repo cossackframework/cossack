@@ -6,27 +6,10 @@ Object.defineProperty(globalThis, 'window', {
   configurable: true,
 });
 
-const { AuthForm, CommandPalette, SettingsPanel } = await import('../src/blocks/index');
+const { CommandPalette, SettingsPanel } = await import('../src/blocks/index');
 
 describe('@cossackframework/ui/blocks interactions', () => {
-  it('submits valid auth data and reports setting changes', async () => {
-    const onSubmit = vi.fn();
-    const auth = new AuthForm() as unknown as {
-      props: Record<string, unknown>;
-      email: string;
-      password: string;
-      handleSubmit(event: Event): Promise<void>;
-    };
-    auth.props = { onSubmit, social: false };
-    auth.email = 'ada@example.com';
-    auth.password = 'correct-horse';
-    await auth.handleSubmit(new Event('submit', { cancelable: true }));
-    expect(onSubmit).toHaveBeenCalledWith({
-      email: 'ada@example.com',
-      password: 'correct-horse',
-      name: undefined,
-    });
-
+  it('reports setting changes', async () => {
     const onChange = vi.fn();
     const settings = new SettingsPanel() as unknown as {
       props: Record<string, unknown>;

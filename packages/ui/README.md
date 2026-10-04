@@ -373,3 +373,26 @@ Use Input with `type: 'range'` for direct native property-binding behavior.
 Checkbox, Switch and RadioGroup wrappers follow the child's native disabled state.
 Slider styles its own native disabled state. This includes disabled fieldsets.
 The installed `radio-and-range` guide describes attributes, events and accessibility.
+
+### AuthForm block
+
+```ts
+import { component } from '@cossackframework/renderer';
+import { AuthForm } from '@cossackframework/ui/blocks';
+
+component(AuthForm, {
+  id: 'account-login',
+  defaultMode: 'login',
+  onSubmit: async (data, { signal }) => {
+    // Call your authentication service. Validate credentials on the server.
+    // Return safe { error, fieldErrors } text when needed.
+  },
+});
+```
+
+Use `mode` with `onModeChange` for controlled state. Native credentials remain in
+fields; submission reads current FormData, including autofill. Provider actions
+require explicit `providers` and `onSocial`. Localize text with `labels`.
+The block owns UI behavior, not authentication or session creation. Actions need
+JavaScript; fields remain editable before hydration. `cossack add ui auth-form`
+ejects the block using public UI imports.
