@@ -120,6 +120,51 @@ cannot identify every secret stored under an ordinary name. Select only fields
 that are appropriate to inspect or share. Component/resource values are never
 included in the default event stream.
 
-RT-28 remains open. Server-side correlation, browser inspector integration,
-CLI/MCP trace access and generated-browser acceptance still need work.
+## Browser inspector
+
+The framework's development entry installs the inspector. Generated applications
+with a custom client entry can opt in explicitly:
+
+```ts
+if (import.meta.env.DEV) {
+  const { enableDevTools } = await import('@cossackframework/framework/client/devtools');
+  const inspector = enableDevTools();
+  // Retain the controller if this entry owns a shorter application lifetime.
+  import.meta.hot?.dispose(() => inspector?.dispose());
+}
+```
+
+Installation is idempotent and does not start capture. The toolbar's **Record trace**
+button starts a session; **Stop trace** stops collection while retaining its history.
+**Log snapshot** writes a detached default snapshot to the browser console.
+A new session replaces the previous capture, including one started through core.
+
+Hold Control to highlight a component source range. **Ctrl-Shift-click** starts
+capture if needed and logs its passive snapshot without invoking the clicked
+application action. **Ctrl-click** opens its source through the existing local
+editor service at `http://localhost:3333/open`; that service must be running.
+Inspection does not contact the editor service. Neither gesture logs live instances
+or selects state values automatically.
+
+The returned `BrowserDevTools` controller provides `startCapture`, `stopCapture`,
+`snapshot`, `inspect(file, options)` and `dispose`. Explicit state selection uses
+the same bounded, redacted core reader described above. `snapshot()` returns null
+before recording and after disposal. Disposal stops only the owned capture,
+removes listeners and controls, restores the owned cursor and clears source
+registrations. Hot-module replacement and final page exit dispose automatically;
+a back/forward-cache suspension retains capture and hides the highlight.
+
+Source lookup is limited to compiler comment markers and registered instances.
+Client navigation registers the page after rendering. The bounded weak registry
+holds the most recent instance for each of at most 128 source files. Repeated
+instances from one source are not distinguished; a marker without a registration
+reports that no component is registered. It is not a complete component-tree view.
+Custom integrations can call `registerDevToolsInstance(file, instance)` and retain
+its identity-safe unregister callback. Reinstalling after disposal requires new
+registrations. Core capture can still observe other instances through navigation
+and RPC without a source registration.
+
+RT-28 remains open. Server-side correlation, Vite integration, CLI/MCP trace access
+and generated-application browser acceptance still need work. The inspector has
+isolated Vite/Chromium coverage, which does not replace the generated-app gate.
 The separate [stored test-results reader](./test-results.md) does not read traces.

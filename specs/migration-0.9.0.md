@@ -1624,3 +1624,11 @@ snapshot captured at first render. Local state resets; controlled state follows
 the parent's acceptance. Reset callbacks run after the native default action and
 are cancelled on cleanup. Keyed row updates preserve controls; focus is repaired
 after movement/removal without taking focus from another active element.
+
+## Development inspector gestures
+
+Use Ctrl-Shift-click to inspect a component snapshot. This replaces the previous
+Ctrl-double-click gesture and raw instance/public-state console output. Ctrl-click
+continues to open source through the local editor service. Recording is explicit
+through the toolbar or inspection gesture; values are omitted unless selected
+through the controller API. See [development traces](../docs/development-traces.md#browser-inspector).

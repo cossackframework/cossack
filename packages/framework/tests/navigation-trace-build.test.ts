@@ -18,3 +18,19 @@ it('removes navigation trace capture and browser diagnostics from production out
         expect(code).not.toContain(marker);
     }
 }, 30000);
+
+it('removes the browser inspector, editor endpoint and capture controls from production output', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const result = await build({ configFile: false, logLevel: 'silent', mode: 'production', build: {
+        write: false, minify: false,
+        lib: { entry: fileURLToPath(new URL('../src/client/devtools.ts', import.meta.url)), formats: ['es'] },
+    } });
+    const bundles = Array.isArray(result) ? result : [result];
+    const code = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : [])
+        .filter(chunk => chunk.type === 'chunk').map(chunk => chunk.code).join('\n');
+    expect(code).toContain('enableDevTools');
+    for (const marker of ['Cossack developer tools', 'localhost:3333', 'Record trace',
+        'cossack-start:', 'startDevelopmentTrace', 'WeakRef', 'Component snapshot']) {
+        expect(code).not.toContain(marker);
+    }
+}, 30000);

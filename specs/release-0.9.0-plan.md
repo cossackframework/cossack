@@ -615,8 +615,13 @@ are omitted by default; explicit selections return bounded, redacted copies. Wea
 tracking, capture timestamps and unavailable/truncated states remain explicit.
 Resource getters/loaders and service resolution do not run during inspection.
 
-Remaining: correlate server events with those calls; integrate the browser inspector
-and project-bound CLI/MCP reads through shared schemas. Verify an actual generated
+The browser inspector now consumes the passive snapshot API, with explicit capture
+controls, separate inspection/source gestures and disposal. DOM, production-bundle
+and isolated Vite/Chromium tests cover its behavior. Source markers resolve only
+the latest registered instance per file; this is not a complete component tree.
+
+Remaining: correlate server events with those calls; integrate Vite and
+project-bound CLI/MCP reads through shared schemas. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.
 Service RPC and server execution are not covered by the current client capture.
 This foundation does not complete RT-28 or CLI-07.

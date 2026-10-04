@@ -6,6 +6,46 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-component-snapshots-2026-10-04"></a>
+## Codex passive component snapshots (2026-10-04)
+
+Author: Codex. Development capture now tracks at most 64 weak component references
+and exposes current snapshots with capture timestamps. Framework-owned readers
+inspect initialized public/client field inventory, resource status (including
+unbound declarations), scope ownership/counts and recorded transport status.
+Defaults omit values. Explicit state selections return detached tagged values
+with depth/node/entry/string limits, known-secret redaction and markers for
+accessors, cycles, unsupported values and sparse holes. Selected values are not
+retained by the event buffer. Stops prevent subsequent passive component reads.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,462 tests / 88 files pass**.
+  New fixtures use real Cossack lifecycle/resource records and service scopes.
+  They verify passive unbound/pending/ready/error resource reads, no getter or
+  serialization-hook calls, no service construction during reads, private-state
+  exclusion, redaction, sparse/value limits, detached results and registry bounds.
+  Log: `/tmp/cossack-component-snapshots-core-suite.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/navigation-outcomes.test.ts tests/navigation-owner.test.ts tests/navigation-focus.test.ts tests/navigation-trace-build.test.ts`:
+  **62 tests / 4 files pass**. Log: `/tmp/cossack-component-snapshots-framework.log`.
+- Production proxy bundling also checks removal of inspector registration,
+  selected-value readers and validation text, alongside trace collection.
+- `pnpm --filter @cossackframework/core build`, `pnpm tsc --noEmit` and
+  `pnpm typecheck`: build, root and all 11 package checks pass.
+  Logs: `/tmp/cossack-component-snapshots-build.log`, `/tmp/cossack-component-snapshots-types.log`.
+- The workspace CLI exact-symbol catalog exposes the built `DevelopmentTraceSession`
+  with `inspect`, `snapshot` and `stop`, plus the updated packaged guide.
+  This is workspace package evidence, not a fresh installed-tarball gate.
+
+Limits: selected values must be appropriate to inspect/share; pattern redaction
+cannot recognize every secret. Reflective JavaScript proxy traps are not sandboxed.
+Snapshots show current reads, not historical reconstruction or server verification.
+Unknown/private/uninitialized selections expose no values. The registry and every
+inventory/value tree have explicit limits. See [usage](../docs/development-traces.md).
+RT-28 still needs browser inspector/Vite integration, server correlation, shared
+CLI/MCP trace reads and generated-browser acceptance. CLI-07 and the full release
+gates remain open. Status stays 25 complete and 33 open.
+
 <a id="codex-navigation-trace-2026-10-04"></a>
 ## Codex shared navigation trace capture (2026-10-04)
 

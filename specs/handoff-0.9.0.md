@@ -7,32 +7,38 @@ Versions stay at 0.8.3 until REL-04.
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
-The [completed task index](./release-0.9.0-plan.md#completed-task-index) links the
-25 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-Latest completion: **RT-23** — DataTable and all 70 UI audit rows reviewed;
-[acceptance evidence and limits](./release-0.9.0-verification-archive.md#codex-rt23-complete-2026-10-04) are archived.
+## Completed work — reference only
+
+The [completed task index](./release-0.9.0-plan.md#completed-task-index) covers all
+25 closed tasks, including RT-23's 70-row UI audit. Full criteria and evidence
+remain in the archives; do not repeat completed implementation work.
+
+Implemented portions of the still-open CLI-07/RT-28 tasks:
+
+- [Stored test evidence](../docs/test-results.md): Vitest 4 reporter and shared CLI/MCP reads.
+- [Development capture](../docs/development-traces.md): bounded RPC/navigation events,
+  shared component IDs and passive state/resource/service/transport snapshots.
+  Values are omitted by default; explicit selections are bounded and redacted.
+
+Browser inspector integration is also verified; see the [latest checkpoint](./release-0.9.0.md#codex-browser-inspector-2026-10-04)
+for results and limits. These portions do not close CLI-07 or RT-28.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-28 snapshots/traces** through shared browser, CLI and MCP services.
-   CLI-07 stored test evidence is implemented: Vitest 4 reporter, versioned records,
-   source freshness and shared reads. See [usage](../docs/test-results.md) and the
-   [verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
-   Core now captures component RPC and framework navigation through one bounded
-   event union; prepared component IDs join the two. See [capture semantics](../docs/development-traces.md).
-   Passive state/resource/service/transport snapshots are now available through the
-   session, with values omitted by default and explicit bounded field selection.
-   Continue with server correlation, browser inspector and Vite development
-   integration, shared CLI/MCP reads and generated-browser acceptance. Preserve session ownership, terminal outcomes and
-   production-exclusion tests. CLI-07 and RT-28 stay open.
-2. Continue **CLI-08** authored API/recipe guidance, executable examples and
-   verified runtime support. UI contracts/guides are reviewed under RT-23; not all
-   guides have executable examples. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
-   using the [shared documentation services](../docs/local-agent-tools.md).
-3. Follow every remaining checklist item and its detailed plan. Close tasks only
-   against their original acceptance criteria. Preserve completed-task regressions.
+1. Finish **RT-28 / CLI-07**: Vite integration, server correlation,
+   shared CLI/MCP trace reads and generated-browser acceptance. Preserve session
+   ownership, terminal outcomes and production-exclusion tests.
+   The inspector now uses passive snapshots with explicit controls and disposal.
+   Its 59-test checkpoint includes isolated Vite/Chromium and production exclusion.
+   Next connect capture to project-bound development tooling; do not treat source
+   markers as complete instance identity or the isolated fixture as generated-app acceptance.
+2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
+   runtime support. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
+   through the [shared documentation services](../docs/local-agent-tools.md).
+3. Follow all 33 open tasks in the detailed plan. Close each only against its
+   original acceptance criteria. Preserve completed-task regression coverage.
 
 ## Limits to retain
 

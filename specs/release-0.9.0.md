@@ -88,45 +88,39 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-component-snapshots-2026-10-04"></a>
-### Codex passive component snapshots (2026-10-04)
+<a id="codex-browser-inspector-2026-10-04"></a>
+### Codex browser inspector integration (2026-10-04)
 
-Author: Codex. Development capture now tracks at most 64 weak component references
-and exposes current snapshots with capture timestamps. Framework-owned readers
-inspect initialized public/client field inventory, resource status (including
-unbound declarations), scope ownership/counts and recorded transport status.
-Defaults omit values. Explicit state selections return detached tagged values
-with depth/node/entry/string limits, known-secret redaction and markers for
-accessors, cycles, unsupported values and sparse holes. Selected values are not
-retained by the event buffer. Stops prevent subsequent passive component reads.
+Author: Codex. The browser inspector now uses the core passive snapshot reader.
+It no longer logs live instances or raw public state. Capture starts explicitly
+through Record trace or Ctrl-Shift-click; Ctrl-click retains source opening.
+The controller owns stop/read/dispose operations. Source registrations are weak,
+limited to 128 files and unregister by identity. Highlighting uses viewport
+coordinates and the Control key. Disposal removes controls/listeners, restores
+its cursor and stops only its own capture; bfcache suspension retains capture.
 
 Verification:
 
-- `pnpm --filter @cossackframework/core exec vitest run`: **1,462 tests / 88 files pass**.
-  New fixtures use real Cossack lifecycle/resource records and service scopes.
-  They verify passive unbound/pending/ready/error resource reads, no getter or
-  serialization-hook calls, no service construction during reads, private-state
-  exclusion, redaction, sparse/value limits, detached results and registry bounds.
-  Log: `/tmp/cossack-component-snapshots-core-suite.log`.
-- `pnpm --filter @cossackframework/framework exec vitest run tests/navigation-outcomes.test.ts tests/navigation-owner.test.ts tests/navigation-focus.test.ts tests/navigation-trace-build.test.ts`:
-  **62 tests / 4 files pass**. Log: `/tmp/cossack-component-snapshots-framework.log`.
-- Production proxy bundling also checks removal of inspector registration,
-  selected-value readers and validation text, alongside trace collection.
-- `pnpm --filter @cossackframework/core build`, `pnpm tsc --noEmit` and
-  `pnpm typecheck`: build, root and all 11 package checks pass.
-  Logs: `/tmp/cossack-component-snapshots-build.log`, `/tmp/cossack-component-snapshots-types.log`.
-- The workspace CLI exact-symbol catalog exposes the built `DevelopmentTraceSession`
-  with `inspect`, `snapshot` and `stop`, plus the updated packaged guide.
-  This is workspace package evidence, not a fresh installed-tarball gate.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools.test.ts tests/devtools-browser.test.ts tests/navigation-outcomes.test.ts tests/navigation-trace-build.test.ts`:
+  **59 tests / 4 files pass**. DOM tests cover controls, identity, bounds, page exit,
+  external capture ownership and cursor restoration. Chromium runs a real Vite
+  fixture with a Cossack instance: inspection redacts selected sensitive state,
+  suppresses the application action, avoids editor requests and disposes cleanly.
+  Production bundling excludes inspector controls, source endpoint and collector.
+  Log: `/tmp/cossack-browser-inspector-final-tests.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 packages pass.
+  Log: `/tmp/cossack-browser-inspector-types.log`.
+- `pnpm --filter @cossackframework/framework build:types`: passes; built public
+  declarations expose `BrowserDevTools` and the identity-safe unregister callback.
+  Log: `/tmp/cossack-browser-inspector-build.log`.
 
-Limits: selected values must be appropriate to inspect/share; pattern redaction
-cannot recognize every secret. Reflective JavaScript proxy traps are not sandboxed.
-Snapshots show current reads, not historical reconstruction or server verification.
-Unknown/private/uninitialized selections expose no values. The registry and every
-inventory/value tree have explicit limits. See [usage](../docs/development-traces.md).
-RT-28 still needs browser inspector/Vite integration, server correlation, shared
-CLI/MCP trace reads and generated-browser acceptance. CLI-07 and the full release
-gates remain open. Status stays 25 complete and 33 open.
+Limits: the Chromium fixture is isolated, not a generated application. Automatic
+source registration currently covers rendered pages; repeated instances sharing
+one source file cannot be distinguished. Generated custom client entries require
+explicit inspector installation. The existing editor service is separate and
+was not launched by these tests. Server correlation, Vite/shared CLI/MCP trace
+reads, service RPC capture and generated-browser acceptance remain open. No
+release task is closed: status remains 25 complete and 33 open.
 
 ### Archived checkpoints
 
@@ -137,6 +131,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-component-snapshots-2026-10-04"></a>[Codex passive component snapshots (2026-10-04)](./release-0.9.0-verification-archive.md#codex-component-snapshots-2026-10-04) |
 | <a id="codex-navigation-trace-2026-10-04"></a>[Codex shared navigation trace capture (2026-10-04)](./release-0.9.0-verification-archive.md#codex-navigation-trace-2026-10-04) |
 | <a id="codex-rpc-trace-foundation-2026-10-04"></a>[Codex development RPC trace foundation (2026-10-04)](./release-0.9.0-verification-archive.md#codex-rpc-trace-foundation-2026-10-04) |
 | <a id="codex-test-evidence-2026-10-04"></a>[Codex stored test evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-test-evidence-2026-10-04) |
