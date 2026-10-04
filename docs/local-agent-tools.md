@@ -228,8 +228,8 @@ explicit, and a declared branch does not prove runtime behavior.
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
 The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
-Field CLI/MCP parity covering its required control callback, plus Spinner SVG,
-Skeleton shape, Separator orientation and Pagination navigation checks. It retains unresolved
+Avatar CLI/MCP parity covering its span/image event targets, plus Field callbacks,
+Spinner SVG, Skeleton shape, Separator orientation and Pagination navigation checks. It retains unresolved
 platform diagnostics.
 
 

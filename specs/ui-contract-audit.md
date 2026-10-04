@@ -62,8 +62,8 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [AlertDialog](../packages/ui/src/components/AlertDialog.ts) | Reviewed foundation | Typed native dialog props, linked title/message, Cancel-first focus, controlled/default dismissal, caller-owned actions and SSR/Chromium acceptance. |
 | [AspectRatio](../packages/ui/src/components/AspectRatio.ts) | Reviewed foundation | Typed native wrapper, positive finite ratios, independent CSS ratio box, responsive width/ratio changes, SSR/no-JavaScript/Chromium and ejected-source coverage. |
 | [Attachment](../packages/ui/src/components/Attachment.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Avatar](../packages/ui/src/components/Avatar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [AvatarGroup](../packages/ui/src/components/AvatarGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Avatar](../packages/ui/src/components/Avatar.ts) | Reviewed foundation | Typed span/image callbacks, explicit alternative text, stable fallback names, request-owned failure and cached hydration recovery, native style composition, SSR/Chromium and source-ejection coverage. |
+| [AvatarGroup](../packages/ui/src/components/AvatarGroup.ts) | Reviewed foundation | Named native group, readonly stable keyed items, native props, validated geometry/counts, localized overflow, RTL/reverse overlap, keyed state retention, SSR/Chromium and source-ejection coverage. |
 | [Badge](../packages/ui/src/components/Badge.ts) | Reviewed foundation | Typed native span attributes/events, validated variants, readable status text, SSR/Chromium and ejected-source coverage. |
 | [Breadcrumb](../packages/ui/src/components/Breadcrumb.ts) | Reviewed foundation | Typed native root/list/link/text targets, stable readonly items, current-page links/text, rich names, hidden separators, native keyboard/modifiers, keyed focus, SSR/accessibility snapshots/Chromium, scaffold and ejected-source coverage. |
 | [Bubble](../packages/ui/src/components/Bubble.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,12 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Avatar and AvatarGroup. Avatar retains its failed flag when src changes;
-review recovery, stale image events, SSR/hydration and meaningful fallback names.
-AvatarGroup drops native props and lacks stable item identities. Define typed root
-and image targets, immutable items, validated size/count/overlap, overflow naming
-and logical overlap for RTL/reverse layouts. Keep decorative and meaningful images
-explicit, including initials and caller-supplied fallback content.
+Next audit Item and Typography. Item documents interactive as making a row
+clickable but only adds visual styles; define native action ownership and typed
+root/slot contracts. Typography needs variant-specific native attributes/events
+for headings, paragraphs, quotes, ordered/unordered lists and inline text, with
+invalid variants rejected and semantic content guidance. Keep all variants in
+public type, SSR, browser and installed-catalog acceptance.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

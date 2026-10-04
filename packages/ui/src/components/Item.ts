@@ -22,7 +22,7 @@ export interface ItemProps {
  * children (main content), and `trailing` (trailing) slots.
  *
  *   ${component(Item, {
- *       media: component(Avatar, { src: '/me.png', size: 40 }),
+ *       media: component(Avatar, { src: '/me.png', alt: '', size: 40 }),
  *       trailing: component(Badge, {}, 'New'),
  *   }, html\`<div><p class="font-medium">Tan Nguyen</p><p class="text-sm text-muted-foreground">Admin</p></div>\`)}
  */

@@ -306,30 +306,32 @@ export class ComponentsDemo extends Cossack {
                     <div class="flex flex-col gap-4">
                         <div class="flex items-center gap-6">
                             ${component(AvatarGroup, {
+                                label: 'Team members',
                                 max: 4,
                                 size: 36,
                                 items: [
-                                    { src: 'https://i.pravatar.cc/80?img=1', alt: 'Alice' },
-                                    { src: 'https://i.pravatar.cc/80?img=2', alt: 'Bob' },
-                                    { src: 'https://i.pravatar.cc/80?img=3', alt: 'Carol' },
-                                    { src: 'https://i.pravatar.cc/80?img=4', alt: 'Dan' },
-                                    { src: 'https://i.pravatar.cc/80?img=5', alt: 'Eve' },
-                                    { src: 'https://i.pravatar.cc/80?img=6', alt: 'Frank' },
+                                    { value: 'alice', src: 'https://i.pravatar.cc/80?img=1', alt: 'Alice' },
+                                    { value: 'bob', src: 'https://i.pravatar.cc/80?img=2', alt: 'Bob' },
+                                    { value: 'carol', src: 'https://i.pravatar.cc/80?img=3', alt: 'Carol' },
+                                    { value: 'dan', src: 'https://i.pravatar.cc/80?img=4', alt: 'Dan' },
+                                    { value: 'eve', src: 'https://i.pravatar.cc/80?img=5', alt: 'Eve' },
+                                    { value: 'frank', src: 'https://i.pravatar.cc/80?img=6', alt: 'Frank' },
                                 ],
                             })}
                             <span class="text-sm text-muted-foreground">6 members, max 4 shown</span>
                         </div>
                         <div class="flex items-center gap-6">
                             ${component(AvatarGroup, {
+                                label: 'Team members',
                                 max: 3,
                                 size: 28,
                                 shape: 'square',
                                 items: [
-                                    { src: 'https://i.pravatar.cc/80?img=7', alt: 'Grace' },
-                                    { src: 'https://i.pravatar.cc/80?img=8', alt: 'Henry' },
-                                    { src: 'https://i.pravatar.cc/80?img=9', alt: 'Ivy' },
-                                    { src: 'https://i.pravatar.cc/80?img=10', alt: 'Jack' },
-                                    { alt: 'KL' },
+                                    { value: 'grace', src: 'https://i.pravatar.cc/80?img=7', alt: 'Grace' },
+                                    { value: 'henry', src: 'https://i.pravatar.cc/80?img=8', alt: 'Henry' },
+                                    { value: 'ivy', src: 'https://i.pravatar.cc/80?img=9', alt: 'Ivy' },
+                                    { value: 'jack', src: 'https://i.pravatar.cc/80?img=10', alt: 'Jack' },
+                                    { value: 'kl', alt: 'KL' },
                                 ],
                             })}
                             <span class="text-sm text-muted-foreground">Square, max 3, initials fallback</span>

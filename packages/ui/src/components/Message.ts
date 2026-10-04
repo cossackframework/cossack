@@ -23,7 +23,7 @@ export interface MessageProps {
  *       name: 'Alice',
  *       time: '10:32 AM',
  *       variant: 'received',
- *       avatar: component(Avatar, { src: '/alice.png', size: 32 }),
+ *       avatar: component(Avatar, { src: '/alice.png', alt: 'Alice', size: 32 }),
  *   }, component(Bubble, { variant: 'received' }, 'Hello!'))}
  */
 @Component()

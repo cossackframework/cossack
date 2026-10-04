@@ -485,3 +485,19 @@ component(Field, { label: 'Email', for: 'email' }, component(Input));
 component(Field, { label: 'Email', for: 'email', control: () => '', value: 'text' });
 // @ts-expect-error Empty has a native div, not a button.
 component(Empty, { disabled: true });
+
+import { Avatar, AvatarGroup, type AvatarGroupItem } from '@cossackframework/ui';
+component(Avatar, {alt:'Alice', '@click': event=>{const root:HTMLSpanElement=event.currentTarget;void root;},onImageError:event=>{const image:HTMLImageElement=event.currentTarget;void image;}});
+component(Avatar, {alt:'', loading:'lazy', decoding:'async', referrerpolicy:'no-referrer'});
+const people: readonly AvatarGroupItem[] = [{value:'alice',alt:'Alice'}];
+component(AvatarGroup, {label:'People',items:people,'@click':event=>{const group:HTMLDivElement=event.currentTarget;void group;},overflowLabel:count=>`${count} more`});
+// @ts-expect-error Explicit alt text is required, including empty for decoration.
+component(Avatar, {src:'/person.png'});
+// @ts-expect-error Avatar owns its accessible name.
+component(Avatar, {alt:'Alice','aria-label':'Override'});
+// @ts-expect-error Group items require stable identity.
+component(AvatarGroup, {label:'People',items:[{alt:'Alice'}]});
+// @ts-expect-error A group requires a name.
+component(AvatarGroup, {items:people});
+// @ts-expect-error Image callbacks do not target a form input.
+component(Avatar, {alt:'Alice',onImageLoad:(event:Event & {currentTarget: HTMLInputElement})=>event});

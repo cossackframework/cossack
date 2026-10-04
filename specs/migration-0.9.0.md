@@ -1188,3 +1188,25 @@ Empty now forwards native div attributes/events instead of silently discarding t
 Visible title and description remain component props. The caller owns illustration
 alternatives and native child buttons/links. Neither wrapper adds focus management
 or automatic announcements. See the packaged `native-field-empty` guide.
+
+## Avatar and AvatarGroup
+
+Avatar now requires `alt`: a meaningful name or an explicit empty string for a
+decorative portrait. Its span owns the accessible name across image and fallback
+states. The nested image has empty alt and is hidden from accessibility naming.
+Keep fallback content noninteractive and put actions on a surrounding native link
+or button. Native `@events` target the span; `onImageLoad` and `onImageError` receive
+image events. Loading, decoding and referrer policy apply to the image.
+
+Failures now belong to a source request. A changed URL retries rather than retaining
+the old failed flag. Cached failures before hydration are detected without synthetic
+callbacks. Size must be positive and finite; native styles compose with generated
+sizing. Source changes create new image nodes to prevent stale event ownership.
+
+AvatarGroup requires `label`, readonly `items`, and a unique stable `value` plus
+explicit `alt` per item. Native root props are now forwarded. `max` must be a
+nonnegative safe integer; zero displays the overflow count. `overlap` changes from
+a negative margin to a nonnegative pixel distance smaller than size. Logical
+margins support RTL and row-reverse. `overflowLabel(count)` supplies localized
+count text. Use a separate list/action to expose hidden identities. The packaged
+`native-avatar` guide describes ownership and browser/runtime limits.

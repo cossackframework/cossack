@@ -88,6 +88,59 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-avatar-2026-10-04"></a>
+## Codex Avatar and AvatarGroup (2026-10-04)
+
+Author: Codex. Avatar requires explicit alternative text and keeps a meaningful
+name on its span through image/fallback states. Empty alternative text hides
+decorative content. Native span events and image load/error callbacks have separate
+typed targets. Generated sizing composes with native styles. Size and shape are
+validated; initials handle Unicode code points and whitespace-separated names.
+
+Source changes create a new request identity and image node. Failure no longer
+sticks to later URLs, including returning to a previously failed URL. Old node
+events cannot change the current image. A queued complete/naturalWidth check covers
+failures before hydration; it does not synthesize missed native callbacks. Cleanup
+invalidates queued checks. Without JavaScript, network-error initials remain
+unavailable, while the server-rendered accessible name remains present.
+
+AvatarGroup requires a name, readonly items and stable unique item values. Native
+root props now forward. Keyed reordering retains avatar DOM/state. Validated
+nonnegative overlap uses logical margins for RTL and row-reverse. Nonnegative max
+includes zero; overflow has localizable count text and no implicit interaction.
+The demo and Avatar examples use the new naming/identity contracts.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 358 tests in
+  33 files pass. Public declarations check required names/keys, readonly arrays,
+  span/group/image event targets and owned accessibility attributes. SSR checks
+  names, decorative content, native styles, request recovery and invalid values.
+- `pnpm --filter cossack exec vitest run tests/avatar-browser.test.js tests/ui-ejection.test.js`:
+  28 tests pass (27 source-ejection cases and one themed production Chromium case).
+  Browser checks include no-JavaScript names, retained hydration, verified cached
+  failure before hydration, actual bad/good image responses, repeated URL recovery,
+  stale-node errors, native image callbacks, fallback names, native Tab and events,
+  keyed reorder, all four RTL/reverse combinations, zero/empty groups and cleanup.
+  Source ejection compiles both controls with strict NodeNext settings.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the guide,
+  required alt text, separate span/image callback targets and identical exact-symbol
+  Avatar output. Six existing packaged examples compile and execute; discovery
+  runs with Node networking disabled.
+- The final avatar browser rerun also asserts stale errors do not invoke callbacks
+  and immediate unmount after a source change invalidates pending checks.
+
+The WAI guidance on [informative images](https://www.w3.org/WAI/tutorials/images/informative/)
+and [decorative images](https://www.w3.org/WAI/tutorials/images/decorative/) informs
+the naming contract. The new guide adds no executable example. Other browsers,
+screen readers, full generated-app integration and the runtime matrix remain open.
+
+Logs: `/tmp/cossack-avatar-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs}.log`.
+Fifty-two of 65 component-source foundations are reviewed. Continue Item, Typography
+and every pending row. RT-23 and CLI-07/CLI-08 remain open. Release status stays 24 of 58 complete and
+versions stay 0.8.3 until REL-04.
+
 <a id="codex-field-empty-2026-10-04"></a>
 ## Codex Field and Empty (2026-10-04)
 

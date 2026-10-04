@@ -328,10 +328,20 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(field.propsContract.members.find(member => member.name === 'control').callSignatures.length);
     assert.ok(uiSymbols.some(symbol => symbol.name === 'FieldControlAttributes'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-field-empty'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Field', '--json']);
+    for (const [name, target] of [['Avatar', 'HTMLSpanElement'], ['AvatarGroup', 'HTMLDivElement']]) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@click' && member.type.includes(target)));
+    }
+    const avatar = uiSymbols.find(symbol => symbol.name === 'Avatar');
+    assert.ok(avatar.propsContract.members.some(member => member.name === 'alt' && !member.optional));
+    for (const name of ['onImageLoad', 'onImageError']) assert.ok(avatar.propsContract.members.find(member => member.name === name).callSignatures.some(signature => signature.includes('HTMLImageElement')));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-avatar'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Avatar', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Field']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Field' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Avatar']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Avatar' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');
