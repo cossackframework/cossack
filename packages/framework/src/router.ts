@@ -1,3 +1,4 @@
+import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream } from './transports/development-trace.js';
 import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
@@ -736,6 +737,10 @@ export function createApp(options: CreateAppOptions = {}) {
   };
 
   // Transport routes
+  if (import.meta.env.DEV) {
+    app.use('/crpc', developmentRpcEvidence());
+    app.use('/upload', developmentRpcEvidence());
+  }
   app.use('/crpc', protectTransport(routerContext));
   app.use('/upload', protectTransport(routerContext));
   app.use('/sse/:componentRouteId', protectTransport(routerContext));
@@ -874,7 +879,9 @@ export function createApp(options: CreateAppOptions = {}) {
           const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : [], { signal: c.req.raw.signal });
           await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, c, c.req.raw.signal);
           if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+          if (import.meta.env.DEV) developmentRpcInvoked(c);
           actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
+          if (import.meta.env.DEV) developmentRpcReturned(c, actionResult instanceof Response ? 'native' : 'value');
         } catch (e: any) {
           const denial = getAuthorizationFailure(e);
           if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
@@ -894,6 +901,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Generator results stream through the same response-local protocol as
         // component calls; the stream owns request-scope cleanup until it ends.
         if (isRpcStream(actionResult)) {
+          if (import.meta.env.DEV) developmentRpcStream(c);
           const finishResponseLifetime = retainResponseLifetime(c);
           const response = createRpcStreamResponse({
             result: actionResult, requestId, signal: c.req.raw.signal,
@@ -1098,7 +1106,9 @@ export function createApp(options: CreateAppOptions = {}) {
         // does not pull it; its response owns iteration and request-context lifetime.
         let actionResult: unknown;
         try {
+          if (import.meta.env.DEV) developmentRpcInvoked(c);
           actionResult = await targetInstance[action](...(validatedPayload as any[]));
+          if (import.meta.env.DEV) developmentRpcReturned(c, actionResult instanceof Response ? 'native' : 'value');
         } catch (e: any) {
           const denial = getAuthorizationFailure(e);
           if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
@@ -1117,6 +1127,7 @@ export function createApp(options: CreateAppOptions = {}) {
           throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
         }
         if (isRpcStream(actionResult)) {
+          if (import.meta.env.DEV) developmentRpcStream(c);
           finishResponseLifetime = retainResponseLifetime(c);
           let localSseCursor: number | undefined;
           const response = createRpcStreamResponse({

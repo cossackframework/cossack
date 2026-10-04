@@ -389,7 +389,7 @@ export class ServiceScope {
                         payload: normalized.payload, state: requestState, scopeKey: this.scopeKey };
                     request = fetch(normalized.files.size ? '/upload' : '/crpc', {
                         method: 'POST',
-                        headers: { 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, ...(normalized.files.size ? {} : { 'Content-Type': 'application/json' }), Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
                         body: normalized.files.size ? rpcFormData(body, normalized.files) : JSON.stringify(body),
                     });
@@ -406,6 +406,7 @@ export class ServiceScope {
                         const response = await request;
                         requestId = response.headers.get('X-Cossack-Request-Id') ?? requestId;
                         trace?.response(requestId);
+                        trace?.server(response);
                         if (!response.ok) {
                             throw await readRpcHttpError(response, controller.signal);
                         }

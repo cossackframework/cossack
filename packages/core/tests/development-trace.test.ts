@@ -169,3 +169,19 @@ it('adopts a validated stream frame ID when the HTTP response omitted its correl
         ['response', wireId], ['state-reconciled', wireId], ['finish', wireId],
     ]);
 });
+
+it('carries opt-in dispatch evidence through a real HTTP proxy and state reconciliation', async () => {
+    const header = 'X-Cossack-Development-Trace';
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+        const headers = new Headers(init.headers), callId = headers.get(header), requestId = headers.get('X-Cossack-Request-Id')!;
+        return new Response(JSON.stringify({count: 8, _cossack_return: 8}), {headers: { 'Content-Type': 'application/json', 'X-Cossack-Request-Id': requestId,
+            ...(callId ? {[header]: JSON.stringify({schemaVersion:1, callId, requestId, dispatchId: crypto.randomUUID(), receivedAt:1, invokedAt:2, returnedAt:3, respondedAt:4, result:'value', status:200})} : {})}});
+    }));
+    expect(await component().run()).toBe(8);
+    expect(new Headers(vi.mocked(fetch).mock.calls[0][1]?.headers).has(header)).toBe(false);
+    session = startDevelopmentTrace(); const target = component(); expect(await target.run()).toBe(8);
+    const events = session.snapshot().events;
+    expect(events.map(e=>e.kind)).toEqual(['rpc','rpc','server-rpc','rpc','rpc']);
+    expect(events[2]).toMatchObject({callId: rpcEvents()[0].callId, requestId:rpcEvents()[0].requestId, result:'value'});
+    expect(target.count).toBe(8);
+});

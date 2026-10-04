@@ -52,8 +52,9 @@ describe('multipart payload values', () => {
 describe('progressive upload replies', () => {
     it('retains the supplied call ID when aborting before response headers', async () => {
         const controller = new AbortController(); const id = crypto.randomUUID();
-        const pending = sendRpcUpload('/upload', new FormData(), controller.signal, vi.fn(), id);
+        const pending = sendRpcUpload('/upload', new FormData(), controller.signal, vi.fn(), id, { 'X-Cossack-Development-Trace': id });
         expect(Xhr.latest.setRequestHeader).toHaveBeenCalledWith('X-Cossack-Request-Id', id);
+        expect(Xhr.latest.setRequestHeader).toHaveBeenCalledWith('X-Cossack-Development-Trace', id);
         controller.abort();
         await expect(pending).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED', requestId: id });
     });

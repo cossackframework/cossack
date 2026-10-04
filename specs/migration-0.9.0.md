@@ -1635,7 +1635,7 @@ through the controller API. See [development traces](../docs/development-traces.
 
 ## Paused RPC consumers
 
-Deadlines and WebSocket terminal failures now settle calls even while a consumer
+Deadlines and WebSocket transport failures now settle calls even while a consumer
 is paused after a yield. Do not rely on consumer pauses to extend a declared
 `@Server({ timeout })` deadline. Completion rejects and local loading releases;
 the next iterator pull observes the interruption once before later pulls finish.

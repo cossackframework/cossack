@@ -899,8 +899,9 @@ Stream cleanup does not await an uncooperative producer cancellation hook before
 releasing its reader lock.
 
 WebSocket calls own one deadline timer for their full consumer lifetime, including
-pauses between yields. Their bounded frame queue reports terminal failures to the
-same interruption owner. A disconnect or buffer failure clears pending ownership,
+pauses between yields. Their bounded frame queue reports local transport failures to the
+same interruption owner. Application error frames retain ordered delivery after
+earlier yields; they do not interrupt those yields. A disconnect or buffer failure clears pending ownership,
 local loading and unconsumed frames immediately. The call sends at most one
 best-effort cancellation frame for local cancellation/deadline or invalid/overflow
 input. Already reconciled yield state remains; no action is replayed.
@@ -990,3 +991,19 @@ These are sampled local browser observations, not authenticated server events or
 live queries. The reader exposes receipt age and `live: false`; a recorded collecting
 flag cannot establish current liveness. One Vite recording server owns a project
 directory. Selected field values stay in the browser. See [usage and limits](../docs/development-traces.md#read-captures-from-cli-and-mcp).
+
+
+## Development RPC dispatch evidence
+
+An active client capture adds its opaque call ID to HTTP and multipart RPC headers.
+Development-only router middleware owns one request-local fixed-field record;
+no global request state or application payload is retained. Dispatch records
+invocation and method return around the existing call, reusing stream classification
+without inspecting application iterators again. Response creation publishes a
+bounded header with a separate dispatch ID, correlation IDs, server timestamps,
+result kind and HTTP status. The client validates correlation and fields before
+appending one `server-rpc` event to its original bounded capture. Vite storage,
+CLI and MCP use the same strict event schema. Production removes instrumentation.
+This evidence describes dispatch and response creation, not body completion;
+stream terminals and WebSocket server evidence remain open. See the
+[trace guide](../docs/development-traces.md#server-dispatch-evidence).

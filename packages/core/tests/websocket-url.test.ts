@@ -24,7 +24,7 @@ describe('connectWebSocket URL protocol', () => {
     wsPendingCalls(socket).set('known', sink); wsPendingCalls(socket).set('other', unrelated);
     try {
       socket.onmessage({ data: JSON.stringify({ v: 1, requestId: 'known', state: { count: 999 } }) });
-      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'known' }));
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', code: 'COSSACK_RPC_STREAM_INVALID', requestId: 'known' }), true);
       expect(unrelated).not.toHaveBeenCalled(); expect(wsPendingCalls(socket).has('known')).toBe(false);
       expect(wsPendingCalls(socket).has('other')).toBe(true);
     } finally { disconnectWebSockets(component); }

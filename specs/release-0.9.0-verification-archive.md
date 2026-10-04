@@ -6,6 +6,40 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-paused-rpc-deadlines-2026-10-04"></a>
+## Codex paused RPC deadlines (2026-10-04)
+
+Author: Codex. HTTP/SSE component, explicit service and WebSocket deadlines now
+settle calls while consumers are paused at a yield. Shared cancellation latches
+completion before transport cleanup and closes the generator without another pull.
+Repeated cancellation keeps the first outcome. WebSocket disconnects and queue
+failures also release pending ownership; confirmed state remains and mutations
+are never replayed. Stream reader cleanup does not await producer cancellation.
+
+Verification:
+
+- Core suite: **1,484 tests / 91 files pass**, including paused deadlines,
+  disconnect/overflow, reader release, stable success and reentrant cancellation.
+  Command: `pnpm --filter @cossackframework/core exec vitest run`.
+  Log: `/tmp/cossack-paused-deadline-core-suite.log`.
+- Core build and framework declarations pass. After the final fixture changes,
+  `pnpm tsc --noEmit` and `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-paused-deadline-build.log`, `/tmp/cossack-paused-deadline-final-types.log`.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js`:
+  **1 test passes** through a generated production Worker, workerd, D1 and Chromium,
+  including six paused component/service cases across HTTP/SSE/WebSocket pages.
+  The socket fixture uses explicit D1 bindings, preserving the audit table and
+  proving one mutation per call. No upload occurs.
+  Log: `/tmp/cossack-paused-deadline-workerd-fixed.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'retains confirmed optimistic component and service yields through failures and cancellation'`:
+  **1 passes, 32 unrelated tests skipped**. Generated TypeScript, client/server
+  builds and the same browser cases pass with the Node adapter and test backend.
+  Log: `/tmp/cossack-paused-deadline-node-fixed.log`.
+
+Limits: local settlement cannot stop ignored application I/O or undo external
+writes. Server correlation and full generated development-trace/tarball acceptance
+remain open under RT-28/CLI-07. No task closes: **25 complete, 33 open**.
+
 <a id="codex-service-traces-2026-10-04"></a>
 ## Codex explicit service RPC traces (2026-10-04)
 

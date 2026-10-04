@@ -232,10 +232,12 @@ iterator without requiring another consumer pull. The next pull observes the
 interruption once; later pulls report completion. Explicit cancellation retains
 `COSSACK_RPC_CANCELLED`, and an already completed call keeps its result.
 
-WebSocket disconnects, terminal errors and buffer overflow also interrupt a paused
+WebSocket disconnects, invalid frames and buffer overflow also interrupt a paused
 consumer. Unconsumed queued frames are discarded; already reconciled yield state
 remains authoritative. Cancellation requests are sent at most once for a locally
 cancelled or timed-out call. This does not confirm that server work stopped.
+Application error frames retain their order after earlier yields; consuming those
+yields still observes their confirmed state before the error.
 HTTP stream cleanup requests producer cancellation and releases its reader lock
 without waiting for an uncooperative producer's cleanup promise.
 

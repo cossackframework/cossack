@@ -2,7 +2,7 @@ import { RPC_NATIVE_RESPONSE_HEADER, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRA
 
 /** Keep native upload progress while exposing generator replies before load. */
 export function sendRpcUpload(url: string, body: FormData, signal: AbortSignal,
-    onProgress: (event: ProgressEvent) => void, clientRequestId?: string): Promise<Response> {
+    onProgress: (event: ProgressEvent) => void, clientRequestId?: string, extraHeaders?: Readonly<Record<string, string>>): Promise<Response> {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -57,6 +57,7 @@ export function sendRpcUpload(url: string, body: FormData, signal: AbortSignal,
             }
         };
         xhr.open('POST', url, true);
+        for (const [key, value] of Object.entries(extraHeaders ?? {})) xhr.setRequestHeader(key, value);
         if (clientRequestId) xhr.setRequestHeader('X-Cossack-Request-Id', clientRequestId);
         xhr.responseType = 'arraybuffer';
         xhr.upload.onprogress = onProgress;

@@ -33,7 +33,7 @@ history is incomplete and may contain a terminal event without its start.
 
 Events form a discriminated union. Check `event.kind` before reading fields:
 `rpc` describes component calls, `service-rpc` describes explicit layout-service
-calls, and `navigation` describes navigation decisions.
+calls, `server-rpc` carries server dispatch evidence, and `navigation` describes navigation decisions.
 
 RPC calls share a local `callId` and a UUID `requestId` when available. Component
 calls have an opaque `componentId`; service calls have a separate opaque `serviceId`.
@@ -81,6 +81,34 @@ trace and local loading cleanup do not wait for another pull. Explicit cancellat
 keeps its own outcome. WebSocket disconnects and buffer overflow also settle paused
 calls, discarding unconsumed frames while preserving already reconciled state.
 These local terminal events do not prove that remote work stopped.
+
+## Server dispatch evidence
+
+During an active capture, component and explicit service HTTP calls send an opaque
+call ID in `X-Cossack-Development-Trace`. This includes SSE page actions, which use
+HTTP, and multipart uploads. The development router returns a bounded, fixed-field
+record in the same header. Production removes this instrumentation.
+
+A `server-rpc` response event joins the local call through `callId` and `requestId`.
+Its separate `dispatchId` identifies that server request. The server records
+`receivedAt`, `invokedAt`, `returnedAt` and `respondedAt`; the invocation and return
+markers are null when their stages were not reached. `status` is the response
+status, and `result` is `none`, `value`, `stream` or `native`. A method that throws
+has an invocation marker but no return marker. A denied dispatch has neither.
+
+Returning a generator records `stream` before its body runs. Returning a native
+Response records `native` before its body completes. Neither proves streaming
+success, cleanup or delivery. Server stream terminal events and WebSocket dispatch
+evidence remain pending. Calls interrupted before response headers have no such
+record; absence does not prove that the server did not execute them.
+
+`timestamp` is browser receipt time. The four server markers use the server wall
+clock; do not subtract them from browser timestamps or assume synchronized clocks.
+The client rejects oversized, extra-field, malformed and mismatched records and
+accepts at most one record per call. Evidence follows the original capture owner
+and shares its bounded buffer. CLI and MCP read the same stored event. These are
+response-carried observations, not authenticated server logs; a local browser or
+proxy can edit them. They contain no arguments, state values, names or raw errors.
 
 ## Component snapshots
 

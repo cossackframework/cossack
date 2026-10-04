@@ -282,15 +282,15 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                                 component.setProperty(property, event.loaded / event.total * 100);
                                 component.requestUpdate();
                             }
-                        }, requestId)
+                        }, requestId, trace?.requestHeaders)
                         : fetch(`/upload${window.location.search}`, {
                             method: 'POST', body: formData, signal: controller.signal,
-                            headers: { 'X-Cossack-Request-Id': requestId, Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                            headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         });
                 } else {
                     request = fetch(`/crpc${window.location.search}`, {
                         method: 'POST',
-                        headers: { 'X-Cossack-Request-Id': requestId, 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         signal: controller.signal,
                         body: JSON.stringify({
                             componentRouteId, target: component._id, action: name,
@@ -322,6 +322,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     requestId = response.headers?.get('X-Cossack-Request-Id') ?? requestId;
                     optimisticCall.requestId = requestId;
                     trace?.response(requestId);
+                    trace?.server(response);
                     if (!response.ok) {
                         throw await readRpcHttpError(response, controller.signal);
                     }
@@ -459,8 +460,10 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
             const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
-            wsPendingCalls(ws).set(requestId, frame => {
-                if (frame.type === 'error') { trace?.response(requestId); queue.fail(frame); }
+            wsPendingCalls(ws).set(requestId, (frame, interrupted) => {
+                // Application error frames follow their earlier yields; only local
+                // transport failures discard queued data and interrupt a paused call.
+                if (interrupted && frame.type === 'error') { trace?.response(requestId); queue.fail(frame); }
                 else queue.push(frame);
             });
             try {

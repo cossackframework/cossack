@@ -88,3 +88,19 @@ it.each(['timeout', 'disconnect', 'overflow'] as const)('settles a paused WebSoc
     await expect(iterator.next()).rejects.toMatchObject({ code, requestId }); await call.cancel();
     expect(socket.send.mock.calls.map(([value]) => JSON.parse(value).type)).toEqual(ending === 'disconnect' ? ['action'] : ['action', 'cancel']);
 });
+
+it.each(['COSSACK_RPC_CLIENT_ERROR', 'COSSACK_RPC_TRANSPORT_CLOSED'])('preserves queued yields before a server error even when its code is %s', async code => {
+    const { proxyServerMethods } = await import('../src/shared/method-proxy');
+    const { routeSocketFrame } = await import('../src/shared/transport-connections');
+    const socket = { readyState: WebSocket.OPEN, send: vi.fn() };
+    const { host } = target('component'); host.websockets = new Map([['socket', socket]]); host.consume = () => undefined;
+    proxyServerMethods(host, [{ name: 'run', channel: 'channel', provider: 'socket' }]);
+    const call = host.run(), iterator = call[Symbol.asyncIterator]();
+    const requestId = JSON.parse(socket.send.mock.calls[0][0]).requestId;
+    routeSocketFrame(socket, { v: 1, type: 'yield', requestId, state: { count: 7 }, value: 'first' });
+    routeSocketFrame(socket, { v: 1, type: 'error', requestId, code, message: 'Application failure' });
+    expect(await iterator.next()).toEqual({ done: false, value: 'first' }); expect(host.count).toBe(7);
+    await expect(iterator.next()).rejects.toMatchObject({code, requestId});
+    await expect(call).rejects.toMatchObject({code}); expect(host.loading).toEqual({});
+    expect(socket.send).toHaveBeenCalledTimes(1);
+});

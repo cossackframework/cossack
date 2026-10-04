@@ -248,11 +248,14 @@ it('reads the same stored evidence through CLI and MCP and refreshes source fres
 }, 30_000);
 
 it('reads the same bounded development record through MCP and CLI without starting capture', async () => {
-  const root = await fixture(), session = randomUUID();
+  const root = await fixture(), session = randomUUID(), callId = randomUUID(), requestId = randomUUID();
   await writeDevelopmentTrace(root, randomUUID(), JSON.stringify({ schemaVersion: 1, sessionId: session,
     startedAt: Date.now(), capturedAt: Date.now(), collecting: true, capacity: 512, dropped: 0,
     events: [{ kind: 'service-rpc', sequence: 1, timestamp: Date.now(), phase: 'start',
-      serviceId: 1, callId: randomUUID(), requestId: randomUUID(), transport: 'http', outcome: null }],
+      serviceId: 1, callId, requestId, transport: 'http', outcome: null },
+      { kind: 'server-rpc', sequence: 2, timestamp: Date.now(), phase: 'response', schemaVersion: 1,
+        callId, requestId, dispatchId: randomUUID(), receivedAt: 1, invokedAt: 2,
+        returnedAt: 3, respondedAt: 4, result: 'value', status: 200 }],
     components: { entries: [], dropped: 0, tracking: 'weak' } }));
   const { client, stderr } = await connect(root);
   const response = await client.callTool({ name: 'read_development_traces', arguments: { session } });

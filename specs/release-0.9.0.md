@@ -18,7 +18,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Shared documentation and stored test evidence are implemented. Devtools trace access remains open. See the [stored evidence checkpoint](#codex-test-evidence-2026-10-04).
+- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Codex (2026-10-04): project-bound stdio inspection, versioned schemas, installed versions, redaction and bounded cancellable workers now pass SDK/CLI parity and lifecycle tests. Shared documentation and stored test evidence are implemented. Stored devtools traces and HTTP server dispatch evidence now share the reader. Server stream/WebSocket correlation and full generated acceptance remain open. See the [dispatch checkpoint](#codex-server-dispatch-evidence-2026-10-04).
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
@@ -88,39 +88,48 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-paused-rpc-deadlines-2026-10-04"></a>
-### Codex paused RPC deadlines (2026-10-04)
+<a id="codex-server-dispatch-evidence-2026-10-04"></a>
+### Codex HTTP server dispatch evidence (2026-10-04)
 
-Author: Codex. HTTP/SSE component, explicit service and WebSocket deadlines now
-settle calls while consumers are paused at a yield. Shared cancellation latches
-completion before transport cleanup and closes the generator without another pull.
-Repeated cancellation keeps the first outcome. WebSocket disconnects and queue
-failures also release pending ownership; confirmed state remains and mutations
-are never replayed. Stream reader cleanup does not await producer cancellation.
+Author: Codex. Active captures now request bounded server evidence for HTTP/SSE
+component actions and explicit services, including multipart/progress uploads.
+Request-local router instrumentation records receipt, invocation, method return
+and response creation. The client accepts one fixed-field record only when call
+ID, request ID and HTTP status match. A separate dispatch ID identifies the server
+request. The shared Vite/CLI/MCP reader accepts the same `server-rpc` event.
+Arguments, names, state values and raw errors are excluded; production removes
+client capture and server instrumentation.
+
+The broader RPC matrix also exposed a regression in the prior paused-deadline fix:
+an immediate application error could discard its preceding WebSocket yield.
+Local transport interruptions now carry an internal flag; server application
+errors retain ordered delivery after yields, regardless of their error code.
+Disconnects, invalid frames, overflow and deadlines still interrupt paused calls.
 
 Verification:
 
-- Core suite: **1,484 tests / 91 files pass**, including paused deadlines,
-  disconnect/overflow, reader release, stable success and reentrant cancellation.
+- Core: **1,491 tests / 92 files pass**, including actual proxy/header correlation,
+  malformed and mismatched evidence, capture replacement, ordered WebSocket errors,
+  paused transport interruptions and production capture exclusion.
   Command: `pnpm --filter @cossackframework/core exec vitest run`.
-  Log: `/tmp/cossack-paused-deadline-core-suite.log`.
-- Core build and framework declarations pass. After the final fixture changes,
-  `pnpm tsc --noEmit` and `pnpm typecheck` pass (all 11 packages).
-  Logs: `/tmp/cossack-paused-deadline-build.log`, `/tmp/cossack-paused-deadline-final-types.log`.
-- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js`:
-  **1 test passes** through a generated production Worker, workerd, D1 and Chromium,
-  including six paused component/service cases across HTTP/SSE/WebSocket pages.
-  The socket fixture uses explicit D1 bindings, preserving the audit table and
-  proving one mutation per call. No upload occurs.
-  Log: `/tmp/cossack-paused-deadline-workerd-fixed.log`.
-- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'retains confirmed optimistic component and service yields through failures and cancellation'`:
-  **1 passes, 32 unrelated tests skipped**. Generated TypeScript, client/server
-  builds and the same browser cases pass with the Node adapter and test backend.
-  Log: `/tmp/cossack-paused-deadline-node-fixed.log`.
+  Log: `/tmp/cossack-server-evidence-core-verified.log`.
+- Framework: **559 tests / 6 files pass**, including the expanded shared RPC
+  matrix, JSON/multipart component and service dispatch, denied/failed/native and
+  generator results, stored-record exclusion, and production bundle checks.
+  Command: `pnpm --filter @cossackframework/framework exec vitest run tests/router-rpc-stream.test.ts tests/rpc-conformance-matrix.test.ts tests/rpc-child-targets.test.ts tests/rpc-resource-reconstruction.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`.
+  Log: `/tmp/cossack-server-evidence-framework-final.log`.
+- MCP: **15 tests pass**, including SDK/CLI parity for stored server evidence.
+  Command: `pnpm --filter cossack exec vitest run tests/mcp.test.js`.
+  Log: `/tmp/cossack-server-evidence-mcp.log`.
+- Core build, framework declaration build, root `pnpm tsc --noEmit` and
+  `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-server-evidence-rebuild.log`, `/tmp/cossack-server-evidence-types-final.log`.
 
-Limits: local settlement cannot stop ignored application I/O or undo external
-writes. Server correlation and full generated development-trace/tarball acceptance
-remain open under RT-28/CLI-07. No task closes: **25 complete, 33 open**.
+Limits: response creation does not prove generator/native-body completion or
+remote cleanup. Server stream terminals and WebSocket dispatch evidence remain
+open, along with full generated development-trace and installed-tarball acceptance.
+Browser and server clocks are distinct; records are editable local observations,
+not authenticated logs. No task closes: **25 complete, 33 open**.
 
 ### Archived checkpoints
 
@@ -131,6 +140,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-paused-rpc-deadlines-2026-10-04"></a>[Codex paused RPC deadlines (2026-10-04)](./release-0.9.0-verification-archive.md#codex-paused-rpc-deadlines-2026-10-04) |
 | <a id="codex-service-traces-2026-10-04"></a>[Codex explicit service RPC traces (2026-10-04)](./release-0.9.0-verification-archive.md#codex-service-traces-2026-10-04) |
 | <a id="codex-trace-bridge-2026-10-04"></a>[Codex project-bound trace bridge (2026-10-04)](./release-0.9.0-verification-archive.md#codex-trace-bridge-2026-10-04) |
 | <a id="codex-browser-inspector-2026-10-04"></a>[Codex browser inspector integration (2026-10-04)](./release-0.9.0-verification-archive.md#codex-browser-inspector-2026-10-04) |

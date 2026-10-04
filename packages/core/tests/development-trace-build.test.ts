@@ -18,7 +18,7 @@ it.each([['method-proxy', 'proxyHttpMethods'], ['service-scope', 'ServiceScope']
     const source = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : [])
         .filter(chunk => chunk.type === 'chunk').map(chunk => chunk.code).join('\n');
     expect(source).toContain(symbol);
-    for (const marker of ['service-rpc', 'beginDevelopmentServiceRpcTrace', 'state-reconciled', 'startDevelopmentTrace', 'beginDevelopmentRpcTrace', 'Trace capacity must', 'registerDevelopmentInspector', 'developmentValueReader', 'Select at most 32']) {
+    for (const marker of ['X-Cossack-Development-Trace', 'server-rpc', 'parseDevelopmentRpcEvidence', 'service-rpc', 'beginDevelopmentServiceRpcTrace', 'state-reconciled', 'startDevelopmentTrace', 'beginDevelopmentRpcTrace', 'Trace capacity must', 'registerDevelopmentInspector', 'developmentValueReader', 'Select at most 32']) {
         expect(source).not.toContain(marker);
     }
 }, 30000);

@@ -94,14 +94,21 @@ it('separates bridge instances, rejects overload without queueing and removes it
 
 it('persists actual explicit service calls with distinct service identities through the shared reader', async () => {
     vi.stubGlobal('window', {});
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ _cossack_return: 'private-result', _cossack_service_state: { count: 4 } }), { headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+        const headers = new Headers(init.headers), callId = headers.get('X-Cossack-Development-Trace'), requestId = headers.get('X-Cossack-Request-Id');
+        expect(callId).toMatch(/^[a-f0-9-]{36}$/);
+        return new Response(JSON.stringify({ _cossack_return: 'private-result', _cossack_service_state: { count: 4 } }), { headers: {
+            'Content-Type': 'application/json', 'X-Cossack-Request-Id': requestId!,
+            'X-Cossack-Development-Trace': JSON.stringify({schemaVersion:1, callId, requestId, dispatchId:randomUUID(), receivedAt:1, invokedAt:2, returnedAt:3, respondedAt:4, result:'value', status:200}),
+        } });
+    });
     @Service() class Counter { @State() count = 0; @Server() edit() { return 'server'; } }
     const scope = new ServiceScope(undefined, [Counter], { ownerRouteId: 'private-route' });
     const capture = startDevelopmentTrace();
     try {
         const counter = scope.resolveDeclared(Counter); await counter.edit(); expect(counter.count).toBe(4);
         const snapshot = capture.snapshot();
-        expect(snapshot.events.map(event => event.kind)).toEqual(Array(4).fill('service-rpc'));
+        expect(snapshot.events.map(event => event.kind)).toEqual(['service-rpc', 'service-rpc', 'server-rpc', 'service-rpc', 'service-rpc']);
         expect(snapshot.components.entries).toEqual([]);
         const dir = await root(); await writeDevelopmentTrace(dir, randomUUID(), JSON.stringify(snapshot));
         expect((await readDevelopmentTraces(dir)).data.record?.snapshot).toEqual(snapshot);
@@ -111,4 +118,14 @@ it('persists actual explicit service calls with distinct service identities thro
         delete bad.events[0].componentId; bad.events[0].transport = 'websocket';
         expect(() => parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
     } finally { capture.stop(); await scope.disposeAsync(); }
+});
+
+it('persists response-carried server evidence and rejects extra server payload fields', async () => {
+    const s: any = snapshot();
+    s.events.push({ kind: 'server-rpc', phase: 'response', sequence: 1, timestamp: Date.now(), schemaVersion: 1,
+        callId: randomUUID(), requestId: randomUUID(), dispatchId: randomUUID(), receivedAt: 1, invokedAt: 2,
+        returnedAt: 3, respondedAt: 4, result: 'value', status: 200 });
+    const dir = await root(); await writeDevelopmentTrace(dir, randomUUID(), JSON.stringify(s));
+    expect((await readDevelopmentTraces(dir)).data.record?.snapshot).toEqual(s);
+    s.events[0].payload = 'private'; expect(() => parseDevelopmentTrace(JSON.stringify(s))).toThrow();
 });

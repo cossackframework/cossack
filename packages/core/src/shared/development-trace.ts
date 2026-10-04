@@ -1,3 +1,4 @@
+import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
 import { inspectDevelopmentComponent, type DevelopmentInspectionOptions, type DevelopmentComponentSnapshot } from './development-inspection';
 import type { NavigateOutcome, NavigationScrollBehavior, NavigationType } from '../client/navigation';
 
@@ -36,7 +37,14 @@ export type DevelopmentNavigationEvent = {
     readonly kind: 'navigation';
     readonly navigationId: number | null;
 } & (DevelopmentNavigationDiagnostic | { phase: 'component-prepared'; componentId: number; role: DevelopmentComponentRole });
-export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent;
+export interface DevelopmentServerRpcEvent extends DevelopmentRpcEvidence {
+    readonly kind: 'server-rpc';
+    readonly sequence: number;
+    /** Browser receipt time; server timestamps are a separate clock. */
+    readonly timestamp: number;
+    readonly phase: 'response';
+}
+export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent;
 
 export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
@@ -168,6 +176,8 @@ function navigationDiagnostic(event: DevelopmentNavigationDiagnostic): Developme
 
 /** @internal Fixed operations keep arbitrary metadata out of the capture boundary. */
 export interface DevelopmentRpcTrace {
+    readonly requestHeaders: Readonly<Record<string, string>>;
+    server(response: Response): void;
     response(requestId: string): void;
     state(): void;
     finish(outcome: DevelopmentRpcOutcome): void;
@@ -200,7 +210,16 @@ function rpcTrace(collector: Collector, identity:
         append(collector, event);
     };
     emit('start');
+    let serverRecorded = false;
     return {
+        requestHeaders: { [DEVELOPMENT_RPC_HEADER]: identity.callId },
+        server: response => {
+            if (finished || !collector.collecting || serverRecorded) return;
+            const evidence = parseDevelopmentRpcEvidence(response.headers.get(DEVELOPMENT_RPC_HEADER));
+            if (!evidence || evidence.callId !== identity.callId || evidence.requestId !== wireId || evidence.status !== response.status) return;
+            serverRecorded = true;
+            append(collector, { ...evidence, kind: 'server-rpc', phase: 'response', sequence: ++collector.sequence, timestamp: Date.now() });
+        },
         response: request => { wireId = uuid.test(request) ? request : null; emit('response'); },
         state: () => emit('state-reconciled'),
         finish: outcome => { emit('finish', outcome); finished = true; },

@@ -26,9 +26,15 @@ acceptance; see the [checkpoint](./release-0.9.0.md#codex-paused-rpc-deadlines-2
 Preserve first failure codes, confirmed state, one cancellation request and cleanup
 without another iterator pull. Local cancellation cannot undo server writes.
 
-1. Finish **RT-28 / CLI-07** server correlation and generated browser/CLI/MCP and
+The [HTTP dispatch checkpoint](./release-0.9.0.md#codex-server-dispatch-evidence-2026-10-04)
+records the current server-evidence work and WebSocket yield-order correction.
+
+1. Finish **RT-28 / CLI-07** server stream-terminal/WebSocket correlation and generated browser/CLI/MCP and
    published-package acceptance. Preserve capture ownership, terminal outcomes and
-   production exclusion. Stored browser receipt age does not prove live/server state;
+   production exclusion. HTTP/multipart dispatch evidence now joins calls by IDs;
+   it does not prove response-body completion. Preserve ordered application error
+   delivery after WebSocket yields; only local transport failures discard queued frames.
+   Stored browser receipt age does not prove live/server state;
    source markers identify only the latest registered instance per file.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
    runtime support through the [shared documentation services](../docs/local-agent-tools.md).

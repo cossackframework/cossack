@@ -7,8 +7,8 @@ import { isSharedMethod } from './shared-method';
 import { rpcCancellations, validateRpcFrame, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame, type RpcSocket } from './rpc-stream';
 
 /** Per-socket sinks for correlated request-scoped RPC frames. */
-export function wsPendingCalls(ws: RpcSocket): Map<string, (frame: RpcStreamFrame) => void> {
-    const socket = ws as { __cossack_rpc_pending?: Map<string, (frame: RpcStreamFrame) => void> };
+export function wsPendingCalls(ws: RpcSocket): Map<string, (frame: RpcStreamFrame, interrupted?: boolean) => void> {
+    const socket = ws as { __cossack_rpc_pending?: Map<string, (frame: RpcStreamFrame, interrupted?: boolean) => void> };
     return socket.__cossack_rpc_pending ??= new Map();
 }
 
@@ -18,7 +18,7 @@ export function failPendingSocketCalls(ws: RpcSocket): void {
     for (const [requestId, sink] of [...pending]) {
         sink({ v: 1, type: 'error', requestId,
             code: 'COSSACK_RPC_TRANSPORT_CLOSED',
-            message: 'The realtime connection closed before the call finished. The server result is unknown.' });
+            message: 'The realtime connection closed before the call finished. The server result is unknown.' }, true);
     }
     pending.clear();
     rpcCancellations(ws).clear();
@@ -43,7 +43,7 @@ export function routeSocketFrame(ws: RpcSocket, data: unknown): boolean {
         } catch (error) {
             sink({ v: 1, type: 'error', requestId: frame.requestId,
                 code: error instanceof RpcError ? error.code : 'COSSACK_RPC_STREAM_INVALID',
-                message: error instanceof RpcError ? error.message : 'Invalid RPC frame.' });
+                message: error instanceof RpcError ? error.message : 'Invalid RPC frame.' }, true);
             wsPendingCalls(ws).delete(frame.requestId);
         }
     }

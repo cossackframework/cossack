@@ -20,7 +20,7 @@
     {
       "id": "development-rpc-traces",
       "title": "Capture development navigation and RPC lifecycle evidence",
-      "summary": "Opt in to bounded navigation and client RPC phases without storing URLs, arguments or state values.",
+      "summary": "Opt in to bounded navigation, client RPC phases and HTTP server dispatch evidence without storing URLs, arguments or state values.",
       "imports": [
         "@cossackframework/core/devtools"
       ],

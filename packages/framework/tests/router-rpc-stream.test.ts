@@ -1,3 +1,4 @@
+import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence } from '@cossackframework/core/devtools';
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -110,9 +111,9 @@ const request = (action = 'stream', extra: Record<string, unknown> = {}, headers
         method: 'POST', headers: { origin: 'http://localhost', ...(requestTransport === 'json' ? { 'Content-Type': 'application/json' } : {}), ...headers },
         body: requestBody({ componentRouteId: id, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
     }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
-const serviceRequest = (action: string, extra: Record<string, unknown> = {}) =>
+const serviceRequest = (action: string, extra: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
     createApp().request(endpoint(), {
-        method: 'POST', headers: { origin: 'http://localhost', ...(requestTransport === 'json' ? { 'Content-Type': 'application/json' } : {}) },
+        method: 'POST', headers: { origin: 'http://localhost', ...(requestTransport === 'json' ? { 'Content-Type': 'application/json' } : {}), ...headers },
         body: requestBody({ service: { ownerRouteId: layoutId, slot: '0' }, action, payload: [], scopeKey: 'user:anonymous', ...extra }),
     }, { APP_URL: 'https://configured.test', APP_SECRET: 'rpc-test-signing-secret-16-chars' } as any);
 async function collect(response: Response) {
@@ -125,6 +126,39 @@ afterEach(() => { middlewareStore.database = undefined; vi.restoreAllMocks(); })
 
 describe.each(['json', 'multipart'] as const)('%s router RPC streaming lifecycle', transport => {
     beforeEach(() => { requestTransport = transport; });
+    it.each(['component', 'service'])('correlates opt-in %s dispatch evidence without treating a generator as completed', async target => {
+        const callId = crypto.randomUUID(), requestId = crypto.randomUUID();
+        const headers = { [DEVELOPMENT_RPC_HEADER]: callId, 'X-Cossack-Request-Id': requestId };
+        const response = target === 'component' ? await request('stream', {}, headers) : await serviceRequest('serviceStream', {}, headers);
+        const evidence = parseDevelopmentRpcEvidence(response.headers.get(DEVELOPMENT_RPC_HEADER));
+        expect(evidence).toMatchObject({ callId, requestId, result: 'stream', status: 200,
+            receivedAt: expect.any(Number), invokedAt: expect.any(Number), returnedAt: expect.any(Number), respondedAt: expect.any(Number) });
+        expect(evidence?.dispatchId).not.toBe(callId);
+        expect(effects.closed).toBe(0);
+        expect(JSON.stringify(evidence)).not.toMatch(/APP_SECRET|ownerRouteId|serviceStream|scopeKey/);
+        await collect(response); expect(effects.closed).toBe(1);
+    });
+    it('distinguishes method return, denied dispatch and thrown actions; skips inactive captures', async () => {
+        const headers = { [DEVELOPMENT_RPC_HEADER]: crypto.randomUUID() };
+        const regular = await request('regular', {}, headers);
+        expect(parseDevelopmentRpcEvidence(regular.headers.get(DEVELOPMENT_RPC_HEADER))).toMatchObject({ result: 'value', status: 200, returnedAt: expect.any(Number) });
+        const denied = await request('notCallable', {}, headers);
+        expect(parseDevelopmentRpcEvidence(denied.headers.get(DEVELOPMENT_RPC_HEADER))).toMatchObject({ result: 'none', invokedAt: null, returnedAt: null, status: 403 });
+        const invalid = await request('save', {payload:[{title:''}]}, headers);
+        expect(parseDevelopmentRpcEvidence(invalid.headers.get(DEVELOPMENT_RPC_HEADER))).toMatchObject({result:'none', invokedAt:null, returnedAt:null, status:400});
+        const method = vi.spyOn(StreamPage.prototype, 'regular').mockImplementation(async () => new Response('native') as any);
+        const native = await request('regular', {}, headers);
+        expect(parseDevelopmentRpcEvidence(native.headers.get(DEVELOPMENT_RPC_HEADER))).toMatchObject({result:'native', status:200});
+        expect(await native.text()).toBe('native');
+        method.mockRejectedValue(new Error('private failure'));
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const failed = await request('regular', {}, headers);
+        expect(parseDevelopmentRpcEvidence(failed.headers.get(DEVELOPMENT_RPC_HEADER))).toMatchObject({ result: 'none', invokedAt: expect.any(Number), returnedAt: null, status: 500 });
+        for (const value of [undefined, 'private-secret']) {
+            const response = await request('notCallable', {}, value ? { [DEVELOPMENT_RPC_HEADER]: value } : {});
+            expect(response.headers.has(DEVELOPMENT_RPC_HEADER)).toBe(false);
+        }
+    });
     it.each(['component', 'service'])('permits %s cookie/flash writes before returning a lazy generator', async target => {
         const custom = async () => {
             cookie().set('early', 'kept', { path: '/' });

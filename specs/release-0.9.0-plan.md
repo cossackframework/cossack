@@ -150,7 +150,7 @@ reporter/type and CLI/MCP parity acceptance also pass; see the
 
 RT-28 browser snapshots now have an opt-in Vite bridge and a shared project-local
 CLI/MCP reader with strict default-value exclusion and receipt-age metadata.
-Remaining: server correlation and full generated-runtime
+Remaining: server stream/WebSocket correlation and full generated-runtime
 acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
 Preserve project path boundaries, secret redaction and clean stdout.
 Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
@@ -631,7 +631,12 @@ Explicit layout-service HTTP calls now share lifecycle phases and sequence throu
 `service-rpc` events with weak service identities. Validation/cancellation/timeout,
 streamed state and capture replacement are covered without exposing service values.
 
-Remaining: correlate server events with those calls and cover
+HTTP/multipart component and service calls now include opt-in server dispatch
+evidence with matching call/request IDs, separate dispatch IDs, fixed timestamps,
+result kind and status. It shares the bounded browser/CLI/MCP schema and contains
+no application payloads. Response creation does not prove body completion.
+
+Remaining: server stream terminal and WebSocket dispatch evidence, plus
 full generated-runtime use of the shared CLI/MCP schema. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.
 Server execution is not proven by client capture. Paused-iterator deadlines now

@@ -1,3 +1,4 @@
+import { parseDevelopmentRpcEvidence } from '@cossackframework/core/devtools';
 import type { DevelopmentTraceSnapshot } from '@cossackframework/core/devtools';
 
 export const DEVELOPMENT_TRACE_DIRECTORY = '.cossack/development-traces';
@@ -57,6 +58,10 @@ export function parseDevelopmentTrace(json: string): DevelopmentTraceSnapshot {
             id(e.callId); if (e.requestId !== null && (typeof e.requestId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(e.requestId))) throw invalid();
             number(e.kind === 'rpc' ? e.componentId : e.serviceId); choice(e.transport, e.kind === 'rpc' ? ['http', 'websocket'] : ['http']); choice(e.phase, ['start', 'response', 'state-reconciled', 'finish']);
             choice(e.outcome, e.phase === 'finish' ? ['succeeded', 'failed', 'cancelled', 'timeout', 'disconnected'] : [null]);
+        } else if (e.kind === 'server-rpc') {
+            const { kind, sequence, timestamp, phase, ...evidence } = e;
+            choice(phase, ['response']);
+            if (!parseDevelopmentRpcEvidence(JSON.stringify(evidence))) throw invalid();
         } else if (e.kind === 'navigation') {
             const fields: Record<string, string[]> = { start: ['navigationType'], cache: ['decision'], invalidate: ['entries'], layouts: ['retained', 'created', 'retired', 'rootReplaced'], scroll: ['behavior', 'decision'], transition: ['decision'], finish: ['outcome', 'committed'], 'component-prepared': ['componentId', 'role'] };
             if (!Object.hasOwn(fields, e.phase)) throw invalid(); object(e, [...common, 'navigationId', ...fields[e.phase]]);
