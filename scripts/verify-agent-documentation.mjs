@@ -264,10 +264,24 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(navigation.propsContract.members.some(member => member.name === 'sections' && member.type.includes('NavigationMenuSection')));
     for (const name of ['NavigationMenuLink', 'NavigationMenuTriggerProps', 'NavigationMenuPanelProps', 'NavigationMenuLinkProps', 'AnchorAttributes']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-navigation'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'NavigationMenu', '--json']);
+    const pagination = uiSymbols.find(symbol => symbol.name === 'Pagination');
+    assert.equal(pagination.propsContract.status, 'partial');
+    assert.equal(pagination.propsContract.variants.length, 2);
+    for (const [required, forbidden] of [['href', 'onPageChange'], ['onPageChange', 'href']]) {
+      const branch = pagination.propsContract.variants.find(variant => variant.members.some(member => member.name === required && !member.optional));
+      assert.equal(branch.status, 'declared');
+      assert.ok(branch.members.find(member => member.name === required).callSignatures.some(signature => signature.includes('page: number')));
+      assert.equal(branch.members.find(member => member.name === forbidden).type, 'undefined');
+    }
+    assert.ok(!pagination.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+    assert.ok(pagination.propsContract.members.some(member => member.name === '@keydown' && member.type.includes('HTMLElement')));
+    assert.ok(pagination.propsContract.members.some(member => member.name === 'href'));
+    for (const name of ['PaginationButtonProps', 'PaginationLinkProps']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-pagination'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Pagination', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['NavigationMenu']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'NavigationMenu' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Pagination']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Pagination' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

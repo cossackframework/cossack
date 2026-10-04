@@ -29,7 +29,10 @@ not execute it. A guide can explain usage without proving all runtime targets.
 
 Read the declaration index status and diagnostics before relying on its types.
 Partial results can contain unresolved types. Class `propsContract` entries expose
-public prop descriptions, callback signatures and index signatures. An `any`
+public prop descriptions, callback signatures and index signatures. Union prop
+contracts retain a partial marker and list `variants` with each branch's required
+fields, callback signatures and index contracts. Inspect those branches before
+combining options: shared members can hide mutually exclusive requirements. An `any`
 index signature does not provide type-safe attributes. Prop declarations do not
 prove accessibility or browser behavior. Type-only re-exports do not provide
 runtime values, even when their underlying declaration is a class or function.

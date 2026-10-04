@@ -567,12 +567,12 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 36 UI foundations, including DataTable, have reviewed
+Codex status (2026-10-04): 37 UI foundations, including DataTable, have reviewed
 contracts. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[NavigationMenu verification](./release-0.9.0.md#codex-navigation-menu-2026-10-04) for the latest checkpoint.
+[Pagination verification](./release-0.9.0.md#codex-pagination-2026-10-04) for the latest checkpoint.
 
-Next: Audit Pagination using the source findings in the
+Next: Audit Breadcrumb using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close

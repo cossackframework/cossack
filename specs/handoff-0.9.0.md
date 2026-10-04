@@ -14,21 +14,21 @@ Completed tasks link to the [original plan archive](./release-0.9.0-plan-archive
 CF-03, CF-05–07, CF-11; REL-01. Keep their regression coverage.
 [Archived details](./release-0.9.0-plan-archive.md#codex-completed-handoff-2026-10-04)
 and the [verification log](./release-0.9.0.md#verification-log) retain outcomes, tests and limits.
-RT-23 has 36 reviewed UI foundations; the latest committed checkpoint is
-[NavigationMenu](./release-0.9.0.md#codex-navigation-menu-2026-10-04).
+RT-23 has 37 reviewed UI foundations; the latest committed checkpoint is
+[Pagination and union prop catalogs](./release-0.9.0.md#codex-pagination-2026-10-04).
 Component checkpoints do not close RT-23 or the release matrix.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with Pagination**, then every pending
-   [UI audit row](./ui-contract-audit.md). Pagination accepts arbitrary props but
-   drops native attributes/events. It has a fixed name, unchecked numeric ranges
-   and unkeyed controls. Define typed root/control targets, localized names,
-   controlled page/count behavior, bounded rendering and stable focus. Scaffold
-   users/roles pages currently navigate through button callbacks assigning
-   `window.location.href`; provide native link navigation and preserve modifiers.
-   Update those consumers and cover public types, SSR, themed browser behavior,
-   scaffold recipes, ejected-source compilation and installed guidance.
+1. Continue **RT-23 with Breadcrumb**, then every pending
+   [UI audit row](./ui-contract-audit.md). Breadcrumb accepts arbitrary props but
+   drops native attributes/events. It has a fixed name, no typed link extras,
+   no aria-current marker and separators exposed to assistive technology.
+   Define native root/link targets, localized names, current-page behavior,
+   readonly items and stable identity/focus. Update the components demo and
+   scaffold blog layout together; the latter derives its trail from request paths.
+   Cover public types, SSR, themed browser behavior, scaffold recipes,
+   ejected-source compilation and installed guidance.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend

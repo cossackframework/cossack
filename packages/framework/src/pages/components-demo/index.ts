@@ -91,6 +91,7 @@ import { UsersGroupRoundedIcon as usersIcon } from '@cossackframework/solar-icon
 
 @Page()
 export class ComponentsDemo extends Cossack {
+    @ClientState() paginationPage = 3;
     @ClientState() modalOpen = false;
     @ClientState() sheetOpen = false;
     @ClientState() alertOpen = false;
@@ -520,7 +521,7 @@ export class ComponentsDemo extends Cossack {
                             { label: 'Components', href: '/components-demo' },
                             { label: 'Current' },
                         ]})}
-                        ${component(Pagination, { page: 3, totalPages: 10 })}
+                        ${component(Pagination, { page: this.paginationPage, totalPages: 10, onPageChange: page => this.paginationPage = page })}
                         <div class="flex items-center gap-1">
                             <span class="text-sm text-muted-foreground mr-2">Press</span>
                             ${component(Kbd, {}, '⌘')}

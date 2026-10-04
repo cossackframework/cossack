@@ -88,6 +88,62 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-pagination-2026-10-04"></a>
+## Codex Pagination and union prop catalogs (2026-10-04)
+
+Author: Codex. Pagination now has distinct controlled-button and native-link
+contracts. Button mode requires onPageChange; link mode requires href(page).
+Closed types separate root HTMLElement, button and anchor attributes/events.
+Labels are localizable, native callbacks can veto activation, button controls do
+not submit forms, and URL links preserve modifiers and new tabs. The demo updates
+controlled state; scaffold users/roles lists now render native URLs.
+
+Page/count inputs require safe integers. Empty counts disable the edge controls,
+stale pages display the last available page without emitting changes, and a bounded
+sliding window avoids allocation proportional to the count. Keyed controls retain
+focus as that window changes. Removed/disabled focused controls fall back to the
+current page, an enabled control or the root; outside focus is preserved. Native
+fieldsets disable buttons. Link mode requires the explicit disabled prop because
+fieldsets do not disable anchors. Disabled links omit URLs and leave Tab order.
+
+Installed verification exposed a documentation limitation: union prop contracts
+listed only common fields. That makes Pagination's href and onPageChange both
+appear optional while hiding that one is required and the other forbidden.
+The declaration index now adds variants with each branch's members, requiredness,
+callback signatures and index contracts. Union status remains partial; unknown
+branches remain explicit. Tests also cover discriminated props and template-key
+index signatures. CLI/MCP and packaged guidance explain the distinction.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 276 tests in 27 files pass.
+  Public declarations reject mixed navigation modes, missing callbacks/URLs and
+  competing owned attributes. SSR covers labels, native targets, gaps, empty/stale
+  counts, invalid inputs and bounded rendering at Number.MAX_SAFE_INTEGER.
+- `pnpm --filter cossack exec vitest run tests/pagination-browser.test.js tests/ui-ejection.test.js`:
+  13 tests in two files pass, including strict NodeNext ejected-source compilation.
+  The themed production browser verifies retained hydration, native Tab, controlled
+  acceptance/rejection, callback veto, no duplicate current-page proposals, shifting
+  windows, focus recovery, disabled fields/links, native and modified URL navigation,
+  no form submission and cleanup/remounting. A final browser run adds SSR link
+  navigation with JavaScript disabled and passes.
+- `pnpm --filter cossack exec vitest run tests/declaration-index.test.js tests/documentation.test.js`:
+  26 tests in two files pass for the catalog change.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` package configurations pass.
+- Scaffold recipe suite: 110 tests in five files pass after the users/roles changes.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose identical Pagination
+  contracts, both required/forbidden prop variants and the native-pagination guide.
+  Discovery runs with Node networking disabled; all six existing packaged examples
+  compile and execute. The initial union-status failure remains recorded locally.
+
+Logs: `/tmp/cossack-pagination-{build,ui,browser-ejection,browser-final,catalog,root-types,types,scaffold,agent-docs}.log`.
+Initial installed failure: `/tmp/cossack-pagination-agent-docs-union-regression.log`.
+The guide adds no executable example. Other browser engines, assistive technologies,
+generated-app integration and the full release matrix remain open. Thirty-seven
+of 65 component-source foundations are reviewed. Continue Breadcrumb and every
+pending audit row. RT-23 and CLI-07/CLI-08 remain open. The release is still 24 of
+58 complete, with versions at 0.8.3 until REL-04.
+
 <a id="codex-navigation-menu-2026-10-04"></a>
 ## Codex NavigationMenu (2026-10-04)
 

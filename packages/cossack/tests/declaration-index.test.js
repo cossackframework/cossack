@@ -174,6 +174,11 @@ it('preserves prop documentation, optional event signatures and permissive index
   expect(symbols.find(s=>s.name==='Unknown').propsContract).toMatchObject({status:'unknown',type:'any',members:[]});
   expect(symbols.find(s=>s.name==='Private').propsContract).toBeNull();
   expect(symbols.find(s=>s.name==='Choice').propsContract).toMatchObject({status:'partial',members:[{name:'kind'}]});
+  const variants = symbols.find(s=>s.name==='Choice').propsContract.variants;
+  expect(variants).toHaveLength(2);
+  expect(variants[0]).toMatchObject({status:'declared', members:[{name:'a',optional:false,type:'string'},{name:'kind',optional:false,type:'"a"'}],indexSignatures:[]});
+  expect(variants[1]).toMatchObject({status:'declared', members:[{name:'b',optional:false,type:'number'},{name:'kind',optional:false,type:'"b"'}],indexSignatures:[]});
+
 },30000);
 
 it('indexes instantiated remapped props without degrading synthetic members to any', async () => {
@@ -212,3 +217,29 @@ it('filters by exact exported alias and keeps names available without expanding 
   await expect(readDocumentation(root,{package:'@cossackframework/core',symbol:'Textarea'})).rejects.toMatchObject({code:'COSSACK_DOCS_SYMBOL_INVALID'});
   await expect(readDocumentation(root,{package:'@cossackframework/core',symbols:true,symbol:' '.repeat(257)})).rejects.toMatchObject({code:'COSSACK_DOCS_SYMBOL_INVALID'});
 });
+
+it('preserves mutually exclusive callback requirements and unknown union branches', async () => {
+  const {read}=await fixture({'index.d.ts': `
+    type Base = {label:string; [attribute: \`data-\${string}\`]: string};
+    export declare class Pagination { props: Base & (
+      {onPageChange:(page:number)=>void; href?:never} |
+      {href:(page:number)=>string; onPageChange?:never}
+    ); }
+    export declare class Mixed { props: string | {label:string}; }
+  `});
+  const symbols=(await read()).data.packages[0].declarations.entries[0].symbols;
+  const contract=symbols.find(symbol=>symbol.name==='Pagination').propsContract;
+  expect(contract.status).toBe('partial');
+  expect(contract.variants).toHaveLength(2);
+  for(const [required,forbidden] of [['onPageChange','href'],['href','onPageChange']]) {
+    const branch=contract.variants.find(variant=>variant.members.some(member=>member.name===required&&!member.optional));
+    expect(branch.status).toBe('declared');
+    expect(branch.members.find(member=>member.name===required).callSignatures).toEqual([required==='href'?'(page: number): string':'(page: number): void']);
+    expect(branch.members.find(member=>member.name===forbidden)).toMatchObject({optional:true,type:'undefined'});
+    expect(branch.members.find(member=>member.name==='label')).toMatchObject({optional:false,type:'string'});
+    expect(branch.indexSignatures).toMatchObject([{keyType:'`data-${string}`',valueType:'string'}]);
+  }
+  const mixed=symbols.find(symbol=>symbol.name==='Mixed').propsContract;
+  expect(mixed.status).toBe('partial');
+  expect(mixed.variants.find(variant=>variant.type==='string')).toMatchObject({status:'unknown',members:[],indexSignatures:[]});
+},30000);

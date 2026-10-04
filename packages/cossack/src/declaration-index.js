@@ -83,6 +83,15 @@ export async function indexDeclarations(folder, exports, { symbol: selectedSymbo
       status: !structured ? 'unknown' : shape.flags & ts.TypeFlags.Union ? 'partial' : 'declared',
       ...documentation(props), members: structured ? members(shape, declaration) : [],
       indexSignatures: structured ? indexSignatures(shape) : [],
+      // Shared members alone erase required/forbidden fields in discriminated props.
+      // Preserve each branch while retaining the partial marker for union contracts.
+      ...(shape.flags & ts.TypeFlags.Union ? { variants: shape.types.map(variant => {
+        const object = !!(variant.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection));
+        return { type: checker.typeToString(variant, declaration, format),
+          status: object ? 'declared' : 'unknown',
+          members: object ? members(variant, declaration) : [],
+          indexSignatures: object ? indexSignatures(variant) : [] };
+      }) } : {}),
     };
   };
   const diagnostics = ts.getPreEmitDiagnostics(program);

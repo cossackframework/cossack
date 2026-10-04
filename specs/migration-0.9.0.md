@@ -1043,3 +1043,29 @@ viewport bounds and overflow. Cleanup cancels timers and deferred connection.
 SSR renders named navigation and relationships; disclosure interaction requires
 hydration. Load the UI theme and use the packaged `native-navigation` guide for
 the full keyboard, event and focus contract.
+
+## Pagination
+
+Choose one navigation contract. Controlled in-place pagination now requires
+`onPageChange(page)` alongside `page` and `totalPages`. URL pagination uses
+`href(page)` instead; do not combine them. Replace callbacks that assign
+`window.location.href` with `href` to preserve native links and modified clicks.
+The scaffold user/role lists use this mode. The demo now updates controlled state.
+
+`page` must be a positive safe integer; `totalPages` a nonnegative safe integer.
+A stale page above a reduced count displays the last page without a callback.
+Zero pages render only disabled Previous/Next controls. `maxButtons` is now an
+integer from 1 to 100 and limits the sliding window, excluding edge shortcuts.
+
+Native attributes and `@events` are forwarded to the navigation `HTMLElement`.
+Use `label`, `previousLabel`, `nextLabel` and `pageLabel(page)` to localize names.
+`PaginationButtonProps` and `PaginationLinkProps` target the corresponding native
+controls. Generated labels, current/disabled state, URLs and button type belong
+to Pagination. Native click handlers can veto behavior with `preventDefault()`.
+
+The component uses ordinary Tab order. Keyed controls retain focus across page
+window updates; removed/disabled focused controls fall back to the current page,
+an enabled control, or the root. Button controls use `type="button"` and honor
+native disabled fieldsets. Anchors retain native semantics, so a disabled fieldset
+does not disable them; pass `disabled` when needed. Disabled links omit URLs and
+leave the Tab order. Use the packaged `native-pagination` guide for full behavior.

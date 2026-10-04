@@ -218,10 +218,18 @@ and `unknown` for an unstructured type such as `any`. Union members are only the
 properties common to all alternatives. `declared` does not mean every field is
 strictly typed. Read index signatures and package diagnostics too.
 
+Union component props keep `propsContract.status: "partial"`. Their `variants`
+list exposes each branch's required and optional fields, callback signatures,
+and index contracts. For example, Pagination requires either `onPageChange`
+or `href`; its shared members alone make both appear optional. Inspect the
+variants and packaged guide before combining options. Unknown branches remain
+explicit, and a declared branch does not prove runtime behavior.
+
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
-The installed UI check currently verifies Button prop descriptions and its index
-signature across CLI and MCP. It retains unresolved platform diagnostics.
+The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
+Pagination CLI/MCP parity covering both navigation variants. It retains unresolved
+platform diagnostics.
 
 
 For one exported contract, use an exact symbol name:

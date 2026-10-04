@@ -702,7 +702,7 @@ describe("Breadcrumb", () => {
 
 describe("Pagination", () => {
     it("renders page buttons with current page highlighted", () => {
-        const out = renderComp(Pagination, { page: 3, totalPages: 10 });
+        const out = renderComp(Pagination, { page: 3, totalPages: 10, onPageChange: () => {} });
         expect(out).toContain("cs-pagination");
         expect(out).toContain("3");
         // Prev/next are now Icon components (arrows), not text glyphs.

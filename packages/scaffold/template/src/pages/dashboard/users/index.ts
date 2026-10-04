@@ -256,7 +256,11 @@ export default class UsersPage extends Cossack {
                                 ? component(Pagination, {
                                       page: this.page,
                                       totalPages,
-                                      onPageChange: (p: number) => { window.location.href = this.pageHref(p); },
+                                      label: __('Pagination'),
+                                      previousLabel: __('Previous page'),
+                                      nextLabel: __('Next page'),
+                                      pageLabel: (p: number) => `${__('Page')} ${p}`,
+                                      href: (p: number) => this.pageHref(p),
                                   })
                                 : null}
                         </div>

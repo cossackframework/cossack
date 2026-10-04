@@ -370,3 +370,18 @@ component(NavigationMenu,{id:'primary',label:'Primary',sections:[{value:'docs',l
 component(NavigationMenu,{id:'primary',label:'Primary',sections:[{value:'docs',label:'Docs',triggerProps:{'aria-expanded':true}}]});
 // @ts-expect-error Links own href outside the native extras.
 component(NavigationMenu,{id:'primary',label:'Primary',sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'Guide',href:'/guide',linkProps:{href:'/other'}}]}]});
+
+import { Pagination, type PaginationButtonProps, type PaginationLinkProps } from '@cossackframework/ui';
+component(Pagination,{page:1,totalPages:5,onPageChange:page=>{const value:number=page;void value;},'@keydown':event=>{const root:HTMLElement=event.currentTarget;void root;},buttonProps:{'@click':event=>{const button:HTMLButtonElement=event.currentTarget;void button;}}});
+component(Pagination,{page:1,totalPages:5,href:page=>`/page/${page}`,linkProps:{target:'_blank','@click':event=>{const link:HTMLAnchorElement=event.currentTarget;void link;}}});
+const pageButtonProps:PaginationButtonProps={title:'Page'};const pageLinkProps:PaginationLinkProps={rel:'nofollow'};void pageButtonProps;void pageLinkProps;
+// @ts-expect-error Choose a page change callback or native URL navigation.
+component(Pagination,{page:1,totalPages:5});
+// @ts-expect-error URL navigation and selection callbacks are separate contracts.
+component(Pagination,{page:1,totalPages:5,href:page=>`/page/${page}`,onPageChange:()=>{}});
+// @ts-expect-error Link extras cannot override the generated URL.
+component(Pagination,{page:1,totalPages:5,href:page=>`/page/${page}`,linkProps:{href:'/wrong'}});
+// @ts-expect-error Native attributes have explicit names.
+component(Pagination,{page:1,totalPages:5,onPageChange:()=>{},clas:'pages'});
+// @ts-expect-error Native control ownership prevents accidental submit buttons.
+component(Pagination,{page:1,totalPages:5,onPageChange:()=>{},buttonProps:{type:'submit'}});
