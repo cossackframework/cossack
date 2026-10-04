@@ -6,6 +6,61 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-command-palette-2026-10-04"></a>
+## Codex CommandPalette (2026-10-04)
+
+Author: Codex. CommandPalette now composes the public Command primitive instead
+of maintaining a second Modal, query loop and window shortcut handler. Required
+identity/name/callbacks, readonly commands and separate controlled/default state
+have closed types. Native attributes/events target the actual dialog. setOpen()
+and toggle() propose changes; controlled callers must accept them through props.
+Icons and hint text remain available. Hints are descriptions, not registered actions.
+
+Command now supports grouped results and presentational item rendering with stable
+option names/descriptions. Visual grouping and enabled keyboard order share one
+filtered sequence. Blank group labels stay ungrouped. Search trims whitespace.
+Stable IDs preserve highlight through updates; empty/disabled results stay safe.
+Ctrl/Meta+K is opt-in. Closed palettes ignore editable controls unless opted in;
+arbitration can choose a later eligible owner. Active modals retain precedence.
+Existing native close/focus, callback and cleanup semantics remain shared.
+
+Framework and Studio consumers supply explicit identity and names. The block demo
+uses a named trigger so it does not compete with the shell's app-level shortcut.
+Studio's trigger advertises the dialog and expanded state. A new CLI source-ejection
+entry imports the same public primitive/types as the compiled block.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 597 tests
+  across 44 files pass. SSR, grouping/filter order, immutable public types,
+  descriptions and controlled/default contract failures are covered.
+- `pnpm --filter cossack exec vitest run tests/command-palette-browser.test.js tests/command-browser.test.js tests/ui-ejection.test.js`:
+  44 tests pass. Both published and ejected palettes run with actual Tailwind,
+  HTTP Chromium and SVG artwork. Checks cover retained hydration, named groups,
+  visible keyboard order, disabled items, filtering/reordering, pointer selection,
+  controlled rejection, Escape veto, backdrop close, editor shortcuts, multiple
+  owners, foreign modals, focus return, imperative methods and listener cleanup.
+  The original Command browser suite also passes. Forty-one ejection checks include
+  strict NodeNext imports. Browser bundles exclude the SSR parser.
+- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/command-palette-block.spec.ts e2e/pages/home.spec.ts --grep 'composed command palette|opens the command palette' --workers=1 --reporter=line`:
+  both real application tests pass (11.1 seconds). The block selects a grouped
+  command and restores trigger focus; the shell still navigates to a demo. The
+  owned Vite server was stopped afterward. Studio is type-checked; no new Studio
+  backend/browser acceptance is claimed.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed declarations expose the two
+  controlled/default branches, required identity/callbacks, readonly commands and
+  native dialog targets. The authored block guide is discoverable; exact
+  CommandPalette CLI/MCP output matches. Six existing packaged examples compile
+  and execute. Discovery disables Node networking; installation can use the
+  registry. This guide adds no executable example.
+
+Logs: `/tmp/cossack-command-palette-{build,ui-final,browser-final,types-final,demo,dev,agent-docs}.log`.
+All 65 component foundations plus Icon, AuthForm and CommandPalette are reviewed.
+DashboardStat and SettingsPanel remain pending. Broader generated-app/runtime,
+other-engine and assistive-technology gates remain open. RT-23 and CLI-07/CLI-08
+remain open; release status stays 24/58 complete and versions stay 0.8.3.
+
 <a id="codex-auth-form-2026-10-04"></a>
 ## Codex AuthForm (2026-10-04)
 

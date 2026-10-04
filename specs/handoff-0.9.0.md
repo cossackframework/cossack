@@ -11,19 +11,31 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-RT-23: **65/65 component-source foundations plus Icon, AuthForm and CommandPalette reviewed**. Completed
-[verification records](./release-0.9.0-verification-archive.md) and
-[batch plans](./release-0.9.0-plan-archive.md) remain archived. The latest
-[CommandPalette checkpoint](./release-0.9.0.md#codex-command-palette-2026-10-04) covers
-shared grouped search, native dialog ownership and shortcut arbitration. Two blocks, generated-app
-acceptance and the release matrix remain open. RT-23 is not complete.
+RT-23: **65/65 component-source foundations plus Icon, AuthForm and CommandPalette reviewed**.
+Completed [verification records](./release-0.9.0-verification-archive.md) and
+[batch plans](./release-0.9.0-plan-archive.md) are archived. DashboardStat,
+SettingsPanel and remaining acceptance are open; RT-23 is not complete.
+
+<a id="working-state"></a>
+## Working state
+
+Codex, 2026-10-04: Last completed implementation commit is `9485dcf`
+(CommandPalette). DashboardStat source, exports, CLI ejection, framework demo and
+regression test drafts are uncommitted. The UI build passed after fixing generic
+inference; the new tests and full type checks have not run. Do not mark this batch
+complete or treat its proposed contract as verified.
+
+Resume with the DashboardStat unit/browser/ejection tests and type checks. Verify
+wrapping, keyed updates, native props and the real dashboard demo. Investigate the
+suspected renderer handling of `class: ifDefined(...)` before claiming directive
+class forwarding. Finish installed guidance, migration notes and acceptance before
+recording completion. Preserve all existing source edits during this docs cleanup.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with DashboardStat**, then SettingsPanel. DashboardStat drops
-   root props, colors neutral change as success and includes stray literal template
-   text. Define readonly metric contracts, explicit change meaning, native semantics
-   and responsive wrapping. SettingsPanel still needs typed row/value ownership,
+1. Continue **RT-23 with DashboardStat**, then SettingsPanel. The DashboardStat draft addresses
+   root props, stray template text, readonly metrics, explicit change meaning,
+   native semantics and responsive wrapping; verify these against the plan. SettingsPanel still needs typed row/value ownership,
    connected labels and safe native action/reset behavior. The
    [RT-23 plan](./release-0.9.0-plan.md#rt-23) retains source findings and acceptance.
    Preserve compiled/ejected consumers and installed guidance; component milestones

@@ -526,18 +526,12 @@ Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation
 labels, focus and packaged guidance in scope. Component checkpoints do not close
 the broader audit or full release matrix. RT-23 remains open.
 
-Completed batch plans: [Attachment](./release-0.9.0-plan-archive.md#codex-attachment-plan-2026-10-04),
-[Bubble/Marker/Message](./release-0.9.0-plan-archive.md#codex-chat-display-plan-2026-10-04),
-and [MessageScroller](./release-0.9.0-plan-archive.md#codex-message-scroller-plan-2026-10-04).
-Keep their archived regression evidence; RT-23 remains open.
+Completed UI batch plans and their review links are retained in the
+[plan archive](./release-0.9.0-plan-archive.md). Preserve their regression coverage.
 
-Codex next batch — composed blocks:
-
-The [Icon plan](./release-0.9.0-plan-archive.md#codex-icon-plan-2026-10-04)
-and [verification](./release-0.9.0.md#codex-icon-2026-10-04) preserve its reviewed
-SVG foundation. The [AuthForm plan](./release-0.9.0-plan-archive.md#codex-auth-form-plan-2026-10-04)
-is also archived, as is [CommandPalette](./release-0.9.0-plan-archive.md#codex-command-palette-plan-2026-10-04).
-Start with DashboardStat, then SettingsPanel.
+Codex next batch — DashboardStat, then SettingsPanel. DashboardStat has uncommitted
+implementation and test drafts; see the [working state](./handoff-0.9.0.md#working-state)
+before continuing. The following criteria remain open until verified.
 
 - Audit DashboardStat's ignored root props, literal rendered markup, neutral trend
   color, readonly stat records, numeric/string values, accessible text and responsive
