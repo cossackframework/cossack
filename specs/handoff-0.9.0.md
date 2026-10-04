@@ -19,10 +19,8 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit Toggle and ToggleGroup, then the remaining pending rows.
-   Thirty-two foundations are reviewed. Tabs now has controlled/default selection,
-   instance-scoped identities, keyed focus recovery and responsive indicators.
-   See the [Tabs checkpoint](./release-0.9.0.md#codex-tabs-2026-10-04) for tests and limits.
+   Thirty-two foundations are reviewed at commit `8f2f81f`.
+   Resume the uncommitted Toggle/ToggleGroup work below, then the remaining pending rows.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).
@@ -31,6 +29,23 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
    Discovery reads examples without executing them. Runtime availability remains unverified.
 3. Continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
    Then follow the remaining checklist and linked plans. Close tasks only against their original acceptance criteria.
+
+## Current unfinished work
+
+Codex (2026-10-04): Toggle and ToggleGroup changes are uncommitted and not counted
+as reviewed. Source, demo, public type fixtures, SSR tests, browser tests and
+source-ejection tests are in the working tree. Preserve these edits when resuming.
+
+The browser fixture passes. The UI suite reports 234 passing tests and one failure:
+`packages/ui/tests/fixtures/data-table-types/index.ts:313` has TS7006 for callback
+parameter `value`. Fix contextual typing for the default single-selection mode.
+Root and package type checks did not run because the chained UI test command failed.
+See `/tmp/cossack-toggles-ui.log` and `/tmp/cossack-toggles-browser.log` if still available.
+
+After the fix, rebuild UI before consumer tests. Run the UI, browser and ejection
+suites, root and package type checks, then installed agent-documentation acceptance.
+Add package guidance, migration notes and verification evidence before updating
+the audit count or committing the implementation. Do not mark RT-23 complete.
 
 ## Limits to retain
 

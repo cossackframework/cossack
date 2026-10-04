@@ -4256,3 +4256,492 @@ Next: Tooltip, HoverCard and pending UI audit rows. See the
 [input-addon checkpoint](./release-0.9.0.md#codex-input-addons-2026-10-04).
 See the [SSR control checkpoint](./release-0.9.0.md#codex-form-ssr-2026-10-04).
 The full RT-23 criteria below remain open. See the [checkpoint](./release-0.9.0.md#codex-data-table-2026-10-04).
+
+
+<a id="codex-checkpoint-compaction-2026-10-04"></a>
+## Codex archived checkpoint history (2026-10-04)
+
+These passages were moved verbatim from the active plan during handoff compaction.
+Historical next steps and counts are not current status. Use the active plan and release checklist.
+
+### CLI-07 checkpoint history
+
+Codex implementation checkpoint (2026-10-04): `cossack` now publishes a separate
+`cossack-mcp --project <directory>` stdio entrypoint. The official MCP server SDK
+stays in the Node-only CLI package. `inspection-service.js` shares route
+explanations/checks and the existing static route, deployment and provider models.
+The `inspect_project` tool has strict inputs, a versioned output schema, installed
+CLI/framework versions and read-only annotations. Unknown routes never become
+arbitrary file reads. Default environment selection matches `CLOUDFLARE_ENV`.
+
+Each call owns a worker. Captured dependency output cannot pollute stdout, and
+termination cancels synchronous compiler work. Calls have a 30-second deadline,
+four-worker concurrency limit and 4 MiB result limit. EOF/signals close the server
+and its workers. Tests cover real SDK clients, legacy/current protocol negotiation,
+CLI parity, configured-secret redaction, import-only package version resolution,
+invalid startup/tool/field/path input, deadlines, cancellation and shutdown.
+See the [verification](./release-0.9.0.md#codex-local-mcp-2026-10-04) and
+[setup guide](../docs/local-agent-tools.md).
+
+CLI-07 remains open. Continue with the installed-version documentation service
+(CLI-08), stored test-result access and development snapshot/trace access (RT-28).
+Share those models with the CLI/devtools, define provenance and freshness, and
+avoid arbitrary file reads or shell-output parsing. Add native MCP interruption
+acceptance while these longer-running tools own resources, and verify packaged
+entrypoints/dependencies through the REL-02 tarball fixtures. Audit every original
+requirement before closure. Static inspection alone does not complete this task.
+
+
+### CLI-08 checkpoint history
+
+Codex prop-catalog checkpoint (2026-10-04): declaration catalogs now preserve
+member comments, JSDoc tags, optional callback signatures and index signatures.
+Exported classes with public props expose an instantiated propsContract, including
+inherited generics. Union shapes are partial and unknown shapes remain explicit.
+This records declared types, not native attribute forwarding or accessibility.
+The actual UI catalog exposes Button descriptions and its permissive string/any
+index signature. Platform diagnostics remain partial. See the
+[checkpoint](./release-0.9.0.md#codex-prop-catalog-2026-10-04).
+
+
+Codex recipe-guidance checkpoint (2026-10-04): scaffold now ships guidance for
+resource, mutation, scoped-service and protected-route recipes. Each guide explains
+what the template provides, its limits, preview/application commands and adaptation
+steps. Executable examples inspect resolved dependencies and host requirements
+through the public registry. The protected-route example checks auth/database/UI,
+D1 requirements and rejection of an unsupported Node/D1 selection.
+
+Authoring the examples exposed an unwanted Node Buffer dependency in the pure
+registry declarations. Shared metadata declarations now live in registry.d.ts,
+and the root API re-exports them. Separate compiler fixtures prove the registry
+works without Node ambient types and the root API retains its Node contracts.
+See the [checkpoint](./release-0.9.0.md#codex-recipe-guidance-2026-10-04).
+Continue broader API/component coverage and runtime guidance under the original
+CLI-08 criteria. Recipe planning does not prove remote deployment readiness.
+
+Codex package-guidance checkpoint (2026-10-04): library-owned `agent-docs.json`
+files now supply usage explanations and TypeScript example source through the
+shared CLI/MCP catalog. Guidance carries the installed package identity/version
+and a content hash. The reader validates bounded JSON, rejects escaping paths,
+refreshes content and omits guides whose listed public imports disappear.
+Missing guidance is explicit. Discovery never runs examples.
+
+Initial authored guides cover core typed route URLs and renderer server HTML.
+The tarball acceptance compiles and executes those examples against installed
+exports. This is an initial set, not full API/component/recipe coverage or proof
+for all runtimes. Continue that coverage, runtime guidance, RT-23 and REL-02.
+See the [checkpoint](./release-0.9.0.md#codex-package-guidance-2026-10-04).
+
+Codex installed-tarball checkpoint (2026-10-04): the catalog foundation now passes
+`pnpm test:agent-docs:local` in a generated application with real local tarballs.
+The installed CLI and MCP entrypoints agree on versions, command metadata, the
+packaged guide and renderer declaration signatures. A running server refreshes
+changed versions and removed exports. Discovery runs with Node network calls
+blocked and recorded. Installation itself can use the registry.
+
+This acceptance also runs in the existing generated-app CI path. It does not
+prove every package's examples, component guidance or runtime support. Those
+original requirements, plus RT-23 and REL-02 dependencies, remain open. See the
+[acceptance record](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
+Older notes that list all installed-tarball discovery as pending are superseded.
+
+Codex export-discovery checkpoint (2026-10-04): wildcard/implicit declaration
+discovery is implemented. Catalogs add concrete wildcard matches while preserving
+the source pattern. Exact entries, more-specific patterns and null exclusions take
+precedence. Repeated target stars use one capture. Default branches and fallback
+arrays do not invent alternate paths when an earlier target merely lacks a file.
+A native Node resolution fixture verifies public overrides and private exclusions.
+
+Discovery reports partial status for bounded scans, nested symlinks, unreadable
+directories, unsupported URL targets/file names, malformed pattern keys and constant
+pattern targets. The latter can expose infinitely many public names. These limits
+remain explicit rather than producing a false exhaustive catalog. TypeScript finds
+adjacent JS/ESM/CommonJS declarations and legacy main/default-index types. Wildcard
+matches can come from type files even when runtime output is absent. Resolution
+records and unresolvedImports preserve that distinction.
+
+See the [verification](./release-0.9.0.md#codex-export-discovery-2026-10-04).
+Next implement authored API/component/recipe explanations and executable examples,
+verified runtime guidance and offline installed-tarball acceptance. These remain
+required for CLI-08 closure. Previous notes listing wildcard/implicit discovery as
+unimplemented are superseded by this checkpoint and its documented limits.
+
+Codex declaration-index checkpoint (2026-10-04): named exports/signatures are now
+available through `cossack docs --package <name> --symbols --json` and MCP
+`read_documentation` with `symbols: true`. One package must be selected. The CLI
+owns a pinned `typescript-api` alias at TypeScript 6.0.3 because the workspace's
+TypeScript 7 entry no longer exposes the classic compiler API. Project compilation
+still uses TypeScript 7. The index reports its own compiler version explicitly.
+
+Fresh programs read declared type targets, including legacy `types` entries.
+They resolve aliases, star/type-only/namespace re-exports and CommonJS export
+assignments. Results include overloads/generics, public constructors and members,
+object/namespace/enum helpers, documentation, source locations and a declaration
+graph hash. Private/protected members and constructors are omitted. Abstract
+classes are marked. Underlying signatures never certify runtime value exports.
+Missing targets or compiler diagnostics produce unavailable/partial status, not a
+successful compatibility claim. Source diagnostic payloads omit raw compiler text.
+See the [verification](./release-0.9.0.md#codex-declaration-index-2026-10-04).
+
+Next finish authored API/component/recipe explanations and executable examples,
+verified runtime guidance, wildcard/implicit declaration discovery and offline
+installed-tarball acceptance. The initial fixed compiler profile has no automatic
+ambient platform packages; actual core inspection reports unresolved platform globals
+as partial. It does not invent Cloudflare runtime readiness. Keep CLI-08 open until
+all original requirements and dependency gates are proven.
+
+Codex catalog checkpoint (2026-10-04): `cossack docs [--package <name>] --json`
+and MCP `read_documentation` now share `documentation-service.js`. It reads fresh
+installed manifests through a fixed Cossack package allowlist. Results contain
+versions, manifest hashes, declared export targets/conditions, target presence,
+command schemas and a packaged CLI-version agent guide. Missing, blocked, invalid
+and wildcard targets remain explicit. No module entrypoints execute. MCP's outer
+framework version also refreshes per call. Malformed manifest diagnostics omit
+raw contents, and removed exports disappear on the next catalog read.
+
+Scaffolded AGENTS guidance now starts with offline CLI discovery instead of
+requiring remote skills installation. SDK/CLI parity, manifest changes, package
+selection, malformed metadata and generated guide content have tests. See the
+[verification](./release-0.9.0.md#codex-installed-catalog-2026-10-04).
+
+This is an initial discovery catalog, not completion of CLI-08. Continue by indexing
+named exports and their type/signature information through a compiler-backed
+service. Add authored API/component and recipe explanations, explicit runtime
+support backed by capability metadata, and examples that compile and execute.
+Resolve concrete wildcard exports or retain an explicit unsupported result.
+Verify the catalogs and guides from installed tarballs in an offline generated
+application. Keep command metadata tied to the CLI version and library guidance
+tied to each installed package version. Do not equate file presence with a valid
+runtime import. RT-23 component coverage and REL-02 acceptance remain dependencies.
+
+
+### RT-01 checkpoint history
+
+Codex authored-client checkpoint (2026-10-03): added public
+`rpc$(this.method(...))` as the explicit client type view. TypeScript decorators
+cannot alter a method's authored signature; Vite's signature rewriting alone
+does not supply editor inference. The helper derives `RpcCall<Result, Yield>`
+from the invoked native return, including inferred/annotated generators,
+inherited/generic methods, function fields, and scoped service methods. It checks
+that the value is a framework proxy call and returns it by identity. It does not
+wrap or redispatch the operation. Ordinary returns have no yielded values;
+broad AsyncIterable completion and native Response completion stay unknown.
+
+An isolated TypeScript fixture compiles against published declarations without
+Vite, with positive exact-type assertions and negative argument/result/yield
+checks. Production Node browser acceptance executes HTTP and SSE generators,
+page function fields, and a scoped service function field from the authored
+source. Existing WebSocket/service conformance now consumes calls through the
+helper too. Fixed ordinary HTTP/SSE JSON calls yielding their final result once;
+they now match WebSocket/service completion and `RpcCall<Result, never>`.
+The change is recorded in the [draft migration guide](./migration-0.9.0.md).
+
+Remaining before RT-01 completion: finish multipart and Workers/realtime
+acceptance, plus remaining request/response protocol diagnostics. The JSON wire
+value/type slice is verified in the checkpoint below. The shared conformance
+matrix now exercises HTTP, SSE, WebSocket, and explicit service calls for errors,
+deadlines, disconnect, cancellation, duplicate consumers, and cleanup.
+Extend native Response/cookie/flash acceptance with RT-11 across the full matrix.
+Typed client inference is now verified; do not restore it as an unfinished item.
+
+Codex response timing checkpoint (2026-10-03): native component/service HTTP/SSE
+responses retain their cookies alongside helper and flash cookies. Native
+redirects become navigation metadata. A real Node production browser follows
+both page and service redirects, retains HTTP-only cookies, and reads flash/old
+input once. The streaming header phase closes after outgoing middleware finishes;
+late cookie/header/flash writes reject explicitly. Early cookies are preserved
+when returning a lazy generator: materializing the Context response first prevents
+Hono from dropping prepared headers on a raw streaming response. Tests cover
+both early and late writes. Session rotation/destruction reject before storage
+changes once headers finalize. WebSocket actions reject native HTTP responses;
+serialized trees reject nested Response/Request/Headers with precise paths.
+HTTP/SSE/service/upload network failures explicitly report uncertain completion
+and no automatic retry. The supported-value audit and remaining runtime response
+acceptance are still required; this checkpoint does not close RT-01.
+
+Codex shared matrix checkpoint (2026-10-03):
+`packages/framework/tests/rpc-conformance-matrix.test.ts` runs 19 shared cases
+against four paths (76 tests). HTTP/SSE component and explicit service requests
+execute the real Hono router with published core proxies. The WebSocket pair
+runs the real in-memory runtime/action dispatcher and correlated frame router.
+Controlled disconnects affect transport consumption, not fabricated server
+results. Shared fixtures cover ordinary and generator values/state, repeated
+completion, unobserved draining, catch/finally, validation before mutation, visible
+and private errors, failures after yields, pre-header and mid-stream deadlines,
+cancellation and iterator return, duplicate iterators, unsupported arguments/
+state/results, uncertain disconnects, loading/pending-map cleanup, and request
+versus runtime ownership. Finite application I/O allows teardown to await remote
+completion without implying mutation rollback or arbitrary I/O interruption.
+
+Fixed service RPC exposing private exception stacks in development, WebSocket
+serialization errors losing `payload`/`state` path roots, and HTTP/SSE/service
+errors losing a known response request ID on invalid JSON, stream deadlines,
+or disconnect. HTTP IDs can remain unavailable before response headers arrive;
+local failures need not have server IDs, and HTTP status does not apply to WS.
+
+Codex JSON wire checkpoint (2026-10-03): core now owns `snapshotRpcValue`
+and `snapshotRpcFrame`. Encoders validate and copy the actual JSON representation
+once before stringify. Dates become ISO strings; undefined object fields omit,
+array holes/undefined become null, and top-level void remains undefined.
+Data/model instances transfer own enumerable fields; typed `toJSON()` output
+replaces the instance. Hooks run once per value location with a consistent empty
+root result key; nested hooks receive their field/index. A hook returning itself
+is supported without permitting actual cycles. Shared references copy normally.
+Lossy non-finite numbers, invalid Dates, opaque/native/binary values, cycles,
+throwing hooks/getters, and nesting beyond 256 levels reject with sanitized paths.
+The file extraction walker preserves own `__proto__` keys as data. WebSocket
+File/Blob arguments reject before dispatch instead of disappearing.
+
+`RpcSerialized<T>` maps results and yields to their JSON types. Published
+semantic fixtures check dates, model fields/method exclusion, custom hooks,
+optional hooks, tuples, undefined entries, unknown/any, and generators. Compiler
+return rewriting delegates to the same public types as authored `rpc$`. Method
+parameters and hydrated property annotations remain authored: use JSON input/state
+types, such as ISO strings, rather than assuming native revival. TypeScript cannot
+infer which class properties are enumerable; use explicit DTOs or typed hooks.
+See [the RPC guide](../docs/rpc.md) and [migration notes](./migration-0.9.0.md).
+
+The existing matrix now has 32 shared cases across four paths (128 tests), plus
+six real multipart-router cases (134 total). It verifies dates/model/hook values,
+normalization once, root hook keys, own `__proto__`, and invalid inputs/results.
+Ordinary multipart replies use the same normalizer, stable code/path/request ID,
+and private-error redaction in development. Production generated Node browsers
+execute Date/custom-hook/undefined-array generators over HTTP and SSE after
+source TypeScript checking.
+
+Codex native-response checkpoint (2026-10-03): ordinary successful native
+Response actions now resolve through HTTP/SSE component and explicit service
+clients to a local browser Response. The reserved native-response header
+separates user JSON/NDJSON from framework state and protocol metadata. Text,
+JSON, binary, status/status text, browser-visible headers and bodyless 204 work.
+Redirects still navigate and complete with undefined; HTTP error statuses reject
+with correlation. `RpcResult<Response>` now means `Response | undefined`;
+generator Response values remain unsupported and infer never. WebSocket
+rejection cancels the response body before returning its explicit error.
+
+Core drains the body before completion using a growing byte buffer capped at
+1 MiB. Unobserved calls drain too. Cancellation, deadlines and response-lifetime
+cleanup remain active through body consumption; oversized bodies fail with
+`COSSACK_RPC_RESPONSE_TOO_LARGE`. Use HTTP endpoints for larger downloads or
+continuous streams. Repeated awaits return the same local one-use body; clone
+before multiple reads. Native bodies never hydrate action state and the local
+response does not preserve fetch URL/redirect flags. Typed data returns remain
+the appropriate state synchronization contract. Upload XHR uses arraybuffer and
+copies browser-visible headers; real Chromium verifies bytes/status/headers.
+
+The shared matrix adds 11 cases per transport for five native representations,
+unobserved draining, size errors, HTTP status failures, body disconnects,
+deadlines and cancellation/body cleanup: 43 shared cases across four paths
+(172 tests), plus six ordinary multipart cases (178 total). Core reader tests
+cover exact byte limits, fragmented chunks, early and pending cancellation,
+network failure and reader release. Existing published type tests check the new
+result and unsupported generator terminal types. Generated Node apps compile
+before production HTTP/SSE browsers consume native text and service binary
+results; a separate real upload round-trip returns binary and native metadata.
+This proves Node/browser native body completion, not Workers response acceptance.
+
+Codex multipart checkpoint (2026-10-03): `/upload` now shares `/crpc`'s action
+pipeline instead of separately bootstrapping and disposing a component. A cached
+request decoder is reused by guards and dispatch. It restores nested file
+markers, rejects malformed or duplicate metadata/parts before construction,
+keeps own `__proto__` data, and rejects explicit null/non-array payloads.
+Component and explicit-service clients preserve scope/owner metadata. FileList
+becomes an array of Files; raw Blob is still outside the argument contract.
+
+The shared dispatcher applies action input validation before mutation, restores
+layout service ownership, and retains request/config/ORM context, stream lifetime,
+awaited cleanup and native/helper/flash cookies/redirects. Fetch streams multipart
+responses by default. Numeric `<method>Progress` state selects native XHR upload
+progress. XHR forwards complete UTF-8 NDJSON lines before load and bounds frame
+bytes; it retains cumulative browser response text and has no network download
+backpressure. Do not describe it as a total-memory-bounded stream. Native XHR
+responses preserve binary bytes and browser-visible headers. Parked iterator
+cancellation retains a known request ID on all four client paths.
+
+Evidence: 44 shared cases x four transports (176), 13 raw multipart cases and
+15 multipart client/router cases (204 total); 25 existing router lifetime cases
+now run for both JSON and multipart (50). Production Node/Chromium acceptance
+checks early Unicode yields, final results and progress for HTTP/SSE components
+and explicit services. Cancellation tests retain request correlation and verify
+remote closure/disposal. Tests capture counters per fixture because response
+cleanup can finish after a cancelled caller settles. Full core 726, framework
+858 and CLI 559 tests pass with root and all 11 package type checks.
+
+Codex built Workers checkpoint (2026-10-03): extended the generated staging
+artifact fixture with protected HTTP/SSE pages and a nested layout service.
+Native Responses using RPC NDJSON lost their bytes because the coordinator
+selected protocol parsing by MIME type alone. The reserved native marker now
+wins before parsing; opaque native bodies retain their existing cleanup and
+serialization-slot lifetime. A separate two-Worker source fixture verifies
+bytes/headers, unchanged scope state and subsequent coordinator progress.
+
+The artifact fixture uses `NODE_ENV=production`; inheriting Vitest's test env
+had emitted development asset paths and could not prove hydration. Chromium
+loads hashed scripts, waits for framework readiness, and invokes public clients.
+Component XHR and scoped-service Fetch uploads deliver an early Unicode yield,
+then wait on an explicit D1 gate before completion. Direct calls verify auth/input
+rejection, early cookies and late-cookie diagnostics, native NDJSON/JSON/binary/
+204 bodies and eventual cancellation cleanup. D1 audit records from generator
+completion, page cleanup and service disposal retain the original user/path and
+ORM context. SSR observes authoritative SSE state after multipart mutation.
+
+Real browsers also consume native bodies and observe native/helper/flash cookies
+on redirects from both component and service actions. Old input/messages render
+once and disappear on reload. These are published-entry production artifact
+checks, not tarball installation or remote deployment. Cancellation tests release
+finite application I/O explicitly; they do not claim rollback or cancellation of
+queued RPC callbacks on the pinned Wrangler baseline. Full framework 858 and CLI
+559 tests pass with root and all 11 package checks; core source is unchanged.
+
+Next finish systematic malformed data/frame, rate-limit and child-target checks
+and settle file count/size/type/unknown-key policies with RT-02/RT-14. The shared
+dispatcher and new runtime fixtures do not themselves prove every authorization
+or protocol boundary. RT-11 still requires secret exclusion, complete session
+recipes, rotation and concurrency criteria. Physical upgrades, distributed
+coordination, Deno execution, Electron packaging and full release gates retain
+separate evidence requirements. RT-01 stays open; no additional checkbox closes.
+
+Codex protocol-boundary checkpoint (2026-10-03): malformed JSON/UTF-8/frame
+shapes now retain the header/learned request ID. The first HTTP frame must match
+the response header; nonempty IDs/error codes are required. The reader holds
+done/error until EOF, rejecting trailing bytes or body failure before clients
+hydrate terminal state. Yields remain immediate and already accepted state is
+retained. Deadline/cancellation ownership remains active through EOF; there is
+no retry or mutation rollback. The four-path matrix now has 52 shared cases
+(208), six response-local protocol cases, 13 raw multipart and 15 multipart
+client/router cases: 242 total. WebSocket faults only rewrite correlated frames;
+initial snapshots/broadcasts remain untouched. Unknown socket IDs are ignored,
+malformed known-ID frames reject the pending call, and its terminal frame closes
+the call without waiting for the shared socket to end.
+
+Codex target/limit checkpoint (2026-10-03): WebSocket execution now checks
+inherited or forwarded `@RateLimit` metadata before validation/mutation, with
+authenticated peer identity and the same counter decision as HTTP. The runtime
+assigns an internal canonical route owner, so the same action/caller/store budget
+survives switching JSON/multipart/socket and reopening connections. Child class
+budgets are separate from page class budgets; siblings of one class share a
+budget. Explicit service limits belong to their layout/slot and span its pages.
+Limit/store failures keep request IDs, release loading/pending state, redact
+private errors and never retry mutations. HTTP rate replies add a stable code.
+
+Process-local SSE was publishing child state as page state. Ordinary and stream
+actions now publish the root snapshot while their caller receives child state.
+New tests deliberately collide page/child state names across JSON and multipart,
+verify denied/missing/invalid targets and awaited descendant cleanup, and prove
+child/page budget separation. Numeric/empty action targets cannot fall back to
+root WebSocket execution. The actual browser socket message handler now routes
+known-ID malformed frames before filtering broadcast types, so a missing type
+rejects its call without waiting for timeout or poisoning another pending call.
+
+Evidence: 56 shared cases x four paths (224), six response-local cases, 13 raw
+multipart, 15 multipart client/router and one cross-HTTP/socket budget case:
+259 matrix cases. The child suite has 18 cases; separate real socket tests
+exercise trusted caller isolation, forwarded service limits and child dispatch.
+Generated production workerd proves JSON acceptance followed by multipart 429,
+request IDs/Retry-After and zero denied D1 writes. A layout service retains its
+spent budget across HTTP/SSE pages. Full core 744, framework 931 and CLI 559 pass
+with root/all 11 package checks. Test-only registry caches and the limiter's
+expiry clock are isolated so these checks do not depend on warm caches or sleep.
+
+Codex ordinary-envelope checkpoint (2026-10-03): the real response matrix
+reproduced 35 malformed service-state, redirect and diagnostic cases before the
+fix. Core now uses one decoder for component/SSE/explicit-service ordinary JSON
+and HTTP errors. It rejects invalid UTF-8, non-object roots, foreign service
+wrappers, missing/null/array service state, invalid/conflicting redirects, and
+untyped code/message/field-error/ID metadata. Redirects are exclusive nonempty
+HTTP/HTTPS-or-relative URL envelopes. Error body IDs must match known headers;
+a valid body ID supplies correlation when a header is absent. Component state
+named `requestId` remains application data. Native failure bodies remain opaque.
+
+The complete ordinary JSON/error body is bounded to 1 MiB, including state,
+results and diagnostics; the public constant is `RPC_JSON_RESPONSE_MAX_BYTES`.
+Overflow cancels the reader and rejects before hydration. Fatal UTF-8 parsing,
+EOF, cancellation, deadline and ownership checks precede completion. This does
+not prevent a server mutation or roll it back. Non-JSON middleware failures
+retain generic status/known-ID errors; malformed declared JSON failures reject.
+Nested field-error values remain JSON, without inventing RT-02 schema semantics.
+
+Evidence: 31 new core cases cover exact byte limits, multibyte/split decoding,
+opaque/invalid errors, EOF gating, body read failure and public-proxy parked-body
+cancellation/deadlines. The matrix has 294 cases (259 previous plus 35 ordinary
+response regressions); full core 775/53 files and framework 966/50 pass with
+root/all 11 package checks. See the linked checkpoint for CLI/runtime evidence.
+No new checkbox closes. The original task scope and all remaining tasks persist.
+
+Codex socket-peer checkpoint (2026-10-03): Cloudflare formerly assigned every
+anonymous socket a synthetic `anonymous` user and rebuilt only page params.
+Core now retains the verified peer user and upgrade URL/params/filtered headers
+in the native attachment. Anonymous peers have no user and use captured IP
+headers. Every action receives a fresh Hono context; custom keys and generator
+bodies use that peer instead of shared bootstrap state. HTTP credentials,
+handshake noise and internal identity assertions are excluded. Arbitrary
+middleware variables/session revalidation are not reconstructed. Oversized
+attachments reject upgrades with structured 413, and old sockets without a
+snapshot reject before mutation and close 1012 for reconnect. Child targets
+receive the same context; unrelated broadcasts do not read attachments.
+
+The shared process runtime now stores each client's context; framework upgrade
+metadata includes decoded page params. Node, its legacy adapter, and Deno pass
+the connecting context rather than borrowing a shared component's first peer.
+Evidence includes real two-Worker/native DO sockets with a configured DO rate
+store, IP/user/header-key isolation, cross-Worker/reconnect budgets, interleaved
+generators, forged message/identity isolation and HTTP/socket counter sharing.
+Forced reconstruction uses native storage and retained attachments; it does not
+claim timed platform eviction or a persistent rate-counter window. Real Node
+sockets prove shared-component headers/users/custom budgets. Deno event tests
+verify adapter wiring; actual Deno execution remains REL-03. See the checkpoint
+for full commands and counts. No new checkbox closes.
+
+The subsequent durable rate-window checkpoint with RT-18 closes the DO
+counter's eviction-reset defect. Counter/deadline commits are transactional and
+expiry alarms cannot erase a newer window. Native workerd proves unique ordered
+counts from concurrent requests through two Workers, actual DO eviction, Worker
+reload and spent HTTP/socket budgets. DO requests/replies have window/counter
+validation; malformed storage and failed counter/alarm writes reject. Fake-clock
+cases cover exact expiry and queued transactions. These proofs do not apply to
+Redis, KV or memory. The subsequent rate-store contract checkpoint rejects invalid configured
+backends, removes first-env global ownership and validates runtime options plus
+Redis/KV/custom counters. Peer actions prefer their own context environment.
+Redis expiry is now milliseconds; KV logical deadlines respect a minimum
+60-second storage TTL. Next finish backend response bounds/abort/cleanup,
+provider resource policies and public capability/cache-unit inspection. Do not
+infer Redis/KV live or regional guarantees from native DO fixtures.
+Audit component initialization/restoration concurrency and all remaining RT-01
+criteria. Continue schema/file/unknown-key/resource policies with RT-02/RT-14
+and session recipes/secrets/rotation/concurrency with RT-11. Handshake identity
+is not per-message session revalidation. All 44 unchecked tasks remain in scope;
+14/58 are checked. Keep the separate Deno/Electron/tarball/live release gates.
+
+
+### RT-23 checkpoint history
+
+Codex status (2026-10-04): 32 UI foundations, including DataTable, have reviewed contracts.
+Completed work covers typed native attributes and events, form behavior, SSR and
+hydration, keyboard navigation, focus, dialogs, popovers and action menus.
+The [component audit](./ui-contract-audit.md) records coverage and pending rows.
+See [archived UI checkpoints](./release-0.9.0-plan-archive.md#codex-ui-handoff-2026-10-04)
+for implementation details and links to verification evidence.
+
+Tooltip and HoverCard now have typed wrapper/panel contracts, stable descriptions,
+hover/focus ownership and cancellation. See the
+[hover-control checkpoint](./release-0.9.0.md#codex-hover-controls-2026-10-04).
+AlertDialog now shares native dismissal and focus handling, with linked title/message,
+closed props and caller-owned confirmation. See the
+[alert checkpoint](./release-0.9.0.md#codex-alert-dialog-2026-10-04).
+Command now has named modal search, stable result identity, controlled/default
+state and document-order shortcut ownership. App uses one shortcut owner, and the
+local demo uses an explicit button. See the
+[Command checkpoint](./release-0.9.0.md#codex-command-2026-10-04).
+Accordion and Collapsible now have native button/heading contracts, stable panel
+IDs, typed attribute targets, one-time defaults and collapse focus restoration.
+See the [disclosure checkpoint](./release-0.9.0.md#codex-disclosures-2026-10-04).
+Tabs now has controlled/default selection, named instance-scoped relationships,
+manual/automatic activation, disabled navigation and keyed focus recovery.
+ResizeObserver tracks the indicator; cleanup cancels queued work. See the
+[Tabs checkpoint](./release-0.9.0.md#codex-tabs-2026-10-04).
+Next: Toggle and ToggleGroup, then remaining audit rows. Check native button
+ownership, pressed state, controlled/default selection, disabled items, group naming
+and keyboard focus. Preserve the full original component and release scope.
+RT-23 remains open against all criteria below.
+
+End of archived checkpoint passages.
