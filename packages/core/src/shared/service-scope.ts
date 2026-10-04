@@ -452,7 +452,11 @@ export class ServiceScope {
                     }
                 };
                 return createRpcCall(operation(), () => { controller.abort(); cleanup(); },
-                    error => console.error(`Error calling service action '${action}':`, error), () => requestId);
+                    error => console.error(`Error calling service action '${action}':`, error), () => requestId, {
+                        signal: controller.signal,
+                        error: () => new RpcError(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED',
+                            timedOut ? `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.` : 'RPC call was cancelled.', { requestId }),
+                    });
             };
         }
         this.clientProxyInstalled.add(entry.instance);

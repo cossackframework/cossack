@@ -11,37 +11,29 @@ All unchecked tasks remain in scope.
 
 ## Completed work — reference only
 
-The [completed task index](./release-0.9.0-plan.md#completed-task-index) covers all
-25 closed tasks, including RT-23's 70-row UI audit. Full criteria and evidence
-remain in the archives; do not repeat completed implementation work.
+All 25 closed tasks are in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
+with original criteria and evidence archived. Do not repeat their implementation.
 
-Implemented portions of the still-open CLI-07/RT-28 tasks:
-
-- [Stored test evidence](../docs/test-results.md): Vitest 4 reporter and shared CLI/MCP reads.
-- [Development capture](../docs/development-traces.md): bounded RPC/navigation events,
-  shared component IDs and passive state/resource/service/transport snapshots.
-  Values are omitted by default; explicit selections are bounded and redacted.
-
-Browser inspector, Vite/CLI/MCP records and service-call capture are verified; see
-the [latest checkpoint](./release-0.9.0.md#codex-service-traces-2026-10-04)
-for results and limits. These portions do not close CLI-07 or RT-28.
+Completed portions of open CLI-07/RT-28: [stored test evidence](../docs/test-results.md),
+[RPC/navigation capture, passive browser inspection and shared Vite/CLI/MCP records](../docs/development-traces.md).
+Service-call capture is committed as `c6c2e49`; [verification and limits](./release-0.9.0-verification-archive.md#codex-service-traces-2026-10-04)
+are archived. These portions do not close their parent tasks.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Finish **RT-28 / CLI-07**: server correlation and generated
-   application acceptance across browser, CLI and MCP. Preserve capture ownership,
-   terminal outcomes, production exclusion and published-package boundaries.
-   Vite's opt-in bridge now records default snapshots for the shared CLI/MCP reader.
-   Stored receipt age is explicit; records do not prove live or server state.
-   Source markers identify only the latest registered instance per file.
-   First reproduce/fix deadlines while a component/service iterator is paused at
-   a yield: timeout currently aborts transport but cleanup/completion can wait for
-   consumer resumption. Preserve deadline codes, state and exactly-once cleanup.
+The paused-iterator deadline fix now passes core, generated Node and workerd
+acceptance; see the [checkpoint](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04).
+Preserve first failure codes, confirmed state, one cancellation request and cleanup
+without another iterator pull. Local cancellation cannot undo server writes.
+
+1. Finish **RT-28 / CLI-07** server correlation and generated browser/CLI/MCP and
+   published-package acceptance. Preserve capture ownership, terminal outcomes and
+   production exclusion. Stored browser receipt age does not prove live/server state;
+   source markers identify only the latest registered instance per file.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
-   runtime support. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
-   through the [shared documentation services](../docs/local-agent-tools.md).
-3. Follow all 33 open tasks in the detailed plan. Close each only against its
-   original acceptance criteria. Preserve completed-task regression coverage.
+   runtime support through the [shared documentation services](../docs/local-agent-tools.md).
+   Follow all 33 open tasks in the detailed plan and retain completed-task regressions.
+   Close each task only against its original acceptance criteria.
 
 ## Limits to retain
 

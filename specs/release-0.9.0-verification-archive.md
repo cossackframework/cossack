@@ -6,6 +6,51 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-service-traces-2026-10-04"></a>
+## Codex explicit service RPC traces (2026-10-04)
+
+Author: Codex. Explicit layout-service HTTP calls now emit `service-rpc` events
+through the same bounded capture sequence as component RPC and navigation. Calls
+have opaque weak service identities, local call IDs and filtered wire IDs. They
+record response/state-reconciliation and one cleanup outcome without exposing
+service names, arguments, values or owner paths. Services do not enter the
+component snapshot registry. Shared stored-record validation and CLI/MCP reads
+accept this event variant without weakening field/value exclusion.
+
+Component and service stream clients also adopt a validated frame's request ID
+when its HTTP response omitted the correlation header. Subsequent reconciliation,
+completion and cancellation retain that ID. A changed observed ID produces another
+response event under the original local call ID; non-UUID values stay omitted.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,471 tests / 89 files pass**.
+  New real service-scope tests cover response/state/completion, stable versus
+  distinct service identities, pre-dispatch serialization failure, private ID
+  exclusion, cancellation, response-wait deadlines, capture replacement and
+  streamed completion/cancellation with frame-only correlation. Component stream
+  correlation and production service-proxy exclusion have regression coverage.
+  Log: `/tmp/cossack-service-trace-core-suite.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/devtools-browser.test.ts tests/navigation-trace-build.test.ts`:
+  **14 tests / 4 files pass**. A real service call round-trips through the built
+  core public entry and shared store; service/component identity mixing and
+  unsupported service transports are rejected. Existing browser/bridge gates pass.
+  Log: `/tmp/cossack-service-trace-framework-tests.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **15 tests pass**,
+  including stdio SDK/CLI parity for a stored service event.
+  Log: `/tmp/cossack-service-trace-mcp-tests.log`.
+- Core build, framework declaration build, root `pnpm tsc --noEmit` and
+  `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-service-trace-build.log`, `/tmp/cossack-service-trace-types.log`.
+
+Limits: client observations do not prove server execution, and service IDs do not
+identify the consuming component or a historical service-state snapshot. Source
+review found that a timeout while an iterator is paused at a yield aborts transport
+but can delay cleanup/completion until consumer resumption; the deadline tests
+above cover response waiting, not that paused-iterator case. Reproduce and fix it
+next for both component and service clients. Server correlation and full generated
+application/tarball acceptance remain open. Status stays 25 complete and 33 open.
+
 <a id="codex-trace-bridge-2026-10-04"></a>
 ## Codex project-bound trace bridge (2026-10-04)
 

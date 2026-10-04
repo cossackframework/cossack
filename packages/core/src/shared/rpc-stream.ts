@@ -136,7 +136,9 @@ export async function* readRpcStream(
             'RPC stream failed. The server outcome is unknown and is never retried.', { cause, requestId });
     } finally {
         signal?.removeEventListener('abort', cancelReader);
-        await reader.cancel().catch(() => {});
+        // Cancellation hooks may ignore abort or never settle. Do not retain the
+        // reader lock and local call lifetime while waiting for producer cleanup.
+        void reader.cancel().catch(() => {});
         reader.releaseLock();
     }
 }
@@ -435,12 +437,14 @@ export function rpcCancellations(client: unknown): Map<string, () => void> {
  * One operation, one response, one iterator. Await drains the stream and returns
  * its final result. Iteration yields values with backpressure. A discarded call
  * drains automatically so event-handler calls still execute and clean up.
+ * An optional cancellation signal closes paused consumers with the supplied error.
  */
 export function createRpcCall<Result, Yield>(
     operation: AsyncGenerator<Yield, Result>,
     abort: () => void,
     onUnobservedError?: (error: unknown) => void,
     getRequestId?: () => string | undefined,
+    cancellation?: { signal: AbortSignal; error: () => RpcError },
 ): RpcCall<Result, Yield> {
     let resolve!: (value: Result) => void;
     let reject!: (error: unknown) => void;
@@ -451,15 +455,26 @@ export function createRpcCall<Result, Yield>(
     let settled = false;
     let observed = false;
     let queue: Promise<unknown> = Promise.resolve();
+    let interruption: RpcError | undefined;
+    let interruptionDelivered = false;
+    let closing: Promise<void> | undefined;
+    const detach = () => cancellation?.signal.removeEventListener('abort', onAbort);
     const next = (): Promise<IteratorResult<Yield, Result>> => {
         const pending = queue.then(async () => {
-            if (settled) return { done: true as const, value: undefined as Result };
+            if (settled) {
+                // A paused iterator must observe the deadline instead of silently ending.
+                if (interruption && !interruptionDelivered) { interruptionDelivered = true; throw interruption; }
+                return { done: true as const, value: undefined as Result };
+            }
             try {
                 const result = await operation.next();
-                if (result.done) { settled = true; resolve(result.value); }
+                if (interruption) throw interruption;
+                if (result.done) { settled = true; detach(); resolve(result.value); }
                 return result;
             } catch (error) {
+                if (interruption) { error = interruption; interruptionDelivered = true; }
                 settled = true;
+                detach();
                 reject(error);
                 throw error;
             }
@@ -475,19 +490,25 @@ export function createRpcCall<Result, Yield>(
             catch (error) { if (!observed) onUnobservedError?.(error); }
         })();
     };
-    const cancel = async () => {
-        if (settled) return;
-        abort();
-        // An abort releases an in-flight reader before closing the generator.
-        await queue;
-        try { await operation.return(undefined as Result); }
-        finally {
-            if (!settled) {
-                settled = true;
-                reject(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId: getRequestId?.() }));
-            }
-        }
+    const cancel = (): Promise<void> => {
+        if (closing) return closing;
+        if (settled) return Promise.resolve();
+        interruption = cancellation?.error() ?? new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId: getRequestId?.() });
+        settled = true;
+        detach();
+        reject(interruption);
+        let closed!: () => void, failed!: (error: unknown) => void;
+        closing = new Promise<void>((resolve, reject) => { closed = resolve; failed = reject; });
+        // Install the latch before abort: transport callbacks can reenter cancel.
+        let abortFailure: unknown, abortFailed = false;
+        try { abort(); } catch (error) { abortFailed = true; abortFailure = error; }
+        // Closing a parked generator runs its finally blocks without another consumer pull.
+        void queue.then(() => operation.return(undefined as Result)).then(() => {
+            if (abortFailed) failed(abortFailure); else closed();
+        }, failed);
+        return closing;
     };
+    const onAbort = () => { void cancel().catch(error => { if (!observed) onUnobservedError?.(error); }); };
     const call: RpcCall<Result, Yield> = {
         then(onFulfilled, onRejected) {
             observed = true;
@@ -496,7 +517,7 @@ export function createRpcCall<Result, Yield>(
         },
         catch(onRejected) { observed = true; drive(); return completion.catch(onRejected); },
         finally(onFinally) { observed = true; drive(); return completion.finally(onFinally); },
-        cancel,
+        cancel() { observed = true; return cancel(); },
         [Symbol.asyncIterator]() {
             if (mode) throw new RpcError('COSSACK_RPC_ALREADY_CONSUMED', 'RPC results already have a consumer.');
             mode = 'iterator';
@@ -508,6 +529,8 @@ export function createRpcCall<Result, Yield>(
         },
     };
     rpcCalls.add(call);
+    cancellation?.signal.addEventListener('abort', onAbort, { once: true });
+    if (cancellation?.signal.aborted) onAbort();
     queueMicrotask(drive);
     return call;
 }

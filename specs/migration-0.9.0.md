@@ -1632,3 +1632,13 @@ Ctrl-double-click gesture and raw instance/public-state console output. Ctrl-cli
 continues to open source through the local editor service. Recording is explicit
 through the toolbar or inspection gesture; values are omitted unless selected
 through the controller API. See [development traces](../docs/development-traces.md#browser-inspector).
+
+## Paused RPC consumers
+
+Deadlines and WebSocket terminal failures now settle calls even while a consumer
+is paused after a yield. Do not rely on consumer pauses to extend a declared
+`@Server({ timeout })` deadline. Completion rejects and local loading releases;
+the next iterator pull observes the interruption once before later pulls finish.
+Explicit cancellation uses `COSSACK_RPC_CANCELLED`; deadlines use
+`COSSACK_RPC_TIMEOUT`. Already reconciled state is retained. See [RPC failure
+semantics](../docs/rpc.md) for remote-outcome limits.

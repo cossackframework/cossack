@@ -76,6 +76,12 @@ the bounded snapshot on the session handle. It does not cancel application calls
 a stopped session may therefore have starts without terminal events. Cancellation
 or a timeout does not prove that remote work stopped or external effects rolled back.
 
+Deadlines can finish a call while its consumer is paused at a yield. Its timeout
+trace and local loading cleanup do not wait for another pull. Explicit cancellation
+keeps its own outcome. WebSocket disconnects and buffer overflow also settle paused
+calls, discarding unconsumed frames while preserving already reconciled state.
+These local terminal events do not prove that remote work stopped.
+
 ## Component snapshots
 
 `session.snapshot().components` reports current status for up to 64 component

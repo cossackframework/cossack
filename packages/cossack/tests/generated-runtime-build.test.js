@@ -1649,12 +1649,18 @@ it('retains confirmed optimistic component and service yields through failures a
     }
     export async function audit(scope:string){return {...record(scope)};}
     export async function commit(scope:string){const value=record(scope);value.count++;value.mutations++;return {count:value.count};}
+    export async function commitBound(_db:unknown,scope:string){return commit(scope);}
+    export async function waitForReleaseBound(_db:unknown,scope:string){return waitForRelease(scope);}
     export async function release(scope:string){record(scope).released=1;}
     export async function waitForRelease(scope:string){
       const deadline=Date.now()+15000;
       while(!record(scope).released){if(Date.now()>deadline)throw new Error('Test did not release stream');await new Promise(resolve=>setTimeout(resolve,10));}
     }
   `);
+  for(const transport of ['http','sse','durable-object']) {
+    const pageFile=path.join(root,'src/pages/resource-check/optimistic-streams',transport,'index.ts');
+    await fs.writeFile(pageFile,(await fs.readFile(pageFile,'utf8')).replaceAll('this.env.DB','undefined').replace('Cossack<Env>','Cossack'));
+  }
   await fs.writeFile(path.join(root,'src/private/optimistic-stream.server.ts'), `
     import {audit,commit} from '../private-optimistic-streams';
     export async function readCounter(){return {count:(await audit('docs-example')).count};}

@@ -889,6 +889,22 @@ fails; unconfirmed client-only previews roll back. Late scoped consumers keep th
 per-invocation ownership. See the [optimistic guide](../docs/optimistic.md#cancel-a-stream).
 
 
+The shared `createRpcCall` completion owner accepts an optional transport abort
+signal and error factory. Interruption latches settlement before invoking abort,
+detaches its signal listener and closes the generator after outstanding pulls.
+Repeated/reentrant cancellation shares one close operation. A paused iterator's
+next pull observes the interruption once; successful completion wins over later
+abort. HTTP/SSE and explicit services bind their deadline controllers to this owner.
+Stream cleanup does not await an uncooperative producer cancellation hook before
+releasing its reader lock.
+
+WebSocket calls own one deadline timer for their full consumer lifetime, including
+pauses between yields. Their bounded frame queue reports terminal failures to the
+same interruption owner. A disconnect or buffer failure clears pending ownership,
+local loading and unconsumed frames immediately. The call sends at most one
+best-effort cancellation frame for local cancellation/deadline or invalid/overflow
+input. Already reconciled yield state remains; no action is replayed.
+
 ## Controlled UI data tables
 
 The UI DataTable consumes a current page and an explicit total. Its parent owns

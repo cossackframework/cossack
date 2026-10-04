@@ -225,6 +225,20 @@ automatically after a timeout or disconnect: the server outcome may be unknown.
 Network failures report that uncertainty; the framework never retries the action.
 Cancelling response consumption does not roll back a completed mutation.
 
+A configured deadline continues while an iterator is paused at a yielded value.
+HTTP/SSE, explicit service and WebSocket calls reject completion with
+`COSSACK_RPC_TIMEOUT`, release local loading ownership and close the paused
+iterator without requiring another consumer pull. The next pull observes the
+interruption once; later pulls report completion. Explicit cancellation retains
+`COSSACK_RPC_CANCELLED`, and an already completed call keeps its result.
+
+WebSocket disconnects, terminal errors and buffer overflow also interrupt a paused
+consumer. Unconsumed queued frames are discarded; already reconciled yield state
+remains authoritative. Cancellation requests are sent at most once for a locally
+cancelled or timed-out call. This does not confirm that server work stopped.
+HTTP stream cleanup requests producer cancellation and releases its reader lock
+without waiting for an uncooperative producer's cleanup promise.
+
 Use the error's `code` for application decisions. Internal exception messages
 and stacks stay in server logs, including service RPC in development. Deliberate
 `ClientVisibleError` messages and validation field errors remain visible.

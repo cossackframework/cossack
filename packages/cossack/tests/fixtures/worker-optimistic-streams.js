@@ -22,6 +22,19 @@ export async function writeWorkerOptimisticStreams(root) {
       await sql\`UPDATE optimistic_stream_audit SET count=count+1,mutations=mutations+1 WHERE scope=\${scope}\`;
       return {count:(await audit(scope)).count};
     }
+    // Socket actions have no HTTP ORM scope; use their explicit binding.
+    export async function commitBound(db:D1Database,scope:string) {
+      await db.prepare('CREATE TABLE IF NOT EXISTS optimistic_stream_audit (scope TEXT PRIMARY KEY, count INTEGER NOT NULL, mutations INTEGER NOT NULL, released INTEGER NOT NULL)').run();
+      await db.prepare('INSERT OR IGNORE INTO optimistic_stream_audit VALUES (?,0,0,0)').bind(scope).run();
+      return (await db.prepare('UPDATE optimistic_stream_audit SET count=count+1,mutations=mutations+1 WHERE scope=? RETURNING count').bind(scope).first<{count:number}>())!;
+    }
+    export async function waitForReleaseBound(db:D1Database,scope:string) {
+      const deadline=Date.now()+15000;
+      while(!(await db.prepare('SELECT released FROM optimistic_stream_audit WHERE scope=?').bind(scope).first<{released:number}>())?.released) {
+        if(Date.now()>deadline) throw new Error('Test did not release its optimistic stream');
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+    }
     export async function release(scope:string) {
       await sql\`UPDATE optimistic_stream_audit SET released=1 WHERE scope=\${scope}\`;
     }
@@ -43,6 +56,11 @@ export async function writeWorkerOptimisticStreams(root) {
       @Optimistic('streamService') preview() {
         const edits=optimistic<StreamCounter>(this); edits.increment('serviceCount',1); edits.increment('previewCount',1);
       }
+      @Server({timeout:1500,input:input.object({scope:input.string()})})
+      async *timedStreamService(value:{scope:string}) {
+        this.serviceCount=(await commit(value.scope)).count; yield {scope:value.scope,count:this.serviceCount};
+        await waitForRelease(value.scope); return this.serviceCount;
+      }
       @Server({input:input.object({scope:input.string(),mode:input.enum(['error','held','done'] as const)})})
       async *streamService(value:{scope:string;mode:'error'|'held'|'done'}) {
         this.serviceCount=(await commit(value.scope)).count; yield {scope:value.scope,count:this.serviceCount};
@@ -59,7 +77,7 @@ export async function writeWorkerOptimisticStreams(root) {
     @Page({services:[StreamCounter]}) export default class StreamLayout extends Cossack {
       @Inject(StreamCounter) service!:StreamCounter;
       render() { return html\`<aside><span id="stream-layout-count">\${this.service.serviceCount}</span>
-        <span id="stream-layout-loading">\${this.loading.streamService??0}</span>
+        <span id="stream-layout-loading">\${(this.loading.streamService??0)+(this.loading.timedStreamService??0)}</span>
         <span id="stream-layout-preview">\${this.service.previewCount}</span></aside>\${this.children}\`; }
     }
   `);
@@ -82,14 +100,14 @@ export async function writeWorkerOptimisticStreams(root) {
     import { Cossack,Page,Component,Inject,State,ClientState,Client,Server,Optimistic,optimistic,input,rpc$,ClientVisibleError } from '@cossackframework/core';
     import {html,component} from '@cossackframework/renderer';
     import StreamCounter from '../../../../services/OptimisticStreams';
-    import {commit,waitForRelease} from '../../../../private-optimistic-streams';
+    import {commit,waitForRelease,commitBound,waitForReleaseBound} from '../../../../private-optimistic-streams';
     @Component({transport:'http'}) class StreamWatcher extends Cossack {
       @Inject(StreamCounter) service!:StreamCounter;
       render() {return html\`<span id="stream-nested-count">\${this.service.serviceCount}</span>
-        <span id="stream-nested-loading">\${this.loading.streamService??0}</span>
+        <span id="stream-nested-loading">\${(this.loading.streamService??0)+(this.loading.timedStreamService??0)}</span>
         <span id="stream-nested-preview">\${this.service.previewCount}</span>\`;}
     }
-    @Page({transport:'${transport}'}) export default class StreamPage extends Cossack {
+    @Page({transport:'${transport}'}) export default class StreamPage extends Cossack<Env> {
       @Inject(StreamCounter) service!:StreamCounter;
       @State() count=0;
       @ClientState() previewCount=0;
@@ -99,6 +117,11 @@ export async function writeWorkerOptimisticStreams(root) {
       private active?:{cancel():Promise<void>};
       @Optimistic('streamComponent') preview() {
         const edits=optimistic<StreamPage>(this);edits.increment('count',1);edits.increment('previewCount',1);
+      }
+      @Server({timeout:1500,input:input.object({scope:input.string()})})
+      async *timedStreamComponent(value:{scope:string}) {
+        this.count=(await commitBound(this.env.DB,value.scope)).count; yield {scope:value.scope,count:this.count};
+        await waitForReleaseBound(this.env.DB,value.scope); return this.count;
       }
       @Server({input:input.object({scope:input.string(),mode:input.enum(['error','held','done'] as const)})})
       async *streamComponent(value:{scope:string;mode:'error'|'held'|'done'}) {
@@ -116,7 +139,7 @@ export async function writeWorkerOptimisticStreams(root) {
       @Client() async cancel() {await this.active?.cancel();}
       render() {return html\`<main><span id="stream-component-count">\${this.count}</span>
         <span id="stream-service-count">\${this.service.serviceCount}</span>
-        <span id="stream-page-loading">\${(this.loading.streamService??0)+(this.loading.streamComponent??0)}</span>
+        <span id="stream-page-loading">\${((this.loading.streamService??0)+(this.loading.timedStreamService??0))+(this.loading.streamComponent??0)+(this.loading.timedStreamComponent??0)}</span>
         <span id="stream-component-preview">\${this.previewCount}</span><span id="stream-service-preview">\${this.service.previewCount}</span>
         <span id="stream-component-draft">\${this.draft}</span><span id="stream-service-draft">\${this.service.draft}</span>
         \${component(StreamWatcher)}</main>\`;}
@@ -134,8 +157,11 @@ export async function checkWorkerOptimisticStreams(server,serverUrl,cookie) {
     for(const transport of ['http','sse','durable-object']) {
       const context=await browser.newContext();
       await context.addCookies([{name:'session_id',value:cookie.split(';')[0].slice('session_id='.length),url:origin,httpOnly:true}]);
-      const page=await context.newPage(),errors=[],requests=[];
+      const page=await context.newPage(),errors=[],requests=[],socketRequests=[];
       page.on('pageerror',error=>errors.push(error.message));
+      page.on('websocket',socket=>socket.on('framesent',event=>{
+        try {socketRequests.push(JSON.parse(String(event.payload)));} catch { /* Non-RPC frame. */ }
+      }));
       page.on('request',request=>{if(new URL(request.url()).pathname==='/crpc')requests.push(request.postDataJSON());});
       await page.goto(origin+'/resource-check/optimistic-streams/'+transport);
       await page.waitForFunction(()=>!!window.__optimisticStreams);
@@ -197,6 +223,31 @@ export async function checkWorkerOptimisticStreams(server,serverUrl,cookie) {
         await browserExpect(page.locator('#stream-service-draft')).toHaveText('keep service draft');
         expect(await audit(scope)).toMatchObject({count:1,mutations:1});expect(errors).toEqual([]);
         await page.unroute('**/crpc**');
+      }
+      for (const useService of [false,true]) {
+        const scope=transport+':'+(useService?'service':'component')+':paused-deadline';
+        const first=await page.evaluate(async({scope,useService})=>{
+          const host=window.__optimisticStreams;
+          const call=useService?host.service.timedStreamService({scope}):host.timedStreamComponent({scope});
+          window.__pausedCall=call; window.__pausedIterator=call[Symbol.asyncIterator](); window.__pausedError=undefined;
+          void call.catch(error=>{window.__pausedError={code:error.code,requestId:error.requestId};});
+          return window.__pausedIterator.next();
+        },{scope,useService});
+        expect(first).toMatchObject({done:false,value:{scope,count:1}});
+        await page.waitForFunction(()=>!!window.__pausedError);
+        expect(await page.evaluate(()=>window.__pausedError)).toMatchObject({code:'COSSACK_RPC_TIMEOUT',requestId:expect.any(String)});
+        await browserExpect(page.locator('#stream-page-loading')).toHaveText('0');
+        await browserExpect(page.locator('#stream-'+(useService?'service':'component')+'-count')).toHaveText('1');
+        if(useService)for(const owner of ['layout','nested'])await browserExpect(page.locator('#stream-'+owner+'-loading')).toHaveText('0');
+        expect(await page.evaluate(async()=>{
+          try {await window.__pausedIterator.next();return 'unexpected-success';} catch(error){return error.code;}
+        })).toBe('COSSACK_RPC_TIMEOUT');
+        await page.evaluate(()=>window.__pausedCall.cancel());
+        expect(await audit(scope)).toMatchObject({count:1,mutations:1});
+        const requestsForCall=(transport==='durable-object'&&!useService?socketRequests:requests).filter(body=>body.payload?.[0]?.scope===scope);
+        expect(requestsForCall).toHaveLength(1);
+        const released=await server.fetch('/api/rpc-check/optimistic-streams?scope='+encodeURIComponent(scope),{method:'POST',headers:{cookie}});
+        expect(released.status).toBe(200); expect(errors).toEqual([]);
       }
       if(transport==='sse') {
         await page.goto(origin+'/resource-check/optimistic-streams/example');

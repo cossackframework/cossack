@@ -88,50 +88,39 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-service-traces-2026-10-04"></a>
-### Codex explicit service RPC traces (2026-10-04)
+<a id="codex-paused-rpc-deadlines-2026-10-04"></a>
+### Codex paused RPC deadlines (2026-10-04)
 
-Author: Codex. Explicit layout-service HTTP calls now emit `service-rpc` events
-through the same bounded capture sequence as component RPC and navigation. Calls
-have opaque weak service identities, local call IDs and filtered wire IDs. They
-record response/state-reconciliation and one cleanup outcome without exposing
-service names, arguments, values or owner paths. Services do not enter the
-component snapshot registry. Shared stored-record validation and CLI/MCP reads
-accept this event variant without weakening field/value exclusion.
-
-Component and service stream clients also adopt a validated frame's request ID
-when its HTTP response omitted the correlation header. Subsequent reconciliation,
-completion and cancellation retain that ID. A changed observed ID produces another
-response event under the original local call ID; non-UUID values stay omitted.
+Author: Codex. HTTP/SSE component, explicit service and WebSocket deadlines now
+settle calls while consumers are paused at a yield. Shared cancellation latches
+completion before transport cleanup and closes the generator without another pull.
+Repeated cancellation keeps the first outcome. WebSocket disconnects and queue
+failures also release pending ownership; confirmed state remains and mutations
+are never replayed. Stream reader cleanup does not await producer cancellation.
 
 Verification:
 
-- `pnpm --filter @cossackframework/core exec vitest run`: **1,471 tests / 89 files pass**.
-  New real service-scope tests cover response/state/completion, stable versus
-  distinct service identities, pre-dispatch serialization failure, private ID
-  exclusion, cancellation, response-wait deadlines, capture replacement and
-  streamed completion/cancellation with frame-only correlation. Component stream
-  correlation and production service-proxy exclusion have regression coverage.
-  Log: `/tmp/cossack-service-trace-core-suite.log`.
-- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/devtools-browser.test.ts tests/navigation-trace-build.test.ts`:
-  **14 tests / 4 files pass**. A real service call round-trips through the built
-  core public entry and shared store; service/component identity mixing and
-  unsupported service transports are rejected. Existing browser/bridge gates pass.
-  Log: `/tmp/cossack-service-trace-framework-tests.log`.
-- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **15 tests pass**,
-  including stdio SDK/CLI parity for a stored service event.
-  Log: `/tmp/cossack-service-trace-mcp-tests.log`.
-- Core build, framework declaration build, root `pnpm tsc --noEmit` and
-  `pnpm typecheck` pass (all 11 packages).
-  Logs: `/tmp/cossack-service-trace-build.log`, `/tmp/cossack-service-trace-types.log`.
+- Core suite: **1,484 tests / 91 files pass**, including paused deadlines,
+  disconnect/overflow, reader release, stable success and reentrant cancellation.
+  Command: `pnpm --filter @cossackframework/core exec vitest run`.
+  Log: `/tmp/cossack-paused-deadline-core-suite.log`.
+- Core build and framework declarations pass. After the final fixture changes,
+  `pnpm tsc --noEmit` and `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-paused-deadline-build.log`, `/tmp/cossack-paused-deadline-final-types.log`.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js`:
+  **1 test passes** through a generated production Worker, workerd, D1 and Chromium,
+  including six paused component/service cases across HTTP/SSE/WebSocket pages.
+  The socket fixture uses explicit D1 bindings, preserving the audit table and
+  proving one mutation per call. No upload occurs.
+  Log: `/tmp/cossack-paused-deadline-workerd-fixed.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'retains confirmed optimistic component and service yields through failures and cancellation'`:
+  **1 passes, 32 unrelated tests skipped**. Generated TypeScript, client/server
+  builds and the same browser cases pass with the Node adapter and test backend.
+  Log: `/tmp/cossack-paused-deadline-node-fixed.log`.
 
-Limits: client observations do not prove server execution, and service IDs do not
-identify the consuming component or a historical service-state snapshot. Source
-review found that a timeout while an iterator is paused at a yield aborts transport
-but can delay cleanup/completion until consumer resumption; the deadline tests
-above cover response waiting, not that paused-iterator case. Reproduce and fix it
-next for both component and service clients. Server correlation and full generated
-application/tarball acceptance remain open. Status stays 25 complete and 33 open.
+Limits: local settlement cannot stop ignored application I/O or undo external
+writes. Server correlation and full generated development-trace/tarball acceptance
+remain open under RT-28/CLI-07. No task closes: **25 complete, 33 open**.
 
 ### Archived checkpoints
 
@@ -142,6 +131,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-service-traces-2026-10-04"></a>[Codex explicit service RPC traces (2026-10-04)](./release-0.9.0-verification-archive.md#codex-service-traces-2026-10-04) |
 | <a id="codex-trace-bridge-2026-10-04"></a>[Codex project-bound trace bridge (2026-10-04)](./release-0.9.0-verification-archive.md#codex-trace-bridge-2026-10-04) |
 | <a id="codex-browser-inspector-2026-10-04"></a>[Codex browser inspector integration (2026-10-04)](./release-0.9.0-verification-archive.md#codex-browser-inspector-2026-10-04) |
 | <a id="codex-component-snapshots-2026-10-04"></a>[Codex passive component snapshots (2026-10-04)](./release-0.9.0-verification-archive.md#codex-component-snapshots-2026-10-04) |

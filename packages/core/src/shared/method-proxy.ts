@@ -160,6 +160,7 @@ function createCallLifecycle(component: any, name: string, call: OptimisticCall,
 
 /** Ordered frame queue for request-scoped realtime calls. */
 class SocketFrameQueue {
+    constructor(private onFailure?: (frame: Extract<RpcStreamFrame, { type: 'error' }>) => void) {}
     private frames: Array<{ frame: RpcStreamFrame; bytes: number }> = [];
     private bytes = 0;
     private failed = false;
@@ -182,10 +183,12 @@ class SocketFrameQueue {
     }
 
     fail(frame: RpcStreamFrame): void {
+        if (this.failed) return;
         this.failed = true;
         this.frames = [{ frame, bytes: 0 }];
         this.bytes = 0;
         for (const resolve of this.resolvers.splice(0)) resolve({ value: frame, done: false });
+        if (frame.type === 'error') this.onFailure?.(frame);
     }
 
     next(): Promise<IteratorResult<RpcStreamFrame>> {
@@ -209,32 +212,6 @@ function serverMethodTimeout(constructor: any, name: string): number | undefined
     const metadata = collectServerMethodMetadata(constructor);
     const timeout = Number(metadata[name]?.timeout);
     return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
-}
-
-/** Race a frame wait against the call deadline. */
-async function nextFrameWithDeadline(
-    queue: SocketFrameQueue,
-    deadline: number,
-    requestId: string,
-    timeoutMs: number | undefined,
-): Promise<IteratorResult<RpcStreamFrame>> {
-    if (deadline === Infinity) return queue.next();
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-        throw new RpcError('COSSACK_RPC_TIMEOUT',
-            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
-    }
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-        return await Promise.race([
-            queue.next(),
-            new Promise<never>((_, reject) => {
-                timer = setTimeout(() => reject(new RpcError('COSSACK_RPC_TIMEOUT',
-                    `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`,
-                    { requestId })), remaining);
-            }),
-        ]);
-    } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
@@ -397,9 +374,13 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             };
             return createRpcCall(operation(), () => {
                 controller.abort();
-                fail('COSSACK_RPC_CANCELLED');
+                fail(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED');
                 cleanup();
-            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId);
+            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId, {
+                signal: controller.signal,
+                error: () => new RpcError(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED',
+                    timedOut ? `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.` : 'RPC call was cancelled.', { requestId }),
+            });
         };
         component.__cossack_proxies.set(name, proxy);
         component.setProperty(name, proxy);
@@ -441,11 +422,19 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             component.requestUpdate();
 
             optimisticCall.requestId = requestId;
-            const { cleanup, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
+            const controller = new AbortController();
+            let interruptionError: RpcError | undefined;
+            let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+            const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
+            const cleanup = () => { if (deadlineTimer !== undefined) clearTimeout(deadlineTimer); finish(); };
             // Keep serializable args (primitives, plain objects, arrays), drop
             // non-transportable UI objects (DOM nodes, Event).
             let payload = args.filter(isWsTransportable);
-            const queue = new SocketFrameQueue();
+            const queue = new SocketFrameQueue(frame => {
+                if (controller.signal.aborted) return;
+                interruptionError = new RpcError(frame.code, frame.message, { requestId, fieldErrors: frame.fieldErrors });
+                controller.abort();
+            });
             let message: string;
             let requestState: Record<string, unknown> = {};
             try {
@@ -470,7 +459,10 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
             const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
-            wsPendingCalls(ws).set(requestId, frame => queue.push(frame));
+            wsPendingCalls(ws).set(requestId, frame => {
+                if (frame.type === 'error') { trace?.response(requestId); queue.fail(frame); }
+                else queue.push(frame);
+            });
             try {
                 ws.send(message);
             } catch (cause) {
@@ -481,11 +473,15 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             }
             invalidateClientPageCache();
 
+            if (timeoutMs !== undefined) deadlineTimer = setTimeout(() => {
+                interruptionError = new RpcError('COSSACK_RPC_TIMEOUT',
+                    `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
+                controller.abort();
+            }, timeoutMs);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
-                const deadline = timeoutMs === undefined ? Infinity : Date.now() + timeoutMs;
                 try {
                     while (true) {
-                        const next = await nextFrameWithDeadline(queue, deadline, requestId, timeoutMs);
+                        const next = await queue.next();
                         const frame = next.value;
                         trace?.response(requestId);
                         if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
@@ -496,10 +492,6 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     }
                 } catch (error) {
                     fail(error instanceof RpcError ? error.code : 'COSSACK_RPC_TRANSPORT_FAILED');
-                    if (error instanceof RpcError && ['COSSACK_RPC_TIMEOUT', 'COSSACK_RPC_BUFFER_EXCEEDED',
-                        'COSSACK_RPC_STREAM_INVALID', 'COSSACK_RPC_STREAM_TOO_LARGE'].includes(error.code)) {
-                        try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
-                    }
                     throw error;
                 } finally {
                     wsPendingCalls(ws).delete(requestId);
@@ -507,15 +499,21 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                 }
             };
             return createRpcCall(operation(), () => {
-                // Wake local consumers immediately. Server cancellation is a
-                // best effort and cannot interrupt arbitrary application I/O.
-                queue.fail({ v: 1, type: 'error', requestId,
-                    code: 'COSSACK_RPC_CANCELLED', message: 'RPC call was cancelled.' });
+                // Fail local consumption immediately; server cancellation remains best effort.
+                interruptionError ??= new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
+                controller.abort();
+                queue.fail({ v: 1, type: 'error', requestId, code: interruptionError.code, message: interruptionError.message });
                 wsPendingCalls(ws).delete(requestId);
-                fail('COSSACK_RPC_CANCELLED');
+                fail(interruptionError.code);
                 cleanup();
-                try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
-            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId);
+                if (['COSSACK_RPC_CANCELLED', 'COSSACK_RPC_TIMEOUT', 'COSSACK_RPC_BUFFER_EXCEEDED',
+                    'COSSACK_RPC_STREAM_INVALID', 'COSSACK_RPC_STREAM_TOO_LARGE'].includes(interruptionError.code)) {
+                    try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
+                }
+            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId, {
+                signal: controller.signal,
+                error: () => interruptionError ?? new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId }),
+            });
         };
 
         // Store proxy in the map so stubbed methods can find it

@@ -634,9 +634,10 @@ streamed state and capture replacement are covered without exposing service valu
 Remaining: correlate server events with those calls and cover
 full generated-runtime use of the shared CLI/MCP schema. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.
-Server execution is not proven by client capture. Also reproduce/fix timeout
-completion and cleanup while a component/service iterator is paused at a yield;
-response-wait deadlines do not prove that case.
+Server execution is not proven by client capture. Paused-iterator deadlines now
+settle HTTP/SSE, service and WebSocket calls without another consumer pull;
+WebSocket failures also release pending ownership. Preserve those regressions
+alongside first-interruption codes, confirmed state and one cancellation request.
 This foundation does not complete RT-28 or CLI-07.
 
 Purpose: A developer or agent needs to connect a UI symptom to the navigation,

@@ -314,3 +314,10 @@ describe('single-dispatch RPC calls', () => {
         expect(run).toHaveBeenCalledOnce();
     });
 });
+
+it('releases a malformed stream without waiting for an uncooperative producer cancellation hook', async () => {
+    const cancel = vi.fn(() => new Promise<void>(() => {}));
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode('invalid-json\n')); }, cancel });
+    await expect(collect(new Response(body, { headers: { 'Content-Type': RPC_STREAM_CONTENT_TYPE } }))).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID' });
+    expect(cancel).toHaveBeenCalledOnce(); expect(body.locked).toBe(false);
+});
