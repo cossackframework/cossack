@@ -6,7 +6,8 @@ description: "Capture bounded navigation and client RPC lifecycle evidence durin
 # Development traces
 
 The core package provides opt-in capture for framework navigation and component
-HTTP/SSE and WebSocket calls. Use it from Vite development code:
+HTTP/SSE and WebSocket calls, plus explicit layout-service HTTP calls. Use it from
+Vite development code:
 
 ```ts
 import { startDevelopmentTrace } from '@cossackframework/core/devtools';
@@ -31,12 +32,17 @@ Sequence numbers order events; timestamps use the local wall clock. A dropped
 history is incomplete and may contain a terminal event without its start.
 
 Events form a discriminated union. Check `event.kind` before reading fields:
-`rpc` describes component calls and `navigation` describes navigation decisions.
+`rpc` describes component calls, `service-rpc` describes explicit layout-service
+calls, and `navigation` describes navigation decisions.
 
-Each RPC call has a local `callId`, an opaque `componentId` and a UUID `requestId` when
-available. A server can change the wire request ID; `callId` still groups the local
+RPC calls share a local `callId` and a UUID `requestId` when available. Component
+calls have an opaque `componentId`; service calls have a separate opaque `serviceId`.
+A service instance keeps its identity within a capture and is held weakly. Service
+identities do not add services or service state values to the component registry. A server can change the wire request ID; `callId` still groups the local
 lifecycle. Non-UUID response identifiers are omitted. These are client observations,
-not authenticated server execution evidence.
+not authenticated server execution evidence. Validated stream frames supply their
+request ID if the HTTP response omitted the correlation header; subsequent state
+and terminal events use that ID.
 
 | Phase | Meaning |
 | --- | --- |
@@ -213,7 +219,7 @@ HTTP endpoint. That token is available to the development browser and is not an
 authentication claim. Treat records as local browser observations. Production
 HTML does not install the bridge, and production bundling removes the publisher.
 
-RT-28 remains open for server-side correlation, service RPC capture and
+RT-28 remains open for server-side correlation and
 full generated-application browser acceptance. Isolated Vite/Chromium coverage
 does not replace that gate. The separate [stored test-results reader](./test-results.md)
 reads test evidence, not runtime traces.

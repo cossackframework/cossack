@@ -251,7 +251,9 @@ it('reads the same bounded development record through MCP and CLI without starti
   const root = await fixture(), session = randomUUID();
   await writeDevelopmentTrace(root, randomUUID(), JSON.stringify({ schemaVersion: 1, sessionId: session,
     startedAt: Date.now(), capturedAt: Date.now(), collecting: true, capacity: 512, dropped: 0,
-    events: [], components: { entries: [], dropped: 0, tracking: 'weak' } }));
+    events: [{ kind: 'service-rpc', sequence: 1, timestamp: Date.now(), phase: 'start',
+      serviceId: 1, callId: randomUUID(), requestId: randomUUID(), transport: 'http', outcome: null }],
+    components: { entries: [], dropped: 0, tracking: 'weak' } }));
   const { client, stderr } = await connect(root);
   const response = await client.callTool({ name: 'read_development_traces', arguments: { session } });
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});

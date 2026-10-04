@@ -1,14 +1,14 @@
 // @vitest-environment node
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Cossack, State } from '@cossackframework/core';
+import { Cossack, State, Server, Service, ServiceScope } from '@cossackframework/core';
 import { startDevelopmentTrace, createDevelopmentNavigationTrace } from '@cossackframework/core/devtools';
 import { parseDevelopmentTrace, readDevelopmentTraces, writeDevelopmentTrace } from '../src/development-traces';
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.unstubAllGlobals(); await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 async function root() { const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-trace-store-')); roots.push(dir); return dir; }
 const snapshot = () => ({ schemaVersion: 1, sessionId: randomUUID(), startedAt: Date.now(), capturedAt: Date.now(), collecting: true, capacity: 512, dropped: 0, events: [], components: { entries: [], dropped: 0, tracking: 'weak' } });
 it('round trips a real core snapshot with navigation and passive component fields', async () => {
@@ -90,4 +90,25 @@ it('separates bridge instances, rejects overload without queueing and removes it
     await expect.poll(() => replies.some(reply => reply.id === '2' && reply.status === 'saved')).toBe(true);
     expect((await readDevelopmentTraces(dir)).data.record?.snapshot.sessionId).toBe(s.sessionId);
     httpServer.emit('close'); expect(ws.listenerCount(TRACE_BRIDGE_EVENT)).toBe(0); bridge.dispose();
+});
+
+it('persists actual explicit service calls with distinct service identities through the shared reader', async () => {
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ _cossack_return: 'private-result', _cossack_service_state: { count: 4 } }), { headers: { 'Content-Type': 'application/json' } }));
+    @Service() class Counter { @State() count = 0; @Server() edit() { return 'server'; } }
+    const scope = new ServiceScope(undefined, [Counter], { ownerRouteId: 'private-route' });
+    const capture = startDevelopmentTrace();
+    try {
+        const counter = scope.resolveDeclared(Counter); await counter.edit(); expect(counter.count).toBe(4);
+        const snapshot = capture.snapshot();
+        expect(snapshot.events.map(event => event.kind)).toEqual(Array(4).fill('service-rpc'));
+        expect(snapshot.components.entries).toEqual([]);
+        const dir = await root(); await writeDevelopmentTrace(dir, randomUUID(), JSON.stringify(snapshot));
+        expect((await readDevelopmentTraces(dir)).data.record?.snapshot).toEqual(snapshot);
+        expect(JSON.stringify(snapshot)).not.toMatch(/private-result|private-route|componentId/);
+        const bad = structuredClone(snapshot) as any; bad.events[0].componentId = 1;
+        expect(() => parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
+        delete bad.events[0].componentId; bad.events[0].transport = 'websocket';
+        expect(() => parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
+    } finally { capture.stop(); await scope.disposeAsync(); }
 });

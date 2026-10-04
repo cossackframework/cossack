@@ -52,10 +52,10 @@ export function parseDevelopmentTrace(json: string): DevelopmentTraceSnapshot {
         if (!e || typeof e !== 'object') throw invalid();
         const common = ['kind', 'sequence', 'timestamp', 'phase'];
         number(e.sequence); if (e.sequence <= sequence) throw invalid(); sequence = e.sequence; number(e.timestamp);
-        if (e.kind === 'rpc') {
-            object(e, [...common, 'callId', 'requestId', 'componentId', 'transport', 'outcome']);
+        if (e.kind === 'rpc' || e.kind === 'service-rpc') {
+            object(e, [...common, 'callId', 'requestId', e.kind === 'rpc' ? 'componentId' : 'serviceId', 'transport', 'outcome']);
             id(e.callId); if (e.requestId !== null && (typeof e.requestId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(e.requestId))) throw invalid();
-            number(e.componentId); choice(e.transport, ['http', 'websocket']); choice(e.phase, ['start', 'response', 'state-reconciled', 'finish']);
+            number(e.kind === 'rpc' ? e.componentId : e.serviceId); choice(e.transport, e.kind === 'rpc' ? ['http', 'websocket'] : ['http']); choice(e.phase, ['start', 'response', 'state-reconciled', 'finish']);
             choice(e.outcome, e.phase === 'finish' ? ['succeeded', 'failed', 'cancelled', 'timeout', 'disconnected'] : [null]);
         } else if (e.kind === 'navigation') {
             const fields: Record<string, string[]> = { start: ['navigationType'], cache: ['decision'], invalidate: ['entries'], layouts: ['retained', 'created', 'retired', 'rootReplaced'], scroll: ['behavior', 'decision'], transition: ['decision'], finish: ['outcome', 'committed'], 'component-prepared': ['componentId', 'role'] };

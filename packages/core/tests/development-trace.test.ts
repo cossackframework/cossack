@@ -158,3 +158,14 @@ it('copies allowlisted navigation primitives and ignores malformed or private fi
     expect(JSON.stringify(session.snapshot())).not.toMatch(/secret|url|state/);
     expect(createDevelopmentNavigationTrace(NaN)).toBeUndefined();
 });
+
+it('adopts a validated stream frame ID when the HTTP response omitted its correlation header', async () => {
+    const wireId = crypto.randomUUID();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ v: 1, type: 'done', requestId: wireId, state: { count: 3 }, value: 8 }) + '\n', {
+        headers: { 'Content-Type': 'application/x-cossack-rpc+ndjson' },
+    })));
+    session = startDevelopmentTrace(); expect(await component().run()).toBe(8);
+    expect(rpcEvents().slice(-3).map(event => [event.phase, event.requestId])).toEqual([
+        ['response', wireId], ['state-reconciled', wireId], ['finish', wireId],
+    ]);
+});

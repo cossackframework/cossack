@@ -357,6 +357,11 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                     if (response.headers?.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                         let invalidated = false;
                         for await (const frame of readRpcStream(response, controller.signal)) {
+                            if (frame.requestId !== requestId) {
+                                requestId = frame.requestId;
+                                optimisticCall.requestId = requestId;
+                                trace?.response(requestId);
+                            }
                             if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                                 { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                             if (!invalidated) { invalidateClientPageCache(); invalidated = true; }

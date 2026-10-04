@@ -88,51 +88,50 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-trace-bridge-2026-10-04"></a>
-### Codex project-bound trace bridge (2026-10-04)
+<a id="codex-service-traces-2026-10-04"></a>
+### Codex explicit service RPC traces (2026-10-04)
 
-Author: Codex. `cossackPages({ developmentTraces: true })` now installs a development
-publisher through Vite HTML transformation. Explicit browser capture offers its
-default snapshot once per second with one outstanding acknowledgement; stopped
-snapshots are acknowledged before suppressing further sends. Disconnect/reconnect,
-page exit and HMR remove or suspend publishing without replaying application work.
-The injected module honors the development base path and is empty in production.
+Author: Codex. Explicit layout-service HTTP calls now emit `service-rpc` events
+through the same bounded capture sequence as component RPC and navigation. Calls
+have opaque weak service identities, local call IDs and filtered wire IDs. They
+record response/state-reconciliation and one cleanup outcome without exposing
+service names, arguments, values or owner paths. Services do not enter the
+component snapshot registry. Shared stored-record validation and CLI/MCP reads
+accept this event variant without weakening field/value exclusion.
 
-The framework's Node-only `/development-traces` service owns strict parsed-JSON
-validation, bounded project-local storage and reads. Selected state values and
-extra payload fields are rejected. Records carry project/server identity and
-receipt time, use atomic replacement and retain up to 16 capture sessions.
-`cossack traces --json` and MCP `read_development_traces` share that reader, expose
-record age with `live: false`, and accept an optional capture session UUID.
+Component and service stream clients also adopt a validated frame's request ID
+when its HTTP response omitted the correlation header. Subsequent reconciliation,
+completion and cancellation retain that ID. A changed observed ID produces another
+response event under the original local call ID; non-UUID values stay omitted.
 
 Verification:
 
-- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/devtools-browser.test.ts tests/devtools.test.ts tests/navigation-trace-build.test.ts`:
-  **20 tests / 5 files pass**. Real core snapshots round-trip through storage.
-  Chromium exercises the actual opt-in page plugin under `/debug/`, receives
-  default component snapshots on disk and records the stopped capture. Tests also
-  cover schema limits, selected-value exclusion, links/corrupt/copied records,
-  retention, acknowledgement races, overload, cleanup, default-off installation
-  and production publisher/virtual-module exclusion.
-  Log: `/tmp/cossack-trace-bridge-final-tests.log`.
-- `pnpm --filter cossack exec vitest run tests/mcp.test.js tests/dispatch.test.js tests/flags.test.js tests/documentation.test.js`:
-  **64 tests / 4 files pass**, including real stdio SDK/CLI trace parity, project
-  binding, unknown-field/path rejection and existing tool/command regressions.
-  Log: `/tmp/cossack-trace-cli-tests.log`.
-- `pnpm tsc --noEmit`, `pnpm typecheck` and
-  `pnpm --filter @cossackframework/framework build:types`: root, all 11 package
-  checks and public declaration build pass.
-  Logs: `/tmp/cossack-trace-bridge-types.log`, `/tmp/cossack-trace-bridge-build.log`.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,471 tests / 89 files pass**.
+  New real service-scope tests cover response/state/completion, stable versus
+  distinct service identities, pre-dispatch serialization failure, private ID
+  exclusion, cancellation, response-wait deadlines, capture replacement and
+  streamed completion/cancellation with frame-only correlation. Component stream
+  correlation and production service-proxy exclusion have regression coverage.
+  Log: `/tmp/cossack-service-trace-core-suite.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/devtools-browser.test.ts tests/navigation-trace-build.test.ts`:
+  **14 tests / 4 files pass**. A real service call round-trips through the built
+  core public entry and shared store; service/component identity mixing and
+  unsupported service transports are rejected. Existing browser/bridge gates pass.
+  Log: `/tmp/cossack-service-trace-framework-tests.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **15 tests pass**,
+  including stdio SDK/CLI parity for a stored service event.
+  Log: `/tmp/cossack-service-trace-mcp-tests.log`.
+- Core build, framework declaration build, root `pnpm tsc --noEmit` and
+  `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-service-trace-build.log`, `/tmp/cossack-service-trace-types.log`.
 
-Limits: these are sampled local browser observations, not authenticated server
-execution or a live query. A collecting flag can outlive the browser/server.
-Source/environment freshness is not verified. One recording Vite server owns a
-project directory; custom HTML servers must run Vite's HTML transform. Page exit
-can precede the final write; captures replaced within one sampling interval can
-remain unpublished. This uses workspace builds and an isolated Vite/Chromium
-fixture, not fresh tarball/generated-application acceptance. RT-28 still needs
-server correlation, service RPC capture and full generated runtime acceptance.
-CLI-07 and release gates stay open. Status remains 25 complete and 33 open.
+Limits: client observations do not prove server execution, and service IDs do not
+identify the consuming component or a historical service-state snapshot. Source
+review found that a timeout while an iterator is paused at a yield aborts transport
+but can delay cleanup/completion until consumer resumption; the deadline tests
+above cover response waiting, not that paused-iterator case. Reproduce and fix it
+next for both component and service clients. Server correlation and full generated
+application/tarball acceptance remain open. Status stays 25 complete and 33 open.
 
 ### Archived checkpoints
 
@@ -143,6 +142,7 @@ parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-trace-bridge-2026-10-04"></a>[Codex project-bound trace bridge (2026-10-04)](./release-0.9.0-verification-archive.md#codex-trace-bridge-2026-10-04) |
 | <a id="codex-browser-inspector-2026-10-04"></a>[Codex browser inspector integration (2026-10-04)](./release-0.9.0-verification-archive.md#codex-browser-inspector-2026-10-04) |
 | <a id="codex-component-snapshots-2026-10-04"></a>[Codex passive component snapshots (2026-10-04)](./release-0.9.0-verification-archive.md#codex-component-snapshots-2026-10-04) |
 | <a id="codex-navigation-trace-2026-10-04"></a>[Codex shared navigation trace capture (2026-10-04)](./release-0.9.0-verification-archive.md#codex-navigation-trace-2026-10-04) |

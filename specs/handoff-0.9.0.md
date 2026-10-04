@@ -22,17 +22,21 @@ Implemented portions of the still-open CLI-07/RT-28 tasks:
   shared component IDs and passive state/resource/service/transport snapshots.
   Values are omitted by default; explicit selections are bounded and redacted.
 
-Browser inspector and the opt-in Vite/CLI/MCP bridge are verified; see the [latest checkpoint](./release-0.9.0.md#codex-trace-bridge-2026-10-04)
+Browser inspector, Vite/CLI/MCP records and service-call capture are verified; see
+the [latest checkpoint](./release-0.9.0.md#codex-service-traces-2026-10-04)
 for results and limits. These portions do not close CLI-07 or RT-28.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Finish **RT-28 / CLI-07**: server correlation, service RPC capture and generated
+1. Finish **RT-28 / CLI-07**: server correlation and generated
    application acceptance across browser, CLI and MCP. Preserve capture ownership,
    terminal outcomes, production exclusion and published-package boundaries.
    Vite's opt-in bridge now records default snapshots for the shared CLI/MCP reader.
    Stored receipt age is explicit; records do not prove live or server state.
    Source markers identify only the latest registered instance per file.
+   First reproduce/fix deadlines while a component/service iterator is paused at
+   a yield: timeout currently aborts transport but cleanup/completion can wait for
+   consumer resumption. Preserve deadline codes, state and exactly-once cleanup.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
    runtime support. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
    through the [shared documentation services](../docs/local-agent-tools.md).

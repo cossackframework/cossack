@@ -14,6 +14,12 @@ export interface DevelopmentRpcEvent {
     readonly phase: 'start' | 'response' | 'state-reconciled' | 'finish';
     readonly outcome: DevelopmentRpcOutcome | null;
 }
+/** Explicit layout-service calls have service identities, not component identities. */
+export interface DevelopmentServiceRpcEvent extends Omit<DevelopmentRpcEvent, 'kind' | 'componentId' | 'transport'> {
+    readonly kind: 'service-rpc';
+    readonly serviceId: number;
+    readonly transport: 'http';
+}
 /** Fixed navigation decisions; never URLs, application state or error messages. */
 export type DevelopmentNavigationDiagnostic =
     | { phase: 'start'; navigationType: NavigationType }
@@ -30,7 +36,7 @@ export type DevelopmentNavigationEvent = {
     readonly kind: 'navigation';
     readonly navigationId: number | null;
 } & (DevelopmentNavigationDiagnostic | { phase: 'component-prepared'; componentId: number; role: DevelopmentComponentRole });
-export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentNavigationEvent;
+export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent;
 
 export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
@@ -53,6 +59,8 @@ interface Collector {
     readonly startedAt: number;
     readonly capacity: number;
     readonly components: WeakMap<object, number>;
+    readonly services: WeakMap<object, number>;
+    serviceSequence: number;
     readonly componentRefs: Map<number, WeakRef<object>>;
     droppedComponents: number;
     componentSequence: number;
@@ -75,7 +83,7 @@ export function startDevelopmentTrace(options: { capacity?: number } = {}): Deve
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 2048) throw new RangeError('Trace capacity must be an integer from 1 to 2048.');
     if (active) active.collecting = false;
     const collector: Collector = { sessionId: crypto.randomUUID(), startedAt: Date.now(), capacity,
-        components: new WeakMap(), componentRefs: new Map(), droppedComponents: 0, componentSequence: 0, sequence: 0, dropped: 0, collecting: true, events: [] };
+        components: new WeakMap(), services: new WeakMap(), serviceSequence: 0, componentRefs: new Map(), droppedComponents: 0, componentSequence: 0, sequence: 0, dropped: 0, collecting: true, events: [] };
     active = collector;
     return {
         snapshot: () => ({ schemaVersion: 1, sessionId: collector.sessionId, startedAt: collector.startedAt, capturedAt: Date.now(),
@@ -169,12 +177,25 @@ export interface DevelopmentRpcTrace {
 export function beginDevelopmentRpcTrace(component: object, transport: 'http' | 'websocket', requestId: string): DevelopmentRpcTrace | undefined {
     if (!import.meta.env?.DEV || !active) return;
     const collector = active;
-    const identity = { callId: crypto.randomUUID(), componentId: componentIdentity(collector, component), transport };
+    return rpcTrace(collector, { kind: 'rpc', callId: crypto.randomUUID(), componentId: componentIdentity(collector, component), transport }, requestId);
+}
+/** @internal Service instances are held weakly and are not added to the component registry. */
+export function beginDevelopmentServiceRpcTrace(service: object, requestId: string): DevelopmentRpcTrace | undefined {
+    if (!import.meta.env?.DEV || !active) return;
+    const collector = active;
+    let serviceId = collector.services.get(service);
+    if (serviceId === undefined) { serviceId = ++collector.serviceSequence; collector.services.set(service, serviceId); }
+    return rpcTrace(collector, { kind: 'service-rpc', callId: crypto.randomUUID(), serviceId, transport: 'http' }, requestId);
+}
+function rpcTrace(collector: Collector, identity:
+    | Pick<DevelopmentRpcEvent, 'kind' | 'callId' | 'componentId' | 'transport'>
+    | Pick<DevelopmentServiceRpcEvent, 'kind' | 'callId' | 'serviceId' | 'transport'>,
+    requestId: string): DevelopmentRpcTrace {
     let wireId = uuid.test(requestId) ? requestId : null;
     let finished = false;
     const emit = (phase: DevelopmentRpcEvent['phase'], outcome: DevelopmentRpcOutcome | null = null) => {
         if (finished || !collector.collecting) return;
-        const event: DevelopmentRpcEvent = { ...identity, kind: 'rpc', requestId: wireId,
+        const event: DevelopmentRpcEvent | DevelopmentServiceRpcEvent = { ...identity, requestId: wireId,
             sequence: ++collector.sequence, timestamp: Date.now(), phase, outcome };
         append(collector, event);
     };

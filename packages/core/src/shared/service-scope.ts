@@ -1,3 +1,4 @@
+import { beginDevelopmentServiceRpcTrace } from './development-trace';
 import { registerDevelopmentScope, developmentName } from './development-inspection';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers, optimisticHandler, optimisticKeys, ownRpcLoading } from './optimistic-state';
@@ -362,6 +363,7 @@ export class ServiceScope {
                     optimisticKeys(entry.serviceClass));
                 const finishLoading = this.beginLoading(entry.serviceClass, action);
                 let requestId: string = crypto.randomUUID();
+                const trace = import.meta.env?.DEV ? beginDevelopmentServiceRpcTrace(entry.instance, requestId) : undefined;
                 const controller = new AbortController();
                 let timedOut = false;
                 const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
@@ -376,8 +378,9 @@ export class ServiceScope {
                     if (finished) return;
                     finished = true;
                     if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
-                    finishOptimisticCall(call, success);
-                    finishLoading();
+                    try { finishOptimisticCall(call, success); finishLoading(); }
+                    catch (error) { trace?.finish('failed'); throw error; }
+                    finally { trace?.finish(success ? 'succeeded' : timedOut ? 'timeout' : controller.signal.aborted ? 'cancelled' : 'failed'); }
                 };
                 try {
                     requestState = snapshotRpcValue(optimisticRequestState(entry.instance, getServiceState(entry.instance)), 'state') as Record<string, unknown>;
@@ -396,12 +399,13 @@ export class ServiceScope {
                 }
                 request = awaitRpcResponse(request, controller.signal, () => requestId);
                 void request.catch(() => {});
-                const applyState = createStateApplier(entry.instance, requestState, call);
+                const applyState = createStateApplier(entry.instance, requestState, call, trace ? () => trace.state() : undefined);
                 const apply = (state: Record<string, unknown>) => applyState(sanitizeServiceState(entry.serviceClass, state));
                 const operation = async function* (): AsyncGenerator<unknown, unknown> {
                     try {
                         const response = await request;
                         requestId = response.headers.get('X-Cossack-Request-Id') ?? requestId;
+                        trace?.response(requestId);
                         if (!response.ok) {
                             throw await readRpcHttpError(response, controller.signal);
                         }
@@ -412,6 +416,10 @@ export class ServiceScope {
                         }
                         if (response.headers.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
                             for await (const frame of readRpcStream(response, controller.signal)) {
+                                if (frame.requestId !== requestId) {
+                                    requestId = frame.requestId;
+                                    trace?.response(requestId);
+                                }
                                 if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                                     { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
                                 if (frame.state && typeof frame.state === 'object') {

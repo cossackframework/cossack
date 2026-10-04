@@ -150,7 +150,7 @@ reporter/type and CLI/MCP parity acceptance also pass; see the
 
 RT-28 browser snapshots now have an opt-in Vite bridge and a shared project-local
 CLI/MCP reader with strict default-value exclusion and receipt-age metadata.
-Remaining: server correlation, service RPC capture and full generated-runtime
+Remaining: server correlation and full generated-runtime
 acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
 Preserve project path boundaries, secret redaction and clean stdout.
 Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
@@ -627,10 +627,16 @@ transport. The shared Node-only reader powers `cossack traces` and MCP
 `read_development_traces`. Records omit selected values, bound storage and expose
 receipt age with `live: false`; see the development trace guide.
 
-Remaining: correlate server events with those calls; cover service RPC and
+Explicit layout-service HTTP calls now share lifecycle phases and sequence through
+`service-rpc` events with weak service identities. Validation/cancellation/timeout,
+streamed state and capture replacement are covered without exposing service values.
+
+Remaining: correlate server events with those calls and cover
 full generated-runtime use of the shared CLI/MCP schema. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.
-Service RPC and server execution are not covered by the current client capture.
+Server execution is not proven by client capture. Also reproduce/fix timeout
+completion and cleanup while a component/service iterator is paused at a yield;
+response-wait deadlines do not prove that case.
 This foundation does not complete RT-28 or CLI-07.
 
 Purpose: A developer or agent needs to connect a UI symptom to the navigation,
