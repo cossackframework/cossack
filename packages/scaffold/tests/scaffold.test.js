@@ -799,6 +799,9 @@ describe('composition', () => {
     expect(pkg.scripts['desktop:dev']).toBe('cossack-desktop');
     expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
     const deno = JSON.parse(files.get('deno.json').content.toString());
+    expect(deno.nodeModulesDir).toBe('manual');
+    expect(files.get('src/index.ts').content.toString()).toContain('port: Number(env.PORT ?? 8000)');
+    expect(files.get('src/index.ts').content.toString()).toContain("hostname: String(env.HOST ?? '0.0.0.0')");
     expect(deno.tasks.build).toBe('pnpm run build');
     expect(deno.imports.hono).toMatch(/^npm:hono@/);
     expect(deno.imports.vite).toMatch(/^npm:vite@/);

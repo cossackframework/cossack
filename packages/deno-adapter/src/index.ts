@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { serveStatic, upgradeWebSocket } from 'hono/deno';
 import { InMemoryWebSocketRuntime } from '@cossackframework/core';
-import type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/framework/runtime-adapter';
+import type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/core';
 
 export interface DenoAdapterOptions {
   env?: Record<string, unknown>;
@@ -281,4 +281,4 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
   };
 }
 
-export type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/framework/runtime-adapter';
+export type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/core';

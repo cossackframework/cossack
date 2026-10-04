@@ -74,3 +74,5 @@ export type {
 } from '@cossackframework/renderer';
 
 export { createRouteBuilder, routeParameters, RouteUrlError, type RouteBuilder, type RouteParameters, type RouteParameter } from './shared/routes';
+
+export type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from './shared/runtime-adapter';

@@ -6,6 +6,64 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-node-websocket-development-2026-10-04"></a>
+### Codex: Unified Node development sockets and bindings (2026-10-04)
+
+Author: Codex. A dedicated `/ws/` listener now loads the application before its
+first WebSocket handshake, without requiring a prior HTTP request. Runtime upgrade
+handlers attach to a private event host, keeping Vite's HMR listener independent.
+Server-source hot updates replace the SSR graph, detach and dispose the previous
+runtime, and close its sockets. A revision check discards an entry superseded
+while its binding factory is awaiting work. Failed factories retry with a fresh
+entry rather than a disposed runtime. The implementation uses Vite's
+[per-environment hot-update hook](https://vite.dev/guide/api-environment-plugins#the-hotupdate-hook).
+
+Generated Node entries expose one typed `createEnv` factory. Development uses
+Vite environment files with process overrides; production uses process variables.
+The factory preserves arbitrary bindings, the database path default and SMTP
+email setup. Configured SMTP requires both credentials. No mail is sent by the
+acceptance tests. The generated script is now a thin Vite launcher that retains
+its optional local overlay and port default. Both normal and JSON `cossack dev`
+use the same bounded child-process supervisor.
+
+Verification:
+
+- Node adapter: **22 tests / 5 files pass**, including stale asynchronous
+  initialization and binding-factory retry regressions
+  (`/tmp/cossack-node-sockets-final-adapter.log`). The tooling bundle keeps all Node
+  built-ins external; the actual generated app caught the initial EventEmitter
+  browser-stub packaging mistake before correction.
+- Generated Node cold socket startup, HMR, repeated reload and binding precedence
+  through both launchers, plus all three Node trace transports and production
+  exclusion: **5 pass / 36 unrelated cases skipped**
+  (`/tmp/cossack-node-sockets-traces.log`). SMTP coverage constructs a sender and
+  checks its interface; it does not establish delivery or contact an SMTP host.
+- Generated normal/JSON CLI HTTP and shutdown checks, state development/production
+  examples and Cloudflare HTTP/SSE/WebSocket traces: **7 pass / 35 unrelated cases
+  skipped** (`/tmp/cossack-node-sockets-runtime.log`).
+- CLI lifecycle contract: **9 pass / 38 unrelated cases skipped**, using
+  `--testTimeout 30000` (`/tmp/cossack-node-sockets-cli.log`). Requested SIGINT and
+  SIGTERM code forms are accepted; unsolicited exits and forced timeouts fail.
+- Scaffold: **113 tests / 8 files pass** (`/tmp/cossack-node-sockets-scaffold.log`).
+- Root `pnpm tsc --noEmit` and all 11 package type checks pass
+  (`/tmp/cossack-node-sockets-final-types.log`).
+
+Installed acceptance uses `node scripts/test-local-scaffold.mjs --node-dev-only`
+and now includes both Vite and script launch paths plus Node WebSocket traces.
+The first installed run found that Vite externalized the packaged Node adapter
+and core, disabling server socket trace guards. The plugin now keeps those two
+packages in its development SSR graph; the production build stays unchanged.
+**The corrected gate passes**: all three Node trace transports, exact offline
+CLI/MCP parity, native evidence, production exclusion, cold sockets and reloads
+through both launchers, six packaged examples, reporter types and UI contracts.
+Installed versions include Vite 8.3.2, Hono Node server 2.1.3, Hono 4.13.12,
+TypeScript 7.0.2 and Vitest 4.1.11. Log:
+`/tmp/cossack-node-sockets-installed-final.log`. Temporary installs were removed.
+
+The shutdown deadline bounds waiting, not arbitrary application I/O. Server edits
+reset process-local socket instances. Other runtime development acceptance and the
+final release matrix remain open. **26 complete, 32 open**; versions stay 0.8.3.
+
 <a id="codex-node-development-2026-10-04"></a>
 ### Codex: Node Vite development HTTP and trace acceptance (2026-10-04)
 

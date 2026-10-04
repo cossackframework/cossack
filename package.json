@@ -9,6 +9,7 @@
     "test:unit": "pnpm --workspace-concurrency=1 --filter \"./packages/*\" run test --watch=false",
     "audit:bundle": "pnpm --filter @cossackframework/database run audit:bundle",
     "test:agent-docs:local": "node scripts/test-local-scaffold.mjs --agent-docs-only",
+    "test:deno": "node scripts/test-deno-runtime.mjs",
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:production-bundles": "node scripts/test-local-scaffold.mjs",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e",

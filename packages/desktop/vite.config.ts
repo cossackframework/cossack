@@ -12,7 +12,7 @@ export default defineConfig({
     },
     outDir: 'dist',
     rolldownOptions: {
-      external: [/^node:/, 'electron', '@cossackframework/framework/runtime-adapter'],
+      external: [/^node:/, 'electron'],
       output: { entryFileNames: '[name].js' },
     },
   },

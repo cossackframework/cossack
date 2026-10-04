@@ -213,7 +213,9 @@ Retain RT-11 session and stream-response cookie requirements. Handshake identity
 does not prove per-message session revalidation. Explicit coordinator cancellation
 does not prove incoming TCP abort delivery or terminate ignored application I/O.
 Native Durable Object fixtures do not prove live Redis/KV guarantees.
-Actual Deno/Electron execution and the full release matrix remain separate gates.
+Deno interruption/lifecycle acceptance, actual Electron execution and the full
+release matrix remain separate gates. Basic Deno production execution is recorded
+in the [runtime checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
 RT-01 remains open.
 
 Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
@@ -965,7 +967,22 @@ connection. The script and standalone Vite share their binding factory and
 runtime lifecycle. Normal and JSON CLI development commands supervise shutdown.
 The [socket checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04)
 records generated and installed verification. Complete the final release matrix;
-Deno execution and Electron launch/packaging remain open.
+Deno CLI/development integration and Electron launch/packaging remain open.
+
+**Deno production progress — Author: Codex (2026-10-04).** Generated and installed
+apps now execute in real Deno with HTTP, SSE, WebSockets, hydration, environment
+bindings, repeated cookies and origin/scope rejection. `pnpm test:deno` owns the
+repeatable local gate, including generated-app TypeScript and typed native smoke
+tests. Generated projects use pnpm's dependency tree (`nodeModulesDir: "manual"`)
+and honor `PORT`/`HOST`. Shared adapter contracts live in core; Deno and Desktop
+no longer depend on framework-owned types. See the
+[checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
+
+Next, fix Deno dispatch in `cossack start` (the current non-Cloudflare branch runs
+Node), verify normal/JSON CLI execution and cancellation, and implement actual
+Deno development acceptance. Production execution alone does not verify RT-28
+development traces, graceful generated-server draining, Deno Deploy, Electron or
+the complete REL-03 matrix.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

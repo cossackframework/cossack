@@ -11,19 +11,20 @@ All unchecked tasks remain in scope.
 
 ## Completed work — reference only
 
-The [completed task index](./release-0.9.0-plan.md#completed-task-index) links all
-26 closed tasks to their archived criteria. CLI-07 is complete. RT-28's HTTP and
-SSE/WebSocket trace portions, including native-body server evidence, pass generated
-and installed browser/CLI/MCP parity and production exclusion; see the
-[verification record](./release-0.9.0.md#codex-native-trace-evidence-2026-10-04).
-Preserve these regressions; their implementation does not need repeating.
+All **26 completed tasks** are listed in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
+with links to their original criteria. Preserve their regressions; do not repeat implementation.
+Completed Node development and HTTP/SSE/WebSocket trace acceptance are recorded in the
+[verification archive](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04).
+Partial acceptance does not close RT-28 or REL-03.
 
 ## Continue here — Codex, 2026-10-04
 
 1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** other runtime development
-   acceptance, coordinating Deno execution and Desktop verification with REL-03.
-   Node cold socket startup, source reload and binding parity now use the shared
-   Vite lifecycle; see the [checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04).
+   acceptance, coordinating Deno CLI/development and Desktop verification with REL-03.
+   Basic Deno production execution now passes; see the
+   [checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
+   Next fix Deno `cossack start` dispatch (currently the Node branch), verify its
+   normal/JSON lifecycle, then implement Deno development acceptance.
    Preserve the public inspector import
    (filesystem imports duplicate capture owners), ordered WebSocket application
    errors, and capture ownership. Keep the Node adapter and core inside the
@@ -49,7 +50,7 @@ Preserve these regressions; their implementation does not need repeating.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
-- REL-03 still needs Deno execution, Electron launch/packaging and the full runtime/release matrix.
+- REL-03 still needs Deno CLI/development integration, Electron launch/packaging and the full runtime/release matrix.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

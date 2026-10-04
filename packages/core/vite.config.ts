@@ -17,11 +17,12 @@ export default defineConfig({
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),
-        // `User` is intentionally type-only, but Deno resolves the `.js`
-        // specifier in emitted declarations before loading `user.d.ts`.
+        // These contracts are type-only, but Deno resolves the `.js`
+        // specifier in emitted declarations before loading the matching `.d.ts`.
         // Keep an empty runtime module beside the declaration for strict ESM
         // consumers such as `deno check`.
         'shared/user': path.resolve(__dirname, 'src/shared/user.ts'),
+        'shared/runtime-adapter': path.resolve(__dirname, 'src/shared/runtime-adapter.ts'),
       },
       name: '@cossackframework/core',
       formats: ['es'],

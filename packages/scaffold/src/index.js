@@ -965,7 +965,7 @@ import { App } from './App';
 import { template } from './root';
 ${oauthImport}
 export const env: Record<string, unknown> = Deno.env.toObject();
-export const runtime = createDenoAdapter({ env });
+export const runtime = createDenoAdapter({ env, port: Number(env.PORT ?? 8000), hostname: String(env.HOST ?? '0.0.0.0') });
 export const frameworkApp = createApp({
   AppComponent: App,
   htmlTemplate: template,
@@ -999,7 +999,7 @@ function denoConfiguration() {
     deploy: 'deno task build && deno deploy',
   };
   return JSON.stringify({
-    nodeModulesDir: 'auto',
+    nodeModulesDir: 'manual',
     imports: {
       hono: `npm:hono@${dependencyVersion('hono')}`,
       vite: `npm:vite@${dependencyVersion('vite')}`,

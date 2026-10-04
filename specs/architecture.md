@@ -31,6 +31,12 @@ Recipe resolution records structural facts; rendering rejects unsupported target
 before planning writes. Inspection can therefore report an older unsupported
 selection with its feature, target, and manifest source instead of discarding it.
 
+The shared `CossackRuntimeAdapter` and `RuntimeWebSocketUpgrade` type contracts
+live in core. Framework re-exports them and owns transport policy enforcement.
+Deno and Desktop consume core directly; they do not depend on framework to define
+an adapter. Core publishes an empty runtime module beside these type declarations
+so Deno's strict ESM resolver can load their `.js` references during type checking.
+
 The storage capability model lives at
 `@cossackframework/core/storage-capabilities`, also re-exported by framework.
 It is independent of platform bindings and application configuration. Profiles

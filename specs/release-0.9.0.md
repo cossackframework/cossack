@@ -88,63 +88,48 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-node-websocket-development-2026-10-04"></a>
-### Codex: Unified Node development sockets and bindings (2026-10-04)
+<a id="codex-deno-production-2026-10-04"></a>
+### Codex: Real Deno production acceptance (2026-10-04)
 
-Author: Codex. A dedicated `/ws/` listener now loads the application before its
-first WebSocket handshake, without requiring a prior HTTP request. Runtime upgrade
-handlers attach to a private event host, keeping Vite's HMR listener independent.
-Server-source hot updates replace the SSR graph, detach and dispose the previous
-runtime, and close its sockets. A revision check discards an entry superseded
-while its binding factory is awaiting work. Failed factories retry with a fresh
-entry rather than a disposed runtime. The implementation uses Vite's
-[per-environment hot-update hook](https://vite.dev/guide/api-environment-plugins#the-hotupdate-hook).
+Generated Deno apps now keep pnpm-installed dependencies with
+`nodeModulesDir: "manual"` and honor `PORT`/`HOST` (defaults: 8000/0.0.0.0).
+The first actual run exposed automatic installation replacing linked packages
+and failing to resolve a server import. Generated-app TypeScript checks also
+cover conversion of the environment's `HOST` value to the adapter's string type.
 
-Generated Node entries expose one typed `createEnv` factory. Development uses
-Vite environment files with process overrides; production uses process variables.
-The factory preserves arbitrary bindings, the database path default and SMTP
-email setup. Configured SMTP requires both credentials. No mail is sent by the
-acceptance tests. The generated script is now a thin Vite launcher that retains
-its optional local overlay and port default. Both normal and JSON `cossack dev`
-use the same bounded child-process supervisor.
+Shared adapter contracts now live in core, with framework re-exports. Deno and
+Desktop no longer depend on framework-owned types. Core publishes the empty
+JavaScript companion required for Deno to resolve the type-only contract;
+Desktop builds consume published declarations instead of pulling core source
+outside their project. The typed Deno smoke test caught the missing companion
+before correction.
 
 Verification:
 
-- Node adapter: **22 tests / 5 files pass**, including stale asynchronous
-  initialization and binding-factory retry regressions
-  (`/tmp/cossack-node-sockets-final-adapter.log`). The tooling bundle keeps all Node
-  built-ins external; the actual generated app caught the initial EventEmitter
-  browser-stub packaging mistake before correction.
-- Generated Node cold socket startup, HMR, repeated reload and binding precedence
-  through both launchers, plus all three Node trace transports and production
-  exclusion: **5 pass / 36 unrelated cases skipped**
-  (`/tmp/cossack-node-sockets-traces.log`). SMTP coverage constructs a sender and
-  checks its interface; it does not establish delivery or contact an SMTP host.
-- Generated normal/JSON CLI HTTP and shutdown checks, state development/production
-  examples and Cloudflare HTTP/SSE/WebSocket traces: **7 pass / 35 unrelated cases
-  skipped** (`/tmp/cossack-node-sockets-runtime.log`).
-- CLI lifecycle contract: **9 pass / 38 unrelated cases skipped**, using
-  `--testTimeout 30000` (`/tmp/cossack-node-sockets-cli.log`). Requested SIGINT and
-  SIGTERM code forms are accepted; unsolicited exits and forced timeouts fail.
-- Scaffold: **113 tests / 8 files pass** (`/tmp/cossack-node-sockets-scaffold.log`).
-- Root `pnpm tsc --noEmit` and all 11 package type checks pass
-  (`/tmp/cossack-node-sockets-final-types.log`).
+- `COSSACK_DENO_BINARY=<Deno executable> pnpm test:deno`: builds and packs local
+  packages, installs a generated Deno application, checks its TypeScript and
+  runs it in Deno/Chromium; then runs **2 typed native smoke tests** and the
+  workspace generated-app case (**1 pass / 42 unrelated cases skipped**).
+  HTTP requests, repeated cookies, bindings, HTTP/SSE/WebSocket actions,
+  hydration, origin/scope rejection and process termination pass. Client chunks
+  exclude server method code; both graphs exclude `cloudflare:workers` imports.
+  Log: `/tmp/cossack-deno-gate-complete.log`.
+- Deno adapter: **16 tests / 2 files**; Desktop: **16 / 4**;
+  framework adapter contract: **5 / 1**. Logs:
+  `/tmp/cossack-deno-regressions.log`, `/tmp/cossack-deno-framework-contract.log`.
+- Scaffold: **113 tests / 8 files** (`/tmp/cossack-deno-scaffold-final.log`).
+  Root `pnpm tsc --noEmit` and all **11 package type checks** pass
+  (`/tmp/cossack-deno-root-types-final.log`, `/tmp/cossack-deno-package-types-final.log`).
+- Missing Deno fails immediately with setup guidance; the gate never treats the
+  ordinary suite's optional Deno case as runtime evidence. The CLI test package
+  declares Deno ambient types for its generated TypeScript fixture.
 
-Installed acceptance uses `node scripts/test-local-scaffold.mjs --node-dev-only`
-and now includes both Vite and script launch paths plus Node WebSocket traces.
-The first installed run found that Vite externalized the packaged Node adapter
-and core, disabling server socket trace guards. The plugin now keeps those two
-packages in its development SSR graph; the production build stays unchanged.
-**The corrected gate passes**: all three Node trace transports, exact offline
-CLI/MCP parity, native evidence, production exclusion, cold sockets and reloads
-through both launchers, six packaged examples, reporter types and UI contracts.
-Installed versions include Vite 8.3.2, Hono Node server 2.1.3, Hono 4.13.12,
-TypeScript 7.0.2 and Vitest 4.1.11. Log:
-`/tmp/cossack-node-sockets-installed-final.log`. Temporary installs were removed.
-
-The shutdown deadline bounds waiting, not arbitrary application I/O. Server edits
-reset process-local socket instances. Other runtime development acceptance and the
-final release matrix remain open. **26 complete, 32 open**; versions stay 0.8.3.
+Baseline: Deno 2.9.6 on Linux; installed Vite 8.3.2, Hono 4.13.12 and TypeScript
+7.0.2. Deno's native checker uses its bundled TypeScript 6.0.3. No deployment or
+publication occurred. Process termination does not prove graceful draining of
+arbitrary generated-app work. Deno CLI startup/development, RT-28 development
+traces, Electron launch/packaging and the full release matrix remain open.
+**26 tasks complete, 32 open**; versions stay at 0.8.3.
 
 ### Archived checkpoints
 
@@ -155,6 +140,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-node-websocket-development-2026-10-04"></a>[Codex unified Node development sockets and bindings (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04) |
 | <a id="codex-node-development-2026-10-04"></a>[Codex Node Vite development HTTP and trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-development-2026-10-04) |
 | <a id="codex-native-trace-evidence-2026-10-04"></a>[Codex native body server trace evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-native-trace-evidence-2026-10-04) |
 | <a id="codex-native-cancel-settlement-2026-10-04"></a>[Codex native response failure settlement (2026-10-04)](./release-0.9.0-verification-archive.md#codex-native-cancel-settlement-2026-10-04) |

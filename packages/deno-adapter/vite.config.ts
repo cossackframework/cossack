@@ -11,7 +11,7 @@ export default defineConfig({
     },
     outDir: 'dist',
     rolldownOptions: {
-      external: ['@cossackframework/core', '@cossackframework/framework/runtime-adapter', 'hono', 'hono/deno'],
+      external: ['@cossackframework/core', 'hono', 'hono/deno'],
     },
   },
 });

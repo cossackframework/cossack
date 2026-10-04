@@ -33,7 +33,7 @@
     "test": "vitest --run"
   },
   "dependencies": {
-    "@cossackframework/framework": "workspace:*"
+    "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
     "electron": ">=43.5.0"

@@ -36,6 +36,7 @@
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.3.0",
     "@playwright/test": "^1.61.1",
+    "@types/deno": "^2.7.0",
     "vitest": "^4.1.11"
   },
   "engines": {

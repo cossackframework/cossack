@@ -9,7 +9,7 @@ import type {
   NativeImage,
   WebPreferences,
 } from 'electron';
-import type { CossackRuntimeAdapter } from '@cossackframework/framework/runtime-adapter';
+import type { CossackRuntimeAdapter } from '@cossackframework/core';
 import { DesktopUnavailableError } from './error.js';
 
 const electronApi = (typeof electron === 'object' && electron !== null ? electron : {}) as typeof import('electron');

@@ -162,6 +162,9 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
+      '@types/deno':
+        specifier: ^2.7.0
+        version: 2.7.0
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.0.0)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -209,9 +212,6 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@cossackframework/framework':
-        specifier: workspace:*
-        version: link:../framework
       hono:
         specifier: ^4.13.7
         version: 4.13.11
@@ -227,9 +227,9 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@cossackframework/framework':
+      '@cossackframework/core':
         specifier: workspace:*
-        version: link:../framework
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^22.19.0
@@ -1684,6 +1684,9 @@ packages:
 
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
+
+  '@types/deno@2.7.0':
+    resolution: {integrity: sha512-Y6fWcV8KpYeO3Lik/RiYnUxtr/LWqoeACciU0CA+dr1U/45tGgaX3HWQQAPCNN53raN4Rr4Fht4y6qsUH57fDA==}
 
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
@@ -5672,6 +5675,8 @@ snapshots:
       '@types/ms': 2.1.0
 
   '@types/deep-eql@4.0.2': {}
+
+  '@types/deno@2.7.0': {}
 
   '@types/estree@1.0.8': {}
 
