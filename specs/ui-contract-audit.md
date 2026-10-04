@@ -64,13 +64,13 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Attachment](../packages/ui/src/components/Attachment.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Avatar](../packages/ui/src/components/Avatar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [AvatarGroup](../packages/ui/src/components/AvatarGroup.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Badge](../packages/ui/src/components/Badge.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Badge](../packages/ui/src/components/Badge.ts) | Reviewed foundation | Typed native span attributes/events, validated variants, readable status text, SSR/Chromium and ejected-source coverage. |
 | [Breadcrumb](../packages/ui/src/components/Breadcrumb.ts) | Reviewed foundation | Typed native root/list/link/text targets, stable readonly items, current-page links/text, rich names, hidden separators, native keyboard/modifiers, keyed focus, SSR/accessibility snapshots/Chromium, scaffold and ejected-source coverage. |
 | [Bubble](../packages/ui/src/components/Bubble.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Button](../packages/ui/src/components/Button.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [ButtonGroup](../packages/ui/src/components/ButtonGroup.ts) | Reviewed foundation | Named typed native div, consumed props, direct-control border joining, RTL/vertical layout, focus rings and ordinary native child behavior; SSR/Chromium and ejected-source coverage. |
 | [Calendar](../packages/ui/src/components/Calendar.ts) | Reviewed foundation | Strict UTC Gregorian dates, typed root props, SSR selected month, bounded grid keyboard navigation, controlled/default values, locale/week starts and focus ownership. |
-| [Card](../packages/ui/src/components/Card.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Card](../packages/ui/src/components/Card.ts) | Reviewed foundation | All four exports have typed native div contracts; visual-only hover, root/slot padding, native child actions, reduced motion, SSR/Chromium and ejected-source coverage. |
 | [Carousel](../packages/ui/src/components/Carousel.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Checkbox](../packages/ui/src/components/Checkbox.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Collapsible](../packages/ui/src/components/Collapsible.ts) | Reviewed foundation | Typed root/trigger/panel contracts, native activation, stable IDs, one-time defaults, focus restoration and SSR/Chromium acceptance. |
@@ -89,7 +89,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [InputGroup](../packages/ui/src/components/InputGroup.ts) | Reviewed foundation | Published native contracts, SSR/hydration, themed keyboard/focus/state/validation browser evidence. |
 | [InputOTP](../packages/ui/src/components/InputOTP.ts) | Reviewed foundation | One labeled native field, typed props/events, controlled/default values, selection-aware paste, composition, completion, reset, validation, themed focus and SSR/hydration browser acceptance. |
 | [Item](../packages/ui/src/components/Item.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Kbd](../packages/ui/src/components/Kbd.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Kbd](../packages/ui/src/components/Kbd.ts) | Reviewed foundation | Typed native HTMLElement attributes/events on descriptive kbd markup, no implicit shortcut behavior, SSR/Chromium and ejected-source coverage. |
 | [Label](../packages/ui/src/components/Label.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Marker](../packages/ui/src/components/Marker.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Menubar](../packages/ui/src/components/Menubar.ts) | Reviewed foundation | Named scoped menus, typed root/trigger/panel contracts, roving focus, RTL/typeahead, native dismissal, dynamic focus recovery, bounded positioning, SSR/Chromium and ejected-source compilation. |
@@ -110,7 +110,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Separator](../packages/ui/src/components/Separator.ts) | Reviewed foundation | Orientation-specific hr/div native types, textual decorative ARIA states, static separator ownership, one-pixel geometry, SSR/Chromium and ejected-source coverage. |
 | [Sheet](../packages/ui/src/components/Sheet.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [Sidebar](../packages/ui/src/components/Sidebar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Skeleton](../packages/ui/src/components/Skeleton.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Skeleton](../packages/ui/src/components/Skeleton.ts) | Reviewed foundation | Typed decorative div with separate rectangle/circle dimensions, native style composition, visible SSR defaults, reduced motion, public types, themed Chromium and ejected-source coverage. |
 | [Slider](../packages/ui/src/components/Slider.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Spinner](../packages/ui/src/components/Spinner.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Switch](../packages/ui/src/components/Switch.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
@@ -125,12 +125,11 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Skeleton, Card (including Header/Body/Footer), Badge and Kbd.
-Skeleton lacks its documented default line height and has an unsupported size
-example; review circle dimensions, decorative semantics and reduced motion.
-Card's interactive flag currently adds only visual hover styles. Clarify native
-interaction ownership and padding, then type every slot's actual div target.
-Badge and Kbd need their native span/HTMLElement contracts and naming guidance.
+Next audit Alert, Progress and Spinner. Alert currently hardcodes an assertive
+alert role and has an obsolete string-icon example. Review announcement ownership
+and native attributes. Progress needs a named, explicit determinate/indeterminate
+contract and owned value attributes. Spinner needs typed SVG event targets, valid
+geometry and reduced-motion behavior, with explicit decorative/announced modes.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

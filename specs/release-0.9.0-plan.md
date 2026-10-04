@@ -78,23 +78,23 @@ fields, not only in prose that an agent must parse.
 
 ## Suggested execution order
 
-These groups describe dependencies. They do not reduce the release scope.
+These groups list remaining work in dependency order. Completed prerequisites
+and the original sequence remain in the [archive](./release-0.9.0-plan-archive.md#suggested-execution-order).
+They do not reduce the release scope.
 Add focused tests during each group, and run broader gates after integration.
 
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
-| 1. Finish current runtime work | CF-05, RT-01, RT-12, RT-19, CF-06 | Distributed SSE works through generated apps and retains request ownership. |
-| 2. Establish shared metadata and diagnostics | CLI-02 through CLI-04, RT-07, RT-24, RT-25, RT-29 | Tools and types describe the behavior that the compiler and runtime execute. |
-| 3. Complete application state and actions | RT-02 through RT-06, RT-08 through RT-11, RT-14 | Forms, data loading, mutations, cancellation, and authorization compose. |
-| 4. Complete data and content features | RT-13, RT-15 through RT-18, RT-20 through RT-23, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
+| 1. Finish current runtime work | RT-01, RT-12 | Distributed SSE works through generated apps and retains request ownership. |
+| 2. Establish shared metadata and diagnostics | RT-24, RT-29 | Tools and types describe the behavior that the compiler and runtime execute. |
+| 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
+| 4. Complete data and content features | RT-13, RT-15 through RT-17, RT-20 through RT-23, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
-| 6. Expose the complete agent workflow | CLI-05 through CLI-08, RT-28 | Recipes, upgrades, offline help, and MCP use the shared services. |
-| 7. Finish operations | CF-01 through CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
-| 8. Audit and prepare release | REL-01 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
+| 6. Expose the complete agent workflow | CLI-07, CLI-08, RT-28 | Recipes, upgrades, offline help, and MCP use the shared services. |
+| 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
+| 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
 
-Some work in groups 1 and 7 already passed tests. Preserve that behavior while
-closing the missing parts. CF-07 and CF-11 are completed baseline invariants.
-Keep their regression coverage throughout the refactor.
+Preserve regression coverage for completed prerequisites while closing the open criteria.
 
 ## CLI and agent tooling
 
@@ -567,12 +567,12 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 41 UI foundations, including DataTable, have reviewed
+Codex status (2026-10-04): 45 UI foundations, including DataTable, have reviewed
 contracts. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[Layout-control verification](./release-0.9.0.md#codex-layout-controls-2026-10-04) for the latest checkpoint.
+[Display-control verification](./release-0.9.0.md#codex-display-controls-2026-10-04) for the latest checkpoint.
 
-Next: Audit Skeleton and the display components using the source findings in the
+Next: Audit Alert, Progress and Spinner using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close

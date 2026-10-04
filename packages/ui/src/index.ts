@@ -16,6 +16,9 @@ export {
     CardBody,
     CardFooter,
     type CardProps,
+    type CardHeaderProps,
+    type CardBodyProps,
+    type CardFooterProps,
 } from "./components/Card";
 export { Badge, type BadgeProps } from "./components/Badge";
 export { Label, type LabelProps } from "./components/Label";
@@ -34,7 +37,7 @@ export { Spinner, type SpinnerProps } from "./components/Spinner";
 export { Avatar, type AvatarProps } from "./components/Avatar";
 export { AvatarGroup, type AvatarGroupProps, type AvatarGroupItem } from "./components/AvatarGroup";
 export { Separator, type SeparatorProps } from "./components/Separator";
-export { Skeleton, type SkeletonProps } from "./components/Skeleton";
+export { Skeleton, type SkeletonProps, type SkeletonDimension } from "./components/Skeleton";
 export { Progress, type ProgressProps } from "./components/Progress";
 export { Tabs, type TabsProps, type TabsItem, type TabsListProps } from "./components/Tabs";
 export { Tooltip, type TooltipProps } from "./components/Tooltip";

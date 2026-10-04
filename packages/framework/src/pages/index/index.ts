@@ -32,7 +32,7 @@ export default class DemoOverview extends Cossack {
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               ${group.entries.map((entry) => html`
                 <a href="${entry.url}" class="block text-inherit no-underline" data-demo-url="${entry.url}">
-                  ${component(Card, { interactive: true, class: 'flex h-full items-center justify-between gap-4' }, html`
+                  ${component(Card, { hoverable: true, class: 'flex h-full items-center justify-between gap-4' }, html`
                     <div>
                       <h3 class="font-semibold">${entry.label}</h3>
                       <p class="mt-1 text-sm text-muted-foreground">${entry.url}</p>

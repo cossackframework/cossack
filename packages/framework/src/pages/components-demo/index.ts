@@ -202,7 +202,7 @@ export class ComponentsDemo extends Cossack {
                 <!-- Card -->
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Card</h2>
-                    ${component(Card, { interactive: false }, html`
+                    ${component(Card, { padding: 'none' }, html`
                         ${component(CardHeader, {}, html`<h3 class="text-base font-semibold">Plan: Pro</h3>`)}
                         ${component(CardBody, {}, html`
                             <p>Unlimited projects and priority support.</p>

@@ -1,7 +1,8 @@
+import type { GlobalAttributes } from '../native-attributes';
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface BadgeProps {
+export type BadgeProps = GlobalAttributes<HTMLSpanElement> & {
     /** Semantic color. Defaults to "default" (primary). */
     variant?:
         | "default"
@@ -10,8 +11,6 @@ export interface BadgeProps {
         | "warning"
         | "destructive"
         | "outline";
-    /** Allow arbitrary HTML attributes to spread onto the root. */
-    [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<BadgeProps["variant"]>, string> = {
@@ -34,6 +33,7 @@ export class Badge extends Cossack {
 
     render() {
         const { variant = "default", ...rest } = this.props;
+        if (!Object.hasOwn(VARIANTS, variant)) throw new Error("Badge requires a supported variant.");
 
         const classes = classMap({
             "cs-badge": true,

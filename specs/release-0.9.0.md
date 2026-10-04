@@ -88,6 +88,52 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-display-controls-2026-10-04"></a>
+## Codex Skeleton, Card, Badge and Kbd (2026-10-04)
+
+Author: Codex. Skeleton now has a visible default line height, pixel/CSS dimensions,
+and separate rectangle and circle contracts. Circle size controls both dimensions.
+Native styles, including `ifDefined`, compose with generated sizing. Skeleton stays
+decorative, excludes focus attributes from its public contract and disables pulse
+animation for reduced motion. Loading announcements belong to the containing region.
+
+Card renames `interactive` to `hoverable`: the option provides a visual effect,
+while native child controls own actions and keyboard behavior. All four Card exports
+have typed div attributes/events. Root padding and slot padding are documented
+separately; the composite demo uses no root padding. Removing the legacy unlayered
+Card transition rule lets its hover and reduced-motion classes take effect.
+Badge validates variants and forwards native span props. Kbd describes keys using
+native kbd markup and does not install shortcuts. Migration and packaged guidance
+cover all seven exports.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 313 tests in
+  30 files pass. Public types cover all seven native event targets and reject
+  competing Skeleton dimensions, focus/hidden overrides and obsolete Card props.
+- Source ejection: 20 tests pass, including strict NodeNext compilation of the
+  four sources with previously reviewed controls.
+- `pnpm --filter cossack exec vitest run tests/display-controls-browser.test.js`
+  passes after correcting native style composition and the legacy transition
+  override found by the browser fixture. It covers SSR without JavaScript,
+  retained hydration, dimensions, slot padding, native Tab/Enter/link behavior,
+  event targets, updates, reduced motion and unmount/remount cleanup. The fixture
+  builds the actual Tailwind/UI theme and checks browser bundles exclude parse5.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` package configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the native-display
+  guide and identical exact-symbol Skeleton output, including both shape variants.
+  All seven native event targets and the new public types are checked. Discovery
+  runs with Node networking disabled; six existing packaged examples compile and
+  execute. The display guide adds no executable example.
+
+Logs: `/tmp/cossack-display-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs}.log`.
+The combined browser/ejection log retains the earlier browser failure; the final
+browser log records its passing rerun. Other browser engines, assistive technologies,
+generated-app integration and the full release matrix remain separate gates.
+Forty-five of 65 component-source foundations are reviewed. Continue Alert, Progress,
+Spinner and every pending audit row. RT-23 and CLI-07/CLI-08 remain open; release
+status stays 24 of 58 complete. Versions remain 0.8.3 until REL-04.
+
 <a id="codex-layout-controls-2026-10-04"></a>
 ## Codex ButtonGroup, Separator and AspectRatio (2026-10-04)
 

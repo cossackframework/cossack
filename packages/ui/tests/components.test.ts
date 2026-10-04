@@ -144,10 +144,10 @@ describe("Card", () => {
         expect(out).toContain("body-content");
     });
 
-    it("applies interactive classes when requested", () => {
-        const out = renderComp(Card, { interactive: true });
+    it("applies visual hover styles without implying an action", () => {
+        const out = renderComp(Card, { hoverable: true });
         expect(out).toContain("hover:shadow-md");
-        expect(out).toContain("cursor-pointer");
+        expect(out).not.toContain("cursor-pointer");
     });
 });
 

@@ -421,3 +421,29 @@ component(Separator,{'aria-hidden':true});
 component(AspectRatio,{ratio:'16/9'});
 // @ts-expect-error Native attributes are closed.
 component(AspectRatio,{clas:'media'});
+
+import { Skeleton, Card, CardHeader, CardBody, CardFooter, Badge, Kbd } from '@cossackframework/ui';
+component(Skeleton,{circle:true,size:40,'@click':event=>{const shape:HTMLDivElement=event.currentTarget;void shape;}});
+component(Skeleton,{width:'60%',height:16});
+component(Card,{hoverable:true,padding:'none','@click':event=>{const card:HTMLDivElement=event.currentTarget;void card;}});
+component(CardHeader,{'@click':event=>{const header:HTMLDivElement=event.currentTarget;void header;}});
+component(CardBody,{'@click':event=>{const body:HTMLDivElement=event.currentTarget;void body;}});
+component(CardFooter,{'@click':event=>{const footer:HTMLDivElement=event.currentTarget;void footer;}});
+component(Badge,{variant:'success','@click':event=>{const badge:HTMLSpanElement=event.currentTarget;void badge;}},'Saved');
+component(Kbd,{'@click':event=>{const key:HTMLElement=event.currentTarget;void key;}},'Ctrl');
+// @ts-expect-error Circle dimensions use one size.
+component(Skeleton,{circle:true,width:'40px',height:'40px'});
+// @ts-expect-error Rectangle dimensions do not accept size.
+component(Skeleton,{size:40});
+// @ts-expect-error Decorative skeletons cannot enter Tab order.
+component(Skeleton,{tabindex:0});
+// @ts-expect-error Skeleton owns its hidden semantics.
+component(Skeleton,{'aria-hidden':false});
+// @ts-expect-error Use hoverable for the visual effect; native actions belong to child controls.
+component(Card,{interactive:true});
+// @ts-expect-error Slot attributes are closed.
+component(CardHeader,{clas:'header'});
+// @ts-expect-error Badge variants are closed.
+component(Badge,{variant:'unknown'});
+// @ts-expect-error Kbd is descriptive markup, not a button.
+component(Kbd,{disabled:true});

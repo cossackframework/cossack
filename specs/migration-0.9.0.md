@@ -1118,3 +1118,25 @@ style and ratio style are separate. Update selectors relying on the previous
 internal wrapper/padding structure. Children occupy an absolute content layer;
 keep their image alternatives and object-fit behavior explicit. Use the packaged
 `native-layout` guide for ownership and layout details.
+
+## Skeleton, Card, Badge and Kbd
+
+Skeleton rectangles now default to a visible `1em` height. Rectangles use
+`width`/`height`; circles use `circle: true` with one `size` (default `1em`).
+Replace circle width/height pairs with size. Dimensions accept nonnegative finite
+pixel numbers or nonempty CSS lengths. Generated sizing composes with native
+styles, including `ifDefined`; supplied CSS follows the generated declarations.
+The placeholder remains decorative and cannot become a focus stop. Reduced motion
+disables its animation. Announce loading on the containing content region.
+
+Rename Card `interactive` to `hoverable`. This option is a visual effect and adds
+no keyboard or button behavior. It no longer supplies a pointer cursor, and reduced
+motion disables its lift and transition. Put actions in native controls. Root
+padding is independent of slot padding; use `padding: 'none'` when the supplied
+slots already own spacing. The components demo now does so.
+
+Card and all three slots have typed native div attributes/events. CardHeaderProps,
+CardBodyProps and CardFooterProps are public. Badge has native span props and
+rejects unsupported variants. Kbd has native HTMLElement props on its kbd tag;
+it describes keys and does not register shortcuts. Use readable text for status
+and key names. The packaged `native-display` guide describes all seven exports.

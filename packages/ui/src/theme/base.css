@@ -111,11 +111,6 @@ a:active {
     transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
 }
 
-/* --- Card interactive: hover lift --- */
-.cs-card {
-    transition: box-shadow 200ms ease, transform 200ms ease;
-}
-
 /* --- Progress: shimmer overlay on the bar --- */
 .cs-progress__bar {
     position: relative;
