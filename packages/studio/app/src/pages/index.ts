@@ -1651,7 +1651,7 @@ export default class StudioPage extends Cossack {
                     : 'text-muted-foreground'}">
                     ${component(Icon, {
                       entry: candidate.kind === 'view' ? EyeIcon : DatabaseIcon,
-                      style: selected ? 'bold-duotone' : candidate.kind === 'view' ? 'line' : 'duotone',
+                      variant: selected ? 'bold' : candidate.kind === 'view' ? 'line' : 'duotone',
                       size: 16,
                     })}
                   </span>

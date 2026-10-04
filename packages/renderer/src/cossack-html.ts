@@ -346,15 +346,13 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   const prefix = match[1];
   const existing = match[2];
   const suffix = match[3];
-  const extra = extraClass.trim();
+  const extra = escapeHtml(extraClass.trim());
   if (!extra) return result;
   const merged = existing ? `${existing} ${extra}` : extra;
-  // Don't escape the merged class value: it's developer-controlled (component
-  // props, not user input), and CSS class names can legitimately contain quotes
-  // (e.g. Tailwind arbitrary values like `before:content-['hello']`). Escaping
-  // would mangle those into `&#039;` and break the CSS selector. The existing
-  // class text from the template is already raw (unescaped) HTML.
-  const rewrittenTag = tagSlice.replace(match[0], `${prefix}class="${merged}"${suffix}`);
+  // Existing markup is already serialized. Escape only the incoming value;
+  // HTML parsing restores literal quotes/entities in the resulting class text.
+  // A replacement callback also preserves literal $& and other dollar patterns.
+  const rewrittenTag = tagSlice.replace(match[0], () => `${prefix}class="${merged}"${suffix}`);
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
@@ -1606,9 +1604,22 @@ class NodePart implements Part {
     } else if (isUnsafeHTML(value)) {
       this._clearTemplateCache();
       this.clear();
-      const temp = document.createElement('template');
-      temp.innerHTML = value.value;
-      this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
+      const parent = this.startNode.parentNode!;
+      const owner = this.startNode.ownerDocument!;
+      if (parent instanceof Element && parent.namespaceURI === 'http://www.w3.org/2000/svg'
+        && !['foreignObject', 'desc', 'title'].includes(parent.localName)) {
+        // Parse in the actual SVG context, including foreignObject's HTML integration.
+        // innerHTML preserves the existing inert-script behavior of unsafeHTML.
+        const context = owner.createElementNS(parent.namespaceURI, parent.localName);
+        context.innerHTML = value.value;
+        const fragment = owner.createDocumentFragment();
+        while (context.firstChild) fragment.appendChild(context.firstChild);
+        parent.insertBefore(fragment, this.endNode);
+      } else {
+        const temp = owner.createElement('template');
+        temp.innerHTML = value.value;
+        parent.insertBefore(temp.content, this.endNode);
+      }
     } else if (
       isComponentResult(value) ||
       (typeof value === 'object' && value !== null && !(value instanceof Node) && !Array.isArray(value))

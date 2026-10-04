@@ -69,7 +69,7 @@ export class QueryHistorySheet extends Cossack {
                   >
                     ${component(Icon, {
                       entry: StarIcon,
-                      style: entry.favorite ? 'bold' : 'line',
+                      variant: entry.favorite ? 'bold' : 'line',
                       size: 17,
                     })}
                   </button>

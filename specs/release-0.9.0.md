@@ -88,6 +88,52 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-icon-2026-10-04"></a>
+### Codex Icon (2026-10-04)
+
+Author: Codex. Icon now binds closed native SVG props/events rather than building
+attribute strings. `variant` selects artwork; `style` is native CSS. Required
+trusted entries, positive finite size and informative/decorative names have
+explicit contracts. Unknown variants and missing/empty artwork reject. A missing
+variant may use own line artwork. Named icons use an SVG title, role and label;
+interactive behavior remains on native parent controls. Framework/Studio callers
+and repository skill examples now use direct entries and canonical variants.
+Studio's unsupported bold-duotone selection becomes bold.
+
+The renderer now parses raw children in SVG context, keeping HTML integration
+points and inert script insertion. Fresh and updated artwork renders as actual
+SVG paths. This does not sanitize trusted raw artwork. Review also found SSR class
+merging failed to escape caller text and interpreted replacement dollar patterns.
+It now escapes incoming class text once and preserves literal replacement text.
+Icon's default fill also has one binding so caller fill survives SSR.
+
+Verification:
+
+- Renderer build and `pnpm --filter @cossackframework/renderer exec vitest run`:
+  330 tests across 24 files pass. New regressions cover creation, hydration update,
+  SVG/HTML namespaces and literal class quotes/entities/dollar patterns.
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 568 tests
+  across 42 files pass. Public declaration fixtures reject missing entries,
+  invalid variants, competing geometry/naming and incorrect event targets.
+- `pnpm --filter cossack exec vitest run tests/icon-browser.test.js tests/ui-ejection.test.js`:
+  40 tests pass. The HTTP Chromium fixture covers no-JavaScript SSR escaping and
+  naming, retained hydration, fresh and updated SVG path geometry, title namespaces,
+  foreignObject HTML, inert scripts, native event targets, CSS updates and literal
+  attribute payloads. Browser bundles exclude the SSR parser. The other 39 checks
+  verify supported component source ejection and NodeNext imports. Icon remains a
+  published import used by ejected consumers; no new standalone CLI icon recipe is claimed.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes: installed native SVG declarations and the
+  authored guide are discoverable; exact-symbol Icon output matches CLI/MCP. Six
+  existing packaged examples compile and execute. Discovery disables Node networking;
+  installation can use the registry. The new guide adds no executable example.
+
+Logs: `/tmp/cossack-icon-{renderer,renderer-build,ui,ui-build,browser,types,agent-docs,agent-docs-final}.log`.
+Final UI/browser/type checks include the fill correction and no-JavaScript fixture.
+All 65 component-source foundations plus Icon are reviewed. Four composed blocks,
+other engines/assistive technologies and full generated-app/runtime acceptance
+remain open. RT-23 and CLI-07/CLI-08 remain open; status stays 24/58 complete.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits

@@ -691,3 +691,18 @@ const transcriptSubmit: MessageScrollerJumpProps = {type:'submit'};
 const transcriptScroll: MessageScrollerViewportProps = {'@scroll':(event:Event & {currentTarget:HTMLInputElement})=>event};
 // @ts-expect-error Use jumpLabel instead of the removed misleading name.
 component(MessageScroller,{id:'transcript',label:'Conversation',newMessageLabel:'New messages'});
+
+import { Icon, type IconProps } from '@cossackframework/ui';
+const iconProps: IconProps = { entry: { line: '<path/>' }, variant: 'bold', style: 'color: red', label: 'Next',
+    '@click': event => { const svg: SVGSVGElement = event.currentTarget; void svg; } };
+component(Icon, iconProps);
+// @ts-expect-error Icon requires explicit trusted artwork.
+component(Icon, { label: 'Next' });
+// @ts-expect-error Artwork variant has a closed vocabulary.
+component(Icon, { entry: {}, variant: 'unknown' });
+// @ts-expect-error Geometry is owned by size.
+component(Icon, { entry: {}, width: 20 });
+// @ts-expect-error Naming is owned by label.
+component(Icon, { entry: {}, 'aria-label': 'Next' });
+// @ts-expect-error SVG events do not target HTML buttons.
+component(Icon, { entry: {}, '@click': (event: MouseEvent & { currentTarget: HTMLButtonElement }) => {} });

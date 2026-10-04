@@ -1497,3 +1497,24 @@ The generated Chat template now gives the viewport a name and streaming busy
 state. A separate short status region announces progress/completion instead of a
 live region around every token in the transcript. MessageScroller itself owns no
 live announcements, unread counts, message fetching or authorization.
+
+## Icon native SVG props
+
+Use `variant` for Solar artwork styles; `style` now supplies native CSS. Import
+individual entries, for example `ArrowRightIcon` from
+`@cossackframework/solar-icons/arrow-right`, and pass `entry: ArrowRightIcon`.
+The removed name lookup is not supported. Canonical variants are line, bold,
+duotone, broken, outline and line-duotone. `normalizeStyle` converts supported
+aliases and now rejects unknown names. A missing variant uses own line artwork;
+missing or empty artwork rejects rather than rendering nothing.
+
+`size` must be positive and finite. `label` owns informative naming; omitted or
+blank labels mark decoration. Native SVG attributes and `@event` listeners bind
+to the SVG root, with `SVGSVGElement` currentTarget. Native `style`, fill and stroke
+remain available. Do not override width/height/viewBox, naming or focus attributes.
+Put actions on named native buttons or links. Positional children are rejected.
+
+Native attributes and labels use renderer escaping. Only `entry` artwork is raw,
+explicitly trusted SVG; this change does not sanitize arbitrary user artwork.
+Renderer creation and artwork updates now retain SVG namespaces and HTML
+integration inside foreignObject instead of creating HTML path elements.

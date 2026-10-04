@@ -516,11 +516,11 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 ### RT-23: DataTable and UI contracts
 
 Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
-have reviewed contracts. Icon and four composed blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
+have reviewed contracts. Icon also has a reviewed foundation; four composed blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[MessageScroller verification](./release-0.9.0.md#codex-message-scroller-2026-10-04) for the latest checkpoint.
+[Icon verification](./release-0.9.0.md#codex-icon-2026-10-04) for the latest checkpoint.
 
-Next: Audit Icon and the composed blocks using the source findings in the
+Next: Audit the composed blocks using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close
@@ -531,27 +531,25 @@ Completed batch plans: [Attachment](./release-0.9.0-plan-archive.md#codex-attach
 and [MessageScroller](./release-0.9.0-plan-archive.md#codex-message-scroller-plan-2026-10-04).
 Keep their archived regression evidence; RT-23 remains open.
 
-Codex next batch — Icon, then composed blocks:
+Codex next batch — composed blocks:
 
-Purpose: The icon and opt-in blocks are public UI features used by the reviewed
-components. Their contracts must be safe, typed and usable through actual native
-DOM behavior. Existing export presence does not establish those contracts.
+The [Icon plan](./release-0.9.0-plan-archive.md#codex-icon-plan-2026-10-04)
+and [verification](./release-0.9.0.md#codex-icon-2026-10-04) preserve its reviewed
+SVG foundation. Start with AuthForm, then the other three blocks.
 
-- Start with `packages/ui/src/icons/Icon.ts`. It manually constructs an SVG string
-  through unsafeHTML. Class values are interpolated without escaping, attribute
-  values use incomplete bespoke escaping, and callbacks become attribute strings.
-  Move caller attributes/events to renderer bindings. Treat imported icon path
-  strings as explicitly trusted artwork; native prop safety must not depend on
-  trusting caller-provided class/label/data text. Verify actual SVG namespaces and
-  path rendering in a browser, literal attribute values and real event targets.
-- Define Icon's size, decorative/informative naming, focus and artwork-style
-  fallback. Resolve the current style prop's collision with native CSS style.
-  Keep Solar imports tree-shakeable and runtime type imports out of browser graphs.
-  Update real callers, migration notes, source ejection and installed guidance.
 - Audit AuthForm next: actual form/control ownership, SSR login/signup mode,
   stable labels/error relationships, disabled/loading states, submitted data,
   callback failure/concurrency and social actions. The current submit comment
-  mentions false although its type does not allow that result. Keep authentication
+  mentions false although its type does not allow that result. Source review also
+  finds duplicate hardcoded field IDs, a PasswordInput consumer still using removed
+  value/onChange props, no input name/autocomplete contract, and handleSocial ignoring
+  provider identity while invoking credential submission with empty credentials.
+  Require a stable instance ID, use current native input bindings, separate typed
+  provider actions from credentials, and make social options explicit. Preserve
+  browser autofill and pre-hydration edits by reading actual form values at submit.
+  Guard repeated submission, observe asynchronous failures and prevent settled
+  callbacks from mutating an unmounted instance. Avoid exposing raw callback error
+  messages as UI text; define caller-owned safe errors and localization. Keep authentication
   and authorization in application/library services; a block must not imply them.
 - Audit CommandPalette using current Modal and Command contracts. Define native
   prop destinations, controlled/default open state, names, selection, filtered

@@ -131,7 +131,7 @@ import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 html`
   ${component(Button, { variant: "default", "@click": this.save }, "Save")}
   ${component(Input, { type: "email", placeholder: "you@ex.com" })}
-  ${component(Icon, { entry: ArrowRightIcon, style: "duotone", size: 20 })}
+  ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
 `;
 ```
 
@@ -233,7 +233,7 @@ import { Icon } from "@cossackframework/ui";
 import { component } from "@cossackframework/renderer";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
-html`${component(Icon, { entry: ArrowRightIcon, style: "duotone", size: 20 })}`;
+html`${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}`;
 ```
 
 For maximum tree-shaking, import a single style instead of the full entry:

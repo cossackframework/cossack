@@ -228,7 +228,7 @@ explicit, and a declared branch does not prove runtime behavior.
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
 The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
-MessageScroller CLI/MCP parity covering viewport identity, native targets and scroll options,
+Icon CLI/MCP parity covering required artwork, native SVG targets, naming and style ownership,
 plus Bubble readonly reactions and time metadata,
 plus Message/Marker contracts and Attachment filenames, native targets and status,
 plus Carousel slide identity and sizing,

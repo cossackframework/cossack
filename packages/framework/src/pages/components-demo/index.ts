@@ -231,12 +231,12 @@ export class ComponentsDemo extends Cossack {
                     </div>
                     <div class="flex flex-wrap items-center gap-4 text-foreground">
                         <span class="text-xs text-muted-foreground">check-circle styles:</span>
-                        ${component(Icon, { entry: checkCircleIcon, style: 'line', size: 32 })}
-                        ${component(Icon, { entry: checkCircleIcon, style: 'bold', size: 32 })}
-                        ${component(Icon, { entry: checkCircleIcon, style: 'duotone', size: 32 })}
-                        ${component(Icon, { entry: checkCircleIcon, style: 'broken', size: 32 })}
-                        ${component(Icon, { entry: checkCircleIcon, style: 'outline', size: 32 })}
-                        ${component(Icon, { entry: checkCircleIcon, style: 'line-duotone', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, variant: 'line', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, variant: 'bold', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, variant: 'duotone', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, variant: 'broken', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, variant: 'outline', size: 32 })}
+                        ${component(Icon, { entry: checkCircleIcon, variant: 'line-duotone', size: 32 })}
                     </div>
                 </section>
 

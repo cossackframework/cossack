@@ -63,6 +63,7 @@ Components are imported from `@cossackframework/ui` and rendered with
 
 ```ts
 import { html, component } from "@cossackframework/renderer";
+import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 import { Button, Input, Label, Card, Icon, toast } from "@cossackframework/ui";
 
 @Page()
@@ -76,7 +77,7 @@ export default class DemoPage extends Cossack {
                     ${component(Label, { for: "email" }, "Email")}
                     ${component(Input, { id: "email", type: "email", placeholder: "you@ex.com" })}
                     ${component(Button, { variant: "default", "@click": this.save }, "Save")}
-                    ${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}
+                    ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
                 `
             )}
         `;

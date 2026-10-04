@@ -125,12 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Blocks and icons
 
-All 65 rows above have reviewed foundations. These five additional exports remain
+All 65 rows above have reviewed foundations. Icon also has a reviewed foundation; the four composed blocks remain
 pending. They were always part of RT-23; the component count does not close the task.
 
 | Source | Contract audit | Evidence / next action |
 | --- | --- | --- |
-| [Icon](../packages/ui/src/icons/Icon.ts) | Pending | Raw SVG construction interpolates class/attributes and cannot bind native events. Define safe native SVG ownership, size/style/name semantics and trusted path-data boundaries. |
+| [Icon](../packages/ui/src/icons/Icon.ts) | Reviewed foundation | Closed native SVG props/events, explicit trusted artwork, variant/CSS separation, size/name validation, escaped SSR class merging, SVG namespaces, Chromium paths/hydration/events and installed guidance. |
 | [AuthForm](../packages/ui/src/blocks/AuthForm/index.ts) | Pending | Audit native form ownership, SSR mode, labels, field errors, social callbacks, submission/loading/failure lifetime and localization against current primitives. |
 | [CommandPalette](../packages/ui/src/blocks/CommandPalette/index.ts) | Pending | Audit current Modal/Command composition, naming, controlled state, native targets, global shortcuts, selection/focus and cleanup. |
 | [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Pending | Root ignores native props; neutral trend uses success color. Verify rendered markup, readonly data, labels, responsive columns and icon composition. |
@@ -138,12 +138,9 @@ pending. They were always part of RT-23; the component count does not close the 
 
 ## Next passes
 
-Start with Icon, then the four blocks. Icon manually constructs unsafeHTML markup;
-class interpolation is unescaped and arbitrary props become HTML strings instead
-of native events. Use renderer-owned SVG attribute/event bindings and keep imported
-path data's trust boundary explicit. Define the distinction between icon artwork
-style and native CSS style. Verify actual SVG element namespaces and native events,
-not only serialized output.
+Start with AuthForm, then CommandPalette, DashboardStat and SettingsPanel.
+Preserve the [Icon regressions](./release-0.9.0.md#codex-icon-2026-10-04),
+including raw-artwork trust boundaries, native SVG namespaces and SSR escaping.
 
 Block tests must render and operate the actual compositions through published and
 ejected imports. Preserve meaningful native keyboard/focus behavior, public types,

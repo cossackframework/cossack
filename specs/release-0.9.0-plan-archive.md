@@ -4833,3 +4833,26 @@ can disappear while focused. No cleanup releases scheduled work.
   framework demo and generated Chat template if the public contract changes.
   Record migration behavior and separate fixture evidence from native transport
   or full generated-app acceptance. Then audit blocks/icons and the RT-23 gate.
+
+<a id="codex-icon-plan-2026-10-04"></a>
+## Codex Icon plan (2026-10-04)
+
+Original Icon scope (completed foundation; block work remains open):
+
+Purpose: The icon and opt-in blocks are public UI features used by the reviewed
+components. Their contracts must be safe, typed and usable through actual native
+DOM behavior. Existing export presence does not establish those contracts.
+
+- Start with `packages/ui/src/icons/Icon.ts`. It manually constructs an SVG string
+  through unsafeHTML. Class values are interpolated without escaping, attribute
+  values use incomplete bespoke escaping, and callbacks become attribute strings.
+  Move caller attributes/events to renderer bindings. Treat imported icon path
+  strings as explicitly trusted artwork; native prop safety must not depend on
+  trusting caller-provided class/label/data text. Verify actual SVG namespaces and
+  path rendering in a browser, literal attribute values and real event targets.
+- Define Icon's size, decorative/informative naming, focus and artwork-style
+  fallback. Resolve the current style prop's collision with native CSS style.
+  Keep Solar imports tree-shakeable and runtime type imports out of browser graphs.
+  Update real callers, migration notes, source ejection and installed guidance.
+
+Verification: [Icon checkpoint](./release-0.9.0.md#codex-icon-2026-10-04).
