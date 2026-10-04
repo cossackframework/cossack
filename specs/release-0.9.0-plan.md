@@ -603,7 +603,13 @@ Cancellation/disconnect outcomes are terminal, capture replacement preserves cal
 ownership, and production proxy bundling removes collection code. See
 [capture semantics and limits](../docs/development-traces.md).
 
-Remaining: correlate navigation and server events with those calls; add state,
+Framework navigation now shares the capture sequence and records prepared component
+identities that match RPC component IDs. Existing DOM diagnostics remain available.
+Captured navigation callbacks retain session ownership and have one terminal outcome;
+standalone cache/prefetch events retain null navigation IDs. These are client
+observations, not proof of server execution or causation.
+
+Remaining: correlate server events with those calls; add state,
 resource, service-scope and transport snapshots; integrate the browser inspector
 and project-bound CLI/MCP reads through shared schemas. Verify an actual generated
 browser action end to end and production endpoint/source-metadata exclusion.

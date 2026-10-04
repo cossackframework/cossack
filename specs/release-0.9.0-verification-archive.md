@@ -6,6 +6,41 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rpc-trace-foundation-2026-10-04"></a>
+## Codex development RPC trace foundation (2026-10-04)
+
+Author: Codex. Core exposes `@cossackframework/core/devtools` with opt-in, bounded
+capture for component HTTP/SSE and WebSocket proxy lifecycles. Snapshots retain
+fixed phases, opaque component/call identities and UUID wire request IDs, without
+arguments, values, source paths or raw errors. Replacement sessions do not adopt
+in-flight calls. Terminal events cover success, failure, cancellation, deadlines
+and disconnects. The cancellation regression caught delayed WebSocket cleanup;
+local ownership now releases in the cancellation callback.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,454 tests / 87 files pass**.
+  Includes correlation through real proxies/frame dispatch, privacy omissions,
+  bounded/detached snapshots, session replacement and cancellation/disconnects.
+  Log: `/tmp/cossack-trace-core-suite.log`.
+- The production bundle fixture verifies collection symbols and event strings
+  are removed from a production proxy bundle. This does not prove endpoint
+  exclusion for the future Vite development integration.
+- `pnpm --filter @cossackframework/core build`: passes; emitted public export resolves
+  through the package map and refuses non-development capture in plain Node.
+  Log: `/tmp/cossack-trace-core-build.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: root and all 11 package checks pass.
+  Log: `/tmp/cossack-trace-types.log` (package checks).
+- The CLI exact-symbol catalog from the framework workspace resolves the built
+  `startDevelopmentTrace` declaration and packaged `development-rpc-traces` guide.
+  This uses workspace packages, not a fresh tarball installation.
+
+RT-28 and CLI-07 remain open. This is client component RPC evidence, not server
+execution or service RPC capture. Navigation correlation, state/resource/service/
+transport snapshots, browser inspector, shared CLI/MCP access, generated-browser
+acceptance and final production endpoint/source-metadata checks remain required.
+See [usage and limits](../docs/development-traces.md). Status stays 25/58 complete.
+
 <a id="codex-test-evidence-2026-10-04"></a>
 ## Codex stored test evidence (2026-10-04)
 

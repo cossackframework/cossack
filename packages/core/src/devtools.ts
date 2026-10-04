@@ -1,2 +1,6 @@
-export { startDevelopmentTrace } from './shared/development-trace';
-export type { DevelopmentTraceSession, DevelopmentTraceSnapshot, DevelopmentRpcEvent, DevelopmentRpcOutcome } from './shared/development-trace';
+export { startDevelopmentTrace, createDevelopmentNavigationTrace } from './shared/development-trace';
+export type {
+    DevelopmentTraceSession, DevelopmentTraceSnapshot, DevelopmentTraceEvent,
+    DevelopmentRpcEvent, DevelopmentRpcOutcome, DevelopmentNavigationEvent,
+    DevelopmentNavigationDiagnostic, DevelopmentNavigationTrace, DevelopmentComponentRole,
+} from './shared/development-trace';

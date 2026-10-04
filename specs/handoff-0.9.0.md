@@ -20,12 +20,12 @@ Latest completion: **RT-23** — DataTable and all 70 UI audit rows reviewed;
    CLI-07 stored test evidence is implemented: Vitest 4 reporter, versioned records,
    source freshness and shared reads. See [usage](../docs/test-results.md) and the
    [verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
-   Core now has opt-in component RPC capture through `@cossackframework/core/devtools`;
-   see [capture semantics](../docs/development-traces.md). Continue from framework
-   `client/navigation-diagnostics.ts`, `client/devtools.ts` and Vite development
-   integration. Add navigation/server correlation, resource/service/transport
-   snapshots, shared CLI/MCP reads and generated-browser acceptance. Preserve the
-   existing bounded capture and terminal-event regressions. CLI-07 and RT-28 stay open.
+   Core now captures component RPC and framework navigation through one bounded
+   event union; prepared component IDs join the two. See [capture semantics](../docs/development-traces.md).
+   Continue with state/resource/service/transport snapshots, server correlation,
+   browser inspector and Vite development integration, shared CLI/MCP reads and
+   generated-browser acceptance. Preserve session ownership, terminal outcomes and
+   production-exclusion tests. CLI-07 and RT-28 stay open.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and
    verified runtime support. UI contracts/guides are reviewed under RT-23; not all
    guides have executable examples. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)

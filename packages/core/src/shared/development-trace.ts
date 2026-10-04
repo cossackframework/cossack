@@ -1,3 +1,5 @@
+import type { NavigateOutcome, NavigationScrollBehavior, NavigationType } from '../client/navigation';
+
 /** Development-only lifecycle evidence. Never accepts application payloads or raw errors. */
 export type DevelopmentRpcOutcome = 'succeeded' | 'failed' | 'cancelled' | 'timeout' | 'disconnected';
 export interface DevelopmentRpcEvent {
@@ -11,6 +13,24 @@ export interface DevelopmentRpcEvent {
     readonly phase: 'start' | 'response' | 'state-reconciled' | 'finish';
     readonly outcome: DevelopmentRpcOutcome | null;
 }
+/** Fixed navigation decisions; never URLs, application state or error messages. */
+export type DevelopmentNavigationDiagnostic =
+    | { phase: 'start'; navigationType: NavigationType }
+    | { phase: 'cache'; decision: 'hit' | 'miss' | 'shared' }
+    | { phase: 'invalidate'; entries: number }
+    | { phase: 'layouts'; retained: number; created: number; retired: number; rootReplaced: boolean }
+    | { phase: 'scroll'; behavior: NavigationScrollBehavior; decision: 'unavailable' | 'preserve' | 'history' | 'top' | 'fragment' | 'fragment-missing' }
+    | { phase: 'transition'; decision: 'disabled' | 'unsupported' | 'callback' | 'typed' | 'types-unsupported' | 'animation-skipped' }
+    | { phase: 'finish'; outcome: NavigateOutcome; committed: boolean };
+export type DevelopmentComponentRole = 'app' | 'layout' | 'page' | 'loading';
+export type DevelopmentNavigationEvent = {
+    readonly sequence: number;
+    readonly timestamp: number;
+    readonly kind: 'navigation';
+    readonly navigationId: number | null;
+} & (DevelopmentNavigationDiagnostic | { phase: 'component-prepared'; componentId: number; role: DevelopmentComponentRole });
+export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentNavigationEvent;
+
 export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
     readonly sessionId: string;
@@ -18,7 +38,7 @@ export interface DevelopmentTraceSnapshot {
     readonly collecting: boolean;
     readonly capacity: number;
     readonly dropped: number;
-    readonly events: readonly DevelopmentRpcEvent[];
+    readonly events: readonly DevelopmentTraceEvent[];
 }
 export interface DevelopmentTraceSession {
     snapshot(): DevelopmentTraceSnapshot;
@@ -33,7 +53,7 @@ interface Collector {
     sequence: number;
     dropped: number;
     collecting: boolean;
-    events: DevelopmentRpcEvent[];
+    events: DevelopmentTraceEvent[];
 }
 let active: Collector | undefined;
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -59,6 +79,63 @@ export function startDevelopmentTrace(options: { capacity?: number } = {}): Deve
     };
 }
 
+function componentIdentity(collector: Collector, component: object): number {
+    let id = collector.components.get(component);
+    if (id === undefined) { id = ++collector.componentSequence; collector.components.set(component, id); }
+    return id;
+}
+function append(collector: Collector, event: DevelopmentTraceEvent): void {
+    if (collector.events.length === collector.capacity) { collector.events.shift(); collector.dropped++; }
+    collector.events.push(event);
+}
+
+/** Framework integration: each callback retains its capture owner across awaits. */
+export interface DevelopmentNavigationTrace {
+    record(event: DevelopmentNavigationDiagnostic): void;
+    component(component: object, role: DevelopmentComponentRole): void;
+}
+export function createDevelopmentNavigationTrace(navigationId: number | null): DevelopmentNavigationTrace | undefined {
+    if (!import.meta.env?.DEV || !active || (navigationId !== null && (!Number.isSafeInteger(navigationId) || navigationId < 0))) return;
+    const collector = active;
+    let finished = false;
+    const emit = (data: DevelopmentNavigationDiagnostic | { phase: 'component-prepared'; componentId: number; role: DevelopmentComponentRole }) => {
+        if (finished || !collector.collecting) return;
+        append(collector, { ...data, kind: 'navigation', navigationId, sequence: ++collector.sequence, timestamp: Date.now() });
+    };
+    return {
+        record: event => {
+            // Copy only explicitly allowed primitives, even for JavaScript callers.
+            const data = navigationDiagnostic(event);
+            if (!data) return;
+            emit(data);
+            if (data.phase === 'finish') finished = true;
+        },
+        component: (component, role) => {
+            if (!collector.collecting || finished || component === null || typeof component !== 'object'
+                || !['app', 'layout', 'page', 'loading'].includes(role)) return;
+            emit({ phase: 'component-prepared', componentId: componentIdentity(collector, component), role });
+        },
+    };
+}
+const count = (value: number) => Number.isSafeInteger(value) && value >= 0;
+function navigationDiagnostic(event: DevelopmentNavigationDiagnostic): DevelopmentNavigationDiagnostic | undefined {
+    if (!event || typeof event !== 'object') return;
+    switch (event.phase) {
+        case 'start': return ['push', 'replace', 'traverse'].includes(event.navigationType) ? { phase: event.phase, navigationType: event.navigationType } : undefined;
+        case 'cache': return ['hit', 'miss', 'shared'].includes(event.decision) ? { phase: event.phase, decision: event.decision } : undefined;
+        case 'invalidate': return count(event.entries) ? { phase: event.phase, entries: event.entries } : undefined;
+        case 'layouts': return count(event.retained) && count(event.created) && count(event.retired) && typeof event.rootReplaced === 'boolean'
+            ? { phase: event.phase, retained: event.retained, created: event.created, retired: event.retired, rootReplaced: event.rootReplaced } : undefined;
+        case 'scroll': return ['auto', 'top', 'preserve'].includes(event.behavior)
+            && ['unavailable', 'preserve', 'history', 'top', 'fragment', 'fragment-missing'].includes(event.decision)
+            ? { phase: event.phase, behavior: event.behavior, decision: event.decision } : undefined;
+        case 'transition': return ['disabled', 'unsupported', 'callback', 'typed', 'types-unsupported', 'animation-skipped'].includes(event.decision)
+            ? { phase: event.phase, decision: event.decision } : undefined;
+        case 'finish': return ['completed', 'superseded', 'canceled', 'redirected', 'failed'].includes(event.outcome) && typeof event.committed === 'boolean'
+            ? { phase: event.phase, outcome: event.outcome, committed: event.committed } : undefined;
+    }
+}
+
 /** @internal Fixed operations keep arbitrary metadata out of the capture boundary. */
 export interface DevelopmentRpcTrace {
     response(requestId: string): void;
@@ -70,17 +147,14 @@ export interface DevelopmentRpcTrace {
 export function beginDevelopmentRpcTrace(component: object, transport: 'http' | 'websocket', requestId: string): DevelopmentRpcTrace | undefined {
     if (!import.meta.env?.DEV || !active) return;
     const collector = active;
-    let componentId = collector.components.get(component);
-    if (componentId === undefined) { componentId = ++collector.componentSequence; collector.components.set(component, componentId); }
-    const identity = { callId: crypto.randomUUID(), componentId, transport };
+    const identity = { callId: crypto.randomUUID(), componentId: componentIdentity(collector, component), transport };
     let wireId = uuid.test(requestId) ? requestId : null;
     let finished = false;
     const emit = (phase: DevelopmentRpcEvent['phase'], outcome: DevelopmentRpcOutcome | null = null) => {
         if (finished || !collector.collecting) return;
         const event: DevelopmentRpcEvent = { ...identity, kind: 'rpc', requestId: wireId,
             sequence: ++collector.sequence, timestamp: Date.now(), phase, outcome };
-        if (collector.events.length === collector.capacity) { collector.events.shift(); collector.dropped++; }
-        collector.events.push(event);
+        append(collector, event);
     };
     emit('start');
     return {

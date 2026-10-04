@@ -91,12 +91,16 @@ not imply a passing, current or complete suite. MCP reads use the same cancellab
 worker boundary. See [storage, scope and privacy limits](../docs/test-results.md).
 Core now owns a portable, opt-in development RPC capture model, exposed through
 `@cossackframework/core/devtools`. Component HTTP/SSE and WebSocket proxies record
-fixed lifecycle phases, opaque identities and terminal outcomes. Bounded sessions
-never retain application payloads; weak component ownership and detached snapshots
-keep the recorder independent of the application. Production proxy bundles strip
-collection. See [capture semantics](../docs/development-traces.md).
-RT-28 navigation/resource/service/server integration and shared CLI/MCP trace reads
-remain open; the current test-results service does not expose runtime traces.
+fixed lifecycle phases, opaque identities and terminal outcomes. Framework navigation
+uses the same discriminated event model and bounded sequence. Prepared component
+identities link navigation candidates with their RPC observations; a preparation is
+not a commit or proof of causation. Navigation callbacks retain capture ownership
+across awaits and reject events after their terminal outcome. Bounded sessions
+never retain application payloads or URLs; weak component ownership and detached
+snapshots keep the recorder independent of the application. Production proxy and
+navigation diagnostic bundles strip collection. See [capture semantics](../docs/development-traces.md).
+RT-28 state/resource/service/transport snapshots, server correlation, browser tools
+and shared CLI/MCP trace reads remain open. Test-results reads do not expose traces.
 
 ## Server input boundary
 

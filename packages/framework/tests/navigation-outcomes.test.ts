@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NavigateResult } from '@cossackframework/core';
+import { startDevelopmentTrace, type DevelopmentTraceSession } from '@cossackframework/core/devtools';
 
 const fixture = vi.hoisted(() => ({
     registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} },
@@ -554,10 +555,11 @@ describe('navigation completion behavior', () => {
 
 
 describe('development navigation diagnostics', () => {
+    let capture: DevelopmentTraceSession | undefined;
     let events: any[];
     const collect = (event: Event) => events.push((event as CustomEvent).detail);
     beforeEach(() => { events = []; document.addEventListener('cossack:navigation-diagnostic', collect); });
-    afterEach(() => { document.removeEventListener('cossack:navigation-diagnostic', collect); vi.unstubAllEnvs(); });
+    afterEach(() => { capture?.stop(); capture = undefined; document.removeEventListener('cossack:navigation-diagnostic', collect); vi.unstubAllEnvs(); });
 
     it('correlates ordered decisions, cache reuse and invalidation without URL or state values', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
@@ -643,6 +645,36 @@ describe('development navigation diagnostics', () => {
             expect(JSON.stringify(events)).not.toContain('private-type');
             expect(events.at(-1)).toMatchObject({phase:'finish',outcome:'completed'});
         } finally { delete (document as any).startViewTransition; }
+    });
+
+    it('records real navigation decisions and prepared component identities in the shared bounded capture', async () => {
+        capture = startDevelopmentTrace();
+        vi.stubGlobal('fetch', vi.fn(async () => documentResponse('fast')));
+        expect(await navigate('/fast?secret=private')).toMatchObject({ outcome: 'completed' });
+        const recorded = capture.snapshot().events;
+        expect(recorded.every(event => event.kind === 'navigation')).toBe(true);
+        expect(recorded.filter(event => event.phase !== 'component-prepared').map(event => event.phase))
+            .toEqual(events.map(event => event.phase));
+        expect(recorded.filter(event => event.phase === 'component-prepared').map(event => event.role)).toEqual(['app', 'page']);
+        expect(recorded.at(-1)).toMatchObject({ phase: 'finish', outcome: 'completed', committed: true });
+        expect(JSON.stringify(recorded)).not.toMatch(/private|secret|fast/);
+        (globalThis as any).__cossack_invalidatePageCache();
+        expect(capture.snapshot().events.at(-1)).toMatchObject({ phase: 'invalidate', navigationId: null });
+    });
+
+    it('retains distinct terminal outcomes when one captured navigation supersedes another', async () => {
+        capture = startDevelopmentTrace();
+        vi.stubGlobal('fetch', vi.fn(async (target: string) => target === '/slow' ? new Promise<Response>(() => {}) : documentResponse('fast')));
+        const older = navigate('/slow');
+        await vi.waitFor(() => expect(events.some(event => event.phase === 'cache')).toBe(true));
+        await navigate('/fast'); await older;
+        const finished = capture.snapshot().events.filter(event => event.kind === 'navigation' && event.phase === 'finish');
+        expect(finished).toEqual(expect.arrayContaining([
+            expect.objectContaining({ outcome: 'superseded', committed: false }),
+            expect.objectContaining({ outcome: 'completed', committed: true }),
+        ]));
+        expect(finished).toHaveLength(2);
+        expect(new Set(finished.map(event => event.kind === 'navigation' ? event.navigationId : null)).size).toBe(2);
     });
 
     it('does not emit diagnostics in production', async () => {

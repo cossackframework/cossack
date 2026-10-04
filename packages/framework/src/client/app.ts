@@ -551,6 +551,7 @@ export async function createClientApp({
       if (currentPageState && rootOwnership !== nextRootOwnership) {
         preparedRoot = createRootServiceScope();
         nextApp = createInstance(AppComponent, { serviceScope: preparedRoot });
+        trace?.bindComponent?.(nextApp, 'app');
         staged.add(nextApp);
         const root = nextApp;
         root.updateHead = () => { if (appInstance === root) syncHead(); };
@@ -559,6 +560,7 @@ export async function createClientApp({
           metadata: { ...appState?.metadata, url: destinationUrl } }, skipInit: true, stageNavigation: true });
         assertCurrent();
       }
+      if (nextApp === appInstance) trace?.bindComponent?.(nextApp, 'app');
       const nextLayouts = new Map<string, Cossack>();
       const nextRoot = preparedRoot ?? clientServiceRoot;
       let activeServiceScope = nextRoot;
@@ -575,6 +577,7 @@ export async function createClientApp({
           });
           try { instance = createInstance(Layout, { serviceScope: scope, ownsServiceScope: true }); }
           catch (error) { await scope.disposeAsync(); throw error; }
+          trace?.bindComponent?.(instance, 'layout');
           staged.add(instance);
           hookUpdates(instance);
           await instance.bootstrap({ initialState: { ...state,
@@ -582,11 +585,12 @@ export async function createClientApp({
             skipInit: true, stageNavigation: true });
           assertCurrent();
           layoutOwnership.set(instance, layoutOwnershipKey(state, initialState, Layout));
-        }
+        } else trace?.bindComponent?.(instance, 'layout');
         nextLayouts.set(path, instance);
         activeServiceScope = instance._getServiceScope() || activeServiceScope;
       }
       const nextPage = createInstance(PageComponent, { serviceScope: activeServiceScope });
+      trace?.bindComponent?.(nextPage, 'page');
       staged.add(nextPage);
       hookUpdates(nextPage);
       await nextPage.bootstrap({ initialState, skipInit: true, stageNavigation: true });
@@ -854,6 +858,7 @@ export async function createClientApp({
           isDisplayingLoadingState = true;
           const loadingScope = currentLayoutInstances.at(-1)?._getServiceScope() || clientServiceRoot;
           const loadingInstance = createInstance(LoadingCompClass, { serviceScope: loadingScope });
+          trace.bindComponent?.(loadingInstance, 'loading');
           // Display loading content without destroying the committed page.
           ownLoading = loadingInstance;
           loadingPage = loadingInstance;
