@@ -14,20 +14,12 @@ All unchecked tasks remain in scope.
 All 25 closed tasks are in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
 with original criteria and evidence archived. Do not repeat their implementation.
 
-Completed portions of open CLI-07/RT-28: [stored test evidence](../docs/test-results.md),
-[RPC/navigation capture, passive browser inspection and shared Vite/CLI/MCP records](../docs/development-traces.md).
-Service-call capture is committed as `c6c2e49`; [verification and limits](./release-0.9.0-verification-archive.md#codex-service-traces-2026-10-04)
-are archived. These portions do not close their parent tasks.
+Completed portions of CLI-07/RT-28 are summarized in the [active plan](./release-0.9.0-plan.md#cli-07).
+Implementation history is archived; [trace contracts](../docs/development-traces.md)
+and the [latest verified checkpoint](./release-0.9.0.md#codex-generated-trace-acceptance-2026-10-04)
+remain the references for continuation. These portions do not close their parent tasks.
 
 ## Continue here — Codex, 2026-10-04
-
-The paused-iterator deadline fix now passes core, generated Node and workerd
-acceptance; see the [checkpoint](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04).
-Preserve first failure codes, confirmed state, one cancellation request and cleanup
-without another iterator pull. Local cancellation cannot undo server writes.
-
-The [generated trace checkpoint](./release-0.9.0.md#codex-generated-trace-acceptance-2026-10-04)
-records current acceptance and bootstrap/production fixes. Earlier evidence remains archived.
 
 1. Finish installed-tarball trace acceptance, then audit **CLI-07** against its
    original tool/parity/lifecycle requirements. Generated Cloudflare browser
@@ -44,6 +36,8 @@ records current acceptance and bootstrap/production fixes. Earlier evidence rema
 
 ## Limits to retain
 
+- Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
+  first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 needs native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency acceptance.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
 - RT-11 retains session and stream-response cookie requirements. Native calls require explicit parsing and authorization.

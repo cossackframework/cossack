@@ -135,22 +135,12 @@ in the archive. The release checklist retains outcomes and verification evidence
 <a id="cli-07"></a>
 ### CLI-07: Local MCP tools
 
-Codex status (2026-10-04): Project-bound stdio inspection and installed-version
-documentation share CLI services. Versioned schemas, redaction, bounded workers,
-cancellation and lifecycle behavior have SDK/CLI tests and installed-tarball evidence.
-See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and [tool usage](../docs/local-agent-tools.md).
+Codex status (2026-10-04): Shared CLI/MCP inspection, installed documentation and
+stored test-result readers pass parity and lifecycle acceptance. Browser trace
+records also share the reader; generated Cloudflare parity and production
+exclusion pass. See [completed implementation notes](./release-0.9.0-plan-archive.md#codex-cli07-completed-portions-2026-10-04),
+[tool usage](../docs/local-agent-tools.md) and [test evidence](../docs/test-results.md).
 
-Stored test results now have a shared CLI/MCP reader and an opt-in Vitest 4
-reporter. Records distinguish selected scope, terminal state, endpoint snapshot
-freshness and local unauthenticated provenance. See [usage and limits](../docs/test-results.md).
-Focused tests cover actual pass/fail/skip and collection failure, CLI/MCP parity,
-newest-started selection, corrupt/linked records and bounded storage. Installed
-reporter/type and CLI/MCP parity acceptance also pass; see the
-[verification checkpoint](./release-0.9.0.md#codex-test-evidence-2026-10-04).
-
-RT-28 browser snapshots now have an opt-in Vite bridge and a shared project-local
-CLI/MCP reader with strict default-value exclusion and receipt-age metadata.
-Generated Cloudflare browser/CLI/MCP parity and production exclusion now pass.
 Remaining: installed trace-tool acceptance and the CLI-07 completion audit;
 RT-28 retains WebSocket/native-body correlation and other runtime acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
 Preserve project path boundaries, secret redaction and clean stdout.
@@ -599,47 +589,12 @@ JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.
 <a id="rt-28"></a>
 ### RT-28: Devtools snapshots and timelines
 
-Codex status (2026-10-04): Core now exposes opt-in development capture through
-`@cossackframework/core/devtools`. Component HTTP/SSE and WebSocket proxy lifecycle
-phases share versioned, bounded snapshots with local call IDs and UUID wire IDs.
-Cancellation/disconnect outcomes are terminal, capture replacement preserves call
-ownership, and production proxy bundling removes collection code. See
-[capture semantics and limits](../docs/development-traces.md).
-
-Framework navigation now shares the capture sequence and records prepared component
-identities that match RPC component IDs. Existing DOM diagnostics remain available.
-Captured navigation callbacks retain session ownership and have one terminal outcome;
-standalone cache/prefetch events retain null navigation IDs. These are client
-observations, not proof of server execution or causation.
-
-Captures now include passive component snapshots: initialized public/client field
-inventory, resource status, scope ownership/counts and transport summaries. Values
-are omitted by default; explicit selections return bounded, redacted copies. Weak
-tracking, capture timestamps and unavailable/truncated states remain explicit.
-Resource getters/loaders and service resolution do not run during inspection.
-
-The browser inspector now consumes the passive snapshot API, with explicit capture
-controls, separate inspection/source gestures and disposal. DOM, production-bundle
-and isolated Vite/Chromium tests cover its behavior. Source markers resolve only
-the latest registered instance per file; this is not a complete component tree.
-
-Vite now publishes explicitly recorded browser snapshots through its existing HMR
-transport. The shared Node-only reader powers `cossack traces` and MCP
-`read_development_traces`. Records omit selected values, bound storage and expose
-receipt age with `live: false`; see the development trace guide.
-
-Explicit layout-service HTTP calls now share lifecycle phases and sequence through
-`service-rpc` events with weak service identities. Validation/cancellation/timeout,
-streamed state and capture replacement are covered without exposing service values.
-
-HTTP/multipart component and service calls now include opt-in server dispatch
-evidence with matching call/request IDs, separate dispatch IDs, fixed timestamps,
-result kind and status. It shares the bounded browser/CLI/MCP schema and contains
-no application payloads. Response creation does not prove body completion.
-
-Delivered HTTP RPC generator terminals now join their dispatch IDs after cleanup
-and full stream validation, with distinct outcome/cleanup fields. Missing or
-invalid optional metadata does not change action semantics.
+Codex status (2026-10-04): Bounded RPC/service/navigation capture, passive
+component inspection, browser controls and shared Vite/CLI/MCP records are
+implemented. HTTP dispatch and delivered generator terminals have correlated
+server evidence. Generated Cloudflare parity and production exclusion pass.
+See [completed implementation notes](./release-0.9.0-plan-archive.md#codex-rt28-completed-portions-2026-10-04)
+and [capture semantics and limits](../docs/development-traces.md).
 
 Remaining: WebSocket dispatch and native-body terminal evidence, plus
 installed-tarball and other runtime use of the shared CLI/MCP schema. Generated
