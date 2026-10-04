@@ -564,6 +564,7 @@ export class ComponentsDemo extends Cossack {
                         }, component(Button, { variant: 'outline' }, 'Hover me'))}
                     </div>
                     ${component(AlertDialog, {
+                        id: 'demo-alert-dialog',
                         open: this.alertOpen,
                         title: 'Delete account?',
                         description: 'This will permanently delete your account and all associated data. This action cannot be undone.',

@@ -1756,11 +1756,13 @@ export default class StudioPage extends Cossack {
           'data-testid': 'studio-command-palette',
         })}
         ${component(AlertDialog, {
+          id: 'studio-delete-dialog',
           open: Boolean(this.deleteTarget),
           title: `Delete ${this.deleteTarget?.keys.length ?? 0} selected row${this.deleteTarget?.keys.length === 1 ? '' : 's'}?`,
           description: `This action runs immediately against ${this.deleteTarget?.table ?? 'the table'} and cannot be undone.`,
           cancelLabel: 'Cancel',
           actionLabel: this.loading.deleteGridRows ? 'Deleting…' : 'Delete',
+          actionDisabled: Boolean(this.loading.deleteGridRows),
           onClose: () => { this.deleteTarget = null; },
           onAction: this.confirmDelete,
           'data-testid': 'delete-dialog',

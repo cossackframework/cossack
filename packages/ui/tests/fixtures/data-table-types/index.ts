@@ -257,3 +257,16 @@ component(Tooltip, { id: 'help', content: 'Help' });
 component(HoverCard, { id: 'details', content: 'Details' });
 // @ts-expect-error The card owns its nonmodal dialog role.
 component(HoverCard, { id: 'details', label: 'Details', content: '', contentProps: { role: 'tooltip' } });
+
+import { AlertDialog } from '@cossackframework/ui';
+component(AlertDialog, { id: 'confirm', title: 'Delete?', onAction: event => { const button: HTMLButtonElement = event.currentTarget; void button; }, '@cancel': event => { const dialog: HTMLDialogElement = event.currentTarget; void dialog; } });
+// @ts-expect-error Stable identity is required.
+component(AlertDialog, { title: 'Delete?' });
+// @ts-expect-error Accessible title must be text.
+component(AlertDialog, { id: 'confirm', title: {} });
+// @ts-expect-error Dialog semantics belong to the component.
+component(AlertDialog, { id: 'confirm', title: 'Delete?', role: 'button' });
+// @ts-expect-error Alert dialogs never dismiss on backdrop clicks.
+component(AlertDialog, { id: 'confirm', title: 'Delete?', closeOnBackdrop: true });
+// @ts-expect-error Arbitrary props are not implemented.
+component(AlertDialog, { id: 'confirm', title: 'Delete?', busy: true });

@@ -88,6 +88,46 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-alert-dialog-2026-10-04"></a>
+## Codex AlertDialog (2026-10-04)
+
+Author: Codex. AlertDialog now shares the native dialog controller instead of a
+separate ClientTask and direct callback-only Cancel button. Stable required IDs
+connect the visible text title and optional description to `role=alertdialog`.
+Native attributes/events target HTMLDialogElement. Closed public props reject
+arbitrary options and caller overrides of owned semantics. Cancel receives initial
+focus; backdrop clicks never dismiss. Escape can be vetoed through `@cancel` or
+`closeOnEscape=false`. Controlled callers accept `onClose` by changing `open`.
+Uncontrolled default state and explicit `close()` share native dismissal and cleanup.
+
+Confirmation remains caller-owned. `onAction` receives the native button event,
+without automatic dismissal or promise handling. `actionDisabled` prevents repeated
+confirmation while the caller owns pending work. Studio, scaffold and demo consumers
+have stable IDs. Studio converts its numeric loading counter to the new boolean
+prop. Cancellation does not abort or undo application operations.
+
+Verification:
+
+- UI build and 207 UI tests across 20 files pass, including SSR relationships,
+  invalid identity/labels, native attributes and published declaration contracts.
+- Production themed Chromium checks retained hydration, closed SSR, accessible
+  name/description, Cancel-first focus, background inertness, Tab navigation,
+  backdrop persistence, disabled confirmation, caller-owned actions, Escape vetoes,
+  rejected/accepted controlled dismissal, prop-driven closing, focus restoration,
+  explicit uncontrolled close and queued-attachment cleanup.
+- Root `pnpm tsc --noEmit` and all 11 package configurations in `pnpm typecheck` pass.
+- All 78 scaffold regression tests pass after consumer ID migration.
+- `pnpm test:agent-docs:local` passes installed CLI/MCP native-prop and exact
+  AlertDialog symbol parity with Node networking disabled. Six existing packaged
+  examples compile and execute. The new alert guide has no executable examples;
+  broader UI examples and platform declarations remain CLI-08/release work.
+
+Logs: `/tmp/cossack-alert-{build,ui,browser,root-types,types,agent-docs,scaffold}.log`.
+Twenty-eight component foundations are reviewed. RT-23 and CLI-08 remain open,
+as do other browser engines, assistive technologies and full release gates.
+Next: Command shortcut ownership, controlled state, modal focus and list semantics.
+Versions stay at 0.8.3 until REL-04.
+
 <a id="codex-hover-controls-2026-10-04"></a>
 ## Codex hover controls (2026-10-04)
 

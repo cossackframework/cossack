@@ -872,3 +872,21 @@ The controller owns positioning and viewport bounds. `side` selects preferred
 placement; Tooltip defaults to top and HoverCard to bottom. Panels flip and clamp,
 follow scrolling/resizing, and scroll internally when oversized. Cleanup cancels
 pending timers, observers and listeners.
+
+## AlertDialog
+
+AlertDialog requires a stable page-unique `id` and a nonempty text `title`.
+`description` is optional plain text. Derived IDs connect its visible title and
+message to the native `alertdialog`. The component owns those ARIA relationships.
+Native attributes and events now target the dialog. Arbitrary props are rejected.
+
+Cancel receives initial focus. Backdrop clicks never dismiss. Native Escape,
+Cancel and `close()` share the dialog controller. Controlled callers must accept
+`onClose` by setting `open=false`; otherwise the dialog reopens. `defaultOpen`
+supports initial uncontrolled state. SSR stays closed until client connection.
+Prop-driven closing and cleanup do not emit `onClose`.
+
+`onAction` receives the native button event. Confirmation keeps the dialog open;
+the caller owns asynchronous work, errors and successful closing. Use
+`actionDisabled` to block repeated confirmation while work is pending. Cancellation
+does not abort that work. `cancelLabel` and `actionLabel` must be nonempty strings.

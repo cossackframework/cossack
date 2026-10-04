@@ -42,6 +42,7 @@ export default class PreventNavigationDemo extends Cossack {
 
             <!-- Custom Prompt UI -->
             ${component(AlertDialog, {
+                id: 'unsaved-changes-dialog',
                 open: !!this._pendingNavigation,
                 title: 'Unsaved changes',
                 description: 'You have unsaved text in the input field. Are you sure you want to leave?',

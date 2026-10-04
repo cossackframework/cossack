@@ -210,6 +210,7 @@ export default class RolesPage extends Cossack {
                 `)}
 
                 ${component(AlertDialog, {
+                    id: 'delete-role-dialog',
                     open: this.pendingDelete !== null,
                     title: __('Delete role?'),
                     description: this.pendingDelete

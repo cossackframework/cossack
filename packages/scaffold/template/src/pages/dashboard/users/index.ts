@@ -264,6 +264,7 @@ export default class UsersPage extends Cossack {
                 `)}
 
                 ${component(AlertDialog, {
+                    id: 'delete-user-dialog',
                     open: this.pendingDelete !== null,
                     title: __('Delete user?'),
                     description: this.pendingDelete

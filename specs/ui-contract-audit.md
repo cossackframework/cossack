@@ -59,7 +59,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | --- | --- | --- |
 | [Accordion](../packages/ui/src/components/Accordion.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Alert](../packages/ui/src/components/Alert.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [AlertDialog](../packages/ui/src/components/AlertDialog.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [AlertDialog](../packages/ui/src/components/AlertDialog.ts) | Reviewed foundation | Typed native dialog props, linked title/message, Cancel-first focus, controlled/default dismissal, caller-owned actions and SSR/Chromium acceptance. |
 | [AspectRatio](../packages/ui/src/components/AspectRatio.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Attachment](../packages/ui/src/components/Attachment.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Avatar](../packages/ui/src/components/Avatar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit AlertDialog and Command, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Command, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the
