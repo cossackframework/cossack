@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { authorizeDesktopRequest, desktopOwnerHeader, desktopTokenHeader, isDesktopAppUrl } from './request-security.js';
 import { execFile } from 'node:child_process';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -87,7 +89,7 @@ function registerDesktopScheme(): void {
       standard: true,
       secure: true,
       supportFetchAPI: true,
-      corsEnabled: false,
+      corsEnabled: true,
       stream: true,
     },
   }]);
@@ -177,6 +179,9 @@ function assertElectron(): void {
   if (!process.versions.electron || process.type === 'renderer' || !app || !BrowserWindow) {
     throw new DesktopUnavailableError();
   }
+  const [major, minor] = process.versions.electron.split('.').map(Number);
+  if (major < 43 || major === 43 && minor < 7 || major === 44 && minor < 4)
+    throw new Error('Cossack Desktop requires Electron 43.7+ or 44.4+ for native request initiator verification.');
 }
 
 function repairUbuntuTrayRegistration(tray: Tray, sequence: number): void {
@@ -361,19 +366,11 @@ function toFrameworkRequest(request: Request): Request {
   const url = new URL(`${desktopUrl.pathname}${desktopUrl.search}`, 'https://app');
   url.searchParams.delete('__cossack_window');
   const mapped = new Request(url, request);
-  // The protocol handler validates the private authority before this rewrite.
-  if (request.headers.get('origin') === protocolOrigin) {
-    mapped.headers.set('origin', url.origin);
-  }
+  // Native initiator and owned-window proof were checked before this rewrite.
+  mapped.headers.delete(desktopOwnerHeader);
+  mapped.headers.delete(desktopTokenHeader);
+  mapped.headers.set('origin', url.origin);
   return mapped;
-}
-
-function isDesktopAppUrl(url: URL): boolean {
-  return url.protocol === `${protocolScheme}:` &&
-    url.hostname === 'app' &&
-    url.username === '' &&
-    url.password === '' &&
-    url.port === '';
 }
 
 function secureWindowOptions(options: SafeBrowserWindowOptions = {}): BrowserWindowConstructorOptions {
@@ -475,6 +472,24 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
 
   await app.whenReady();
   debugDesktop('Electron app is ready');
+  const desktopSession = electronApi.session.fromPartition(`persist:cossack.${options.identifier}`);
+  const windows = new Map<number, BrowserWindow>();
+  const requestToken = randomUUID();
+  // This session belongs to the runtime, so its single-listener WebRequest hook
+  // does not replace hooks attached to Electron's default session by the app.
+  desktopSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    if (!details.url.startsWith(`${protocolScheme}:`)) {
+      // A redirect must not forward private proof to an external server.
+      const headers = new Headers(details.requestHeaders);
+      headers.delete(desktopOwnerHeader);
+      headers.delete(desktopTokenHeader);
+      callback({ requestHeaders: Object.fromEntries(headers) });
+      return;
+    }
+    const headers = authorizeDesktopRequest(details, windows.has(details.webContentsId ?? -1), requestToken);
+    if (!headers) debugDesktop(`rejected ${details.resourceType} from ${details.initiatorOrigin ?? 'browser'} (owned: ${windows.has(details.webContentsId ?? -1)})`);
+    callback(headers ? { requestHeaders: headers } : { cancel: true });
+  });
 
   const createWindow = (windowOptions: CreateDesktopWindowOptions = {}): BrowserWindow => {
     const { path: requestedPath = startPath, ...browserOptions } = windowOptions;
@@ -482,10 +497,13 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
     if (!isDesktopAppUrl(target)) {
       throw new TypeError('Desktop window paths must stay within cossack://app.');
     }
-    const window = new BrowserWindow(secureWindowOptions({ ...options.window, ...browserOptions }));
+    const secureOptions = secureWindowOptions({ ...options.window, ...browserOptions });
+    const window = new BrowserWindow({ ...secureOptions, webPreferences: { ...secureOptions.webPreferences, session: desktopSession } });
+    const contentsId = window.webContents.id;
+    windows.set(contentsId, window);
+    window.once('closed', () => windows.delete(contentsId));
     debugDesktop(`created BrowserWindow ${window.id}`);
     secureWebContents(window);
-    target.searchParams.set('__cossack_window', String(window.id));
     void window.loadURL(target.href).then(
       () => debugDesktop(`loaded ${target.href}`),
       (error) => console.error(`[Cossack Desktop] Failed to load ${target.href}`, error),
@@ -494,10 +512,9 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
     return window;
   };
 
-  await protocol.handle(protocolScheme, async (request) => {
+  await desktopSession.protocol.handle(protocolScheme, async (request) => {
     debugDesktop(`handling ${request.method} ${request.url}`);
     let url: URL;
-    let scopeUrl: URL;
     try {
       url = new URL(request.url);
       if (!isDesktopAppUrl(url)) return new Response('Forbidden Desktop authority', { status: 403 });
@@ -505,16 +522,18 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
       if (origin && origin !== protocolOrigin) return new Response('Forbidden Desktop origin', { status: 403 });
       normalizePathname(url.pathname);
       const referringUrl = request.headers.get('referer');
-      scopeUrl = new URL(referringUrl || request.url);
+      const scopeUrl = new URL(referringUrl || request.url);
       if (!isDesktopAppUrl(scopeUrl)) {
         return new Response('Forbidden Desktop authority', { status: 403 });
       }
     } catch {
       return new Response('Invalid Desktop URL', { status: 400 });
     }
-    const windowId = scopeUrl.searchParams.get('__cossack_window');
-    const browserWindow = windowId ? BrowserWindow.fromId(Number(windowId)) ?? mainWindow : mainWindow;
-    const scopedShell = browserWindow ? createDesktopShell({ window: browserWindow }) : undefined;
+    const owner = request.headers.get(desktopOwnerHeader);
+    const browserWindow = owner === null ? undefined : windows.get(Number(owner));
+    if (request.headers.get(desktopTokenHeader) !== requestToken || !browserWindow)
+      return new Response('Unverified Desktop request', { status: 403 });
+    const scopedShell = createDesktopShell({ window: browserWindow });
     const asset = await assetResponse(assetsRoot, request);
     if (asset) return asset;
     const assets = {

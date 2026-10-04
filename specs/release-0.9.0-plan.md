@@ -569,6 +569,23 @@ see the [Node development checkpoint](./release-0.9.0.md#codex-node-websocket-de
 Deno normal/JSON CLI development traces also pass over HTTP/HTTPS and WebSocket/WSS,
 including installed offline CLI/MCP reads and production exclusion; see the
 [Deno trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04).
+Desktop continuation — Codex (2026-10-04): the current `desktop:dev` runner uses
+production `vite build --watch` processes. Passing native production acceptance
+therefore does not prove development traces. Next:
+
+1. Add a real development module/asset path while retaining the private
+   `cossack://app` origin, native initiator verification and managed window scope.
+   Keep Vite tooling in a separate development entry and preserve the selected
+   web adapter. Do not expose a generic renderer IPC bridge.
+2. Connect the existing public inspector and framework trace bridge to that path.
+   Reuse capture ownership, redaction, bounded receipt handling and shared CLI/MCP
+   storage rather than adding a Desktop-only trace schema.
+3. Extend native Electron acceptance to source reload/recovery, shutdown,
+   correlated HTTP actions/streams/native bodies, stored CLI/MCP parity and
+   production exclusion. Run the installed tarball gate as well as workspace
+   checks. Desktop remains HTTP-only; do not add SSE/WebSocket page support to
+   satisfy this task.
+
 Remaining: Desktop development acceptance. Header
 evidence does not prove body completion; a WebSocket terminal does not prove later iterator cleanup. Preserve capture ownership,
 bounded optional evidence, paused-iterator deadlines, first failure codes,
@@ -963,9 +980,11 @@ CLI lifecycle and trace checks. See the [runtime evidence index](./handoff-0.9.0
 and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
 `pnpm test:deno` owns the repeatable native Deno gate.
 
-Remaining: Desktop development traces and Electron launch/packaging, graceful
-generated-server draining, Deno Deploy and the complete final release matrix.
-Uncommitted Desktop work is in progress; it is not release acceptance.
+Remaining: Desktop development traces, graceful generated-server draining,
+Deno Deploy and the complete final release matrix.
+Desktop native RPC/persistence and Linux packaging have a new reproducible
+`pnpm test:desktop` gate; see the [native checkpoint](./release-0.9.0.md#codex-desktop-native-2026-10-04).
+Installed OS integration, Windows/macOS and signing remain native-host checks.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

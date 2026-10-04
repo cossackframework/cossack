@@ -30,11 +30,13 @@ const electron = vi.hoisted(() => {
     }
   }
   const events: string[] = [];
+  let requestListener: (details: any, callback: (response: any) => void) => void;
   let protocolHandler: ((request: Request) => Promise<Response>) | undefined;
   const windows: FakeBrowserWindow[] = [];
   const trays: FakeTray[] = [];
 
   class FakeWebContents extends Emitter {
+    readonly id = windows.length + 101;
     openHandler?: (details: { url: string }) => { action: string };
     reloadIgnoringCache = vi.fn();
     setWindowOpenHandler(handler: (details: { url: string }) => { action: string }) {
@@ -96,6 +98,11 @@ const electron = vi.hoisted(() => {
 
   const api = {
     events,
+    intercept(details: any) {
+      let response: any;
+      requestListener(details, value => { response = value; });
+      return response;
+    },
     windows,
     trays,
     app,
@@ -104,19 +111,30 @@ const electron = vi.hoisted(() => {
     Menu: class {},
     nativeImage: {},
     Notification: class {},
+    session: { fromPartition: vi.fn() },
     protocol: {
       registerSchemesAsPrivileged: vi.fn(() => events.push('register')),
       handle: vi.fn(async (_scheme: string, handler: (request: Request) => Promise<Response>) => {
         protocolHandler = handler;
       }),
-      invoke(request: Request) {
+      async invokeUnverified(request: Request) {
         if (!protocolHandler) throw new Error('protocol not initialized');
         return protocolHandler(request);
+      },
+      async invoke(request: Request, webContentsId?: number) {
+        if (!protocolHandler) throw new Error('protocol not initialized');
+        const owner = windows.find(window => (window.options.webPreferences as any)?.session);
+        let response: any;
+        requestListener({url:request.url,method:request.method,resourceType:'xhr',initiatorOrigin:'cossack://app',
+          webContentsId:webContentsId ?? owner?.webContents.id,requestHeaders:Object.fromEntries(request.headers)}, value => {response=value;});
+        if(response.cancel)return new Response('Forbidden', {status:403});
+        return protocolHandler(new Request(request, {headers:response.requestHeaders}));
       },
     },
     shell: { openExternal: vi.fn(async () => {}) },
     Tray: FakeTray,
   };
+  api.session.fromPartition.mockReturnValue({protocol:api.protocol,webRequest:{onBeforeSendHeaders:vi.fn(listener=>{requestListener=listener;})}});
   return { ...api, default: api };
 });
 
@@ -127,7 +145,7 @@ let desktop: typeof import('../src/index');
 let assetsRoot: string;
 
 beforeAll(async () => {
-  Object.defineProperty(process.versions, 'electron', { value: '43.5.0', configurable: true });
+  Object.defineProperty(process.versions, 'electron', { value: '43.7.6', configurable: true });
   assetsRoot = await mkdtemp(path.join(tmpdir(), 'cossack-desktop-'));
   await writeFile(path.join(assetsRoot, 'app.js'), 'console.log("desktop")');
   desktop = await import('../src/index');
@@ -242,7 +260,7 @@ describe('Electron Desktop runtime', () => {
     expect(electron.protocol.registerSchemesAsPrivileged).toHaveBeenCalledWith([
       expect.objectContaining({
         scheme: 'cossack',
-        privileges: expect.objectContaining({ standard: true, secure: true, supportFetchAPI: true }),
+        privileges: expect.objectContaining({ standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }),
       }),
     ]);
     expect(electron.events[0]).toBe('register');
@@ -271,6 +289,30 @@ describe('Electron Desktop runtime', () => {
     expect(await response.json()).toEqual({ desktop: true, assets: true });
     expect(fetch.mock.calls[0]?.[0].url).toBe('https://app/counter');
     expect(fetch.mock.calls[0]?.[0].headers.get('origin')).toBe('https://app');
+    expect(fetch.mock.calls[0]?.[0].headers.has('x-cossack-desktop-owner')).toBe(false);
+    expect(fetch.mock.calls[0]?.[0].headers.has('x-cossack-desktop-token')).toBe(false);
+    expect(electron.session.fromPartition).toHaveBeenCalledWith('persist:cossack.dev.cossack.test');
+  });
+
+  it('rejects protocol dispatch without native proof, including forged proof', async () => {
+    for (const headers of [{}, {'x-cossack-desktop-owner':'101','x-cossack-desktop-token':'forged'}]) {
+      const response = await electron.protocol.invokeUnverified(new Request('cossack://app/crpc', {
+        method:'POST', headers, body:'{}',
+      }));
+      expect(response.status).toBe(403);
+    }
+  });
+
+  it('removes private proof from requests leaving the Desktop origin', () => {
+    expect(electron.intercept({url:'https://example.com/redirect',requestHeaders:{
+      'X-Cossack-Desktop-Owner':'42','X-Cossack-Desktop-Token':'secret',Accept:'text/plain',
+    }})).toEqual({requestHeaders:{accept:'text/plain'}});
+  });
+
+  it.each(['42.9.0', '43.6.9', '44.3.9'])('rejects Electron %s without native initiator evidence', version => {
+    Object.defineProperty(process.versions, 'electron', {value:version,configurable:true});
+    try {expect(() => desktop.createDesktopShell()).toThrow('native request initiator verification');}
+    finally {Object.defineProperty(process.versions, 'electron', {value:'43.7.6',configurable:true});}
   });
 
   it('rejects foreign authorities and unsafe paths', async () => {
@@ -341,6 +383,9 @@ describe('Electron Desktop runtime', () => {
     expect(additional.options).toMatchObject({ width: 640, webPreferences: { sandbox: true } });
     expect(() => application.createWindow({ path: 'https://example.com' }))
       .toThrow('must stay within cossack://app');
+    const id = additional.webContents.id;
+    additional.emit('closed');
+    expect((await electron.protocol.invoke(new Request('cossack://app/crpc'), id)).status).toBe(403);
     application.quit();
     expect(application.quitting).toBe(true);
     expect(electron.app.quit).toHaveBeenCalled();

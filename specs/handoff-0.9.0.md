@@ -23,11 +23,11 @@ These completed portions do not close RT-28 or REL-03.
 
 ## Continue here — Codex, 2026-10-04
 
-Desktop implementation and native acceptance fixtures currently have uncommitted
-changes. Review and finish that work before claiming acceptance or committing it.
-
 1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)**: verify Desktop development
-   traces and Electron launch/packaging, coordinating with REL-03.
+   traces through a real development path, coordinating with REL-03. Native
+   production RPC and Linux packaging are covered by `pnpm test:desktop`; see the
+   [Desktop checkpoint](./release-0.9.0.md#codex-desktop-native-2026-10-04). The
+   current build-watch runner does not enable development capture.
    Preserve the public inspector import and capture ownership; filesystem imports
    duplicate capture owners. Keep Node adapter/core in the development SSR graph
    and preserve ordered WebSocket errors. Headers do not prove body completion;
@@ -52,7 +52,8 @@ changes. Review and finish that work before claiming acceptance or committing it
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
-- REL-03 still needs Electron launch/packaging and the full runtime/release matrix.
+- REL-03 still needs installed Desktop OS integration, Windows/macOS packaging,
+  conditional signing and the full runtime/release matrix.
   Deno Deploy and graceful generated-server draining remain separate acceptance gaps.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.

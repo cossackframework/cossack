@@ -88,6 +88,47 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-desktop-native-2026-10-04"></a>
+### Codex: Native Desktop requests and Linux packaging (2026-10-04)
+
+Native Electron acceptance exposed two release defects. Chromium omitted `Origin`
+on private-protocol actions, causing legitimate RPC to return 403. Window scope
+also depended on a renderer-controlled query/referrer. The runtime now verifies
+Electron's native initiator and managed webContents identity in a dedicated
+persistent session, passes private proof to the protocol handler, then removes
+that proof before application dispatch. External requests cannot retain proof.
+Foreign and opaque frames cannot execute native mutations. This requires Electron
+43.7+ in the 43.x series, or 44.4+; see the [migration notes](./migration-0.9.0.md#desktop-native-request-ownership).
+
+The actual generated ASAR also contained the `.env.production` test sentinel.
+Generated and example Forge configs now include only the manifest, Desktop and
+client bundles, and native assets. The installed-tarball helper preserves existing
+pnpm overrides while adding local package resolutions.
+
+Verification:
+
+- `pnpm test:desktop` **passes** (`/tmp/cossack-desktop-gate.log`): sequential
+  dependency builds, 12 tarballs, fresh generated TypeScript, native Electron RPC,
+  streamed/binary responses, two-window ownership, foreign/opaque-frame rejection,
+  renderer isolation and persistence across restart. ASAR excludes private
+  sentinels/source/dependencies and server-only renderer code. A relocated package
+  passes the same native checks; Forge constructs a DEB containing the app, icon
+  and launcher. Installed Electron 43.7.7 / Vite 8.3.2 pass, followed by the
+  workspace Electron 43.7.6 / Vite 8.1.4 case (**1 pass / 51 unrelated skipped**).
+- Desktop unit suite: **28 tests / 5 files pass**
+  (`/tmp/cossack-desktop-unit.log`), including forged/missing proof, old Electron
+  versions, closed windows and private-header stripping.
+- Scaffold suite: **78 tests pass** (`/tmp/cossack-desktop-scaffold.log`).
+- Root `pnpm tsc --noEmit` and all **11 package type checks pass**
+  (`/tmp/cossack-desktop-root-types.log`, `/tmp/cossack-desktop-package-types.log`).
+
+The native gate uses Xvfb and the existing uninstalled Linux sandbox fallback;
+secure renderer preferences are asserted, but installed OS sandbox behavior is
+not claimed. Installed menus/tray/notifications/icons, Windows/macOS packaging,
+conditional signing, Desktop development traces and the final release matrix
+remain open. `desktop:dev` still uses production build watchers. **26 complete,
+32 open**; versions remain 0.8.3. No deployment, publication or push occurred.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits

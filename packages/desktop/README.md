@@ -30,6 +30,12 @@ integration and preload bridges disabled. Only same-origin navigation is
 allowed; valid HTTP(S) popups are opened in the operating-system browser.
 Desktop pages currently require `@Page({ transport: 'http' })`.
 
+Use Electron 43.7+ in the 43.x series, or 44.4+. The runtime verifies native
+request initiators and managed window identity before dispatching local actions.
+Cossack reserves the `persist:cossack.<identifier>` session and its
+`onBeforeSendHeaders` hook. Default-session cookies/storage are not migrated.
+Keep the identifier stable; native app files retain their existing paths.
+
 On Linux, `desktop:dev` checks Electron's local `chrome-sandbox` helper. pnpm's
 download is normally user-owned rather than root-owned/setuid, so the runner
 prints a warning and applies Electron's testing-only `--no-sandbox` flag to the

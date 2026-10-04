@@ -13,7 +13,8 @@
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:production-bundles": "node scripts/test-local-scaffold.mjs",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e",
-    "bump": "node scripts/bump.mjs"
+    "bump": "node scripts/bump.mjs",
+    "test:desktop": "node scripts/test-desktop-runtime.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2"

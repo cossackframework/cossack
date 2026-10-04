@@ -1659,3 +1659,23 @@ WebSocket dispatch records have a `frame` type and no HTTP `status`. The first
 yield and terminal can share a dispatch ID; a terminal is not evidence of iterator
 cleanup. Unknown or absent optional evidence must not change application results.
 See [WebSocket trace semantics](../docs/development-traces.md#websocket-dispatch-evidence).
+
+## Desktop native request ownership
+
+Upgrade Electron to 43.7+ in the 43.x series, or 44.4+. Native RPC now requires
+Electron request-initiator evidence and a managed window. Renderer-supplied
+`Origin`, referrer and `__cossack_window` values cannot establish ownership.
+The adapter strips its private proof headers before calling the application.
+
+Desktop windows now use `persist:cossack.<identifier>`. Existing cookies and
+browser storage in Electron's default session are not copied; users may need to
+sign in again. Native files under `app.getPath('userData')` are unaffected. Keep
+the identifier stable. Cossack reserves this session's private protocol and
+`onBeforeSendHeaders` hook; attach unrelated app hooks to a separate session.
+See [Desktop guidance](../docs/desktop.md).
+
+The generated Forge config now includes only `package.json`, `dist/client`,
+`dist/desktop` and `desktop-assets`. Existing apps should apply the same filter
+to their owned `forge.config.ts`; the old exclusions could include `.env` and
+other local files. Move required native runtime assets to `desktop-assets` or
+explicitly review any additions to the package filter.

@@ -1712,3 +1712,15 @@ it.skipIf(!process.env.COSSACK_DENO_BINARY).each([false, true])('serves generate
   await writeDenoRuntimeAcceptance(root);
   await verifyDenoDevelopmentApplication(root, crash);
 },120000);
+
+it.skipIf(process.env.COSSACK_DESKTOP_ACCEPTANCE!=='1')('executes a generated Desktop application in Electron with native RPC and persistence',async()=>{
+  const {writeDesktopRuntimeAcceptance,verifyDesktopRuntimeApplication}=await import('./fixtures/desktop-runtime-acceptance.js');
+  const root=await project('node',['desktop']);
+  await writeDesktopRuntimeAcceptance(root);
+  try{await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000});}
+  catch(error){throw new Error(`${error.stdout}\n${error.stderr}`);}
+  await vite(root,[]);
+  await vite(root,['--mode','desktop','--ssr','src/desktop/index.ts','--outDir','dist/desktop']);
+  await assertPortableChunks(path.join(root,'dist/desktop'));
+  await verifyDesktopRuntimeApplication(root);
+},120000);

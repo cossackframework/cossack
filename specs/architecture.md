@@ -373,6 +373,12 @@ private `cossack://app` protocol and injects `ASSETS` plus a window-scoped
 `COSSACK_DESKTOP` binding. It is a side target independent of the Cloudflare,
 Node, or Deno web adapter and supports HTTP page transport only.
 
+Managed windows share a Cossack-owned persistent Electron session. The runtime
+verifies native initiator origin and webContents ownership before dispatch,
+then removes private proof headers and supplies the framework's internal HTTPS
+origin. Renderer headers, referrers and query IDs cannot grant native access.
+The session's request hook is reserved to the runtime.
+
 Renderer code has no Electron client entry, preload bridge, Node integration,
 or generic IPC channel. Native calls run in bootstrap modules or server-only
 component methods. The Desktop package may use Node/Electron APIs; core and

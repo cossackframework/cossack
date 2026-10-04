@@ -1,3 +1,5 @@
+import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
+import { verifyDesktopPackage } from './verify-desktop-package.mjs';
 import { writeDenoRuntimeAcceptance, verifyDenoRuntimeApplication, verifyDenoCliStartup, verifyDenoDevelopmentApplication } from '../packages/cossack/tests/fixtures/deno-runtime-acceptance.js';
 import { verifyAgentDocumentation } from './verify-agent-documentation.mjs';
 import { execFile, spawn } from 'node:child_process';
@@ -7,6 +9,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { parseDocument } from 'yaml';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
@@ -96,17 +99,10 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   // pnpm 11 moved overrides out of package.json's `pnpm` field. Keep the
   // tarball acceptance project compatible with both pnpm 10 and 11 by writing
   // the workspace setting used by current generated applications.
-  const workspace = await fs.readFile(workspacePath, 'utf8');
-  if (/^overrides:\s*$/m.test(workspace)) {
-    throw new Error('Local tarball smoke test expected no existing workspace overrides');
-  }
-  const renderedOverrides = Object.entries(overrides)
-    .map(([name, target]) => `  ${JSON.stringify(name)}: ${JSON.stringify(target)}`)
-    .join('\n');
-  await fs.writeFile(
-    workspacePath,
-    `${workspace.trimEnd()}\n\noverrides:\n${renderedOverrides}\n`,
-  );
+  const workspace = parseDocument(await fs.readFile(workspacePath, 'utf8'));
+  if (workspace.errors.length) throw workspace.errors[0];
+  for (const [name, target] of Object.entries(overrides)) workspace.setIn(['overrides', name], target);
+  await fs.writeFile(workspacePath, workspace.toString());
 }
 
 async function installGeneratedProject(projectDir) {
@@ -600,6 +596,7 @@ const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pac
 const keep = process.env.COSSACK_KEEP_SMOKE === '1';
 const nodeDevelopmentOnly = process.argv.includes('--node-dev-only');
 const denoRuntimeOnly = process.argv.includes('--deno-runtime-only');
+const desktopRuntimeOnly = process.argv.includes('--desktop-runtime-only');
 
 try {
   if (denoRuntimeOnly) await run(process.env.COSSACK_DENO_BINARY ?? 'deno', ['--version']);
@@ -612,14 +609,21 @@ try {
     path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
     'create',
     'minimal-production',
-    denoRuntimeOnly ? '--adapter=deno' : nodeDevelopmentOnly ? '--adapter=node' : '--adapter=cloudflare',
+    denoRuntimeOnly ? '--adapter=deno' : (nodeDevelopmentOnly || desktopRuntimeOnly) ? '--adapter=node' : '--adapter=cloudflare',
     '--preset=minimal',
+    ...(desktopRuntimeOnly ? ['--features=desktop'] : []),
     '--yes',
   ], { cwd: temporaryRoot });
   const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
-  await useTarballs(minimalProjectDir, tarballs, { documentation: true });
+  await useTarballs(minimalProjectDir, tarballs, { documentation: !desktopRuntimeOnly });
   await installGeneratedProject(minimalProjectDir);
-  if (denoRuntimeOnly) {
+  if (desktopRuntimeOnly) {
+    await writeDesktopRuntimeAcceptance(minimalProjectDir);
+    await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
+    await run('pnpm', ['run', 'build:desktop'], { cwd: minimalProjectDir });
+    await verifyDesktopRuntimeApplication(minimalProjectDir);
+    await verifyDesktopPackage(minimalProjectDir);
+  } else if (denoRuntimeOnly) {
     await writeDenoRuntimeAcceptance(minimalProjectDir);
     await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
     await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
@@ -633,7 +637,7 @@ try {
   } else {
     await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
   }
-  if (!denoRuntimeOnly && !nodeDevelopmentOnly && !process.argv.includes('--agent-docs-only')) {
+  if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !process.argv.includes('--agent-docs-only')) {
     await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
   }
 } finally {
