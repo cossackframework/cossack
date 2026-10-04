@@ -71,7 +71,7 @@ export { Resizable, type ResizableProps } from "./components/Resizable";
 export { Carousel, type CarouselProps } from "./components/Carousel";
 export { NavigationMenu, type NavigationMenuProps } from "./components/NavigationMenu";
 export { Menubar, type MenubarProps } from "./components/Menubar";
-export { Command, type CommandProps } from "./components/Command";
+export { Command, type CommandProps, type CommandItem } from "./components/Command";
 export { Combobox, type ComboboxProps, type ComboboxOption } from "./components/Combobox";
 export { Calendar, type CalendarProps } from "./components/Calendar";
 export { DatePicker, type DatePickerProps } from "./components/DatePicker";

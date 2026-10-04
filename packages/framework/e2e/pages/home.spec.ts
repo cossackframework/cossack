@@ -46,7 +46,7 @@ test.describe('Demo navigation shell', () => {
     await commandSearch.fill('Contact and flash messages');
     await commandSearch.press('Enter');
     await expect(page).toHaveURL(/\/contact$/);
-    await expect(commandSearch).toHaveCount(0);
+    await expect(commandSearch).not.toBeVisible();
   });
 
   test('uses SPA links and follows active navigation state', async ({ page }) => {

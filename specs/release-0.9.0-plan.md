@@ -962,7 +962,7 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 28 UI foundations, including DataTable, have reviewed contracts.
+Codex status (2026-10-04): 29 UI foundations, including DataTable, have reviewed contracts.
 Completed work covers typed native attributes and events, form behavior, SSR and
 hydration, keyboard navigation, focus, dialogs, popovers and action menus.
 The [component audit](./ui-contract-audit.md) records coverage and pending rows.
@@ -975,13 +975,13 @@ hover/focus ownership and cancellation. See the
 AlertDialog now shares native dismissal and focus handling, with linked title/message,
 closed props and caller-owned confirmation. See the
 [alert checkpoint](./release-0.9.0.md#codex-alert-dialog-2026-10-04).
-Next: Command, then the remaining audit rows. Command reads undeclared open and
-onOpenChange props, has no modal focus boundary, and does not expose the highlighted
-result to assistive technology. Its global shortcut can open both App and demo
-instances. Define shortcut ownership, explicit controlled/default state, native
-modal focus, labeled search/list semantics and stable result identity. Preserve
-application-owned selection and test empty results, changing items, composition,
-Escape, focus restoration and cleanup through the published browser fixture.
+Command now has named modal search, stable result identity, controlled/default
+state and document-order shortcut ownership. App uses one shortcut owner, and the
+local demo uses an explicit button. See the
+[Command checkpoint](./release-0.9.0.md#codex-command-2026-10-04).
+Next: Tabs, Accordion and Collapsible, then remaining audit rows. Check controlled
+state, native trigger ownership, keyboard/focus, stable panel relationships and
+SSR/hydration. Preserve the full original component and release scope.
 RT-23 remains open against all criteria below.
 
 Purpose: Applications need a typed table for real server data, and agents need

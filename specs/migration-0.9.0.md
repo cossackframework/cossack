@@ -890,3 +890,27 @@ Prop-driven closing and cleanup do not emit `onClose`.
 the caller owns asynchronous work, errors and successful closing. Use
 `actionDisabled` to block repeated confirmation while work is pending. Cancellation
 does not abort that work. `cancelLabel` and `actionLabel` must be nonempty strings.
+
+## Command
+
+Command requires `id` and an accessible `label`. Native attributes/events now
+belong to a native modal dialog. `CommandItem` is exported, and readonly items
+require unique nonempty IDs and labels. `disabled` items cannot be selected.
+The search field owns keyboard focus and exposes the active result through ARIA.
+Arrow navigation skips disabled results and retains item identity across reordering.
+Search is case-insensitive substring matching. Composition Enter does not select.
+
+Global Ctrl/Meta+K registration now requires `shortcut=true`. Enable it on one
+app-level palette. Remove duplicate document handlers and open local palettes
+through `setOpen()` or controlled `open`/`onOpenChange`. Competing eligible palettes
+use document order. An open modal prevents unrelated palettes from taking over.
+
+`defaultOpen` initializes uncontrolled state. Controlled callers must accept
+`onOpenChange`. Confirmation calls `onSelect(id)` and proposes closing; it does not
+await promises or own application errors. Accepted state changes reset search.
+Localize `searchLabel`, `placeholder`, `emptyLabel` and `closeLabel`.
+
+SSR now retains closed dialog markup instead of returning null. Tests must assert
+hidden state after dismissal rather than expect the search element to be removed.
+Native modal behavior supplies focus containment and restoration. Escape/backdrop
+configuration follows the shared dialog contract, and cleanup removes shortcuts.

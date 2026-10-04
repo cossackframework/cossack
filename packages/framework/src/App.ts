@@ -1,4 +1,4 @@
-import { Cossack, Page, HeadContext, HeadValue, ClientState, On, OnDocument, Client } from '@cossackframework/core';
+import { Cossack, Page, HeadContext, HeadValue, ClientState, On, Client } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
 import { Button, Command } from '@cossackframework/ui';
 import { demoCommandItems } from './demo-catalog.js';
@@ -40,16 +40,6 @@ export class App extends Cossack {
         }
     }
 
-    @OnDocument('keydown')
-    handleCommandShortcut(event: KeyboardEvent) {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-            event.preventDefault();
-            this.commandPaletteOpen = !this.commandPaletteOpen;
-        } else if (event.key === 'Escape' && this.commandPaletteOpen) {
-            this.commandPaletteOpen = false;
-        }
-    }
-
     @Client()
     setCommandPaletteOpen(open: boolean) {
         this.commandPaletteOpen = open;
@@ -72,6 +62,7 @@ export class App extends Cossack {
                 </div>
                 ${this.children}
                 ${component(Command, {
+                    id: 'app-command', label: 'Navigate demos', shortcut: true,
                     items: demoCommandItems,
                     placeholder: 'Go to a demo…',
                     open: this.commandPaletteOpen,

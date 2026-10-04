@@ -94,6 +94,7 @@ export class ComponentsDemo extends Cossack {
     @ClientState() modalOpen = false;
     @ClientState() sheetOpen = false;
     @ClientState() alertOpen = false;
+    @ClientState() commandOpen = false;
     @ClientState() drawerOpen = false;
     @ClientState() sidebarCollapsed = false;
     @ClientState() calendarDate = '2025-07-04';
@@ -638,8 +639,10 @@ export class ComponentsDemo extends Cossack {
                     <h2 class="text-lg font-semibold">Command · Combobox</h2>
                     <div class="flex flex-wrap items-start gap-6">
                         <div class="flex flex-col gap-2">
-                            <p class="text-sm text-muted-foreground">Press <kbd class="inline-flex items-center justify-center min-w-6 h-5 px-1 text-xs font-medium rounded border border-border bg-muted">⌘</kbd> <kbd class="inline-flex items-center justify-center min-w-6 h-5 px-1 text-xs font-medium rounded border border-border bg-muted">K</kbd> anywhere</p>
+                            ${component(Button, { '@click': () => { this.commandOpen = true; } }, 'Open example commands')}
                             ${component(Command, {
+                                id: 'demo-command', label: 'Example commands', open: this.commandOpen,
+                                onOpenChange: (open: boolean) => { this.commandOpen = open; },
                                 items: [
                                     { id: 'home', label: 'Go to Home', group: 'Navigation' },
                                     { id: 'settings', label: 'Open Settings', group: 'Navigation' },

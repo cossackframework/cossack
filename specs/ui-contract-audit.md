@@ -75,7 +75,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Checkbox](../packages/ui/src/components/Checkbox.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Collapsible](../packages/ui/src/components/Collapsible.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Combobox](../packages/ui/src/components/Combobox.ts) | Reviewed foundation | Stable IDs, typed input props/events, listbox/active-descendant semantics, controlled/default selection, form values, required/reset behavior, keyboard/pointer and SSR/fresh-render acceptance. |
-| [Command](../packages/ui/src/components/Command.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Command](../packages/ui/src/components/Command.ts) | Reviewed foundation | Typed native dialog, labeled search/list, stable active IDs, controlled/default state, deterministic shortcuts, SSR/Chromium and app navigation acceptance. |
 | [ContextMenu](../packages/ui/src/components/ContextMenu.ts) | Reviewed foundation | Stable IDs, typed actions/native events, menu semantics, keyboard/typeahead, disabled actions, focus restoration, bounded placement and SSR/Chromium acceptance. |
 | [DataTable](../packages/ui/src/components/DataTable.ts) | Foundation reviewed | Typed columns/props, generated Node/workerd resource/query acceptance and focus checks. |
 | [DatePicker](../packages/ui/src/components/DatePicker.ts) | Reviewed foundation | Shared Calendar, typed native date input, min/max/required/form/reset behavior, stable labels, controlled/default values, nonmodal popup focus and browser acceptance. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Command, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Tabs, Accordion and Collapsible, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the

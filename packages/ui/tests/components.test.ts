@@ -628,6 +628,7 @@ describe("Sheet", () => {
 describe("Command", () => {
     it("supports a controlled open state without changing its public item contract", () => {
         const out = renderComp(Command, {
+            id: 'commands', label: 'Commands',
             open: true,
             items: [{ id: "/docs", label: "Documentation", group: "Navigation" }],
         });

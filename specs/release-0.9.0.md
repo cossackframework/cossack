@@ -88,6 +88,51 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-command-2026-10-04"></a>
+## Codex Command (2026-10-04)
+
+Author: Codex. Command now renders a named native modal dialog with typed native
+attributes/events and explicit controlled/default state. It requires a stable ID
+and accessible label. The public CommandItem contract accepts readonly arrays,
+unique IDs, labels, optional group text and disabled items. A named combobox owns
+focus, with stable active-descendant/list relationships and keyed result identity.
+Arrow keys skip disabled results; Enter selects the active match, except during
+composition. Empty/all-disabled results have no active descendant. Reordering
+preserves the highlighted ID; removal falls back to an enabled result. Search
+retains case-insensitive substring matching and resets on accepted state changes.
+
+Shortcut registration is now opt-in. A browser regression exposed hydration-order
+differences between listener attachment and DOM order. Document-scoped registration
+now picks the first eligible owner in document order. Only the active modal can
+handle a shortcut while one is open. Cleanup removes listeners/registration and
+cancels deferred connection. The App's duplicate document handler is removed;
+it owns the global palette shortcut, while the local demo uses an explicit button.
+Confirmation remains application-owned and proposes closing after onSelect.
+
+Verification:
+
+- UI build and 213 tests across 21 files pass, including SSR contracts, invalid
+  identities/labels and installed-export declaration fixtures.
+- Production themed Chromium checks retained hydration, native focus/inertness,
+  enabled-result navigation, reordering/removal, empty matches, composition,
+  disabled pointer activation, controlled proposals and rejection, Escape vetoes,
+  multiple shortcut owners, foreign modal exclusion and cleanup.
+- `pnpm test:agent-docs:local` passes installed CLI/MCP parity, exact Command
+  discovery and native prop contracts with Node networking disabled. Six existing
+  packaged examples compile and execute. The new UI guide has no executable
+  examples; wider UI example/platform acceptance remains release work.
+- Root `pnpm tsc --noEmit` and all 11 package type configurations pass.
+- The real framework Playwright navigation test passes: Ctrl+K, route search,
+  Enter selection, SPA navigation and dismissal. The assertion now checks hidden
+  retained markup instead of removal. Startup emitted missing required demo-secret
+  warnings; this test does not prove auth, storage or remote deployment readiness.
+
+Logs: `/tmp/cossack-command-{build,ui,browser,root-types,types,e2e,agent-docs}.log`.
+Twenty-nine component foundations are reviewed. RT-23, CLI-08 and the full release
+matrix remain open, including other browser engines and assistive technologies.
+Continue Tabs, Accordion and Collapsible, then all remaining pending audit rows.
+Versions stay at 0.8.3 until REL-04.
+
 <a id="codex-alert-dialog-2026-10-04"></a>
 ## Codex AlertDialog (2026-10-04)
 

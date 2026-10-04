@@ -19,10 +19,10 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Next audit Command, then the remaining pending rows.
-   Twenty-eight foundations are reviewed. AlertDialog now has native naming,
-   shared dismissal/focus and caller-owned confirmation.
-   See the [alert checkpoint](./release-0.9.0.md#codex-alert-dialog-2026-10-04) for tests and limits.
+   Next audit Tabs, Accordion and Collapsible, then the remaining pending rows.
+   Twenty-nine foundations are reviewed. Command now has named modal search,
+   stable result identity and explicit shortcut ownership.
+   See the [Command checkpoint](./release-0.9.0.md#codex-command-2026-10-04) for tests and limits.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).

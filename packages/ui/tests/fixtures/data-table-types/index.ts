@@ -270,3 +270,15 @@ component(AlertDialog, { id: 'confirm', title: 'Delete?', role: 'button' });
 component(AlertDialog, { id: 'confirm', title: 'Delete?', closeOnBackdrop: true });
 // @ts-expect-error Arbitrary props are not implemented.
 component(AlertDialog, { id: 'confirm', title: 'Delete?', busy: true });
+
+import { Command, type CommandItem } from '@cossackframework/ui';
+const commands: readonly CommandItem[] = [{ id: '/home', label: 'Home', disabled: false }];
+component(Command, { id: 'commands', label: 'Navigate', items: commands, shortcut: true, onOpenChange: open => { const value: boolean = open; void value; }, '@cancel': event => { const dialog: HTMLDialogElement = event.currentTarget; void dialog; } });
+// @ts-expect-error Stable identity is required.
+component(Command, { label: 'Navigate' });
+// @ts-expect-error Accessible name is required.
+component(Command, { id: 'commands' });
+// @ts-expect-error Command owns its modal role.
+component(Command, { id: 'commands', label: 'Navigate', role: 'listbox' });
+// @ts-expect-error Arbitrary unimplemented props are rejected.
+component(Command, { id: 'commands', label: 'Navigate', fuzzy: true });
