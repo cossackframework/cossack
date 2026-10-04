@@ -526,14 +526,10 @@ Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation
 labels, focus and packaged guidance in scope. Component checkpoints do not close
 the broader audit or full release matrix. RT-23 remains open.
 
-The completed [Attachment plan](./release-0.9.0-plan-archive.md#codex-attachment-plan-2026-10-04)
-and its verification remain archived for regression context.
-
-The completed [Bubble plan](./release-0.9.0-plan-archive.md#codex-chat-display-plan-2026-10-04)
-is archived with the combined Bubble/Marker/Message evidence.
-
-The completed [MessageScroller plan](./release-0.9.0-plan-archive.md#codex-message-scroller-plan-2026-10-04)
-is archived with its verification. Source-component completion does not complete RT-23.
+Completed batch plans: [Attachment](./release-0.9.0-plan-archive.md#codex-attachment-plan-2026-10-04),
+[Bubble/Marker/Message](./release-0.9.0-plan-archive.md#codex-chat-display-plan-2026-10-04),
+and [MessageScroller](./release-0.9.0-plan-archive.md#codex-message-scroller-plan-2026-10-04).
+Keep their archived regression evidence; RT-23 remains open.
 
 Codex next batch — Icon, then composed blocks:
 

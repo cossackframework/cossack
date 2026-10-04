@@ -11,24 +11,30 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-Current partial work: RT-23 has **65 of 65 component-source rows reviewed**, through
-[MessageScroller](./release-0.9.0.md#codex-message-scroller-2026-10-04).
-Icon and four composed blocks remain pending. These checkpoints do not close
-RT-23 or the release matrix.
-Past component reviews are indexed in the
-[archived checkpoints](./release-0.9.0.md#archived-checkpoints); their full evidence is preserved.
+RT-23: **65/65 component-source foundations reviewed**. Their
+[verification records](./release-0.9.0-verification-archive.md) and
+[completed batch plans](./release-0.9.0-plan-archive.md) are archived.
+Icon and four composed blocks, generated-app acceptance and the release matrix
+remain open. RT-23 is not complete.
+
+Uncommitted Icon work is **unfinished and unverified**: typed SVG bindings,
+`style` → `variant` caller changes, and a renderer SVG-namespace regression test.
+The new renderer test currently has two expected failures; the renderer fix,
+updated Icon tests and acceptance checks still need implementation. Continue from
+this working tree. The last verified implementation is commit `0e2f42f`
+(MessageScroller); do not treat its passing checks as proof for these edits.
 
 ## Continue here — Codex, 2026-10-04
 
 1. Continue **RT-23 with Icon**, then AuthForm, CommandPalette, DashboardStat and
-   SettingsPanel in the [UI audit](./ui-contract-audit.md#blocks-and-icons). Icon
-   constructs raw SVG attributes, leaves class text unescaped and cannot bind
-   native callbacks. Define safe SVG props/events, naming, sizing, artwork-style
-   versus CSS-style ownership and the trusted path-data boundary.
+   SettingsPanel in the [UI audit](./ui-contract-audit.md#blocks-and-icons). The original Icon
+   used raw SVG attribute interpolation. Finish the in-progress native bindings,
+   SVG namespace handling, naming, sizing, artwork-style versus CSS-style ownership
+   and trusted path-data boundary.
    The [RT-23 plan](./release-0.9.0-plan.md#rt-23) explains all five baselines and
    checks. Keep published/ejected imports, current primitive composition and
-   installed CLI/MCP guidance in scope. MessageScroller's scroll/focus/lifetime
-   evidence is recorded; generated-app, accessibility and runtime gates remain open.
+   installed CLI/MCP guidance in scope. Generated-app, accessibility and runtime
+   gates remain open.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend

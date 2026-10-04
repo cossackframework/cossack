@@ -88,75 +88,6 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-message-scroller-2026-10-04"></a>
-### Codex MessageScroller (2026-10-04)
-
-Author: Codex. MessageScroller now requires stable identity and a named native
-keyboard viewport. Root, viewport and jump-button props have public native types.
-Caller handlers compose before internal updates. Initial following respects
-existing browser focus/scrolling. Focusing message controls or reading history
-pauses following; native scrolling near the bottom and explicit jumps resume it.
-
-Visible direct child elements provide reading anchors across prepends, resizing,
-streaming and late image sizes. A surviving visible sibling replaces a removed
-anchor; complete replacement clamps the old offset. Geometry-driven scroll clamping
-cannot silently resume following. Browser anchoring is disabled to avoid competing
-adjustments. Keyed DOM identity matters; no word-level anchoring is claimed.
-
-The correctly named latest-message button retains native disabled/veto/form behavior
-and returns its focus to the viewport before disappearing. Removed/disabled message
-controls recover focus, while keyed updates retain edits and focus. Explicit jumps
-recover focus when they leave a child outside the visible area. Setup is deferred
-until refs connect; cleanup cancels queued frames and disconnects observers.
-
-Framework and generated Chat consumers now supply identity/names. The generated
-Chat exposes streaming busy state and a short separate status region instead of a
-live region around every token. Application authorization and announcement policy
-remain caller-owned. Migration notes replace scrollRef/newMessageLabel with typed
-viewport events, scrollToBottom() and jumpLabel.
-
-Verification:
-
-- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 551 tests
-  across 42 files pass. SSR and public types cover ownership, identity/naming,
-  native targets, threshold validation, initial position and server safety.
-- `pnpm --filter cossack exec vitest run tests/message-scroller-browser.test.js tests/ui-ejection.test.js`:
-  40 tests pass, including 39 source-ejection checks and strict NodeNext compilation.
-  The HTTP/Tailwind Chromium fixture covers no-JavaScript keyboard scrolling,
-  pre-hydration editing/focus, retained hydration, appending/streaming, keyed
-  prepends, delayed image sizing, resize/RTL, removed anchors, complete replacement,
-  shrink/repopulate, native wheel/keyboard, caller veto/disabled actions, focused
-  row removal, edits, explicit focus recovery, empty state and cleanup/remounts.
-  Queued setup and scheduled-frame cleanup are exercised separately. Native
-  observers are instrumented without replacing their behavior; only observers
-  targeting the component count toward its resource lifetime.
-- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/components-demo.spec.ts --grep 'chat components render' --workers=1 --reporter=line`:
-  the real application test passes, including the final-source rerun. It exercises
-  the named viewport, native Home scrolling and latest-message focus recovery.
-  The first run waited on a local server probe; the final ready-server run took
-  11.3 seconds. Both owned manual development servers were stopped afterward.
-- `pnpm --filter @cossackframework/scaffold exec vitest run`: 113 tests across
-  eight files pass, including actual generated Chat rendering with its named
-  viewport, busy state and separate streaming status. This is not transport proof.
-- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
-- `pnpm test:agent-docs:local` passes. Installed catalogs expose required
-  identity/name, root and target prop types, scroll options and the authored guide.
-  Exact-symbol MessageScroller output matches across CLI/MCP. Six existing packaged
-  examples compile and execute. Discovery disables Node networking; installation
-  can use the registry. The new guide adds no executable example.
-
-The first teardown assertion counted Playwright's document MutationObserver as a
-component leak. Target inspection identified that observer; the corrected fixture
-requires both component observers to disconnect and verifies fresh remount ownership.
-Review also found browser scroll clamping could be mistaken for user intent; the
-geometry guard and shrink/repopulate regression now preserve the paused state.
-
-Logs: `/tmp/cossack-message-scroller-{build,ui,browser-ejection,scaffold,root-types,types,demo,demo-final,dev,agent-docs}.log`.
-Other engines, assistive technologies, blocks/icons and the full generated-app/runtime
-matrix remain open. All 65 component-source rows have reviewed foundations; Icon
-and four composed blocks are still pending. RT-23 and CLI-07/CLI-08 are not complete;
-the release retains all 58 tasks and 24 completed tasks.
-
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
@@ -166,6 +97,7 @@ parent task. Status remains 24 complete and 34 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-message-scroller-2026-10-04"></a>[Codex MessageScroller (2026-10-04)](./release-0.9.0-verification-archive.md#codex-message-scroller-2026-10-04) |
 | <a id="codex-chat-display-2026-10-04"></a>[Codex Bubble, Marker and Message (2026-10-04)](./release-0.9.0-verification-archive.md#codex-chat-display-2026-10-04) |
 | <a id="codex-attachment-2026-10-04"></a>[Codex Attachment (2026-10-04)](./release-0.9.0-verification-archive.md#codex-attachment-2026-10-04) |
 | <a id="codex-carousel-2026-10-04"></a>[Codex Carousel (2026-10-04)](./release-0.9.0-verification-archive.md#codex-carousel-2026-10-04) |
