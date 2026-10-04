@@ -310,14 +310,32 @@ and late-cookie diagnostics work through the real artifact. Continue sensitive
 old-input filtering, complete failure/login/logout/rotation recipes and documented
 concurrent request behavior; this runtime slice does not close RT-11.
 
-Codex next-step audit (2026-10-05): RT-13's shared auth primitives are complete.
-The generated session-management application still copies `SessionInfo.id`
-(the auth bearer token) into dashboard `@State()`. Its single-session revoke
-helper deletes by ID without actor/purpose constraints, and dashboard catches
-copy raw storage error messages into public state. Replace exposed tokens with
-safe public references, enforce owner and auth-purpose checks on the server,
-and use fixed errors. Native SSR/RPC tests must reject disclosure and forged
-cross-user/reset-token revocation before completing the rest of this task.
+Codex session-dashboard checkpoint (2026-10-05): RT-13's shared auth primitives
+remain complete. The generated application now exposes independent
+`SessionInfo.reference` UUIDs and a whitelist of display fields. An additive
+migration and conditional legacy backfill preserve token identities; rotation
+preserves the reference. Authenticated-context helpers enforce ownership and
+auth purpose. Single and keep-current bulk revocation protect the current
+reference during rotation. The dashboard layout also guards RPC requests;
+page errors discard raw storage messages. Native Node SQLite/Cloudflare D1
+acceptance covers SSR/RPC disclosure, forged actors, foreign/current/reset/state
+references, real storage failures, concurrent revocation, rotation races and
+bulk cookie clearing. Sessions-only dashboards no longer import absent role
+models in their seeder. See the
+[checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05).
+Auth starters now leave the extra anonymous session bag opt-in, preserving public
+SSG without visitor cookies; standalone SSG also initializes bare translation/
+config helpers. Preserve the session-registration migration and public SSG guards.
+Continue sensitive old-input filtering, complete failure/login/logout/rotation
+recipes and the remaining concurrent/realtime criteria. This checkpoint does
+not close RT-11 or prove connection identity refresh after revocation.
+
+Next start with `flashInput` in `packages/core/src/shared/flash.ts`: it currently
+assigns the submitted record unchanged to outgoing old input. Define an explicit
+public-field policy before cookie serialization, including nested password/token
+fields and custom credential names. Update authored recipes/docs and prove secret
+exclusion through real HTTP/RPC redirects and the following SSR request. Keep
+ordinary one-time field restoration and the existing failure/cookie timing rules.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.

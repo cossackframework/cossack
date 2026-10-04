@@ -120,6 +120,35 @@ and `SameSite=Lax`. Configure the name, path, domain and same-site policy throug
 `cookie`. Clearing uses the same policy with `Max-Age=0`. Never copy tokens or
 cookie headers into public page state.
 
+## Generated session dashboard
+
+The generated dashboard stores an independent UUID in `sessions.public_id`.
+`SessionInfo.reference` exposes that UUID; the bearer token remains in the
+HttpOnly cookie and storage. The reference stays stable during rotation.
+Listings return only dates, the current-session flag and origin information.
+Session data and arbitrary metadata do not enter page state.
+
+The auth starter registers auth middleware without the separate anonymous
+framework session bag. That bag remains available as an explicit application
+choice; see the [session guide](./session.md) before enabling it on public routes.
+
+Application helpers now receive the authenticated Hono context:
+`listUserSessions(c)`, `revokeSession(c, reference)` and
+`revokeAllUserSessions(c, keepCurrent = false)`. The caller's request supplies
+the owner. Single revocation checks owner, auth purpose and expiry in one delete.
+It protects the current stable reference as well as the current token, including
+concurrent rotation. Bulk revocation preserves reset and OAuth-state records;
+`revokeAllUserSessions(c, true)` also protects the stable reference across rotation.
+
+The dashboard layout requires authentication for SSR and RPC. A public reference
+does not authenticate a request or grant permission to revoke a session. Invalid,
+foreign and current references produce the same fixed page error. Storage errors
+also use fixed messages. A mutation that commits before a later listing fails is
+not rolled back. An already-ended caller can receive a sign-in denial.
+
+Existing applications need the new migration and template changes described in
+the [draft migration guide](../specs/migration-0.9.0.md#session-dashboard-references).
+
 ## Diagnostics and limits
 
 `AuthError` has a fixed `code`, `stage` and `message`. Use `error.toJSON()` for

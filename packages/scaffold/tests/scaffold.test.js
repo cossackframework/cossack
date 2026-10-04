@@ -572,6 +572,21 @@ describe('composition', () => {
     );
   });
 
+  it.each(['node', 'cloudflare', 'deno'])('composes the %s sessions dashboard without unselected RBAC dependencies', async adapter => {
+    const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features: ['dashboard'], dashboardModules: ['sessions'] }));
+    const seeder = files.get('src/seeders/application.seeder.ts').content.toString();
+    expect(seeder).toContain('defineSeeder');
+    expect(seeder).not.toMatch(/Role|permissions|ADMIN_PASSWORD/);
+    expect(files.has('src/models/Role.ts')).toBe(false);
+    expect(files.has('src/models/UserRole.ts')).toBe(false);
+    expect(files.has('src/migrations/0008_add_session_public_id.ts')).toBe(true);
+    expect(files.get('src/migrations/index.ts').content.toString()).toContain("'./0008_add_session_public_id'");
+    const middleware = files.get('src/bootstrap/middlewares.ts').content.toString();
+    expect(middleware).toContain('auth.middleware');
+    expect(middleware).not.toContain('sessionMiddleware');
+    expect(files.get('src/middlewares/orm.ts').content.toString()).toContain('export const sessionMiddleware');
+  });
+
   it('generates Node environment defaults without recording local secrets', async () => {
     const root = await temporaryDirectory();
     const project = await createApp('app', {

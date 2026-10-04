@@ -59,14 +59,23 @@ the required non-Desktop release matrix.
    Continue other library and UI guidance and the remaining runtime coverage.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
-   recipes. Review found concrete gaps in the generated session dashboard:
-   `listUserSessions` exposes bearer token IDs through `SessionInfo.id` into
-   `@State()`, `revokeSession` deletes by ID without owner/purpose checks, and
-   dashboard catches copy raw storage messages into public error state.
-   Add safe public references, server ownership/purpose enforcement and fixed
-   errors, with native SSR/RPC tests for disclosure and forged revocation.
-   Then finish sensitive old-input filtering and the remaining RT-11 criteria.
-   Preserve RT-13's shared-library regression coverage during these changes.
+   recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
+   verifies independent public references, owner/purpose checks, fixed errors and
+   an authenticated dashboard layout guard before RPC. Native SQLite/D1 checks
+   cover disclosure, forged actors/references, real storage failures, conditional
+   legacy backfill, concurrent revocation and keeping the current session during
+   token rotation. Preserve `0008_add_session_public_id`, reference stability,
+   reset/OAuth purpose separation and sessions-only recipe composition.
+   Auth's separate anonymous session bag is now opt-in; preserve public SSG
+   response guards and standalone translation/config initialization.
+   The full installed scaffold gate passes the locally packed Node → Cloudflare
+   → Node flow, migrations/schema checks, Studio and production assets.
+   Continue sensitive old-input filtering and complete failure/login/logout/
+   rotation recipes, concurrent request semantics and realtime freshness.
+   Start with core `flashInput`: it still stores the submitted record unchanged.
+   Define public-field selection before serialization and verify nested/custom
+   secrets through native redirect cookies and the following SSR request.
+   Preserve RT-13's shared-library regressions. This slice does not close RT-11.
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
 4. Follow the detailed plan for all 30 open tasks. Close each only against its

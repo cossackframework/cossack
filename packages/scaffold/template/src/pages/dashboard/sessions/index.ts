@@ -1,7 +1,6 @@
 import { Cossack, Page, State, Server } from '@cossackframework/core';
 import { Card, CardBody, CardHeader, Button, Badge, Tooltip, Icon } from '@cossackframework/ui';
 import { html, component } from '@cossackframework/renderer';
-import { getCookie } from 'hono/cookie';
 import { MonitorSmartphoneIcon as monitorSmartphoneIconSvg } from '@cossackframework/solar-icons/monitor-smartphone/line';
 import { SmartphoneIcon as smartphoneIconSvg } from '@cossackframework/solar-icons/smartphone/line';
 import { LaptopIcon as laptopIconSvg } from '@cossackframework/solar-icons/laptop/line';
@@ -12,7 +11,6 @@ import {
     revokeSession,
     revokeAllUserSessions,
     expiredSessionCookie,
-    SESSION_COOKIE_NAME,
     type SessionInfo,
 } from '../../../auth';
 
@@ -66,42 +64,49 @@ export default class SessionsPage extends Cossack {
 
     @Server()
     async init() {
-        const currentId = getCookie(this.c, SESSION_COOKIE_NAME);
-        this.sessions = await listUserSessions(this.user!.id, currentId);
+        this.sessions = [];
+        this.error = '';
+        try {
+            this.sessions = await listUserSessions(this.c);
+        } catch {
+            this.error = 'Could not load sessions.';
+        }
     }
 
     @Server()
-    async revoke(id: string) {
+    async revoke(reference: string) {
+        this.error = '';
         try {
-            await revokeSession(id);
-            const currentId = getCookie(this.c, SESSION_COOKIE_NAME);
-            this.sessions = await listUserSessions(this.user!.id, currentId);
-        } catch (e: any) {
-            this.error = e?.message || 'Could not revoke session';
+            const revoked = await revokeSession(this.c, reference);
+            this.sessions = await listUserSessions(this.c);
+            if (!revoked) this.error = 'Could not revoke session.';
+        } catch {
+            this.error = 'Could not revoke session.';
         }
     }
 
     @Server()
     async revokeAllExceptCurrent() {
+        this.error = '';
         try {
-            const currentId = getCookie(this.c, SESSION_COOKIE_NAME);
-            await revokeAllUserSessions(this.user!.id, currentId);
-            this.sessions = await listUserSessions(this.user!.id, currentId);
-        } catch (e: any) {
-            this.error = e?.message || 'Could not revoke sessions';
+            await revokeAllUserSessions(this.c, true);
+            this.sessions = await listUserSessions(this.c);
+        } catch {
+            this.error = 'Could not revoke sessions.';
         }
     }
 
     @Server()
     async revokeAll() {
+        this.error = '';
         try {
-            await revokeAllUserSessions(this.user!.id);
+            await revokeAllUserSessions(this.c);
             // Revoking the current session too — clear its cookie (mirror of
             // logout) and bounce to the login page.
             expiredSessionCookie().forEach((value, key) => this.c.header(key, value));
             this.redirect(config('auth.redirectAfterLogout'));
-        } catch (e: any) {
-            this.error = e?.message || 'Could not revoke sessions';
+        } catch {
+            this.error = 'Could not revoke sessions.';
         }
     }
 
@@ -128,14 +133,14 @@ export default class SessionsPage extends Cossack {
             return html`
                 <tr class="border-t border-border">
                     <td class="py-3 pr-4 text-sm text-foreground">
-                        <span class="font-mono text-xs">${s.id.slice(0, 8)}…</span>
+                        <span class="font-mono text-xs">${s.reference.slice(0, 8)}…</span>
                     </td>
                     <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(s.createdAt)}</td>
                     <td class="py-3 pr-4 text-sm text-muted-foreground">${this.formatDate(s.expiresAt)}</td>
                     <td class="py-3 pr-4 text-sm text-muted-foreground">
                         ${s.userAgent
-                            ? component(Tooltip, { id: `session-${encodeURIComponent(s.id)}-agent-tip`, label: uaSummary }, html`
-                                <span tabindex="0" aria-label=${deviceLabel} aria-describedby=${`session-${encodeURIComponent(s.id)}-agent-tip`} class=${iconBtn + ' cursor-help'}>
+                            ? component(Tooltip, { id: `session-${encodeURIComponent(s.reference)}-agent-tip`, label: uaSummary }, html`
+                                <span tabindex="0" aria-label=${deviceLabel} aria-describedby=${`session-${encodeURIComponent(s.reference)}-agent-tip`} class=${iconBtn + ' cursor-help'}>
                                     ${component(Icon, { entry: deviceEntry, size: 16 })}
                                 </span>`)
                             : html`<span class="text-muted-foreground">—</span>`}
@@ -148,7 +153,7 @@ export default class SessionsPage extends Cossack {
                             : component(Button, {
                                   variant: 'destructive',
                                   size: 'sm',
-                                  '@click': () => this.revoke(s.id),
+                                  '@click': () => this.revoke(s.reference),
                               }, __('Revoke'))}
                     </td>
                 </tr>

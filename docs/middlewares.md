@@ -33,6 +33,10 @@ const middlewares: MiddlewareHandler[] = [
 export default middlewares;
 ```
 
+The framework session bag above is opt-in. Generated auth already supplies its
+own persistent cookie. Register the extra bag only on routes that need visitor
+state; its new-visitor cookie prevents that response from being published as SSG.
+
 ```ts
 // src/middlewares/logging.ts — a definition
 import { defineServerMiddleware } from '@cossackframework/core';

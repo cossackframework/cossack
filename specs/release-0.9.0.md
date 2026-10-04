@@ -39,7 +39,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Remaining: secret exclusion, complete recipes, rotation/concurrency semantics, and Workers/realtime acceptance.
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Codex verifies native redirect cookies and old-input consumption, preserves valid flash during background transports/failures, and rejects late rotation/destruction before storage changes. Generated dashboard references, owner/purpose enforcement, RPC authentication, fixed errors and rotation races now pass native SQLite/D1 acceptance. Remaining: old-input secret exclusion, complete recipes, broader rotation/concurrency semantics and realtime freshness.
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -93,6 +93,25 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-rt11-dashboard-2026-10-05"></a>
+### Codex: Safe session dashboard and scoped revocation (2026-10-05)
+
+Generated dashboards expose stable public references instead of auth bearer
+tokens. An additive migration and conditional backfill support existing rows.
+Authenticated-context helpers scope deletion to owner and auth purpose; current
+references remain protected during token rotation. Dashboard layout guards now
+cover RPC, and page errors discard storage exceptions. A sessions-only recipe
+also uses a seeder without unselected role dependencies.
+Auth leaves the separate anonymous session bag opt-in, and standalone SSG now
+initializes translation/config helpers without the SSR entry.
+Native Node SQLite/Cloudflare D1 checks verify SSR/RPC disclosure rejection,
+forged actors and revocations, concurrent backfill/deletion, real database
+failures, rotation races, purpose separation and bulk cookie clearing.
+The full installed gate also passes adapter switching, migrations/schema,
+Studio, public SSG, packaged guidance and production assets.
+See [commands, evidence and limits](./release-0.9.0-verification-archive.md#codex-rt11-dashboard-2026-10-05).
+**28 complete / 30 open.** RT-11 remains open for its remaining criteria; Desktop stays closed.
 
 <a id="codex-rt13-complete-2026-10-05"></a>
 ### Codex: Atomic OAuth state and RT-13 completion (2026-10-05)

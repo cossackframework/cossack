@@ -244,6 +244,7 @@ const AUTH_PATHS = new Set([
   'src/middlewares/auth.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
+  'src/migrations/0008_add_session_public_id.ts',
   'src/migrations/0005_create_oauth_accounts.ts',
   'src/models/User.ts',
   'src/models/Session.ts',
@@ -405,13 +406,13 @@ function middlewareRegistry(recipe) {
   const entries = [];
   if (recipe.resolvedFeatures.includes('database')) {
     imports.push(
-      "import { ormRequestMiddleware, sessionMiddleware } from '../middlewares/orm';",
+      "import { ormRequestMiddleware } from '../middlewares/orm';",
     );
     entries.push('  ormRequestMiddleware,');
   }
   if (recipe.resolvedFeatures.includes('auth')) {
     imports.push("import { auth } from '../auth';", "import { authGuard } from '../middlewares/auth';");
-    entries.push('  sessionMiddleware,', '  auth.middleware,', '  authGuard,');
+    entries.push('  auth.middleware,', '  authGuard,');
   }
   return `${imports.join('\n')}\n\nconst middlewares: MiddlewareHandler[] = [\n${entries.join('\n')}\n];\n\nexport default middlewares;\n`;
 }
@@ -1792,6 +1793,7 @@ export async function renderRecipe(recipe, options = {}) {
             '0001_create_users.ts',
             '0002_create_sessions.ts',
             '0005_create_oauth_accounts.ts',
+            '0008_add_session_public_id.ts',
           ]
         : []),
       ...(recipe.dashboardModules.includes('roles') ||
@@ -1809,7 +1811,7 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(registeredBarrel('seeds', seedFiles)),
       capability: 'database',
     });
-    if (!recipe.resolvedFeatures.includes('dashboard')) {
+    if (!recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
       files.set('src/seeders/application.seeder.ts', {
         content: text(blankSeeder()),
         capability: 'database',

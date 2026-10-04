@@ -540,6 +540,9 @@ export default class PackagingSsgPage extends Cossack {
   if (!ejectedButton.includes('export class Button')) {
     throw new Error('UI component ejection did not use the packaged source');
   }
+  // Auth/session middleware runs while SSG renders the example pages. Apply
+  // the generated schema before the first build, as the starter instructs.
+  await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   await fs.access(path.join(
     projectDir,
@@ -552,8 +555,11 @@ export default class PackagingSsgPage extends Cossack {
     'adapter',
     'cloudflare',
     '--database=d1',
+    // The harness deliberately changed published semver pins to local tarballs.
+    '--force',
     '--yes',
   ], { cwd: projectDir });
+  await useTarballs(projectDir, tarballs);
   await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
@@ -572,8 +578,10 @@ export default class PackagingSsgPage extends Cossack {
     'adapter',
     'node',
     '--database=sqlite',
+    '--force',
     '--yes',
   ], { cwd: projectDir });
+  await useTarballs(projectDir, tarballs);
   await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['exec', 'cossack', 'seeder', 'run'], { cwd: projectDir });

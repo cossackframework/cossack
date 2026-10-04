@@ -37,6 +37,47 @@ token purposes separate. Hash upgrades also need an atomic expected-hash match.
 operations. Raw crypto, database and mapping exceptions are discarded. A failed
 operation does not undo a storage side effect that already committed.
 
+## Session dashboard references
+
+Apply `0008_add_session_public_id` before deploying the updated auth application.
+It adds a nullable `public_id` column and unique index without changing bearer
+tokens or the existing `0002_create_sessions` migration. Port `Session.publicId`,
+the generated auth storage/management helpers, the sessions page and the
+dashboard layout's `requireDashboardUser` middleware. Template upgrade planning
+preserves locally edited files; merge these changes explicitly when needed.
+
+New auth rows receive independent random public references. Existing canonical
+auth rows receive one on their first management request through a conditional
+assignment and re-read. Rotation preserves the reference. Reset and OAuth-state
+rows can leave the column null. Do not copy or derive a reference from a bearer
+token. Noncanonical auth-purpose metadata requires the normalization described
+above before legacy backfill or conditional management writes.
+
+`SessionInfo.id` becomes `SessionInfo.reference`; arbitrary `meta` is removed
+from the public DTO. Replace the old user-ID/token arguments with
+`listUserSessions(c)`, `revokeSession(c, reference)` and
+`revokeAllUserSessions(c, keepCurrent = false)`. The context must pass through
+auth middleware. Ownership comes from its authenticated user, never RPC state.
+Single revocation returns a boolean, rejects the current session and checks
+purpose/owner/expiry atomically. Keeping the current session also checks its
+stable reference so concurrent token rotation cannot expose it to bulk deletion.
+Bulk management deletes auth rows only. Password reset retains its separate,
+intentional account-wide token invalidation policy.
+
+Dashboard RPCs now require the layout's authenticated-user guard. Session-page
+storage failures use fixed messages. If a delete commits and a later list fails,
+the delete remains committed. Sessions-only dashboards use an empty application
+seeder instead of importing unselected role models.
+
+The auth recipe no longer auto-registers the separate framework session bag.
+Authentication still uses its own persistent `session_id` cookie. Applications
+that call framework `session()` must explicitly register the exported
+`sessionMiddleware` after ORM middleware, scoped to routes that need it.
+Public static pages must not use middleware that issues visitor cookies.
+Read the [session guide](../docs/session.md) for registration and the auth bridge.
+Standalone SSG rendering now installs the same bare translation/config helpers
+as the SSR entry before component lifecycle hooks run.
+
 ## Atomic OAuth state storage
 
 Cookie-based `createOAuth` now requires `stateStore`. Its `create` callback

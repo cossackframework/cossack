@@ -16,7 +16,14 @@ import {
 ```
 
 `SessionStore` is structural, so an application can use any backend. The
-generated ORM recipe composes the supplied database store:
+generated ORM recipe exports middleware composed with the supplied database store.
+
+This framework session bag is opt-in. Generated authentication already uses
+the auth library's persistent cookie and does not register an extra anonymous
+session middleware. Import the exported `sessionMiddleware` from
+`src/middlewares/orm.ts` and register it when the application needs `session()`.
+Limit its registration to routes that need visitor state: it creates a row and
+issues a cookie for a new visitor, so it makes that response unsuitable for SSG.
 
 ```ts
 import { createDatabaseSessionStore } from '@cossackframework/database/cossack';

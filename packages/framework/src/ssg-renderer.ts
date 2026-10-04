@@ -1,3 +1,5 @@
+import './i18n-globals.js';
+import './config-globals.js';
 import { getModuleDefault } from './module-default.js';
 import * as fs from 'fs';
 import * as path from 'path';

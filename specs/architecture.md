@@ -369,6 +369,20 @@ record; the generated SQL adapter enforces a single winner. Default cookies are
 Secure, HttpOnly and SameSite=Lax. Returned headers are applied after storage
 success; a later failure does not undo a committed write.
 
+Session management DTOs and ownership rules remain application-owned. Generated
+auth rows have a separate random public reference that survives token rotation.
+Only that reference, timestamps and origin information enter dashboard state.
+Conditional deletes match the trusted request user and auth purpose; single
+deletion also checks expiry and protects the current token/reference. Bulk
+deletion preserves other token purposes and, when requested, the stable current
+reference during rotation. A dashboard layout guard runs before SSR and inbound
+RPC actions. Page catches discard raw storage exceptions. The additive migration
+retains old tokens; conditional backfill assigns legacy public references.
+The auth recipe leaves the separate framework session bag opt-in, so unused
+visitor state does not create rows/cookies or prevent public SSG. Standalone SSG
+initializes bare translation/config helpers before component lifecycle hooks;
+its existing public-response checks still reject visitor cookies.
+
 Cookie-based OAuth requires an application-owned `OAuthStateStore`. Auth prepares
 a provider-scoped SHA-256 state key with absolute timestamps, registers it before
 issuing the signed cookie, and atomically consumes it before token exchange.

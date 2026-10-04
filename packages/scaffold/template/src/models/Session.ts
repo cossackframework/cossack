@@ -3,6 +3,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryColumn,
@@ -14,6 +15,11 @@ import { User } from './User';
 export class Session extends BaseEntity {
   @PrimaryColumn({ type: 'varchar', name: 'id', length: 191 })
   declare id: string;
+
+  /** Independent public reference for account session management. */
+  @Index('sessions_public_id_unique', { unique: true })
+  @Column({ type: 'varchar', name: 'public_id', length: 36, nullable: true, unique: true })
+  declare publicId: string | null;
 
   @Column({ type: 'varchar', name: 'user_id', length: 191, nullable: true })
   declare userId: string | null;

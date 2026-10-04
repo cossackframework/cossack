@@ -6,6 +6,99 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt11-dashboard-2026-10-05"></a>
+### Codex: Safe session dashboard and scoped revocation (2026-10-05)
+
+Author: Codex. This completes the reviewed dashboard slice of RT-11, not the
+whole task. New auth rows have independent `public_id` UUIDs. The additive
+`0008_add_session_public_id` migration leaves existing bearer tokens unchanged;
+conditional assignment and re-read give legacy rows a stable reference across
+concurrent listings. Rotation preserves that reference. `SessionInfo.reference`
+and a whitelist of dates/current/origin fields replace bearer IDs and raw metadata
+in public state.
+The model declares the public column's unique flag as well as its named index,
+matching database introspection. Both native fixtures run the actual local CLI
+schema check after migration; the full installed gate also checks schema drift.
+
+Management helpers receive the trusted Hono context instead of user/token IDs.
+Single conditional deletion matches public reference, owner, auth purpose and
+expiry; it excludes both the current token and stable reference. Keeping the
+current session during bulk deletion also excludes its stable reference, so
+rotation cannot make it eligible as an "other" session. Bulk management preserves
+reset and OAuth-state rows. Password reset retains its separate account-wide
+token invalidation. The dashboard layout now requires an authenticated user
+before SSR or RPC; the global URL-prefix guard alone did not cover `/crpc`.
+Page catches use fixed messages, and success clears earlier errors.
+
+The real generated sessions page runs unchanged in production Node SQLite and
+Cloudflare D1 fixtures. Acceptance verifies guest/forged-actor denial; no bearer
+token or session data in SSR/RPC; references cannot authenticate; foreign,
+current, reset, state, raw-token and malformed revoke targets do not mutate rows;
+one concurrent revoke winner; rotation preserves references; concurrent current
+rotation cannot make single/bulk revocation delete the caller's new token;
+bulk logout clears the cookie and keeps other users/purposes. Fixture-only SQLite
+triggers produce real private storage errors; responses retain fixed messages,
+failed writes leave sessions valid and failed bulk logout issues no clear cookie.
+Unit checks also execute generated page methods for init/write/list failures.
+Fault acceptance now checks both stored validity and the middleware's request
+identity after each failed write, and native Node failures retain server output.
+An earlier fault sequence returned an unexpected 401 without that diagnostic;
+the isolated Node and full SQLite/D1 reruns pass with these stronger assertions.
+No cause was established for that earlier result. Retain this regression and
+inspect its diagnostics if it recurs; do not treat reruns as a reliability proof.
+
+Native generation exposed a separate sessions-only recipe error: its seeder
+imported role models that were not selected. Such dashboards now use an empty
+application seeder; selected user/role modules retain their admin seeder. Node,
+Cloudflare and Deno composition checks retain the migration in the public barrel.
+
+The full installed scaffold gate also needed a setup correction: its first
+dashboard/example build ran before migrations. Auth/session middleware executes
+during static rendering, so the missing sessions table correctly failed that
+build. The gate now applies the generated migrations before its first full-stack
+build, matching the starter instructions. This does not add automatic production
+migration behavior.
+Adapter-switch fixtures now explicitly replace their own local tarball pins and
+reapply those pins after each switch. The CLI correctly treated these pins as
+edited dependencies; its normal conflict checks remain unchanged. Both runtime
+directions must consume the locally packed release under test.
+
+The installed SSG flow exposed two further composition defects. Standalone
+`renderSsgPage` now installs the bare translation/config helpers before lifecycle
+hooks. A fresh-module regression executes translated init/render and scoped
+config/env access. Auth starters no longer register an unused, separate anonymous
+framework session middleware: auth already owns its persistent cookie. The
+exported bag middleware remains opt-in for routes that need visitor state.
+This avoids unnecessary rows/cookies and lets public SSG retain its existing
+rejection of visitor-specific responses. The migration guide records this break.
+
+| Command | Verified result |
+| --- | --- |
+| `pnpm --filter @cossackframework/scaffold exec vitest run` | 131 tests, 8 files pass. |
+| `pnpm --filter @cossackframework/auth exec vitest run` | 261 tests, 11 files pass; RT-13 primitives/replay regressions preserved. |
+| `pnpm --filter @cossackframework/framework exec vitest run tests/ssg-globals.test.ts tests/ssg-renderer.test.ts tests/ssg-services.test.ts tests/ssg-public.test.ts tests/vite-ssg-plugin.test.ts tests/ssg-config.test.ts` | 76 tests, 6 files pass, including standalone helpers and public-response rejection. |
+| `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'serves generated authentication primitives\|runs the protected-route recipe'` | 3 native/browser cases pass; 55 unrelated cases skipped. Both generated apps type-check, migrate, check schema and build; real SQLite/D1 dashboard/credential/OAuth flows and the Node protected-route browser regression pass. |
+| `COSSACK_KEEP_SMOKE=1 pnpm test:scaffold:local` | Exit 0. Twelve local tarballs, ten standalone/four auth examples, CLI/MCP/reporter/Cloudflare browser traces, three packaged application pages, minimal Cloudflare/Deno builds, public SSG and Node → Cloudflare → Node composition pass. The full app migrates, seeds, checks schema, exercises ORM/cache/session storage and Studio, and serves production Node assets. No native Desktop gate runs. |
+| `pnpm tsc --noEmit` | Root types pass. |
+| `pnpm typecheck` | All 11 package type checks pass. |
+
+Logs: `/tmp/cossack-rt11-dashboard-{scaffold,auth,ssg,native,root-types,package-types}.log`.
+The final full installed gate log is `/tmp/cossack-rt11-dashboard-installed.log`;
+its retained fixture is `/tmp/cossack-local-pack-XIV9bx`. Earlier gate failures
+identified the setup, standalone SSG, adapter pin and model-uniqueness issues
+described above; the final run passed after those corrections.
+The [migration guide](./migration-0.9.0.md#session-dashboard-references) describes
+the application API break and required template/migration merge.
+
+Limits: Local native fixtures do not prove deployment or open-connection identity
+refresh. The installed Deno check covers builds, not Deno Deploy acceptance.
+A committed delete is not rolled back when a later listing fails.
+Canonical auth-purpose JSON is required by generated conditional writes; adapted
+stores must preserve equivalent matching. RT-11 still needs sensitive old-input
+filtering, complete failure/login/logout/rotation recipes and its remaining
+concurrent/realtime criteria. No non-Desktop task is closed by this checkpoint.
+Counts remain **28 complete / 30 open**; Desktop remains completed by user decision.
+
 <a id="codex-rt13-complete-2026-10-05"></a>
 ### Codex: Atomic OAuth state and RT-13 acceptance audit (2026-10-05)
 

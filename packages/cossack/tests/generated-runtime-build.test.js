@@ -1,5 +1,6 @@
 import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { writeAuthPrimitivesAcceptance, checkAuthPrimitives } from './fixtures/auth-primitives-acceptance.js';
+import { writeSessionDashboardAcceptance, checkSessionDashboard } from './fixtures/session-dashboard-acceptance.js';
 import { createOAuthFixtureProvider, writeOAuthReplayAcceptance, checkOAuthReplay } from './fixtures/oauth-replay-acceptance.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
@@ -43,6 +44,18 @@ async function project(adapter, features = [], options = {}) {
   await fs.mkdir(path.join(modules, '@cossackframework'));
   for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'node-adapter', 'deno-adapter', 'desktop']) {
     await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
+  }
+  if (features.includes('dashboard')) {
+    const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
+    const iconRoot = path.join(parent, 'icons');
+    await fs.mkdir(iconRoot);
+    await fs.writeFile(path.join(iconRoot, 'package.json'), JSON.stringify({ private: true, dependencies: {
+      '@cossackframework/solar-icons': pkg.dependencies['@cossackframework/solar-icons'],
+    } }));
+    await promisify(execFile)('pnpm', ['install', '--ignore-workspace', '--ignore-scripts'],
+      { cwd: iconRoot, timeout: 30000, maxBuffer: 1024 * 1024 });
+    await fs.symlink(path.join(iconRoot, 'node_modules/@cossackframework/solar-icons'),
+      path.join(modules, '@cossackframework/solar-icons'), 'junction');
   }
   return projectDir;
 }
@@ -96,7 +109,7 @@ async function productionServer(root, environment = {}) {
     await close();
     throw error;
   }
-  return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close };
+  return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close, diagnostics: () => output };
 }
 it('replaces navigation owners when a browser moves between production Node and workerd', async () => {
   const nodeRoot=await project('node'); const workerRoot=await project('cloudflare');
@@ -929,10 +942,11 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
   }
 }, 120000);
 it.each(['node', 'cloudflare'])('serves generated authentication primitives and OAuth diagnostics on %s without exposing credentials', async adapter => {
-  const root = await project(adapter, ['auth'], { oauth: 'github' });
+  const root = await project(adapter, ['dashboard'], { oauth: 'github', dashboardModules: ['sessions'] });
   const fixtureProvider = await createOAuthFixtureProvider();
   try {
   await writeAuthPrimitivesAcceptance(root);
+  await writeSessionDashboardAcceptance(root);
   await writeOAuthReplayAcceptance(root, fixtureProvider.origin);
   if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
     { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
@@ -951,16 +965,26 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
   try { await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'up', '--local', '--json'],
     { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
   catch (error) { throw new Error(`Generated OAuth migrations (${error.code}, ${error.signal}): ${error.stdout}\n${error.stderr}`); }
+  try {
+    const checked = await promisify(execFile)(process.execPath,
+      [path.join(repository, 'packages/cossack/bin/cossack.js'), 'schema', 'check', '--local', '--json'],
+      { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+    expect(JSON.parse(checked.stdout)).toMatchObject({ ok: true });
+  } catch (error) { throw new Error(`Generated auth schema: ${error.stdout}\n${error.stderr}`); }
   await vite(root, []);
   if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const sessionsRouteId = manifest.filePathToId['/src/pages/dashboard/sessions/index.ts'];
+  expect(sessionsRouteId).toBeTruthy();
   const privateValue = 'PRIVATE_OAUTH_CREDENTIAL_CODE_DESCRIPTION';
   for (const configured of [true, false]) {
     const environment = { APP_SECRET: 'fixture-application-secret-0123456789', OAUTH_SECRET: 'fixture-state-secret-01234567890123456789',
       GITHUB_CLIENT_ID: configured ? 'fixture-client' : '', GITHUB_CLIENT_SECRET: privateValue };
-    let close, request;
+    let close, request, diagnostics;
     if (adapter === 'node') {
       const server = await productionServer(root, environment);
       close = server.close;
+      diagnostics = server.diagnostics;
       request = (url, options = {}) => fetch(server.origin + url, { redirect: 'manual', ...options });
     } else {
       const configPath = path.join(root, 'dist/ssr/wrangler.json');
@@ -980,7 +1004,11 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
       } catch (error) { await close(); throw error; }
     }
     try {
-      if (configured) { await checkAuthPrimitives(request); await checkOAuthReplay(request, fixtureProvider); }
+      if (configured) {
+        await checkAuthPrimitives(request);
+        await checkSessionDashboard(request, sessionsRouteId);
+        await checkOAuthReplay(request, fixtureProvider);
+      }
       if (!configured) {
         for (const route of ['redirect', 'callback']) {
           const response = await request(`/auth/github/${route}`);
@@ -1007,6 +1035,8 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
         expect(JSON.stringify(body)).not.toContain(privateValue);
         expect(response.headers.get('set-cookie')).toMatch(/cossack_oauth_state=;.*Max-Age=0/i);
       }
+    } catch (error) {
+      throw new Error(`${error.stack ?? error}\n${diagnostics?.() ?? ''}`);
     } finally { await close(); }
   }
   } finally { await fixtureProvider.close(); }

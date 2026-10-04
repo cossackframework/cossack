@@ -9,6 +9,7 @@ import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-ico
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
 import { dashboardModules } from '../../dashboard/registry';
 import { logout } from '../../auth';
+import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
 
 const dashboardIcon = { line: dashboardIconSvg };
@@ -27,7 +28,7 @@ const logoutIcon = { line: logoutIconSvg };
  * `<html>.dark` class + cookie, so the toggle stays consistent
  * regardless of which one rendered it.
  */
-@Page({ transport: 'http' })
+@Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
     appName = server$(() => config('app.name'), { initial: 'My App' });
     @State() theme: 'light' | 'dark' = 'dark';

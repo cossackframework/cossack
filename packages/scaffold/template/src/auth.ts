@@ -14,7 +14,7 @@ import { getCookie } from 'hono/cookie';
 import type { Context } from 'hono';
 import { createAuth, createCredentialVerifier, createSessionManager, hashPassword, type AuthSessionRecord } from '@cossackframework/auth';
 export { hashPassword, verifyPassword } from '@cossackframework/auth';
-import { MoreThan, Not, sql } from '@cossackframework/database';
+import { MoreThan, sql } from '@cossackframework/database';
 import { ClientVisibleError } from '@cossackframework/core';
 import { uuidv7 } from '@/lib/uuid';
 import { User, type RoleAssignment } from '@/models/User';
@@ -109,7 +109,7 @@ export const authSessions = createSessionManager({
   store: {
     async create(record, c) {
       const { ip, userAgent, location } = captureRequestInfo(c);
-      await Session.insert({ id: record.id, userId: record.userId, data: null,
+      await Session.insert({ id: record.id, publicId: crypto.randomUUID(), userId: record.userId, data: null,
         createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
         meta: { type: 'auth' }, ipAddress: ip, userAgent, location });
     },
@@ -286,13 +286,13 @@ export const expiredSessionCookie = authSessions.expiredCookie;
 
 // --- Session management (for the /dashboard/sessions page) -----------------
 export interface SessionInfo {
-  id: string;
+  /** Public management reference. Never the bearer token used in the cookie. */
+  reference: string;
   expiresAt: string;
   /** When the session was created (the "Logged in" time). */
   createdAt: string;
   /** True when this row is the calling session (never revokable from its own page). */
   current: boolean;
-  meta: Record<string, unknown> | null;
   /** Origin metadata captured at login (null if unavailable). */
   location: string | null;
   userAgent: string | null;
@@ -309,43 +309,92 @@ function parseMeta(raw: Record<string, unknown> | string | null): Record<string,
   }
 }
 
-/**
- * Lists a user's active auth sessions (reset tokens and expired rows excluded).
- * Pass the calling session id to flag the current session.
- */
-export async function listUserSessions(userId: string, currentSessionId?: string): Promise<SessionInfo[]> {
+const PUBLIC_SESSION_REFERENCE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function sessionOwner(c: Context): { userId: string; currentId: string } {
+  const user = c.get('user') as PublicUser | undefined;
+  const currentId = getCookie(c, SESSION_COOKIE);
+  if (!user || typeof user.id !== 'string' || !user.id || !currentId) {
+    throw new ClientVisibleError('Sign in to manage sessions.');
+  }
+  return { userId: user.id, currentId };
+}
+
+function validSessionReference(row: Session): boolean {
+  return typeof row.publicId === 'string' && PUBLIC_SESSION_REFERENCE.test(row.publicId) && row.publicId !== row.id;
+}
+
+async function sessionWithReference(row: Session, userId: string): Promise<Session | null> {
+  if (row.userId !== userId || parseMeta(row.meta)?.type !== 'auth' || row.expiresAt.getTime() <= Date.now()) return null;
+  if (row.publicId == null) {
+    // Conditional assignment and re-read retain one winner across tabs.
+    await sql`UPDATE sessions SET public_id = ${crypto.randomUUID()}
+      WHERE id = ${row.id} AND user_id = ${userId} AND public_id IS NULL
+        AND meta = ${JSON.stringify({ type: 'auth' })}
+        AND expires_at > ${new Date().toISOString()}`;
+    const stored = await Session.findOne({ where: { id: row.id, userId } });
+    if (!stored || parseMeta(stored.meta)?.type !== 'auth' || stored.expiresAt.getTime() <= Date.now()) return null;
+    row = stored;
+  }
+  if (!validSessionReference(row)) throw new Error('Invalid session management reference.');
+  return row;
+}
+
+async function currentSessionReference(userId: string, currentId: string): Promise<string> {
+  const row = await Session.findOne({ where: { id: currentId, userId } });
+  const current = row ? await sessionWithReference(row, userId) : null;
+  if (!current) throw new ClientVisibleError('Sign in to manage sessions.');
+  return current.publicId!;
+}
+
+/** Lists only the authenticated caller's active auth sessions as safe DTOs. */
+export async function listUserSessions(c: Context): Promise<SessionInfo[]> {
+  const { userId, currentId } = sessionOwner(c);
   const rows = await Session.find({
     where: { userId, expiresAt: MoreThan(new Date()) },
   });
-  return rows
-    .filter((row) => {
-      // Only show real auth sessions, not password-reset tokens.
-      const m = parseMeta(row.meta);
-      return m?.type === 'auth';
-    })
-    .map((row) => ({
-      id: row.id,
+  const sessions: SessionInfo[] = [];
+  for (const candidate of rows) {
+    // Existing auth rows get an independent reference on first listing.
+    const row = await sessionWithReference(candidate, userId);
+    if (!row) continue;
+    sessions.push({
+      reference: row.publicId!,
       expiresAt: row.expiresAt.toISOString(),
       createdAt: (row.createdAt || row.expiresAt).toISOString(),
-      current: row.id === currentSessionId,
-      meta: parseMeta(row.meta),
+      current: row.id === currentId,
       location: row.location,
       userAgent: row.userAgent,
       ipAddress: row.ipAddress,
-    }));
+    });
+  }
+  return sessions;
 }
 
-/** Revoke a single session by id. */
-export async function revokeSession(sessionId: string): Promise<void> {
-  await Session.delete({ id: sessionId });
+/** Revoke one other auth session owned by the authenticated caller. */
+export async function revokeSession(c: Context, reference: string): Promise<boolean> {
+  const { userId, currentId } = sessionOwner(c);
+  if (typeof reference !== 'string' || !PUBLIC_SESSION_REFERENCE.test(reference)) return false;
+  const currentReference = await currentSessionReference(userId, currentId);
+  const result = await sql`DELETE FROM sessions
+    WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${currentId}
+      AND public_id <> ${currentReference}
+      AND meta = ${JSON.stringify({ type: 'auth' })}
+      AND expires_at > ${new Date().toISOString()}`;
+  return result.meta.rowsAffected === 1;
 }
 
-/** Revoke all of a user's auth sessions, optionally keeping the current one. */
-export async function revokeAllUserSessions(userId: string, exceptSessionId?: string): Promise<void> {
-  await Session.delete({
-    userId,
-    ...(exceptSessionId ? { id: Not(exceptSessionId) } : {}),
-  });
+/** Revoke the caller's auth rows. Reset and OAuth-state rows remain separate. */
+export async function revokeAllUserSessions(c: Context, keepCurrent = false): Promise<void> {
+  const { userId, currentId } = sessionOwner(c);
+  if (keepCurrent) {
+    const currentReference = await currentSessionReference(userId, currentId);
+    await sql`DELETE FROM sessions WHERE user_id = ${userId}
+      AND id <> ${currentId} AND (public_id IS NULL OR public_id <> ${currentReference})
+      AND meta = ${JSON.stringify({ type: 'auth' })}`;
+  } else {
+    await sql`DELETE FROM sessions WHERE user_id = ${userId} AND meta = ${JSON.stringify({ type: 'auth' })}`;
+  }
 }
 
 /** The session cookie name, exported so pages/middleware can read it. */
