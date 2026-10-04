@@ -11,19 +11,21 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-Current partial work: RT-23 has **57 of 65 UI source rows reviewed**, through
-[Resizable](./release-0.9.0.md#codex-resizable-2026-10-04).
+Current partial work: RT-23 has **58 of 65 UI source rows reviewed**, through
+[Sidebar](./release-0.9.0.md#codex-sidebar-2026-10-04).
 These component checkpoints do not close RT-23 or the release matrix.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with Sidebar**, then every pending
-   [UI audit row](./ui-contract-audit.md). Sidebar needs named native targets,
-   stable item identity, correct group toggling, reachable nested links in icon
-   mode, offcanvas focus handling and modifier-aware navigation callbacks.
-   Its current root ignores native props and active-child fallback prevents collapse.
-   Preserve public types, SSR, themed browser, source ejection, affected consumers
-   and installed CLI/MCP guidance.
+1. Continue **RT-23 with Toast**, then every pending
+   [UI audit row](./ui-contract-audit.md). Review all four exports, server/browser
+   store ownership, timer cleanup, validated options, live announcements, native
+   dismissal, pause behavior and focus recovery. The current module singleton
+   accepts server calls and can share messages across requests. Preserve public
+   types, SSR, themed browser tests, source ejection, affected consumers and
+   installed CLI/MCP guidance. Sidebar now has focused browser and demo-shell
+   acceptance; generated dashboard coverage renders the real template but does
+   not prove a full generated app's auth/runtime behavior.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend

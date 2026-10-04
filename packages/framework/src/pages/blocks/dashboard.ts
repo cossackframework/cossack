@@ -195,18 +195,18 @@ export default class DashboardBlocks extends Cossack {
         return html`
             <div class="flex min-h-[600px] border-t border-border">
                 ${component(Sidebar, {
-                    title: 'Acme Inc',
+                    id: 'dashboard-example-sidebar', label: 'Example pages', title: 'Acme Inc',
                     width: '240px',
                     collapsible: 'icon',
                     items: [
-                        { label: 'Dashboard', href: '#', icon: Widget2Icon, active: true },
-                        { label: 'Analytics', href: '#', icon: ChartIcon },
-                        { label: 'Orders', href: '#', icon: CartIcon, children: [
-                            { label: 'All Orders', href: '#' },
-                            { label: 'Refunds', href: '#' },
+                        { value: 'dashboard', label: 'Dashboard', href: '#', icon: Widget2Icon, active: true },
+                        { value: 'analytics', label: 'Analytics', href: '#', icon: ChartIcon },
+                        { value: 'orders', label: 'Orders', href: '#', icon: CartIcon, children: [
+                            { value: 'all-orders', label: 'All Orders', href: '#' },
+                            { value: 'refunds', label: 'Refunds', href: '#' },
                         ]},
-                        { label: 'Customers', href: '#', icon: UsersGroupRoundedIcon },
-                        { label: 'Settings', href: '#', icon: SettingsIcon },
+                        { value: 'customers', label: 'Customers', href: '#', icon: UsersGroupRoundedIcon },
+                        { value: 'settings', label: 'Settings', href: '#', icon: SettingsIcon },
                     ],
                     footer: component(DropdownMenu, {
                         id: 'dashboard-account-menu',

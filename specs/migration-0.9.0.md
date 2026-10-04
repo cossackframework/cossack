@@ -1262,3 +1262,28 @@ Home/End and Enter minimize/restore. Zero-width/height panels become inert and
 hidden from assistive technology; focus inside a collapsed panel moves to the
 handle. Pointer capture replaces document mouse listeners. Interruption, prop
 changes and unmount release capture and the owned window-blur listener.
+
+## Sidebar
+
+Supply a stable `id`, a navigation `label`, and a globally unique `value` for every
+item, including nested groups. Leaves require href; groups require nonempty children
+and may retain a separate destination. Arrays can be readonly. `active` means the
+current page; ancestors open by default until the user makes an explicit choice.
+Manual closing now wins over the active-child default. Item keys survive reordering.
+
+Root props now target the aside. Use navProps for navigation attributes and item
+linkProps for native anchors. title remains visual brand text. Group markup uses
+native details/summary, and every link uses `cs-sidebar__link`; update selectors
+that relied on `cs-sidebar__sublink`. Both group destinations and children remain
+reachable in icon mode. Names remain available when visible labels are hidden.
+
+onToggle now receives the next collapsed boolean. Without it, there is no built-in
+toggle button. Default button names are “Expand navigation” and “Collapse navigation”;
+use expandLabel/collapseLabel for localization. onNavigate receives the item and
+native anchor event, and leaves modifiers, downloads, non-self targets, external
+origins and non-HTTP(S) protocols to the browser. Item link listeners run first.
+
+Offcanvas mode requires restoreFocusTo naming an external focusable opener. The
+caller owns its aria-controls/aria-expanded and placement. Hiding now removes the
+sidebar from layout and Tab order and restores focus before hiding focused content.
+This mode is not a modal overlay; compose Sheet when modal behavior is required.

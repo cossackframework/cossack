@@ -572,3 +572,26 @@ const invalidHandle:ResizableHandleProps={'@keydown':()=>{}};
 const invalidPanel:ResizablePanelProps={id:'override'};
 // @ts-expect-error The separator owns its value.
 const invalidValue:ResizableHandleProps={'aria-valuenow':20};
+
+import { Sidebar, type SidebarItem, type SidebarLinkProps, type SidebarNavProps } from '@cossackframework/ui';
+const sidebarItems:readonly SidebarItem[]=[{value:'home',label:'Home',href:'/'},{value:'group',label:'Group',children:[{value:'child',label:'Child',href:'/child'}]}];
+const sidebarLinkProps:SidebarLinkProps={target:'_blank','@click':event=>{const anchor:HTMLAnchorElement=event.currentTarget;void anchor;}};
+const sidebarNavProps:SidebarNavProps={'@focus':event=>{const nav:HTMLElement=event.currentTarget;void nav;}};
+component(Sidebar,{id:'nav',label:'Pages',items:sidebarItems,navProps:sidebarNavProps,onToggle:collapsed=>{const value:boolean=collapsed;void value;},onNavigate:(item,event)=>{const href:string|undefined=item.href;const anchor:HTMLAnchorElement=event.currentTarget;void href;void anchor;},'@click':event=>{const aside:HTMLElement=event.currentTarget;void aside;}});
+component(Sidebar,{id:'mobile-nav',label:'Pages',collapsible:'offcanvas',restoreFocusTo:'opener'});
+// @ts-expect-error Names are required.
+component(Sidebar,{id:'nav'});
+// @ts-expect-error Offcanvas needs an external opener.
+component(Sidebar,{id:'nav',label:'Pages',collapsible:'offcanvas'});
+// @ts-expect-error Icon mode does not consume offcanvas focus options.
+component(Sidebar,{id:'nav',label:'Pages',restoreFocusTo:'opener'});
+// @ts-expect-error Every item needs stable identity.
+const unkeyedSidebar:SidebarItem={label:'Home',href:'/'};
+// @ts-expect-error A leaf needs a destination.
+const missingDestination:SidebarItem={value:'home',label:'Home'};
+// @ts-expect-error Current-page state belongs to the item.
+const conflictingLink:SidebarLinkProps={'aria-current':'page'};
+// @ts-expect-error Nav names belong to label.
+const conflictingNav:SidebarNavProps={'aria-label':'Other'};
+// @ts-expect-error Root props target an aside, not a form input.
+component(Sidebar,{id:'nav',label:'Pages','@click':(event:MouseEvent & {currentTarget:HTMLInputElement})=>event});

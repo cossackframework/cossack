@@ -115,27 +115,34 @@ export default class DashboardLayout extends Cossack {
         );
         const items: SidebarItem[] = [
             {
+                value: 'dashboard',
                 label: __('Dashboard'),
                 href: '/dashboard',
                 icon: dashboardIcon,
                 active: this.isActive('/dashboard'),
             },
-            ...navigationModules.map((module) => ({
-                label: __(module.label),
-                href: module.href,
-                icon: module.icon,
-                active: this.isActive(module.href, false),
-                children: module.children?.map((child) => ({
-                    label: __(child.label),
-                    href: child.href,
-                    active: this.isActive(child.href),
-                })),
-            })),
+            ...navigationModules.map((module): SidebarItem => {
+                const item = {
+                    value: `module:${module.id}`,
+                    label: __(module.label), href: module.href, icon: module.icon,
+                    active: this.isActive(module.href),
+                };
+                return module.children?.length ? {
+                    ...item,
+                    children: module.children.map((child) => ({
+                        value: `module:${module.id}:${child.href}`,
+                        label: __(child.label), href: child.href,
+                        active: this.isActive(child.href),
+                    })),
+                } : item;
+            }),
         ];
 
         return html`
             <div class="flex min-h-screen bg-background">
                 ${component(Sidebar, {
+                    id: 'dashboard-navigation', label: __('Dashboard navigation'),
+                    expandLabel: __('Expand navigation'), collapseLabel: __('Collapse navigation'),
                     title: this.appName,
                     brand: html`<a href="/dashboard" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('Dashboard')}>
                         ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 shrink-0' })}

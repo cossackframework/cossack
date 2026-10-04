@@ -782,20 +782,20 @@ export class ComponentsDemo extends Cossack {
                     </p>
                     <div class="border border-border rounded-lg overflow-hidden" style="height: 380px;">
                         ${component(Sidebar, {
-                            title: 'Acme Inc',
+                            id: 'example-sidebar', label: 'Example pages', title: 'Acme Inc',
                             items: [
-                                { label: 'Dashboard', href: '#', icon: homeIcon, active: true },
-                                { label: 'Projects', href: '#', icon: folderIcon, children: [
-                                    { label: 'Active', href: '#' },
-                                    { label: 'Archived', href: '#' },
+                                { value: 'dashboard', label: 'Dashboard', href: '#', icon: homeIcon, active: true },
+                                { value: 'projects', label: 'Projects', href: '#', icon: folderIcon, children: [
+                                    { value: 'active', label: 'Active', href: '#' },
+                                    { value: 'archived', label: 'Archived', href: '#' },
                                 ]},
-                                { label: 'Team', href: '#', icon: usersIcon },
-                                { label: 'Settings', href: '#', icon: settingsIcon },
+                                { value: 'team', label: 'Team', href: '#', icon: usersIcon },
+                                { value: 'settings', label: 'Settings', href: '#', icon: settingsIcon },
                             ],
                             collapsible: 'icon',
                             collapsed: this.sidebarCollapsed,
                             onToggle: () => { this.sidebarCollapsed = !this.sidebarCollapsed; },
-                            onNavigate: (item: any) => toast.show('Navigate: ' + item.label),
+                            onNavigate: (item) => toast.show('Navigate: ' + item.label),
                             // Footer slot: arbitrary content. Here a user-menu trigger.
                             // side:'right' opens the menu beside the trigger (desktop);
                             // collision-aware flip handles tight/mobile viewports.

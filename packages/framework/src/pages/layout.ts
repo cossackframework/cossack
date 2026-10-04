@@ -54,10 +54,12 @@ export default class RootLayout extends Cossack {
 
   get sidebarItems(): SidebarItem[] {
     return this.filteredCatalog.map((group) => ({
+      value: `group:${group.category}`,
       label: group.category,
       icon: group.icon,
       active: group.entries.some((entry) => this.isEntryActive(entry.url)),
       children: group.entries.map((entry) => ({
+        value: `page:${entry.url}`,
         label: entry.label,
         href: entry.url,
         active: this.isEntryActive(entry.url),
@@ -104,6 +106,8 @@ export default class RootLayout extends Cossack {
   @Shared()
   private renderSidebar(collapsible: 'icon' | 'offcanvas') {
     return component(Sidebar, {
+      id: collapsible === 'icon' ? 'demo-desktop-navigation' : 'demo-mobile-navigation',
+      label: 'Demo pages',
       title: 'Cossack demos',
       brand: html`
         <a href="/" class="flex items-center gap-2 text-sm font-semibold text-foreground no-underline">
@@ -113,7 +117,7 @@ export default class RootLayout extends Cossack {
       `,
       items: this.sidebarItems,
       collapsed: collapsible === 'icon' ? this.sidebarCollapsed : false,
-      collapsible,
+      ...(collapsible === 'offcanvas' ? { collapsible: 'offcanvas' as const, restoreFocusTo: 'mobile-navigation-trigger' } : { collapsible: 'icon' as const }),
       onToggle: collapsible === 'icon' ? this.toggleSidebar : this.closeMobileNavigation,
       onNavigate: this.navigateSidebar,
       footer: html`<p class="px-2 text-xs text-muted-foreground group-[.is-collapsed]:hidden">Built with Cossack</p>`,
@@ -146,6 +150,7 @@ export default class RootLayout extends Cossack {
                 size: 'icon',
                 '@click': this.openMobileNavigation,
                 'aria-label': 'Open navigation',
+                id: 'mobile-navigation-trigger',
                 'data-testid': 'mobile-navigation-trigger',
               }, component(Icon, { entry: HamburgerMenuIcon, size: 18 }))}
             </div>

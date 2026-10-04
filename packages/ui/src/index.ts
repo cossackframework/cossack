@@ -82,7 +82,7 @@ export { ContextMenu, type ContextMenuProps } from "./components/ContextMenu";
 export { InputOTP, type InputOTPProps } from "./components/InputOTP";
 export { Typography, type TypographyProps } from "./components/Typography";
 export { Drawer, type DrawerProps } from "./components/Drawer";
-export { Sidebar, type SidebarProps, type SidebarItem } from "./components/Sidebar";
+export { Sidebar, type SidebarProps, type SidebarItem, type SidebarLinkItem, type SidebarGroupItem, type SidebarLinkProps, type SidebarNavProps } from "./components/Sidebar";
 export { NativeSelect, type NativeSelectProps } from "./components/NativeSelect";
 export { InputGroup, type InputGroupProps } from "./components/InputGroup";
 export { Item, type ItemProps } from "./components/Item";

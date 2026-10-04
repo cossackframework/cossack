@@ -369,10 +369,20 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(resizable.propsContract.members.find(member => member.name === 'onSizeChange').callSignatures.some(signature => signature.includes('number')));
     for (const name of ['ResizablePanelProps', 'ResizableHandleProps']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-resizable'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Resizable', '--json']);
+    const sidebar = uiSymbols.find(symbol => symbol.name === 'Sidebar');
+    assert.equal(sidebar.propsContract.status, 'partial');
+    assert.equal(sidebar.propsContract.variants.length, 2);
+    for (const variant of sidebar.propsContract.variants) {
+      for (const name of ['id', 'label']) assert.ok(variant.members.some(member => member.name === name && !member.optional));
+      assert.ok(variant.members.some(member => member.name === '@click' && member.type.includes('HTMLElement')));
+    }
+    assert.ok(sidebar.propsContract.variants.some(variant => variant.members.some(member => member.name === 'restoreFocusTo' && !member.optional)));
+    for (const name of ['SidebarItem', 'SidebarLinkItem', 'SidebarGroupItem', 'SidebarLinkProps', 'SidebarNavProps']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-sidebar'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Sidebar', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Resizable']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Resizable' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Sidebar']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Sidebar' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

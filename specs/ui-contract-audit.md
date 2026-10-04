@@ -109,7 +109,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Select](../packages/ui/src/components/Select.ts) | Reviewed foundation | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Separator](../packages/ui/src/components/Separator.ts) | Reviewed foundation | Orientation-specific hr/div native types, textual decorative ARIA states, static separator ownership, one-pixel geometry, SSR/Chromium and ejected-source coverage. |
 | [Sheet](../packages/ui/src/components/Sheet.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
-| [Sidebar](../packages/ui/src/components/Sidebar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Sidebar](../packages/ui/src/components/Sidebar.ts) | Reviewed foundation | Named native navigation/disclosures, stable item identity, typed native targets, manual group state, reachable icon-rail links, offcanvas focus return, modifier-aware callbacks; SSR/Chromium/ejection and demo-shell coverage. |
 | [Skeleton](../packages/ui/src/components/Skeleton.ts) | Reviewed foundation | Typed decorative div with separate rectangle/circle dimensions, native style composition, visible SSR defaults, reduced motion, public types, themed Chromium and ejected-source coverage. |
 | [Slider](../packages/ui/src/components/Slider.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Spinner](../packages/ui/src/components/Spinner.ts) | Reviewed foundation | Typed native SVG props/events, validated geometry, decorative/status states, SVG title namespace and updates, reduced motion, SSR/Chromium and ejected-source coverage. |
@@ -125,12 +125,13 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Sidebar. Its root currently ignores native props, navigation has no
-explicit name, and the active-child fallback prevents manual group collapse.
-Groups use array indexes rather than stable identity. Icon mode drops child
-navigation, offcanvas leaves translated content focusable, and onNavigate cancels
-modifier clicks. Define navigation/disclosure contracts, preserve native links,
-and verify focus recovery, RTL, collapsed modes and source ejection.
+Next audit Toast, including ToastItem, toastStore, toast and Toaster. The module
+singleton currently accepts server calls, which can share queued messages across
+requests. Timers have no owned handles or cleanup. Define browser-only convenience
+and scoped store ownership, validated options, timer/dismissal behavior and focus
+recovery. Review duplicate live announcements, native dismiss button semantics,
+pause behavior, responsive layout, reduced motion and source ejection. Preserve
+all public exports in installed guidance and cover real lifecycle behavior.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

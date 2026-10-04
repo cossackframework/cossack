@@ -28,12 +28,12 @@ test.describe('Demo navigation shell', () => {
     const search = page.getByRole('searchbox', { name: 'Filter demos' });
 
     await search.fill('optimistic');
-    await expect(page.getByRole('button', { name: 'State & Data Flow' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Authentication' })).toHaveCount(0);
+    await expect(page.locator('#demo-desktop-navigation summary').filter({ has: page.getByText('State & Data Flow', { exact: true }) })).toBeVisible();
+    await expect(page.locator('#demo-desktop-navigation summary').filter({ has: page.getByText('Authentication', { exact: true }) })).toHaveCount(0);
 
     await search.fill('authentication');
-    await expect(page.getByRole('button', { name: 'Authentication' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'State & Data Flow' })).toHaveCount(0);
+    await expect(page.locator('#demo-desktop-navigation summary').filter({ has: page.getByText('Authentication', { exact: true }) })).toBeVisible();
+    await expect(page.locator('#demo-desktop-navigation summary').filter({ has: page.getByText('State & Data Flow', { exact: true }) })).toHaveCount(0);
 
     await search.fill('definitely not a demo');
     await expect(page.getByRole('status')).toContainText('No demos match');
@@ -50,20 +50,21 @@ test.describe('Demo navigation shell', () => {
   });
 
   test('uses SPA links and follows active navigation state', async ({ page }) => {
-    const overviewTrigger = page.getByRole('button', { name: 'Overview' }).first();
+    const overviewTrigger = page.locator('#demo-desktop-navigation summary').filter({ has: page.getByText('Overview', { exact: true }) });
     await expect(overviewTrigger).toBeVisible();
-    await page.locator('.cs-sidebar__sublink[href="/contact"]').first().click();
+    await expect(overviewTrigger).toHaveAccessibleName('Overview');
+    await page.locator('.cs-sidebar__link[href="/contact"]').first().click();
 
     await expect(page).toHaveURL(/\/contact$/);
-    await expect(page.locator('.cs-sidebar__sublink[href="/contact"]').first()).toHaveClass(/font-medium/);
+    await expect(page.locator('.cs-sidebar__link[href="/contact"]').first()).toHaveClass(/font-medium/);
     await expect(page.locator('.contact-layout')).toBeVisible();
   });
 
   test('desktop collapse and mobile navigation are keyboard accessible', async ({ page }) => {
-    const collapse = page.getByRole('button', { name: 'Collapse sidebar' }).first();
+    const collapse = page.getByRole('button', { name: 'Collapse navigation' }).first();
     await collapse.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: 'Expand sidebar' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Expand navigation' }).first()).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
     const mobileTrigger = page.getByRole('button', { name: 'Open navigation' });

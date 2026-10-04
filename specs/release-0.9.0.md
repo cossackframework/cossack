@@ -88,6 +88,63 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-sidebar-2026-10-04"></a>
+### Codex Sidebar (2026-10-04)
+
+Author: Codex. Sidebar now requires a stable id and navigation label. Item values
+provide globally unique identity across keyed groups and links. Public item,
+link and nav prop types define native event targets. Root props reach the aside;
+navProps reach the named nav. Native details/summary groups retain their own
+optional destination and nested links. Active descendants open groups until the
+user makes an explicit choice, including closing an active group.
+
+The icon rail keeps nested navigation and accessible link names. Controlled
+toggle callbacks propose the next boolean state. Native link handlers run first;
+framework navigation handles only ordinary same-origin HTTP(S) clicks. Modifier,
+new-tab, download, external and inherited base-target behavior stays native.
+Offcanvas mode requires an external restoreFocusTo ID, returns contained focus
+before hiding and makes closed content hidden/inert. It supplies no modal focus
+trap. Keyed updates preserve focus or repair it to a reachable control.
+
+Demo pages, the shared shell and generated dashboard use the new contract.
+Migration notes cover required identity, prop ownership, group markup and callback
+behavior. Sidebar item classes now use cs-sidebar__link at every nesting level.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 435 tests
+  across 37 files pass. SSR and declaration tests cover identity, named native
+  targets, group state, hidden content, invalid inputs and public prop branches.
+- `pnpm --filter cossack exec vitest run tests/sidebar-browser.test.js tests/ui-ejection.test.js`:
+  34 tests pass, including 33 source-ejection checks and strict NodeNext compilation.
+  The final browser-only rerun also passes with a native accessibility-tree check.
+  The HTTP/Tailwind fixture covers no-JavaScript disclosures and links, retained
+  hydration, keyboard group controls, manual collapse, nested/reordered items,
+  icon rail, RTL, native events, callback vetoes, modifier/new-tab/download/base
+  target behavior, focus repair, offcanvas return/Tab exclusion and cleanup.
+  Chromium exposes the named summary as DisclosureTriangle with expanded state.
+- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/home.spec.ts --workers=1 --reporter=line`:
+  all seven tests pass. These cover filtering, SPA links, command palette, desktop
+  collapse, mobile dismissal and retained App-shell hydration on two routes.
+  Old button selectors failed for native summaries; the tests now target summary
+  elements and assert accessible naming instead of requiring a synthetic button role.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: 112 tests across
+  seven files pass. The dashboard test renders the real template with actual UI
+  and renderer code. Stubbed module/account inputs do not prove full generated-app
+  authentication or runtime integration.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose both Sidebar
+  collapse-mode branches, required naming/identity, native targets, public item
+  types and authored guidance. Exact-symbol Sidebar results match across CLI/MCP.
+  Six existing packaged examples compile and execute. Discovery runs with Node
+  networking disabled; installation can use the registry. The Sidebar guide adds
+  no executable example.
+
+Logs: `/tmp/cossack-sidebar-{build,ui,browser-ejection,browser-final,shell,scaffold,root-types,types,agent-docs}.log`.
+Fifty-eight of 65 UI source rows are reviewed. Continue Toast, every pending row,
+then blocks/icons and the full generated-app/runtime matrix. RT-23 and CLI-07/CLI-08
+remain open. Release status stays 24 of 58 complete. Versions stay 0.8.3 until REL-04.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
