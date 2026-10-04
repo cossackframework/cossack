@@ -4,9 +4,11 @@ This release implements the framework, developer experience, agent tooling,
 and Cloudflare work agreed in the feature review. An unchecked item remains
 in scope. Package versions change only after implementation and verification.
 
-User priority (2026-10-04): further Desktop-only work and native-host acceptance
-are optional and deferred. Focus on shared framework, CLI/agent tooling and
-Cloudflare; preserve the completed Desktop work without expanding it.
+**Desktop: completed for 0.9.0 by user decision (2026-10-04).** Remaining
+Desktop-only platform checks are waived for this release, not reported as passed.
+Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
+tooling and Cloudflare. This closes Desktop scope within the existing tasks;
+the release count remains 27 of 58 complete.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -150,9 +152,9 @@ Original RT-28 criteria audit:
 | CLI/MCP read the same facts | Installed Desktop readers match the browser/disk snapshot through the existing shared schema; the earlier installed runtime gates cover Cloudflare, Node and Deno. |
 
 **RT-28 is complete: 27 of 58 tasks complete, 31 open.** Versions remain 0.8.3.
-Further Desktop OS integration/sandbox, Windows/macOS packaging and signing
-are deferred under the user's priority. REL-03 retains the required non-Desktop
-release matrix. Cancellation does not undo
+The user has closed Desktop for this release and waived remaining OS integration/
+sandbox, Windows/macOS packaging and signing acceptance. REL-03 retains the
+required non-Desktop release matrix. Cancellation does not undo
 external effects; body headers do not prove consumption, and stored records are
 not live state. No deployment, publication or push occurred.
 
@@ -164,8 +166,8 @@ packaging. Installed/workspace Electron acceptance, Linux DEB, 28 Desktop tests,
 78 scaffold tests and root/all 11 package type checks passed. Full commands,
 versions and limits are in the [verification archive](./release-0.9.0-verification-archive.md#codex-desktop-native-2026-10-04).
 These results precede the [development runner and RT-28 audit](#codex-rt28-complete-2026-10-04).
-Further installed OS integration, other OS packages and signing are now deferred
-under the user's Desktop priority.
+Remaining installed OS integration, other OS packages and signing acceptance
+are waived by the user's decision to mark Desktop complete for this release.
 
 ### Archived checkpoints
 

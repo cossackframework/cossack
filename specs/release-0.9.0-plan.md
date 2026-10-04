@@ -13,10 +13,11 @@ Historical status statements inside task sections do not override the checklist.
 Continue CLI-08 as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
-User priority (2026-10-04): Desktop is low priority and can be skipped. Preserve
-completed Desktop work; further Desktop-only development and native-host
-acceptance are optional for this release. Focus on shared framework behavior,
-CLI/agent tooling and Cloudflare. Record skipped Desktop checks as deferred, not passed.
+**Desktop: completed for 0.9.0 by user decision (2026-10-04).** Remaining
+Desktop-only platform acceptance is waived for this release; it is not pending
+work or evidence of passing those checks. Preserve the verified implementation
+and do not reopen Desktop unless requested. Focus on shared framework behavior,
+CLI/agent tooling and Cloudflare.
 
 Read [architecture](./architecture.md) before significant changes. Paths below
 are relative to the repository root. A package name followed by a source path
@@ -932,9 +933,10 @@ and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runt
 Remaining: graceful generated-server draining, Deno Deploy and the required
 non-Desktop final release matrix. Desktop development and native Linux checks
 pass the [RT-28 audit](./release-0.9.0.md#codex-rt28-complete-2026-10-04).
-Per the user's updated priority, further Desktop-only work and installed OS
-integration, Windows/macOS and signing checks are deferred and optional. Retain
-`pnpm test:desktop` for future Desktop changes; do not repeat it for unrelated work.
+The user has marked Desktop complete for this release. Remaining installed OS
+integration, Windows/macOS and signing acceptance is waived, not claimed as tested.
+Retain `pnpm test:desktop` for any future requested Desktop changes; do not reopen
+Desktop work or repeat its gate for unrelated work.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

@@ -7,12 +7,13 @@ Versions stay at 0.8.3 until REL-04.
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
-All unchecked tasks remain in scope, subject to the Desktop priority below.
+All unchecked tasks remain in scope, subject to the Desktop closure below.
 
-User priority (2026-10-04): Desktop is low priority and may be skipped. Preserve
-the completed work, but defer further Desktop-only development and native-host
-acceptance. Prioritize shared framework behavior, CLI/agent tooling and Cloudflare.
-Deferred Desktop checks are optional for this release; do not report them as passed.
+**Desktop: completed for 0.9.0 by user decision (2026-10-04).** Preserve the
+verified implementation. Remaining Desktop-only platform acceptance is waived
+for this release, not a pending task or a claim that those checks passed. Do not
+reopen Desktop work unless requested. Prioritize shared framework behavior,
+CLI/agent tooling and Cloudflare.
 
 <a id="completed-work-reference-only"></a>
 ## Completed work — reference only
@@ -59,9 +60,9 @@ public inspector import and its single capture owner; do not add renderer IPC.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
 - Desktop installed OS integration, Windows/macOS packaging and conditional
-  signing are deferred under the user's priority. Do not spend more time on these
-  unless requested. Deno Deploy, graceful generated-server draining and the
-  required non-Desktop release matrix remain separate acceptance gaps.
+  signing checks were waived when the user closed Desktop for this release.
+  Deno Deploy, graceful generated-server draining and the required non-Desktop
+  release matrix remain separate acceptance gaps.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 
