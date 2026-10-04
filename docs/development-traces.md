@@ -29,7 +29,12 @@ Generated Deno applications use the
 with the same commands and trace schema. Deno executes server modules in its own
 process and sends native-response cleanup evidence through a private runner event
 channel. Vite HTTPS/WSS configurations retain public origin checks.
-These transports use the shared CLI/MCP readers.
+Desktop applications use `pnpm desktop:dev` with Vite running inside Electron.
+Their HTTP actions, streamed results and native bodies use the same capture
+schema and shared CLI/MCP readers. The renderer remains on `cossack://app`;
+Desktop does not support SSE/WebSocket page transports. See the
+[Desktop bootstrap migration](../specs/migration-0.9.0.md#desktop-vite-development).
+All these runtimes use the shared CLI/MCP readers.
 
 Keep the session alive while the interaction runs, then read its snapshot.
 Snapshot reads never execute or replay calls. Collection is disabled outside

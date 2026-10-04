@@ -384,6 +384,29 @@ or generic IPC channel. Native calls run in bootstrap modules or server-only
 component methods. The Desktop package may use Node/Electron APIs; core and
 shared library packages remain Web Standard compatible.
 
+### Desktop Vite development boundary
+
+The Node CLI supervises one Electron child. A separate development entry runs
+Vite in Electron's main process, evaluates `frameworkApp` through its SSR module
+runner and invokes `startDesktop(factory)` once. Native bootstrap changes restart
+the child; application source changes invalidate the SSR graph and reload managed
+windows. Configuration and root environment-file changes restart the child too.
+Module replacement resets in-memory state and cannot roll back external effects.
+
+An optional structural asset provider proxies transformed client assets to a
+loopback Vite middleware listener. This listener has no native application
+handler. SSR/RPC still enter through the private protocol's verified request
+ownership path. Custom asset 404 bodies are canceled before router fallback.
+The runner preserves the request-owned `ASSETS` and `COSSACK_DESKTOP` bindings.
+The Desktop library defines the application contract structurally; it does not
+import framework. Production Desktop modules do not import Vite.
+
+The SSR graph includes core/renderer/framework to retain development capture and
+one trace owner. Native response evidence uses the existing environment hot
+channel and shared storage. No renderer IPC bridge or Desktop trace schema is
+introduced. Malformed source may keep a development watcher alive, but module
+transformation still fails; production capability checks remain strict.
+
 ## Request Lifecycle
 
 The lifecycle of a user interaction is split into two main phases: the initial server-side render and the subsequent client-side interactivity.

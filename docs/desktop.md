@@ -15,6 +15,12 @@ the main process and are available to server methods through
 `this.env.COSSACK_DESKTOP`. The framework does not create a preload or a generic renderer IPC API.
 
 Use `pnpm desktop:dev`, `pnpm desktop:package`, and `pnpm desktop:make`.
+Development runs Vite inside Electron and retains the private origin. Source
+edits reload managed windows; native bootstrap, Vite config and root `.env*`
+changes restart Electron. The bootstrap exports `frameworkApp`, `env` and
+`startDesktop(factory)`; see the [development migration](../specs/migration-0.9.0.md#desktop-vite-development).
+Enable `developmentTraces: true` in `cossackPages()` for the shared
+[inspector and CLI/MCP trace readers](./development-traces.md).
 Electron Forge creates the host installer only: DEB on Linux, MSI on Windows,
 and DMG on macOS. See the package [guide](../packages/desktop/docs/guide.md)
 and [0.9.0 migration notes](../specs/migration-0.9.0.md#desktop-native-request-ownership).
@@ -26,7 +32,7 @@ testing-only sandbox fallback.
 
 Use `configureDesktopClose()` to choose `quit`, `hide-to-tray`, or
 `confirm-quit`. Linux tray activation depends on the desktop host, so
-`confirm-quit` is the default. Use `hide-to-tray` only after a
+`confirm-quit` is a conservative choice; generated apps start with `quit`. Use `hide-to-tray` only after a
 tray exists and works on the target OS.
 
 Desktop requests use Electron's native request initiator and managed window identity.

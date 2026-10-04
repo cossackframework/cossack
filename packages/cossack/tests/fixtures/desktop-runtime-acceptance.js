@@ -1,3 +1,4 @@
+import { launchDesktopDevelopmentCli } from './desktop-development-driver.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -35,46 +36,47 @@ export async function writeDesktopRuntimeAcceptance(root) {
     `
     import {Cossack,Page,State,ClientState,Server,Client,rpc$} from '@cossackframework/core';
     import {html} from '@cossackframework/renderer';
+    import {enableDevTools} from '@cossackframework/framework/client/devtools';
     import type {DesktopShell} from '@cossackframework/desktop';
     import {readFile,writeFile} from 'node:fs/promises';
     import path from 'node:path';
     @Page({transport:'http'}) export default class DesktopCheck extends Cossack {
       @State() count=0;
       @State() owner=0;
+      @State() configuration='';
       @ClientState() nativeResult='';
+      @ClientState() htmlResult='';
+      @ClientState() cancelResult='';
       shell(){return this.env.COSSACK_DESKTOP as DesktopShell;}
       storage(){return path.join(this.shell().app.getPath('userData'),'acceptance-count.txt');}
-      async init(){try{this.count=Number(await readFile(this.storage(),'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
+      async init(){this.configuration=String(this.env.DESKTOP_RELOAD_ACCEPTANCE??'');try{this.count=Number(await readFile(this.storage(),'utf8'));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
       @Server() async increment(){this.count++;this.owner=this.shell().window.id;await writeFile(this.storage(),String(this.count));}
       @Server() async *stream(){this.count++;yield this.count;this.count++;await writeFile(this.storage(),String(this.count));return this.count;}
       @Server() native(){return new Response(new Uint8Array([0,255,128]),{status:201,headers:{'X-Native-Test':'kept'}});}
-      @Client() onMount(){(window as any).__desktopAcceptanceReady=true;}
+      @Server() nativeHtml(){return new Response('<p>Native HTML remains opaque</p>',{headers:{'Content-Type':'text/html'}});}
+      @Server() async waitForCancel(){await writeFile(path.join(this.shell().app.getPath('userData'),'cancel-started.txt'),'started');await new Promise(resolve=>setTimeout(resolve,5000));return 'late';}
+      @Client() async runHtml(){const result=await rpc$(this.nativeHtml());this.htmlResult=result?await result.text():'';}
+      @Client() async runCancellation(){const call=rpc$(this.waitForCancel());(window as any).__desktopPendingCall=call;try{await call;}catch(error){this.cancelResult=String((error as any).code);}}
+      @Client() onMount(){(window as any).__desktopAcceptanceReady=true;if(import.meta.env.DEV)(window as any).__desktopDevelopmentTools=enableDevTools();}
       @Client() async runStream(){for await(const _ of rpc$(this.stream())){}}
       @Client() async runNative(){const result=await rpc$(this.native());this.nativeResult=result?[result.status,result.headers.get('X-Native-Test'),...new Uint8Array(await result.arrayBuffer())].join(','):'';}
-      render(){return html\`<main><span id="count">\${this.count}</span><span id="owner">\${this.owner}</span><span id="native">\${this.nativeResult}</span>
-        <button @click="\${()=>this.increment()}">Increment</button><button @click="\${()=>this.runStream()}">Stream</button><button @click="\${()=>this.runNative()}">Native</button></main>\`;}
+      render(){return html\`<main><span id="count">\${this.count}</span><span id="owner">\${this.owner}</span><span id="native">\${this.nativeResult}</span><span id="configuration">\${this.configuration}</span><span id="native-html">\${this.htmlResult}</span><span id="cancel-result">\${this.cancelResult}</span>
+        <button @click="\${()=>this.increment()}">Increment</button><button @click="\${()=>this.runStream()}">Stream</button><button @click="\${()=>this.runNative()}">Native</button><button @click="\${()=>this.runHtml()}">Native HTML</button><button @click="\${()=>this.runCancellation()}">Start cancellation</button></main>\`;}
     }
   `,
   );
 }
 
-export async function verifyDesktopRuntimeApplication(
-  root,
-  { executablePath, packaged = false } = {},
-) {
+export async function verifyDesktopRuntimeApplication(root, { executablePath, packaged = false } = {}) {
   const require = createRequire(path.join(root, 'package.json'));
   const executable = executablePath ?? require('electron');
-  const profile = path.join(
-    root,
-    packaged ? '.desktop-packaged-profile' : '.desktop-acceptance-profile',
-  );
+  const profile = path.join(root, packaged ? '.desktop-packaged-profile' : '.desktop-acceptance-profile');
   await fs.mkdir(profile, { recursive: true });
   let helper;
   try {
     helper = await fs.stat(path.join(path.dirname(executable), 'chrome-sandbox'));
   } catch {}
-  const fallback =
-    process.platform === 'linux' && !(helper?.uid === 0 && (helper.mode & 0o4000) !== 0);
+  const fallback = process.platform === 'linux' && !(helper?.uid === 0 && (helper.mode & 0o4000) !== 0);
   // This only exercises an uninstalled test executable. OS sandbox acceptance
   // must use the installed native-host package, which configures its helper.
   const flags = [
@@ -126,9 +128,10 @@ export async function verifyDesktopRuntimeApplication(
     await expect(page.locator('#count')).toHaveText('0');
     await page.waitForFunction(() => window.__desktopAcceptanceReady, {}, { timeout: 15000 });
     expect(page.url()).toMatch(/^cossack:\/\/app\//);
-    expect(
-      await page.evaluate(() => ({ require: typeof require, process: typeof process })),
-    ).toEqual({ require: 'undefined', process: 'undefined' });
+    expect(await page.evaluate(() => ({ require: typeof require, process: typeof process }))).toEqual({
+      require: 'undefined',
+      process: 'undefined',
+    });
     const metadata = await application.evaluate(({ app, BrowserWindow }) => ({
       profile: app.getPath('userData'),
       version: process.versions.electron,
@@ -198,10 +201,7 @@ export async function verifyDesktopRuntimeApplication(
                 reject(new Error('Foreign-frame acceptance timed out'));
               }, 10000);
               const receive = (event) => {
-                if (
-                  event.source === frame.contentWindow &&
-                  event.data === 'desktop-attack-complete'
-                ) {
+                if (event.source === frame.contentWindow && event.data === 'desktop-attack-complete') {
                   clearTimeout(timer);
                   window.removeEventListener('message', receive);
                   frame.remove();
@@ -228,10 +228,216 @@ export async function verifyDesktopRuntimeApplication(
   }
   const restarted = await launch();
   try {
-    await expect((await restarted.firstWindow({ timeout: 15000 })).locator('#count')).toHaveText(
-      '5',
-    );
+    await expect((await restarted.firstWindow({ timeout: 15000 })).locator('#count')).toHaveText('5');
   } finally {
     await restarted.close();
+  }
+}
+
+export async function verifyDesktopDevelopmentApplication(
+  root,
+  { onRecorded = async () => {}, startupError = false, launcher = false, crash = false } = {},
+) {
+  const require = createRequire(path.join(root, 'package.json'));
+  const executable = require('electron');
+  const runtime = path.join(root, 'node_modules/@cossackframework/desktop/dist/development-runtime.js');
+  const profile = path.join(root, '.desktop-development-profile');
+  const sourceFile = path.join(root, 'src/pages/index.ts');
+  const source = await fs.readFile(sourceFile, 'utf8');
+  const entryFile = path.join(root, 'src/desktop/index.ts');
+  const configFile = path.join(root, 'vite.config.ts');
+  const envFile = path.join(root, '.env.desktop.local');
+  const entrySource = await fs.readFile(entryFile, 'utf8');
+  const configSource = await fs.readFile(configFile, 'utf8');
+  const envSource = await fs.readFile(envFile, 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (startupError) await fs.writeFile(sourceFile, source + '\nthis is deliberately invalid TypeScript');
+
+  const application = launcher
+    ? await launchDesktopDevelopmentCli(root, profile, { crash })
+    : await _electron.launch({
+        executablePath: executable,
+        cwd: root,
+        chromiumSandbox: true,
+        args: [
+          ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=x11'] : []),
+          `--user-data-dir=${profile}`,
+          runtime,
+        ],
+        env: { ...process.env, NODE_ENV: 'development', ELECTRON_RUN_AS_NODE: '', COSSACK_DESKTOP_DEBUG: '1' },
+        timeout: 30000,
+      });
+  let output = application.initialOutput ?? '';
+  application.process().stdout?.on('data', (data) => {
+    output += data;
+  });
+  application.process().stderr?.on('data', (data) => {
+    output += data;
+  });
+  try {
+    if (startupError) {
+      await expect.poll(() => output, { timeout: 30000 }).toContain('[PARSE_ERROR]');
+      await fs.writeFile(sourceFile, source);
+    }
+    const page = await application.firstWindow({ timeout: 30000 });
+    page.on('pageerror', (error) => {
+      output += '\n' + error.stack;
+    });
+    page.on('console', (message) => {
+      output += '\n' + message.text();
+    });
+    page.on('response', (response) => {
+      if (response.url().includes('/crpc'))
+        void response
+          .text()
+          .then((body) => {
+            output += '\nRPC_RESPONSE=' + response.status() + ' ' + body;
+          })
+          .catch(() => {});
+    });
+    page.on('requestfailed', (request) => {
+      output += '\nFAILED_REQUEST=' + request.url() + ' ' + JSON.stringify(request.failure());
+    });
+    await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 30000 });
+    await page.getByRole('button', { name: 'Record trace', exact: true }).click();
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await expect(page.locator('#count')).toHaveText('1');
+    await page.getByRole('button', { name: 'Stream', exact: true }).click();
+    await expect(page.locator('#count')).toHaveText('3');
+    await page.getByRole('button', { name: 'Native', exact: true }).click();
+    await expect(page.locator('#native')).toHaveText('201,kept,0,255,128');
+    await page.getByRole('button', { name: 'Native HTML', exact: true }).click();
+    await expect(page.locator('#native-html')).toHaveText('<p>Native HTML remains opaque</p>');
+    await page.getByRole('button', { name: 'Start cancellation', exact: true }).click();
+    await expect
+      .poll(() =>
+        fs.readFile(path.join(profile, 'cancel-started.txt'), 'utf8').catch((error) => {
+          if (error.code === 'ENOENT') return '';
+          throw error;
+        }),
+      )
+      .toBe('started');
+    await page.evaluate(async () => {
+      await window.__desktopPendingCall.cancel();
+      await window.__desktopPendingCall.cancel();
+    });
+    await expect(page.locator('#cancel-result')).toHaveText('COSSACK_RPC_CANCELLED');
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              window.__desktopDevelopmentTools.snapshot().events.filter((event) => event.kind === 'server-native')
+                .length,
+          ),
+        { timeout: 10000 },
+      )
+      .toBe(2);
+    await page.getByRole('button', { name: 'Stop trace', exact: true }).click();
+    const snapshot = await page.evaluate(() => window.__desktopDevelopmentTools.snapshot());
+    expect(snapshot.events.filter((event) => event.kind === 'rpc' && event.phase === 'start')).toHaveLength(5);
+    expect(
+      snapshot.events.filter(
+        (event) => event.kind === 'rpc' && event.phase === 'finish' && event.outcome === 'cancelled',
+      ),
+    ).toHaveLength(1);
+    for (const call of snapshot.events.filter((event) => event.kind === 'rpc' && event.phase === 'start')) {
+      const events = snapshot.events.filter((event) => event.callId === call.callId);
+      expect(events.filter((event) => event.kind === 'rpc' && event.phase === 'finish')).toHaveLength(1);
+      if (events.some((event) => event.kind === 'rpc' && event.phase === 'finish' && event.outcome === 'cancelled'))
+        continue;
+      const dispatch = events.find((event) => event.kind === 'server-rpc');
+      expect(dispatch).toMatchObject({ requestId: call.requestId, invokedAt: expect.any(Number) });
+      if (dispatch.result === 'stream' || dispatch.result === 'native')
+        expect(events.find((event) => event.kind === `server-${dispatch.result}`)).toMatchObject({
+          requestId: call.requestId,
+          dispatchId: dispatch.dispatchId,
+          outcome: 'succeeded',
+          cleanup: 'completed',
+        });
+    }
+    const recordFile = path.join(root, '.cossack/development-traces', snapshot.sessionId + '.json');
+    let record;
+    await expect
+      .poll(
+        async () => {
+          try {
+            record = JSON.parse(await fs.readFile(recordFile, 'utf8'));
+            return record.snapshot.collecting;
+          } catch (error) {
+            if (error.code === 'ENOENT') return true;
+            throw error;
+          }
+        },
+        { timeout: 10000 },
+      )
+      .toBe(false);
+    expect(record.snapshot.events).toEqual(snapshot.events);
+    for (const value of ['acceptance-count.txt', 'increment', 'nativeResult'])
+      expect(JSON.stringify(record)).not.toContain(value);
+    await onRecorded({ snapshot, recorded: record });
+
+    const updated = source
+      .replace('this.count++;this.owner', 'this.count+=2;this.owner')
+      .replace('<main>', '<main><p id="development-reload">Source reloaded</p>');
+    await fs.writeFile(sourceFile, updated);
+    await expect(page.locator('#development-reload')).toHaveText('Source reloaded', { timeout: 15000 });
+    await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 15000 });
+    await expect(page.locator('#count')).toHaveText('3');
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await expect(page.locator('#count')).toHaveText('5');
+    output = '';
+    await fs.writeFile(sourceFile, updated + '\nthis is deliberately invalid TypeScript');
+    await expect.poll(() => output, { timeout: 15000 }).toContain('[desktop]');
+    await page.reload();
+    await expect(page.locator('#cossack-development-error')).toBeVisible();
+    await fs.writeFile(sourceFile, updated);
+    await expect.poll(() => page.locator('#count').textContent(), { timeout: 15000 }).toBe('5');
+    await page.waitForFunction(() => window.__desktopDevelopmentTools, {}, { timeout: 15000 });
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await expect(page.locator('#count')).toHaveText('7');
+    if (launcher) {
+      const assertRestart = async (change, expected) => {
+        await application.restartAfter(change);
+        const window = await application.firstWindow();
+        await expect(window.locator('#count')).toHaveText('7');
+        await expect(window.locator('#configuration')).toHaveText(expected);
+        await window.waitForFunction(() => window.__desktopDevelopmentTools);
+      };
+      await assertRestart(() => fs.writeFile(envFile, 'DESKTOP_RELOAD_ACCEPTANCE=environment\n'), 'environment');
+      await assertRestart(
+        () =>
+          fs.writeFile(
+            configFile,
+            configSource.replace(
+              'plugins: [',
+              "plugins: [{name:'restart-acceptance',config:()=>{process.env.DESKTOP_RELOAD_ACCEPTANCE='configuration';}},",
+            ),
+          ),
+        'configuration',
+      );
+      await assertRestart(
+        () =>
+          fs.writeFile(
+            entryFile,
+            entrySource.replace('{ ...process.env }', "{ ...process.env, DESKTOP_RELOAD_ACCEPTANCE:'bootstrap' }"),
+          ),
+        'bootstrap',
+      );
+    }
+  } catch (error) {
+    throw new Error(`${error.stack}\nElectron output:\n${output}`);
+  } finally {
+    try {
+      await application.close();
+    } finally {
+      await fs.writeFile(sourceFile, source);
+      await fs.writeFile(entryFile, entrySource);
+      await fs.writeFile(configFile, configSource);
+      if (envSource === null) await fs.rm(envFile, { force: true });
+      else await fs.writeFile(envFile, envSource);
+    }
   }
 }

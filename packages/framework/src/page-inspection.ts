@@ -165,7 +165,7 @@ export async function extractPageOptionsFromAst(code: string) {
   if (!parseSync) return null;
   const program = parsedProgram(parseSync, code);
   if (!program) {
-    return { options: null, method: 'unknown', reason: 'The file could not be parsed as TypeScript.' };
+    return { options: null, method: 'unknown', parseError: true as const, reason: 'The file could not be parsed as TypeScript.' };
   }
   const selected = pageClass(program, code);
   const decoratorCall = selected?.decorator.expression;

@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { cossackConfig, cossackLang, cossackMiddlewares, cossackPages } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode, command }) => ({
   plugins: [
     tailwindcss(),
     cossackSecurityPlugin({ devWarning: true }),
@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
     ssr: {
-      resolve: mode === 'desktop'
+      resolve: mode === 'desktop' && command === 'build'
         ? { external: ['electron'], noExternal: true }
         : { noExternal: ['@cossackframework/ui', 'hono', 'css-tree'] },
     },

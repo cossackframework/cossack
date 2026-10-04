@@ -1679,3 +1679,29 @@ The generated Forge config now includes only `package.json`, `dist/client`,
 to their owned `forge.config.ts`; the old exclusions could include `.env` and
 other local files. Move required native runtime assets to `desktop-assets` or
 explicitly review any additions to the package filter.
+
+## Desktop Vite development
+
+Replace the old production build watchers with the updated `cossack-desktop`
+runner (the generated `desktop:dev` script). Install the Desktop package's
+optional Vite peer for development; packaged runtime imports do not load Vite.
+
+Update `src/desktop/index.ts` to export the router as `frameworkApp`, application
+bindings as `env`, and `async function startDesktop(createApplication = createDesktopApp)`.
+Inside that function, call the supplied `createApplication` factory, install native
+menus/tray/close handlers and return the resulting Desktop application. Guard the
+production invocation with `if (!import.meta.env.DEV)`; development invokes the
+export itself. See the complete [bootstrap example](../packages/desktop/README.md).
+Do not top-level await creation or run native setup during module evaluation.
+
+Change the Vite config callback to accept `{ mode, command }` and apply
+`ssr.noExternal: true` only for `mode === 'desktop' && command === 'build'`.
+Keep the selected web adapter excluded in Desktop mode as before. Production
+bundles native dependencies; development needs regular package externalization.
+
+Application source edits reload windows. Native bootstrap, config and root
+`.env*` edits restart Electron; process state is not preserved across restarts.
+Page syntax errors can recover after repair. The renderer stays on the private origin,
+and native request ownership rules still apply. Opt in to stored development
+captures through `cossackPages({ developmentTraces: true })` and the public
+inspector. Do not expose native handlers through a loopback HTTP endpoint.

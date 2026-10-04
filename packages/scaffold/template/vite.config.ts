@@ -8,7 +8,7 @@ import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from '@c
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode, command }) => ({
   // Local D1 updates its WAL/SHM files for authenticated reads and writes.
   // Those runtime files are not source code and must never trigger Vite HMR.
   server: {
@@ -75,7 +75,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
     ssr: {
-      resolve: mode === 'desktop'
+      resolve: mode === 'desktop' && command === 'build'
         ? {
             // Forge omits node_modules from packaged applications. Bundle the
             // complete main-process graph while preserving Electron's native

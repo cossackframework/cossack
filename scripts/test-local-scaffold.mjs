@@ -1,4 +1,5 @@
-import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
+import { verifyDesktopTraceReaders } from '../packages/cossack/tests/fixtures/desktop-trace-readers.js';
+import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication, verifyDesktopDevelopmentApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
 import { verifyDesktopPackage } from './verify-desktop-package.mjs';
 import { writeDenoRuntimeAcceptance, verifyDenoRuntimeApplication, verifyDenoCliStartup, verifyDenoDevelopmentApplication } from '../packages/cossack/tests/fixtures/deno-runtime-acceptance.js';
 import { verifyAgentDocumentation } from './verify-agent-documentation.mjs';
@@ -619,10 +620,14 @@ try {
   await installGeneratedProject(minimalProjectDir);
   if (desktopRuntimeOnly) {
     await writeDesktopRuntimeAcceptance(minimalProjectDir);
+    const configFile = path.join(minimalProjectDir, 'vite.config.ts');
+    await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('cossackPages({', 'cossackPages({ developmentTraces:true,'));
     await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
     await run('pnpm', ['run', 'build:desktop'], { cwd: minimalProjectDir });
     await verifyDesktopRuntimeApplication(minimalProjectDir);
     await verifyDesktopPackage(minimalProjectDir);
+    await verifyDesktopDevelopmentApplication(minimalProjectDir, { launcher: true, startupError: true,
+      onRecorded: record => verifyDesktopTraceReaders(minimalProjectDir, record) });
   } else if (denoRuntimeOnly) {
     await writeDenoRuntimeAcceptance(minimalProjectDir);
     await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });

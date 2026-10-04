@@ -18,9 +18,20 @@ a window-scoped `COSSACK_DESKTOP`, and starts a sandboxed, context-isolated
 `BrowserWindow`. Use only HTTP-transport pages. Native work belongs in the
 bootstrap or ordinary `@Server()` methods:
 
-Do not top-level `await` `createDesktopApp()` from an ESM entry. Invoke an async
-`main()` without awaiting it at module scope so Electron can complete the first
-event-loop tick and emit `ready`.
+Keep the generated `frameworkApp`, `env` and `startDesktop(factory)` exports.
+Use the supplied factory to create the application and return its Desktop result.
+Put native menus, tray and close handlers inside that bootstrap. The development
+runner calls it once; only production calls it at module scope, guarded by
+`if (!import.meta.env.DEV)`. Do not top-level `await` Desktop creation: Electron
+must complete the first event-loop tick before it emits `ready`.
+
+`desktop:dev` runs Vite inside Electron and keeps the renderer on `cossack://app`.
+Page edits reload managed windows; native bootstrap, Vite config and root `.env*`
+changes restart Electron. Page syntax repair recovers the development window. Reloads
+reset in-memory modules, so store durable application data explicitly. The Vite
+asset listener never dispatches native application actions over loopback HTTP.
+Keep `ssr.noExternal: true` limited to `mode === 'desktop' && command === 'build'`.
+See the [bootstrap example](../README.md) when migrating an existing entry.
 
 ```ts
 const shell = this.env.COSSACK_DESKTOP as DesktopShell;

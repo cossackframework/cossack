@@ -74,6 +74,12 @@ export async function verifyDesktopPackage(root) {
       assert(!code.includes(marker), `Server-only fixture code leaked into renderer: ${marker}`);
     }
   }
+  for (const entry of entries.filter(name => /^\/dist\/(client|desktop)\//.test(name) && name.endsWith('.js'))) {
+    const code = extractFile(asar, entry.slice(1)).toString();
+    for (const marker of ['X-Cossack-Development-Trace', 'Record trace', 'server-stream', 'server-socket', 'server-native', 'cossack:development-trace:native', 'beginDevelopmentSocketDispatch', 'cossack-start:', 'cossack-desktop-development', '/@vite/client']) {
+      assert(!code.includes(marker), `Development code leaked into production ${entry}: ${marker}`);
+    }
+  }
   assert.equal(
     JSON.parse(extractFile(asar, 'package.json').toString()).main,
     'dist/desktop/index.js',

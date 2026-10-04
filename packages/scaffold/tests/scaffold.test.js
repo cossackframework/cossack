@@ -770,11 +770,11 @@ describe('composition', () => {
         .toContain('noExternal: true');
       expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
-        .toContain('createDesktopApp({');
+        .toContain('startDesktop(createApplication = createDesktopApp)');
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .not.toContain('export const desktop = await');
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
-        .toContain('void main().catch');
+        .toContain('if (!import.meta.env.DEV) void startDesktop().catch');
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .toContain("behavior: 'quit'");
       expect(targetFiles.get('forge.config.ts').content.toString())

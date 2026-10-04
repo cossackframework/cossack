@@ -1,3 +1,4 @@
+import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
 import { createDataTableBackend, writeDataTableAcceptance, checkDataTableBrowser } from './fixtures/data-table-acceptance.js';
@@ -1723,4 +1724,16 @@ it.skipIf(process.env.COSSACK_DESKTOP_ACCEPTANCE!=='1')('executes a generated De
   await vite(root,['--mode','desktop','--ssr','src/desktop/index.ts','--outDir','dist/desktop']);
   await assertPortableChunks(path.join(root,'dist/desktop'));
   await verifyDesktopRuntimeApplication(root);
+},120000);
+
+it.skipIf(process.env.COSSACK_DESKTOP_ACCEPTANCE!=='1').each([false,true])('executes Desktop development with the native Vite runner and shared traces (CLI: %s)',async launcher=>{
+  const {writeDesktopRuntimeAcceptance,verifyDesktopDevelopmentApplication}=await import('./fixtures/desktop-runtime-acceptance.js');
+  const root=await project('node',['desktop']);
+  await writeDesktopRuntimeAcceptance(root);
+  const config=path.join(root,'vite.config.ts');
+  const source=await fs.readFile(config,'utf8');
+  await fs.writeFile(config,source.replace('cossackPages({','cossackPages({ developmentTraces:true,').replace('plugins: [',`plugins: [{name:'acceptance-fs',config:()=>({server:{fs:{allow:${JSON.stringify([repository,root])}}}})},`));
+  await verifyDesktopDevelopmentApplication(root,{launcher,startupError:launcher,crash:launcher,
+    onRecorded: record => verifyDesktopTraceReaders(root,record,path.join(repository,'packages/cossack')),
+  });
 },120000);

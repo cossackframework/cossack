@@ -25,8 +25,8 @@ export const frameworkApp = createApp({
 });
 
 const icon = fileURLToPath(new URL('../../desktop-assets/icon-256.png', import.meta.url));
-async function main() {
-  const desktop = await createDesktopApp({
+export async function startDesktop(createApplication = createDesktopApp) {
+  const desktop = await createApplication({
     identifier: 'dev.cossack.counter',
     productName: 'Cossack Counter',
     assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
@@ -181,9 +181,10 @@ async function main() {
       desktop.quit();
     }
   }
+  return desktop;
 }
 
-void main().catch((error) => {
+if (!import.meta.env.DEV) void startDesktop().catch((error) => {
   console.error('Cossack Desktop failed to start.', error);
   electronApp.exit(1);
 });

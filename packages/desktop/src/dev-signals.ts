@@ -1,9 +1,5 @@
 import { resolveLinuxOzonePlatform } from './platform.js';
 
-export function isSuccessfulBuildOutput(value: string): boolean {
-  return /built in \d|built in [\d.]+s/i.test(value);
-}
-
 export interface SandboxHelperMetadata {
   uid: number;
   mode: number;

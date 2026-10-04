@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. The release has 58 tasks: 26 complete and 32 open.
+Compacted by Codex on 2026-10-04. The release has 58 tasks: 27 complete and 31 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -10,8 +10,13 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
-Continue CLI-08 and RT-28 as described in the handoff. All unchecked tasks
+Continue CLI-08 as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
+
+User priority (2026-10-04): Desktop is low priority and can be skipped. Preserve
+completed Desktop work; further Desktop-only development and native-host
+acceptance are optional for this release. Focus on shared framework behavior,
+CLI/agent tooling and Cloudflare. Record skipped Desktop checks as deferred, not passed.
 
 Read [architecture](./architecture.md) before significant changes. Paths below
 are relative to the repository root. A package name followed by a source path
@@ -91,7 +96,7 @@ Add focused tests during each group, and run broader gates after integration.
 | 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
 | 4. Complete data and content features | RT-13, RT-15 through RT-17, RT-20 through RT-22, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
-| 6. Expose the complete agent workflow | CLI-08, RT-28 | Recipes, upgrades, offline help, and MCP use the shared services. |
+| 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
 | 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
 
@@ -124,6 +129,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="rt-19"></a>RT-19 | [Realtime lifecycle and recovery](./release-0.9.0-plan-archive.md#rt-19) |
 | <a id="rt-23"></a>RT-23 | [DataTable, native UI contracts and installed accessibility guidance](./release-0.9.0-plan-archive.md#codex-rt23-final-plan-2026-10-04) |
 | <a id="rt-25"></a>RT-25 | [Runtime capability checks](./release-0.9.0-plan-archive.md#rt-25) |
+| <a id="rt-28"></a>RT-28 | [Devtools snapshots, correlated traces and native runtime acceptance](./release-0.9.0-plan-archive.md#codex-rt28-final-plan-2026-10-04) |
 | <a id="cf-03"></a>CF-03 | [Secrets, placeholders, and binding types](./release-0.9.0-plan-archive.md#cf-03) |
 | <a id="cf-05"></a>CF-05 | [Distributed SSE coordination](./release-0.9.0-plan-archive.md#cf-05) |
 | <a id="cf-06"></a>CF-06 | [Built-artifact runtime tests](./release-0.9.0-plan-archive.md#cf-06) |
@@ -554,63 +560,6 @@ dynamic keys, and fallback locales. Generated types reject an unknown key or
 missing parameter. Parallel SSR/SSG renders retain the correct locale.
 JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.
 
-<a id="rt-28"></a>
-### RT-28: Devtools snapshots and timelines
-
-Codex status (2026-10-04): Capture, passive inspection, browser controls and shared
-CLI/MCP records pass generated and installed Cloudflare HTTP/SSE/WebSocket acceptance.
-Native bodies now report separate server outcome/cleanup evidence with bounded
-background receipt acknowledgement; see the [native checkpoint](./release-0.9.0.md#codex-native-trace-evidence-2026-10-04).
-See [earlier completed work and evidence](./release-0.9.0-plan-archive.md#codex-rt28-socket-handoff-2026-10-04)
-and [capture contracts](../docs/development-traces.md).
-
-Node standalone Vite HTTP/SSE/WebSocket browser traces also pass the shared schema checks;
-see the [Node development checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04).
-Deno normal/JSON CLI development traces also pass over HTTP/HTTPS and WebSocket/WSS,
-including installed offline CLI/MCP reads and production exclusion; see the
-[Deno trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04).
-Desktop continuation — Codex (2026-10-04): the current `desktop:dev` runner uses
-production `vite build --watch` processes. Passing native production acceptance
-therefore does not prove development traces. Next:
-
-1. Add a real development module/asset path while retaining the private
-   `cossack://app` origin, native initiator verification and managed window scope.
-   Keep Vite tooling in a separate development entry and preserve the selected
-   web adapter. Do not expose a generic renderer IPC bridge.
-2. Connect the existing public inspector and framework trace bridge to that path.
-   Reuse capture ownership, redaction, bounded receipt handling and shared CLI/MCP
-   storage rather than adding a Desktop-only trace schema.
-3. Extend native Electron acceptance to source reload/recovery, shutdown,
-   correlated HTTP actions/streams/native bodies, stored CLI/MCP parity and
-   production exclusion. Run the installed tarball gate as well as workspace
-   checks. Desktop remains HTTP-only; do not add SSE/WebSocket page support to
-   satisfy this task.
-
-Remaining: Desktop development acceptance. Header
-evidence does not prove body completion; a WebSocket terminal does not prove later iterator cleanup. Preserve capture ownership,
-bounded optional evidence, paused-iterator deadlines, first failure codes,
-confirmed state and one cancellation request. RT-28 remains open.
-
-Purpose: A developer or agent needs to connect a UI symptom to the navigation,
-resource load, RPC, or state update that caused it.
-
-Baseline: Click-to-source and component state inspection exist. A structured
-snapshot service and correlated event timeline remain open.
-
-Approach: Define a bounded development event stream with timestamps, request/call
-IDs, route/component identities, lifecycle phases, and redacted summaries.
-Expose snapshots for state, resources, service scopes, and transport status.
-Have browser tools, CLI, and MCP consume the same schema. Keep trace collection
-opt-in and avoid retaining complete payloads, files, or credentials.
-
-Start in framework `client/devtools.ts`, existing Vite development integration,
-and the runtime boundaries instrumented by RT-01, RT-09, RT-12, and RT-19.
-
-Done when: One UI action can be followed through request, result, and state update.
-Disconnects and canceled work have terminal events. Buffers stay bounded.
-Production builds exclude development endpoints and source metadata. CLI-07 can
-read the same facts without depending on a browser console layout.
-
 <a id="rt-29"></a>
 ### RT-29: Framework-faithful test utilities
 
@@ -980,11 +929,12 @@ CLI lifecycle and trace checks. See the [runtime evidence index](./handoff-0.9.0
 and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
 `pnpm test:deno` owns the repeatable native Deno gate.
 
-Remaining: Desktop development traces, graceful generated-server draining,
-Deno Deploy and the complete final release matrix.
-Desktop native RPC/persistence and Linux packaging have a new reproducible
-`pnpm test:desktop` gate; see the [native checkpoint](./release-0.9.0.md#codex-desktop-native-2026-10-04).
-Installed OS integration, Windows/macOS and signing remain native-host checks.
+Remaining: graceful generated-server draining, Deno Deploy and the required
+non-Desktop final release matrix. Desktop development and native Linux checks
+pass the [RT-28 audit](./release-0.9.0.md#codex-rt28-complete-2026-10-04).
+Per the user's updated priority, further Desktop-only work and installed OS
+integration, Windows/macOS and signing checks are deferred and optional. Retain
+`pnpm test:desktop` for future Desktop changes; do not repeat it for unrelated work.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

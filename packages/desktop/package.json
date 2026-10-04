@@ -36,7 +36,8 @@
     "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
-    "electron": "^43.7.0 || >=44.4.0"
+    "electron": "^43.7.0 || >=44.4.0",
+    "vite": "^8.1.4"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
@@ -44,5 +45,10 @@
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.11"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   }
 }

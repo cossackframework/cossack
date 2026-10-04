@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { build } from 'vite';
+import { build, createServer } from 'vite';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -129,4 +129,42 @@ it('checks native database bindings before modules are bundled', async () => {
   await expect(buildFixture('cloudflare', 'http', ['DB'], { cloudflareBindings: ['DB'] })).resolves.toBeDefined();
   await expect(buildFixture('desktop', 'http', ['DB'], { cloudflareBindings: ['DB'] }))
     .rejects.toThrow('cloudflareBindings on desktop');
+});
+
+it('keeps syntax-broken development source repairable while builds still reject unknown requirements', async () => {
+  const broken='@Page({ transport: \'http\' }) export default class Chat { invalid syntax';
+  await expect(buildFixture('desktop','http',[],{},broken)).rejects.toThrow('requirements are unknown');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-capability-dev-'));
+  roots.push(root);
+  const file=path.join(root,'src/pages/index.ts');
+  await fs.mkdir(path.dirname(file),{recursive:true});
+  await fs.writeFile(file,broken);
+  const server=await createServer({root,configFile:false,logLevel:'silent',server:{middlewareMode:true},plugins:[cossackPages({capabilities:{runtime:'desktop'}})]});
+  try {
+    await expect(server.transformRequest('/src/pages/index.ts')).rejects.toThrow();
+    for (const [source, message] of [
+      ["@Page({transport:'sse'}) export default class Chat {}", 'requires transports on desktop'],
+      ['@Page(config) export default class Chat {}', 'requirements are unknown'],
+    ]) {
+      await fs.writeFile(file, source);
+      server.environments.client.moduleGraph.invalidateAll();
+      await expect(server.transformRequest('/src/pages/index.ts')).rejects.toThrow(message);
+    }
+    await fs.writeFile(file,"@Page({transport:'http'}) export default class Chat {}");
+    server.environments.client.moduleGraph.invalidateAll();
+    expect((await server.transformRequest('/src/pages/index.ts'))?.code).toContain('class Chat');
+  } finally {await server.close();}
+});
+it('still rejects dynamic transport options when starting development', async () => {
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-capability-dev-'));
+  roots.push(root);
+  await fs.mkdir(path.join(root,'src/pages'),{recursive:true});
+  await fs.writeFile(path.join(root,'src/pages/index.ts'),'@Page(config) export default class Chat {}');
+  let started: Awaited<ReturnType<typeof createServer>> | undefined;
+  try {
+    await expect(createServer({root,configFile:false,logLevel:'silent',server:{middlewareMode:true},plugins:[
+      {name:'capture-failed-server',configureServer(server){started=server;}},
+      cossackPages({capabilities:{runtime:'desktop'}}),
+    ]})).rejects.toThrow('requirements are unknown');
+  } finally {await started?.close();}
 });

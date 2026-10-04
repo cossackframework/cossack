@@ -5158,3 +5158,14 @@ including installed offline CLI/MCP parity and production exclusion. The
 cleanup evidence and corrected public URL forwarding under HTTP/2.
 Next verify Desktop traces and Electron launch/packaging. Graceful generated-server
 draining, Deno Deploy and the complete REL-03 matrix remain open.
+
+<a id="codex-rt28-final-plan-2026-10-04"></a>
+## Codex: RT-28 completion audit (2026-10-04)
+
+RT-28 is complete against its [original criteria](#rt-28). Passive snapshots,
+bounded correlated timelines, terminal outcomes, production exclusion and shared
+CLI/MCP reads pass the [requirement-by-requirement audit](./release-0.9.0.md#codex-rt28-complete-2026-10-04).
+Desktop development was the last runtime gap. Its native gate now covers reload,
+syntax repair, configuration restarts, shutdown, opaque responses, cancellation
+and installed reader parity. Keep the original criteria and prior regressions.
+Installed OS integration and the broader release matrix remain REL-03 work.

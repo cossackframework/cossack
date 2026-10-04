@@ -267,12 +267,14 @@ describe('Electron Desktop runtime', () => {
   });
 
   it('serves assets and routes SSR/RPC with reserved Desktop bindings', async () => {
+    let provider: { fetch(request: Request): Response | Promise<Response> } | undefined;
     const fetch = vi.fn(async (_request: Request, env?: Record<string, unknown>) =>
       Response.json({ desktop: Boolean(env?.COSSACK_DESKTOP), assets: Boolean(env?.ASSETS) }));
     await desktop.createDesktopApp({
       identifier: 'dev.cossack.test',
       productName: 'Test Desktop',
       assetsRoot,
+      get assets() { return provider; },
       fetch,
       env: { TEST: true, COSSACK_DESKTOP: 'cannot override' },
     });
@@ -292,6 +294,24 @@ describe('Electron Desktop runtime', () => {
     expect(fetch.mock.calls[0]?.[0].headers.has('x-cossack-desktop-owner')).toBe(false);
     expect(fetch.mock.calls[0]?.[0].headers.has('x-cossack-desktop-token')).toBe(false);
     expect(electron.session.fromPartition).toHaveBeenCalledWith('persist:cossack.dev.cossack.test');
+    const cancelled = vi.fn();
+    const requests: Request[] = [];
+    provider = { fetch(request) {
+      requests.push(request);
+      return new URL(request.url).pathname === '/virtual.css'
+        ? new Response('body { color: red; }', {headers:{'content-type':'text/css'}})
+        : new Response(new ReadableStream({cancel:cancelled}), {status:404});
+    } };
+    try {
+      expect(await (await electron.protocol.invoke(new Request('cossack://app/virtual.css'))).text()).toContain('color: red');
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(requests[0].url).toBe('https://app/virtual.css');
+      expect(requests[0].headers.has('x-cossack-desktop-token')).toBe(false);
+      expect(requests[0].headers.has('x-cossack-desktop-owner')).toBe(false);
+      await electron.protocol.invoke(new Request('cossack://app/missing'));
+      expect(cancelled).toHaveBeenCalledOnce();
+      expect(fetch).toHaveBeenCalledTimes(2);
+    } finally {provider=undefined;}
   });
 
   it('rejects protocol dispatch without native proof, including forged proof', async () => {

@@ -110,6 +110,39 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     );
   };
 
+  let capabilityPages = new Set<string>();
+  let capabilityBindings: readonly string[] = [];
+  const refreshCapabilityPages = () => {
+    capabilityPages = new Set(scanPagesDir(resolve(projectRoot, 'src/pages'), markdownEnabled)
+      .pageKeys.map(key => resolve(projectRoot, key.slice(1)).replaceAll('\\', '/')));
+  };
+  const pageRequirement = async (file: string) => {
+    const key = '/' + relative(projectRoot, file).replaceAll('\\', '/');
+    let transport = 'http';
+    let stateful = false;
+    let line: number | undefined;
+    if (file.endsWith('.ts')) {
+      const source = readFileSync(file, 'utf8');
+      if (classifyRoute(filePathToHttpRoute(key)) === 'api' && await isHttpHandlerModule(source)) return {};
+      const facts = await extractPageOptionsFromAst(source);
+      if (facts?.method !== 'ast' || !facts.options) return {
+        parseError: !!(facts && 'parseError' in facts && facts.parseError),
+        diagnostic: {
+          code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,
+          message: `${key}: page transport requirements are unknown. ${facts?.reason ?? 'Source parser unavailable.'}`,
+        },
+      };
+      transport = facts.options.transport ?? 'http';
+      stateful = facts.options.stateful === true;
+      line = facts.decoratorLine ?? undefined;
+    }
+    // The Markdown transform fixes its generated transport to HTTP.
+    const requirement: CapabilityUse = { feature: 'page transport', source: { file, line },
+      requires: { transports: [transport as 'http' | 'sse' | 'durable-object'],
+        ...(transport === 'durable-object' && stateful ? { durableState: true } : {}) } };
+    return { requirement };
+  };
+
   return {
     name: 'cossack-pages',
     enforce: 'pre',
@@ -155,29 +188,21 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         const bindings = options.capabilities.bindings ?? (runtime === 'cloudflare'
           ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV) : []);
         const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
-        const { pageKeys } = scanPagesDir(resolve(projectRoot, 'src/pages'), markdownEnabled);
-        for (const key of pageKeys.sort()) {
-          const file = resolve(projectRoot, key.slice(1));
+        capabilityBindings = bindings;
+        refreshCapabilityPages();
+        for (const file of [...capabilityPages].sort()) {
           this.addWatchFile(file);
-          // The Markdown transform below fixes its generated transport to HTTP.
-          let transport = 'http';
-          let stateful = false;
-          let line: number | undefined;
-          if (key.endsWith('.ts')) {
-            const source = readFileSync(file, 'utf8');
-            if (classifyRoute(filePathToHttpRoute(key)) === 'api' && await isHttpHandlerModule(source)) continue; // All supported runtimes provide HTTP handlers.
-            const facts = await extractPageOptionsFromAst(source);
-            if (facts?.method !== 'ast' || !facts.options) this.error({
-              code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,
-              message: `${key}: page transport requirements are unknown. ${facts?.reason ?? 'Source parser unavailable.'}`,
-            });
-            transport = facts.options.transport ?? 'http';
-            stateful = facts.options.stateful === true;
-            line = facts.decoratorLine ?? undefined;
+          const result = await pageRequirement(file);
+          if (result.diagnostic) {
+            // Syntax still fails transformation. Preserve the development
+            // watcher so source repair can recover; builds remain fail-closed.
+            if (this.environment?.mode === 'dev' && result.parseError) {
+              this.warn(result.diagnostic);
+              continue;
+            }
+            this.error(result.diagnostic);
           }
-          requirements.push({ feature: 'page transport', source: { file, line },
-            requires: { transports: [transport as 'http' | 'sse' | 'durable-object'],
-              ...(transport === 'durable-object' && stateful ? { durableState: true } : {}) } });
+          if (result.requirement) requirements.push(result.requirement);
         }
         const diagnostics = checkCapabilityRequirements(runtime, requirements, bindings);
         const first = diagnostics[0];
@@ -259,6 +284,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         const path = relative(pagesDirectory, file);
         if (path.startsWith('..') || path.startsWith('/') || !/\.(?:ts|mdx?)$/.test(path)) return;
         try {
+          if (options.capabilities) refreshCapabilityPages();
           const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
           if (!generated.changed) return;
           const module = server.moduleGraph.getModuleById(generated.file);
@@ -273,6 +299,19 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     async transform(code, id) {
       // Inject source metadata for DevTools (only in dev mode for client environment)
       const isDev = this.environment?.mode === 'dev';
+      const file = id.split('?')[0].replaceAll('\\', '/');
+      if (isDev && options.capabilities && capabilityPages.has(file)) {
+        // Recheck repaired and edited pages, using original source before
+        // another plugin strips decorators or server-only dependencies.
+        const result = await pageRequirement(file);
+        if (result.diagnostic && !result.parseError) this.error(result.diagnostic);
+        if (result.requirement) {
+          const first = checkCapabilityRequirements(options.capabilities.runtime,
+            [result.requirement], capabilityBindings)[0];
+          if (first) this.error({ code: first.code, id: file,
+            message: `${file}${first.source.line ? `:${first.source.line}` : ''}: ${first.message}` });
+        }
+      }
       if (isDev && id.endsWith('.ts') && code.includes('extends Cossack')) {
         const regex = /(export\s+default\s+|export\s+)?class\s+(\w+)\s+extends\s+Cossack\s*(<[^>]+>)?\s*\{/;
         const match = code.match(regex);

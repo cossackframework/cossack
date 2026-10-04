@@ -47,7 +47,7 @@ run(
     'run',
     'tests/generated-runtime-build.test.js',
     '-t',
-    'executes a generated Desktop application',
+    'executes a generated Desktop application|executes Desktop development',
   ],
   { COSSACK_DESKTOP_ACCEPTANCE: '1' },
 );

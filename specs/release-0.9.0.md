@@ -4,6 +4,10 @@ This release implements the framework, developer experience, agent tooling,
 and Cloudflare work agreed in the feature review. An unchecked item remains
 in scope. Package versions change only after implementation and verification.
 
+User priority (2026-10-04): further Desktop-only work and native-host acceptance
+are optional and deferred. Focus on shared framework, CLI/agent tooling and
+Cloudflare; preserve the completed Desktop work without expanding it.
+
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
 below link directly to those explanations. Completed items retain a short summary.
@@ -18,7 +22,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-- [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results and development traces with the CLI; installed-package parity and native interruption acceptance. See the [completion audit](#codex-cli07-complete-2026-10-04).
+- [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
@@ -45,12 +49,12 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
-- [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable with stable selection, filtering, sorting and pagination; reviewed native UI contracts and installed accessibility guidance. Codex (2026-10-04): original acceptance passes across generated Node/workerd apps, published types, Chromium and the installed catalog. See the [completion audit](#codex-rt23-complete-2026-10-04).
+- [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
-- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs. Cloudflare, Node and Deno HTTP/SSE/WebSocket capture include native-body evidence and CLI/MCP parity. Deno normal/JSON CLI development and HTTPS/WSS acceptance pass. Desktop development acceptance remains. See the [checkpoint](#codex-deno-traces-2026-10-04).
+- [x] [RT-28](./release-0.9.0-plan.md#rt-28) Bounded devtools snapshots and correlated timelines across supported runtimes, shared CLI/MCP records and production exclusion; [completion audit](#codex-rt28-complete-2026-10-04).
 - [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite. GLM (2026-10-02): `@cossackframework/test-utils/server` — `withRequestScope` (production request-context ALS + root service scope, awaited disposal, restoration on failure) and `controlledAsync` (settle-once deferred + shared AbortSignal); own suite now runs in root `pnpm test:unit`; remaining: framework-level RPC dispatch fixtures, auth fixtures, hydration helpers, and tarball-import verification.
 
 ## New services
@@ -88,53 +92,87 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-rt28-complete-2026-10-04"></a>
+### Codex: Desktop development and RT-28 completion (2026-10-04)
+
+Desktop now runs Vite inside Electron through a separate development entry. The
+public CLI supervises one child; page edits reload windows, while native entry,
+Vite config and root environment-file changes restart the child. Private-origin
+request ownership remains enforced. The optional asset provider serves Vite
+assets without exposing native application handlers on loopback HTTP.
+
+The generated bootstrap exports `frameworkApp`, `env` and `startDesktop(factory)`.
+Production starts it through a DEV guard and bundles dependencies; development
+uses normal external package resolution. See the [migration](./migration-0.9.0.md#desktop-vite-development).
+Page syntax repair preserves the watcher, clears a stale startup overlay and
+rechecks capability requirements. Unsupported/dynamic transports still fail.
+Document transforms leave opaque HTML RPC bodies unread and unchanged.
+
+Verification (all pass):
+
+- `pnpm test:desktop` (`/tmp/cossack-desktop-dev-gate.log`): dependency builds,
+  12 installed tarballs, generated type checking, real Electron production and
+  development, ASAR inspection, relocated native execution and Linux DEB. The
+  workspace portion passes **3 cases / 51 unrelated skipped**. Development covers
+  startup/page syntax recovery, source reload, environment/config/bootstrap
+  restarts, normal shutdown and parent-crash cleanup. Five actions cover state,
+  streams, binary/HTML native responses and cancellation after server entry;
+  repeated cancellation records one terminal. Browser/disk/CLI/MCP records agree.
+  Production excludes trace hooks and inspector/source markers even with capture
+  enabled in project configuration. Installed Vite 8.3.2 and workspace 8.1.4 pass.
+- `pnpm --filter @cossackframework/desktop test`: **33 tests / 7 files**
+  (`/tmp/cossack-desktop-dev-unit.log`).
+- `pnpm --filter @cossackframework/scaffold test`: **113 tests / 8 files**
+  (`/tmp/cossack-desktop-dev-scaffold.log`).
+- Core focused tests: `pnpm --filter @cossackframework/core exec vitest run
+  tests/development-trace.test.ts tests/service-development-trace.test.ts
+  tests/development-inspection.test.ts tests/development-trace-build.test.ts`:
+  **35 tests / 4 files** (`/tmp/cossack-desktop-trace-core.log`).
+- Framework focused tests: `pnpm --filter @cossackframework/framework exec vitest run
+  tests/build-capabilities.test.ts tests/runtime-capabilities.test.ts
+  tests/route-codegen.test.ts tests/vite-security-plugin.test.ts tests/devtools.test.ts
+  tests/devtools-browser.test.ts tests/development-traces.test.ts
+  tests/development-trace-bridge.test.ts tests/native-trace-channel.test.ts
+  tests/navigation-trace-build.test.ts`: **245 tests / 10 files**
+  (`/tmp/cossack-desktop-framework-regressions.log`).
+- Root `pnpm tsc --noEmit`, `pnpm typecheck` (**11 packages**) and
+  `pnpm --filter @cossackframework/example-desktop-counter exec tsc --noEmit`
+  pass. `pnpm install --lockfile-only --ignore-scripts` reports the lockfile current.
+
+Original RT-28 criteria audit:
+
+| Requirement | Evidence |
+| --- | --- |
+| Follow an action through request, result and state | Core proxy tests assert ordered correlated phases; native Desktop actions update the UI and join server dispatch/body evidence. Prior [Cloudflare](#codex-cli07-complete-2026-10-04), [Node](#codex-node-websocket-development-2026-10-04) and [Deno](#codex-deno-traces-2026-10-04) installed gates cover their supported transports. |
+| Terminal events for disconnect/cancellation | Core tests execute real socket frame routing/disconnect cleanup and repeated HTTP/service cancellation; native Desktop cancellation is recorded once after server entry. |
+| Bounded, redacted passive snapshots | Core inspection tests cover state, resources, real service scopes and transport status without invoking getters/loaders. Capture/storage tests cover limits, dropped events, ownership and rejected payloads. |
+| Production excludes development code and source metadata | Core/framework production builds and the installed Desktop ASAR checks remove capture, inspector, bridge and source markers. |
+| CLI/MCP read the same facts | Installed Desktop readers match the browser/disk snapshot through the existing shared schema; the earlier installed runtime gates cover Cloudflare, Node and Deno. |
+
+**RT-28 is complete: 27 of 58 tasks complete, 31 open.** Versions remain 0.8.3.
+Further Desktop OS integration/sandbox, Windows/macOS packaging and signing
+are deferred under the user's priority. REL-03 retains the required non-Desktop
+release matrix. Cancellation does not undo
+external effects; body headers do not prove consumption, and stored records are
+not live state. No deployment, publication or push occurred.
+
 <a id="codex-desktop-native-2026-10-04"></a>
-### Codex: Native Desktop requests and Linux packaging (2026-10-04)
+### Codex: Completed Desktop checkpoint (2026-10-04)
 
-Native Electron acceptance exposed two release defects. Chromium omitted `Origin`
-on private-protocol actions, causing legitimate RPC to return 403. Window scope
-also depended on a renderer-controlled query/referrer. The runtime now verifies
-Electron's native initiator and managed webContents identity in a dedicated
-persistent session, passes private proof to the protocol handler, then removes
-that proof before application dispatch. External requests cannot retain proof.
-Foreign and opaque frames cannot execute native mutations. This requires Electron
-43.7+ in the 43.x series, or 44.4+; see the [migration notes](./migration-0.9.0.md#desktop-native-request-ownership).
-
-The actual generated ASAR also contained the `.env.production` test sentinel.
-Generated and example Forge configs now include only the manifest, Desktop and
-client bundles, and native assets. The installed-tarball helper preserves existing
-pnpm overrides while adding local package resolutions.
-
-Verification:
-
-- `pnpm test:desktop` **passes** (`/tmp/cossack-desktop-gate.log`): sequential
-  dependency builds, 12 tarballs, fresh generated TypeScript, native Electron RPC,
-  streamed/binary responses, two-window ownership, foreign/opaque-frame rejection,
-  renderer isolation and persistence across restart. ASAR excludes private
-  sentinels/source/dependencies and server-only renderer code. A relocated package
-  passes the same native checks; Forge constructs a DEB containing the app, icon
-  and launcher. Installed Electron 43.7.7 / Vite 8.3.2 pass, followed by the
-  workspace Electron 43.7.6 / Vite 8.1.4 case (**1 pass / 51 unrelated skipped**).
-- Desktop unit suite: **28 tests / 5 files pass**
-  (`/tmp/cossack-desktop-unit.log`), including forged/missing proof, old Electron
-  versions, closed windows and private-header stripping.
-- Scaffold suite: **78 tests pass** (`/tmp/cossack-desktop-scaffold.log`).
-- Root `pnpm tsc --noEmit` and all **11 package type checks pass**
-  (`/tmp/cossack-desktop-root-types.log`, `/tmp/cossack-desktop-package-types.log`).
-
-The native gate uses Xvfb and the existing uninstalled Linux sandbox fallback;
-secure renderer preferences are asserted, but installed OS sandbox behavior is
-not claimed. Installed menus/tray/notifications/icons, Windows/macOS packaging,
-conditional signing, Desktop development traces and the final release matrix
-remain open. `desktop:dev` still uses production build watchers. **26 complete,
-32 open**; versions remain 0.8.3. No deployment, publication or push occurred.
+Committed at `fa434f8`: native request ownership and restricted production
+packaging. Installed/workspace Electron acceptance, Linux DEB, 28 Desktop tests,
+78 scaffold tests and root/all 11 package type checks passed. Full commands,
+versions and limits are in the [verification archive](./release-0.9.0-verification-archive.md#codex-desktop-native-2026-10-04).
+These results precede the [development runner and RT-28 audit](#codex-rt28-complete-2026-10-04).
+Further installed OS integration, other OS packages and signing are now deferred
+under the user's Desktop priority.
 
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
 remain in the [verification archive](./release-0.9.0-verification-archive.md). Existing checkpoint
 anchors below link to those records. Archiving a checkpoint does not complete its
-parent task. Current status is 26 complete and 32 open.
+parent task. Current status is 27 complete and 31 open.
 
 | Recorded checkpoint and full evidence |
 | --- |

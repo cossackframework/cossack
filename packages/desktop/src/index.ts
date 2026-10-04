@@ -112,6 +112,8 @@ export interface CreateDesktopAppOptions {
   identifier: string;
   productName: string;
   assetsRoot: string;
+  /** Optional asset provider. Return 404 to continue to the application router. */
+  assets?: { fetch(request: Request): Response | Promise<Response> };
   fetch: DesktopFetch;
   env?: Record<string, unknown>;
   startPath?: string;
@@ -534,13 +536,15 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
     if (request.headers.get(desktopTokenHeader) !== requestToken || !browserWindow)
       return new Response('Unverified Desktop request', { status: 403 });
     const scopedShell = createDesktopShell({ window: browserWindow });
-    const asset = await assetResponse(assetsRoot, request);
-    if (asset) return asset;
-    const assets = {
+    const frameworkRequest = toFrameworkRequest(request);
+    const assets = options.assets ?? {
       fetch: async (assetRequest: Request) =>
         await assetResponse(assetsRoot, assetRequest) ?? new Response('Not found', { status: 404 }),
     };
-    return options.fetch(toFrameworkRequest(request), {
+    const asset = await assets.fetch(frameworkRequest);
+    if (asset.status !== 404) return asset;
+    await asset.body?.cancel();
+    return options.fetch(frameworkRequest, {
       ...(options.env ?? {}),
       ASSETS: assets,
       COSSACK_DESKTOP: scopedShell,

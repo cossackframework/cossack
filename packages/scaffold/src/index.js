@@ -1022,8 +1022,8 @@ export const frameworkApp = createApp({
   runtimeAdapter: electronRuntimeAdapter,
 });
 
-async function main() {
-  const desktop = await createDesktopApp({
+export async function startDesktop(createApplication = createDesktopApp) {
+  const desktop = await createApplication({
     identifier: '${desktopIdentifier(projectName)}',
     productName: '${projectName.replaceAll("'", "\\'")}',
     assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
@@ -1039,9 +1039,10 @@ async function main() {
     behavior: 'quit',
     onQuit: () => desktop.quit(),
   });
+  return desktop;
 }
 
-void main().catch((error) => {
+if (!import.meta.env.DEV) void startDesktop().catch((error) => {
   console.error('Cossack Desktop failed to start.', error);
   electronApp.exit(1);
 });
