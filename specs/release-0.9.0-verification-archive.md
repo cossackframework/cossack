@@ -6,6 +6,59 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-settings-panel-2026-10-04"></a>
+## Codex SettingsPanel (2026-10-04)
+
+Author: Codex. SettingsPanel now has closed native root props, readonly section
+and row contracts, stable section IDs and panel-wide row keys, and explicit
+controlled/default ownership. Text and switch values validate against their row
+type. Local defaults are captured once; callback snapshots do not alias local
+state. Controlled rejection restores native values even when props are unchanged.
+The private state no longer collides with mirrored values props.
+
+Native labels, names and hint descriptions are connected. Actions require labels
+and callbacks, are always non-submit buttons, and use explicit destructive intent.
+The root is a div with a focus fallback. Keyed controls retain identity; focus
+repair waits for nested updates and respects focus outside the panel. The browser
+regression caught focus loss when existing nodes moved.
+
+Native form reset proposes the initial snapshot after the browser default action.
+Prevented events do not reset state. Each event owns its pending callback, and
+cleanup clears listeners/timers. Fresh-client acceptance exposed a missed listener
+when the root arrived after onMount; root connection now also schedules setup.
+Reset veto, repeated resets, controlled rejection and unmount cancellation pass.
+The framework demo now uses the reviewed API and exposes harmless action feedback.
+CLI source ejection imports the same public primitives/types.
+
+Verification:
+
+- UI build passes. `pnpm --filter @cossackframework/ui exec vitest run`: 636 tests
+  across 46 files pass, including SSR defaults, invalid contracts, prototype-like
+  keys, immutable public types and callback behavior.
+- `pnpm --filter cossack exec vitest run tests/settings-panel-browser.test.js tests/ui-ejection.test.js`:
+  45 tests pass (43 ejection checks plus published/ejected HTTP Chromium fixtures).
+  Actual Tailwind, no-JavaScript SSR, retained hydration, fresh rendering, labels,
+  descriptions, keyboard/label activation, native FormData, disabled controls,
+  controlled acceptance/rejection, callback mutation/failure, reset/veto,
+  reorder/removal focus, responsive sizing and cleanup/remounts are covered.
+- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/settings-panel-block.spec.ts --workers=1 --reporter=line`:
+  the actual controlled settings demo passes (5.0 seconds). The mobile layout
+  assertion waits for the shell sidebar transition; inspection confirmed the
+  settled layout fits. The owned Vite server was stopped afterward.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed controlled/default prop branches,
+  readonly sections, native div targets and public row/value types are verified.
+  The authored guide is discoverable; exact SettingsPanel CLI/MCP output matches.
+  Six existing packaged examples compile and execute. Discovery disables Node
+  networking; installation can use the registry. This guide adds no executable example.
+
+Logs: `/tmp/cossack-settings-panel-{build,ui-full,browser-final,types-final,demo-final,dev,agent-docs}.log`.
+All 65 component-source rows plus Icon and all four blocks now have reviewed
+foundations. Next audit the original RT-23 acceptance against generated DataTable
+and installed catalog evidence. Other-engine, assistive-technology and full runtime
+release gates remain separate. RT-23 and CLI-07/CLI-08 remain open for that audit;
+release status stays 24/58 complete and versions stay 0.8.3.
+
 <a id="codex-dashboard-stat-2026-10-04"></a>
 ## Codex DashboardStat (2026-10-04)
 

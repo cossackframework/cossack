@@ -1,11 +1,11 @@
 # UI contract audit for 0.9.0
 
-Author: Codex. Updated 2026-10-04. This inventory supports RT-23; it does not close the task.
+Author: Codex. Updated 2026-10-04. RT-23 passed its [original acceptance audit](./release-0.9.0.md#codex-rt23-complete-2026-10-04). Broader release gates remain open.
 
 Every component needs declared native attribute ownership, typed events, label guidance,
 keyboard/focus review and appropriate browser evidence. Existing tests remain useful,
 but a pending row means this contract audit is incomplete. Files with multiple exported
-components include all of those exports. Blocks and icons need a separate final pass.
+components include all of those exports. Blocks and icons have completed their separate contract pass.
 
 ## Reviewed foundation
 
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Blocks and icons
 
-All 65 rows above have reviewed foundations. Icon and all four blocks also have reviewed foundations. They were always part of RT-23; the component count does not close the task.
+All 65 rows above have reviewed foundations. Icon and all four blocks also have reviewed foundations. The separate original-criteria audit closes RT-23; the count alone is not the completion evidence.
 
 | Source | Contract audit | Evidence / next action |
 | --- | --- | --- |
@@ -135,19 +135,14 @@ All 65 rows above have reviewed foundations. Icon and all four blocks also have 
 | [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Reviewed foundation | Native list/definition semantics and props, stable readonly metrics, explicit direction/tone, visible localized meaning, responsive wrapping, published/ejected Chromium, real demo and installed guidance. |
 | [SettingsPanel](../packages/ui/src/blocks/SettingsPanel/index.ts) | Reviewed foundation | Readonly row schema, explicit controlled/default values, native labels/names/reset, safe actions, callback snapshots, keyed focus, published/ejected Chromium, actual demo and installed guidance. |
 
-## Next passes
+## Regression coverage and remaining release gates
 
-Audit RT-23 against its original generated-app, type, keyboard/focus and catalog criteria.
-Preserve the [Icon regressions](./release-0.9.0.md#codex-icon-2026-10-04),
-including raw-artwork trust boundaries, native SVG namespaces and SSR escaping.
+RT-23's original generated-app, type, keyboard/focus and installed catalog criteria
+pass. See the [completion audit](./release-0.9.0.md#codex-rt23-complete-2026-10-04)
+for the requirement-to-evidence table and fresh Node/workerd results.
 
-Block tests must render and operate the actual compositions through published and
-ejected imports. Preserve meaningful native keyboard/focus behavior, public types,
-SSR/hydration and installed guidance. Do not mechanically replace every index
-signature: each actual target and state owner determines its contract.
-
-Revalidate the existing RT-23 generated-app acceptance,
-including DataTable server data, filters, sorting, pagination and stable selection.
-Source foundations and fixture checks do not establish other-browser or assistive-
-technology acceptance. The [verification log](./release-0.9.0.md#verification-log)
-retains component evidence and links archived checkpoints.
+Preserve the published/ejected browser, native form, SSR/hydration, public-type
+and installed-guidance coverage listed above. Other browser engines, assistive
+technologies, complete compatibility/contrast checks and the full runtime release
+matrix remain broader release work. Historical foundation records retain their
+exact scope and limits in the [verification archive](./release-0.9.0-verification-archive.md).

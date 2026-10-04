@@ -45,7 +45,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
-- [ ] [RT-23](./release-0.9.0-plan.md#rt-23) Typed DataTable with server data, filtering, sorting, selection, and pagination; native UI attributes/events and accessibility catalog. Codex (2026-10-04): controlled DataTable, stable selection, public types, SSR, HTTP-backed Chromium keyboard/focus coverage and installed guidance are implemented. Generated Cossack app integration and the broader UI audit remain open. See the [checkpoint](#codex-data-table-2026-10-04).
+- [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable with stable selection, filtering, sorting and pagination; reviewed native UI contracts and installed accessibility guidance. Codex (2026-10-04): original acceptance passes across generated Node/workerd apps, published types, Chromium and the installed catalog. See the [completion audit](#codex-rt23-complete-2026-10-04).
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
@@ -88,68 +88,51 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-settings-panel-2026-10-04"></a>
-### Codex SettingsPanel (2026-10-04)
+<a id="codex-rt23-complete-2026-10-04"></a>
+### Codex RT-23 completion audit (2026-10-04)
 
-Author: Codex. SettingsPanel now has closed native root props, readonly section
-and row contracts, stable section IDs and panel-wide row keys, and explicit
-controlled/default ownership. Text and switch values validate against their row
-type. Local defaults are captured once; callback snapshots do not alias local
-state. Controlled rejection restores native values even when props are unchanged.
-The private state no longer collides with mirrored values props.
+Author: Codex. RT-23 is complete against its original acceptance criteria. This
+closes the DataTable/UI contract task, not CLI-08, REL-02 or REL-03. Release status
+is now 25/58 complete, with 33 tasks open. Versions remain 0.8.3.
 
-Native labels, names and hint descriptions are connected. Actions require labels
-and callbacks, are always non-submit buttons, and use explicit destructive intent.
-The root is a div with a focus fallback. Keyed controls retain identity; focus
-repair waits for nested updates and respects focus outside the panel. The browser
-regression caught focus loss when existing nodes moved.
+| Original requirement | Inspected evidence and result |
+| --- | --- |
+| Generated app filters/pages server data without incorrect selection loss | The generated fixture uses a real HTTP data backend, `server$`, URL state and client selection. Node and local workerd both pass copied-page SSR, hydration without duplicate reads, selection across pages/history/filtering, sorting, page sizes, empty data and refresh failure/retry. |
+| Invalid column accessors fail type checks | Published-declaration fixtures reject nonexistent keys, invalid accessor properties and competing key/accessor declarations. Valid generic columns compile. The compiler fixture passes with checked `@ts-expect-error` cases. |
+| Browser keyboard and focus behavior | Generated apps verify Space selection, paging/filter/retry focus and browser history. The standalone browser test adds keyboard sorting/paging, mixed/visible selection, off-page preservation and disabled boundary navigation. |
+| Catalog states attributes, events and accessibility requirements | Shared CLI/MCP documentation reads installed declarations plus 39 authored UI guides. The current installed acceptance verifies DataTable, native targets/events, union branches and reviewed guide availability; SettingsPanel exact-symbol CLI/MCP parity passed before this audit. Native semantics and restrictions are authored, not inferred from export presence. |
+| UI contract audit across the catalog | Inventory paths match all 65 component source files exactly. All 70 component/icon/block rows have reviewed contracts and linked evidence. Current public type fixtures and the latest 636-test UI suite retain their regressions. |
 
-Native form reset proposes the initial snapshot after the browser default action.
-Prevented events do not reset state. Each event owns its pending callback, and
-cleanup clears listeners/timers. Fresh-client acceptance exposed a missed listener
-when the root arrived after onMount; root connection now also schedules setup.
-Reset veto, repeated resets, controlled rejection and unmount cancellation pass.
-The framework demo now uses the reviewed API and exposes harmless action feedback.
-CLI source ejection imports the same public primitives/types.
+Fresh verification against the current source/build:
 
-Verification:
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'integrates the DataTable' --maxWorkers=1`:
+  2 pass (Node/workerd), 31 unrelated cases skipped; 28.34 seconds.
+  Log: `/tmp/cossack-rt23-generated-final.log`.
+- `pnpm --filter cossack exec vitest run tests/data-table-browser.test.js`:
+  1 passes; 4.48 seconds. Log: `/tmp/cossack-rt23-browser-final.log`.
+- `pnpm --filter @cossackframework/ui exec vitest run tests/data-table.test.ts tests/data-table-types.test.ts`:
+  7 pass across 2 files. Log: `/tmp/cossack-rt23-types-final.log`.
+- The immediately preceding [SettingsPanel checkpoint](#codex-settings-panel-2026-10-04)
+  verifies the final UI build, 636 UI tests, root/all-package types and installed
+  tarballs. No source or package guidance changed during this audit.
+- Inventory/checklist paths and anchors were checked. Only RT-23 changes status.
 
-- UI build passes. `pnpm --filter @cossackframework/ui exec vitest run`: 636 tests
-  across 46 files pass, including SSR defaults, invalid contracts, prototype-like
-  keys, immutable public types and callback behavior.
-- `pnpm --filter cossack exec vitest run tests/settings-panel-browser.test.js tests/ui-ejection.test.js`:
-  45 tests pass (43 ejection checks plus published/ejected HTTP Chromium fixtures).
-  Actual Tailwind, no-JavaScript SSR, retained hydration, fresh rendering, labels,
-  descriptions, keyboard/label activation, native FormData, disabled controls,
-  controlled acceptance/rejection, callback mutation/failure, reset/veto,
-  reorder/removal focus, responsive sizing and cleanup/remounts are covered.
-- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/settings-panel-block.spec.ts --workers=1 --reporter=line`:
-  the actual controlled settings demo passes (5.0 seconds). The mobile layout
-  assertion waits for the shell sidebar transition; inspection confirmed the
-  settled layout fits. The owned Vite server was stopped afterward.
-- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
-- `pnpm test:agent-docs:local` passes. Installed controlled/default prop branches,
-  readonly sections, native div targets and public row/value types are verified.
-  The authored guide is discoverable; exact SettingsPanel CLI/MCP output matches.
-  Six existing packaged examples compile and execute. Discovery disables Node
-  networking; installation can use the registry. This guide adds no executable example.
-
-Logs: `/tmp/cossack-settings-panel-{build,ui-full,browser-final,types-final,demo-final,dev,agent-docs}.log`.
-All 65 component-source rows plus Icon and all four blocks now have reviewed
-foundations. Next audit the original RT-23 acceptance against generated DataTable
-and installed catalog evidence. Other-engine, assistive-technology and full runtime
-release gates remain separate. RT-23 and CLI-07/CLI-08 remain open for that audit;
-release status stays 24/58 complete and versions stay 0.8.3.
+Limits retained: generated runtime fixtures link workspace packages; installed
+catalog/type/example acceptance is separate. Chromium evidence does not prove
+other browser engines or assistive technologies. No live deployment or remote
+readiness is claimed. These limits remain in the broader release gates rather
+than being substituted for RT-23's original completion criteria.
 
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
 remain in the [verification archive](./release-0.9.0-verification-archive.md). Existing checkpoint
 anchors below link to those records. Archiving a checkpoint does not complete its
-parent task. Status remains 24 complete and 34 open.
+parent task. Current status is 25 complete and 33 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-settings-panel-2026-10-04"></a>[Codex SettingsPanel (2026-10-04)](./release-0.9.0-verification-archive.md#codex-settings-panel-2026-10-04) |
 | <a id="codex-dashboard-stat-2026-10-04"></a>[Codex DashboardStat (2026-10-04)](./release-0.9.0-verification-archive.md#codex-dashboard-stat-2026-10-04) |
 | <a id="codex-command-palette-2026-10-04"></a>[Codex CommandPalette (2026-10-04)](./release-0.9.0-verification-archive.md#codex-command-palette-2026-10-04) |
 | <a id="codex-auth-form-2026-10-04"></a>[Codex AuthForm (2026-10-04)](./release-0.9.0-verification-archive.md#codex-auth-form-2026-10-04) |

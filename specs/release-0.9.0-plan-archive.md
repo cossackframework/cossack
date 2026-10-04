@@ -4931,3 +4931,52 @@ Reviewed foundation: [DashboardStat checkpoint](./release-0.9.0.md#codex-dashboa
   control targets and fresh callback snapshots; do not infer labels from keys.
 
 Reviewed foundation: [SettingsPanel checkpoint](./release-0.9.0.md#codex-settings-panel-2026-10-04).
+
+<a id="codex-rt23-final-plan-2026-10-04"></a>
+## Codex RT-23 final plan and completion (2026-10-04)
+
+The following is the last open-task plan, retained unchanged for context.
+Completion: [original acceptance audit](./release-0.9.0.md#codex-rt23-complete-2026-10-04).
+
+### RT-23: DataTable and UI contracts
+
+Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
+have reviewed contracts. Icon and all four blocks also have reviewed foundations; original RT-23 acceptance still needs its final audit. The [component audit](./ui-contract-audit.md) owns component coverage and
+pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
+[SettingsPanel verification](./release-0.9.0.md#codex-settings-panel-2026-10-04) for the latest checkpoint.
+
+Next: Follow the acceptance audit in the [handoff](./handoff-0.9.0.md).
+Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
+labels, focus and packaged guidance in scope. Component checkpoints do not close
+the broader audit or full release matrix. RT-23 remains open.
+
+Completed UI batch plans and their review links are retained in the
+[plan archive](./release-0.9.0-plan-archive.md). Preserve their regression coverage.
+
+Next: Audit the original acceptance below against current source and tests.
+[Generated DataTable integration](./release-0.9.0.md#codex-data-table-integration-2026-10-04)
+already records Node/workerd server-resource, URL-state, selection and focus cases.
+Revalidate the generated fixtures and installed catalog after the UI changes.
+Do not keep RT-23 open solely for the broader REL-03 runtime matrix; close it only
+when its own criteria and all inventory rows are supported by evidence. Keep
+other-engine, assistive-technology and full release gates explicitly separate.
+
+Purpose: Applications need a typed table for real server data, and agents need
+reliable component attributes, events, and accessibility guidance.
+
+Baseline: The UI package has many primitives and templates. The task adds a
+complete table contract and audits existing component interfaces.
+
+Approach: Add typed row/column definitions, stable row IDs, sorting, filtering,
+selection, and pagination. Support controlled server-driven state so large data
+sets do not require loading all rows. Define loading, empty, and error views.
+Audit native attribute forwarding, event types, keyboard behavior, labels, and
+focus management across the catalog. Keep data access outside the UI package.
+
+Start in `packages/ui/src/components/`, its public exports/tests, and table
+recipes that consume RT-03, RT-08, and RT-15.
+
+Done when: A generated app filters and pages server data without losing selection
+incorrectly. Type tests reject invalid column accessors. Browser tests cover
+keyboard and focus behavior. The generated catalog states attributes, events,
+and accessibility requirements. Related tasks: CLI-08 and REL-01.

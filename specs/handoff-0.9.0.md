@@ -1,42 +1,36 @@
 # Cossack 0.9.0 agent handoff
 
 Author: Codex. Compacted on 2026-10-04. Branch: `fix-084`.
-24 of 58 release tasks are complete. 34 remain open.
+25 of 58 release tasks are complete. 33 remain open.
 Versions stay at 0.8.3 until REL-04.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links the
-24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
+25 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-RT-23: **65/65 component-source foundations plus Icon and all four blocks reviewed**.
-Completed [verification records](./release-0.9.0-verification-archive.md) and
-[batch plans](./release-0.9.0-plan-archive.md) are archived. The latest
-[SettingsPanel checkpoint](./release-0.9.0.md#codex-settings-panel-2026-10-04)
-records value ownership, native reset and focus regressions. RT-23 still needs
-its final acceptance audit; do not count this component milestone as task completion.
+RT-23 is complete against its [original acceptance criteria](./release-0.9.0.md#codex-rt23-complete-2026-10-04).
+All 65 component-source rows plus Icon and four blocks have reviewed contracts.
+Generated Node/workerd DataTable, published type and keyboard/focus checks pass.
+The completed audit is distinct from the remaining full release gates.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Audit **RT-23 against its original acceptance**. All UI inventory rows now have
-   reviewed foundations. Revalidate the generated DataTable Node/workerd cases in
-   `packages/cossack/tests/generated-runtime-build.test.js` (filter: `integrates the DataTable`)
-   and `tests/data-table-browser.test.js`, and inspect their actual coverage.
-   The [integration checkpoint](./release-0.9.0.md#codex-data-table-integration-2026-10-04)
-   records prior selection, query, hydration and focus evidence. Current installed
-   acceptance retains DataTable and all reviewed UI guide/prop checks. Match those
-   results to the [original criteria](./release-0.9.0-plan.md#rt-23), then close the
-   task if proved. Keep broader REL-03/runtime/other-engine gates separate.
-2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
-   examples and verified runtime support. Use the shared services described in
-   [tool usage](../docs/local-agent-tools.md) and extend
-   [installed-tarball acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
-   Discovery reads examples without executing them; runtime availability remains unverified.
-3. Add **CLI-07 stored test results and RT-28 snapshots/traces** through shared
-   services. Then follow every remaining checklist item and its detailed plan.
-   Close tasks only against their original acceptance criteria.
+1. Continue **CLI-07 stored test results and RT-28 snapshots/traces** through shared
+   services. The MCP server currently exposes inspection and documentation only;
+   the CLI has no test-results command or shared report model. Define versioned
+   report provenance, freshness and bounded/redacted reads, then expose the same
+   service through CLI and MCP. Preserve project path boundaries, cancellation
+   and clean stdout. Inspect actual test-runner integration before choosing the
+   report producer; do not parse human terminal output or invent passing results.
+2. Continue **CLI-08** authored API/recipe guidance, executable examples and
+   verified runtime support. UI contracts/guides are reviewed under RT-23; not all
+   guides have executable examples. Extend [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04)
+   using the [shared documentation services](../docs/local-agent-tools.md).
+3. Follow every remaining checklist item and its detailed plan. Close tasks only
+   against their original acceptance criteria. Preserve completed-task regressions.
 
 ## Limits to retain
 

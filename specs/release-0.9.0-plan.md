@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. The release has 58 tasks: 24 complete and 34 open.
+Compacted by Codex on 2026-10-04. The release has 58 tasks: 25 complete and 33 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -10,7 +10,7 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
-Continue RT-23 and CLI-07/CLI-08 as described in the handoff. All unchecked tasks
+Continue CLI-07/CLI-08 and RT-28 as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
 Read [architecture](./architecture.md) before significant changes. Paths below
@@ -89,7 +89,7 @@ Add focused tests during each group, and run broader gates after integration.
 | 1. Finish current runtime work | RT-01, RT-12 | Distributed SSE works through generated apps and retains request ownership. |
 | 2. Establish shared metadata and diagnostics | RT-24, RT-29 | Tools and types describe the behavior that the compiler and runtime execute. |
 | 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
-| 4. Complete data and content features | RT-13, RT-15 through RT-17, RT-20 through RT-23, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
+| 4. Complete data and content features | RT-13, RT-15 through RT-17, RT-20 through RT-22, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-07, CLI-08, RT-28 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
@@ -121,6 +121,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="rt-14"></a>RT-14 | [Resource authorization policies](./release-0.9.0-plan-archive.md#rt-14) |
 | <a id="rt-18"></a>RT-18 | [Cache and rate-limit contracts](./release-0.9.0-plan-archive.md#rt-18) |
 | <a id="rt-19"></a>RT-19 | [Realtime lifecycle and recovery](./release-0.9.0-plan-archive.md#rt-19) |
+| <a id="rt-23"></a>RT-23 | [DataTable, native UI contracts and installed accessibility guidance](./release-0.9.0-plan-archive.md#codex-rt23-final-plan-2026-10-04) |
 | <a id="rt-25"></a>RT-25 | [Runtime capability checks](./release-0.9.0-plan-archive.md#rt-25) |
 | <a id="cf-03"></a>CF-03 | [Secrets, placeholders, and binding types](./release-0.9.0-plan-archive.md#cf-03) |
 | <a id="cf-05"></a>CF-05 | [Distributed SSE coordination](./release-0.9.0-plan-archive.md#cf-05) |
@@ -172,12 +173,12 @@ Codex status (2026-10-04): CLI and MCP share fresh installed-package catalogs,
 command schemas, declaration signatures, exact-symbol queries and packaged guidance.
 Wildcard discovery preserves export precedence and exclusions. Prop catalogs retain
 member documentation and explicit partial results. Six route, renderer and recipe
-examples compile and execute from installed tarballs. UI guides grow with RT-23.
+examples compile and execute from installed tarballs. The RT-23 UI catalog audit is complete.
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
 [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
 
 Remaining: Complete authored API/component/recipe coverage, executable examples and
-verified runtime guidance. Keep RT-23 and REL-02 acceptance in scope.
+verified runtime guidance. Preserve RT-23 regressions and finish REL-02 acceptance.
 Discovery never executes examples. Declaration presence does not prove runtime
 imports or native attribute behavior. Platform diagnostics and bounded scans can
 produce partial catalogs. Discovery tests block Node networking, but installation
@@ -511,50 +512,6 @@ Done when: Invalid metadata fails before output. Mixed Markdown/TypeScript route
 collisions are rejected. Locale pages contain the correct language, metadata,
 and links with no cross-render leakage. Type tests cover the author-facing
 frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
-
-<a id="rt-23"></a>
-### RT-23: DataTable and UI contracts
-
-Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
-have reviewed contracts. Icon and all four blocks also have reviewed foundations; original RT-23 acceptance still needs its final audit. The [component audit](./ui-contract-audit.md) owns component coverage and
-pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[SettingsPanel verification](./release-0.9.0.md#codex-settings-panel-2026-10-04) for the latest checkpoint.
-
-Next: Follow the acceptance audit in the [handoff](./handoff-0.9.0.md).
-Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
-labels, focus and packaged guidance in scope. Component checkpoints do not close
-the broader audit or full release matrix. RT-23 remains open.
-
-Completed UI batch plans and their review links are retained in the
-[plan archive](./release-0.9.0-plan-archive.md). Preserve their regression coverage.
-
-Next: Audit the original acceptance below against current source and tests.
-[Generated DataTable integration](./release-0.9.0.md#codex-data-table-integration-2026-10-04)
-already records Node/workerd server-resource, URL-state, selection and focus cases.
-Revalidate the generated fixtures and installed catalog after the UI changes.
-Do not keep RT-23 open solely for the broader REL-03 runtime matrix; close it only
-when its own criteria and all inventory rows are supported by evidence. Keep
-other-engine, assistive-technology and full release gates explicitly separate.
-
-Purpose: Applications need a typed table for real server data, and agents need
-reliable component attributes, events, and accessibility guidance.
-
-Baseline: The UI package has many primitives and templates. The task adds a
-complete table contract and audits existing component interfaces.
-
-Approach: Add typed row/column definitions, stable row IDs, sorting, filtering,
-selection, and pagination. Support controlled server-driven state so large data
-sets do not require loading all rows. Define loading, empty, and error views.
-Audit native attribute forwarding, event types, keyboard behavior, labels, and
-focus management across the catalog. Keep data access outside the UI package.
-
-Start in `packages/ui/src/components/`, its public exports/tests, and table
-recipes that consume RT-03, RT-08, and RT-15.
-
-Done when: A generated app filters and pages server data without losing selection
-incorrectly. Type tests reject invalid column accessors. Browser tests cover
-keyboard and focus behavior. The generated catalog states attributes, events,
-and accessibility requirements. Related tasks: CLI-08 and REL-01.
 
 <a id="rt-24"></a>
 ### RT-24: Inferred configuration and required bindings
