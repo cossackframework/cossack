@@ -11,17 +11,17 @@ components.
 |---|---|---|
 | Granularity | Single primitive (Button, Modal, Table) | Full section (Auth form, Dashboard, Settings) |
 | Depends on | `@cossackframework/core`, `@cossackframework/renderer` | UI components + app state |
-| Ejectable | `cossack add ui <name>` | Copy into `src/blocks/` and customize |
+| Ejectable | `cossack add ui <name>` | AuthForm, CommandPalette and DashboardStat have CLI entries; copy other blocks for now |
 | Goal | Reusable building blocks | Opinionated starting points |
 
 ## Available Blocks
 
 | Block | Description |
 |---|---|
-| **AuthForm** | Login + signup form with validation, password reveal, social buttons |
+| **AuthForm** | Login + signup form with validation, password reveal, explicit provider callbacks |
 | **DashboardStat** | Stat cards grid (KPI tiles with trend indicators) |
 | **SettingsPanel** | Card-section settings page (switch toggles, text inputs, action buttons) |
-| **CommandPalette** | ⌘K command palette with fuzzy search + keyboard navigation |
+| **CommandPalette** | Opt-in Ctrl/Meta+K palette with grouped substring search and keyboard navigation |
 
 The controlled `DataTable` is available from `@cossackframework/ui` as a component.
 Its parent owns server queries and row actions.
@@ -38,16 +38,35 @@ Blocks are published from `@cossackframework/ui/blocks`. They use the
 `@cossackframework/ui` component library and expect the theme CSS to be wired.
 
 ```ts
-import { AuthForm } from '@cossackframework/ui/blocks';
+import { component } from '@cossackframework/renderer';
+import { DashboardStat, type StatItem } from '@cossackframework/ui/blocks';
 
-// In a page:
-render() {
-    return component(AuthForm, {
-        mode: 'login',
-        onSubmit: async (data) => { ... },
-    });
-}
+const stats: readonly StatItem[] = [
+    { id: 'orders', label: 'Orders', value: 0 },
+    {
+        id: 'errors', label: 'Errors', value: 2,
+        change: '-3 this month', trend: 'down', tone: 'positive',
+    },
+];
+
+export const metrics = () => component(DashboardStat, {
+    stats,
+    'aria-label': 'Overview metrics',
+});
 ```
+
+DashboardStat renders a native list of label/value definitions. Each metric needs
+an ID unique within the list. Values are finite numbers or preformatted text;
+format units and dates in the caller. Change direction and favorable/unfavorable
+meaning are independent. Tone defaults to neutral. Positive and negative tones
+include visible meaning; use `trendLabels` and `toneLabels` to localize it.
+The grid uses one column on narrow screens, two from the `sm` breakpoint, and
+`columns` (2, 3 or 4; default 4) from `md`. Root attributes and events target the
+`ul`. The block does not fetch data or announce updates as a live region.
+
+AuthForm requires an instance `id` and an application-owned `onSubmit` callback.
+See its installed guide for credential handling, safe errors and provider actions.
+
 
 ## Creating a New Block
 

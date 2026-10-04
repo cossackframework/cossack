@@ -228,7 +228,7 @@ explicit, and a declared branch does not prove runtime behavior.
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
 The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
-CommandPalette CLI/MCP parity covering controlled/default modes, readonly commands and native dialog targets,
+DashboardStat CLI/MCP parity covering readonly metrics, explicit trend/tone types and native list targets,
 plus AuthForm required callbacks and native targets,
 plus Icon artwork, native SVG targets, naming and style ownership,
 plus Bubble readonly reactions and time metadata,

@@ -516,9 +516,9 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 ### RT-23: DataTable and UI contracts
 
 Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
-have reviewed contracts. Icon, AuthForm and CommandPalette also have reviewed foundations; two blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
+have reviewed contracts. Icon, AuthForm, CommandPalette and DashboardStat also have reviewed foundations; SettingsPanel remains pending. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[CommandPalette verification](./release-0.9.0.md#codex-command-palette-2026-10-04) for the latest checkpoint.
+[DashboardStat verification](./release-0.9.0.md#codex-dashboard-stat-2026-10-04) for the latest checkpoint.
 
 Next: Audit the composed blocks using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
@@ -529,17 +529,9 @@ the broader audit or full release matrix. RT-23 remains open.
 Completed UI batch plans and their review links are retained in the
 [plan archive](./release-0.9.0-plan-archive.md). Preserve their regression coverage.
 
-Codex next batch — DashboardStat, then SettingsPanel. DashboardStat has uncommitted
-implementation and test drafts; see the [working state](./handoff-0.9.0.md#working-state)
-before continuing. The following criteria remain open until verified.
+Codex next batch — SettingsPanel. Preserve the completed DashboardStat
+[plan](./release-0.9.0-plan-archive.md#codex-dashboard-stat-plan-2026-10-04) and regression evidence.
 
-- Audit DashboardStat's ignored root props, literal rendered markup, neutral trend
-  color, readonly stat records, numeric/string values, accessible text and responsive
-  columns. The extra literal `)}` after the Card call is inside template text and
-  must not appear in rendered cards. Preserve zero, validate non-finite numbers,
-  wrap long labels/values and check narrow screens. Separate direction from business
-  meaning: an increase is not automatically a favorable metric. Define explicit
-  localized change text and tone instead of relying on color or row-key guesses. Compose the corrected Icon; do not encode meaning with color alone.
 - Audit SettingsPanel's row variants, value types and state ownership. Its private
   values field has the same name as the public prop, so check Cossack prop mirroring
   before choosing controlled/default behavior. Verify native labels/descriptions,
@@ -550,6 +542,15 @@ before continuing. The following criteria remain open until verified.
   with explicit native value ownership, stable field IDs/names/descriptions and
   declared action intent. Keep immutable sections/rows and callback snapshots;
   verify SSR defaults, controlled rejection, native edits/reset and disabled state.
+  Current-source follow-up (Codex, 2026-10-04): Input forwards `.value`; Switch
+  forwards native checkbox attributes and binds `.checked` with dirty checking.
+  A rejected controlled proposal must restore the native value even when the
+  accepted prop is unchanged. Test that behavior through real input events,
+  not direct calls to a private method. Keep local values separate from mirrored
+  props, capture defaults once, and define how added/removed rows use those defaults.
+  Native form reset must agree with that ownership model, honor prevented reset,
+  and release any form listener or queued work on cleanup. Preserve typed native
+  control targets and fresh callback snapshots; do not infer labels from keys.
 - For every export, prove public type failures, SSR/hydration, themed native browser
   behavior, current primitive composition, published/ejected imports and CLI/MCP
   guidance. Update generated consumers where needed. Then finish the original

@@ -88,6 +88,49 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-dashboard-stat-2026-10-04"></a>
+### Codex DashboardStat (2026-10-04)
+
+Author: Codex. DashboardStat now renders a native list with definition pairs,
+forwards typed root attributes/events, and keys readonly metrics by required
+stable IDs. Empty/non-finite values and duplicate identities reject; zero remains
+visible. Responsive columns and wrapping replace clipped text. The stray literal
+template text is removed. Direction and favorable/unfavorable meaning are separate;
+tone defaults to neutral, and explicit meaning has visible localized text.
+The framework dashboard now uses this public block. CLI source ejection imports
+public components and types.
+
+The review also reproduced and fixed optional spread-class handling in renderer:
+SSR merges `ifDefined` class text into template classes, and browser updates retain
+component classes. The new regression failed before the fix. The browser fixture
+now declares UTF-8, preventing corrupted non-ASCII text in its served HTML.
+
+Verification:
+
+- Renderer/UI builds pass. `pnpm --filter @cossackframework/renderer exec vitest run`:
+  331 tests pass. `pnpm --filter @cossackframework/ui exec vitest run`: 618 tests
+  across 45 files pass, including public type failures and metric validation.
+- `pnpm --filter cossack exec vitest run tests/dashboard-stat-browser.test.js tests/ui-ejection.test.js`:
+  44 tests pass (42 ejection checks and both published/ejected browser fixtures).
+  SSR without JavaScript, retained hydration, native events/SVG, visible tone,
+  light/dark colors, narrow layouts, optional class updates, keyed identity,
+  reordering, empty lists and cleanup are covered.
+- `pnpm --filter @cossackframework/framework exec playwright test e2e/pages/dashboard-stat-block.spec.ts --workers=1 --reporter=line`:
+  the actual dashboard demo passes (7.1 seconds), including mobile/desktop columns
+  and explicit meaning. The owned Vite server was stopped afterward.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes: installed readonly metrics, public trend/tone
+  types, native list event targets and the authored guide are verified; exact
+  DashboardStat CLI/MCP output matches. Six existing packaged examples compile
+  and execute. Discovery disables Node networking; installation can use the
+  registry. The new guide adds no executable example.
+
+Logs: `/tmp/cossack-dashboard-stat-{renderer,ui-full,browser-final,types-final,rebuild,demo,dev,agent-docs}.log`.
+All 65 component foundations plus Icon, AuthForm, CommandPalette and DashboardStat
+are reviewed. SettingsPanel remains pending. Broader runtime, other-engine and
+assistive-technology gates remain open. RT-23 and CLI-07/CLI-08 remain open;
+release status stays 24/58 complete and versions stay 0.8.3.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits

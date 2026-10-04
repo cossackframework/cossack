@@ -1577,3 +1577,24 @@ empty and close text with the existing label props. Native close, Escape, backdr
 and focus behavior comes from the shared dialog controller. Action callbacks and
 promises remain application-owned; no authorization or command shortcut execution
 is inferred from UI visibility or hint text.
+
+## DashboardStat metric identity and change meaning
+
+Import the block and its public metric types from `@cossackframework/ui/blocks`.
+Every metric now requires a stable nonempty `id`, unique within its list. `stats`
+and metric records are readonly. Labels and string values must be nonempty;
+numeric values must be finite. Zero remains visible. Format units in the caller.
+
+The root is now a native `ul`; forwarded attributes and events target
+`HTMLUListElement`. The block owns `role=list` and renders `dt`/`dd` label/value
+pairs. Remove positional children. Long text wraps, and narrow screens use one
+column. `columns` accepts only 2, 3 or 4. The stray literal template text is removed.
+
+Do not infer business meaning from direction. `trend` still describes up, down
+or neutral; `tone` explicitly describes positive, negative or neutral and defaults
+to neutral. Both require nonempty `change` text. Add `tone: 'positive'` or
+`tone: 'negative'` where the old implicit color was intended. Direction and
+positive/negative meaning have visible text, localized through `trendLabels` and
+`toneLabels`. An increase in cost may be unfavorable; a decrease in errors may
+be favorable. Native optional spread classes now merge with component classes
+through `ifDefined` instead of replacing them during browser updates.

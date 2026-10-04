@@ -1,5 +1,6 @@
 import { Cossack, Page, ClientState, State, Store, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component, bind, type TemplateResult } from '@cossackframework/renderer';
+import { DashboardStat, type StatItem } from '@cossackframework/ui/blocks';
 import { Widget2Icon } from '@cossackframework/solar-icons/widget-2';
 import { ChartIcon } from '@cossackframework/solar-icons/chart';
 import { CartIcon } from '@cossackframework/solar-icons/cart';
@@ -41,18 +42,11 @@ const STATUS_VARIANT: Record<string, string> = {
     refunded: 'destructive',
 };
 
-interface StatData {
-    label: string;
-    value: string;
-    change: string;
-    trend: 'up' | 'down';
-}
-
-const STATS: StatData[] = [
-    { label: 'Total Revenue', value: '$45.2K', change: '+12.5%', trend: 'up' },
-    { label: 'Active Users', value: '2,340', change: '+4.3%', trend: 'up' },
-    { label: 'New Orders', value: '189', change: '-2.1%', trend: 'down' },
-    { label: 'Conversion', value: '3.2%', change: '+0.8%', trend: 'up' },
+const STATS: readonly StatItem[] = [
+    { id: 'revenue', label: 'Total Revenue', value: '$45.2K', change: '+12.5% vs last month', trend: 'up', tone: 'positive' },
+    { id: 'users', label: 'Active Users', value: '2,340', change: '+4.3% vs last month', trend: 'up', tone: 'positive' },
+    { id: 'orders', label: 'New Orders', value: '189', change: '-2.1% vs last month', trend: 'down', tone: 'negative' },
+    { id: 'conversion', label: 'Conversion', value: '3.2%', change: '+0.8% vs last month', trend: 'up', tone: 'positive' },
 ];
 
 @Page({ transport: 'http' })
@@ -114,19 +108,7 @@ export default class DashboardBlocks extends Cossack {
 
     // ─── Shared: stat cards grid ───────────────────────────────────
     private statCards(): TemplateResult {
-        return html`
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                ${STATS.map(s => html`
-                    <div class="rounded-lg border border-border bg-background p-4">
-                        <p class="text-sm text-muted-foreground truncate">${s.label}</p>
-                        <p class="text-2xl font-bold text-foreground mt-1">${s.value}</p>
-                        <p class=${`text-xs font-medium mt-1 ${s.trend === 'down' ? 'text-destructive' : 'text-success'}`}>
-                            ${s.change} <span class="text-muted-foreground">vs last month</span>
-                        </p>
-                    </div>
-                `)}
-            </div>
-        `;
+        return html`${component(DashboardStat, { stats: STATS, 'aria-label': 'Overview metrics' })}`;
     }
 
     // ─── dashboard-01: Stats grid + recent orders table ──────────

@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Blocks and icons
 
-All 65 rows above have reviewed foundations. Icon, AuthForm and CommandPalette also have reviewed foundations; two blocks remain
+All 65 rows above have reviewed foundations. Icon, AuthForm, CommandPalette and DashboardStat also have reviewed foundations; SettingsPanel remains
 pending. They were always part of RT-23; the component count does not close the task.
 
 | Source | Contract audit | Evidence / next action |
@@ -133,12 +133,12 @@ pending. They were always part of RT-23; the component count does not close the 
 | [Icon](../packages/ui/src/icons/Icon.ts) | Reviewed foundation | Closed native SVG props/events, explicit trusted artwork, variant/CSS separation, size/name validation, escaped SSR class merging, SVG namespaces, Chromium paths/hydration/events and installed guidance. |
 | [AuthForm](../packages/ui/src/blocks/AuthForm/index.ts) | Reviewed foundation | Stable field identity, SSR/controlled modes, native credentials/autofill, explicit providers, safe errors, request cancellation and focus; published/ejected Chromium, public types and agent guidance. |
 | [CommandPalette](../packages/ui/src/blocks/CommandPalette/index.ts) | Reviewed foundation | Shared Command dialog/search ownership, readonly grouped records, typed native targets, icons/hints, controlled/default proposals and opt-in shortcuts; published/ejected Chromium and real demo acceptance. |
-| [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Pending | Root ignores native props; neutral trend uses success color. Verify rendered markup, readonly data, labels, responsive columns and icon composition. |
+| [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Reviewed foundation | Native list/definition semantics and props, stable readonly metrics, explicit direction/tone, visible localized meaning, responsive wrapping, published/ejected Chromium, real demo and installed guidance. |
 | [SettingsPanel](../packages/ui/src/blocks/SettingsPanel/index.ts) | Pending | Audit row types, controlled/default values, state/prop ownership, field names/descriptions, callbacks, updates and current Input/Switch/Button composition. |
 
 ## Next passes
 
-Start with DashboardStat, then SettingsPanel.
+Continue with SettingsPanel.
 Preserve the [Icon regressions](./release-0.9.0.md#codex-icon-2026-10-04),
 including raw-artwork trust boundaries, native SVG namespaces and SSR escaping.
 

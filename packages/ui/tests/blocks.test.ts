@@ -25,7 +25,7 @@ describe('@cossackframework/ui/blocks', () => {
       open: true,
     })).toContain('cs-command-palette');
     expect(renderBlock(DashboardStat, {
-      stats: [{ label: 'Users', value: 42 }],
+      stats: [{ id: 'users', label: 'Users', value: 42 }],
     })).toContain('Users');
     expect(renderBlock(SettingsPanel, {
       sections: [{

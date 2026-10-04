@@ -744,3 +744,22 @@ component(CommandPalette,{...paletteProps,'@click':(event:MouseEvent & {currentT
 // @ts-expect-error Command records are immutable to consumers.
 paletteCommands[0].label='Changed';
 component(Command,{id:'rich',label:'Rich',grouped:true,items:[{id:'x',label:'X',description:'Description'}],renderItem:item=>item.label});
+
+import { DashboardStat, type DashboardStatProps, type StatItem, type StatTrend, type StatTone } from '@cossackframework/ui/blocks';
+const stats:readonly StatItem[]=[{id:'errors',label:'Errors',value:0,change:'-5',trend:'down',tone:'positive'}] as const;
+const statsProps:DashboardStatProps={stats,columns:3,'aria-label':'Metrics','@click':event=>{const list:HTMLUListElement=event.currentTarget;void list;}};
+component(DashboardStat,statsProps);
+const trend:StatTrend='neutral',tone:StatTone='negative';void [trend,tone];
+// @ts-expect-error Metrics need stable identities.
+component(DashboardStat,{stats:[{label:'Count',value:0}]});
+// @ts-expect-error Trend and tone require change text.
+const incompleteStat:StatItem={id:'x',label:'X',value:2,tone:'positive'};
+// @ts-expect-error Columns have a closed vocabulary.
+component(DashboardStat,{stats,columns:5});
+// @ts-expect-error Metric definitions are readonly.
+stats[0].value=2;
+// @ts-expect-error Native list semantics are owned by the block.
+component(DashboardStat,{stats,role:'button'});
+// @ts-expect-error Native events target a list, not a button.
+component(DashboardStat,{stats,'@click':(event:MouseEvent & {currentTarget:HTMLButtonElement})=>{}});
+void incompleteStat;

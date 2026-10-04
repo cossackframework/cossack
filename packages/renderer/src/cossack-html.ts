@@ -272,6 +272,11 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       }
     }
 
+    if ((name === 'class' || name === 'className') && val instanceof IfDefinedResult) {
+      if (val.value === undefined) continue;
+      val = String(val.value);
+    }
+
     // `class` / `className` merging: when a component template already has a
     // literal `class="..."` AND the spread also carries a `class` prop (e.g.
     // component(Card, { class: 'w-full' })), merge the caller's classes into
@@ -279,7 +284,7 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
     // keep only the first, dropping one set). The merge rewrites `ctx.result`
     // in place, so it composes correctly even when `class` is not the first
     // key in the spread (earlier keys have already been appended to result).
-    if ((name === 'class' || name === 'className') && typeof val === 'string' && val) {
+    if ((name === 'class' || name === 'className') && typeof val === 'string') {
       const merged = mergeClassIntoResult(ctx.result, val);
       if (merged !== null) {
         ctx.result = merged;
@@ -1830,7 +1835,9 @@ class SpreadPart implements Part {
         // literal attribute string, mirroring the AttributePart path. Checked
         // before the `typeof val === 'boolean'` branch so `false` renders as
         // "false".
-        if (val.value === undefined) {
+        if (key === 'class' || key === 'className') {
+          this.applySpreadClass(val.value === undefined ? '' : String(val.value));
+        } else if (val.value === undefined) {
           this.element.removeAttribute(key);
         } else {
           this.element.setAttribute(key, String(val.value));

@@ -4893,3 +4893,16 @@ PasswordInput value/onChange remain supported; the initial handoff claim was cor
   pointer selection must agree after filtering, regrouping and command updates.
 
 Reviewed foundation: [CommandPalette checkpoint](./release-0.9.0.md#codex-command-palette-2026-10-04).
+
+<a id="codex-dashboard-stat-plan-2026-10-04"></a>
+## Codex DashboardStat plan (2026-10-04)
+
+- Audit DashboardStat's ignored root props, literal rendered markup, neutral trend
+  color, readonly stat records, numeric/string values, accessible text and responsive
+  columns. The extra literal `)}` after the Card call is inside template text and
+  must not appear in rendered cards. Preserve zero, validate non-finite numbers,
+  wrap long labels/values and check narrow screens. Separate direction from business
+  meaning: an increase is not automatically a favorable metric. Define explicit
+  localized change text and tone instead of relying on color or row-key guesses. Compose the corrected Icon; do not encode meaning with color alone.
+
+Reviewed foundation: [DashboardStat checkpoint](./release-0.9.0.md#codex-dashboard-stat-2026-10-04).
