@@ -566,7 +566,10 @@ and [capture contracts](../docs/development-traces.md).
 
 Node standalone Vite HTTP/SSE/WebSocket browser traces also pass the shared schema checks;
 see the [Node development checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04).
-Remaining: Other runtime development acceptance. Header
+Deno normal/JSON CLI development traces also pass over HTTP/HTTPS and WebSocket/WSS,
+including installed offline CLI/MCP reads and production exclusion; see the
+[Deno trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04).
+Remaining: Desktop development acceptance. Header
 evidence does not prove body completion; a WebSocket terminal does not prove later iterator cleanup. Preserve capture ownership,
 bounded optional evidence, paused-iterator deadlines, first failure codes,
 confirmed state and one cancellation request. RT-28 remains open.
@@ -967,7 +970,7 @@ connection. The script and standalone Vite share their binding factory and
 runtime lifecycle. Normal and JSON CLI development commands supervise shutdown.
 The [socket checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04)
 records generated and installed verification. Complete the final release matrix;
-Deno development integration and Electron launch/packaging remain open.
+Electron launch/packaging remains open; Deno acceptance is recorded below.
 
 **Deno production progress — Author: Codex (2026-10-04).** Generated and installed
 apps now execute in real Deno with HTTP, SSE, WebSockets, hydration, environment
@@ -984,9 +987,12 @@ Native Deno/Vite development now executes server modules in Deno through Vite's
 module runner. Generated and installed acceptance covers browser transports,
 cold sockets, server reload, bindings, startup repair and parent-crash cleanup;
 see the [development checkpoint](./release-0.9.0.md#codex-deno-development-2026-10-04).
-Next verify public CLI development traces and HTTPS. These checks do not close RT-28
-development traces, graceful generated-server draining, Deno Deploy, Electron or
-the complete REL-03 matrix.
+Normal/JSON CLI development traces now pass all three transports over HTTP/HTTPS,
+including installed offline CLI/MCP parity and production exclusion. The
+[trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04) records native
+cleanup evidence and corrected public URL forwarding under HTTP/2.
+Next verify Desktop traces and Electron launch/packaging. Graceful generated-server
+draining, Deno Deploy and the complete REL-03 matrix remain open.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

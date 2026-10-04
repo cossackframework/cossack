@@ -258,6 +258,22 @@ export async function verifyDenoCliStartup(root, binary, cli) {
 }
 
 export async function verifyDenoDevelopmentApplication(root, crash = false) {
+  const backups = new Map();
+  for (const file of ['.env.development', 'src/index.ts', 'src/pages/deno-http/index.ts']) {
+    try { backups.set(file, await fs.readFile(path.join(root, file))); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; backups.set(file, null); }
+  }
+  try {
+    await checkDenoDevelopmentApplication(root, crash);
+  } finally {
+    for (const [file, content] of backups) {
+      if (content === null) await fs.rm(path.join(root, file), { force: true });
+      else await fs.writeFile(path.join(root, file), content);
+    }
+  }
+}
+
+async function checkDenoDevelopmentApplication(root, crash) {
   await fs.writeFile(
     path.join(root, '.env.development'),
     'DENO_ACCEPTANCE_BINDING=mode-file\nDENO_DEV_OVERRIDE=file-value\n',

@@ -1,4 +1,5 @@
-import { DevEnvironment, createServerHotChannel, loadEnv, type Plugin } from 'vite';
+import { DevEnvironment, createServerHotChannel, loadEnv, type Plugin, type NormalizedServerHotChannel } from 'vite';
+import { connectDenoDevelopmentEvents } from './development-events';
 import { createProxyServer } from 'http-proxy-3';
 import { createServer, type IncomingMessage } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -47,7 +48,7 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
           dev: {
             createEnvironment: (name, config) =>
               new DevEnvironment(name, config, {
-                hot: false,
+                hot: true,
                 transport: createServerHotChannel(),
               }),
           },
@@ -100,6 +101,7 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
       const address = control.address();
       if (!address || typeof address === 'string') throw new Error('Could not bind Deno development control server');
       const controlUrl = `http://127.0.0.1:${address.port}`;
+      const closeEvents = connectDenoDevelopmentEvents(control, environment.hot as NormalizedServerHotChannel, token);
       const variables = { ...loadEnv(vite.config.mode, vite.config.envDir, ''), ...process.env };
       const proxy = createProxyServer();
       // Late upstream resets (especially sockets during reload) may be emitted
@@ -220,11 +222,11 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
         return load();
       };
       const headers = (request: IncomingMessage) => {
-        const protocol = 'encrypted' in request.socket && request.socket.encrypted ? 'https' : 'http';
+        const protocol = (request.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http';
         const url = new URL(request.url ?? '/', 'http://vite.invalid');
         return {
           'x-cossack-deno-token': token,
-          'x-cossack-deno-url': `${protocol}://${request.headers.host}${url.pathname}${url.search}`,
+          'x-cossack-deno-url': `${protocol}://${request.headers.host ?? request.headers[':authority']}${url.pathname}${url.search}`,
         };
       };
       const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -255,6 +257,7 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
           await Promise.allSettled([...children].map(stop));
           await loading?.catch(() => {});
           proxy.close();
+          await closeEvents();
           control.closeAllConnections();
           await new Promise<void>((resolve) => control.close(() => resolve()));
         })());

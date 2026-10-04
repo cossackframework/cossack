@@ -214,10 +214,16 @@ importers:
       http-proxy-3:
         specifier: ^1.23.3
         version: 1.23.3(supports-color@10.2.2)
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
     devDependencies:
       '@types/deno':
         specifier: ^2.7.0
         version: 2.7.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       hono:
         specifier: ^4.13.7
         version: 4.13.11

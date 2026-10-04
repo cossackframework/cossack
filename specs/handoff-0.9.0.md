@@ -19,13 +19,14 @@ All **26 completed tasks** retain their criteria in the
 | Node development and HTTP/SSE/WebSocket trace acceptance | [Node checkpoint](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04) |
 | Native Deno production and normal/JSON CLI startup | [Production](./release-0.9.0-verification-archive.md#codex-deno-production-2026-10-04), [CLI startup](./release-0.9.0-verification-archive.md#codex-deno-cli-start-2026-10-04) |
 | Native Deno/Vite development, reload, recovery and parent-crash cleanup | [Development checkpoint](./release-0.9.0-verification-archive.md#codex-deno-development-2026-10-04); commit `b28c122`; full `pnpm test:deno` gate passed with Deno 2.9.6 |
+| Deno normal/JSON CLI development traces, HTTPS/WSS and installed offline CLI/MCP parity | [Trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04) |
 
 These runtime checkpoints do not close RT-28 or REL-03.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)**: verify Deno public CLI
-   development trace parity and HTTPS, then Desktop, coordinating with REL-03.
+1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)**: verify Desktop development
+   traces and Electron launch/packaging, coordinating with REL-03.
    Preserve the public inspector import and capture ownership; filesystem imports
    duplicate capture owners. Keep Node adapter/core in the development SSR graph
    and preserve ordered WebSocket errors. Headers do not prove body completion;
@@ -50,7 +51,8 @@ These runtime checkpoints do not close RT-28 or REL-03.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
-- REL-03 still needs Deno development trace/HTTPS acceptance, Electron launch/packaging and the full runtime/release matrix.
+- REL-03 still needs Electron launch/packaging and the full runtime/release matrix.
+  Deno Deploy and graceful generated-server draining remain separate acceptance gaps.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

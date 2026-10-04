@@ -151,7 +151,8 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     // The app and dev server use installed packages; CLI/MCP readers retain the
     // network guard while the browser drives real component and service actions.
     for(const transport of ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
-      transport,runtime,
+      transport,runtime,https:runtime==='deno',
+      launcher:runtime==='deno'?{entry:cli,json:true}:undefined,
       async onRecorded({snapshot,recorded}) {
         const trace=await invoke(['traces','--json','--session',snapshot.sessionId]);
         assert.equal(trace.ok,true);

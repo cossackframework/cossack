@@ -13,7 +13,16 @@ export default defineConfig({
     },
     outDir: 'dist',
     rolldownOptions: {
-      external: [/^node:/, 'vite', 'vite/module-runner', 'http-proxy-3', '@cossackframework/core', 'hono', 'hono/deno'],
+      external: [
+        /^node:/,
+        'vite',
+        'vite/module-runner',
+        'http-proxy-3',
+        'ws',
+        '@cossackframework/core',
+        'hono',
+        'hono/deno',
+      ],
       output: { entryFileNames: '[name].js' },
     },
   },

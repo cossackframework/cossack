@@ -1,5 +1,5 @@
 /// <reference types="@types/deno" />
-import { ModuleRunner } from 'vite/module-runner';
+import { ModuleRunner, createWebSocketModuleRunnerTransport } from 'vite/module-runner';
 
 interface DevelopmentEntry {
   app: { fetch(request: Request, env?: Record<string, unknown>): Response | Promise<Response> };
@@ -16,9 +16,13 @@ const config = JSON.parse(Deno.env.get('COSSACK_DENO_DEVELOPMENT') ?? '{}') as {
 };
 Deno.env.delete('COSSACK_DENO_DEVELOPMENT');
 const runner = new ModuleRunner({
-  hmr: false,
+  hmr: true,
   sourcemapInterceptor: false,
   transport: {
+    ...createWebSocketModuleRunnerTransport({
+      createConnection: () =>
+        new WebSocket(config.control.replace('http:', 'ws:') + '/events', `cossack-deno-${config.token}`),
+    }),
     async invoke(payload) {
       const response = await fetch(`${config.control}/invoke`, {
         method: 'POST',

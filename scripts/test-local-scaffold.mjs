@@ -627,9 +627,9 @@ try {
     await verifyDenoCliStartup(minimalProjectDir, process.env.COSSACK_DENO_BINARY ?? 'deno',
       path.join(minimalProjectDir, 'node_modules/cossack/bin/cossack.js'));
     await verifyDenoDevelopmentApplication(minimalProjectDir);
-    await writeDenoRuntimeAcceptance(minimalProjectDir);
     await verifyDenoDevelopmentApplication(minimalProjectDir, true);
-    console.log('Installed Deno HTTP/SSE/WebSocket, hydration and normal/JSON CLI startup acceptance passed.');
+    await verifyAgentDocumentation(minimalProjectDir, { runtime: 'deno' });
+    console.log('Installed Deno production, CLI startup, development recovery and trace acceptance passed.');
   } else {
     await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
   }

@@ -24,7 +24,12 @@ if (import.meta.env.DEV) {
 Generated Node applications include the
 [Node Vite plugin](../packages/node-adapter/README.md#vite-development-http-server),
 which serves HTTP/SSE calls and WebSocket upgrades through `cossack dev`.
-These transports use the shared trace schema and CLI/MCP readers.
+Generated Deno applications use the
+[Deno Vite plugin](../packages/deno-adapter/docs/installation.md#develop-with-vite-and-deno)
+with the same commands and trace schema. Deno executes server modules in its own
+process and sends native-response cleanup evidence through a private runner event
+channel. Vite HTTPS/WSS configurations retain public origin checks.
+These transports use the shared CLI/MCP readers.
 
 Keep the session alive while the interaction runs, then read its snapshot.
 Snapshot reads never execute or replay calls. Collection is disabled outside

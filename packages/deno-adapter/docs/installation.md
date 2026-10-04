@@ -57,8 +57,12 @@ startup, runs the
 native adapter smoke tests with Deno type checking, and repeats generated
 application acceptance against workspace packages. A missing Deno executable
 fails the gate. The gate also checks Vite/Deno development, server reload, startup
-repair and parent-crash cleanup. Deno development trace parity, HTTPS, Deno Deploy
-and the full release matrix require separate acceptance.
+repair and parent-crash cleanup. Development trace cases drive HTTP, SSE and
+WebSocket actions through `cossack dev`, compare browser records with CLI/MCP
+reads, and check production exclusion. HTTPS cases use OpenSSL to create a
+one-day local test certificate; install OpenSSL before running the gate. Certificate
+verification is bypassed only in that test browser context. Deno Deploy and the
+full release matrix require separate acceptance.
 
 ## Develop with Vite and Deno
 
@@ -80,6 +84,17 @@ connections. It removes its private headers and environment configuration before
 calling application code. Application code is trusted local code; this connection
 is not a sandbox. Middleware-mode Vite servers are currently rejected explicitly.
 Desktop configurations exclude this web plugin.
+
+Configure HTTPS through Vite's `server.https` options. Vite terminates TLS and
+forwards the public URL to Deno, including the HTTP/2 authority. Application origin
+checks use that URL. Application WebSockets use WSS on the same public listener.
+
+With `cossackPages({ developmentTraces: true })`, Deno reports native-response
+cleanup through a separate authenticated runner WebSocket. This shares Vite's
+custom-event channel and does not modify response bodies. Server edits still
+replace the Deno process; the event connection does not re-evaluate the retiring
+application. Trace collection and read commands follow the framework's development
+trace guide; recorded evidence does not establish live state.
 
 `cossackDeno({ entry, executable, startupTimeoutMs, shutdownTimeoutMs })` can select
 a source entry or executable and adjust the lifecycle deadlines. Defaults are

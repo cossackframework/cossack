@@ -1062,3 +1062,26 @@ entry's `createEnv` factory receives server-only environment-file values and
 process overrides; generated production entries use the same factory. The
 script launcher uses this plugin too. Embedded servers retain their own listener
 and lifecycle.
+
+
+### Deno Vite development boundary
+
+The Deno adapter's Node-only `/vite` entry transforms application modules with
+Vite and evaluates them in a separate Deno module runner. The source entry exports
+`app.fetch`, `env`, and optionally `runtime.dispose`. Authenticated loopback HTTP
+carries module requests and forwarded application traffic. A separate authenticated
+WebSocket carries custom runner events and native-body trace acknowledgements;
+the framework continues to own trace validation and browser publication.
+
+Vite owns public HTTP/HTTPS and WebSocket/WSS listeners. Forwarding retains the
+public scheme and authority, including HTTP/2 requests without a Host header.
+The child wraps the original native request so Deno WebSocket upgrade ownership
+survives forwarding. Private bridge headers and configuration are removed from
+the application-facing request headers and environment.
+
+Source changes replace the Deno process instead of re-evaluating its modules.
+The private event channel filters update/reload frames, and disconnect removes
+its Vite listeners. Parent and child bound shutdown; stdin EOF ends an orphaned
+child after parent failure. This is trusted local development, not a sandbox.
+Reload resets process-local state and does not undo external effects. Desktop
+web configurations exclude this plugin; embedded Vite middleware mode is rejected.

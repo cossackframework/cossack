@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import path from 'node:path';
+import os from 'node:os';
+import {createServer} from 'node:net';
 import {execFile,spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {once} from 'node:events';
@@ -11,16 +13,24 @@ const browserExpect=expect;
 
 // The browser driver is a repository test client. Vite and every application
 // dependency resolve from root, including when root contains installed tarballs.
-export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[],transport='http',runtime='cloudflare'}) {
+export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[],transport='http',runtime='cloudflare',https=false,launcher}) {
   // Repeated installed runs must not inherit the SSE coordinator's durable state.
   const scope='trace-acceptance-'+randomUUID();
-  const files=['vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts',...(transport==='durable-object'&&runtime==='cloudflare'?['wrangler.jsonc','src/index.ts']:[])];
+  const files=['src/pages/api/trace-context.ts','vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts',...(transport==='durable-object'&&runtime==='cloudflare'?['wrangler.jsonc','src/index.ts']:[])];
   const backups=new Map();
   for(const file of files){
     try{backups.set(file,await fs.readFile(path.join(root,file)));}
     catch(error){if(error.code!=='ENOENT')throw error;backups.set(file,null);}
   }
+  let tlsDirectory;
   try {
+  let tls;
+  if(https){
+    tlsDirectory=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-trace-tls-'));
+    const key=path.join(tlsDirectory,'key.pem'),cert=path.join(tlsDirectory,'cert.pem');
+    await promisify(execFile)('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],{timeout:15000});
+    tls={key:await fs.readFile(key,'utf8'),cert:await fs.readFile(cert,'utf8')};
+  }
   if(transport==='durable-object'&&runtime==='cloudflare') {
     const configPath=path.join(root,'wrangler.jsonc'), config=JSON.parse(await fs.readFile(configPath,'utf8'));
     config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'TraceAcceptanceObject'});
@@ -31,7 +41,17 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
   const configFile=path.join(root,'vite.config.ts');
   const generatedConfig=await fs.readFile(configFile,'utf8');
   expect(generatedConfig).toContain('cossackPages({');
-  await fs.writeFile(configFile,generatedConfig.replace('cossackPages({','cossackPages({ developmentTraces: true,'));
+  let traceConfig=generatedConfig.replace('cossackPages({','cossackPages({ developmentTraces: true,');
+  if(launcher){
+    expect(traceConfig).toContain('plugins: [');
+    traceConfig=traceConfig.replace('plugins: [',`plugins: [{name:'trace-server-options',config:()=>({server:${JSON.stringify({https:tls,fs:{allow:[root,...additionalAllowedPaths]}})}})},`);
+  }
+  await fs.writeFile(configFile,traceConfig);
+  await fs.mkdir(path.join(root,'src/pages/api'),{recursive:true});
+  await fs.writeFile(path.join(root,'src/pages/api/trace-context.ts'), `
+    import {defineApi} from '@cossackframework/framework/api';
+    export const GET=defineApi({handler:async({c})=>c.json({url:c.req.url})});
+  `);
   await fs.mkdir(path.join(root,'src/services'),{recursive:true});
   await fs.writeFile(path.join(root,'src/services/TraceCounter.ts'), `
     import {CossackService,Service,State,Server} from '@cossackframework/core';
@@ -85,22 +105,34 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
   `);
   try {await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024});}
   catch(error){throw new Error(`Generated trace types: ${error.stdout}\n${error.stderr}`);}
-  const child=spawn(process.execPath,['--input-type=module','-e',`
+  let cliOrigin;
+  let cliArgs;
+  if(launcher){
+    const reservation=createServer();
+    await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));
+    const port=reservation.address().port;
+    await new Promise(resolve=>reservation.close(resolve));
+    cliOrigin=`${https?'https':'http'}://127.0.0.1:${port}`;
+    cliArgs=[launcher.entry,'dev',...(launcher.json?['--json']:[]),'--host','127.0.0.1','--port',String(port),'--strictPort'];
+  }
+  const viteArgs=['--input-type=module','-e',`
     import {createServer} from 'vite';
-    const server=await createServer({root:${JSON.stringify(root)},logLevel:'error',server:{host:'127.0.0.1',port:0,fs:{allow:${JSON.stringify([root,...additionalAllowedPaths])}}}});
+    const server=await createServer({root:${JSON.stringify(root)},logLevel:'error',server:{host:'127.0.0.1',port:0,https:${JSON.stringify(tls)},fs:{allow:${JSON.stringify([root,...additionalAllowedPaths])}}}});
     await server.listen();
-    console.log('TRACE_ORIGIN=http://127.0.0.1:'+server.httpServer.address().port);
+    console.log('TRACE_ORIGIN=${https?'https':'http'}://127.0.0.1:'+server.httpServer.address().port);
     process.once('message',async()=>{await server.close();process.exit(0);});
-  `],{cwd:root,env:{...process.env,NODE_ENV:'development',VITEST:'',WRANGLER_SEND_METRICS:'false'},stdio:['ignore','pipe','pipe','ipc']});
-  let output='';child.stdout.on('data',data=>{output+=data;});child.stderr.on('data',data=>{output+=data;});
+  `];
+  const child=spawn(process.execPath,cliArgs??viteArgs,{cwd:root,env:{...process.env,PATH:(launcher?.binDirectory??path.join(root,'node_modules/.bin'))+path.delimiter+process.env.PATH,NODE_ENV:'development',VITEST:'',WRANGLER_SEND_METRICS:'false'},stdio:['ignore','pipe','pipe',...(launcher?[]:['ipc'])]});
+  let output='',stdout='';child.stdout.on('data',data=>{output+=data;stdout+=data;});child.stderr.on('data',data=>{output+=data;});
   const exited=once(child,'exit');let browser;
   try {
-    await expect.poll(()=>{
+    browser=await chromium.launch({headless:true});const page=await browser.newPage({ignoreHTTPSErrors:https});const errors=[];
+    await expect.poll(async()=>{
       if(child.exitCode!==null)throw new Error(output);
-      return /TRACE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+      if(!launcher)return /TRACE_ORIGIN=(https?:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+      try{return (await page.request.get(cliOrigin+'/@vite/client',{timeout:1000})).ok();}catch{return false;}
     },{timeout:30000}).toBeTruthy();
-    const origin=/TRACE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
-    browser=await chromium.launch({headless:true});const page=await browser.newPage();const errors=[];
+    const origin=cliOrigin??/TRACE_ORIGIN=(https?:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
     page.on('pageerror',error=>errors.push(error.message));
     page.on('request',request=>{if(request.url().includes('development-trace'))output+='\nTRACE_MODULE='+request.url();});
     page.on('console',message=>{if(message.type()==='error')output+='\nBROWSER_ERROR='+message.text();});
@@ -109,6 +141,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
         try {const message=JSON.parse(String(payload));if(message.event?.includes('development-trace'))output+='\nTRACE_HMR='+JSON.stringify({direction,event:message.event,id:message.data?.id,status:message.data?.status});}catch{}
       });
     });
+    expect(await (await page.request.get(origin+'/api/trace-context?check=public')).json()).toEqual({url:origin+'/api/trace-context?check=public'});
     await page.goto(origin);await page.waitForFunction(()=>!!window.__traceFixture,{},{timeout:30000});
     if(transport==='durable-object')await page.waitForFunction(()=>Object.values(window.__traceFixture.component.realtime.websockets).some(connection=>connection.state==='open'),{},{timeout:30000});
     expect(await page.content()).toContain('cossack-start:');
@@ -167,9 +200,15 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
   } catch(error) {throw new Error(`${error.stack}\nGenerated Vite output:\n${output}`);}
   finally {
     await browser?.close();
-    if(child.exitCode===null)child.send('stop');
+    if(child.exitCode===null){if(launcher)child.kill(launcher.json?'SIGINT':'SIGTERM');else child.send('stop');}
     const kill=setTimeout(()=>child.kill('SIGKILL'),10000);const [exitCode,signal]=await exited;clearTimeout(kill);
     expect({exitCode,signal},output).toEqual({exitCode:0,signal:null});
+    if(launcher?.json){
+      const events=stdout.trim().split('\n').map(line=>JSON.parse(line));
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({ok:true,command:'dev',data:{event:'started',tool:'vite'}});
+      expect(events[1]).toMatchObject({ok:true,command:'dev',data:{event:'stopped',reason:'requested'}});
+    }
   }
   const require=createRequire(path.join(root,'package.json'));
   const vite=path.join(path.dirname(require.resolve('vite/package.json')),'bin/vite.js');
@@ -186,11 +225,12 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       }
     }
   };
-  if(runtime==='node')await promisify(execFile)(process.execPath,[vite,'build','--ssr','src/index.ts','--outDir','dist/server'],{
+  if(runtime==='node'||runtime==='deno')await promisify(execFile)(process.execPath,[vite,'build','--ssr','src/index.ts','--outDir','dist/server'],{
     cwd:root,env:{...process.env,NODE_ENV:'production',VITEST:''},timeout:120000,maxBuffer:8*1024*1024,
   });
-  await checkProduction(path.join(root,'dist/client/assets'));await checkProduction(path.join(root,runtime==='node'?'dist/server':'dist/ssr'));
+  await checkProduction(path.join(root,'dist/client/assets'));await checkProduction(path.join(root,runtime==='cloudflare'?'dist/ssr':'dist/server'));
   } finally {
+    if(tlsDirectory)await fs.rm(tlsDirectory,{recursive:true,force:true});
     for(const [file,content] of backups){
       if(content===null)await fs.rm(path.join(root,file),{force:true});
       else await fs.writeFile(path.join(root,file),content);

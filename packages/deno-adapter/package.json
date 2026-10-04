@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "http-proxy-3": "^1.23.3"
+    "http-proxy-3": "^1.23.3",
+    "ws": "^8.21.1"
   },
   "peerDependencies": {
     "hono": "^4.13.7",
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@types/deno": "^2.7.0",
+    "@types/ws": "^8.18.1",
     "hono": "^4.13.7",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",

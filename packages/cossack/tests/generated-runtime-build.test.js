@@ -1617,12 +1617,17 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-it.each([['cloudflare','http'],['cloudflare','sse'],['cloudflare','durable-object'],['node','http'],['node','sse'],['node','durable-object']])('shares a generated %s development browser RPC trace over %s with the CLI and MCP', async (runtime, transport) => {
+const traceRuntimeCases = ['cloudflare', 'node', 'deno'].flatMap(runtime =>
+  (runtime === 'deno' ? [false, true] : [false]).flatMap(https =>
+    ['http', 'sse', 'durable-object'].map(transport => [runtime, transport, https])));
+it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP (HTTPS: %s)', async (runtime, transport, https, context) => {
+  if(runtime==='deno'&&!process.env.COSSACK_DENO_BINARY)context.skip();
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project(runtime);
   await verifyDevelopmentTraceApplication(root,{
-    additionalAllowedPaths:[repository],transport,runtime,
+    additionalAllowedPaths:[repository],transport,runtime,https,
+    launcher:runtime==='deno'?{entry:path.join(repository,'packages/cossack/bin/cossack.js'),binDirectory:path.join(repository,'node_modules/.bin'),json:https}:undefined,
     async onRecorded({snapshot,recorded}) {
       const {stdout,stderr:cliStderr}=await promisify(execFile)(process.execPath,[path.join(repository,'packages/cossack/bin/cossack.js'),'traces','--json','--session',snapshot.sessionId],{cwd:root,timeout:15000,maxBuffer:2*1024*1024});
       const cli=JSON.parse(stdout);
