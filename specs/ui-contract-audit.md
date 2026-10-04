@@ -117,7 +117,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Table](../packages/ui/src/components/Table.ts) | Reviewed foundation | All six exports typed; separate table/wrapper targets, native cell metadata, captions and section composition, working stripes, themed hydration and child-action coverage. |
 | [Tabs](../packages/ui/src/components/Tabs.ts) | Reviewed foundation | Typed root/list contracts, controlled/default state, scoped IDs, rich-label names, RTL/manual navigation, keyed focus and responsive indicator browser acceptance. |
 | [Textarea](../packages/ui/src/components/Textarea.ts) | Reviewed foundation | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
-| [Toast](../packages/ui/src/components/Toast.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Toast](../packages/ui/src/components/Toast.ts) | Reviewed foundation | Browser-only writes/subscriptions, immutable bounded isolated stores, single presenter ownership, paused/cancelled timers, one polite announcer, native dismissal and focus recovery; SSR/Chromium/ejection coverage. |
 | [Toggle](../packages/ui/src/components/Toggle.ts) | Reviewed foundation | Typed native button attributes/events, controlled/default pressed state, click veto, native fieldsets and SSR/themed Chromium acceptance. |
 | [ToggleGroup](../packages/ui/src/components/ToggleGroup.ts) | Reviewed foundation | Named native button group, mode-specific public types, SSR/default capture, immutable selection proposals, roving focus, RTL/vertical navigation, keyed focus repair and responsive indicator cleanup. |
 | [Tooltip](../packages/ui/src/components/Tooltip.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
@@ -125,13 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Toast, including ToastItem, toastStore, toast and Toaster. The module
-singleton currently accepts server calls, which can share queued messages across
-requests. Timers have no owned handles or cleanup. Define browser-only convenience
-and scoped store ownership, validated options, timer/dismissal behavior and focus
-recovery. Review duplicate live announcements, native dismiss button semantics,
-pause behavior, responsive layout, reduced motion and source ejection. Preserve
-all public exports in installed guidance and cover real lifecycle behavior.
+Next audit Carousel. Its open prop signature ignores native attributes, the
+region/viewport have no naming or keyboard contract, and navigation scrolls a
+fixed 0.8 viewport rather than targeting slides. Define slide sizing and identity,
+native root/viewport ownership, boundary controls, keyboard and RTL behavior.
+Verify dynamic content, resize, focus, reduced motion, SSR, themed browser behavior
+and source ejection. Then continue the remaining chat and attachment components.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

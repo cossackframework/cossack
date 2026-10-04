@@ -88,6 +88,65 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
+<a id="codex-toast-2026-10-04"></a>
+### Codex Toast (2026-10-04)
+
+Author: Codex. Toast writes and subscriptions now reject on the server before
+changing module state or retaining listeners. The browser convenience API and
+root-exported toastStore share one store. createToastStore supplies isolated,
+bounded queues with frozen readonly snapshots, validated options, generated IDs,
+explicit clear/dismiss/dispose operations and one presenter per store. Full queues
+reject instead of evicting focused messages. A throwing subscriber does not
+prevent other subscribers from receiving the committed update.
+
+Timers start when a presenter connects. Hover, focus, window blur and hidden
+state pause them with elapsed time preserved. Unmount cancels timers and clears
+the queue; disposal also releases store subscriptions. Deferred setup waits for
+refs to reach the live document, and cleanup cancels setup that has not run.
+This fixes a hydration failure exposed by the first browser acceptance run.
+
+Toaster now forwards typed native div props into a named region. Dismissal uses
+native non-submit buttons and Escape, with focus recovery that skips disabled or
+hidden candidates. New messages do not steal focus. A permanent polite announcer
+replaces nested live regions; only added messages request announcements. Responsive
+layout fits narrow viewports, and the theme disables animation for reduced motion.
+
+The [W3C status-message technique](https://www.w3.org/WAI/WCAG22/Techniques/aria/ARIA22)
+informs the permanent announcement container. Timer pause alone does not establish
+accessibility compliance: use persistent messages, user timing preferences or
+another persistent source of the information, as described in
+[W3C timing guidance](https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html).
+Actual assistive-technology and cross-browser acceptance remain open.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 461 tests
+  across 38 files pass. Coverage includes server-write/subscription rejection,
+  isolated immutable snapshots, capacity and option validation, disposal,
+  subscribers, IDs without cryptographic browser APIs, SSR, native props and public
+  declaration failures.
+- `pnpm --filter cossack exec vitest run tests/toast-browser.test.js tests/ui-ejection.test.js`:
+  34 tests pass. Source ejection now compiles Toaster together with other reviewed
+  controls under strict NodeNext. The HTTP/Tailwind Chromium fixture covers
+  retained SSR hydration, one live announcer, responsive/reduced-motion layout,
+  native button events, no form submission, keyboard/fallback focus, elapsed timer
+  pause/resume, isolated queues, duplicate presenters, disposal, early cleanup,
+  cleared timers after unmount and queued messages on remount. Focus and hover use
+  real DOM actions; hidden-document/window events are synthetic timing checks.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose Toaster's native
+  props, isolated-store types, public helpers and authored guide. Exact-symbol
+  Toaster output matches across CLI/MCP. Six existing packaged examples compile
+  and execute. Discovery disables Node networking; installation can use the
+  registry. The new guide adds no executable example. The first run caught a
+  missing guide summary; the corrected guide passes the schema, and acceptance
+  now asserts guidance availability before inspecting individual guide entries.
+
+Logs: `/tmp/cossack-toast-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
+Fifty-nine of 65 UI source rows are reviewed. Continue Carousel, all remaining rows,
+then blocks/icons and the full generated-app/runtime matrix. RT-23 and CLI-07/CLI-08
+remain open. Release status stays 24 of 58 complete; versions remain 0.8.3 until REL-04.
+
 <a id="codex-sidebar-2026-10-04"></a>
 ### Codex Sidebar (2026-10-04)
 

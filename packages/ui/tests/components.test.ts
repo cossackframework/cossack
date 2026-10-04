@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderToString, html } from "@cossackframework/renderer";
 import {
     Button,
@@ -533,9 +533,12 @@ describe("Toaster", () => {
 });
 
 describe("toast (global API)", () => {
+    // These tests exercise browser calls without a presenter; no timers start.
+    beforeEach(() => { vi.stubGlobal('window', {}); vi.stubGlobal('document', {}); });
+    afterEach(() => { toastStore.clear(); vi.unstubAllGlobals(); });
     it("pushes and dismisses toasts via the reactive store", () => {
         // Clear any leftover state.
-        toastStore.set([]);
+        toastStore.clear();
         expect(toastStore.get()).toEqual([]);
 
         const id = toast.success("Saved!");
@@ -548,8 +551,8 @@ describe("toast (global API)", () => {
     });
 
     it("subscribe receives the current value immediately and on updates", () => {
-        toastStore.set([]);
-        const received: any[][] = [];
+        toastStore.clear();
+        const received: (readonly unknown[])[] = [];
         const unsub = toastStore.subscribe((v) => received.push([...v]));
 
         toast.show("Hello");
@@ -559,7 +562,7 @@ describe("toast (global API)", () => {
         unsub();
         toast.show("After unsub");
         expect(received).toHaveLength(2); // no more updates
-        toastStore.set([]);
+        toastStore.clear();
     });
 });
 

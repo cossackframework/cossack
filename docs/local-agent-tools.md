@@ -228,7 +228,8 @@ explicit, and a declared branch does not prove runtime behavior.
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
 The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
-Sidebar CLI/MCP parity covering both collapse-mode branches, plus Resizable
+Toaster CLI/MCP parity covering native props and isolated store types, plus both
+Sidebar collapse-mode branches and Resizable
 panel/callback contracts and all six table
 exports and the named ScrollArea viewport,
 plus Typography native prop branches, Avatar span/image targets, Field callbacks,

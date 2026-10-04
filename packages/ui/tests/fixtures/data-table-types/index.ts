@@ -595,3 +595,23 @@ const conflictingLink:SidebarLinkProps={'aria-current':'page'};
 const conflictingNav:SidebarNavProps={'aria-label':'Other'};
 // @ts-expect-error Root props target an aside, not a form input.
 component(Sidebar,{id:'nav',label:'Pages','@click':(event:MouseEvent & {currentTarget:HTMLInputElement})=>event});
+
+import { Toaster, toast, toastStore, createToastStore, type ToastItem, type ToastOptions, type ToastStore } from '@cossackframework/ui';
+const notificationStore: ToastStore = createToastStore({maxToasts: 3});
+const notificationOptions: ToastOptions = {duration: 0, variant: 'warning'};
+notificationStore.show('Review', notificationOptions);
+const notifications: readonly ToastItem[] = toastStore.get(); void notifications;
+component(Toaster,{store:notificationStore,label:'Updates',dismissLabel:'Close',position:'top-left','@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;}});
+toast.success('Saved',{duration:1000});
+// @ts-expect-error Store snapshots cannot be replaced without validation.
+toastStore.set([]);
+// @ts-expect-error Notification snapshots are readonly.
+notificationStore.get().push({id:'x',message:'x',variant:'default',duration:0});
+// @ts-expect-error Variant helpers own their variant.
+toast.error('Error',{variant:'success'});
+// @ts-expect-error Caller IDs cannot override store identity.
+toast.show('Message',{id:'x'});
+// @ts-expect-error Presenter owns its live announcement contract.
+component(Toaster,{'aria-live':'assertive'});
+// @ts-expect-error Root events target a div.
+component(Toaster,{'@click':(event:MouseEvent & {currentTarget:HTMLButtonElement})=>event});

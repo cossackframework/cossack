@@ -53,7 +53,7 @@ export {
     TableCell,
     type TableProps,
 } from "./components/Table";
-export { Toaster, toast, type ToastItem, type ToasterProps } from "./components/Toast";
+export { Toaster, toast, toastStore, createToastStore, type ToastItem, type ToastOptions, type ToastVariant, type ToastStore, type ToastStoreOptions, type ToasterProps } from "./components/Toast";
 export { DropdownMenu, type DropdownMenuProps } from "./components/DropdownMenu";
 export { Sheet, type SheetProps } from "./components/Sheet";
 export { Collapsible, type CollapsibleProps } from "./components/Collapsible";

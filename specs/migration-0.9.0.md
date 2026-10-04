@@ -1287,3 +1287,37 @@ Offcanvas mode requires restoreFocusTo naming an external focusable opener. The
 caller owns its aria-controls/aria-expanded and placement. Hiding now removes the
 sidebar from layout and Tab order and restores focus before hiding focused content.
 This mode is not a modal overlay; compose Sheet when modal behavior is required.
+
+## Toast store and presenter contracts
+
+Author: Codex, 2026-10-04. Toast mutations and subscriptions now require a browser. Return a server
+result to a client handler before calling `toast.success`, `toast.error` or another
+mutation. The old server-call guidance was incorrect: it changed shared module
+state without delivering a notification to the caller's browser.
+
+`toast` and the newly root-exported `toastStore` expose the same default store.
+Mount one default `Toaster` in the application root. For another presenter, use
+`createToastStore({ maxToasts: 5 })` and pass its result as `store`. Store identity
+cannot change while mounted. The queue bound is an integer from 1 to 100; a full
+queue rejects new messages. A second presenter for the same store rejects.
+
+Snapshots and items are readonly and frozen. Replace `toastStore.set/update`
+with `show`, `dismiss(id)` or `clear`. `subscribe` still returns an unsubscribe
+function. `ToastOptions` accepts only `duration` and `variant`; variant helpers
+accept only `duration`. IDs and messages cannot be overridden through options.
+Durations are finite milliseconds from 0 to 2147483647. Zero stays until dismissed.
+The default remains 4000. Messages and accessible labels must be nonempty.
+
+Timers start when a presenter connects, pause for hover/focus, window blur and
+hidden documents, and resume with their remaining time. Unmount clears the queue
+and cancels timers. `dispose` permanently clears an isolated store and subscribers;
+do not dispose the shared default store. Queue messages before mounting if needed.
+Use persistent notifications or another accessible view when information must
+remain available after a timed toast disappears.
+
+Native root props/events now target an HTMLDivElement. `label` names the region;
+`dismissLabel` supplies the dismissal-name prefix. The component owns roles,
+announcement attributes and tab order, and accepts no children. Dismissal buttons
+use `type="button"`. One permanent polite announcer replaces nested live regions.
+Escape dismisses the focused toast; removal repairs focus without focusing new
+messages. The stack fits narrow viewports and removes animation for reduced motion.

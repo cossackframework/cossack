@@ -24,7 +24,7 @@ describe('UI source ejection', () => {
 it('type-checks the combined helper and component imports after menu ejection', () => {
   const root=fileURLToPath(new URL('../../framework/',import.meta.url));
   vi.spyOn(process,'cwd').mockReturnValue(root);
-  const files=new Map(['menubar','navigation-menu', 'pagination', 'breadcrumb', 'button-group', 'separator', 'aspect-ratio', 'skeleton', 'card', 'badge', 'kbd', 'alert', 'progress', 'spinner', 'field', 'empty', 'avatar', 'avatar-group', 'item', 'typography', 'table', 'scroll-area', 'resizable', 'sidebar','dropdown-menu','context-menu','accordion','collapsible'].map(name=>[root+`.ejected-${name}.ts`,UI_COMPONENTS[name].template()]));
+  const files=new Map(['toaster','menubar','navigation-menu', 'pagination', 'breadcrumb', 'button-group', 'separator', 'aspect-ratio', 'skeleton', 'card', 'badge', 'kbd', 'alert', 'progress', 'spinner', 'field', 'empty', 'avatar', 'avatar-group', 'item', 'typography', 'table', 'scroll-area', 'resizable', 'sidebar','dropdown-menu','context-menu','accordion','collapsible'].map(name=>[root+`.ejected-${name}.ts`,UI_COMPONENTS[name].template()]));
   const options={target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,strict:true,skipLibCheck:true,noEmit:true,experimentalDecorators:true};
   const host=ts.createCompilerHost(options),read=host.readFile.bind(host),exists=host.fileExists.bind(host),getSourceFile=host.getSourceFile.bind(host);
   host.readFile=file=>files.get(file)??read(file);
