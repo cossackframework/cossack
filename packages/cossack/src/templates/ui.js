@@ -9,8 +9,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import ts from 'typescript-api';
 
 const requireFromCli = createRequire(import.meta.url);
+
+/** Merge repeated named imports after private helpers are included in one source file. */
+function mergeNamedImports(source) {
+  const file = ts.createSourceFile('ejected.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const groups = new Map();
+  const edits = [];
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    const clause = statement.importClause;
+    if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) continue;
+    const module = statement.moduleSpecifier.text;
+    const bindings = groups.get(module) ?? new Map();
+    groups.set(module, bindings);
+    for (const item of clause.namedBindings.elements) {
+      const local = item.name.text, imported = item.propertyName?.text ?? local;
+      const typeOnly = clause.isTypeOnly || item.isTypeOnly;
+      const previous = bindings.get(local);
+      if (previous && previous.imported !== imported) throw new Error(`Conflicting ejected import: ${local}`);
+      bindings.set(local, { imported, typeOnly: previous ? previous.typeOnly && typeOnly : typeOnly });
+    }
+    edits.push([statement.getStart(file), statement.end]);
+  }
+  for (const [start, end] of edits.reverse()) source = source.slice(0,start) + source.slice(end);
+  const imports = [...groups].map(([module, bindings]) => `import { ${[...bindings].map(([local, item]) =>
+    `${item.typeOnly ? 'type ' : ''}${item.imported}${item.imported === local ? '' : ` as ${local}`}`).join(', ')} } from ${JSON.stringify(module)};`);
+  return imports.join('\n') + '\n' + source;
+}
 
 /**
  * Read a component's source directly from the installed
@@ -31,12 +59,12 @@ function ejectFromPackage(className) {
       const pkgDir = path.resolve(path.dirname(themePath), '../..');
       const sourceName = className === 'Toaster' ? 'Toast' : className;
       const srcPath = path.join(pkgDir, 'src', 'components', `${sourceName}.ts`);
-      return fs.readFileSync(srcPath, 'utf8')
-        // Ejected files must remain standalone. Include private animation
-        // support rather than leaving an import into the package's source tree.
+      return mergeNamedImports(fs.readFileSync(srcPath, 'utf8')
+        // Include shared private helpers without imports into the package source tree.
+        // Merge their named imports with the component imports afterward.
         .replace(
-          /^import .* from ["']\.\.\/internal\/disclosure["'];$/m,
-          () => fs.readFileSync(path.join(pkgDir, 'src/internal/disclosure.ts'), 'utf8'),
+          /^import .* from ["']\.\.\/internal\/(disclosure|menu)["'];$/gm,
+          (_import, name) => fs.readFileSync(path.join(pkgDir, `src/internal/${name}.ts`), 'utf8'),
         )
         .replace(/from ["']\.\.\/native-attributes["']/g, 'from "@cossackframework/ui"')
         .replace(
@@ -46,7 +74,7 @@ function ejectFromPackage(className) {
         .replace(
           /from ["']\.\/Avatar["']/g,
           'from "@cossackframework/ui"',
-        );
+        ));
     } catch {
       // Try the next resolution root.
     }

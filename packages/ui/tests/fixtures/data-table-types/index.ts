@@ -342,3 +342,16 @@ component(ToggleGroup);
 component(ToggleGroup, undefined, 'Children');
 declare const optionalToggleProps: import('@cossackframework/ui').ToggleGroupProps | undefined;
 component(ToggleGroup, optionalToggleProps);
+
+import { Menubar, type MenubarMenu } from '@cossackframework/ui';
+const barMenus: readonly MenubarMenu[] = [{ value: 'file', label: 'File', items: [{ label: 'Save', onClick: event => { const button: HTMLButtonElement = event.currentTarget; void button; } }] }];
+component(Menubar, { id: 'editor', label: 'Editor', menus: barMenus, '@keydown': event => { const root: HTMLDivElement = event.currentTarget; void root; } });
+component(Menubar, { id: 'editor', label: 'Editor', menus: [{value:'file',label:'File',triggerProps:{'@click':event=>{const button:HTMLButtonElement=event.currentTarget;void button;}},menuProps:{'@keydown':event=>{const panel:HTMLDivElement=event.currentTarget;void panel;}}}] });
+// @ts-expect-error The menubar needs its own identity.
+component(Menubar, { label: 'Editor' });
+// @ts-expect-error Stable menu values are required.
+component(Menubar, { id: 'editor', label: 'Editor', menus: [{ label: 'File' }] });
+// @ts-expect-error The component owns trigger expansion semantics.
+component(Menubar, { id: 'editor', label: 'Editor', menus: [{ value: 'file', label: 'File', triggerProps: { 'aria-expanded': true } }] });
+// @ts-expect-error Action labels supply accessible and typeahead names.
+component(Menubar, { id: 'editor', label: 'Editor', menus: [{ value: 'file', label: 'File', items: [{label:{}}] }] });

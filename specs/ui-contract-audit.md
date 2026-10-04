@@ -92,7 +92,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Kbd](../packages/ui/src/components/Kbd.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Label](../packages/ui/src/components/Label.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [Marker](../packages/ui/src/components/Marker.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [Menubar](../packages/ui/src/components/Menubar.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Menubar](../packages/ui/src/components/Menubar.ts) | Reviewed foundation | Named scoped menus, typed root/trigger/panel contracts, roving focus, RTL/typeahead, native dismissal, dynamic focus recovery, bounded positioning, SSR/Chromium and ejected-source compilation. |
 | [Message](../packages/ui/src/components/Message.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Modal](../packages/ui/src/components/Modal.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |

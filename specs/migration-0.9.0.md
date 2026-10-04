@@ -986,3 +986,29 @@ and repairs focus when keyed items move or disappear. Native disabled fieldsets
 block activation. Group key handlers can veto navigation with `preventDefault()`.
 ResizeObserver follows the single-selection indicator; cleanup releases observers
 and pending setup. Toggles do not submit values or reset with forms.
+
+## Menubar
+
+Menubar requires an instance `id` and a nonempty `label`. Each menu now requires
+its own stable `value` and text label. Derived trigger/panel IDs use that value and
+the instance prefix. Replace selectors based on the old `cs-menubar-index` IDs.
+`MenubarMenu` and `MenubarTriggerProps` are exported. Readonly arrays are supported.
+
+Native root attributes/events target HTMLDivElement. Per-menu `triggerProps` and
+`menuProps` target the button and panel. IDs, naming, roles, expansion and disabled
+state belong to Menubar. Actions use the shared typed `MenuItem` contract. Labels
+must be plain nonempty text, separators are distinct entries, and callbacks receive
+a native button event. Prevent default in an action/panel click handler to retain
+the open menu. Trigger click and native key handlers can veto built-in behavior.
+
+Replace direct writes to `openMenu` with native trigger activation. Open state now
+follows native auto popovers. There is one roving tab stop. Menus and actions marked
+disabled remain focusable but cannot activate. Native disabled fieldsets still apply.
+Keyboard navigation supports RTL, Home/End, typeahead, adjacent menus, Escape and
+Tab exit. Hover only switches an already-open menu. Focus repairs after menu/action
+removal and preserves focus moved outside by application actions.
+
+Panel placement follows the viewport and bounds oversized content. Cleanup removes
+listeners, observers and deferred setup. CLI ejection now includes the shared menu
+helper and merges duplicate named imports. Menubar, DropdownMenu and ContextMenu
+sources compile after ejection together with the existing disclosure components.

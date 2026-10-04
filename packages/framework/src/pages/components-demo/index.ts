@@ -622,14 +622,14 @@ export class ComponentsDemo extends Cossack {
                                 { label: 'API Reference', href: '#' },
                             ]},
                         ]})}
-                        ${component(Menubar, { menus: [
-                            { label: 'File', items: [
+                        ${component(Menubar, { id: 'demo-menubar', label: 'Editor actions', menus: [
+                            { value: 'file', label: 'File', items: [
                                 { label: 'New File', onClick: () => toast.show('New File') },
                                 { label: 'Open...', onClick: () => toast.show('Open') },
                                 { separator: true },
                                 { label: 'Exit', onClick: () => toast.show('Exit') },
                             ]},
-                            { label: 'Edit', items: [
+                            { value: 'edit', label: 'Edit', items: [
                                 { label: 'Undo', onClick: () => toast.show('Undo') },
                                 { label: 'Redo', onClick: () => toast.show('Redo') },
                             ]},

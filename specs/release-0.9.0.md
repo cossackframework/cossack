@@ -88,6 +88,63 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-menubar-2026-10-04"></a>
+## Codex Menubar (2026-10-04)
+
+Author: Codex. Menubar now has a required instance ID and name, readonly typed
+menus/actions and separate native root, trigger and panel attribute contracts.
+Stable menu values identify keyed sections and encoded relationships. Local refs
+replace global index-based IDs and document lookups. The demo uses the new API.
+
+The shared MenuController supplies action navigation, typeahead, disabled-action
+guards, dismissal, viewport bounds and cleanup. Menubar adds roving trigger focus,
+RTL navigation, adjacent-menu movement and switching by pointer while open.
+Disabled menus/actions remain focusable but cannot activate. Native fieldsets apply.
+Trigger, panel and root handlers retain their declared native event targets.
+Native click/key callbacks can veto the corresponding internal behavior.
+
+Keyed reordering preserves open-menu focus. Removing a menu repairs focus to a
+remaining trigger or the root. A new browser regression exposed focus moving to
+the trigger when a focused action disappeared from an open menu. Recovery now stays
+inside that menu on its first remaining action or empty-panel fallback. Actions
+that move focus outside retain that focus. Cleanup cancels deferred setup and
+releases the shared controller's listeners and observers.
+
+Source ejection now includes the private menu helper. A compiler-backed import
+merge removes duplicate named bindings after helpers are included. Ejected Menubar,
+DropdownMenu, ContextMenu, Accordion and Collapsible sources pass strict NodeNext
+compilation against public package declarations. The pinned compiler API remains
+inside the Node-only CLI package.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 242 tests in 25 files pass.
+- `pnpm --filter cossack exec vitest run tests/menubar-browser.test.js tests/menu-controls-browser.test.js tests/ui-ejection.test.js`:
+  12 tests pass across three files. The themed browser coverage includes SSR and
+  retained hydration, instance isolation, first/last opening, key and action veto,
+  disabled focus/activation, typeahead, RTL, adjacent menus, Escape/Tab exit,
+  outside focus, menu/action removal, open-menu reordering, inherited fieldsets,
+  all-disabled/empty updates, viewport bounds and cleanup/remounting.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` package configurations pass.
+- `pnpm test:agent-docs:local` passes installed native prop contracts, packaged
+  guidance and exact Menubar CLI/MCP parity with Node networking disabled during
+  discovery. All six existing packaged examples compile and execute. This UI guide
+  adds no executable example; installation can use the registry.
+- The final `tests/menubar-browser.test.js` run also passes empty-panel focus,
+  trigger/panel vetoes with native targets and closed/open hover behavior.
+
+Logs: `/tmp/cossack-menubar-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs}.log`.
+The failed-before removed-action case is recorded in
+`/tmp/cossack-menubar-focus-regression.log`.
+
+The keyboard model follows the [W3C menubar pattern](https://www.w3.org/WAI/ARIA/apg/patterns/menubar/).
+The packaged guide and migration notes explain names, identities, callbacks,
+focus and native attribute ownership. Nested submenus, menu checkboxes/radios,
+other browser engines and assistive-technology acceptance are not claimed here.
+Thirty-five UI foundations are reviewed. RT-23 and CLI-08 remain open. Continue
+NavigationMenu and all pending audit rows. The release retains 24 completed tasks
+and 34 open tasks. Versions remain 0.8.3 until REL-04.
+
 <a id="codex-toggles-2026-10-04"></a>
 ## Codex Toggle and ToggleGroup (2026-10-04)
 

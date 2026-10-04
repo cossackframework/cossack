@@ -19,9 +19,9 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 ## Continue here
 
 1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Thirty-four foundations are reviewed. See the
-   [Toggle checkpoint](./release-0.9.0.md#codex-toggles-2026-10-04) for the latest evidence.
-   Next audit Menubar and NavigationMenu, then the remaining pending rows.
+   Thirty-five foundations are reviewed. See the
+   [Menubar checkpoint](./release-0.9.0.md#codex-menubar-2026-10-04) for the latest evidence.
+   Next audit NavigationMenu, then the remaining pending rows.
    The broader component audit and full release matrix remain open.
 2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
    Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).
@@ -33,17 +33,20 @@ Earlier handoff details remain available through `git show 8f084e0:specs/handoff
 
 ## Next audit context
 
-Codex (2026-10-04): Next audit Menubar and NavigationMenu. Both currently derive panel IDs from global
-indexes and use document-wide lookups, so multiple instances can interfere.
-Menubar needs named menu semantics, trigger/panel keyboard navigation, native typed
-callbacks, focus recovery, bounded positioning and cleanup. Inspect the existing
-`internal/menu.ts` controller before adding another implementation.
-NavigationMenu needs named navigation/disclosure semantics, native link behavior,
-keyboard activation in hover mode, timer cancellation, outside/Escape dismissal
-and focus-safe panel transitions. Its spread uses unsupported onMouseenter names.
-Preserve hover/click options and verify independent instances, prop updates and
-removal. Follow each implementation with public type, SSR, themed browser,
-source-ejection and installed-guidance evidence. Audit all remaining rows afterward.
+Codex (2026-10-04): NavigationMenu still derives panel IDs from global indexes
+and uses document-wide lookups. Add stable section identities and a named navigation
+root with typed native attributes/events. Keep native links and disclosure semantics.
+Provide keyboard activation in hover mode, timer cancellation, outside/Escape
+dismissal and focus-safe transitions. Its spread uses unsupported onMouseenter names.
+Preserve hover/click options and verify independent instances, updates and removal.
+
+Update both the components demo and scaffold public layout. The latter stores
+translated sections in `@State`; identities must remain stable across label changes.
+Run scaffold recipe tests as well as public type, SSR, themed browser and installed
+guidance checks. Ejection now includes menu/disclosure helpers and merges named
+imports; extend source compilation coverage when NavigationMenu changes.
+Audit every remaining UI row afterward. Existing action-menu controllers deliberately
+move focus on opening; navigation hover must preserve native link/focus behavior.
 
 ## Limits to retain
 
