@@ -16,6 +16,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
+        input: path.resolve(__dirname, 'src/input.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),
         // These contracts are type-only, but Deno resolves the `.js`
         // specifier in emitted declarations before loading the matching `.d.ts`.

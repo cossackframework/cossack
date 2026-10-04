@@ -14,6 +14,12 @@ Declare a server contract with `input` from `@cossackframework/core`. Use
 data before calling the method. This applies to component actions, forwarded
 services and explicit service RPC, including multipart uploads.
 
+For standalone parsing, import the helpers from `@cossackframework/core/input`.
+This entry exports `input`, its types, `parseFormData`, `ActionValidationError`
+and `isActionValidationError` without component or runtime imports.
+Use `pnpm exec cossack docs --package @cossackframework/core --json` to read
+installed examples for schemas, nested forms and validation cancellation.
+
 ```typescript
 import { input, Server, type InputOf, type RawInputOf } from '@cossackframework/core';
 

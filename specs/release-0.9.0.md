@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): fresh CLI/MCP catalogs and packaged guides include route URLs, typed query state, schemas, nested forms, renderer output and four feature recipes. Ten examples compile and execute from installed tarballs. Broader authored API/component/recipe coverage and runtime guidance remain open. See the [installed input checkpoint](#codex-cli08-input-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -93,6 +93,42 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-cli08-input-2026-10-04"></a>
+### Codex: Portable input guidance and installed examples (2026-10-04)
+
+Core ships guides for typed query state, input schemas and nested forms. The
+focused `@cossackframework/core/input` export provides schema types, form parsing
+and validation errors without importing component or runtime modules. Root
+imports remain available. Guidance explains raw versus parsed types, direct
+calls versus inbound contracts, unknown fields and cancellation limits.
+Numeric bracket keys create objects; empty brackets create arrays.
+
+The installed harness now compiles and executes ten public usage examples,
+including normalized input, rejected fields, nested errors, inferred types,
+query round trips and asynchronous validation cancellation. The new declaration
+query and guidance match across CLI/MCP. A reader regression removes schema/form
+guides when the installed input export disappears. Discovery never runs examples.
+The ordinary form guide now awaits request form data. Stale trace and reader
+status text is corrected.
+
+- `pnpm test:agent-docs:local`: passes dependency builds, twelve tarballs, ten
+  compiled/executed examples, offline CLI/MCP parity, installed reporter types,
+  Cloudflare HTTP/SSE/WebSocket traces, production exclusion and UI catalogs.
+  Log: `/tmp/cossack-cli08-input-installed.log`.
+- `pnpm --filter @cossackframework/core exec vitest run tests/input-schema.test.ts tests/forms.test.ts tests/url-state.test.ts`:
+  **105 tests / 3 files pass**. Log: `/tmp/cossack-cli08-input-core.log`.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`:
+  **11 tests / 1 file pass**. Log: `/tmp/cossack-cli08-input-guidance.log`.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: pass, including all eleven packages.
+  Logs: `/tmp/cossack-cli08-input-root-types.log` and `/tmp/cossack-cli08-input-package-types.log`.
+
+CLI-08 remains open. These helper examples prove Node execution inside an
+installed Cloudflare project. They do not prove native helper behavior on every
+runtime, component actions, resource/task lifecycles or UI behavior. Continue
+authored application examples and the remaining library/component coverage.
+REL-02 and REL-03 retain their full acceptance criteria. Desktop remains closed
+by user decision. Release status stays **27 complete / 31 open**.
 
 <a id="codex-rt28-complete-2026-10-04"></a>
 ### Codex: Desktop development and RT-28 completion (2026-10-04)

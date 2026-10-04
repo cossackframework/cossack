@@ -151,8 +151,8 @@ Unknown package paths are rejected. Malformed manifest diagnostics omit raw cont
 These tools expose static inspection, configuration diagnostics, declaration
 signatures and available package-owned usage guides. The catalog and initial
 examples have installed-tarball acceptance. Full API/component/recipe coverage
-and verified runtime guidance remain CLI-08 work. Stored test results and development traces
-still need shared services. The server does not build, test, mutate, deploy or
+and verified runtime guidance remain CLI-08 work. Stored test results and development
+traces use shared readers for CLI and MCP. The server does not build, test, mutate, deploy or
 provision an application.
 
 The implementation uses the official SDK's
@@ -196,10 +196,14 @@ lowercase letters, digits and hyphens. Imports must belong to the owning package
 The file has a 256 KiB limit and cannot resolve outside its package directory.
 The CLI rejects unknown fields and unsupported schema versions.
 
-The guides explain typed route URL construction in core, escaped server HTML
-rendering in renderer, and the resource, mutation, scoped-service and protected-route
-recipes in scaffold. The tarball acceptance compiles and executes
-their examples against installed public exports. Discovery itself reports
+The core guides explain route URLs, typed query state, input schemas and nested
+form parsing. The focused `@cossackframework/core/input` entry exports schemas,
+form parsing and validation errors without component or runtime imports.
+Renderer guidance covers escaped server HTML. Scaffold guidance covers resource,
+mutation, scoped-service and protected-route recipes. The tarball acceptance
+compiles and executes ten examples against installed public exports. Input
+examples cover normalization, rejected fields, nested errors, inferred types and
+cancellation of an asynchronous refinement. Discovery itself reports
 `exampleExecution: "not-performed"` and `runtimeSupport: "not-verified"`.
 The recipe examples inspect dependencies and capability requirements through the
 pure scaffold registry without writing files. The protected-route example also

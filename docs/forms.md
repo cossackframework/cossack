@@ -87,8 +87,8 @@ component(Form, { method: 'post' }, html`<input name="email" /> ...`)
 To handle a form submission, define a method for its HTTP method in the page component. For a POST request, define a `post()` method. See [API Routes](/docs/api-routes.md).
 
 ```typescript
-post() {
-    const formData = this.c.req.formData();
+async post() {
+    const formData = await this.c.req.formData();
     const username = formData.get('username');
     const email = formData.get('email');
 

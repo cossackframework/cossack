@@ -244,6 +244,10 @@ JavaScript metadata fails before callbacks or mutation with a private migration
 error. Form rules (`@Validate`/`storeRules`) retain their existing API.
 See [the schema contract](../docs/validation.md).
 
+Standalone schema and form helpers are available from
+`@cossackframework/core/input`. This entry keeps component and runtime imports
+out of the helper graph. Existing imports from the core root remain available.
+
 When migrating a rule map, declare every accepted key and nested/file shape.
 Unknown keys now fail by default; opt into `unknownKeys: 'strip'` where dropping
 extra keys is intentional. Use `.optional()` and `.nullable()` explicitly.

@@ -74,3 +74,30 @@ it('prints package-owned prose and examples in the human CLI output', async () =
     expect(output).toContain(guide.examples[0].source);
   } finally { log.mockRestore(); }
 });
+
+it('reads the authored core guides and omits input guidance when its installed export disappears', async () => {
+  const { folder, read } = await fixture();
+  const authored = JSON.parse(await fs.readFile(new URL('../../core/agent-docs.json', import.meta.url), 'utf8'));
+  const exports = {};
+  for (const specifier of new Set(authored.guides.flatMap(guide => guide.imports))) {
+    const subpath = '.' + specifier.slice(name.length);
+    const target = './' + (subpath === '.' ? 'index' : subpath.slice(2)) + '.js';
+    exports[subpath] = target;
+    await fs.writeFile(path.join(folder, target), 'throw new Error("DO_NOT_IMPORT_GUIDANCE_MODULES")');
+  }
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version: '0.9.0', exports }));
+  await fs.writeFile(path.join(folder, 'agent-docs.json'), JSON.stringify(authored));
+  const before = (await read()).data.packages[0].guidance;
+  expect(before).toMatchObject({ status: 'available', version: '0.9.0', exampleExecution: 'not-performed' });
+  expect(before.guides).toEqual(authored.guides);
+
+  delete exports['./input'];
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version: '0.9.1', exports }));
+  const after = (await read()).data.packages[0].guidance;
+  expect(after).toMatchObject({ status: 'partial', version: '0.9.1', omitted: [
+    { id: 'validated-input', reason: 'imports-unavailable' },
+    { id: 'nested-form-input', reason: 'imports-unavailable' },
+  ] });
+  expect(after.guides.map(guide => guide.id)).toContain('typed-url-state');
+  expect(after.guides.some(guide => guide.imports.includes(name + '/input'))).toBe(false);
+});

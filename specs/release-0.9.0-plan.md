@@ -146,8 +146,12 @@ in the archive. The release checklist retains outcomes and verification evidence
 Codex status (2026-10-04): CLI and MCP share fresh installed-package catalogs,
 command schemas, declaration signatures, exact-symbol queries and packaged guidance.
 Wildcard discovery preserves export precedence and exclusions. Prop catalogs retain
-member documentation and explicit partial results. Six route, renderer and recipe
-examples compile and execute from installed tarballs. The RT-23 UI catalog audit is complete.
+member documentation and explicit partial results. The examples now cover route URLs,
+query state, schemas, nested forms, renderer output and recipes. The portable
+`core/input` entry keeps schema/form helpers independent of component runtimes.
+Ten examples compile and execute from installed tarballs. See the
+[input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04).
+The RT-23 UI catalog audit is complete.
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
 [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
 

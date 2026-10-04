@@ -70,7 +70,7 @@ require('node:module').syncBuiltinESMExports();
     // The documentation tool itself only returns source text.
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
-    for (const [name, id] of [['@cossackframework/core', 'route-urls'], ['@cossackframework/renderer', 'server-html'],
+    for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
       ...['resource', 'mutation', 'scoped-service', 'protected-route'].map(feature => ['@cossackframework/scaffold', feature + '-recipe'])]) {
       const pkg = catalog.data.packages.find(pkg => pkg.name === name);
       assert.equal(pkg.guidance.status, 'available');
@@ -111,6 +111,15 @@ require('node:module').syncBuiltinESMExports();
     const remote = await client.callTool({ name: 'read_documentation', arguments: { package: renderer.name, symbols: true } });
     assert.equal(remote.isError, false);
     assert.deepEqual(remote.structuredContent.data, documented.data);
+
+    const coreDocs = await invoke(['docs', '--package', '@cossackframework/core', '--symbols', '--symbol', 'input', '--json']);
+    assert.equal(coreDocs.ok, true);
+    const inputResolution = coreDocs.data.packages[0].declarations.resolutions.find(entry => entry.import === '@cossackframework/core/input' && entry.status === 'declaration');
+    const inputEntry = coreDocs.data.packages[0].declarations.entries.find(entry => entry.file === inputResolution?.file);
+    assert.ok(inputEntry?.symbols.some(symbol => symbol.name === 'input' && symbol.status === 'indexed'), 'Portable input declarations must be indexed');
+    const coreRemote = await client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/core', symbols: true, symbol: 'input' } });
+    assert.equal(coreRemote.isError, false);
+    assert.deepEqual(coreRemote.structuredContent.data, coreDocs.data);
 
     // Compile and execute the public reporter from installed tarballs. Only the
     // authored fixture runs; CLI and MCP readers themselves never execute tests.

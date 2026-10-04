@@ -32,6 +32,12 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
    [shared documentation services](../docs/local-agent-tools.md). Generated
    declarations alone do not prove usage or runtime compatibility. Desktop's new
    bootstrap is documented in its package guide and migration notes.
+   Core guidance now includes typed URL state, standalone schemas and nested forms.
+   Preserve the focused `core/input` export and
+   [ten installed examples](./release-0.9.0.md#codex-cli08-input-2026-10-04).
+   Next add component/action/resource/task usage through executable application
+   fixtures, then expand other library and UI guidance. Pure helpers and recipe
+   plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
 3. Follow the detailed plan for all 31 open tasks. Close each only against its
