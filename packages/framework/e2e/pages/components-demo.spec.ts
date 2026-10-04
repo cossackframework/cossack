@@ -584,8 +584,18 @@ test.beforeEach(async ({ page }) => {
     await expect(page.locator('.cs-message__meta:has-text("Alice")')).toHaveCount(3);
     // Attachment card.
     await expect(page.locator('.cs-attachment__info:has-text("design-system.fig")')).toBeAttached();
-    // MessageScroller viewport.
-    await expect(page.locator('.cs-message-scroller__viewport')).toBeVisible();
+    // Native named viewport remains keyboard-scrollable through the real app.
+    const transcript = page.getByRole('region', { name: 'Example conversation' });
+    await expect(transcript).toHaveAttribute('id', 'demo-messages-viewport');
+    await transcript.focus();
+    await page.keyboard.press('Home');
+    await expect.poll(() => transcript.evaluate(element => element.scrollTop)).toBeLessThan(1);
+    const latest = page.getByRole('button', { name: 'Scroll to latest messages' });
+    await expect(latest).toBeVisible();
+    await latest.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => transcript.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(1);
+    await expect(transcript).toBeFocused();
   });
 
   test('password input has show/hide toggle that changes input type', async ({ page }) => {

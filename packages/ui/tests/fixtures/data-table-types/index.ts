@@ -675,3 +675,19 @@ component(Marker,{disabled:true});
 component(Bubble,{reactions:[{emoji:'👍',label:'Like',count:'3'}]});
 // @ts-expect-error Time metadata is a string.
 component(Message,{datetime:new Date()});
+
+import { MessageScroller, type MessageScrollerViewportProps, type MessageScrollerJumpProps } from '@cossackframework/ui';
+const transcriptViewport: MessageScrollerViewportProps = {'@scroll':event=>{const viewport:HTMLDivElement=event.currentTarget;void viewport;}};
+const transcriptJump: MessageScrollerJumpProps = {'@click':event=>{const button:HTMLButtonElement=event.currentTarget;void button;},disabled:false};
+component(MessageScroller,{id:'transcript',label:'Conversation',initialPosition:'start',threshold:0,viewportProps:transcriptViewport,jumpProps:transcriptJump,'@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;}});
+new MessageScroller().scrollToBottom();
+// @ts-expect-error A scroller needs identity and a viewport name.
+component(MessageScroller,{});
+// @ts-expect-error Viewport owns keyboard access.
+const transcriptTab: MessageScrollerViewportProps = {tabindex:-1};
+// @ts-expect-error Jump is always a non-submit action.
+const transcriptSubmit: MessageScrollerJumpProps = {type:'submit'};
+// @ts-expect-error Native viewport callbacks target a div.
+const transcriptScroll: MessageScrollerViewportProps = {'@scroll':(event:Event & {currentTarget:HTMLInputElement})=>event};
+// @ts-expect-error Use jumpLabel instead of the removed misleading name.
+component(MessageScroller,{id:'transcript',label:'Conversation',newMessageLabel:'New messages'});

@@ -4792,3 +4792,44 @@ Codex next batch — Bubble:
   updates, RTL/narrow geometry, source ejection and installed guidance. Update
   migration notes. Then continue Marker, Message and MessageScroller; their source
   findings are in the UI audit. Component checks do not close RT-23.
+
+<a id="codex-message-scroller-plan-2026-10-04"></a>
+## MessageScroller implementation plan — Codex, 2026-10-04
+
+Archived after its [verified checkpoint](./release-0.9.0.md#codex-message-scroller-2026-10-04).
+The original baseline and implementation plan follow.
+
+Codex next batch — MessageScroller:
+
+Purpose: Users must be able to read history and operate message controls while
+new content arrives. Automatic following must respect that intent and component
+lifetime; keyboard users need a named, reachable viewport and jump action.
+
+Baseline: The root discards arbitrary props, scrollRef exposes internal ownership,
+and the viewport has no name or tab stop. onMount and ClientTask schedule uncancelled
+frames. Growth is inferred from scrollHeight without resize observation. The jump
+button appears for any distance from the bottom, regardless of new messages, and
+can disappear while focused. No cleanup releases scheduled work.
+
+- Define typed root/viewport props with native event targets, a stable identity
+  and viewport name. Keep native scrolling and child controls usable without JS.
+  Compose caller scroll handlers before internal updates. Validate finite,
+  nonnegative threshold values and localizable labels.
+- Specify initial following, appending, streaming text, delayed media/viewport
+  resizing and manual history reading. Follow growth only when the user was
+  already following. Preserve a stable visible anchor when history is prepended
+  or content above changes; document fallback behavior when that anchor disappears.
+  Avoid competing with native scroll anchoring. Test actual geometry and user input.
+- Give the jump action an accurate name, native non-submit behavior and a focus
+  destination when it disappears. Preserve focus in message child controls. Do
+  not infer that scrolling up means unseen messages have arrived or add a noisy
+  live region around every streaming token.
+- Own observers, event listeners and animation frames. Defer setup until refs are
+  connected, guard queued work by lifetime, and cancel it on cleanup. Keep any
+  public scrolling method browser-only and safe while disconnected.
+- Verify SSR/hydration, real keyboard/scroll behavior, late content sizing,
+  append/prepend/replacement, focused controls, threshold/empty states, resizing,
+  cleanup/remounts, source ejection and installed CLI/MCP guidance. Update the
+  framework demo and generated Chat template if the public contract changes.
+  Record migration behavior and separate fixture evidence from native transport
+  or full generated-app acceptance. Then audit blocks/icons and the RT-23 gate.

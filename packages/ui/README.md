@@ -93,7 +93,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|---|
 | **Bubble** | `<div>` | Chat message bubble (sent/received variants, tail, timestamp) |
 | **Message** | `<div>` | Chat message wrapper (avatar + name + bubble grouping) |
-| **MessageScroller** | `<div>` | Auto-stick-to-bottom scroll container with "new messages" affordance |
+| **MessageScroller** | `<div>` | Named keyboard-scrollable viewport with history anchoring and a latest-message action |
 | **Marker** | `<div>` | Date/section divider inside a message list ("Today", "New messages") |
 | **Attachment** | `<div>` | Chat file-attachment card with auto-detected type icon + status |
 

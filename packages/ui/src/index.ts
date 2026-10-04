@@ -88,7 +88,7 @@ export { InputGroup, type InputGroupProps } from "./components/InputGroup";
 export { Item, type ItemProps } from "./components/Item";
 export { Bubble, type BubbleProps, type BubbleReaction } from "./components/Bubble";
 export { Message, type MessageProps } from "./components/Message";
-export { MessageScroller, type MessageScrollerProps } from "./components/MessageScroller";
+export { MessageScroller, type MessageScrollerProps, type MessageScrollerViewportProps, type MessageScrollerJumpProps } from "./components/MessageScroller";
 export { Marker, type MarkerProps } from "./components/Marker";
 export { Attachment, type AttachmentProps, type AttachmentType, type AttachmentStatusVariant, type AttachmentRemoveProps, type AttachmentThumbnailProps } from "./components/Attachment";
 export { PasswordInput, type PasswordInputProps } from "./components/PasswordInput";

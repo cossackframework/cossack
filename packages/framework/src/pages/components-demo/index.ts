@@ -929,7 +929,7 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Chat — Bubble · Message · Attachment</h2>
                     <div class="border border-border rounded-lg overflow-hidden" style="height: 360px;">
-                        ${component(MessageScroller, {},
+                        ${component(MessageScroller, { id: 'demo-messages', label: 'Example conversation' },
                             html`
                                 ${component(Marker, {}, 'Today')}
                                 ${component(Message, {

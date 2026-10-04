@@ -19,6 +19,8 @@ it('renders the generated chat through real UI components for received, sent and
     expect(output.match(/class="cs-message /g)).toHaveLength(3);
     expect(output).toContain('cs-message--sent');expect(output).toContain('cs-message--received');
     expect(output).toContain('Question &lt;one&gt;');expect(output).toContain('Answer');expect(output).toContain('More text');
+    expect(output).toContain('id="chat-messages-viewport"');expect(output).toContain('aria-label="Conversation"');expect(output.match(/aria-live="polite"/g)).toHaveLength(1);expect(output).toContain('Receiving response');expect(output).toContain('aria-busy="true"');
+    expect(output).not.toMatch(/class="h-80[^"]*" aria-live/);
     expect(output).toContain('cs-bubble__body');expect(output).toContain('aria-label="Chat message"');expect(output).toContain('value="Draft"');
     expect(output).toContain('aria-label="Streaming response"');expect(output).toContain('type="submit"');
     chat.props = {...chat.props,messages:[],isStreaming:false,streamingText:''};

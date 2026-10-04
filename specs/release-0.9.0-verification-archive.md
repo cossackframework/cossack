@@ -6,6 +6,62 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-chat-display-2026-10-04"></a>
+## Codex Bubble, Marker and Message (2026-10-04)
+
+Author: Codex. These three display components now forward typed native div
+attributes/events. Bubble reactions require localized text equivalents, accept
+readonly records and validate nonnegative safe counts, including visible zero.
+They render as a named native list with decorative emoji and readable text.
+Wrapping reactions now take up normal layout space instead of overlapping the
+next timestamp/message. Native child actions remain independent.
+
+Bubble constrains its actual content box to 75% by default. Message owns an 80%
+body and sets the bubble limit to 100% inside it, avoiding nested percentage
+limits. Long words and metadata wrap; logical corners/alignment follow RTL.
+Message preserves supplied name, time and avatar for both variants. Explicit
+datetime plus display time produces a native time element; arbitrary time text
+alone remains a span. Marker exposes its label and hides only decorative lines.
+None adds automatic live-region semantics, keyboard actions or global resources.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 539 tests
+  across 41 files pass. SSR and public declarations cover native targets,
+  timestamp contracts, sent metadata, readonly labeled reactions, zero/invalid
+  counts, variants, decorative content and retained native children.
+- `pnpm --filter cossack exec vitest run tests/chat-display-browser.test.js tests/ui-ejection.test.js`:
+  39 tests pass, including 38 source-ejection checks and strict NodeNext compilation.
+  The real HTTP/Tailwind Chromium fixture checks no-JavaScript readable output,
+  retained hydration, native event targets, Tab/Enter/Space/link behavior, no form
+  submission, draft focus/value retention, reaction accessibility-tree text,
+  timestamps, 12 wrapped reactions, RTL corners/avatar order, narrow layouts and
+  standalone/composed width measurements with nested Attachment content.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: 113 tests in eight
+  files pass. The generated Chat render fixture executes its actual method with
+  real UI/renderer components for sent, received, streaming and empty content.
+  Translation, records and callbacks are fixture inputs; no transport/server
+  acceptance is inferred from that render test.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose native div
+  targets for all three components, readonly reactions, timestamp metadata,
+  public reaction types and the authored guide. Exact-symbol Bubble results match
+  across CLI/MCP. Six existing packaged examples compile and execute. Discovery
+  disables Node networking; installation can use the registry. The new guide
+  adds no executable example.
+
+The first browser run exposed a failed nested width override: Tailwind arbitrary
+selectors interpret unescaped underscores in the class name. Replacing that
+selector with the inherited --cs-bubble-max-width contract fixes the measured
+geometry. Package type checking also caught an incompatible constructor union in
+a test; the test now uses individually typed factories without widening props.
+
+Logs: `/tmp/cossack-chat-display-{build,ui,browser-ejection,scaffold,root-types,types,agent-docs}.log`.
+Cross-browser/assistive-technology and full generated-app/runtime acceptance remain
+open. Sixty-four of 65 UI source rows are reviewed. Continue MessageScroller,
+then blocks/icons and the full matrix. RT-23 and CLI-07/CLI-08 remain open; the
+release stays 24 of 58 complete, with all unchecked tasks still in scope.
+
 <a id="codex-attachment-2026-10-04"></a>
 ## Codex Attachment (2026-10-04)
 

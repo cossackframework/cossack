@@ -515,12 +515,12 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 64 UI foundations, including DataTable, have reviewed
-contracts. The [component audit](./ui-contract-audit.md) owns component coverage and
+Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
+have reviewed contracts. Icon and four composed blocks remain pending. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[Chat display verification](./release-0.9.0.md#codex-chat-display-2026-10-04) for the latest checkpoint.
+[MessageScroller verification](./release-0.9.0.md#codex-message-scroller-2026-10-04) for the latest checkpoint.
 
-Next: Audit MessageScroller using the source findings in the
+Next: Audit Icon and the composed blocks using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close
@@ -532,40 +532,46 @@ and its verification remain archived for regression context.
 The completed [Bubble plan](./release-0.9.0-plan-archive.md#codex-chat-display-plan-2026-10-04)
 is archived with the combined Bubble/Marker/Message evidence.
 
-Codex next batch — MessageScroller:
+The completed [MessageScroller plan](./release-0.9.0-plan-archive.md#codex-message-scroller-plan-2026-10-04)
+is archived with its verification. Source-component completion does not complete RT-23.
 
-Purpose: Users must be able to read history and operate message controls while
-new content arrives. Automatic following must respect that intent and component
-lifetime; keyboard users need a named, reachable viewport and jump action.
+Codex next batch — Icon, then composed blocks:
 
-Baseline: The root discards arbitrary props, scrollRef exposes internal ownership,
-and the viewport has no name or tab stop. onMount and ClientTask schedule uncancelled
-frames. Growth is inferred from scrollHeight without resize observation. The jump
-button appears for any distance from the bottom, regardless of new messages, and
-can disappear while focused. No cleanup releases scheduled work.
+Purpose: The icon and opt-in blocks are public UI features used by the reviewed
+components. Their contracts must be safe, typed and usable through actual native
+DOM behavior. Existing export presence does not establish those contracts.
 
-- Define typed root/viewport props with native event targets, a stable identity
-  and viewport name. Keep native scrolling and child controls usable without JS.
-  Compose caller scroll handlers before internal updates. Validate finite,
-  nonnegative threshold values and localizable labels.
-- Specify initial following, appending, streaming text, delayed media/viewport
-  resizing and manual history reading. Follow growth only when the user was
-  already following. Preserve a stable visible anchor when history is prepended
-  or content above changes; document fallback behavior when that anchor disappears.
-  Avoid competing with native scroll anchoring. Test actual geometry and user input.
-- Give the jump action an accurate name, native non-submit behavior and a focus
-  destination when it disappears. Preserve focus in message child controls. Do
-  not infer that scrolling up means unseen messages have arrived or add a noisy
-  live region around every streaming token.
-- Own observers, event listeners and animation frames. Defer setup until refs are
-  connected, guard queued work by lifetime, and cancel it on cleanup. Keep any
-  public scrolling method browser-only and safe while disconnected.
-- Verify SSR/hydration, real keyboard/scroll behavior, late content sizing,
-  append/prepend/replacement, focused controls, threshold/empty states, resizing,
-  cleanup/remounts, source ejection and installed CLI/MCP guidance. Update the
-  framework demo and generated Chat template if the public contract changes.
-  Record migration behavior and separate fixture evidence from native transport
-  or full generated-app acceptance. Then audit blocks/icons and the RT-23 gate.
+- Start with `packages/ui/src/icons/Icon.ts`. It manually constructs an SVG string
+  through unsafeHTML. Class values are interpolated without escaping, attribute
+  values use incomplete bespoke escaping, and callbacks become attribute strings.
+  Move caller attributes/events to renderer bindings. Treat imported icon path
+  strings as explicitly trusted artwork; native prop safety must not depend on
+  trusting caller-provided class/label/data text. Verify actual SVG namespaces and
+  path rendering in a browser, literal attribute values and real event targets.
+- Define Icon's size, decorative/informative naming, focus and artwork-style
+  fallback. Resolve the current style prop's collision with native CSS style.
+  Keep Solar imports tree-shakeable and runtime type imports out of browser graphs.
+  Update real callers, migration notes, source ejection and installed guidance.
+- Audit AuthForm next: actual form/control ownership, SSR login/signup mode,
+  stable labels/error relationships, disabled/loading states, submitted data,
+  callback failure/concurrency and social actions. The current submit comment
+  mentions false although its type does not allow that result. Keep authentication
+  and authorization in application/library services; a block must not imply them.
+- Audit CommandPalette using current Modal and Command contracts. Define native
+  prop destinations, controlled/default open state, names, selection, filtered
+  keyboard behavior, focus return and global-shortcut ownership/cleanup. Reuse
+  existing controllers instead of maintaining incompatible menu/dialog behavior.
+- Audit DashboardStat's ignored root props, literal rendered markup, neutral trend
+  color, readonly stat records, numeric/string values, accessible text and responsive
+  columns. Compose the corrected Icon; do not encode meaning with color alone.
+- Audit SettingsPanel's row variants, value types and state ownership. Its private
+  values field has the same name as the public prop, so check Cossack prop mirroring
+  before choosing controlled/default behavior. Verify native labels/descriptions,
+  real input/switch/button callbacks, updates and focus during row changes.
+- For every export, prove public type failures, SSR/hydration, themed native browser
+  behavior, current primitive composition, published/ejected imports and CLI/MCP
+  guidance. Update generated consumers where needed. Then finish the original
+  DataTable/generated-app acceptance and broader runtime/accessibility gates.
 
 Purpose: Applications need a typed table for real server data, and agents need
 reliable component attributes, events, and accessibility guidance.

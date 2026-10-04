@@ -1449,3 +1449,51 @@ Marker validates its default/unread variant, forwards root props and hides only
 its decorative lines. Its phrasing children remain readable. Unread styling adds
 no announcement, keyboard handling or focus change. None of these controls adds
 automatic live-region or message-log semantics.
+
+## MessageScroller native ownership and reading position
+
+MessageScroller now requires `id` and a viewport `label`. Root native props reach
+the outer div; `viewportProps` reaches the scrolling div and `jumpProps` reaches
+the jump button. Their public types describe actual event targets. The named
+viewport owns `tabindex="0"`, so keyboard scrolling works before hydration.
+Constrain the parent's height or set an explicit root height.
+
+```ts
+component(MessageScroller, {
+  id: 'conversation',
+  label: 'Conversation',
+  style: 'height: 24rem',
+  initialPosition: 'end',
+  threshold: 80,
+  jumpLabel: 'Scroll to latest messages',
+  viewportProps: {
+    '@scroll': event => console.log(event.currentTarget.scrollTop),
+  },
+}, messageContent);
+```
+
+Replace `newMessageLabel` with `jumpLabel`. The button reports a scroll action,
+not an unread count. Replace direct `scrollRef` access with the public browser
+method `scrollToBottom()` or the typed native viewport event. The button is
+non-submit; native caller handlers can veto its action, and disabled props apply.
+When the focused button disappears, focus returns to the viewport.
+
+`initialPosition` defaults to `end` and is captured on mount. Existing browser
+focus or scrolling takes precedence. Native scrolling within `threshold` resumes
+following; history reading and focused message controls pause automatic movement.
+Threshold must be finite and nonnegative. Content growth and resizing follow the
+bottom only while following. Geometry-driven browser clamping does not resume it.
+
+Use keyed direct element children to preserve their DOM identity across prepends
+and reorders. Visible child offsets anchor history reading. A removed anchor uses
+another surviving visible child; a complete replacement clamps the old scroll
+offset. Text-only content and rebuilt nodes cannot preserve a row anchor, and
+this does not promise word-level anchoring inside an edited row. Do not override
+native `overflow-anchor` or force smooth scrolling behind the component's back.
+Explicit jumps use instant movement and recover offscreen child focus to the
+viewport. Setup, observers and queued frames are owned and cleaned up on unmount.
+
+The generated Chat template now gives the viewport a name and streaming busy
+state. A separate short status region announces progress/completion instead of a
+live region around every token in the transcript. MessageScroller itself owns no
+live announcements, unread counts, message fetching or authorization.

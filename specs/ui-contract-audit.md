@@ -94,7 +94,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Marker](../packages/ui/src/components/Marker.ts) | Reviewed foundation | Typed native div props, validated visual variants, readable phrasing content and decorative lines; SSR, native browser events, narrow/RTL layout and installed guidance. |
 | [Menubar](../packages/ui/src/components/Menubar.ts) | Reviewed foundation | Named scoped menus, typed root/trigger/panel contracts, roving focus, RTL/typeahead, native dismissal, dynamic focus recovery, bounded positioning, SSR/Chromium and ejected-source compilation. |
 | [Message](../packages/ui/src/components/Message.ts) | Reviewed foundation | Typed native div props, preserved sent/received metadata and avatars, explicit time metadata, responsive body ownership, child focus/actions and generated Chat render coverage. |
-| [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Reviewed foundation | Named native viewport, typed root/viewport/jump targets, following and visible-row anchors, native focus/scroll, geometry-clamp protection, owned observers/frames and SSR/Chromium/demo/ejection/installed guidance. |
 | [Modal](../packages/ui/src/components/Modal.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [MultiSelect](../packages/ui/src/components/MultiSelect.ts) | Reviewed foundation | Typed input props/events, stable IDs, controlled/default tags, repeated form values, visible validation, keyboard/chip focus, composition, external form reset and SSR/fresh-render acceptance. |
 | [NativeSelect](../packages/ui/src/components/NativeSelect.ts) | Reviewed foundation | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
@@ -123,21 +123,35 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Tooltip](../packages/ui/src/components/Tooltip.ts) | Reviewed foundation | Typed native ownership, stable names/descriptions, hover/focus persistence, Escape cancellation, cleanup, bounded placement and SSR/Chromium acceptance. |
 | [Typography](../packages/ui/src/components/Typography.ts) | Reviewed foundation | Six native prop branches for all thirteen variants, exclusive quote/list attributes, native marker types, typed event targets, SSR/Chromium and source-ejection coverage. |
 
+## Blocks and icons
+
+All 65 rows above have reviewed foundations. These five additional exports remain
+pending. They were always part of RT-23; the component count does not close the task.
+
+| Source | Contract audit | Evidence / next action |
+| --- | --- | --- |
+| [Icon](../packages/ui/src/icons/Icon.ts) | Pending | Raw SVG construction interpolates class/attributes and cannot bind native events. Define safe native SVG ownership, size/style/name semantics and trusted path-data boundaries. |
+| [AuthForm](../packages/ui/src/blocks/AuthForm/index.ts) | Pending | Audit native form ownership, SSR mode, labels, field errors, social callbacks, submission/loading/failure lifetime and localization against current primitives. |
+| [CommandPalette](../packages/ui/src/blocks/CommandPalette/index.ts) | Pending | Audit current Modal/Command composition, naming, controlled state, native targets, global shortcuts, selection/focus and cleanup. |
+| [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Pending | Root ignores native props; neutral trend uses success color. Verify rendered markup, readonly data, labels, responsive columns and icon composition. |
+| [SettingsPanel](../packages/ui/src/blocks/SettingsPanel/index.ts) | Pending | Audit row types, controlled/default values, state/prop ownership, field names/descriptions, callbacks, updates and current Input/Switch/Button composition. |
+
 ## Next passes
 
-Next audit MessageScroller, the final pending source row. It ignores native root
-props, gives the viewport no keyboard tab stop or accessible name, and schedules
-animation frames without cleanup. Its scroll/task behavior needs browser evidence
-for appended/prepended content, delayed image sizing, manual history reading and
-remounts. Define actual viewport event targets, follow/anchor behavior and jump
-control focus before implementation. The detailed RT-23 plan preserves these goals.
-Then review blocks and icons separately.
+Start with Icon, then the four blocks. Icon manually constructs unsafeHTML markup;
+class interpolation is unescaped and arbitrary props become HTML strings instead
+of native events. Use renderer-owned SVG attribute/event bindings and keep imported
+path data's trust boundary explicit. Define the distinction between icon artwork
+style and native CSS style. Verify actual SVG element namespaces and native events,
+not only serialized output.
 
-Finish the pending source row, then review blocks and icons separately. Do not mechanically replace every prop index signature with a
-global type: the actual spread destination determines allowed attributes, native
-event targets and accessibility contracts. Keep unknown or unsupported behavior
-explicit in installed catalogs. Reviewed foundations still need the broader
-RT-23 generated-app acceptance and full release matrix.
+Block tests must render and operate the actual compositions through published and
+ejected imports. Preserve meaningful native keyboard/focus behavior, public types,
+SSR/hydration and installed guidance. Do not mechanically replace every index
+signature: each actual target and state owner determines its contract.
 
-The [verification log](./release-0.9.0.md#verification-log) retains completed
-component evidence, including shared dialog, menu and disclosure controllers.
+Then finish the broader RT-23 generated-app acceptance and full release matrix,
+including DataTable server data, filters, sorting, pagination and stable selection.
+Source foundations and fixture checks do not establish other-browser or assistive-
+technology acceptance. The [verification log](./release-0.9.0.md#verification-log)
+retains component evidence and links archived checkpoints.
