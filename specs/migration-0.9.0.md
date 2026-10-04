@@ -1012,3 +1012,34 @@ Panel placement follows the viewport and bounds oversized content. Cleanup remov
 listeners, observers and deferred setup. CLI ejection now includes the shared menu
 helper and merges duplicate named imports. Menubar, DropdownMenu and ContextMenu
 sources compile after ejection together with the existing disclosure components.
+
+## NavigationMenu
+
+Supply a page-unique `id` and a nonempty `label` for the navigation landmark.
+Each section now requires a stable `value`; each link requires a stable `value`
+unique within its section. Labels and descriptions are text. `href` must be
+nonempty. Use values that survive translations and item reordering. Replace
+selectors based on global indexes with the instance-prefixed trigger/panel IDs.
+
+`NavigationMenuSection`, `NavigationMenuLink`, `NavigationMenuTriggerProps`,
+`NavigationMenuPanelProps` and `NavigationMenuLinkProps` describe the public
+contract. Arrays can be readonly. Native attributes and `@events` target the
+root `HTMLElement`; nested props target the button, panel div and native anchor.
+`AnchorAttributes` exposes native link options. Replace unsupported `onMouseenter`
+style callbacks with typed `@pointerenter` handlers where needed.
+
+Both hover and click modes support native click, Enter and Space. Hover preserves
+keyboard focus, ignores touch entry and cannot dismiss another focused popup.
+Delays are integer milliseconds from 0 through 60000 (defaults: 100 open, 150 close).
+`disabled` applies to the whole navigation or one section; enclosing disabled
+fieldsets also disable triggers. Tab follows native links and buttons. Arrow keys,
+Home/End and Escape provide disclosure navigation and dismissal. Native callbacks
+can prevent the corresponding built-in action with `preventDefault()`.
+
+The native popover owns open state; the former public `activeSection` index is
+removed. Keyed updates preserve focus, with a remaining link, panel, trigger or
+root as a fallback when the focused target disappears. Panels own fixed positioning,
+viewport bounds and overflow. Cleanup cancels timers and deferred connection.
+SSR renders named navigation and relationships; disclosure interaction requires
+hydration. Load the UI theme and use the packaged `native-navigation` guide for
+the full keyboard, event and focus contract.

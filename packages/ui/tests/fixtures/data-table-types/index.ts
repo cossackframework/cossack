@@ -355,3 +355,18 @@ component(Menubar, { id: 'editor', label: 'Editor', menus: [{ label: 'File' }] }
 component(Menubar, { id: 'editor', label: 'Editor', menus: [{ value: 'file', label: 'File', triggerProps: { 'aria-expanded': true } }] });
 // @ts-expect-error Action labels supply accessible and typeahead names.
 component(Menubar, { id: 'editor', label: 'Editor', menus: [{ value: 'file', label: 'File', items: [{label:{}}] }] });
+
+import { NavigationMenu, type NavigationMenuSection, type AnchorAttributes } from '@cossackframework/ui';
+const navSections: readonly NavigationMenuSection[] = [{ value: 'docs', label: 'Docs', items: [{value:'guide',label:'Guide',href:'/guide',linkProps:{target:'_blank',download:'guide.html','@click':event=>{const link:HTMLAnchorElement=event.currentTarget;void link;}}}],triggerProps:{'@click':event=>{const button:HTMLButtonElement=event.currentTarget;void button;}},panelProps:{'@keydown':event=>{const panel:HTMLDivElement=event.currentTarget;void panel;}} }];
+component(NavigationMenu,{id:'primary',label:'Primary navigation',sections:navSections,'@keydown':event=>{const nav:HTMLElement=event.currentTarget;void nav;}});
+const nativeAnchor: AnchorAttributes = {href:'/guide',target:'_blank',rel:'noopener',referrerpolicy:'no-referrer'};void nativeAnchor;
+// @ts-expect-error A named navigation landmark is required.
+component(NavigationMenu,{id:'primary'});
+// @ts-expect-error Stable section identities are required.
+component(NavigationMenu,{id:'primary',label:'Primary',sections:[{label:'Docs'}]});
+// @ts-expect-error Stable link identities are required.
+component(NavigationMenu,{id:'primary',label:'Primary',sections:[{value:'docs',label:'Docs',items:[{label:'Guide',href:'/guide'}]}]});
+// @ts-expect-error Trigger expansion belongs to the component.
+component(NavigationMenu,{id:'primary',label:'Primary',sections:[{value:'docs',label:'Docs',triggerProps:{'aria-expanded':true}}]});
+// @ts-expect-error Links own href outside the native extras.
+component(NavigationMenu,{id:'primary',label:'Primary',sections:[{value:'docs',label:'Docs',items:[{value:'guide',label:'Guide',href:'/guide',linkProps:{href:'/other'}}]}]});

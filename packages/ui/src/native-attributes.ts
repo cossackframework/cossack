@@ -38,6 +38,11 @@ export type ButtonAttributes = GlobalAttributes<HTMLButtonElement> & Attributes<
     formnovalidate: boolean; formtarget: string; popovertarget: string;
     popovertargetaction: 'hide' | 'show' | 'toggle';
 }>;
+/** Native links retain browser navigation, download and modifier-key behavior. */
+export type AnchorAttributes = GlobalAttributes<HTMLAnchorElement> & Attributes<{
+    href: string; target: string; rel: string; download: string | boolean;
+    hreflang: string; type: string; referrerpolicy: ReferrerPolicy; ping: string;
+}>;
 export type InputAttributes = GlobalAttributes<HTMLInputElement> & Attributes<{
     type: 'button' | 'checkbox' | 'color' | 'date' | 'datetime-local' | 'email' | 'file' | 'hidden' |
         'image' | 'month' | 'number' | 'password' | 'radio' | 'range' | 'reset' | 'search' | 'submit' | 'tel' | 'text' | 'time' | 'url' | 'week';

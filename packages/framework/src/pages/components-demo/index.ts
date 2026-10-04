@@ -612,14 +612,14 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">NavigationMenu · Menubar</h2>
                     <div class="space-y-4">
-                        ${component(NavigationMenu, { sections: [
-                            { label: 'Products', items: [
-                                { label: 'Core', href: '#', description: 'The framework' },
-                                { label: 'UI', href: '#', description: 'Components library' },
+                        ${component(NavigationMenu, { id: 'demo-navigation', label: 'Documentation', sections: [
+                            { value: 'products', label: 'Products', items: [
+                                { value: 'core', label: 'Core', href: '#', description: 'The framework' },
+                                { value: 'ui', label: 'UI', href: '#', description: 'Components library' },
                             ]},
-                            { label: 'Docs', items: [
-                                { label: 'Getting Started', href: '#' },
-                                { label: 'API Reference', href: '#' },
+                            { value: 'docs', label: 'Docs', items: [
+                                { value: 'getting-started', label: 'Getting Started', href: '#' },
+                                { value: 'api', label: 'API Reference', href: '#' },
                             ]},
                         ]})}
                         ${component(Menubar, { id: 'demo-menubar', label: 'Editor actions', menus: [

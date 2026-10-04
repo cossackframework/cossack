@@ -88,6 +88,57 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-navigation-menu-2026-10-04"></a>
+## Codex NavigationMenu (2026-10-04)
+
+Author: Codex. NavigationMenu now requires an instance ID, landmark name and
+stable section/link values. Readonly sections and links have closed native
+root/button/panel/anchor attribute contracts. AnchorAttributes preserves native
+link options. The demo and scaffold public layout use stable identities across
+translated labels. Open state belongs to native popovers; global index IDs,
+document-wide lookups and the public activeSection index are removed.
+
+Hover preserves keyboard focus and cannot dismiss another focused popup.
+Both modes support click, Enter/Space and disclosure arrow navigation. Native
+Tab follows buttons and visible links. Pointer travel, delayed opening/closing,
+Escape cancellation, touch, outside focus and disabled fieldsets have explicit
+behavior. Keyed updates recover focus after link/section removal. Panels flip,
+clamp and scroll within the viewport. Cleanup cancels timers and deferred setup.
+
+The Chromium fixture found and now covers three regressions: authored autofocus
+triggered blur dismissal while opening; a focusout microtask hid the next native
+Tab target before focusin; and a second touch activation dismissed then reopened
+the panel. Internal focus restoration is guarded, focusout respects relatedTarget,
+and native popovertarget relationships prevent trigger taps from light-dismissal
+before the owned click handler. Modified links retain browser new-tab behavior.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 252 tests in 26 files pass.
+- `pnpm --filter cossack exec vitest run tests/navigation-menu-browser.test.js tests/ui-ejection.test.js`:
+  12 tests in two files pass, including themed production Chromium and strict
+  NodeNext compilation of ejected NavigationMenu with existing menu/disclosure sources.
+  Browser coverage includes SSR relationships, retained hydration, focus-preserving
+  hover/autofocus, native Tab, event vetoes, link navigation, touch toggling, RTL,
+  dynamic links/sections, empty fallbacks, disabled fieldsets, viewport bounds,
+  unmount during pending timers and remount before deferred connection.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` package configurations pass.
+- Scaffold recipe suite: 110 tests in five files pass after the public-layout update.
+- `pnpm test:agent-docs:local` passes. Installed CLI/MCP expose the same exact-symbol
+  NavigationMenu contract and native-navigation guide with Node networking disabled
+  during discovery. All six existing packaged examples compile and execute.
+
+The [W3C disclosure-navigation pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/)
+and [HTML popover behavior](https://html.spec.whatwg.org/multipage/popover.html)
+inform the contract. This is site navigation with native links, not an application
+menu. The new guide adds no executable example. Other browser engines, assistive
+technologies, generated-app integration and the full release matrix remain open.
+
+Logs: `/tmp/cossack-navigation-{build,ui,browser-ejection,root-types,types,scaffold,agent-docs}.log`.
+Thirty-six of 65 component-source foundations are reviewed. Continue Pagination,
+then every pending UI row. RT-23 and CLI-07/CLI-08 remain open; the release remains
+24 of 58 complete, with versions at 0.8.3 until REL-04.
+
 <a id="codex-menubar-2026-10-04"></a>
 ## Codex Menubar (2026-10-04)
 

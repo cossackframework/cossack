@@ -69,7 +69,7 @@ export { HoverCard, type HoverCardProps } from "./components/HoverCard";
 export { ScrollArea, type ScrollAreaProps } from "./components/ScrollArea";
 export { Resizable, type ResizableProps } from "./components/Resizable";
 export { Carousel, type CarouselProps } from "./components/Carousel";
-export { NavigationMenu, type NavigationMenuProps } from "./components/NavigationMenu";
+export { NavigationMenu, type NavigationMenuProps, type NavigationMenuSection, type NavigationMenuLink, type NavigationMenuLinkProps, type NavigationMenuTriggerProps, type NavigationMenuPanelProps } from "./components/NavigationMenu";
 export { Menubar, type MenubarProps, type MenubarMenu, type MenubarTriggerProps } from "./components/Menubar";
 export { Command, type CommandProps, type CommandItem } from "./components/Command";
 export { Combobox, type ComboboxProps, type ComboboxOption } from "./components/Combobox";
@@ -101,7 +101,7 @@ export type { IconStyle, IconEntry, IconRegistry } from "@cossackframework/solar
 
 export { DataTable, type DataTableProps, type DataTableColumn, type DataTableState, type DataTableSort } from './components/DataTable';
 
-export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, InputAttributes, TextareaAttributes, SelectAttributes, PasswordAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
+export type { ControlEvent, NativeEvents, AriaAttributes, GlobalAttributes, ButtonAttributes, AnchorAttributes, InputAttributes, TextareaAttributes, SelectAttributes, PasswordAttributes, RangeAttributes, CheckControlAttributes, LabelAttributes, FormAttributes } from "./native-attributes";
 
 export { isCalendarDate } from './internal/date';
 
