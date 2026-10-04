@@ -51,3 +51,20 @@ export function parseDevelopmentStreamEvidence(json: unknown): DevelopmentStream
         return e;
     } catch { return; }
 }
+
+/** Socket response preparation, not HTTP status or post-send/iterator cleanup evidence. */
+export interface DevelopmentSocketEvidence extends Omit<DevelopmentRpcEvidence, 'status'> {
+    frame: 'yield' | 'done' | 'error';
+}
+export function parseDevelopmentSocketEvidence(json: unknown): DevelopmentSocketEvidence | undefined {
+    if (typeof json !== 'string' || json.length > 1024) return;
+    try {
+        const e = JSON.parse(json);
+        if (!e || typeof e !== 'object' || Array.isArray(e)) return;
+        const { frame, ...common } = e;
+        if (!['yield', 'done', 'error'].includes(frame) || Object.hasOwn(common, 'status')) return;
+        if (!parseDevelopmentRpcEvidence(JSON.stringify({ ...common, status: 200 }))) return;
+        if (frame === 'yield' && e.result !== 'stream' || frame === 'done' && !['value', 'stream'].includes(e.result)) return;
+        return e;
+    } catch { return; }
+}

@@ -8834,3 +8834,57 @@ Limits: this fixture uses workspace package links. Installed-tarball trace
 acceptance remains before the CLI-07 audit. RT-28 retains WebSocket/native-body
 server evidence and other runtime development acceptance. No task closes:
 **25 complete, 33 open**. No deployment or publication occurred.
+
+<a id="codex-cli07-complete-2026-10-04"></a>
+### Codex: installed trace acceptance and CLI-07 completion (2026-10-04)
+
+Author: Codex. **CLI-07 is complete** against its original tool, parity and
+lifecycle criteria. The release now has **26 complete and 32 open tasks**.
+RT-28 transport enrichment and CLI-08 documentation coverage remain open.
+
+The shared browser acceptance fixture now runs against workspace links and actual
+installed tarballs. The application, Vite, CLI and MCP server resolve from the
+installation; only the browser driver and MCP test client come from the repository.
+Real component-stream, service and failure buttons produce the same bounded record
+through the browser, stored file, CLI and MCP. CLI/MCP reads run with Node networking
+disabled. The fixture restores its source/configuration files and verifies generated
+TypeScript, graceful server shutdown and production client/Worker exclusion.
+
+Installed acceptance found a bug hidden by workspace links: the bridge imported
+the inspector by filesystem path while the app used Vite's optimized public import.
+That created duplicate toolbars and separate capture owners. The virtual module now
+resolves the public inspector and supplies that instance to the bridge. The bridge
+has no runtime import of a second inspector or core capture module.
+
+Completion audit:
+
+| Original requirement | Evidence |
+| --- | --- |
+| Inspection, docs, diagnostics, test results and traces share services | All four MCP tools dispatch through the shared readers/inspection service. CLI commands use those services directly; no human-output parsing. |
+| Tool and CLI answers match for one fixture | SDK tests compare route facts/checks and recorded evidence. The installed fixture compares documentation, reporter records and real browser traces with the installed CLI/MCP entrypoints. |
+| Typed inputs, versioned output and accurate annotations | Strict schemas, schema version 1 and read-only/non-destructive/idempotent/local annotations are present on every tool; SDK negotiation and output validation pass. |
+| Invalid paths and unknown operations fail predictably | SDK tests reject unknown tools/fields, route traversal, package paths and record IDs; startup binds one real project root. |
+| Secrets are redacted and installed versions identified | Configured-secret tests pass; recorded actions exclude values, names and raw errors. Installed versions match manifests and refresh after metadata changes. |
+| Startup, shutdown and interrupted calls release resources | Existing deadline/concurrency/output-limit tests pass. New stdio tests block four real compiler workers at a controlled file read, then observe each native worker exit after SDK cancellation, stdin EOF or SIGTERM. Cancellation frees all four slots for subsequent calls; EOF exits without signal escalation. |
+
+Verification:
+
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **18 tests pass**,
+  including the three busy-server interruption cases. Log: `/tmp/cossack-installed-trace-mcp.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools-browser.test.ts tests/development-trace-bridge.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
+  **18 tests / 4 files pass**. Log: `/tmp/cossack-installed-trace-framework.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
+  **1 passes, 33 unrelated tests skipped**. Log: `/tmp/cossack-installed-trace-workspace.log`.
+- `COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --agent-docs-only`:
+  sequential package builds, 12 tarballs, installed examples/catalog/reporter/trace
+  acceptance and production exclusion pass. Log: `/tmp/cossack-installed-trace-tarballs.log`.
+  Installed runtime tools: Vite **8.3.2**, Cloudflare Vite plugin **1.62.5**,
+  Wrangler **4.147.0**, TypeScript **7.0.2**, Vitest **4.1.11**.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck` pass for all **11 packages**.
+  Log: `/tmp/cossack-installed-trace-types.log`.
+
+Limits: reads expose local, editable evidence with provenance and receipt age;
+they do not prove live state or remote readiness. RT-28 still needs WebSocket
+server dispatch, native-body terminal evidence and other runtime development
+acceptance. CLI-08 retains broader authored guidance; REL-02/REL-03 retain their
+full package/runtime gates. Versions remain 0.8.3. No deployment or publication occurred.

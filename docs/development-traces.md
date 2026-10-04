@@ -33,8 +33,9 @@ history is incomplete and may contain a terminal event without its start.
 
 Events form a discriminated union. Check `event.kind` before reading fields:
 `rpc` describes component calls, `service-rpc` describes explicit layout-service
-calls, `server-rpc` carries server dispatch evidence, `server-stream` carries delivered
-RPC stream terminal evidence, and `navigation` describes navigation decisions.
+calls, `server-rpc` carries HTTP server dispatch evidence, `server-stream` carries delivered
+RPC stream terminal evidence, `server-socket` carries WebSocket dispatch evidence,
+and `navigation` describes navigation decisions.
 
 RPC calls share a local `callId` and a UUID `requestId` when available. Component
 calls have an opaque `componentId`; service calls have a separate opaque `serviceId`.
@@ -100,14 +101,13 @@ has an invocation marker but no return marker. A denied dispatch has neither.
 Returning a generator records `stream` before its body runs. Returning a native
 Response records `native` before its body completes. Neither proves streaming
 success, cleanup or delivery. A separate `server-stream` event can report a
-delivered RPC generator terminal. WebSocket dispatch and native-body terminal
-evidence remain pending. Calls interrupted before response headers have no such
+delivered RPC generator terminal. Native-body terminal evidence remains pending. Calls interrupted before response headers have no such
 record; absence does not prove that the server did not execute them.
 
 `timestamp` is browser receipt time. The four server markers use the server wall
 clock; do not subtract them from browser timestamps or assume synchronized clocks.
 The client rejects oversized, extra-field, malformed and mismatched records and
-accepts at most one record per call. Evidence follows the original capture owner
+accepts at most one header record per call. Evidence follows the original capture owner
 and shares its bounded buffer. CLI and MCP read the same stored event. These are
 response-carried observations, not authenticated server logs; a local browser or
 proxy can edit them. They contain no arguments, state values, names or raw errors.
@@ -134,6 +134,37 @@ Missing evidence never establishes that the server failed or stopped.
 Malformed evidence is ignored without changing application results. Valid records
 share the capture's bounded buffer and are available through the same CLI/MCP
 reader. Production removes the server evidence encoder and client collector.
+
+### WebSocket dispatch evidence
+
+During capture, a WebSocket action includes an opaque call ID. The shared server
+dispatcher keeps a separate recorder for each message, including queued actions.
+The first yield and the terminal frame may carry a bounded `developmentTrace`
+record. The client stores these as `server-socket` events: `phase: 'response'`
+for a yield and `phase: 'finish'` for a done/error frame. At most two such events
+are recorded per call; a non-streaming call normally has only a terminal event.
+
+Each record has `callId`, `requestId`, `dispatchId`, `receivedAt`, `invokedAt`,
+`returnedAt`, `respondedAt`, `result` and `frame` (`yield`, `done` or `error`).
+It has no HTTP status. Invocation/return markers are null when those stages were
+not reached. Rejected input or a forbidden method has neither marker; an invoked
+method that throws has no return marker. Native Response values are rejected on
+WebSockets and may produce an error record with `result: 'native'`.
+
+`respondedAt` marks frame preparation. The event's `timestamp` is when the browser
+consumes that frame, which may follow time spent in a paused iterator's queue.
+These clocks are separate. A delivered terminal proves neither iterator cleanup
+nor later effects completed: the existing socket dispatcher cleans up after sending
+it. Cancellation, disconnect or buffer failure may discard queued frames, so local
+completion never invents a server terminal. A ring-buffer snapshot can lack the
+earlier response event even when its terminal is present.
+
+The client checks the call, request, dispatch and frame identities, ignores invalid
+optional metadata and retains the original capture owner. The encoder snapshots
+application values once and omits evidence when it would exceed the frame limit.
+No payloads, names, state values or raw errors enter these records. CLI/MCP use
+the same strict schema. Production removes the request marker, recorder and
+collector. These are editable local observations, not authenticated server logs.
 
 ## Component snapshots
 
@@ -281,8 +312,8 @@ HTTP endpoint. That token is available to the development browser and is not an
 authentication claim. Treat records as local browser observations. Production
 HTML does not install the bridge, and production bundling removes the publisher.
 
-Generated Cloudflare acceptance now follows real component-stream, service and
-failure button actions through browser capture, Vite persistence, CLI and MCP. It
+Generated Cloudflare HTTP and WebSocket acceptance follows real component-stream,
+service and failure button actions through browser capture, Vite persistence, CLI and MCP. It
 also checks generated types and production client/Worker bundles. The same
 acceptance passes with installed tarballs and offline CLI/MCP readers. The Vite
 bridge uses the public inspector import so dependency optimization does not

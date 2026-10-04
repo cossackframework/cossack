@@ -151,3 +151,16 @@ it('records and stores a real service proxy stream terminal alongside its dispat
         expect(()=>parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
     } finally {capture.stop();await scope.disposeAsync();}
 });
+
+it('persists bounded socket evidence and rejects payloads, HTTP status and inconsistent phases', async () => {
+    const s: any = snapshot();
+    s.events.push({ kind: 'server-socket', phase: 'finish', sequence: 1, timestamp: Date.now(), schemaVersion: 1,
+        callId: randomUUID(), requestId: randomUUID(), dispatchId: randomUUID(), receivedAt: 1,
+        invokedAt: 2, returnedAt: 3, respondedAt: 4, result: 'value', frame: 'done' });
+    const dir = await root(); await writeDevelopmentTrace(dir, randomUUID(), JSON.stringify(s));
+    expect((await readDevelopmentTraces(dir)).data.record?.snapshot).toEqual(s);
+    for (const patch of [{ payload: 'private' }, { status: 200 }, { phase: 'response' }, { frame: 'yield' }]) {
+        const bad = structuredClone(s); Object.assign(bad.events[0], patch);
+        expect(() => parseDevelopmentTrace(JSON.stringify(bad))).toThrow();
+    }
+});

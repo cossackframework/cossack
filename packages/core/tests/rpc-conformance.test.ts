@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { startDevelopmentTrace } from '../src/shared/development-trace';
+import { parseDevelopmentSocketEvidence } from '../src/shared/development-rpc-evidence';
 import { Hono, type Context } from 'hono';
 import { CossackElement } from '@cossackframework/renderer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -156,6 +158,64 @@ describe('realtime (WebSocket) RPC conformance', () => {
     afterEach(() => {
         delete (globalThis as any).WebSocket;
         errSpy.mockClear();
+    });
+
+    it.each(['ordinary', 'stream', 'failure', 'denied', 'invalid-input'] as const)('joins real socket %s dispatch with client state and terminal events', async kind => {
+        const capture = startDevelopmentTrace();
+        try {
+            if (kind === 'ordinary') expect(await client.ordinary(5)).toBe(5);
+            if (kind === 'stream') expect(await client.stream(3)).toBe('done:1');
+            if (kind === 'failure') await expect(client.failInternal()).rejects.toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR' });
+            if (kind === 'invalid-input') await expect(client.guarded({ title: 'x' })).rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED' });
+            if (kind === 'denied') {
+                proxyServerMethods(client, [{ name: 'destroy', channel: 'global', provider: 'page' }]);
+                await expect(client.destroy()).rejects.toMatchObject({ code: 'COSSACK_RPC_FORBIDDEN' });
+            }
+            const request = JSON.parse(sockets.clientSocket.sent[0]);
+            const events = capture.snapshot().events;
+            const evidence = events.filter(event => event.kind === 'server-socket');
+            expect(evidence.map(event => event.frame)).toEqual(kind === 'stream' ? ['yield', 'done'] : [kind === 'ordinary' ? 'done' : 'error']);
+            expect(new Set(evidence.map(event => event.dispatchId)).size).toBe(1);
+            for (const event of evidence) {
+                expect(event).toMatchObject({ callId: request.developmentTrace, requestId: request.requestId,
+                    invokedAt: kind === 'denied' || kind === 'invalid-input' ? null : expect.any(Number),
+                    returnedAt: ['denied', 'failure', 'invalid-input'].includes(kind) ? null : expect.any(Number),
+                    result: kind === 'stream' ? 'stream' : kind === 'ordinary' ? 'value' : 'none' });
+                const { kind: _, phase, sequence, timestamp, ...wire } = event;
+                expect(parseDevelopmentSocketEvidence(JSON.stringify(wire))).toEqual(wire);
+            }
+            expect(events.filter(event => event.kind === 'rpc' && event.phase === 'finish')).toHaveLength(1);
+            expect(client.count).toBe(kind === 'ordinary' ? 5 : kind === 'stream' ? 3 : 0);
+            expect(client.loading).toEqual({});
+            expect(JSON.stringify(events)).not.toMatch(/SECRET_TOKEN|ordinary|failInternal|destroy|done:1/);
+        } finally { capture.stop(); }
+    });
+
+    it('keeps queued socket dispatch identities separate and emits no evidence without capture', async () => {
+        await client.ordinary(1);
+        expect(JSON.parse(sockets.clientSocket.sent[0]).developmentTrace).toBeUndefined();
+        const capture = startDevelopmentTrace();
+        try {
+            expect(await Promise.all([client.ordinary(2), client.ordinary(4)])).toEqual([3, 7]);
+            const evidence = capture.snapshot().events.filter(event => event.kind === 'server-socket');
+            expect(evidence).toHaveLength(2);
+            expect(new Set(evidence.map(event => event.dispatchId)).size).toBe(2);
+            const requests = sockets.clientSocket.sent.slice(1).map((raw: string) => JSON.parse(raw));
+            expect(evidence.map(event => [event.callId, event.requestId])).toEqual(requests.map((request: any) => [request.developmentTrace, request.requestId]));
+            expect(server.count).toBe(7);
+        } finally { capture.stop(); }
+    });
+
+    it('does not invent a server terminal when a paused socket stream is cancelled', async () => {
+        const capture = startDevelopmentTrace();
+        try {
+            const call = client.slowStream(), iterator = call[Symbol.asyncIterator]();
+            expect(await iterator.next()).toEqual({ value: 'first', done: false });
+            await call.cancel(); await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+            const events = capture.snapshot().events;
+            expect(events.filter(event => event.kind === 'server-socket').map(event => event.frame)).toEqual(['yield']);
+            expect(events.at(-1)).toMatchObject({ kind: 'rpc', phase: 'finish', outcome: 'cancelled' });
+        } finally { capture.stop(); }
     });
 
     it('awaits ordinary results with server state and clears loading', async () => {

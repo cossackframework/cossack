@@ -1652,3 +1652,10 @@ joins an earlier dispatch ID and reports cleanup separately from outcome. It is
 optional and does not change RPC results; local cancellation never implies a
 server terminal. Server timestamps use a different clock from browser receipt
 timestamps. See [development traces](../docs/development-traces.md#server-dispatch-evidence).
+
+
+Development trace consumers must also handle `kind: 'server-socket'`. These
+WebSocket dispatch records have a `frame` type and no HTTP `status`. The first
+yield and terminal can share a dispatch ID; a terminal is not evidence of iterator
+cleanup. Unknown or absent optional evidence must not change application results.
+See [WebSocket trace semantics](../docs/development-traces.md#websocket-dispatch-evidence).

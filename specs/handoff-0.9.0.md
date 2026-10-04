@@ -21,9 +21,10 @@ inspector import: a filesystem import created a second capture owner in installe
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-28** WebSocket server dispatch, native-body terminal evidence
-   and other runtime development acceptance. Generated and installed Cloudflare
-   browser/CLI/MCP parity and production exclusion pass. Preserve ordered
+1. Continue **RT-28** native-body terminal evidence and other runtime development
+   acceptance. [WebSocket server evidence](./release-0.9.0.md#codex-socket-trace-evidence-2026-10-04)
+   now passes generated and installed Cloudflare browser/CLI/MCP parity and
+   production exclusion. A socket terminal does not prove post-send iterator cleanup. Preserve ordered
    application errors after WebSocket yields; only local transport failures discard
    queued frames. Header evidence alone does not prove body completion. Stored
    receipt age does not prove live state; source markers identify the latest instance per file.

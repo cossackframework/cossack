@@ -4,7 +4,7 @@ afterEach(() => vi.unstubAllEnvs());
 import { build } from 'vite';
 import { fileURLToPath } from 'node:url';
 
-it.each([['method-proxy', 'proxyHttpMethods'], ['service-scope', 'ServiceScope'], ['cossack', 'Cossack']])('removes trace collection from a production %s bundle', async (entry, symbol) => {
+it.each([['method-proxy', 'proxyHttpMethods'], ['service-scope', 'ServiceScope'], ['cossack', 'Cossack'], ['runtime', 'dispatchSocketRpcMessage']])('removes trace collection from a production %s bundle', async (entry, symbol) => {
     vi.stubEnv('NODE_ENV', 'production');
     const output = await build({
         configFile: false, logLevel: 'silent', mode: 'production',
@@ -18,7 +18,7 @@ it.each([['method-proxy', 'proxyHttpMethods'], ['service-scope', 'ServiceScope']
     const source = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : [])
         .filter(chunk => chunk.type === 'chunk').map(chunk => chunk.code).join('\n');
     expect(source).toContain(symbol);
-    for (const marker of ['cossack-start:', 'cossack-end:', 'server-stream', 'parseDevelopmentStreamEvidence', 'X-Cossack-Development-Trace', 'server-rpc', 'parseDevelopmentRpcEvidence', 'service-rpc', 'beginDevelopmentServiceRpcTrace', 'state-reconciled', 'startDevelopmentTrace', 'beginDevelopmentRpcTrace', 'Trace capacity must', 'registerDevelopmentInspector', 'developmentValueReader', 'Select at most 32']) {
+    for (const marker of ['server-socket', 'beginDevelopmentSocketDispatch', 'parseDevelopmentSocketEvidence', 'cossack-start:', 'cossack-end:', 'server-stream', 'parseDevelopmentStreamEvidence', 'X-Cossack-Development-Trace', 'server-rpc', 'parseDevelopmentRpcEvidence', 'service-rpc', 'beginDevelopmentServiceRpcTrace', 'state-reconciled', 'startDevelopmentTrace', 'beginDevelopmentRpcTrace', 'Trace capacity must', 'registerDevelopmentInspector', 'developmentValueReader', 'Select at most 32']) {
         expect(source).not.toContain(marker);
     }
 }, 30000);

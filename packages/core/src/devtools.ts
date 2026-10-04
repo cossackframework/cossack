@@ -9,6 +9,6 @@ export type {
     DevelopmentStateSnapshot, DevelopmentResourceSnapshot, DevelopmentScopeSnapshot, DevelopmentTransportSnapshot,
 } from './shared/development-inspection';
 
-export { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence } from './shared/development-rpc-evidence';
-export type { DevelopmentRpcEvidence, DevelopmentStreamEvidence } from './shared/development-rpc-evidence';
-export type { DevelopmentServerRpcEvent, DevelopmentServerStreamEvent } from './shared/development-trace';
+export { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, parseDevelopmentSocketEvidence } from './shared/development-rpc-evidence';
+export type { DevelopmentRpcEvidence, DevelopmentStreamEvidence, DevelopmentSocketEvidence } from './shared/development-rpc-evidence';
+export type { DevelopmentServerRpcEvent, DevelopmentServerStreamEvent, DevelopmentServerSocketEvent } from './shared/development-trace';

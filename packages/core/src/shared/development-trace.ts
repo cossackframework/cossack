@@ -1,4 +1,4 @@
-import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, type DevelopmentStreamEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
+import { DEVELOPMENT_RPC_HEADER, parseDevelopmentSocketEvidence, type DevelopmentSocketEvidence, parseDevelopmentRpcEvidence, parseDevelopmentStreamEvidence, type DevelopmentStreamEvidence, type DevelopmentRpcEvidence } from './development-rpc-evidence';
 import { inspectDevelopmentComponent, type DevelopmentInspectionOptions, type DevelopmentComponentSnapshot } from './development-inspection';
 import type { NavigateOutcome, NavigationScrollBehavior, NavigationType } from '../client/navigation';
 
@@ -50,7 +50,13 @@ export interface DevelopmentServerStreamEvent extends DevelopmentStreamEvidence 
     readonly sequence: number;
     readonly timestamp: number;
 }
-export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent | DevelopmentServerStreamEvent;
+export interface DevelopmentServerSocketEvent extends DevelopmentSocketEvidence {
+    readonly kind: 'server-socket';
+    readonly phase: 'response' | 'finish';
+    readonly sequence: number;
+    readonly timestamp: number;
+}
+export type DevelopmentTraceEvent = DevelopmentRpcEvent | DevelopmentServiceRpcEvent | DevelopmentNavigationEvent | DevelopmentServerRpcEvent | DevelopmentServerStreamEvent | DevelopmentServerSocketEvent;
 
 export interface DevelopmentTraceSnapshot {
     readonly schemaVersion: 1;
@@ -182,6 +188,8 @@ function navigationDiagnostic(event: DevelopmentNavigationDiagnostic): Developme
 
 /** @internal Fixed operations keep arbitrary metadata out of the capture boundary. */
 export interface DevelopmentRpcTrace {
+    readonly callId: string;
+    socket(frame: { type: string; requestId: string; developmentTrace?: unknown }): void;
     readonly requestHeaders: Readonly<Record<string, string>>;
     server(response: Response): void;
     stream(frame: { type: string; requestId: string; developmentTrace?: unknown }): void;
@@ -219,8 +227,21 @@ function rpcTrace(collector: Collector, identity:
     emit('start');
     let serverRecorded: DevelopmentRpcEvidence | undefined;
     let streamRecorded = false;
+    let socketDispatch: string | undefined, socketResponse = false, socketTerminal = false;
     return {
+        callId: identity.callId,
         requestHeaders: { [DEVELOPMENT_RPC_HEADER]: identity.callId },
+        socket: frame => {
+            if (finished || !collector.collecting || identity.transport !== 'websocket' || socketTerminal) return;
+            const evidence = parseDevelopmentSocketEvidence(frame.developmentTrace);
+            if (!evidence || evidence.callId !== identity.callId || evidence.requestId !== wireId || evidence.requestId !== frame.requestId
+                || evidence.frame !== frame.type || socketDispatch !== undefined && evidence.dispatchId !== socketDispatch) return;
+            if (frame.type === 'yield' && socketResponse) return;
+            socketDispatch = evidence.dispatchId;
+            if (frame.type === 'yield') socketResponse = true; else socketTerminal = true;
+            append(collector, { ...evidence, kind: 'server-socket', phase: frame.type === 'yield' ? 'response' : 'finish',
+                sequence: ++collector.sequence, timestamp: Date.now() });
+        },
         server: response => {
             if (finished || !collector.collecting || serverRecorded) return;
             const evidence = parseDevelopmentRpcEvidence(response.headers.get(DEVELOPMENT_RPC_HEADER));

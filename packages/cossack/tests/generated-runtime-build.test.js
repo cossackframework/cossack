@@ -1697,12 +1697,12 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-it('shares a generated development browser RPC trace with the CLI and MCP', async () => {
+it.each(['http','durable-object'])('shares a generated development browser RPC trace over %s with the CLI and MCP', async transport => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project('cloudflare');
   await verifyDevelopmentTraceApplication(root,{
-    additionalAllowedPaths:[repository],
+    additionalAllowedPaths:[repository],transport,
     async onRecorded({snapshot,recorded}) {
       const {stdout,stderr:cliStderr}=await promisify(execFile)(process.execPath,[path.join(repository,'packages/cossack/bin/cossack.js'),'traces','--json','--session',snapshot.sessionId],{cwd:root,timeout:15000,maxBuffer:2*1024*1024});
       const cli=JSON.parse(stdout);

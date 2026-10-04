@@ -50,7 +50,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
-- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs.
+- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs. HTTP/WebSocket capture and installed CLI/MCP parity pass; native-body evidence and other runtime acceptance remain. See the [checkpoint](#codex-socket-trace-evidence-2026-10-04).
 - [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite. GLM (2026-10-02): `@cossackframework/test-utils/server` — `withRequestScope` (production request-context ALS + root service scope, awaited disposal, restoration on failure) and `controlledAsync` (settle-once deferred + shared AbortSignal); own suite now runs in root `pnpm test:unit`; remaining: framework-level RPC dispatch fixtures, auth fixtures, hydration helpers, and tarball-import verification.
 
 ## New services
@@ -88,59 +88,59 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-cli07-complete-2026-10-04"></a>
-### Codex: installed trace acceptance and CLI-07 completion (2026-10-04)
+<a id="codex-socket-trace-evidence-2026-10-04"></a>
+### Codex: WebSocket server trace evidence (2026-10-04)
 
-Author: Codex. **CLI-07 is complete** against its original tool, parity and
-lifecycle criteria. The release now has **26 complete and 32 open tasks**.
-RT-28 transport enrichment and CLI-08 documentation coverage remain open.
+Author: Codex. RT-28 now correlates WebSocket server dispatch with browser RPC
+observations and shared CLI/MCP records. Each opted-in action owns its recorder
+while queued or executing. The first yield and terminal can carry fixed-field
+`server-socket` evidence with call/request/dispatch IDs, server stage timestamps,
+result kind and frame type. Rejected methods/input have no invocation marker;
+invoked failures have no return marker. Records contain no application payloads,
+names or raw errors. Production removes the marker, encoder and collector.
 
-The shared browser acceptance fixture now runs against workspace links and actual
-installed tarballs. The application, Vite, CLI and MCP server resolve from the
-installation; only the browser driver and MCP test client come from the repository.
-Real component-stream, service and failure buttons produce the same bounded record
-through the browser, stored file, CLI and MCP. CLI/MCP reads run with Node networking
-disabled. The fixture restores its source/configuration files and verifies generated
-TypeScript, graceful server shutdown and production client/Worker exclusion.
+The client accepts at most two records per call, rejects mismatched dispatch/frame
+identities and keeps the original capture owner. Optional metadata cannot turn a
+valid frame into an oversized failure or evaluate application serialization twice.
+Cancellation never invents a server terminal. Socket terminal delivery does not
+prove iterator cleanup: the existing dispatcher cleans up after sending it.
+Browser collection time may follow a paused queue and uses a separate clock from
+the server markers. See [semantics](../docs/development-traces.md#websocket-dispatch-evidence).
 
-Installed acceptance found a bug hidden by workspace links: the bridge imported
-the inspector by filesystem path while the app used Vite's optimized public import.
-That created duplicate toolbars and separate capture owners. The virtual module now
-resolves the public inspector and supplies that instance to the bridge. The bridge
-has no runtime import of a second inspector or core capture module.
-
-Completion audit:
-
-| Original requirement | Evidence |
-| --- | --- |
-| Inspection, docs, diagnostics, test results and traces share services | All four MCP tools dispatch through the shared readers/inspection service. CLI commands use those services directly; no human-output parsing. |
-| Tool and CLI answers match for one fixture | SDK tests compare route facts/checks and recorded evidence. The installed fixture compares documentation, reporter records and real browser traces with the installed CLI/MCP entrypoints. |
-| Typed inputs, versioned output and accurate annotations | Strict schemas, schema version 1 and read-only/non-destructive/idempotent/local annotations are present on every tool; SDK negotiation and output validation pass. |
-| Invalid paths and unknown operations fail predictably | SDK tests reject unknown tools/fields, route traversal, package paths and record IDs; startup binds one real project root. |
-| Secrets are redacted and installed versions identified | Configured-secret tests pass; recorded actions exclude values, names and raw errors. Installed versions match manifests and refresh after metadata changes. |
-| Startup, shutdown and interrupted calls release resources | Existing deadline/concurrency/output-limit tests pass. New stdio tests block four real compiler workers at a controlled file read, then observe each native worker exit after SDK cancellation, stdin EOF or SIGTERM. Cancellation frees all four slots for subsequent calls; EOF exits without signal escalation. |
+The shared runtime dispatcher supplies the evidence for process and Durable Object
+adapters. The browser acceptance fixture now covers HTTP and real Cloudflare
+WebSocket actions, plus an explicit layout-service HTTP call, from both workspace
+links and installed tarballs. Both variants compare browser/stored/CLI/MCP records,
+check generated types and production client/Worker exclusion, then close the server.
+The tarball reader checks retain Node networking guards. Source and configuration
+changes in the acceptance app are restored after each variant.
 
 Verification:
 
-- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **18 tests pass**,
-  including the three busy-server interruption cases. Log: `/tmp/cossack-installed-trace-mcp.log`.
-- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools-browser.test.ts tests/development-trace-bridge.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
-  **18 tests / 4 files pass**. Log: `/tmp/cossack-installed-trace-framework.log`.
+- `pnpm --filter @cossackframework/core exec vitest run`: **1,509 tests / 92 files pass**.
+  Includes dispatch/denial/failure/queue/cancellation correlation, malformed evidence,
+  frame limits, one-time serialization and four production bundle entrypoints.
+  Log: `/tmp/cossack-socket-trace-core-full.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/navigation-trace-build.test.ts`:
+  **18 tests / 3 files pass**. Log: `/tmp/cossack-socket-trace-framework.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **18 tests pass**.
+  Log: `/tmp/cossack-socket-trace-mcp.log`.
 - `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
-  **1 passes, 33 unrelated tests skipped**. Log: `/tmp/cossack-installed-trace-workspace.log`.
+  **2 pass, 33 unrelated tests skipped**. Log: `/tmp/cossack-socket-trace-generated.log`.
 - `COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --agent-docs-only`:
-  sequential package builds, 12 tarballs, installed examples/catalog/reporter/trace
-  acceptance and production exclusion pass. Log: `/tmp/cossack-installed-trace-tarballs.log`.
-  Installed runtime tools: Vite **8.3.2**, Cloudflare Vite plugin **1.62.5**,
-  Wrangler **4.147.0**, TypeScript **7.0.2**, Vitest **4.1.11**.
+  sequential package builds, 12 tarballs and complete installed documentation,
+  reporter, HTTP/WebSocket trace and production exclusion acceptance pass.
+  Log: `/tmp/cossack-socket-trace-installed.log`. Installed Vite **8.3.2**,
+  Cloudflare Vite plugin **1.62.5**, Wrangler **4.147.0**, TypeScript **7.0.2**,
+  Vitest **4.1.11**. The temporary installation was removed after verification.
 - Root `pnpm tsc --noEmit` and `pnpm typecheck` pass for all **11 packages**.
-  Log: `/tmp/cossack-installed-trace-types.log`.
+  Log: `/tmp/cossack-socket-trace-types.log`.
 
-Limits: reads expose local, editable evidence with provenance and receipt age;
-they do not prove live state or remote readiness. RT-28 still needs WebSocket
-server dispatch, native-body terminal evidence and other runtime development
-acceptance. CLI-08 retains broader authored guidance; REL-02/REL-03 retain their
-full package/runtime gates. Versions remain 0.8.3. No deployment or publication occurred.
+Limits: native-body terminal evidence and other runtime development acceptance
+remain open under RT-28. Socket evidence does not cover post-send cleanup or prove
+that ignored application I/O stopped. Local editable records are not authenticated
+server logs or remote readiness checks. No task closes: **26 complete, 32 open**.
+Versions remain 0.8.3; no deployment or publication occurred.
 
 ### Archived checkpoints
 
@@ -151,6 +151,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-cli07-complete-2026-10-04"></a>[Codex installed trace acceptance and CLI-07 completion (2026-10-04)](./release-0.9.0-verification-archive.md#codex-cli07-complete-2026-10-04) |
 | <a id="codex-generated-trace-acceptance-2026-10-04"></a>[Codex generated development-trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-generated-trace-acceptance-2026-10-04) |
 | <a id="codex-stream-terminal-evidence-2026-10-04"></a>[Codex delivered RPC stream terminal evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-stream-terminal-evidence-2026-10-04) |
 | <a id="codex-server-dispatch-evidence-2026-10-04"></a>[Codex HTTP server dispatch evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-server-dispatch-evidence-2026-10-04) |

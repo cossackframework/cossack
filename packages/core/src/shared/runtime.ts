@@ -1,4 +1,5 @@
-import { rpcCancellations, sendRpcFrame } from './rpc-stream';
+import { beginDevelopmentSocketDispatch } from './development-socket-dispatch';
+import { rpcCancellations, sendRpcFrame, type RpcStreamFrame } from './rpc-stream';
 import type { Context } from 'hono';
 
 export interface CossackServerRuntime {
@@ -29,9 +30,11 @@ export async function dispatchSocketRpcMessage(
     }
     if (message.type !== 'action') return;
     const requestId = typeof message.requestId === 'string' ? message.requestId : undefined;
+    const development = import.meta.env?.DEV ? beginDevelopmentSocketDispatch(message.developmentTrace, requestId) : undefined;
+    const send = (frame: RpcStreamFrame) => sendRpcFrame(client, frame, import.meta.env?.DEV ? development?.frame : undefined);
     if (typeof message.action !== 'string' || !message.action.trim() || !Array.isArray(message.payload) ||
         (message.target !== undefined && (typeof message.target !== 'string' || !message.target.trim()))) {
-        if (requestId?.trim()) sendRpcFrame(client, { v: 1, type: 'error', requestId,
+        if (requestId?.trim()) send({ v: 1, type: 'error', requestId,
             code: 'COSSACK_RPC_REQUEST_INVALID', message: 'Invalid RPC action request.' });
         return;
     }
@@ -43,13 +46,14 @@ export async function dispatchSocketRpcMessage(
         targetInstance = root.activeComponents?.get?.(target);
         if (!targetInstance) {
             console.warn(`[Cossack] Target component '${target}' not found. Action '${message.action}' dropped.`);
-            if (requestId !== undefined) sendRpcFrame(client, { v: 1, type: 'error', requestId,
+            if (requestId !== undefined) send({ v: 1, type: 'error', requestId,
                 code: 'COSSACK_RPC_NOT_FOUND', message: `Target component '${target}' not found.` });
             return;
         }
     }
     const context = getContext?.(client);
-    if (context) await targetInstance.executeAction(message.action, message.payload, user, client, requestId, context);
+    if (development) await targetInstance.executeAction(message.action, message.payload, user, client, requestId, context, development);
+    else if (context) await targetInstance.executeAction(message.action, message.payload, user, client, requestId, context);
     else await targetInstance.executeAction(message.action, message.payload, user, client, requestId);
 }
 

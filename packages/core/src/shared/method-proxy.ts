@@ -447,6 +447,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     v: 1,
                     type: 'action',
                     requestId,
+                    ...(import.meta.env.DEV && trace ? { developmentTrace: trace.callId } : {}),
                     action: name,
                     payload: payload,
                     channel: channel,
@@ -488,6 +489,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                         const next = await queue.next();
                         const frame = next.value;
                         trace?.response(requestId);
+                        trace?.socket(frame);
                         if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
                             { requestId, fieldErrors: frame.fieldErrors });
                         apply(frame.state);

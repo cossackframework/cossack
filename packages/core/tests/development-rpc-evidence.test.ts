@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest';
 import { beginDevelopmentRpcTrace, beginDevelopmentServiceRpcTrace, startDevelopmentTrace, type DevelopmentTraceSession } from '../src/shared/development-trace';
-import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, type DevelopmentRpcEvidence } from '../src/shared/development-rpc-evidence';
+import { DEVELOPMENT_RPC_HEADER, parseDevelopmentRpcEvidence, parseDevelopmentSocketEvidence, type DevelopmentRpcEvidence } from '../src/shared/development-rpc-evidence';
 let capture: DevelopmentTraceSession | undefined;
 afterEach(() => capture?.stop());
 const evidence = (): DevelopmentRpcEvidence => ({ schemaVersion: 1, callId: crypto.randomUUID(), requestId: crypto.randomUUID(), dispatchId: crypto.randomUUID(),
@@ -55,4 +55,38 @@ it('ignores stream evidence without a matching dispatch record or after capture 
     trace.stream(frame); expect(capture.snapshot().events).toHaveLength(1);
     trace.server(new Response(null,{headers:{[DEVELOPMENT_RPC_HEADER]:JSON.stringify(value)}}));
     capture.stop(); trace.stream(frame); expect(capture.snapshot().events).toHaveLength(2);
+});
+
+it('accepts bounded socket evidence only for its call, dispatch and delivered frame', () => {
+    capture = startDevelopmentTrace();
+    const { status, ...base } = evidence();
+    const trace = beginDevelopmentRpcTrace({}, 'websocket', base.requestId)!;
+    base.callId = trace.callId;
+    const first = { ...base, result: 'stream', frame: 'yield' };
+    const frame = { type: 'yield', requestId: base.requestId, developmentTrace: JSON.stringify(first) };
+    for (const bad of [{ ...first, callId: crypto.randomUUID() }, { ...first, requestId: crypto.randomUUID() },
+        { ...first, frame: 'done' }, { ...first, payload: 'private' }, { ...first, status: 200 }, { ...first, result: 'value' }]) {
+        trace.socket({ ...frame, developmentTrace: JSON.stringify(bad) });
+    }
+    expect(capture.snapshot().events).toHaveLength(1);
+    trace.socket(frame); trace.socket(frame);
+    const terminal = { ...first, frame: 'done' };
+    trace.socket({ ...frame, type: 'done', developmentTrace: JSON.stringify({ ...terminal, dispatchId: crypto.randomUUID() }) });
+    expect(capture.snapshot().events).toHaveLength(2);
+    trace.socket({ ...frame, type: 'done', developmentTrace: JSON.stringify(terminal) });
+    trace.socket(frame);
+    expect(capture.snapshot().events).toHaveLength(3);
+    expect(capture.snapshot().events.at(-1)).toMatchObject({ kind: 'server-socket', phase: 'finish', frame: 'done' });
+    for (const invalid of ['x', ' '.repeat(1025), '{}', JSON.stringify({ ...terminal, private: 'secret' })]) {
+        expect(parseDevelopmentSocketEvidence(invalid)).toBeUndefined();
+    }
+});
+it('ignores socket evidence for HTTP calls and stopped captures', () => {
+    capture = startDevelopmentTrace(); const { status, ...base } = evidence();
+    const http = beginDevelopmentRpcTrace({}, 'http', base.requestId)!;
+    http.socket({ type: 'done', requestId: base.requestId, developmentTrace: JSON.stringify({ ...base, frame: 'done', callId: http.callId }) });
+    const socket = beginDevelopmentRpcTrace({}, 'websocket', base.requestId)!;
+    const prior = capture; capture = startDevelopmentTrace();
+    socket.socket({ type: 'done', requestId: base.requestId, developmentTrace: JSON.stringify({ ...base, frame: 'done', callId: socket.callId }) });
+    expect(prior.snapshot().events).toHaveLength(2); expect(capture.snapshot().events).toEqual([]);
 });

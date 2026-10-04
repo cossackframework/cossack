@@ -1,3 +1,4 @@
+import type { DevelopmentSocketDispatch } from './development-socket-dispatch';
 import { registerDevelopmentInspector, inspectDevelopmentScopes, developmentName, developmentData, type DevelopmentComponentDetails } from './development-inspection';
 import { enforceActionInput } from './action-input';
 import { enforceActionAuthorization, getAuthorizationFailure } from './action-authorization';
@@ -18,7 +19,7 @@ import { isServer } from './environment';
 import type { UrlCodec, UrlValue, UrlStateDefinition, UrlStateValues, UrlStatePatch, ExactUrlStatePatch } from './url-state';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
-import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, describeUnsupportedStateValue } from './rpc-stream';
+import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, type RpcStreamFrame, describeUnsupportedStateValue } from './rpc-stream';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
@@ -1424,13 +1425,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _actionQueue: Promise<void> = Promise.resolve();
 
     public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string,
-        requestContext?: Context): Promise<void> {
+        requestContext?: Context, development?: DevelopmentSocketDispatch): Promise<void> {
+        const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a
         // crafted WebSocket message, bypassing the client-side stripping.
         if (!isRpcCallableAction(getForwardedServerMethodClass(this, action) ?? this.constructor, action)) {
-            if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+            if (requestId !== undefined) send({ v: 1, type: 'error', requestId,
                 code: 'COSSACK_RPC_FORBIDDEN', message: `Action '${action}' is not a callable server method.` });
             return Promise.resolve();
         }
@@ -1441,7 +1443,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (requestId !== undefined) {
             const hooks = rpcCancellations(clientContext);
             if (hooks.has(requestId)) {
-                sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+                send({ v: 1, type: 'error', requestId,
                     code: 'COSSACK_RPC_REQUEST_DUPLICATE', message: 'A call with this request ID is already active.' });
                 return Promise.resolve();
             }
@@ -1450,7 +1452,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const run = async () => {
             try {
                 if (cancellation.cancelled) return;
-                await this._runAction(action, payload, user, clientContext, requestId, cancellation, requestContext);
+                await this._runAction(action, payload, user, clientContext, requestId, cancellation, requestContext, development);
             } finally {
                 if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
             }
@@ -1460,10 +1462,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
-        requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context): Promise<void> {
+        requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context, development?: DevelopmentSocketDispatch): Promise<void> {
+        const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {
-            if (requestId !== undefined) sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+            if (requestId !== undefined) send({ v: 1, type: 'error', requestId,
                 code: 'COSSACK_RPC_NOT_FOUND', message: `Action '${action}' not found.` });
             return;
         }
@@ -1524,28 +1527,32 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // a longer client payload could displace.
             // Inherited prototype actions may not have been auto-bound by the
             // most-derived constructor. Preserve the component receiver here.
+            if (import.meta.env?.DEV) development?.invoked();
             const result = await (actionMethod as any).apply(this, validatedPayload as any[]);
             if (requestId !== undefined && result instanceof Response) {
+                if (import.meta.env?.DEV) development?.returned('native');
                 await result.body?.cancel().catch(() => {});
                 throw new RpcError('COSSACK_RPC_HTTP_RESPONSE_REQUIRED',
                     'Native HTTP responses require an HTTP or SSE action. WebSocket actions must return data.');
             }
             if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
+                if (import.meta.env?.DEV) development?.returned('stream');
                 iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
                 cancellation.close = () => { void iterator!.return?.(undefined).catch(() => {}); };
                 while (!cancellation.cancelled) {
                     const next = await iterator.next();
                     if (cancellation.cancelled) break;
                     if (next.done) {
-                        sendRpcFrame(clientContext, { v: 1, type: 'done', requestId,
+                        send({ v: 1, type: 'done', requestId,
                             value: next.value, state: this.getPublicState() });
                         break;
                     }
-                    sendRpcFrame(clientContext, { v: 1, type: 'yield', requestId,
+                    send({ v: 1, type: 'yield', requestId,
                         value: next.value, state: this.getPublicState() });
                 }
             } else if (requestId !== undefined && !cancellation.cancelled) {
-                sendRpcFrame(clientContext, { v: 1, type: 'done', requestId,
+                if (import.meta.env?.DEV) development?.returned('value');
+                send({ v: 1, type: 'done', requestId,
                     value: result, state: this.getPublicState() });
             }
         } catch (e) {
@@ -1553,7 +1560,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // unhandled rejection and so `loading[action]` is always released.
             if (requestId !== undefined && !cancellation.cancelled) {
                 const denial = getAuthorizationFailure(e);
-                sendRpcFrame(clientContext, { v: 1, type: 'error', requestId,
+                send({ v: 1, type: 'error', requestId,
                     code: denial?.code ?? (isActionValidationError(e) ? e.validationCode : isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
                         : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR'),
                     fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,

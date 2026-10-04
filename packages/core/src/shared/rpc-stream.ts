@@ -412,7 +412,7 @@ function snapshotValue(value: unknown, path: string, seen: WeakSet<object>,
 export type RpcSocket = { readyState?: number; send: (data: string) => void };
 
 /** Send one correlated RPC frame over a client socket when it is open. */
-export function sendRpcFrame(client: unknown, frame: RpcStreamFrame): void {
+export function sendRpcFrame(client: unknown, frame: RpcStreamFrame, development?: (type: RpcStreamFrame['type']) => string | undefined): void {
     const socket = client as RpcSocket | null | undefined;
     if (socket && socket.readyState === 1) {
         let serialized: string;
@@ -422,6 +422,15 @@ export function sendRpcFrame(client: unknown, frame: RpcStreamFrame): void {
             { requestId: frame.requestId, cause }); }
         if (new TextEncoder().encode(serialized).length > RPC_STREAM_MAX_FRAME_BYTES) {
             throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC frame exceeds the byte limit.', { requestId: frame.requestId });
+        }
+        // Evidence never changes application serialization or turns an otherwise
+        // valid frame into an oversized failure. Snapshot application values once.
+        if (import.meta.env?.DEV && development) {
+            const evidence = development(frame.type);
+            if (evidence) {
+                const withEvidence = JSON.stringify({ ...JSON.parse(serialized), developmentTrace: evidence });
+                if (new TextEncoder().encode(withEvidence).length <= RPC_STREAM_MAX_FRAME_BYTES) serialized = withEvidence;
+            }
         }
         try { socket.send(serialized); } catch { /* the socket died mid-send */ }
     }

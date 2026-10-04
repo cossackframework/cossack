@@ -10,14 +10,21 @@ const browserExpect=expect;
 
 // The browser driver is a repository test client. Vite and every application
 // dependency resolve from root, including when root contains installed tarballs.
-export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[]}) {
-  const files=['vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts'];
+export async function verifyDevelopmentTraceApplication(root,{onRecorded,additionalAllowedPaths=[],transport='http'}) {
+  const files=['vite.config.ts','src/services/TraceCounter.ts','src/pages/layout.ts','src/pages/index.ts',...(transport==='durable-object'?['wrangler.jsonc','src/index.ts']:[])];
   const backups=new Map();
   for(const file of files){
     try{backups.set(file,await fs.readFile(path.join(root,file)));}
     catch(error){if(error.code!=='ENOENT')throw error;backups.set(file,null);}
   }
   try {
+  if(transport==='durable-object') {
+    const configPath=path.join(root,'wrangler.jsonc'), config=JSON.parse(await fs.readFile(configPath,'utf8'));
+    config.durable_objects.bindings.push({name:'COSSACK_OBJECT',class_name:'TraceAcceptanceObject'});
+    config.migrations.push({tag:'trace-acceptance-v2',new_sqlite_classes:['TraceAcceptanceObject']});
+    await fs.writeFile(configPath,JSON.stringify(config));
+    await fs.appendFile(path.join(root,'src/index.ts'), "\nexport { AppDurableObject as TraceAcceptanceObject } from '@cossackframework/framework';\n");
+  }
   const configFile=path.join(root,'vite.config.ts');
   const generatedConfig=await fs.readFile(configFile,'utf8');
   expect(generatedConfig).toContain('cossackPages({');
@@ -43,13 +50,13 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     import {html} from '@cossackframework/renderer';
     import {enableDevTools} from '@cossackframework/framework/client/devtools';
     import TraceCounter from '../services/TraceCounter';
-    @Page({transport:'http'}) export default class TracePage extends Cossack {
+    @Page({transport:'${transport}',stateful:false}) export default class TracePage extends Cossack {
       @State() count=0;
       @ClientState() failure='';
       @Inject(TraceCounter) counter!:TraceCounter;
       @Server() async *componentStream(value:string){this.count++;yield value;this.count++;return value;}
       @Server() async componentFailure(){throw new ClientVisibleError('private-error-sentinel');}
-      @Client() onMount(){if(import.meta.env.DEV)(window as any).__traceFixture={tools:enableDevTools()};}
+      @Client() onMount(){if(import.meta.env.DEV)(window as any).__traceFixture={tools:enableDevTools(),component:this};}
       @Client() async runComponent(){for await(const _value of rpc$(this.componentStream('private-value-sentinel'))){} }
       @Client() async runService(){await this.counter.serviceIncrement('private-value-sentinel');}
       @Client() async runFailure(){try{await this.componentFailure();}catch(error){this.failure=(error as {code:string}).code;}}
@@ -87,6 +94,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       });
     });
     await page.goto(origin);await page.waitForFunction(()=>!!window.__traceFixture,{},{timeout:30000});
+    if(transport==='durable-object')await page.waitForFunction(()=>Object.values(window.__traceFixture.component.realtime.websockets).some(connection=>connection.state==='open'),{},{timeout:30000});
     expect(await page.content()).toContain('cossack-start:');
     expect(await page.evaluate(()=>window.__traceFixture.tools.snapshot())).toBeNull();
     await page.getByRole('button',{name:'Record trace',exact:true}).click();
@@ -102,12 +110,21 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     expect(calls).toHaveLength(3);
     for(const call of calls){
       const joined=snapshot.events.filter(event=>event.callId===call.callId);
-      const dispatch=joined.find(event=>event.kind==='server-rpc');
-      expect(dispatch).toMatchObject({requestId:call.requestId,invokedAt:expect.any(Number)});
       expect(joined.filter(event=>(event.kind==='rpc'||event.kind==='service-rpc')&&event.phase==='finish')).toHaveLength(1);
-      if(dispatch.result==='stream')expect(joined.find(event=>event.kind==='server-stream')).toMatchObject({requestId:call.requestId,dispatchId:dispatch.dispatchId,outcome:'succeeded',cleanup:'completed'});
+      if(call.transport==='websocket') {
+        const evidence=joined.filter(event=>event.kind==='server-socket');
+        expect(evidence.length).toBeGreaterThan(0);
+        expect(new Set(evidence.map(event=>event.dispatchId)).size).toBe(1);
+        for(const event of evidence)expect(event).toMatchObject({requestId:call.requestId,invokedAt:expect.any(Number)});
+        expect(evidence.map(event=>event.frame)).toEqual(evidence[0].result==='stream'?['yield','done']:['error']);
+      } else {
+        const dispatch=joined.find(event=>event.kind==='server-rpc');
+        expect(dispatch).toMatchObject({requestId:call.requestId,invokedAt:expect.any(Number)});
+        if(dispatch.result==='stream')expect(joined.find(event=>event.kind==='server-stream')).toMatchObject({requestId:call.requestId,dispatchId:dispatch.dispatchId,outcome:'succeeded',cleanup:'completed'});
+      }
     }
-    expect(snapshot.events.filter(event=>event.kind==='server-stream')).toHaveLength(1);
+    expect(snapshot.events.filter(event=>event.kind==='server-stream')).toHaveLength(transport==='http'?1:0);
+    expect(snapshot.events.filter(event=>event.kind==='server-socket')).toHaveLength(transport==='http'?0:3);
     expect(snapshot.events.filter(event=>event.phase==='finish'&&event.outcome==='failed')).toHaveLength(1);
     expect(snapshot.sessionId).toMatch(/^[a-f0-9-]{36}$/i);
     const readRecord=async()=>{
@@ -138,7 +155,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       if(entry.isDirectory())await checkProduction(file);
       else if(entry.name.endsWith('.js')){
         const source=await fs.readFile(file,'utf8');
-        for(const marker of ['X-Cossack-Development-Trace','Record trace','server-stream','cossack-start:'])expect(source.includes(marker),`${file}: ${marker}`).toBe(false);
+        for(const marker of ['X-Cossack-Development-Trace','Record trace','server-stream','server-socket','beginDevelopmentSocketDispatch','cossack-start:'])expect(source.includes(marker),`${file}: ${marker}`).toBe(false);
       }
     }
   };

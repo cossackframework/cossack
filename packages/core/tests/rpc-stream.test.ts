@@ -1,10 +1,10 @@
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createRpcCall, rpc$, readRpcStream, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES } from '../src/shared/rpc-stream';
+import { sendRpcFrame, createRpcCall, rpc$, readRpcStream, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES } from '../src/shared/rpc-stream';
 import { proxyHttpMethods } from '../src/shared/method-proxy';
 
 const frame = (type: 'yield' | 'done' = 'yield', value: unknown = 'é🌿', state = { count: 1 }) =>
-    ({ v: 1, type, requestId: 'request-1', value, state });
+    ({ v: 1 as const, type, requestId: 'request-1', value, state });
 const encode = (value: unknown) => new TextEncoder().encode(`${JSON.stringify(value)}\n`);
 function response(chunks: Uint8Array[], cancel = vi.fn()) {
     return new Response(new ReadableStream({
@@ -320,4 +320,18 @@ it('releases a malformed stream without waiting for an uncooperative producer ca
     const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new TextEncoder().encode('invalid-json\n')); }, cancel });
     await expect(collect(new Response(body, { headers: { 'Content-Type': RPC_STREAM_CONTENT_TYPE } }))).rejects.toMatchObject({ code: 'COSSACK_RPC_STREAM_INVALID' });
     expect(cancel).toHaveBeenCalledOnce(); expect(body.locked).toBe(false);
+});
+
+it('keeps socket trace metadata optional at the frame limit and snapshots application values once', () => {
+    const send = vi.fn(), toJSON = vi.fn(() => 'x');
+    const socket = { readyState: 1, send };
+    const metadata = vi.fn(() => JSON.stringify({ evidence: 'private-test-only' }));
+    sendRpcFrame(socket, frame('done', { toJSON }), metadata);
+    expect(toJSON).toHaveBeenCalledOnce(); expect(metadata).toHaveBeenCalledOnce();
+    expect(JSON.parse(send.mock.calls[0][0]).developmentTrace).toBe(metadata.mock.results[0].value);
+    const base = frame('done', '');
+    base.value = 'x'.repeat(RPC_STREAM_MAX_FRAME_BYTES - new TextEncoder().encode(JSON.stringify(base)).length);
+    sendRpcFrame(socket, base, metadata);
+    expect(new TextEncoder().encode(send.mock.calls[1][0])).toHaveLength(RPC_STREAM_MAX_FRAME_BYTES);
+    expect(JSON.parse(send.mock.calls[1][0]).developmentTrace).toBeUndefined();
 });
