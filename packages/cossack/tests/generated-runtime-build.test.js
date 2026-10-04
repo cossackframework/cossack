@@ -1,3 +1,4 @@
+import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
 import { createDataTableBackend, writeDataTableAcceptance, checkDataTableBrowser } from './fixtures/data-table-acceptance.js';
 import { afterEach, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -1697,131 +1698,24 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
 },120000);
 
 it('shares a generated development browser RPC trace with the CLI and MCP', async () => {
-  const { readDevelopmentTraces, parseDevelopmentTrace } = await import('@cossackframework/framework/development-traces');
-  const { Client } = await import('@modelcontextprotocol/client');
-  const { StdioClientTransport } = await import('@modelcontextprotocol/client/stdio');
+  const {Client}=await import('@modelcontextprotocol/client');
+  const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project('cloudflare');
-  const configFile=path.join(root,'vite.config.ts');
-  const generatedConfig=await fs.readFile(configFile,'utf8');
-  expect(generatedConfig).toContain('cossackPages({');
-  await fs.writeFile(configFile,generatedConfig.replace('cossackPages({','cossackPages({ developmentTraces: true,'));
-  await fs.mkdir(path.join(root,'src/services'),{recursive:true});
-  await fs.writeFile(path.join(root,'src/services/TraceCounter.ts'), `
-    import {CossackService,Service,State,Server} from '@cossackframework/core';
-    @Service() export default class TraceCounter extends CossackService {
-      @State() count=0;
-      @Server() async serviceIncrement(value:string){this.count++;return value;}
-    }
-  `);
-  await fs.writeFile(path.join(root,'src/pages/layout.ts'), `
-    import {Cossack,Page} from '@cossackframework/core';
-    import {html} from '@cossackframework/renderer';
-    import TraceCounter from '../services/TraceCounter';
-    @Page({services:[TraceCounter]}) export default class Layout extends Cossack {
-      render(){return html\`\${this.children}\`;}
-    }
-  `);
-  await fs.writeFile(path.join(root,'src/pages/index.ts'), `
-    import {Cossack,Page,Client,Server,State,ClientState,Inject,ClientVisibleError,rpc$} from '@cossackframework/core';
-    import {html} from '@cossackframework/renderer';
-    import {enableDevTools} from '@cossackframework/framework/client/devtools';
-    import TraceCounter from '../services/TraceCounter';
-    @Page({transport:'http'}) export default class TracePage extends Cossack {
-      @State() count=0;
-      @ClientState() failure='';
-      @Inject(TraceCounter) counter!:TraceCounter;
-      @Server() async *componentStream(value:string){this.count++;yield value;this.count++;return value;}
-      @Server() async componentFailure(){throw new ClientVisibleError('private-error-sentinel');}
-      @Client() onMount(){if(import.meta.env.DEV)(window as any).__traceFixture={tools:enableDevTools()};}
-      @Client() async runComponent(){for await(const _value of rpc$(this.componentStream('private-value-sentinel'))){} }
-      @Client() async runService(){await this.counter.serviceIncrement('private-value-sentinel');}
-      @Client() async runFailure(){try{await this.componentFailure();}catch(error){this.failure=(error as {code:string}).code;}}
-      render(){return html\`<main><span id="trace-count">\${this.count}</span><span id="trace-service">\${this.counter.count}</span>
-        <span id="trace-failure">\${this.failure}</span>
-        <button @click="\${()=>this.runComponent()}">Component stream</button>
-        <button @click="\${()=>this.runService()}">Service action</button>
-        <button @click="\${()=>this.runFailure()}">Failed action</button></main>\`;}
-    }
-  `);
-  try {await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024});}
-  catch(error){throw new Error(`Generated trace types: ${error.stdout}\n${error.stderr}`);}
-  const child=spawn(process.execPath,['--input-type=module','-e',`
-    import {createServer} from 'vite';
-    const server=await createServer({root:${JSON.stringify(root)},logLevel:'error',server:{host:'127.0.0.1',port:0,fs:{allow:[${JSON.stringify(root)},${JSON.stringify(repository)}]}}});
-    await server.listen();
-    console.log('TRACE_ORIGIN=http://127.0.0.1:'+server.httpServer.address().port);
-    process.once('message',async()=>{await server.close();process.exit(0);});
-  `],{cwd:root,env:{...process.env,NODE_ENV:'development',VITEST:'',WRANGLER_SEND_METRICS:'false'},stdio:['ignore','pipe','pipe','ipc']});
-  let output='';child.stdout.on('data',data=>{output+=data;});child.stderr.on('data',data=>{output+=data;});
-  const exited=once(child,'exit');let browser,client;
-  try {
-    await expect.poll(()=>{
-      if(child.exitCode!==null)throw new Error(output);
-      return /TRACE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
-    },{timeout:30000}).toBeTruthy();
-    const origin=/TRACE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
-    browser=await chromium.launch({headless:true});const page=await browser.newPage();const errors=[];
-    page.on('pageerror',error=>errors.push(error.message));
-    page.on('request',request=>{if(request.url().includes('development-trace'))output+='\nTRACE_MODULE='+request.url();});
-    page.on('console',message=>{if(message.type()==='error')output+='\nBROWSER_ERROR='+message.text();});
-    page.on('websocket',socket=>{
-      for(const direction of ['framesent','framereceived'])socket.on(direction,({payload})=>{
-        try {const message=JSON.parse(String(payload));if(message.event?.includes('development-trace'))output+='\nTRACE_HMR='+JSON.stringify({direction,event:message.event,id:message.data?.id,status:message.data?.status});}catch{}
-      });
-    });
-    await page.goto(origin);await page.waitForFunction(()=>!!window.__traceFixture,{},{timeout:30000});
-    expect(await page.content()).toContain('cossack-start:');
-    expect(await page.evaluate(()=>window.__traceFixture.tools.snapshot())).toBeNull();
-    await page.getByRole('button',{name:'Record trace',exact:true}).click();
-    await page.getByRole('button',{name:'Component stream',exact:true}).click();
-    await browserExpect(page.locator('#trace-count')).toHaveText('2');
-    await page.getByRole('button',{name:'Service action',exact:true}).click();
-    await browserExpect(page.locator('#trace-service')).toHaveText('1');
-    await page.getByRole('button',{name:'Failed action',exact:true}).click();
-    await browserExpect(page.locator('#trace-failure')).toHaveText('COSSACK_RPC_CLIENT_ERROR');
-    await page.getByRole('button',{name:'Stop trace',exact:true}).click();
-    const snapshot=await page.evaluate(()=>window.__traceFixture.tools.snapshot());
-    expect(()=>parseDevelopmentTrace(JSON.stringify(snapshot))).not.toThrow();
-    const calls=snapshot.events.filter(event=>(event.kind==='rpc'||event.kind==='service-rpc')&&event.phase==='start');
-    expect(calls).toHaveLength(3);
-    for(const call of calls){
-      const joined=snapshot.events.filter(event=>event.callId===call.callId);
-      const dispatch=joined.find(event=>event.kind==='server-rpc');
-      expect(dispatch).toMatchObject({requestId:call.requestId,invokedAt:expect.any(Number)});
-      expect(joined.filter(event=>(event.kind==='rpc'||event.kind==='service-rpc')&&event.phase==='finish')).toHaveLength(1);
-      if(dispatch.result==='stream')expect(joined.find(event=>event.kind==='server-stream')).toMatchObject({requestId:call.requestId,dispatchId:dispatch.dispatchId,outcome:'succeeded',cleanup:'completed'});
-    }
-    expect(snapshot.events.filter(event=>event.kind==='server-stream')).toHaveLength(1);
-    expect(snapshot.events.filter(event=>event.phase==='finish'&&event.outcome==='failed')).toHaveLength(1);
-    await expect.poll(async()=> (await readDevelopmentTraces(root,{session:snapshot.sessionId})).data.record?.snapshot.collecting,{timeout:10000}).toBe(false);
-    const recorded=(await readDevelopmentTraces(root,{session:snapshot.sessionId})).data.record;
-    expect(recorded.snapshot.events).toEqual(snapshot.events);
-    for(const secret of ['private-value-sentinel','private-error-sentinel','componentStream','serviceIncrement'])expect(JSON.stringify(recorded)).not.toContain(secret);
-    const {stdout}=await promisify(execFile)(process.execPath,[path.join(repository,'packages/cossack/bin/cossack.js'),'traces','--json','--session',snapshot.sessionId],{cwd:root,timeout:15000,maxBuffer:2*1024*1024});
-    const cli=JSON.parse(stdout);expect(cli).toMatchObject({ok:true,data:{record:recorded,freshness:{live:false}}});
-    client=new Client({name:'generated-trace-acceptance',version:'1.0.0'});
-    const transport=new StdioClientTransport({command:process.execPath,args:[path.join(repository,'packages/cossack/bin/cossack-mcp.js'),'--project',root],stderr:'pipe'});
-    let stderr='';transport.stderr?.on('data',data=>{stderr+=data;});await client.connect(transport);
-    const remote=await client.callTool({name:'read_development_traces',arguments:{session:snapshot.sessionId}});
-    expect(remote.structuredContent).toMatchObject({ok:true,data:{record:cli.data.record,freshness:{live:false}}});
-    expect(errors).toEqual([]);expect(stderr).toBe('');
-  } catch(error) {throw new Error(`${error.stack}\nGenerated Vite output:\n${output}`);}
-  finally {
-    await client?.close();await browser?.close();
-    if(child.exitCode===null)child.send('stop');
-    const kill=setTimeout(()=>child.kill('SIGKILL'),10000);const [exitCode,signal]=await exited;clearTimeout(kill);
-    expect({exitCode,signal},output).toEqual({exitCode:0,signal:null});
-  }
-  await vite(root,[]);
-  const checkProduction=async directory=>{
-    for(const entry of await fs.readdir(directory,{withFileTypes:true})){
-      const file=path.join(directory,entry.name);
-      if(entry.isDirectory())await checkProduction(file);
-      else if(entry.name.endsWith('.js')){
-        const source=await fs.readFile(file,'utf8');
-        for(const marker of ['X-Cossack-Development-Trace','Record trace','server-stream','cossack-start:'])expect(source.includes(marker),`${file}: ${marker}`).toBe(false);
-      }
-    }
-  };
-  await checkProduction(path.join(root,'dist/client/assets'));await checkProduction(path.join(root,'dist/ssr'));
+  await verifyDevelopmentTraceApplication(root,{
+    additionalAllowedPaths:[repository],
+    async onRecorded({snapshot,recorded}) {
+      const {stdout,stderr:cliStderr}=await promisify(execFile)(process.execPath,[path.join(repository,'packages/cossack/bin/cossack.js'),'traces','--json','--session',snapshot.sessionId],{cwd:root,timeout:15000,maxBuffer:2*1024*1024});
+      const cli=JSON.parse(stdout);
+      expect(cli).toMatchObject({ok:true,data:{record:recorded,freshness:{live:false}}});
+      expect(cliStderr).toBe('');
+      const client=new Client({name:'generated-trace-acceptance',version:'1.0.0'});
+      try {
+        const transport=new StdioClientTransport({command:process.execPath,args:[path.join(repository,'packages/cossack/bin/cossack-mcp.js'),'--project',root],stderr:'pipe'});
+        let stderr='';transport.stderr?.on('data',data=>{stderr+=data;});await client.connect(transport);
+        const remote=await client.callTool({name:'read_development_traces',arguments:{session:snapshot.sessionId}});
+        expect(remote.structuredContent).toMatchObject({ok:true,data:{record:cli.data.record,freshness:{live:false}}});
+        expect(stderr).toBe('');
+      } finally {await client.close();}
+    },
+  });
 },180000);

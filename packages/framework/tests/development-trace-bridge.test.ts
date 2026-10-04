@@ -8,7 +8,7 @@ function fixture() {
     vi.useFakeTimers();
     const listeners = new Map<string, Function>();
     const hot = { on: (name: string, listener: Function) => listeners.set(name, listener), off: (name: string) => listeners.delete(name), send: vi.fn(), dispose: vi.fn() };
-    dispose = connectDevelopmentTraceBridge('fixture-token', hot as any);
+    dispose = connectDevelopmentTraceBridge('fixture-token', hot as any, enableDevTools());
     const emit = (name: string, data?: unknown) => listeners.get(name)?.(data);
     return { hot, emit, tools: enableDevTools()!, listeners };
 }
@@ -35,5 +35,5 @@ it('avoids disconnected buffering, retries after busy, and cleans up its timer/l
     expect(session.snapshot().collecting).toBe(true);
 });
 it('does not install a production bridge', () => {
-    vi.stubEnv('DEV', false); const on = vi.fn(); dispose = connectDevelopmentTraceBridge('unused', { on } as any); expect(on).not.toHaveBeenCalled();
+    vi.stubEnv('DEV', false); const on = vi.fn(); dispose = connectDevelopmentTraceBridge('unused', { on } as any, undefined); expect(on).not.toHaveBeenCalled();
 });

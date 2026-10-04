@@ -18,7 +18,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-04](./release-0.9.0-plan.md#cli-04) Inspect/check/explain commands using compiler and scaffold metadata, including source locations and method classification reasons.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
-- [ ] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results, and trace services with the CLI. Shared readers and generated Cloudflare trace parity pass. Remaining: installed-tarball trace acceptance and the original tool/parity/lifecycle completion audit. See the [latest checkpoint](#codex-generated-trace-acceptance-2026-10-04); RT-28 retains further transport evidence.
+- [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Local MCP tools sharing inspection, documentation, checks, test results and development traces with the CLI; installed-package parity and native interruption acceptance. See the [completion audit](#codex-cli07-complete-2026-10-04).
 - [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): offline installed export-target catalogs, command schemas and packaged/scaffolded guides now share CLI/MCP services. Named-symbol signatures now use a pinned compiler API, with partial results and runtime limits explicit. Wildcard and implicit declaration discovery now preserve exclusions, precedence and partial results. Package-owned route/renderer and four feature-recipe guides compile and execute from installed tarballs. Broader API/component/recipe coverage and runtime guidance remain open. See the [guidance checkpoint](#codex-package-guidance-2026-10-04).
 
 ## Runtime and application APIs
@@ -88,53 +88,70 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-generated-trace-acceptance-2026-10-04"></a>
-### Codex generated development-trace acceptance (2026-10-04)
+<a id="codex-cli07-complete-2026-10-04"></a>
+### Codex: installed trace acceptance and CLI-07 completion (2026-10-04)
 
-Author: Codex. A generated Cloudflare app now exercises real Chromium component
-stream, service and failure buttons through capture, server dispatch/terminal
-evidence, Vite persistence, the CLI process and an MCP SDK stdio client. Shared
-records match; values, action names and raw errors stay excluded. The fixture
-checks generated TypeScript and production client/Worker bundles, and shuts down
-the development server through its awaited close operation.
+Author: Codex. **CLI-07 is complete** against its original tool, parity and
+lifecycle criteria. The release now has **26 complete and 32 open tasks**.
+RT-28 transport enrichment and CLI-08 documentation coverage remain open.
 
-This exposed and fixed two gaps. Worker-rendered HTML bypassed the HTML-transform
-bridge injection; the client route registry now loads the same canonical virtual
-module, without duplicating the HTML publisher. Core render source markers relied
-on absent metadata rather than an explicit development guard; the guard now
-removes marker handling from production bundles while preserving development markers.
+The shared browser acceptance fixture now runs against workspace links and actual
+installed tarballs. The application, Vite, CLI and MCP server resolve from the
+installation; only the browser driver and MCP test client come from the repository.
+Real component-stream, service and failure buttons produce the same bounded record
+through the browser, stored file, CLI and MCP. CLI/MCP reads run with Node networking
+disabled. The fixture restores its source/configuration files and verifies generated
+TypeScript, graceful server shutdown and production client/Worker exclusion.
+
+Installed acceptance found a bug hidden by workspace links: the bridge imported
+the inspector by filesystem path while the app used Vite's optimized public import.
+That created duplicate toolbars and separate capture owners. The virtual module now
+resolves the public inspector and supplies that instance to the bridge. The bridge
+has no runtime import of a second inspector or core capture module.
+
+Completion audit:
+
+| Original requirement | Evidence |
+| --- | --- |
+| Inspection, docs, diagnostics, test results and traces share services | All four MCP tools dispatch through the shared readers/inspection service. CLI commands use those services directly; no human-output parsing. |
+| Tool and CLI answers match for one fixture | SDK tests compare route facts/checks and recorded evidence. The installed fixture compares documentation, reporter records and real browser traces with the installed CLI/MCP entrypoints. |
+| Typed inputs, versioned output and accurate annotations | Strict schemas, schema version 1 and read-only/non-destructive/idempotent/local annotations are present on every tool; SDK negotiation and output validation pass. |
+| Invalid paths and unknown operations fail predictably | SDK tests reject unknown tools/fields, route traversal, package paths and record IDs; startup binds one real project root. |
+| Secrets are redacted and installed versions identified | Configured-secret tests pass; recorded actions exclude values, names and raw errors. Installed versions match manifests and refresh after metadata changes. |
+| Startup, shutdown and interrupted calls release resources | Existing deadline/concurrency/output-limit tests pass. New stdio tests block four real compiler workers at a controlled file read, then observe each native worker exit after SDK cancellation, stdin EOF or SIGTERM. Cancellation frees all four slots for subsequent calls; EOF exits without signal escalation. |
 
 Verification:
 
-- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
-  **1 passes, 33 unrelated tests skipped**. Generated types, live development
-  browser/server/CLI/MCP parity and production client/Worker exclusion pass.
-  Log: `/tmp/cossack-generated-trace-final-verified.log`.
+- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **18 tests pass**,
+  including the three busy-server interruption cases. Log: `/tmp/cossack-installed-trace-mcp.log`.
 - `pnpm --filter @cossackframework/framework exec vitest run tests/devtools-browser.test.ts tests/development-trace-bridge.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
-  **18 tests / 4 files pass**, including custom-base HTML plus registry bootstrap
-  without duplicate publications and existing capture/storage lifecycle checks.
-  Log: `/tmp/cossack-generated-trace-framework.log`.
-- `pnpm --filter @cossackframework/core exec vitest run tests/development-trace-build.test.ts`:
-  **3 tests pass** for production component/service proxy and renderer exclusion.
-  Log: `/tmp/cossack-generated-trace-core-build-tests.log`.
-- Core/framework declaration builds, root `pnpm tsc --noEmit` and
-  `pnpm typecheck` pass (all 11 packages).
-  Logs: `/tmp/cossack-generated-trace-final-build.log`, `/tmp/cossack-generated-trace-types-final.log`.
+  **18 tests / 4 files pass**. Log: `/tmp/cossack-installed-trace-framework.log`.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
+  **1 passes, 33 unrelated tests skipped**. Log: `/tmp/cossack-installed-trace-workspace.log`.
+- `COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --agent-docs-only`:
+  sequential package builds, 12 tarballs, installed examples/catalog/reporter/trace
+  acceptance and production exclusion pass. Log: `/tmp/cossack-installed-trace-tarballs.log`.
+  Installed runtime tools: Vite **8.3.2**, Cloudflare Vite plugin **1.62.5**,
+  Wrangler **4.147.0**, TypeScript **7.0.2**, Vitest **4.1.11**.
+- Root `pnpm tsc --noEmit` and `pnpm typecheck` pass for all **11 packages**.
+  Log: `/tmp/cossack-installed-trace-types.log`.
 
-Limits: this fixture uses workspace package links. Installed-tarball trace
-acceptance remains before the CLI-07 audit. RT-28 retains WebSocket/native-body
-server evidence and other runtime development acceptance. No task closes:
-**25 complete, 33 open**. No deployment or publication occurred.
+Limits: reads expose local, editable evidence with provenance and receipt age;
+they do not prove live state or remote readiness. RT-28 still needs WebSocket
+server dispatch, native-body terminal evidence and other runtime development
+acceptance. CLI-08 retains broader authored guidance; REL-02/REL-03 retain their
+full package/runtime gates. Versions remain 0.8.3. No deployment or publication occurred.
 
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
 remain in the [verification archive](./release-0.9.0-verification-archive.md). Existing checkpoint
 anchors below link to those records. Archiving a checkpoint does not complete its
-parent task. Current status is 25 complete and 33 open.
+parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-generated-trace-acceptance-2026-10-04"></a>[Codex generated development-trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-generated-trace-acceptance-2026-10-04) |
 | <a id="codex-stream-terminal-evidence-2026-10-04"></a>[Codex delivered RPC stream terminal evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-stream-terminal-evidence-2026-10-04) |
 | <a id="codex-server-dispatch-evidence-2026-10-04"></a>[Codex HTTP server dispatch evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-server-dispatch-evidence-2026-10-04) |
 | <a id="codex-paused-rpc-deadlines-2026-10-04"></a>[Codex paused RPC deadlines (2026-10-04)](./release-0.9.0-verification-archive.md#codex-paused-rpc-deadlines-2026-10-04) |

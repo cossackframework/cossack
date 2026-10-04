@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. The release has 58 tasks: 25 complete and 33 open.
+Compacted by Codex on 2026-10-04. The release has 58 tasks: 26 complete and 32 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -10,7 +10,7 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
-Continue CLI-07/CLI-08 and RT-28 as described in the handoff. All unchecked tasks
+Continue CLI-08 and RT-28 as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
 Read [architecture](./architecture.md) before significant changes. Paths below
@@ -91,7 +91,7 @@ Add focused tests during each group, and run broader gates after integration.
 | 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
 | 4. Complete data and content features | RT-13, RT-15 through RT-17, RT-20 through RT-22, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
-| 6. Expose the complete agent workflow | CLI-07, CLI-08, RT-28 | Recipes, upgrades, offline help, and MCP use the shared services. |
+| 6. Expose the complete agent workflow | CLI-08, RT-28 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
 | 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
 
@@ -110,6 +110,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="cli-04"></a>CLI-04 | [Inspect, check, and explain project behavior](./release-0.9.0-plan-archive.md#cli-04) |
 | <a id="cli-05"></a>CLI-05 | [Complete application recipes](./release-0.9.0-plan-archive.md#cli-05) |
 | <a id="cli-06"></a>CLI-06 | [Structured upgrades](./release-0.9.0-plan-archive.md#cli-06) |
+| <a id="cli-07"></a>CLI-07 | [Shared local MCP tools and installed acceptance](./release-0.9.0-plan-archive.md#codex-cli07-final-plan-2026-10-04) |
 | <a id="rt-02"></a>RT-02 | [Validated server actions](./release-0.9.0-plan-archive.md#rt-02) |
 | <a id="rt-03"></a>RT-03 | [Observable server resources](./release-0.9.0-plan-archive.md#rt-03) |
 | <a id="rt-04"></a>RT-04 | [State, store, and computed diagnostics](./release-0.9.0-plan-archive.md#rt-04) |
@@ -131,41 +132,6 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="rel-01"></a>REL-01 | [Reported regressions](./release-0.9.0-plan-archive.md#rel-01) |
 
 ## CLI and agent tooling
-
-<a id="cli-07"></a>
-### CLI-07: Local MCP tools
-
-Codex status (2026-10-04): Shared CLI/MCP inspection, installed documentation and
-stored test-result readers pass parity and lifecycle acceptance. Browser trace
-records also share the reader; generated Cloudflare parity and production
-exclusion pass. See [completed implementation notes](./release-0.9.0-plan-archive.md#codex-cli07-completed-portions-2026-10-04),
-[tool usage](../docs/local-agent-tools.md) and [test evidence](../docs/test-results.md).
-
-Remaining: installed trace-tool acceptance and the CLI-07 completion audit;
-RT-28 retains WebSocket/native-body correlation and other runtime acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
-Preserve project path boundaries, secret redaction and clean stdout.
-Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
-
-Purpose: MCP gives coding agents a structured tool interface. The intended server
-lets an agent inspect the installed framework and project without reconstructing
-answers from shell output or unrelated online documentation.
-
-Baseline: Open. This is a local development tool, not an MCP endpoint in deployed
-applications.
-
-Approach: Expose project inspection, installed-version documentation, diagnostics,
-test results, and development traces through the same services as CLI and devtools.
-Define typed inputs and versioned output. Bind the server to one project root.
-Give each operation accurate read/write annotations and cancellation behavior.
-Keep mutation commands separate from inspection. Do not shell out to parse the
-human CLI view when a shared function is available.
-
-Start with the service boundaries from CLI-04 and RT-28. Select the package
-location after checking CLI dependencies and published entry requirements.
-
-Done when: Tool and CLI answers match for one fixture. Invalid paths and unknown
-operations fail predictably. Results redact secrets and identify the installed
-version. Startup, shutdown, and interrupted tool calls release resources.
 
 <a id="cli-08"></a>
 ### CLI-08: Installed-version agent documentation
@@ -596,15 +562,16 @@ server evidence. Generated Cloudflare parity and production exclusion pass.
 See [completed implementation notes](./release-0.9.0-plan-archive.md#codex-rt28-completed-portions-2026-10-04)
 and [capture semantics and limits](../docs/development-traces.md).
 
-Remaining: WebSocket dispatch and native-body terminal evidence, plus
-installed-tarball and other runtime use of the shared CLI/MCP schema. Generated
-Cloudflare actions now pass end-to-end browser, persisted-record, CLI and MCP
-checks, with client/Worker production trace and source-marker exclusion.
+Remaining: WebSocket dispatch and native-body terminal evidence, plus other
+runtime use of the shared CLI/MCP schema. Generated and installed-tarball
+Cloudflare actions pass browser, persisted-record, CLI and MCP checks, with
+client/Worker production trace and source-marker exclusion. See the
+[installed acceptance and CLI-07 audit](./release-0.9.0.md#codex-cli07-complete-2026-10-04).
 Server execution is not proven by client capture. Paused-iterator deadlines now
 settle HTTP/SSE, service and WebSocket calls without another consumer pull;
 WebSocket failures also release pending ownership. Preserve those regressions
 alongside first-interruption codes, confirmed state and one cancellation request.
-This foundation does not complete RT-28 or CLI-07.
+RT-28 remains open; the shared tool/reader requirements in CLI-07 are complete.
 
 Purpose: A developer or agent needs to connect a UI symptom to the navigation,
 resource load, RPC, or state update that caused it.

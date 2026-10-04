@@ -201,7 +201,12 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       if (id === '\0' + TRACE_BRIDGE_MODULE) {
         if (!traceBridge) return 'export {};';
         const entry = fileURLToPath(new URL('./client/development-trace-bridge.js', import.meta.url)).replaceAll('\\', '/');
-        return `import { connectDevelopmentTraceBridge } from ${JSON.stringify(entry)}; connectDevelopmentTraceBridge(${JSON.stringify(traceBridge.token)}, import.meta.hot);`;
+        // Resolve the inspector through the same public import as application
+        // code. A filesystem import here creates a second copy beside Vite's
+        // optimized dependency, splitting the toolbar and capture ownership.
+        return `import { enableDevTools } from '@cossackframework/framework/client/devtools';
+          import { connectDevelopmentTraceBridge } from ${JSON.stringify(entry)};
+          connectDevelopmentTraceBridge(${JSON.stringify(traceBridge.token)}, import.meta.hot, enableDevTools());`;
       }
       if (id === resolvedVirtualModuleId) {
         // Detect environment via the Vite 6 Environment API

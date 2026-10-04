@@ -1,7 +1,7 @@
 # Cossack 0.9.0 agent handoff
 
 Author: Codex. Compacted on 2026-10-04. Branch: `fix-084`.
-25 of 58 release tasks are complete. 33 remain open.
+26 of 58 release tasks are complete. 32 remain open.
 Versions stay at 0.8.3 until REL-04.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
@@ -11,27 +11,25 @@ All unchecked tasks remain in scope.
 
 ## Completed work — reference only
 
-All 25 closed tasks are in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
+All 26 closed tasks are in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
 with original criteria and evidence archived. Do not repeat their implementation.
 
-Completed portions of CLI-07/RT-28 are summarized in the [active plan](./release-0.9.0-plan.md#cli-07).
-Implementation history is archived; [trace contracts](../docs/development-traces.md)
-and the [latest verified checkpoint](./release-0.9.0.md#codex-generated-trace-acceptance-2026-10-04)
-remain the references for continuation. These portions do not close their parent tasks.
+CLI-07 is complete; see the [installed trace and native lifecycle audit](./release-0.9.0.md#codex-cli07-complete-2026-10-04).
+RT-28's completed portions remain in its [active plan](./release-0.9.0-plan.md#rt-28)
+and [trace contracts](../docs/development-traces.md). Preserve the shared public
+inspector import: a filesystem import created a second capture owner in installed apps.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Finish installed-tarball trace acceptance, then audit **CLI-07** against its
-   original tool/parity/lifecycle requirements. Generated Cloudflare browser
-   actions now match stored CLI/MCP evidence; production client/Worker trace and
-   source-marker exclusion passes. **RT-28** retains WebSocket/native-body server
-   evidence and other runtime acceptance. Preserve ordered application error
-   delivery after WebSocket yields; only local transport failures discard queued
-   frames. Header evidence alone does not prove body completion. Stored receipt
-   age does not prove live state; source markers identify the latest instance per file.
+1. Continue **RT-28** WebSocket server dispatch, native-body terminal evidence
+   and other runtime development acceptance. Generated and installed Cloudflare
+   browser/CLI/MCP parity and production exclusion pass. Preserve ordered
+   application errors after WebSocket yields; only local transport failures discard
+   queued frames. Header evidence alone does not prove body completion. Stored
+   receipt age does not prove live state; source markers identify the latest instance per file.
 2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
    runtime support through the [shared documentation services](../docs/local-agent-tools.md).
-   Follow all 33 open tasks in the detailed plan and retain completed-task regressions.
+   Follow all 32 open tasks in the detailed plan and retain completed-task regressions.
    Close each task only against its original acceptance criteria.
 
 ## Limits to retain
@@ -55,7 +53,9 @@ remain the references for continuation. These portions do not close their parent
 - Read `AGENTS.md`, [architecture](./architecture.md) and applicable task specs. Use pnpm. Alpha-stage API breaks are acceptable.
 - Keep libraries independent of framework/application. Keep `cloudflare:workers` imports out of core and Node/Deno runtime import graphs.
 - Use installed Cloudflare skills and current official documentation for Workers, Durable Objects or Wrangler changes.
-  Recorded baseline: Wrangler 4.114.0, Cloudflare Vite plugin 1.47.0, Vite 8.1.4. Verify compatibility before upgrades.
+  Workspace baseline: Wrangler 4.114.0, Cloudflare Vite plugin 1.47.0, Vite 8.1.4.
+  Installed trace acceptance also passes with Wrangler 4.147.0, plugin 1.62.5 and Vite 8.3.2.
+  Verify the relevant runtime matrix before upgrades.
 - Build dependencies before consumers. Never overlap builds that replace `dist` with tests or type checks that read it.
   Framework pretest rebuilds declarations. After building, use `pnpm --filter @cossackframework/framework exec vitest run`.
 - After source changes, run meaningful regression tests, root `pnpm tsc --noEmit` and package type checks.

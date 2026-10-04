@@ -5049,3 +5049,45 @@ no application payloads. Response creation does not prove body completion.
 Delivered HTTP RPC generator terminals now join their dispatch IDs after cleanup
 and full stream validation, with distinct outcome/cleanup fields. Missing or
 invalid optional metadata does not change action semantics.
+
+<a id="codex-cli07-final-plan-2026-10-04"></a>
+## Codex: CLI-07 completion and original plan (2026-10-04)
+
+CLI-07 is complete. The [completion audit](./release-0.9.0.md#codex-cli07-complete-2026-10-04)
+records installed trace parity, the inspector identity fix and native stdio
+interruption acceptance. The pre-audit plan below preserves the original context
+and criteria; its historical open status does not override that audit.
+
+### CLI-07: Local MCP tools
+
+Codex status (2026-10-04): Shared CLI/MCP inspection, installed documentation and
+stored test-result readers pass parity and lifecycle acceptance. Browser trace
+records also share the reader; generated Cloudflare parity and production
+exclusion pass. See [completed implementation notes](./release-0.9.0-plan-archive.md#codex-cli07-completed-portions-2026-10-04),
+[tool usage](../docs/local-agent-tools.md) and [test evidence](../docs/test-results.md).
+
+Remaining: installed trace-tool acceptance and the CLI-07 completion audit;
+RT-28 retains WebSocket/native-body correlation and other runtime acceptance; stored browser records do not prove current or server state. Extend native interruption acceptance as tools acquire resources.
+Preserve project path boundaries, secret redaction and clean stdout.
+Continue CLI-08 coverage and REL-02 packaged acceptance. CLI-07 remains open.
+
+Purpose: MCP gives coding agents a structured tool interface. The intended server
+lets an agent inspect the installed framework and project without reconstructing
+answers from shell output or unrelated online documentation.
+
+Baseline: Open. This is a local development tool, not an MCP endpoint in deployed
+applications.
+
+Approach: Expose project inspection, installed-version documentation, diagnostics,
+test results, and development traces through the same services as CLI and devtools.
+Define typed inputs and versioned output. Bind the server to one project root.
+Give each operation accurate read/write annotations and cancellation behavior.
+Keep mutation commands separate from inspection. Do not shell out to parse the
+human CLI view when a shared function is available.
+
+Start with the service boundaries from CLI-04 and RT-28. Select the package
+location after checking CLI dependencies and published entry requirements.
+
+Done when: Tool and CLI answers match for one fixture. Invalid paths and unknown
+operations fail predictably. Results redact secrets and identify the installed
+version. Startup, shutdown, and interrupted tool calls release resources.

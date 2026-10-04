@@ -10,7 +10,6 @@ import { readDevelopmentTraces } from '../src/development-traces';
 import { fileURLToPath } from 'node:url';
 
 it('captures and inspects in Chromium without invoking an application action or opening the editor', async () => {
-    const entry = fileURLToPath(new URL('../src/client/devtools.ts', import.meta.url));
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-trace-browser-'));
     await fs.mkdir(path.join(root, 'src/pages'), { recursive: true });
     await fs.writeFile(path.join(root, 'package.json'), '{"name":"trace-fixture","type":"module"}');
@@ -18,6 +17,7 @@ it('captures and inspects in Chromium without invoking an application action or 
     const server = await createServer({
         root, base: '/debug/',
         configFile: false, logLevel: 'error', mode: 'development',
+        resolve: { alias: { '@cossackframework/framework/client/devtools': fileURLToPath(new URL('../src/client/devtools.ts', import.meta.url)) } },
         server: { host: '127.0.0.1', port: 0, fs: { allow: [root, fileURLToPath(new URL('../../../', import.meta.url))] } },
         plugins: [cossackPages({ developmentTraces: true }), {
             name: 'devtools-browser-fixture',
@@ -27,7 +27,7 @@ it('captures and inspects in Chromium without invoking an application action or 
                 return `
                     import 'virtual:cossack-pages';
                     import { Cossack, State } from '@cossackframework/core';
-                    import { enableDevTools, registerDevToolsInstance } from ${JSON.stringify(entry)};
+                    import { enableDevTools, registerDevToolsInstance } from '@cossackframework/framework/client/devtools';
                     class Page extends Cossack {}
                     State()(Page.prototype, 'count');
                     State()(Page.prototype, 'password');

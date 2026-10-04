@@ -269,3 +269,79 @@ it('reads the same bounded development record through MCP and CLI without starti
   expect((await client.callTool({ name: 'read_development_traces', arguments: { root: '/tmp' } })).isError).toBe(true);
   expect(stderr()).toBe('');
 }, 30000);
+
+it.each(['cancel', 'close', 'signal'])('releases busy stdio documentation workers on %s', async action => {
+  const root = await fixture();
+  const folder = path.join(root, 'node_modules/@cossackframework/core');
+  await fs.mkdir(folder, { recursive: true });
+  const declaration = path.join(folder, 'blocked.d.ts');
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({
+    name: '@cossackframework/core', version: '0.1.2', exports: { '.': { types: './blocked.d.ts' } },
+  }));
+  await fs.writeFile(declaration, 'export declare function example(): void;');
+  const preload = path.join(root, 'observe-workers.cjs');
+  // Delay a real compiler file read, after the SDK request owns a real worker.
+  // Observe native worker exits separately from client promise settlement.
+  // No production test hooks or replacement MCP handlers are involved.
+  await fs.writeFile(preload, `
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const threads = require('node:worker_threads');
+    const root = ${JSON.stringify(root)};
+    if (threads.isMainThread) {
+      const OriginalWorker = threads.Worker;
+      threads.Worker = class extends OriginalWorker {
+        constructor(...args) {
+          super(...args);
+          const id = this.threadId;
+          this.once('exit', () => fs.writeFileSync(path.join(root, 'exited-' + id), 'done'));
+        }
+      };
+      require('node:module').syncBuiltinESMExports();
+      process.on('exit', code => fs.writeFileSync(path.join(root, 'server-exit'), String(code)));
+      process.on('SIGTERM', () => fs.writeFileSync(path.join(root, 'server-signal'), 'SIGTERM'));
+    } else {
+      const read = fs.readFileSync;
+      fs.readFileSync = function(file, ...args) {
+        if (String(file) === ${JSON.stringify(declaration)}) {
+          fs.writeFileSync(path.join(root, 'entered-' + threads.threadId), 'ready');
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+        }
+        return read.call(this, file, ...args);
+      };
+      require('node:module').syncBuiltinESMExports();
+    }
+  `);
+  const client = new Client({ name: 'native-interruption-acceptance', version: '1' });
+  clients.push(client);
+  const transport = new StdioClientTransport({ command: process.execPath, args: ['--require', preload, bin, '--project', root], stderr: 'pipe' });
+  let stderr = ''; transport.stderr?.on('data', data => { stderr += data; });
+  await client.connect(transport);
+  const controllers = Array.from({ length: 4 }, () => new AbortController());
+  const calls = controllers.map(controller => client.callTool({
+    name: 'read_documentation', arguments: { package: '@cossackframework/core', symbols: true },
+  }, { signal: controller.signal }).then(value => ({ value }), error => ({ error })));
+  const observed = async prefix => (await fs.readdir(root)).filter(file => file.startsWith(prefix));
+  try {
+    await expect.poll(() => observed('entered-'), { timeout: 10000 }).toHaveLength(4);
+    const busy = await client.callTool({ name: 'read_test_results', arguments: {} });
+    expect(busy.structuredContent.diagnostics[0].code).toBe('COSSACK_MCP_BUSY');
+    if (action === 'cancel') controllers.forEach(controller => controller.abort());
+    else if (action === 'close') await client.close();
+    else process.kill(transport.pid, 'SIGTERM');
+    await expect.poll(() => observed('exited-'), { timeout: 5000 }).toHaveLength(4);
+    const settled = await Promise.all(calls);
+    expect(settled.every(result => result.error || result.value?.isError)).toBe(true);
+    if (action === 'cancel') {
+      const recovered = await Promise.all(Array.from({ length: 4 }, () => client.callTool({ name: 'read_test_results', arguments: {} })));
+      expect(recovered.every(result => result.structuredContent.ok)).toBe(true);
+      await client.close();
+    }
+    await expect.poll(async () => fs.readFile(path.join(root, 'server-exit'), 'utf8').catch(() => null), { timeout: 5000 }).toBe('0');
+    if (action !== 'signal') expect(await observed('server-signal')).toEqual([]);
+    expect(stderr).toBe('');
+  } finally {
+    controllers.forEach(controller => controller.abort());
+    await client.close();
+  }
+}, 30000);

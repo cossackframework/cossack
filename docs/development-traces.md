@@ -283,7 +283,9 @@ HTML does not install the bridge, and production bundling removes the publisher.
 
 Generated Cloudflare acceptance now follows real component-stream, service and
 failure button actions through browser capture, Vite persistence, CLI and MCP. It
-also checks generated types and production client/Worker bundles. Installed
-tarballs, other runtime development paths and remaining server transport evidence
-still have separate acceptance gates. The separate [stored test-results reader](./test-results.md)
+also checks generated types and production client/Worker bundles. The same
+acceptance passes with installed tarballs and offline CLI/MCP readers. The Vite
+bridge uses the public inspector import so dependency optimization does not
+create a second capture owner. Other runtime development paths and remaining
+server transport evidence still have separate acceptance gates. The separate [stored test-results reader](./test-results.md)
 reads test evidence, not runtime traces.

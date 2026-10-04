@@ -1,3 +1,4 @@
+import { verifyDevelopmentTraceApplication } from '../packages/cossack/tests/fixtures/development-trace-acceptance.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -145,6 +146,26 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     const staleEvidence = await client.callTool({ name: 'read_test_results', arguments: { run: evidence.data.report.id } });
     assert.equal(staleEvidence.structuredContent.data.freshness.status, 'changed');
     console.log('Installed Vitest reporter, public types and offline CLI/MCP evidence parity passed.');
+
+    // The app and dev server use installed packages; CLI/MCP readers retain the
+    // network guard while the browser drives real component and service actions.
+    await verifyDevelopmentTraceApplication(projectDir,{
+      async onRecorded({snapshot,recorded}) {
+        const trace=await invoke(['traces','--json','--session',snapshot.sessionId]);
+        assert.equal(trace.ok,true);
+        assert.deepEqual(trace.data.record,recorded);
+        assert.equal(trace.data.freshness.live,false);
+        const remote=await client.callTool({name:'read_development_traces',arguments:{session:snapshot.sessionId}});
+        assert.equal(remote.isError,false);
+        assert.equal(remote.structuredContent.ok,true);
+        assert.deepEqual(remote.structuredContent.data.record,recorded);
+        assert.equal(remote.structuredContent.data.freshness.live,false);
+        assert.equal(remote.structuredContent.versions.cli,cliManifest.version);
+        const framework=catalog.data.packages.find(pkg=>pkg.name==='@cossackframework/framework');
+        assert.equal(remote.structuredContent.versions.framework,framework.version);
+      },
+    });
+    console.log('Installed browser trace capture, offline CLI/MCP parity and production exclusion passed.');
 
     // Real UI declarations must expose prop documentation and typed native attributes
     // through both transports, while retaining unresolved platform diagnostics.

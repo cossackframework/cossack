@@ -1,9 +1,8 @@
-import { enableDevTools } from './devtools.js';
+import type { BrowserDevTools } from './devtools.js';
 
 /** Used only by the opt-in Vite virtual module. Acknowledgements bound outstanding snapshots. */
-export function connectDevelopmentTraceBridge(token: string, hot: ImportMeta['hot']): () => void {
+export function connectDevelopmentTraceBridge(token: string, hot: ImportMeta['hot'], tools: BrowserDevTools | undefined): () => void {
     if (!import.meta.env.DEV || !hot) return () => {};
-    const tools = enableDevTools();
     let connected = true, request = 0, pending: string | undefined, pendingStopped: string | undefined, lastStopped: string | undefined, disposed = false;
     const event = 'cossack:development-trace';
     const publish = () => {

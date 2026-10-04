@@ -8796,3 +8796,41 @@ Logs: `/tmp/cossack-menu-{build,ui,browser,root-types,types,agent-docs,scaffold}
 Twenty-five foundations are reviewed. Continue Tooltip and HoverCard, then pending
 UI audit rows. RT-23 and CLI-07/CLI-08 remain open. The release still has 24 of 58
 completed tasks. Package versions remain 0.8.3 until REL-04.
+
+<a id="codex-generated-trace-acceptance-2026-10-04"></a>
+### Codex generated development-trace acceptance (2026-10-04)
+
+Author: Codex. A generated Cloudflare app now exercises real Chromium component
+stream, service and failure buttons through capture, server dispatch/terminal
+evidence, Vite persistence, the CLI process and an MCP SDK stdio client. Shared
+records match; values, action names and raw errors stay excluded. The fixture
+checks generated TypeScript and production client/Worker bundles, and shuts down
+the development server through its awaited close operation.
+
+This exposed and fixed two gaps. Worker-rendered HTML bypassed the HTML-transform
+bridge injection; the client route registry now loads the same canonical virtual
+module, without duplicating the HTML publisher. Core render source markers relied
+on absent metadata rather than an explicit development guard; the guard now
+removes marker handling from production bundles while preserving development markers.
+
+Verification:
+
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
+  **1 passes, 33 unrelated tests skipped**. Generated types, live development
+  browser/server/CLI/MCP parity and production client/Worker exclusion pass.
+  Log: `/tmp/cossack-generated-trace-final-verified.log`.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/devtools-browser.test.ts tests/development-trace-bridge.test.ts tests/development-traces.test.ts tests/navigation-trace-build.test.ts`:
+  **18 tests / 4 files pass**, including custom-base HTML plus registry bootstrap
+  without duplicate publications and existing capture/storage lifecycle checks.
+  Log: `/tmp/cossack-generated-trace-framework.log`.
+- `pnpm --filter @cossackframework/core exec vitest run tests/development-trace-build.test.ts`:
+  **3 tests pass** for production component/service proxy and renderer exclusion.
+  Log: `/tmp/cossack-generated-trace-core-build-tests.log`.
+- Core/framework declaration builds, root `pnpm tsc --noEmit` and
+  `pnpm typecheck` pass (all 11 packages).
+  Logs: `/tmp/cossack-generated-trace-final-build.log`, `/tmp/cossack-generated-trace-types-final.log`.
+
+Limits: this fixture uses workspace package links. Installed-tarball trace
+acceptance remains before the CLI-07 audit. RT-28 retains WebSocket/native-body
+server evidence and other runtime development acceptance. No task closes:
+**25 complete, 33 open**. No deployment or publication occurred.
