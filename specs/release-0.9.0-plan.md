@@ -957,42 +957,15 @@ Runtime/browser gates cover the changed features. Missing external evidence
 remains explicitly open. A source-only prototype test cannot substitute for a
 published application test. Dependencies: REL-02 and completed feature work.
 
-**Node development progress — Author: Codex (2026-10-04).** Generated Node
-Vite configurations now include the Node adapter's separate `/vite` plugin.
-Plain Vite and `cossack dev` serve SSR pages and RPC through the public application
-entry. The state diagnostic fixture no longer supplies a private HTTP bridge.
-Node HTTP/SSE traces and native response evidence pass browser/CLI/MCP parity;
-see the [checkpoint](./release-0.9.0.md#codex-node-development-2026-10-04).
+**Completed runtime checkpoints — Codex (2026-10-04).** Generated and installed
+Node development and Deno production/development pass their recorded browser,
+CLI lifecycle and trace checks. See the [runtime evidence index](./handoff-0.9.0.md#completed-work-reference-only)
+and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
+`pnpm test:deno` owns the repeatable native Deno gate.
 
-Cold WebSocket startup now loads the application without a previous HTTP request.
-Server edits proactively replace socket runtimes while retaining the browser HMR
-connection. The script and standalone Vite share their binding factory and
-runtime lifecycle. Normal and JSON CLI development commands supervise shutdown.
-The [socket checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04)
-records generated and installed verification. Complete the final release matrix;
-Electron launch/packaging remains open; Deno acceptance is recorded below.
-
-**Deno production progress — Author: Codex (2026-10-04).** Generated and installed
-apps now execute in real Deno with HTTP, SSE, WebSockets, hydration, environment
-bindings, repeated cookies and origin/scope rejection. `pnpm test:deno` owns the
-repeatable local gate, including generated-app TypeScript and typed native smoke
-tests. Generated projects use pnpm's dependency tree (`nodeModulesDir: "manual"`)
-and honor `PORT`/`HOST`. Shared adapter contracts live in core; Deno and Desktop
-no longer depend on framework-owned types. See the
-[checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
-
-Deno `cossack start` now dispatches to Deno and supervises normal/JSON execution
-and cancellation; see the [CLI checkpoint](./release-0.9.0.md#codex-deno-cli-start-2026-10-04).
-Native Deno/Vite development now executes server modules in Deno through Vite's
-module runner. Generated and installed acceptance covers browser transports,
-cold sockets, server reload, bindings, startup repair and parent-crash cleanup;
-see the [development checkpoint](./release-0.9.0.md#codex-deno-development-2026-10-04).
-Normal/JSON CLI development traces now pass all three transports over HTTP/HTTPS,
-including installed offline CLI/MCP parity and production exclusion. The
-[trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04) records native
-cleanup evidence and corrected public URL forwarding under HTTP/2.
-Next verify Desktop traces and Electron launch/packaging. Graceful generated-server
-draining, Deno Deploy and the complete REL-03 matrix remain open.
+Remaining: Desktop development traces and Electron launch/packaging, graceful
+generated-server draining, Deno Deploy and the complete final release matrix.
+Uncommitted Desktop work is in progress; it is not release acceptance.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

@@ -9,21 +9,22 @@ The [verification archive](./release-0.9.0-verification-archive.md) preserves pa
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
 All unchecked tasks remain in scope.
 
+<a id="completed-work-reference-only"></a>
 ## Completed work — reference only
 
 All **26 completed tasks** retain their criteria in the
 [completed task index](./release-0.9.0-plan.md#completed-task-index). Preserve their regressions.
 
-| Verified work | Evidence |
-| --- | --- |
-| Node development and HTTP/SSE/WebSocket trace acceptance | [Node checkpoint](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04) |
-| Native Deno production and normal/JSON CLI startup | [Production](./release-0.9.0-verification-archive.md#codex-deno-production-2026-10-04), [CLI startup](./release-0.9.0-verification-archive.md#codex-deno-cli-start-2026-10-04) |
-| Native Deno/Vite development, reload, recovery and parent-crash cleanup | [Development checkpoint](./release-0.9.0-verification-archive.md#codex-deno-development-2026-10-04); commit `b28c122`; full `pnpm test:deno` gate passed with Deno 2.9.6 |
-| Deno normal/JSON CLI development traces, HTTPS/WSS and installed offline CLI/MCP parity | [Trace checkpoint](./release-0.9.0.md#codex-deno-traces-2026-10-04) |
-
-These runtime checkpoints do not close RT-28 or REL-03.
+Node development and Deno production/development checkpoints are recorded in the
+[verification index](./release-0.9.0.md#archived-checkpoints), including native
+runtime execution, CLI lifecycle, HTTP/SSE/WebSocket traces and installed CLI/MCP
+parity. The latest Deno trace gate passed at `f57023e`.
+These completed portions do not close RT-28 or REL-03.
 
 ## Continue here — Codex, 2026-10-04
+
+Desktop implementation and native acceptance fixtures currently have uncommitted
+changes. Review and finish that work before claiming acceptance or committing it.
 
 1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)**: verify Desktop development
    traces and Electron launch/packaging, coordinating with REL-03.

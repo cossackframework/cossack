@@ -88,52 +88,6 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-deno-traces-2026-10-04"></a>
-### Codex: Deno CLI development traces and HTTPS (2026-10-04)
-
-Deno development now supports Vite custom events through an authenticated private
-WebSocket. Native-response outcome/cleanup records reach the existing framework
-bridge and browser capture, with the existing bounded acknowledgement. The event
-channel rejects invalid credentials, paths, malformed/oversized messages and
-releases runner listeners on disconnect. Ping frames are accepted; update/reload
-frames are filtered because source edits replace the Deno process.
-
-HTTPS acceptance found valid actions being rejected with 403. The adapter now
-reads TLS state through the socket accessor and falls back to HTTP/2 `:authority`
-when Host is absent. A generated API checks the forwarded public URL and query;
-browser HTTP/SSE/WebSocket actions retain origin validation over HTTPS/WSS.
-
-The shared trace fixture can launch the public CLI. Deno cases cover normal
-and JSON output, SIGTERM/SIGINT shutdown, native bodies, streams, socket terminals,
-redaction, browser/disk/CLI/MCP equality and production exclusion. HTTPS tests
-create temporary one-day certificates with OpenSSL and scope certificate bypass
-to their browser context. Recovery tests now restore modified entry/page/env files,
-so the deliberately stuck cleanup hook cannot contaminate subsequent acceptance.
-
-Verification:
-
-- Deno adapter: **27 tests / 4 files pass**, including six private-event channel
-  regressions (`/tmp/cossack-deno-trace-unit.log`).
-- Generated public CLI trace matrix: **6 pass / 45 unrelated cases skipped**
-  (`/tmp/cossack-deno-traces-cli.log`), covering three transports over HTTP/HTTPS.
-- `COSSACK_DENO_BINARY=<Deno 2.9.6 executable> pnpm test:deno`: **passes**.
-  Sequential package builds, 12 installed tarballs, generated TypeScript,
-  production/browser and normal/JSON startup, development reload/recovery/crash,
-  installed HTTPS/WSS traces, offline CLI/MCP parity, packaged documentation
-  examples/catalogs and production exclusion all pass with installed Vite 8.3.2.
-  Then **2 typed native smoke tests** and **9 workspace cases / 42 unrelated cases
-  skipped** pass with Vite 8.1.4. Log: `/tmp/cossack-deno-trace-gate.log`.
-- Root `pnpm tsc --noEmit` and all **11 package type checks** pass
-  (`/tmp/cossack-deno-trace-root-types.log`, `/tmp/cossack-deno-trace-package-types.log`).
-- Shared Node/Cloudflare trace-fixture regressions: **6 pass / 45 unrelated cases
-  skipped** (`/tmp/cossack-deno-trace-other-runtimes.log`).
-
-The transport uses Vite's [runtime event API](https://vite.dev/guide/api-environment-runtimes).
-Native evidence describes server cleanup, not client consumption. Private transport
-is trusted local development, not a sandbox. Desktop traces, Electron launch/packaging,
-Deno Deploy, graceful generated-server draining and the final release matrix remain
-open. **26 complete, 32 open**; versions remain 0.8.3. No deployment or publication.
-
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
@@ -143,6 +97,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-deno-traces-2026-10-04"></a>[Codex Deno CLI development traces and HTTPS (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-traces-2026-10-04) |
 | <a id="codex-deno-development-2026-10-04"></a>[Codex native Deno development through Vite (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-development-2026-10-04) |
 | <a id="codex-deno-cli-start-2026-10-04"></a>[Codex Deno CLI production startup (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-cli-start-2026-10-04) |
 | <a id="codex-deno-production-2026-10-04"></a>[Codex real Deno production acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-production-2026-10-04) |
