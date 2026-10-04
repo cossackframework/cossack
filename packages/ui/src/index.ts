@@ -108,3 +108,5 @@ export { isCalendarDate } from './internal/date';
 export type { DialogControlProps } from './internal/dialog';
 
 export type { MenuItem, MenuPanelProps } from './internal/menu';
+
+export type { DisclosureProps, DisclosureTriggerProps, DisclosurePanelProps } from './internal/disclosure';

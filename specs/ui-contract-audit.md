@@ -57,7 +57,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 | Source | Contract audit | Evidence / next action |
 | --- | --- | --- |
-| [Accordion](../packages/ui/src/components/Accordion.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Accordion](../packages/ui/src/components/Accordion.ts) | Reviewed foundation | Typed root/trigger/panel contracts, native activation, stable IDs, one-time defaults, focus restoration and SSR/Chromium acceptance. |
 | [Alert](../packages/ui/src/components/Alert.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [AlertDialog](../packages/ui/src/components/AlertDialog.ts) | Reviewed foundation | Typed native dialog props, linked title/message, Cancel-first focus, controlled/default dismissal, caller-owned actions and SSR/Chromium acceptance. |
 | [AspectRatio](../packages/ui/src/components/AspectRatio.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -73,7 +73,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Card](../packages/ui/src/components/Card.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Carousel](../packages/ui/src/components/Carousel.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Checkbox](../packages/ui/src/components/Checkbox.ts) | Foundation reviewed | Published type fixture, SSR tests and native-controls Chromium acceptance. |
-| [Collapsible](../packages/ui/src/components/Collapsible.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Collapsible](../packages/ui/src/components/Collapsible.ts) | Reviewed foundation | Typed root/trigger/panel contracts, native activation, stable IDs, one-time defaults, focus restoration and SSR/Chromium acceptance. |
 | [Combobox](../packages/ui/src/components/Combobox.ts) | Reviewed foundation | Stable IDs, typed input props/events, listbox/active-descendant semantics, controlled/default selection, form values, required/reset behavior, keyboard/pointer and SSR/fresh-render acceptance. |
 | [Command](../packages/ui/src/components/Command.ts) | Reviewed foundation | Typed native dialog, labeled search/list, stable active IDs, controlled/default state, deterministic shortcuts, SSR/Chromium and app navigation acceptance. |
 | [ContextMenu](../packages/ui/src/components/ContextMenu.ts) | Reviewed foundation | Stable IDs, typed actions/native events, menu semantics, keyboard/typeahead, disabled actions, focus restoration, bounded placement and SSR/Chromium acceptance. |
@@ -125,7 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Tabs, Accordion and Collapsible, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
+Next audit Tabs, then the remaining pending rows. Check native value ownership, keyboard focus, labels and server/hydration behavior.
 Then review composite selection and disclosure controls, dialogs/menus, navigation,
 chat/display components, blocks and icons. Do not mechanically replace every prop
 index signature with one global type: the actual spread destination determines the
@@ -135,8 +135,8 @@ The shared types currently cover the reviewed controls. Extend them from impleme
 native behavior. Preserve an explicit status for unknown or unsupported behavior in
 the installed catalog rather than implying that unreviewed components are complete.
 
-Modal, Sheet and Drawer share native lifecycle handling. The [dialog checkpoint](./release-0.9.0.md#codex-dialog-controls-2026-10-04) records public types, SSR, browser and installed-catalog evidence. Twenty-two foundations are reviewed. The full RT-23 acceptance scope remains open.
+Modal, Sheet and Drawer share native lifecycle handling. The [dialog checkpoint](./release-0.9.0.md#codex-dialog-controls-2026-10-04) records public types, SSR, browser and installed-catalog evidence. The full RT-23 acceptance scope remains open.
 
-Popover now preserves native trigger/panel event ownership and accessibility with stable IDs. The [Popover checkpoint](./release-0.9.0.md#codex-popover-2026-10-04) records evidence and limits. Twenty-three foundations are reviewed.
+Popover now preserves native trigger/panel event ownership and accessibility with stable IDs. The [Popover checkpoint](./release-0.9.0.md#codex-popover-2026-10-04) records evidence and limits.
 
-DropdownMenu and ContextMenu now share single-level menu navigation and lifecycle handling. The [menu checkpoint](./release-0.9.0.md#codex-action-menus-2026-10-04) records evidence and limits. Twenty-five foundations are reviewed.
+DropdownMenu and ContextMenu now share single-level menu navigation and lifecycle handling. The [menu checkpoint](./release-0.9.0.md#codex-action-menus-2026-10-04) records evidence and limits.

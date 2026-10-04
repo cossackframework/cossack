@@ -267,9 +267,9 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Accordion</h2>
                     <div class="space-y-2">
-                        ${component(AccordionItem, { defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
-                        ${component(AccordionItem, { summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
-                        ${component(AccordionItem, { summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
+                        ${component(AccordionItem, { id: 'demo-about', defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
+                        ${component(AccordionItem, { id: 'demo-native', summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
+                        ${component(AccordionItem, { id: 'demo-javascript', summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
                     </div>
                 </section>
 
@@ -494,7 +494,7 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Collapsible · Toggle · ToggleGroup</h2>
                     <div class="flex flex-wrap items-start gap-6">
-                        ${component(Collapsible, { trigger: component(Button, { variant: 'outline', size: 'sm' }, 'Toggle Collapsible') }, html`<p class="text-sm py-3">Content that can be shown or hidden.</p>`)}
+                        ${component(Collapsible, { id: 'demo-collapsible', trigger: 'Toggle Collapsible' }, html`<p class="text-sm py-3">Content that can be shown or hidden.</p>`)}
                         ${component(Toggle, { defaultPressed: true }, 'Bold')}
                         ${component(ToggleGroup, {
                             type: 'single',

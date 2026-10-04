@@ -10,7 +10,7 @@ describe.each([AccordionItem, Collapsible])('%s state ownership', (Component) =>
     it('toggles default-open content before the first render', () => {
         const instance = new Component();
         const onToggle = vi.fn();
-        instance.props = { defaultOpen: true, onToggle };
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', defaultOpen: true, onToggle };
         instance.toggle();
         expect(onToggle).toHaveBeenCalledWith(false);
         expect(renderToString(instance.render())).toContain('height: 0; overflow: hidden');
@@ -19,10 +19,21 @@ describe.each([AccordionItem, Collapsible])('%s state ownership', (Component) =>
         expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
     });
 
+    it('captures defaultOpen only once and blocks disabled toggles', () => {
+        const instance = new Component();
+        const onToggle = vi.fn();
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', defaultOpen: true, onToggle };
+        expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
+        instance.props = { ...instance.props, defaultOpen: false, disabled: true };
+        instance.toggle();
+        expect(onToggle).not.toHaveBeenCalled();
+        expect(renderToString(instance.render())).toContain('height: auto; overflow: visible');
+    });
+
     it('leaves controlled state with the parent until props change', () => {
         const instance = new Component();
         const onToggle = vi.fn();
-        instance.props = { open: false, defaultOpen: true, onToggle };
+        instance.props = { id: 'test', summary: 'Section', trigger: 'Section', open: false, defaultOpen: true, onToggle };
         instance.toggle();
         expect(onToggle).toHaveBeenCalledWith(true);
         expect(renderToString(instance.render())).toContain('height: 0; overflow: hidden');

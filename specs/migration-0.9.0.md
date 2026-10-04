@@ -914,3 +914,24 @@ SSR now retains closed dialog markup instead of returning null. Tests must asser
 hidden state after dismissal rather than expect the search element to be removed.
 Native modal behavior supplies focus containment and restoration. Escape/backdrop
 configuration follows the shared dialog contract, and cleanup removes shortcuts.
+
+## Accordion and Collapsible
+
+Accordion/AccordionItem and Collapsible require a stable `id`. Accordion `summary`
+and Collapsible `trigger` now require nonempty text. Collapsible owns its native
+button; replace `trigger: component(Button, ...)` with trigger text and style it
+through `triggerProps`. Accordion wraps its button in a heading, with configurable
+`headingLevel` from 2 through 6 (default 3).
+
+Native attributes/events belong to the root div. `triggerProps` targets the button;
+`panelProps` targets the content wrapper. The component owns derived trigger/panel
+IDs, expanded/controls relationships and panel animation/inert state. Trigger click
+handlers can prevent default to veto toggling. Events retain native bubbling.
+
+`defaultOpen` is captured once. Use `open` with `onToggle` for later changes.
+Disabled controls and enclosing disabled fieldsets block activation. Buttons use
+`type=button` and never submit a form. When an enabled trigger's panel closes with
+focus inside it, focus returns to that trigger before the panel becomes inert.
+Open content retains auto height after animation. Cleanup cancels animations and
+releases refs. Source ejection now imports native attribute types through the public
+UI package while retaining the shared disclosure helper inline.

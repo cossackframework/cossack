@@ -282,3 +282,15 @@ component(Command, { id: 'commands' });
 component(Command, { id: 'commands', label: 'Navigate', role: 'listbox' });
 // @ts-expect-error Arbitrary unimplemented props are rejected.
 component(Command, { id: 'commands', label: 'Navigate', fuzzy: true });
+
+import { AccordionItem, Collapsible } from '@cossackframework/ui';
+component(AccordionItem, { id: 'section', summary: 'Details', headingLevel: 2, '@click': event => { const div: HTMLDivElement = event.currentTarget; void div; }, triggerProps: { '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } }, panelProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
+component(Collapsible, { id: 'more', trigger: 'More', open: true, onToggle: open => { const value: boolean = open; void value; } });
+// @ts-expect-error Stable IDs are required.
+component(AccordionItem, { summary: 'Details' });
+// @ts-expect-error Trigger content is now text in the owned native button.
+component(Collapsible, { id: 'more', trigger: {} });
+// @ts-expect-error Trigger state and relationships belong to the disclosure.
+component(Collapsible, { id: 'more', trigger: 'More', triggerProps: { 'aria-expanded': true } });
+// @ts-expect-error Panel animation style belongs to the disclosure.
+component(AccordionItem, { id: 'section', summary: 'Details', panelProps: { style: 'height:20px' } });

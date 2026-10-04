@@ -38,6 +38,7 @@ function ejectFromPackage(className) {
           /^import .* from ["']\.\.\/internal\/disclosure["'];$/m,
           () => fs.readFileSync(path.join(pkgDir, 'src/internal/disclosure.ts'), 'utf8'),
         )
+        .replace(/from ["']\.\.\/native-attributes["']/g, 'from "@cossackframework/ui"')
         .replace(
           /from ["']\.\.\/icons\/Icon["']/g,
           'from "@cossackframework/ui"',

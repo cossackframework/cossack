@@ -962,7 +962,7 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 29 UI foundations, including DataTable, have reviewed contracts.
+Codex status (2026-10-04): 31 UI foundations, including DataTable, have reviewed contracts.
 Completed work covers typed native attributes and events, form behavior, SSR and
 hydration, keyboard navigation, focus, dialogs, popovers and action menus.
 The [component audit](./ui-contract-audit.md) records coverage and pending rows.
@@ -979,9 +979,15 @@ Command now has named modal search, stable result identity, controlled/default
 state and document-order shortcut ownership. App uses one shortcut owner, and the
 local demo uses an explicit button. See the
 [Command checkpoint](./release-0.9.0.md#codex-command-2026-10-04).
-Next: Tabs, Accordion and Collapsible, then remaining audit rows. Check controlled
-state, native trigger ownership, keyboard/focus, stable panel relationships and
-SSR/hydration. Preserve the full original component and release scope.
+Accordion and Collapsible now have native button/heading contracts, stable panel
+IDs, typed attribute targets, one-time defaults and collapse focus restoration.
+See the [disclosure checkpoint](./release-0.9.0.md#codex-disclosures-2026-10-04).
+Next: Tabs, then remaining audit rows. Tabs currently lets local active state win
+over later controlled values, uses global value-derived IDs across instances, and
+leaves focus/indicator animation frames uncanceled. Define controlled/default
+selection, disabled items and collision-free identities. Test orientation, RTL,
+roving focus, changing items, indicator resize, cleanup and retained hydration.
+Preserve the full original component and release scope.
 RT-23 remains open against all criteria below.
 
 Purpose: Applications need a typed table for real server data, and agents need

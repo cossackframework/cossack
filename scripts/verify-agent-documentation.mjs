@@ -223,10 +223,19 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(commandPalette.propsContract.members.some(member => member.name === 'shortcut'));
     assert.ok(uiSymbols.some(symbol => symbol.name === 'CommandItem'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'modal-command-search'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Command', '--json']);
+    for (const name of ['Accordion', 'AccordionItem', 'Collapsible']) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
+      assert.ok(control.propsContract.members.some(member => member.name === 'triggerProps' && member.type.includes('DisclosureTriggerProps')));
+      assert.ok(control.propsContract.members.some(member => member.name === 'panelProps' && member.type.includes('DisclosurePanelProps')));
+    }
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-disclosures'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Collapsible', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Command']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Command' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Collapsible']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Collapsible' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

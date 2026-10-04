@@ -88,6 +88,49 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-disclosures-2026-10-04"></a>
+## Codex Accordion and Collapsible (2026-10-04)
+
+Author: Codex. Accordion/AccordionItem and Collapsible now require stable IDs and
+nonempty trigger text. They own native button activation and trigger/panel ARIA
+relationships. Accordion places the button in a configurable heading and hides its
+decorative chevron from accessibility. Collapsible replaces the clickable div and
+caller-supplied interactive trigger with an owned native button.
+
+Typed root attributes/events target HTMLDivElement; triggerProps targets the button
+and panelProps targets the content wrapper. Native trigger callbacks can veto
+toggling with preventDefault. Event bubbling remains native. Disabled controls and
+fieldset inheritance block activation. defaultOpen is captured once; controlled
+state remains parent-owned. Closing a panel with focus inside restores the enabled
+trigger before applying inert state. Existing height animation, reversal, unclamped
+open content and reduced-motion behavior remain. Cleanup releases refs/animations.
+
+The demo and declaration fixtures use the new IDs and text triggers. Ejected source
+retains the disclosure helpers inline and resolves native attribute types through
+the public UI package.
+
+Verification:
+
+- UI build and 218 tests across 22 files pass, including state ownership, SSR
+  contracts, public declarations and existing animation/reversal/cleanup tests.
+- Production themed Chromium checks retained hydration, SSR state, heading and
+  controls relationships, Enter/Space, inert tab exclusion, controlled rejection,
+  callback veto/bubbling, collapse focus, disabled controls/fieldsets, form safety,
+  growing open content, reduced motion and remounting.
+- Root `pnpm tsc --noEmit` and all 11 package type configurations pass.
+- CLI UI-ejection regression suite: all three tests pass.
+- `pnpm test:agent-docs:local` passes installed CLI/MCP prop contracts for Accordion,
+  AccordionItem and Collapsible, exact Collapsible discovery, and packaged guidance
+  with Node networking disabled. Six existing usage examples compile and execute.
+  The new UI guide has no executable examples; broader UI examples and platform
+  declarations remain CLI-08/release work.
+
+Logs: `/tmp/cossack-disclosures-{build,ui,browser,root-types,types,ejection,agent-docs}.log`.
+Thirty-one component foundations are reviewed. Tabs remains pending, including
+controlled selection, collision-free IDs and indicator/focus lifecycle. RT-23,
+CLI-08, other browser engines, assistive technologies and full runtime/release
+acceptance remain open. Versions stay at 0.8.3 until REL-04.
+
 <a id="codex-command-2026-10-04"></a>
 ## Codex Command (2026-10-04)
 

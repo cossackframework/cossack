@@ -215,7 +215,7 @@ describe("AccordionItem", () => {
     it("renders a button + content div (not <details>/<summary>)", () => {
         const out = renderComp(
             AccordionItem,
-            { summary: "Section A" },
+            { id: "section", summary: "Section A" },
             "Panel body",
         );
         expect(out).toContain("<button");
@@ -226,8 +226,8 @@ describe("AccordionItem", () => {
     });
 
     it("renders unclamped open content and inert closed content", () => {
-        const open = renderComp(AccordionItem, { open: true, summary: "X" });
-        const closed = renderComp(AccordionItem, { open: false, summary: "X" });
+        const open = renderComp(AccordionItem, { id: "section", open: true, summary: "X" });
+        const closed = renderComp(AccordionItem, { id: "section", open: false, summary: "X" });
         expect(open).toContain("height: auto; overflow: visible");
         expect(open).toContain('aria-expanded="true"');
         expect(open).not.toContain("inert");
@@ -238,7 +238,7 @@ describe("AccordionItem", () => {
     });
 
     it("renders a chevron svg that rotates when open", () => {
-        const open = renderComp(AccordionItem, { open: true, summary: "X" });
+        const open = renderComp(AccordionItem, { id: "section", open: true, summary: "X" });
         expect(open).toContain("cs-accordion__chevron");
         expect(open).toContain("rotate(180deg)");
     });
@@ -639,7 +639,7 @@ describe("Command", () => {
 
 describe("Collapsible", () => {
     it("renders a trigger and hidden content", () => {
-        const out = renderComp(Collapsible, { trigger: "Toggle" }, "Hidden text");
+        const out = renderComp(Collapsible, { id: "collapse", trigger: "Toggle" }, "Hidden text");
         expect(out).toContain("cs-collapsible");
         expect(out).toContain("Toggle");
         expect(out).toContain("Hidden text");
@@ -647,7 +647,7 @@ describe("Collapsible", () => {
     });
 
     it("shows content when defaultOpen is true", () => {
-        const out = renderComp(Collapsible, { trigger: "T", defaultOpen: true }, "X");
+        const out = renderComp(Collapsible, { id: "collapse", trigger: "T", defaultOpen: true }, "X");
         expect(out).toContain("height: auto; overflow: visible");
     });
 });
