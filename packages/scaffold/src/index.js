@@ -924,10 +924,27 @@ app.use('*', serveStatic({
 // Delegation preserves the framework's custom 404 handler and request scope.
 app.all('*', c => frameworkApp.fetch(c.req.raw, c.env));
 
-export const env: Record<string, unknown> = {
-  ...process.env,
-  DB_PATH: process.env.DB_PATH ?? './database.sqlite',
-};
+// The same binding factory is used by production and the Node Vite plugin.
+export async function createEnv(variables: Record<string, string | undefined> = process.env): Promise<Record<string, unknown>> {
+  const bindings: Record<string, unknown> = {
+    ...variables,
+    DB_PATH: variables.DB_PATH ?? './database.sqlite',
+  };
+  if (variables.SMTP_HOST) {
+    const { SMTP_USER: user, SMTP_PASS: pass } = variables;
+    if (!user || !pass) throw new Error('SMTP_HOST requires SMTP_USER and SMTP_PASS');
+    const { createNodeEmailSender } = await import('@cossackframework/node-adapter');
+    bindings.EMAIL = createNodeEmailSender({
+      host: variables.SMTP_HOST,
+      port: Number(variables.SMTP_PORT ?? 587),
+      secure: variables.SMTP_SECURE === 'true',
+      auth: { user, pass },
+      from: variables.MAIL_FROM ?? 'no-reply@example.com',
+    });
+  }
+  return bindings;
+}
+export const env: Record<string, unknown> = import.meta.env?.DEV ? {} : await createEnv();
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const fetch = (request: Request) => app.fetch(request, env);

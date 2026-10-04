@@ -1033,9 +1033,16 @@ terminal evidence describes frame preparation, not post-send cleanup.
 
 The Node adapter's separate `/vite` entry owns the standalone development HTTP
 listener integration. It consumes only structural `app.fetch`, `env`, and runtime
-lifecycle exports; it never imports the framework. Scaffold includes it only in
+lifecycle exports; it never imports the framework. It keeps the Node adapter and
+core inside the development SSR graph so installed packages receive the same DEV
+guards as linked workspace packages. Scaffold includes it only in
 Node web Vite configuration. Vite's module runner loads the application after
 Vite's asset handlers, and the Hono Node server bridge preserves request streams
-and repeated cookies. Runtime imports do not load Vite. Embedded servers retain
-their own listener and lifecycle. Standalone socket-only startup and proactive
-socket reload remain separate acceptance work under REL-03.
+and repeated cookies. Runtime imports do not load Vite. A dedicated `/ws/` listener
+loads the same entry for cold upgrades. The server hot-update hook replaces its
+module graph and runtime while the client HMR channel stays connected. A revision
+check discards entries superseded during asynchronous binding creation. The
+entry's `createEnv` factory receives server-only environment-file values and
+process overrides; generated production entries use the same factory. The
+script launcher uses this plugin too. Embedded servers retain their own listener
+and lifecycle.

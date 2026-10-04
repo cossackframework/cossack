@@ -121,23 +121,35 @@ This makes `cossack dev` and plain `vite dev` serve the exported `app` from
 and `attach()`. The adapter imports no framework code. Vite remains an optional
 peer dependency and is not imported by the main runtime entry.
 
-The middleware runs after Vite's public asset and module handlers. Each application
-request loads the entry through the SSR module runner, so source edits take effect
-on the next request. Replaced runtimes detach their upgrade listeners and begin
-cleanup. Vite shutdown waits up to five seconds for cleanup; use
-`cossackNode({ entry: '/src/custom.ts', shutdownTimeoutMs: 2000 })` to change these
-settings. The deadline stops waiting; it cannot terminate application I/O.
+The HTTP middleware runs after Vite's public asset and module handlers. A separate
+`/ws/` listener loads the same application before the first WebSocket upgrade,
+including when no application HTTP request has run. Other upgrade paths remain
+with Vite. Server-source edits replace the server module graph, detach and dispose
+the old runtime, and close its sockets. The browser HMR connection stays open.
+Cleanup can continue while the replacement runtime starts; source reload does
+not undo in-flight application effects.
+An edit during asynchronous initialization discards the stale entry before it can
+accept a request. Initialization failures retry with a fresh entry.
 
-The plugin uses the entry's exported bindings as supplied. Configure environment
-values in that entry or the launching process. It does not infer an application
-URL from untrusted request headers or configure SMTP automatically.
+Generated entries export `createEnv(variables)`. The plugin passes values from
+Vite's environment files, with process variables taking precedence. The factory
+preserves arbitrary bindings, supplies the `DB_PATH` default, and configures
+`EMAIL` when `SMTP_HOST` is present. SMTP configuration requires `SMTP_USER` and
+`SMTP_PASS`. The same factory supplies production bindings. Private bindings are
+not added to Vite's client environment; the existing `VITE_` public-prefix rule
+still applies. Custom entries without a factory retain their exported `env`.
 
-Embedded Vite servers (`server.middlewareMode`) keep ownership of their HTTP
-listener and lifecycle. The existing generated `scripts/dev.js` continues to use
-that path. Standalone WebSocket attachment currently begins when the application
-first receives an HTTP request, and a runtime replacement happens on a subsequent
-request. Direct socket-only startup and proactive socket reload acceptance remain
-open; use the generated script for its existing WebSocket development workflow.
+The generated `scripts/dev.js` is a thin Vite launcher. It retains the optional
+`COSSACK_LOCAL` overlay and its `PORT`/3000 default; application routing, upgrades,
+bindings and cleanup all use the plugin. Plain `vite dev` and `cossack dev` use
+Vite's usual port options. Both normal and JSON CLI development commands supervise
+the child process and bound requested shutdown.
+
+Closing Vite waits up to five seconds for runtime cleanup; use
+`cossackNode({ entry: '/src/custom.ts', shutdownTimeoutMs: 2000 })` to change the
+entry or deadline. A deadline stops waiting; it cannot terminate application I/O.
+Embedded Vite servers (`server.middlewareMode`) retain ownership of their listener
+and lifecycle and are not installed by this plugin.
 
 This plugin applies only to development. Production keeps the generated Node
 server and static-file middleware. The plugin is omitted from Desktop mode.

@@ -6,6 +6,64 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-node-development-2026-10-04"></a>
+### Codex: Node Vite development HTTP and trace acceptance (2026-10-04)
+
+Author: Codex. The Node adapter now exports a separate `/vite` plugin. Generated
+Node web configurations use it to serve the public `app.fetch` entry after Vite's
+assets and transformed modules. The library imports no framework code, and its
+main runtime entry does not import Vite. The plugin uses Vite's
+[module runner](https://vite.dev/guide/api-environment-frameworks#runnabledevenvironment)
+and the Hono Node bridge for request bodies and repeated response cookies.
+
+Each request observes the current server module. Replacement detaches the old
+runtime and starts cleanup. Closing Vite bounds cleanup waits; it cannot stop
+ignored application I/O. Embedded Vite hosts retain their own lifecycle, preserving
+the generated script's existing workflow. The private state-fixture bridge is removed.
+
+The actual `cossack dev --json` check found Vite's handled SIGTERM exit code 143
+was classified as failure. The CLI now accepts that code only after its own stop
+request. Unsolicited exits and forced timeout termination still fail.
+
+Verification:
+
+- Node adapter: **20 tests / 5 files pass**, including actual Vite HTTP requests,
+  repeated cookies, module/public assets, source replacement, entry-error recovery
+  and a nonsettling cleanup deadline. Log: `/tmp/cossack-node-dev-adapter.log`.
+- Scaffold: **113 tests / 8 files pass** (`/tmp/cossack-node-dev-scaffold.log`).
+- CLI machine contract: **45 tests pass**, using `--testTimeout 30000` for tests
+  that run multiple subprocesses. The initial default five-second run timed out
+  in four unrelated finite-command cases; its lifecycle assertions passed.
+  Final log: `/tmp/cossack-node-dev-lifecycle-final.log`.
+- Generated state development/production and existing script WebSocket/HMR checks:
+  **3 pass / 33 unrelated cases skipped** (`/tmp/cossack-node-dev-generated.log`).
+- Generated Node HTTP/SSE browser traces, native evidence, CLI/MCP parity and
+  production exclusion: **2 pass / 36 unrelated cases skipped**
+  (`/tmp/cossack-node-dev-traces.log`).
+- Actual generated `cossack dev --json`: **1 pass / 38 unrelated cases skipped**,
+  proving SSR, native POST bodies, repeated cookies, source reload and requested
+  shutdown reporting (`/tmp/cossack-node-dev-cli.log`).
+- Root `pnpm tsc --noEmit` and all 11 package type checks pass
+  (`/tmp/cossack-node-dev-types.log`).
+- Cloudflare HTTP/SSE/WebSocket trace regression after the shared fixture change:
+  **3 pass / 36 unrelated cases skipped**, including production exclusion
+  (`/tmp/cossack-node-dev-cloudflare.log`).
+
+The reproducible installed Node gate is
+`node scripts/test-local-scaffold.mjs --node-dev-only`. It builds and packs the
+local packages, installs an isolated Node application, and runs installed
+documentation plus HTTP/SSE trace browser/CLI/MCP acceptance. **The gate passes**,
+including six packaged examples, public reporter types, offline evidence readers,
+UI contracts and production exclusion. Installed versions include Vite 8.3.2,
+Hono Node server 2.1.3, Hono 4.13.12, TypeScript 7.0.2 and Vitest 4.1.11.
+Log: `/tmp/cossack-node-dev-installed.log`. The temporary installation was removed.
+
+Remaining: direct WebSocket startup before an HTTP request, proactive socket
+runtime replacement on source edits, and binding/environment parity with the
+script. Standalone attachment currently starts with the first application HTTP
+request. Deno and Desktop acceptance and the final release matrix remain open.
+No task closes: **26 complete, 32 open**. Versions remain 0.8.3.
+
 <a id="codex-native-trace-evidence-2026-10-04"></a>
 ### Codex: Native body server trace evidence (2026-10-04)
 

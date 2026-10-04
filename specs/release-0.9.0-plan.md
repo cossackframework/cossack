@@ -562,9 +562,9 @@ background receipt acknowledgement; see the [native checkpoint](./release-0.9.0.
 See [earlier completed work and evidence](./release-0.9.0-plan-archive.md#codex-rt28-socket-handoff-2026-10-04)
 and [capture contracts](../docs/development-traces.md).
 
-Node standalone Vite HTTP/SSE browser traces also pass the shared schema checks;
-see the [Node development checkpoint](./release-0.9.0.md#codex-node-development-2026-10-04).
-Remaining: Node standalone WebSocket lifecycle and other runtime development acceptance. Header
+Node standalone Vite HTTP/SSE/WebSocket browser traces also pass the shared schema checks;
+see the [Node development checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04).
+Remaining: Other runtime development acceptance. Header
 evidence does not prove body completion; a WebSocket terminal does not prove later iterator cleanup. Preserve capture ownership,
 bounded optional evidence, paused-iterator deadlines, first failure codes,
 confirmed state and one cancellation request. RT-28 remains open.
@@ -959,14 +959,13 @@ entry. The state diagnostic fixture no longer supplies a private HTTP bridge.
 Node HTTP/SSE traces and native response evidence pass browser/CLI/MCP parity;
 see the [checkpoint](./release-0.9.0.md#codex-node-development-2026-10-04).
 
-Remaining: verify direct WebSocket startup before any HTTP request, proactively
-replace socket runtimes after source edits, and unify the generated script's
-binding/environment behavior with standalone Vite. The plugin currently attaches
-on the first HTTP application request and replaces runtimes on later requests.
-Embedded Vite leaves listener and lifecycle ownership with its host; the existing
-script's WebSocket acceptance remains a separate path. Complete the final
-installed runtime matrix, recheck Cloudflare development and production, then
-close this gate. Deno execution and Electron launch/packaging remain open.
+Cold WebSocket startup now loads the application without a previous HTTP request.
+Server edits proactively replace socket runtimes while retaining the browser HMR
+connection. The script and standalone Vite share their binding factory and
+runtime lifecycle. Normal and JSON CLI development commands supervise shutdown.
+The [socket checkpoint](./release-0.9.0.md#codex-node-websocket-development-2026-10-04)
+records generated and installed verification. Complete the final release matrix;
+Deno execution and Electron launch/packaging remain open.
 
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents

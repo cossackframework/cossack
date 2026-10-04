@@ -1,3 +1,4 @@
+import { verifyNodeDevelopmentApplication } from '../packages/cossack/tests/fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from '../packages/cossack/tests/fixtures/development-trace-acceptance.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -149,7 +150,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
 
     // The app and dev server use installed packages; CLI/MCP readers retain the
     // network guard while the browser drives real component and service actions.
-    for(const transport of runtime === 'node' ? ['http','sse'] : ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
+    for(const transport of ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
       transport,runtime,
       async onRecorded({snapshot,recorded}) {
         const trace=await invoke(['traces','--json','--session',snapshot.sessionId]);
@@ -166,7 +167,12 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
         assert.equal(remote.structuredContent.versions.framework,framework.version);
       },
     });
-    console.log(`Installed ${runtime} ${runtime === 'node' ? 'HTTP/SSE' : 'HTTP/SSE/WebSocket'} browser traces, offline CLI/MCP parity and production exclusion passed.`);
+    console.log(`Installed ${runtime} HTTP/SSE/WebSocket browser traces, offline CLI/MCP parity and production exclusion passed.`);
+
+    if (runtime === 'node') {
+      for (const mode of ['vite', 'script']) await verifyNodeDevelopmentApplication(projectDir, mode);
+      console.log('Installed Node cold WebSocket startup, source reload, HMR and binding parity passed.');
+    }
 
     // Real UI declarations must expose prop documentation and typed native attributes
     // through both transports, while retaining unresolved platform diagnostics.

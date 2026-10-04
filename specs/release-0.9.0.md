@@ -50,7 +50,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
-- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs. Cloudflare HTTP/SSE/WebSocket capture and Node HTTP/SSE capture include native-body evidence and CLI/MCP parity. Other runtime development acceptance remains. See the [checkpoint](#codex-node-development-2026-10-04).
+- [ ] [RT-28](./release-0.9.0-plan.md#rt-28) Devtools snapshots and timelines with correlation IDs. Cloudflare and Node HTTP/SSE/WebSocket capture include native-body evidence and CLI/MCP parity. Other runtime development acceptance remains. See the [checkpoint](#codex-node-websocket-development-2026-10-04).
 - [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite. GLM (2026-10-02): `@cossackframework/test-utils/server` — `withRequestScope` (production request-context ALS + root service scope, awaited disposal, restoration on failure) and `controlledAsync` (settle-once deferred + shared AbortSignal); own suite now runs in root `pnpm test:unit`; remaining: framework-level RPC dispatch fixtures, auth fixtures, hydration helpers, and tarball-import verification.
 
 ## New services
@@ -88,63 +88,63 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-node-development-2026-10-04"></a>
-### Codex: Node Vite development HTTP and trace acceptance (2026-10-04)
+<a id="codex-node-websocket-development-2026-10-04"></a>
+### Codex: Unified Node development sockets and bindings (2026-10-04)
 
-Author: Codex. The Node adapter now exports a separate `/vite` plugin. Generated
-Node web configurations use it to serve the public `app.fetch` entry after Vite's
-assets and transformed modules. The library imports no framework code, and its
-main runtime entry does not import Vite. The plugin uses Vite's
-[module runner](https://vite.dev/guide/api-environment-frameworks#runnabledevenvironment)
-and the Hono Node bridge for request bodies and repeated response cookies.
+Author: Codex. A dedicated `/ws/` listener now loads the application before its
+first WebSocket handshake, without requiring a prior HTTP request. Runtime upgrade
+handlers attach to a private event host, keeping Vite's HMR listener independent.
+Server-source hot updates replace the SSR graph, detach and dispose the previous
+runtime, and close its sockets. A revision check discards an entry superseded
+while its binding factory is awaiting work. Failed factories retry with a fresh
+entry rather than a disposed runtime. The implementation uses Vite's
+[per-environment hot-update hook](https://vite.dev/guide/api-environment-plugins#the-hotupdate-hook).
 
-Each request observes the current server module. Replacement detaches the old
-runtime and starts cleanup. Closing Vite bounds cleanup waits; it cannot stop
-ignored application I/O. Embedded Vite hosts retain their own lifecycle, preserving
-the generated script's existing workflow. The private state-fixture bridge is removed.
-
-The actual `cossack dev --json` check found Vite's handled SIGTERM exit code 143
-was classified as failure. The CLI now accepts that code only after its own stop
-request. Unsolicited exits and forced timeout termination still fail.
+Generated Node entries expose one typed `createEnv` factory. Development uses
+Vite environment files with process overrides; production uses process variables.
+The factory preserves arbitrary bindings, the database path default and SMTP
+email setup. Configured SMTP requires both credentials. No mail is sent by the
+acceptance tests. The generated script is now a thin Vite launcher that retains
+its optional local overlay and port default. Both normal and JSON `cossack dev`
+use the same bounded child-process supervisor.
 
 Verification:
 
-- Node adapter: **20 tests / 5 files pass**, including actual Vite HTTP requests,
-  repeated cookies, module/public assets, source replacement, entry-error recovery
-  and a nonsettling cleanup deadline. Log: `/tmp/cossack-node-dev-adapter.log`.
-- Scaffold: **113 tests / 8 files pass** (`/tmp/cossack-node-dev-scaffold.log`).
-- CLI machine contract: **45 tests pass**, using `--testTimeout 30000` for tests
-  that run multiple subprocesses. The initial default five-second run timed out
-  in four unrelated finite-command cases; its lifecycle assertions passed.
-  Final log: `/tmp/cossack-node-dev-lifecycle-final.log`.
-- Generated state development/production and existing script WebSocket/HMR checks:
-  **3 pass / 33 unrelated cases skipped** (`/tmp/cossack-node-dev-generated.log`).
-- Generated Node HTTP/SSE browser traces, native evidence, CLI/MCP parity and
-  production exclusion: **2 pass / 36 unrelated cases skipped**
-  (`/tmp/cossack-node-dev-traces.log`).
-- Actual generated `cossack dev --json`: **1 pass / 38 unrelated cases skipped**,
-  proving SSR, native POST bodies, repeated cookies, source reload and requested
-  shutdown reporting (`/tmp/cossack-node-dev-cli.log`).
+- Node adapter: **22 tests / 5 files pass**, including stale asynchronous
+  initialization and binding-factory retry regressions
+  (`/tmp/cossack-node-sockets-final-adapter.log`). The tooling bundle keeps all Node
+  built-ins external; the actual generated app caught the initial EventEmitter
+  browser-stub packaging mistake before correction.
+- Generated Node cold socket startup, HMR, repeated reload and binding precedence
+  through both launchers, plus all three Node trace transports and production
+  exclusion: **5 pass / 36 unrelated cases skipped**
+  (`/tmp/cossack-node-sockets-traces.log`). SMTP coverage constructs a sender and
+  checks its interface; it does not establish delivery or contact an SMTP host.
+- Generated normal/JSON CLI HTTP and shutdown checks, state development/production
+  examples and Cloudflare HTTP/SSE/WebSocket traces: **7 pass / 35 unrelated cases
+  skipped** (`/tmp/cossack-node-sockets-runtime.log`).
+- CLI lifecycle contract: **9 pass / 38 unrelated cases skipped**, using
+  `--testTimeout 30000` (`/tmp/cossack-node-sockets-cli.log`). Requested SIGINT and
+  SIGTERM code forms are accepted; unsolicited exits and forced timeouts fail.
+- Scaffold: **113 tests / 8 files pass** (`/tmp/cossack-node-sockets-scaffold.log`).
 - Root `pnpm tsc --noEmit` and all 11 package type checks pass
-  (`/tmp/cossack-node-dev-types.log`).
-- Cloudflare HTTP/SSE/WebSocket trace regression after the shared fixture change:
-  **3 pass / 36 unrelated cases skipped**, including production exclusion
-  (`/tmp/cossack-node-dev-cloudflare.log`).
+  (`/tmp/cossack-node-sockets-final-types.log`).
 
-The reproducible installed Node gate is
-`node scripts/test-local-scaffold.mjs --node-dev-only`. It builds and packs the
-local packages, installs an isolated Node application, and runs installed
-documentation plus HTTP/SSE trace browser/CLI/MCP acceptance. **The gate passes**,
-including six packaged examples, public reporter types, offline evidence readers,
-UI contracts and production exclusion. Installed versions include Vite 8.3.2,
-Hono Node server 2.1.3, Hono 4.13.12, TypeScript 7.0.2 and Vitest 4.1.11.
-Log: `/tmp/cossack-node-dev-installed.log`. The temporary installation was removed.
+Installed acceptance uses `node scripts/test-local-scaffold.mjs --node-dev-only`
+and now includes both Vite and script launch paths plus Node WebSocket traces.
+The first installed run found that Vite externalized the packaged Node adapter
+and core, disabling server socket trace guards. The plugin now keeps those two
+packages in its development SSR graph; the production build stays unchanged.
+**The corrected gate passes**: all three Node trace transports, exact offline
+CLI/MCP parity, native evidence, production exclusion, cold sockets and reloads
+through both launchers, six packaged examples, reporter types and UI contracts.
+Installed versions include Vite 8.3.2, Hono Node server 2.1.3, Hono 4.13.12,
+TypeScript 7.0.2 and Vitest 4.1.11. Log:
+`/tmp/cossack-node-sockets-installed-final.log`. Temporary installs were removed.
 
-Remaining: direct WebSocket startup before an HTTP request, proactive socket
-runtime replacement on source edits, and binding/environment parity with the
-script. Standalone attachment currently starts with the first application HTTP
-request. Deno and Desktop acceptance and the final release matrix remain open.
-No task closes: **26 complete, 32 open**. Versions remain 0.8.3.
+The shutdown deadline bounds waiting, not arbitrary application I/O. Server edits
+reset process-local socket instances. Other runtime development acceptance and the
+final release matrix remain open. **26 complete, 32 open**; versions stay 0.8.3.
 
 ### Archived checkpoints
 
@@ -155,6 +155,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-node-development-2026-10-04"></a>[Codex Node Vite development HTTP and trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-development-2026-10-04) |
 | <a id="codex-native-trace-evidence-2026-10-04"></a>[Codex native body server trace evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-native-trace-evidence-2026-10-04) |
 | <a id="codex-native-cancel-settlement-2026-10-04"></a>[Codex native response failure settlement (2026-10-04)](./release-0.9.0-verification-archive.md#codex-native-cancel-settlement-2026-10-04) |
 | <a id="codex-socket-trace-evidence-2026-10-04"></a>[Codex WebSocket server trace evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04) |

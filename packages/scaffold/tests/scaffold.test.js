@@ -608,14 +608,12 @@ describe('composition', () => {
       path.join(project.projectDir, 'src/index.ts'),
       'utf8',
     );
-    expect(devEntry).toContain('...process.env');
-    expect(devEntry.indexOf('...process.env')).toBeLessThan(
-      devEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
-    );
-    expect(devEntry.indexOf('...process.env')).toBeLessThan(
-      devEntry.indexOf('env.EMAIL = createNodeEmailSender'),
-    );
-    expect(productionEntry).toContain('...process.env');
+    expect(devEntry).toContain('createServer');
+    expect(devEntry).not.toContain('ssrLoadModule');
+    expect(devEntry).not.toContain('buildEnv');
+    expect(productionEntry).toContain('export async function createEnv');
+    expect(productionEntry).toContain('...variables');
+    expect(productionEntry).toContain('bindings.EMAIL = createNodeEmailSender');
     expect(productionEntry).toContain("import { createNodeAdapter, serveStatic } from '@cossackframework/node-adapter'");
     expect(productionEntry).toContain("new URL('../client', import.meta.url)");
     expect(productionEntry).toContain("urlPath.startsWith('/assets/')");
@@ -623,8 +621,8 @@ describe('composition', () => {
     expect(productionEntry).toContain("'public, max-age=31536000, immutable'");
     expect(productionEntry.indexOf("app.use('*', serveStatic"))
       .toBeLessThan(productionEntry.indexOf("app.all('*', c => frameworkApp.fetch(c.req.raw, c.env))"));
-    expect(productionEntry.indexOf('...process.env')).toBeLessThan(
-      productionEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
+    expect(productionEntry.indexOf('...variables')).toBeLessThan(
+      productionEntry.indexOf("DB_PATH: variables.DB_PATH ?? './database.sqlite'"),
     );
     expect(await detectProjectRuntime(project.projectDir)).toBe('node');
     const environment = await fs.readFile(path.join(project.projectDir, '.env'), 'utf8');
@@ -650,19 +648,13 @@ describe('composition', () => {
     expect(manifest.files).not.toHaveProperty('src/config/oauth.ts');
   });
 
-  it('keeps arbitrary Node bindings and explicit overrides in the raw dev template', async () => {
-    const rawDevEntry = await fs.readFile(
-      new URL('../template/scripts/dev.js', import.meta.url),
-      'utf8',
-    );
-
-    expect(rawDevEntry).toContain('...process.env');
-    expect(rawDevEntry.indexOf('...process.env')).toBeLessThan(
-      rawDevEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
-    );
-    expect(rawDevEntry.indexOf('...process.env')).toBeLessThan(
-      rawDevEntry.indexOf('env.EMAIL = createNodeEmailSender'),
-    );
+  it('uses one Node Vite development lifecycle while preserving the local overlay', async () => {
+    const rawDevEntry = await fs.readFile(new URL('../template/scripts/dev.js', import.meta.url), 'utf8');
+    expect(rawDevEntry).toContain('mergeConfig(overlay');
+    expect(rawDevEntry).toContain('COSSACK_LOCAL');
+    expect(rawDevEntry).toContain('server.close()');
+    expect(rawDevEntry).not.toContain('ssrLoadModule');
+    expect(rawDevEntry).not.toContain('createNodeEmailSender');
   });
 
   it('keeps Node minimal free of database dependencies while still providing env defaults', async () => {

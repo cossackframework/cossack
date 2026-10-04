@@ -1,3 +1,4 @@
+import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
 import { createDataTableBackend, writeDataTableAcceptance, checkDataTableBrowser } from './fixtures/data-table-acceptance.js';
 import { afterEach, expect, it } from 'vitest';
@@ -935,69 +936,8 @@ it('builds the generated Node application Desktop side target with its HTTP boun
     .rejects.toThrow(/page transport requires transports on desktop/);
 }, 120000);
 
-it('runs generated Node development WebSockets, preserves HMR, and replaces runtime state on source reload', async () => {
-  const root = await project('node');
-  const page = path.join(root, 'src/pages/live/index.ts');
-  await fs.mkdir(path.dirname(page), { recursive: true });
-  const source = count => `import { Cossack, Page, State } from '@cossackframework/core'; @Page({ transport: 'durable-object', stateful: false }) export default class Live extends Cossack { @State() count = ${count}; }`;
-  await fs.writeFile(page, source(7));
-  const child = spawn(process.execPath, ['scripts/dev.js'], {
-    cwd: root, env: { ...process.env, PORT: '0', VITEST: '', COSSACK_LOCAL: '', APP_URL: '' }, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let output = '';
-  child.stdout.on('data', data => { output += data; });
-  child.stderr.on('data', data => { output += data; });
-  const exited = once(child, 'exit');
-  const sockets = [];
-  try {
-    await expect.poll(() => {
-      if (child.exitCode !== null) throw new Error(output);
-      return /dev server → http:\/\/localhost:(\d+)/.exec(output)?.[1];
-    }, { timeout: 30000 }).toBeTruthy();
-    const port = /dev server → http:\/\/localhost:(\d+)/.exec(output)[1];
-    const origin = `http://localhost:${port}`;
-    const client = await (await fetch(origin + '/@vite/client')).text();
-    const token = /const wsToken = "([^"]+)"/.exec(client)?.[1];
-    expect(token, client.slice(0, 500)).toBeTruthy();
-    const hmr = new WebSocket(origin.replace('http:', 'ws:') + '/?token=' + token, 'vite-hmr');
-    sockets.push(hmr);
-    const [hmrMessage] = await once(hmr, 'message');
-    expect(JSON.parse(String(hmrMessage)).type).toBe('connected');
-    const connect = async () => {
-      const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
-      const socket = new WebSocket(origin.replace('http:', 'ws:') + '/ws/page/user:anonymous?' + query, { headers: { origin } });
-      sockets.push(socket);
-      const state = await Promise.race([
-        once(socket, 'message').then(([data]) => JSON.parse(String(data))),
-        once(socket, 'close').then(([code]) => { throw new Error('Closed before snapshot: ' + code + '\n' + output); }),
-      ]);
-      return { socket, state };
-    };
-    const first = await connect();
-    expect(first.state.state.count).toBe(7);
-    const closed = once(first.socket, 'close');
-    await fs.writeFile(page, source(9));
-    await closed;
-    await expect.poll(async () => {
-      try { return (await connect()).state.state.count; }
-      catch { return undefined; }
-    }, { timeout: 15000 }).toBe(9);
-    await fs.writeFile(page, source(10));
-    await fs.writeFile(page, source(11));
-    await expect.poll(async () => {
-      try { return (await connect()).state.state.count; }
-      catch { return undefined; }
-    }, { timeout: 15000 }).toBe(11);
-    expect(hmr.readyState).toBe(WebSocket.OPEN);
-    expect((await fetch(origin + '/')).status).toBe(200);
-  } finally {
-    for (const socket of sockets) socket.terminate();
-    child.kill('SIGTERM');
-    const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
-    const [code, signal] = await exited;
-    clearTimeout(kill);
-    expect({ code, signal }, output).toEqual({ code: 0, signal: null });
-  }
+it.each(['script', 'vite'])('runs generated Node development WebSockets through %s, preserves HMR, and replaces runtime state on source reload', async mode => {
+  await verifyNodeDevelopmentApplication(await project('node'), mode);
 }, 60000);
 
 it('runs generated mutation contracts and hydrated resource/mutation UI with failure recovery', async () => {
@@ -1677,7 +1617,7 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-it.each([['cloudflare','http'],['cloudflare','sse'],['cloudflare','durable-object'],['node','http'],['node','sse']])('shares a generated %s development browser RPC trace over %s with the CLI and MCP', async (runtime, transport) => {
+it.each([['cloudflare','http'],['cloudflare','sse'],['cloudflare','durable-object'],['node','http'],['node','sse'],['node','durable-object']])('shares a generated %s development browser RPC trace over %s with the CLI and MCP', async (runtime, transport) => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project(runtime);
@@ -1700,7 +1640,7 @@ it.each([['cloudflare','http'],['cloudflare','sse'],['cloudflare','durable-objec
   });
 },180000);
 
-it('serves generated Node pages, native requests, cookies and source reload through cossack dev', async () => {
+it.each([true, false])('serves generated Node pages, native requests, cookies and source reload through cossack dev (json: %s)', async json => {
   const { createServer } = await import('node:net');
   const reservation = createServer();
   await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
@@ -1718,7 +1658,7 @@ it('serves generated Node pages, native requests, cookies and source reload thro
     } });
   `;
   await fs.writeFile(endpoint, source('first'));
-  const child = spawn(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'dev', '--json', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
+  const child = spawn(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'dev', ...(json ? ['--json'] : []), '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     cwd: root, env: { ...process.env, PATH: path.join(repository, 'node_modules/.bin') + path.delimiter + process.env.PATH, NODE_ENV: 'development', VITEST: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1740,7 +1680,10 @@ it('serves generated Node pages, native requests, cookies and source reload thro
     const kill = setTimeout(() => child.kill('SIGKILL'), 10000);
     const [code, signal] = await exited; clearTimeout(kill);
     expect({code,signal},output).toEqual({code:0,signal:null});
-    const events = output.trim().split('\n').map(line => JSON.parse(line));
-    expect(events.at(-1)).toMatchObject({ok:true,data:{event:'stopped',reason:'requested'}});
+    if (json) {
+      const events = output.trim().split('\n').map(line => JSON.parse(line));
+      expect(events.at(-1)).toMatchObject({ok:true,data:{event:'stopped',reason:'requested'}});
+    } else expect(output).not.toContain('"schemaVersion":1,"command":"dev"');
+    await expect.poll(() => fetch(origin).then(() => true, () => false)).toBe(false);
   }
 }, 60000);

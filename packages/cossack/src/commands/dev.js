@@ -1,5 +1,4 @@
 import { commandSpecs } from '../command-specs.js';
-import { run } from '../spawn.js';
 import { runLifecycle } from '../lifecycle-process.js';
 import { runWithSpec } from '../command-spec.js';
 
@@ -7,11 +6,10 @@ const spec = commandSpecs.dev;
 
 export async function devCommand(args, ctx) {
   return runWithSpec(spec, args, ctx, async () => {
-    if (ctx.flags.json) return runLifecycle('dev', 'vite', ['dev', ...args], {
-      cwd: ctx.cwd, metadata: { tool: 'vite' },
+    if (!ctx.flags.json) console.log('  start   vite dev');
+    return runLifecycle('dev', 'vite', ['dev', ...args], {
+      cwd: ctx.cwd, metadata: { tool: 'vite' }, json: !!ctx.flags.json,
     });
-    console.log('  start   vite dev');
-    return run('vite', ['dev', ...args]);
   });
 }
 

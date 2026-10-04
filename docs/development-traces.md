@@ -23,9 +23,8 @@ if (import.meta.env.DEV) {
 
 Generated Node applications include the
 [Node Vite plugin](../packages/node-adapter/README.md#vite-development-http-server),
-which serves HTTP/SSE calls through `cossack dev`. These transports share the
-Cloudflare trace schema and CLI/MCP readers. Standalone Node WebSocket startup
-and reload acceptance is still pending.
+which serves HTTP/SSE calls and WebSocket upgrades through `cossack dev`.
+These transports use the shared trace schema and CLI/MCP readers.
 
 Keep the session alive while the interaction runs, then read its snapshot.
 Snapshot reads never execute or replay calls. Collection is disabled outside
