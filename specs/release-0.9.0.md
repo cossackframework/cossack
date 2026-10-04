@@ -88,59 +88,9 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-socket-trace-evidence-2026-10-04"></a>
-### Codex: WebSocket server trace evidence (2026-10-04)
-
-Author: Codex. RT-28 now correlates WebSocket server dispatch with browser RPC
-observations and shared CLI/MCP records. Each opted-in action owns its recorder
-while queued or executing. The first yield and terminal can carry fixed-field
-`server-socket` evidence with call/request/dispatch IDs, server stage timestamps,
-result kind and frame type. Rejected methods/input have no invocation marker;
-invoked failures have no return marker. Records contain no application payloads,
-names or raw errors. Production removes the marker, encoder and collector.
-
-The client accepts at most two records per call, rejects mismatched dispatch/frame
-identities and keeps the original capture owner. Optional metadata cannot turn a
-valid frame into an oversized failure or evaluate application serialization twice.
-Cancellation never invents a server terminal. Socket terminal delivery does not
-prove iterator cleanup: the existing dispatcher cleans up after sending it.
-Browser collection time may follow a paused queue and uses a separate clock from
-the server markers. See [semantics](../docs/development-traces.md#websocket-dispatch-evidence).
-
-The shared runtime dispatcher supplies the evidence for process and Durable Object
-adapters. The browser acceptance fixture now covers HTTP and real Cloudflare
-WebSocket actions, plus an explicit layout-service HTTP call, from both workspace
-links and installed tarballs. Both variants compare browser/stored/CLI/MCP records,
-check generated types and production client/Worker exclusion, then close the server.
-The tarball reader checks retain Node networking guards. Source and configuration
-changes in the acceptance app are restored after each variant.
-
-Verification:
-
-- `pnpm --filter @cossackframework/core exec vitest run`: **1,509 tests / 92 files pass**.
-  Includes dispatch/denial/failure/queue/cancellation correlation, malformed evidence,
-  frame limits, one-time serialization and four production bundle entrypoints.
-  Log: `/tmp/cossack-socket-trace-core-full.log`.
-- `pnpm --filter @cossackframework/framework exec vitest run tests/development-traces.test.ts tests/development-trace-bridge.test.ts tests/navigation-trace-build.test.ts`:
-  **18 tests / 3 files pass**. Log: `/tmp/cossack-socket-trace-framework.log`.
-- `pnpm --filter cossack exec vitest run tests/mcp.test.js`: **18 tests pass**.
-  Log: `/tmp/cossack-socket-trace-mcp.log`.
-- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'shares a generated development browser RPC trace'`:
-  **2 pass, 33 unrelated tests skipped**. Log: `/tmp/cossack-socket-trace-generated.log`.
-- `COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --agent-docs-only`:
-  sequential package builds, 12 tarballs and complete installed documentation,
-  reporter, HTTP/WebSocket trace and production exclusion acceptance pass.
-  Log: `/tmp/cossack-socket-trace-installed.log`. Installed Vite **8.3.2**,
-  Cloudflare Vite plugin **1.62.5**, Wrangler **4.147.0**, TypeScript **7.0.2**,
-  Vitest **4.1.11**. The temporary installation was removed after verification.
-- Root `pnpm tsc --noEmit` and `pnpm typecheck` pass for all **11 packages**.
-  Log: `/tmp/cossack-socket-trace-types.log`.
-
-Limits: native-body terminal evidence and other runtime development acceptance
-remain open under RT-28. Socket evidence does not cover post-send cleanup or prove
-that ignored application I/O stopped. Local editable records are not authenticated
-server logs or remote readiness checks. No task closes: **26 complete, 32 open**.
-Versions remain 0.8.3; no deployment or publication occurred.
+Latest verified work: HTTP/WebSocket development traces pass generated and installed
+browser/CLI/MCP parity and production exclusion. RT-28 remains open for native-body
+terminal evidence and other runtime acceptance. See the [full checkpoint](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04).
 
 ### Archived checkpoints
 
@@ -151,6 +101,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-socket-trace-evidence-2026-10-04"></a>[Codex WebSocket server trace evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04) |
 | <a id="codex-cli07-complete-2026-10-04"></a>[Codex installed trace acceptance and CLI-07 completion (2026-10-04)](./release-0.9.0-verification-archive.md#codex-cli07-complete-2026-10-04) |
 | <a id="codex-generated-trace-acceptance-2026-10-04"></a>[Codex generated development-trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-generated-trace-acceptance-2026-10-04) |
 | <a id="codex-stream-terminal-evidence-2026-10-04"></a>[Codex delivered RPC stream terminal evidence (2026-10-04)](./release-0.9.0-verification-archive.md#codex-stream-terminal-evidence-2026-10-04) |

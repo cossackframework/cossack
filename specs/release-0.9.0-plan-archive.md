@@ -5091,3 +5091,27 @@ location after checking CLI dependencies and published entry requirements.
 Done when: Tool and CLI answers match for one fixture. Invalid paths and unknown
 operations fail predictably. Results redact secrets and identify the installed
 version. Startup, shutdown, and interrupted tool calls release resources.
+
+<a id="codex-rt28-socket-handoff-2026-10-04"></a>
+## Codex RT-28 completed trace work and handoff (2026-10-04)
+
+Codex status (2026-10-04): Bounded RPC/service/navigation capture, passive
+component inspection, browser controls and shared Vite/CLI/MCP records are
+implemented. HTTP dispatch, delivered generator terminals and WebSocket dispatch
+have correlated server evidence. Generated and installed Cloudflare HTTP/WebSocket
+parity and production exclusion pass; see the [latest checkpoint](./release-0.9.0.md#codex-socket-trace-evidence-2026-10-04).
+See [completed implementation notes](./release-0.9.0-plan-archive.md#codex-rt28-completed-portions-2026-10-04)
+and [capture semantics and limits](../docs/development-traces.md).
+
+Remaining: Native-body terminal evidence, plus other
+runtime use of the shared CLI/MCP schema. Generated and installed-tarball
+Cloudflare actions pass browser, persisted-record, CLI and MCP checks, with
+client/Worker production trace and source-marker exclusion. See the
+[installed acceptance and CLI-07 audit](./release-0.9.0.md#codex-cli07-complete-2026-10-04).
+Server execution is not proven by client capture. Paused-iterator deadlines now
+settle HTTP/SSE, service and WebSocket calls without another consumer pull;
+WebSocket failures also release pending ownership. Preserve those regressions
+alongside first-interruption codes, confirmed state and one cancellation request.
+WebSocket terminal evidence proves frame delivery, not later iterator cleanup.
+The first yield and terminal share a dispatch ID; optional evidence stays bounded
+and follows capture ownership. RT-28 remains open; CLI-07 is complete.

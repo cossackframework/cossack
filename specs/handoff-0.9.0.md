@@ -11,27 +11,24 @@ All unchecked tasks remain in scope.
 
 ## Completed work — reference only
 
-All 26 closed tasks are in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
-with original criteria and evidence archived. Do not repeat their implementation.
-
-CLI-07 is complete; see the [installed trace and native lifecycle audit](./release-0.9.0.md#codex-cli07-complete-2026-10-04).
-RT-28's completed portions remain in its [active plan](./release-0.9.0-plan.md#rt-28)
-and [trace contracts](../docs/development-traces.md). Preserve the shared public
-inspector import: a filesystem import created a second capture owner in installed apps.
+The [completed task index](./release-0.9.0-plan.md#completed-task-index) links all
+26 closed tasks to their archived criteria. CLI-07 is complete. RT-28's HTTP and
+WebSocket trace portions pass generated and installed browser/CLI/MCP parity and
+production exclusion; see the [verification record](./release-0.9.0-verification-archive.md#codex-socket-trace-evidence-2026-10-04).
+Preserve these regressions; their implementation does not need repeating.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-28** native-body terminal evidence and other runtime development
-   acceptance. [WebSocket server evidence](./release-0.9.0.md#codex-socket-trace-evidence-2026-10-04)
-   now passes generated and installed Cloudflare browser/CLI/MCP parity and
-   production exclusion. A socket terminal does not prove post-send iterator cleanup. Preserve ordered
-   application errors after WebSocket yields; only local transport failures discard
-   queued frames. Header evidence alone does not prove body completion. Stored
-   receipt age does not prove live state; source markers identify the latest instance per file.
-2. Continue **CLI-08** authored API/recipe guidance, executable examples and verified
-   runtime support through the [shared documentation services](../docs/local-agent-tools.md).
-   Follow all 32 open tasks in the detailed plan and retain completed-task regressions.
-   Close each task only against its original acceptance criteria.
+1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** native-body server terminal evidence
+   and other runtime development acceptance. Preserve the public inspector import
+   (filesystem imports duplicate capture owners), ordered WebSocket application
+   errors, and capture ownership. Headers do not prove body completion; socket
+   terminals do not prove later cleanup. Stored records are not live state.
+2. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
+   guidance, executable examples and verified runtime support through the
+   [shared documentation services](../docs/local-agent-tools.md).
+3. Follow the detailed plan for all 32 open tasks. Close each only against its
+   original acceptance criteria; completed portions do not close their parent task.
 
 ## Limits to retain
 
