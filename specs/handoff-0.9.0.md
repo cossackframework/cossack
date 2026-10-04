@@ -11,30 +11,27 @@ All unchecked tasks remain in scope.
 
 ## Completed work — reference only
 
-All **26 completed tasks** are listed in the [completed task index](./release-0.9.0-plan.md#completed-task-index),
-with links to their original criteria. Preserve their regressions; do not repeat implementation.
-Completed Node development and HTTP/SSE/WebSocket trace acceptance are recorded in the
-[verification archive](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04).
-Partial acceptance does not close RT-28 or REL-03.
+All **26 completed tasks** retain their criteria in the
+[completed task index](./release-0.9.0-plan.md#completed-task-index). Preserve their regressions.
+
+| Verified work | Evidence |
+| --- | --- |
+| Node development and HTTP/SSE/WebSocket trace acceptance | [Node checkpoint](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04) |
+| Native Deno production and normal/JSON CLI startup | [Production](./release-0.9.0-verification-archive.md#codex-deno-production-2026-10-04), [CLI startup](./release-0.9.0-verification-archive.md#codex-deno-cli-start-2026-10-04) |
+| Native Deno/Vite development, reload, recovery and parent-crash cleanup | [Development checkpoint](./release-0.9.0-verification-archive.md#codex-deno-development-2026-10-04); commit `b28c122`; full `pnpm test:deno` gate passed with Deno 2.9.6 |
+
+These runtime checkpoints do not close RT-28 or REL-03.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)** other runtime development
-   acceptance, coordinating Deno development and Desktop verification with REL-03.
-   Basic Deno production execution now passes; see the
-   [checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
-   Deno CLI startup now uses the actual runtime with normal/JSON lifecycle
-   supervision; see the [CLI checkpoint](./release-0.9.0.md#codex-deno-cli-start-2026-10-04).
-   Native Deno/Vite development, reload and recovery now pass; see the
-   [development checkpoint](./release-0.9.0.md#codex-deno-development-2026-10-04).
-   Next verify public CLI development trace parity and HTTPS, then Desktop.
-   Preserve the public inspector import
-   (filesystem imports duplicate capture owners), ordered WebSocket application
-   errors, and capture ownership. Keep the Node adapter and core inside the
-   development SSR graph so installed socket evidence stays enabled. Headers do not prove body completion; socket
-   terminals do not prove later cleanup. Native evidence uses a separate channel
-   with a one-second background receipt bound; it does not delay response completion
-   or prove client consumption. Stored records are not live state.
+1. Finish **[RT-28](./release-0.9.0-plan.md#rt-28)**: verify Deno public CLI
+   development trace parity and HTTPS, then Desktop, coordinating with REL-03.
+   Preserve the public inspector import and capture ownership; filesystem imports
+   duplicate capture owners. Keep Node adapter/core in the development SSR graph
+   and preserve ordered WebSocket errors. Headers do not prove body completion;
+   socket terminals do not prove later cleanup. Native evidence uses a separate
+   channel with a one-second background receipt bound. It does not delay response
+   completion or prove client consumption. Stored records are not live state.
 2. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
    guidance, executable examples and verified runtime support through the
    [shared documentation services](../docs/local-agent-tools.md).
@@ -53,7 +50,7 @@ Partial acceptance does not close RT-28 or REL-03.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
-- REL-03 still needs Deno development integration, Electron launch/packaging and the full runtime/release matrix.
+- REL-03 still needs Deno development trace/HTTPS acceptance, Electron launch/packaging and the full runtime/release matrix.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

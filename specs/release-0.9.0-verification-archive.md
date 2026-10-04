@@ -6,6 +6,51 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-deno-development-2026-10-04"></a>
+### Codex: Native Deno development through Vite (2026-10-04)
+
+The Deno adapter now has a separate Node-only `/vite` entry. Generated web
+configurations use `cossackDeno()`; Desktop configurations exclude it. Vite
+transforms modules and serves browser assets while its module runner evaluates
+server code in a Deno child. The generated source entry exports `app`, `env`
+and `runtime`; production fetch/serve behavior is retained.
+
+Module requests and application traffic use authenticated loopback connections.
+The child removes private bridge headers/configuration before calling the app.
+Forwarding preserves the native request needed by Deno's WebSocket upgrade;
+cloning it accepted a client handshake but lost server callbacks in the initial
+prototype. Source reload replaces the child, preserving Vite's browser HMR
+connection. Late proxy resets are handled without crashing Vite. Parent and
+child both bound shutdown; an ownership pipe triggers child cleanup after a
+parent crash, with a child-owned deadline for stuck application work.
+
+Verification:
+
+- Generated native runtime/browser acceptance: cold WebSockets, HTTP/SSE/socket
+  actions, repeated cookies, public URL, environment-file/process precedence,
+  private-header/config exclusion, server edits, process replacement, startup
+  failure/repair, normal shutdown and parent crash with ignored cleanup.
+  Both recovery cases pass (`/tmp/cossack-deno-dev-recovery.log`).
+- Deno adapter: **21 tests / 3 files**; scaffold: **113 / 8**
+  (`/tmp/cossack-deno-dev-unit.log`). Root `pnpm tsc --noEmit` and all **11 package
+  type checks** pass (`/tmp/cossack-deno-dev-root-types.log`,
+  `/tmp/cossack-deno-dev-package-types.log`).
+- The expanded `pnpm test:deno` gate includes installed development/recovery,
+  production and CLI startup, typed native smoke tests, and workspace cases.
+  **The full gate passes** with Deno 2.9.6: installed Vite 8.3.2, production and
+  normal/JSON startup, both development recovery cases, **2 typed native smoke
+  tests**, then **3 workspace cases / 42 unrelated cases skipped** with Vite 8.1.4.
+  Log: `/tmp/cossack-deno-dev-gate.log`.
+
+The implementation follows Vite's [runtime module-runner API](https://vite.dev/guide/api-environment-runtimes).
+This is trusted local development, not a sandbox. Middleware mode is explicitly
+rejected. Reload resets process-local state; bounded termination does not undo
+external effects or prove application cleanup. On Linux containers, the crash
+check accepts a terminated zombie retained by PID 1 as no longer executing.
+Public CLI development trace parity, HTTPS acceptance, Electron launch/packaging
+and the full release matrix remain open. **26 complete, 32 open**; versions stay
+at 0.8.3. No deployment or publication occurred.
+
 <a id="codex-deno-cli-start-2026-10-04"></a>
 ### Codex: Deno CLI production startup (2026-10-04)
 
