@@ -325,12 +325,12 @@ Pass `{ novalidate: false }` if you want native validation restored:
 Flash data carries values across exactly one redirect (POST → GET), then is
 consumed : the classic Laravel `back()->with('success', 'Saved!')` pattern.
 Use it for success messages, validation errors, or repopulating form fields
-after a failed submission.
+after a failed submission. The signed cookie is readable; never put secrets
+into flash data.
 
-When you pass `rules` to `getFormData()`, the submitted input and any
-validation errors are **auto-flashed** : so the common form flow needs no
-manual `flashInput()` / `flash('errors')`. Use `flash()` directly only for
-your own messages (e.g. a success banner).
+When you pass `rules` to `getFormData()`, nonempty validation errors are
+auto-flashed. Select public old-input fields with `flash.input`. Submitted
+values are not retained by default. Use `flash()` for your own public messages.
 
 ```typescript
 import { flash, flashed, old } from '@cossackframework/core';
@@ -338,8 +338,10 @@ import { flash, flashed, old } from '@cossackframework/core';
 @Page({ transport: 'http' })
 export default class FormPage extends Cossack {
   async post() {
-    // getFormData() auto-flashes input (for old()) and errors (when invalid).
-    const { data, valid } = await this.c.getFormData<MyForm>({ rules });
+    // Only public fields enter old input. Errors are flashed when invalid.
+    const { data, valid } = await this.c.getFormData<MyForm>({
+      rules, flash: { input: ['name'] },
+    });
     if (!valid) {
       return this.back('/form');     // errors + old input already flashed
     }
@@ -369,7 +371,7 @@ option on `getFormData()`, and the persistent DB-backed `session()`.
 |---|---|
 | `flash(key, value)` / `flash({...})` | Write a flash value (or several) for the next request. |
 | `flashed(key)` / `flashedAll()` / `hasFlashed(key)` | Read previously-flashed values during this request. |
-| `flashInput(formData)` | Store submitted form input for repopulation. The namespace prevents conflicts with message-style flash keys of the same name. |
+| `flashInput(formData, { fields: ['name'] })` | Copy selected public leaves for repopulation. The namespace keeps input separate from messages. |
 | `old(key)` | Read a stashed input field for repopulating the form. |
 | `this.back(fallback)` | Redirect to the request's `Referer` (falls back to `fallback`). |
 

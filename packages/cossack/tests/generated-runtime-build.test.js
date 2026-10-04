@@ -1,6 +1,7 @@
 import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { writeAuthPrimitivesAcceptance, checkAuthPrimitives } from './fixtures/auth-primitives-acceptance.js';
 import { writeSessionDashboardAcceptance, checkSessionDashboard } from './fixtures/session-dashboard-acceptance.js';
+import { writeOldInputAcceptance, checkOldInputAcceptance } from './fixtures/old-input-acceptance.js';
 import { createOAuthFixtureProvider, writeOAuthReplayAcceptance, checkOAuthReplay } from './fixtures/oauth-replay-acceptance.js';
 import { verifyNodeDevelopmentApplication } from './fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
@@ -573,6 +574,37 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
     await uploadPage.close();
   } finally { await browser?.close(); await server.close(); }
 }, 120000);
+it.each(['node', 'cloudflare'])('excludes private old input through native form and RPC redirects on %s', async adapter => {
+  const root = await project(adapter);
+  await writeOldInputAcceptance(root, repository);
+  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`Generated old-input types: ${error.stdout}\n${error.stderr}`); }
+  await vite(root, []);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const routeId = manifest.filePathToId['/src/pages/old-input-rpc/index.ts'];
+  expect(routeId).toBeTruthy();
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    expect(await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8')).not.toContain('PRIVATE_OLD_INPUT_FAILED_ACTION');
+  }
+  const environment = { APP_SECRET: 'old-input-native-application-secret' };
+  let close, request, diagnostics;
+  if (adapter === 'node') {
+    const server = await productionServer(root, environment);
+    close = server.close; diagnostics = server.diagnostics;
+    request = (url, options = {}) => fetch(server.origin + url, { redirect: 'manual', ...options });
+  } else {
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json'), secrets: environment }] });
+    close = () => harness.close();
+    diagnostics = () => JSON.stringify(harness.getLogs());
+    try { await harness.listen(); } catch (error) { await close(); throw error; }
+    request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
+  }
+  try { await checkOldInputAcceptance(request, routeId); }
+  catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics?.() ?? ''}`); }
+  finally { await close(); }
+}, 120000);
+
 it('preserves native RPC cookies and consumes flash after a real browser redirect', async () => {
   const root = await project('node');
   const write = async (relative, source) => {
@@ -583,7 +615,7 @@ it('preserves native RPC cookies and consumes flash after a real browser redirec
     import { cookie, flash, flashInput, Server, Service, CossackService, input } from '@cossackframework/core';
     export function cookieResult() {
       cookie().set('context_cookie', 'from_action', { httpOnly: true, path: '/' });
-      flash('success', 'Saved'); flashInput({ title: 'Draft' });
+      flash('success', 'Saved'); flashInput({ title: 'Draft' }, { fields: ['title'] });
       const headers = new Headers({ Location: '/cookie-rpc/target' });
       headers.append('Set-Cookie', 'native_one=1; HttpOnly; Path=/');
       headers.append('Set-Cookie', 'native_two=2; HttpOnly; Path=/');

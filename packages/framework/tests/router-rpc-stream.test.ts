@@ -182,7 +182,7 @@ describe.each(['json', 'multipart'] as const)('%s router RPC streaming lifecycle
             const custom = async () => {
                 cookie().set('context_cookie', 'kept', { path: '/', httpOnly: true });
                 flash('success', 'Saved');
-                flashInput({ title: 'Draft' });
+                flashInput({ title: 'Draft' }, { fields: ['title'] });
                 const headers = new Headers({ 'Content-Type': 'text/plain', 'X-Custom': 'kept' });
                 headers.append('Set-Cookie', 'native_one=1; Expires=Wed, 01 Jan 2031 00:00:00 GMT; Path=/');
                 headers.append('Set-Cookie', 'native_two=2; Path=/');
@@ -219,7 +219,7 @@ describe.each(['json', 'multipart'] as const)('%s router RPC streaming lifecycle
     });
     it.each(['component', 'service'])('rejects late %s cookie/header/flash writes in correlated stream errors', async target => {
         for (const write of [() => cookie().set('late', 'value'), () => cookie().delete('old'),
-            () => getRequestContext()!.header('X-Late', 'value'), () => flash('late', 'value'), () => flashInput({ title: 'late' })]) {
+            () => getRequestContext()!.header('X-Late', 'value'), () => flash('late', 'value'), () => flashInput({ title: 'late' }, { fields: ['title'] })]) {
             const stream = async function* () { yield 'first'; write(); return 'unreachable'; };
             const spy = target === 'component' ? vi.spyOn(StreamPage.prototype, 'stream') : vi.spyOn(Counter.prototype, 'serviceStream');
             spy.mockImplementation(stream as any);

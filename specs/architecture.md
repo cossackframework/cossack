@@ -829,6 +829,19 @@ Background transport requests preserve valid incoming flash; HTTP error statuses
 discard partial outgoing flash. Stream failures after headers finalize cannot
 roll back cookies or completed mutations.
 
+Core owns public old-input selection before the flash middleware serializes its
+cookie. `flashInput(data, { fields })` copies only selected own scalar leaves or
+scalar arrays, rebuilding nested containers and preserving selected array
+positions. It omits object branches, files, accessors and unsupported values;
+common credential/prototype paths are always excluded. Custom credentials remain
+the application's responsibility to leave outside its server-authored field
+list. `getFormData` defaults to nonempty validation errors only; submitted input
+requires an explicit `flash.input` list. Selection leaves parsed data unchanged.
+Generic `flash()` cannot write the reserved old-input namespace.
+Old-input reads also reject credential/prototype paths and inherited properties.
+Signing authenticates cookie bytes; it does not encrypt data or provide durable
+single-use consumption. Generic flash/error messages remain application-owned.
+
 Core owns the JSON RPC value contract through `snapshotRpcValue` and
 `snapshotRpcFrame`. Transports snapshot data once before encoding. Valid dates
 become ISO strings; undefined object fields disappear and array holes become

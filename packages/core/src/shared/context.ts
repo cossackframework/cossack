@@ -23,22 +23,21 @@ export type HydratedContext = {
 /**
  * Controls automatic flash-scoping of submitted input and validation errors.
  *
- * - `true` (default): flash both the parsed input (for `old()` repopulation) and
- *   the validation `errors` (only when non-empty) to the next request.
+ * - `true` (default): flash validation errors only when non-empty.
  * - `false`: flash nothing — you call `flashInput`/`flash` yourself.
- * - object form: toggle each category independently. Unspecified keys default
- *   to `true`.
+ * - object form: select public old-input dot paths and toggle errors. Input is
+ *   off unless an explicit field list is provided. Errors default to `true`.
  *
- *   getFormData(opts, { flash: { errors: false } })  // input only
+ *   getFormData({ rules, flash: { input: ['name'], errors: false } })
  */
-export type FlashOptions = boolean | { input?: boolean; errors?: boolean };
+export type FlashOptions = boolean | { input?: readonly string[] | false; errors?: boolean };
 
-/** Resolves `FlashOptions` to explicit `{ input, errors }` booleans. */
-function resolveFlashOptions(flash: FlashOptions | undefined): { input: boolean; errors: boolean } {
+/** Resolves the explicit public-field selection and error policy. */
+function resolveFlashOptions(flash: FlashOptions | undefined): { input: readonly string[] | false; errors: boolean } {
     if (flash === false) return { input: false, errors: false };
-    if (flash === true || flash === undefined) return { input: true, errors: true };
+    if (flash === true || flash === undefined) return { input: false, errors: true };
     return {
-        input: flash.input !== false,
+        input: Array.isArray(flash.input) ? flash.input : false,
         errors: flash.errors !== false,
     };
 }
@@ -50,9 +49,9 @@ function resolveFlashOptions(flash: FlashOptions | undefined): { input: boolean;
  * built-in validation over the parsed data. Omit it for a simple typed DTO
  * (parse + compile-time cast, no runtime validation).
  *
- * `flash` (default `true`) automatically flashes the submitted input and any
- * validation errors to the next request, so you can skip the manual
- * `flashInput(data)` / `flash('errors', errors)` calls before `return this.back()`.
+ * `flash` defaults to validation errors only. Use `{ input: ['name'] }` to
+ * retain selected public fields for `old()`. No submitted values enter old input
+ * by default. The original parsed/validated data is unchanged.
  * Flashing is a no-op when no flash store is wired (e.g. on the client).
  */
 export type GetFormDataOptions<T> = {
@@ -64,13 +63,14 @@ export type GetFormDataOptions<T> = {
  * `getFormData<T>()` with NO rules returns the parsed data typed as `T`.
  */
 export interface CossackContext {
-    getFormData<T>(): Promise<T>;
+    getFormData<T>(opts?: GetFormDataOptions<T> & { rules?: undefined }): Promise<T>;
     /**
      * `getFormData<T>({ rules })` parses AND validates. Returns the typed data,
      * a nested `errors` object mirroring the form shape, a flat dot-path-keyed
      * `flatErrors` map, and an aggregate `valid` flag (see ObjectValidationResult).
      */
-    getFormData<T>(opts: GetFormDataOptions<T>): Promise<ObjectValidationResult<T>>;
+    getFormData<T>(opts: GetFormDataOptions<T> & { rules: StoreRuleMap<T> }): Promise<ObjectValidationResult<T>>;
+    getFormData<T>(opts: GetFormDataOptions<T>): Promise<T | ObjectValidationResult<T>>;
 }
 
 /**
@@ -102,13 +102,13 @@ export function createCossackContext(
                     if (!opts?.rules) {
                         // No validation: flash the parsed input only (if enabled).
                         if (flashInputOn) {
-                            flashInput(data as unknown as Record<string, unknown>);
+                            flashInput(data as unknown as Record<string, unknown>, { fields: flashInputOn });
                         }
                         return data;
                     }
                     const result = await validateObject(data, opts.rules);
                     if (flashInputOn) {
-                        flashInput(result.data as unknown as Record<string, unknown>);
+                        flashInput(result.data as unknown as Record<string, unknown>, { fields: flashInputOn });
                     }
                     // Only flash errors when there are any — flashing `{}` would
                     // make truthy-empty-object error banners render on success.

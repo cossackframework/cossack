@@ -20,7 +20,7 @@ function makeApp(name = 'Alice') {
     // POST handler: accumulates flash data, then redirects.
     app.post('/submit', async (c) => {
         flash('success', 'Saved successfully!');
-        flashInput({ name });
+        flashInput({ name }, { fields: ['name'] });
         return c.redirect('/form');
     });
 

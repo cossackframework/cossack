@@ -26,7 +26,7 @@ export * from './shared/request-context';
 export { cookie } from './shared/cookie';
 export type { CookieOptions } from './shared/cookie';
 export { createCossackContext } from './shared/context';
-export type { CossackContext, GetFormDataOptions } from './shared/context';
+export type { CossackContext, GetFormDataOptions, FlashOptions } from './shared/context';
 export * from './shared/runtimes/durable-object';
 export * from './shared/runtimes/sse';
 export * from './shared/container';

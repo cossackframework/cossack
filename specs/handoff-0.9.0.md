@@ -70,11 +70,17 @@ the required non-Desktop release matrix.
    response guards and standalone translation/config initialization.
    The full installed scaffold gate passes the locally packed Node → Cloudflare
    → Node flow, migrations/schema checks, Studio and production assets.
-   Continue sensitive old-input filtering and complete failure/login/logout/
-   rotation recipes, concurrent request semantics and realtime freshness.
-   Start with core `flashInput`: it still stores the submitted record unchanged.
-   Define public-field selection before serialization and verify nested/custom
-   secrets through native redirect cookies and the following SSR request.
+   [Public old-input selection](./release-0.9.0.md#codex-rt11-input-2026-10-05)
+   now passes real Node/Cloudflare multipart POST, RPC failure/redirect and
+   following SSR checks. Preserve explicit field lists, credential exclusions,
+   detached copies, namespace protection and the errors-only form default.
+   The packaged `safe-old-input` example runs verbatim in generated production
+   fixtures; its new source still needs inclusion in installed example acceptance.
+   Next audit generated auth pages: login currently keeps its password in a public
+   `@Store()` form. Keep credentials in browser-owned fields and server-local
+   arguments, validate the actual inbound actions, and verify real form failure,
+   login/logout/rotation flows. Finish concurrent request semantics and realtime
+   freshness; cookie clearing does not provide durable flash replay protection.
    Preserve RT-13's shared-library regressions. This slice does not close RT-11.
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.

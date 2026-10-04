@@ -81,6 +81,13 @@ describe('flash — writers (outgoing)', () => {
         flash('x', 2);
         expect(store.outgoing.x).toBe(2);
     });
+
+    it('cannot bypass public-field selection through the reserved input namespace', () => {
+        const store = makeStore(); setFlashStoreGetter(() => store);
+        expect(() => flash('__input', { password: 'PRIVATE' })).toThrow('Old input requires flashInput');
+        expect(() => flash({ success: 'partial', __input: { password: 'PRIVATE' } })).toThrow('Old input requires flashInput');
+        expect(store.outgoing).toEqual({});
+    });
 });
 
 describe('flash — readers (incoming)', () => {
@@ -114,10 +121,54 @@ describe('flash — old input (namespaced)', () => {
     beforeEach(() => setEnv(true));
     afterEach(() => __resetFlashForTests());
 
+    it('retains nothing when a JavaScript caller omits the public-field policy', () => {
+        const store = makeStore(); setFlashStoreGetter(() => store);
+        // @ts-expect-error 0.9 requires an explicit public-field list.
+        flashInput({ password: 'PRIVATE', unlockPhrase: 'PRIVATE', name: 'Alice' });
+        expect(store.outgoing.__input).toEqual({});
+    });
+
+    it('projects selected leaves and never copies object branches or common credentials', () => {
+        const store = makeStore(); setFlashStoreGetter(() => store);
+        const input = { name: 'Alice', profile: { city: '東京', password: 'PRIVATE' },
+            contacts: [{ label: 'Home', token: 'PRIVATE' }], tags: ['one', 'two'],
+            unlockPhrase: 'PRIVATE_CUSTOM', api_key: 'PRIVATE', refreshToken: 'PRIVATE', pin: 'PRIVATE' };
+        flashInput(input, { fields: ['name', 'profile', 'profile.city', 'profile.password', 'contacts',
+            'contacts.0.label', 'contacts.0.token', 'tags', 'api_key', 'refreshToken', 'pin'] });
+        expect(store.outgoing.__input).toEqual({ name: 'Alice', profile: { city: '東京' },
+            contacts: [{ label: 'Home' }], tags: ['one', 'two'] });
+        expect(JSON.stringify(store.outgoing)).not.toContain('PRIVATE');
+        input.profile.city = 'changed'; input.tags.push('changed'); input.contacts[0].label = 'changed';
+        expect(store.outgoing.__input).toEqual({ name: 'Alice', profile: { city: '東京' },
+            contacts: [{ label: 'Home' }], tags: ['one', 'two'] });
+    });
+
+    it('does not call accessors or serialization hooks or copy files and unsupported values', () => {
+        const store = makeStore(); setFlashStoreGetter(() => store);
+        const getter = vi.fn(() => 'PRIVATE'); const serialize = vi.fn(() => 'PRIVATE');
+        const input = Object.assign(Object.create({ inherited: 'PRIVATE' }), {
+            name: 'Alice', object: { toJSON: serialize }, file: new Blob(['PRIVATE']),
+            bad: NaN, infinity: Infinity, bigint: 1n, objects: [{ name: 'PRIVATE' }],
+            nested: Object.defineProperty({}, 'name', { get: getter }),
+        });
+        Object.defineProperty(input, 'getter', { get: getter });
+        flashInput(input, { fields: ['name', 'object', 'file', 'bad', 'infinity', 'bigint', 'objects',
+            'nested.name', 'getter', 'inherited', '__proto__.inherited', 'constructor.name'] });
+        expect(store.outgoing.__input).toEqual({ name: 'Alice' });
+        expect(getter).not.toHaveBeenCalled(); expect(serialize).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsafe paths and inherited old values from older signed payloads', () => {
+        setFlashStoreGetter(() => makeStore({ __input: { password: 'PRIVATE', nested: { token: 'PRIVATE' } } }));
+        for (const path of ['password', 'nested.token', '__proto__', 'constructor', 'constructor.name', 'toString']) {
+            expect(old(path)).toBeUndefined();
+        }
+    });
+
     it('flashInput writes under the reserved namespace, not as top-level keys', () => {
         const store = makeStore();
         setFlashStoreGetter(() => store);
-        flashInput({ name: 'Alice', email: 'a@x.com' });
+        flashInput({ name: 'Alice', email: 'a@x.com' }, { fields: ['name', 'email'] });
         // The whole object is under __input, not spread at the top level.
         expect(store.outgoing).toEqual({ __input: { name: 'Alice', email: 'a@x.com' } });
         expect(store.outgoing.name).toBeUndefined();
@@ -136,7 +187,7 @@ describe('flash — old input (namespaced)', () => {
         const store = makeStore();
         setFlashStoreGetter(() => store);
         flash('name', 'This is a message');       // message
-        flashInput({ name: 'Alice' });             // submitted input
+        flashInput({ name: 'Alice' }, { fields: ['name'] });             // submitted input
         expect(store.outgoing.name).toBe('This is a message');
         expect((store.outgoing as any).__input.name).toBe('Alice');
     });

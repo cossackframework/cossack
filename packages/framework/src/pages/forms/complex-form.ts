@@ -14,7 +14,7 @@ import { Button, Input } from '@cossackframework/ui';
 //   - typed + validated nested form data (`getFormData<T>()` + `storeRules<T>`)
 //   - auto-bound flash/old data — `@State({ flash })` / `@Store({ old })` pull
 //     flashed values and old input into state during bootstrap, so there's no
-//     `init()` boilerplate. (`getFormData()` auto-flashes both by default.)
+//     `init()` boilerplate. (`getFormData()` uses an explicit public-input selection.)
 //   - NESTED validation errors — `hasError('address.city')` / `getError('address.city')`
 //     resolve nested fields by dot-path, matching the form's type shape.
 //
@@ -52,10 +52,10 @@ export default class ComplexForm extends Cossack {
   address: AddressForm = { street: '', city: '', state: '' };
 
   async post() {
-    // `getFormData()` auto-flashes the parsed input (for `old()`) and the nested
-    // `errors` (when invalid) to the next request — no manual flashInput/flash
-    // needed. Disable with `{ flash: false }`.
+    // Retain only these public fields for `old()`. Validation errors are flashed
+    // when invalid. Disable both categories with `{ flash: false }`.
     const { data, valid } = await this.c.getFormData<ComplexFormShape>({
+      flash: { input: ['name', 'address.street', 'address.city', 'address.state'] },
       rules: storeRules<ComplexFormShape>({
         name: { required: true, message: 'Name is required' },
         address: {

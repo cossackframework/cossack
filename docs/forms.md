@@ -142,7 +142,7 @@ See [Session & Flash](/docs/session.md) for the full flash/old-input API and how
 
 ## Server-Side Validation
 
-You can validate form data server-side using `this.c.getFormData()` with `storeRules<T>()`. When the form is invalid, the submitted input **and** the validation errors are flashed to the next request automatically : you no longer have to call `flashInput()` or `flash('errors', ...)` yourself. Just redirect back.
+You can validate form data server-side using `this.c.getFormData()` with `storeRules<T>()`. Validation errors are flashed when the form is invalid. Submitted values are retained only when you select public fields with `flash.input`. Redirect back to restore those fields.
 
 > **Tip:** `FormData` values are always strings. Add a `coerce` rule to produce typed `data` : e.g. `age: { coerce: 'number', min: 18 }` turns `"25"` into `25`. See [Validation → Coercion](/docs/validation.md#coercion).
 
@@ -153,8 +153,8 @@ post() {
         name: { required: true, message: 'Name is required' },
         email: { required: true, email: true, message: 'Email is required and must be valid' },
       }),
-      // `flash` defaults to true: the submitted input is flashed for `old()`
-      // repopulation, and the errors are flashed when the form is invalid.
+      flash: { input: ['name', 'email'] },
+      // Errors are flashed when invalid. Only these public fields enter old input.
     });
 
     if (!valid) {
@@ -190,16 +190,28 @@ render() {
 
 ### Auto-flash in detail
 
-`getFormData()` accepts a `flash` option that controls this behavior (default `true`):
+`getFormData()` defaults to validation errors only. Old input requires an explicit public-field list:
 
-| `flash` value        | Flashed input (`old`) | Flashed errors           |
-|----------------------|------------------------|---------------------------|
-| omitted / `true`     | ✅                     | ✅ (only when non-empty)  |
-| `false`              | ❌                     | ❌                         |
-| `{ input: false }`   | ❌                     | ✅                         |
-| `{ errors: false }`  | ✅                     | ❌                         |
+| `flash` value | Retained input (`old`) | Validation errors |
+| --- | --- | --- |
+| omitted / `true` | None | Nonempty errors |
+| `false` | None | None |
+| `{ input: ['name', 'address.city'] }` | Selected public leaves | Nonempty errors |
+| `{ input: ['name'], errors: false }` | Selected public leaves | None |
+| `{ input: false }` | None | Nonempty errors |
 
-Errors are only flashed when there actually are any : a valid form never flashes an empty `errors` object, so truthy checks like `${this.errors ? ...}` will not render an error banner on success. The submitted input is always flashed when input-flashing is on (single-use, harmlessly dropped if not read). Signed flash cookies preserve UTF-8 text, including accented names, non-Latin scripts, and emoji. Flashing is a no-op when no flash store is wired (e.g. on the client), so opting out is as simple as `{ flash: false }`.
+The flash cookie is signed, not encrypted. Keep passwords, tokens and custom
+credentials outside the field list. Common credential names are excluded even
+if selected. Choose `address.city` rather than the whole `address` object.
+Scalar arrays are copied; object arrays require selected leaf paths such as
+`contacts.0.label`. Files and unsupported objects are omitted. Selection does
+not change the parsed or validated data available to the server handler.
+
+Selected values preserve Unicode text. Read them with `old()` on the following
+page request. Errors are flashed only when nonempty, so a valid form has no empty
+error banner. With no flash scope, flashing remains a no-op. See the
+[session guide](./session.md#flash-and-old-input) for the explicit manual API,
+credential-name rules, cookie timing and replay limits.
 
 ## Put it All Together
 
@@ -240,9 +252,9 @@ export default class ContactForm extends Cossack {
   email: string = '';
 
   async post() {
-    // getFormData() auto-flashes the submitted input (for old()) and the
-    // errors (when invalid) — no manual flashInput()/flash('errors') needed.
+    // Select public fields for old(). Nonempty validation errors are automatic.
     const { data, valid } = await this.c.getFormData<ContactFormFields>({
+      flash: { input: ['name', 'email'] },
       rules: storeRules<ContactFormFields>({
         name: { required: true, message: 'Name is required' },
         email: { required: true, email: true, message: 'Email is required' },
@@ -307,6 +319,7 @@ interface ComplexFormShape {
 
 async post() {
     const { data, valid } = await this.c.getFormData<ComplexFormShape>({
+      flash: { input: ['name', 'email', 'address.street', 'address.city'] },
       rules: storeRules<ComplexFormShape>({
         name: { required: true, message: 'Name is required' },
         email: { required: true, email: true, message: 'Email is required and must be valid' },

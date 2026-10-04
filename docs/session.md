@@ -118,5 +118,51 @@ Framework does not import the ORM. The ORM integration lazily resolves the
 active request scope, while explicitly supplied ORM instances are also
 supported for jobs and tests.
 
+## Flash and old input
+
+Flash is separate from the persistent session bag. It uses a signed, readable
+cookie and requires `APP_SECRET`. Import the helpers from core:
+
+```ts
+import { flash, flashInput, flashed, old } from '@cossackframework/core';
+
+flashInput(data, { fields: ['name', 'address.city', 'tags'] });
+flash('success', 'Saved.');
+return this.c.redirect('/form');
+```
+
+On the following page request, read `old('name')`, `old('address.city')` and
+`flashed('success')`. The middleware expires the cookie. A saved cookie can
+still be replayed while the middleware accepts it; browser consumption is not
+durable one-use storage. Valid incoming flash survives background RPC/upload/
+realtime requests. Failed outgoing RPC writes preserve unrelated incoming flash.
+
+`getFormData()` flashes nonempty validation errors by default, with no old input.
+Use `flash: { input: ['name', 'address.city'] }` to retain only those public
+fields. `flash: true` has the same errors-only default, and `flash: false`
+disables both categories. The selection does not change server-side parsed data.
+
+Select nested leaves individually. Whole objects, files, Date values, object
+arrays and accessors are omitted. Scalar arrays are copied. Numeric paths such
+as `contacts.0.label` retain selected array fields; unselected positions become
+null during JSON serialization. Later source mutations do not change the copy.
+Prototype paths and inherited properties are excluded.
+
+Credential names are excluded even if selected. Case folding and punctuation
+removal precede matching: names containing `password`, `passwd`, `passphrase`,
+`secret`, `token`, `credential`, `authorization`, `cookie`, `apikey`, `privatekey`,
+`sessionid` or `csrf` are excluded, as are `pin`, `otp`, `cvv` and `cvc`.
+Custom secret names cannot be classified automatically. Keep them outside the
+public field list, and keep the list in server-authored code. Do not copy secret
+values into flash messages or validation messages. Use ordinary parsed data;
+reflective reads of JavaScript proxies can invoke their traps.
+Generic `flash()` rejects the reserved `__input` namespace; use `flashInput()`
+for old input so the selection policy applies.
+
+Prepare flash before returning a lazy generator. After response headers are
+committed, flash writes reject with `COSSACK_RESPONSE_HEADERS_COMMITTED`.
+See the [form recipe](./forms.md#server-side-validation) and installed
+`safe-old-input` guide returned by `cossack docs --package @cossackframework/core --json`.
+
 Custom stores must add `has()` and reject writes that recreate expired or deleted
 rows. After `destroy()`, the handle rejects further access in the same request.

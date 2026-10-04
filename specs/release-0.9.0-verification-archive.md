@@ -6,6 +6,76 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-rt11-input-2026-10-05"></a>
+### Codex: Explicit public old-input selection (2026-10-05)
+
+Author: Codex. Continued after `0b317d2`. RT-11's old-input requirement now has
+explicit public-field selection before cookie serialization. `getFormData`
+defaults to nonempty validation errors only, including `flash: true`. An
+application opts into old input with `flash: { input: ['name', 'profile.city'] }`
+or `flashInput(data, { fields })`. An older JavaScript call without the latter
+policy retains no submitted values. `FlashOptions` and `FlashInputOptions` are
+public core contracts. No-rules form options now return the parsed DTO rather
+than claiming a validation-result shape; potentially optional rules return a
+union. The migration guide records these alpha-stage API breaks.
+
+Selection reads own data properties, copies finite JSON scalar values/arrays,
+rebuilds nested containers and preserves selected array positions. Whole object
+branches, files, accessors, unsupported values and inherited properties are
+omitted. Source mutation after flashing cannot add a credential to the copy.
+Known credential names and prototype paths are rejected even when selected.
+Old reads reject those paths from older signed payloads too. Generic `flash()`
+rejects the reserved old-input namespace before a partial object write, so it
+cannot bypass the policy. Custom secrets are not classified automatically:
+applications must keep them outside the server-authored public-field list.
+Selection does not remove credentials from parsed/validated server data.
+
+The authored `safe-old-input/public-form-fields` example runs verbatim in
+generated production Node and Cloudflare apps. Real multipart POST rejects
+invalid email, retains selected Unicode fields and fixed errors, redirects and
+restores those fields through the following SSR/hydration response. Tests decode
+the actual cookie payload and scan it and response text for root/nested/custom
+credentials. Direct RPC repeats projection with scalar arrays/array leaves and
+explicitly selected known credentials, verifies redirect metadata, and then
+fails a write while preserving unrelated incoming flash. The next page clears
+the cookie; a request without it has empty fields. Plain no-policy form parsing
+issues only an explicitly written message. Client JavaScript excludes the
+fixture's private server-error marker.
+
+The first Workers attempt passed Node FormData directly through Miniflare's
+separate Request realm, losing the multipart content type. Captured Workers logs
+identified that setup error. The final fixture sends the headers and bytes
+encoded by a real native Request; it leaves production form parsing unchanged.
+Native fixture failures now retain Node output or structured Workers logs.
+The existing larger D1/workerd/Chromium test passes with updated explicit title
+selection in component/service redirects from HTTP/SSE pages, cookie preservation
+and late-write rejection. Deployment commands in that test remain dry runs.
+
+| Command | Verified result |
+| --- | --- |
+| `pnpm --filter @cossackframework/core exec vitest run` | 1,536 tests / 93 files pass, including selection/default/namespace/DTO regressions. |
+| `pnpm --filter @cossackframework/framework exec vitest run tests/flash-middleware.test.ts tests/router-rpc-stream.test.ts tests/cookie-request-context.test.ts tests/response-lifetime.test.ts` | 76 tests / 4 files pass; background transports, errors and header timing preserved. |
+| `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'excludes private old input\|preserves native RPC cookies'` | 3 native/browser cases pass; 57 unrelated cases skipped. Both new production apps type-check/build. Node browser native-cookie/flash redirects remain green. |
+| `pnpm --filter cossack exec vitest run tests/package-guidance.test.js` | 12 tests pass, including fresh authored-guide discovery without executing modules/source. |
+| `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js` | 1 broader native Workers/D1/browser/dry-run deployment case passes, about 147 seconds. |
+| `pnpm tsc --noEmit` | Root types pass. |
+| `pnpm typecheck` | All 11 package checks pass. |
+
+Logs: `/tmp/cossack-rt11-input-{core,framework,native,guidance,worker,root-types,package-types}.log`.
+Core was rebuilt before dependent tests; framework declarations were rebuilt
+after the API change. No dist-replacing build overlapped these checks.
+
+Limits: The new form guide has workspace-linked production acceptance, not a new
+installed-tarball execution claim. No live deployment occurred. The signed flash
+cookie is readable, not encrypted, and clearing it is not durable one-use replay
+protection. Already-issued cookies can still contain old private bytes; changing
+read helpers does not erase those bytes. Arbitrary flash/validation messages and
+custom secret classification remain application-owned. Native Node/Workers
+acceptance does not close Deno Deploy or the final release matrix. Generated auth
+form state and actual login/logout/failure/rotation recipes, concurrent semantics
+and realtime identity criteria remain open. Counts stay **28 complete / 30 open**.
+Desktop remains complete by user decision, with its platform checks waived.
+
 <a id="codex-rt11-dashboard-2026-10-05"></a>
 ### Codex: Safe session dashboard and scoped revocation (2026-10-05)
 

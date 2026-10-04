@@ -87,7 +87,7 @@ export async function writeWorkerRpcAcceptance(root) {
       @Server() complete(key: string) {
         this.key = key;
         cookie().set('context_cookie', 'kept', { httpOnly: true, path: '/' });
-        flash('success', 'Saved'); flashInput({ title: 'Draft' });
+        flash('success', 'Saved'); flashInput({ title: 'Draft' }, { fields: ['title'] });
         const headers = new Headers({ Location: '/rpc-check/target' });
         headers.append('Set-Cookie', 'native_one=1; HttpOnly; Path=/');
         headers.append('Set-Cookie', 'native_two=2; HttpOnly; Path=/');

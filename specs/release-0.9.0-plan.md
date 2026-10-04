@@ -330,12 +330,29 @@ Continue sensitive old-input filtering, complete failure/login/logout/rotation
 recipes and the remaining concurrent/realtime criteria. This checkpoint does
 not close RT-11 or prove connection identity refresh after revocation.
 
-Next start with `flashInput` in `packages/core/src/shared/flash.ts`: it currently
-assigns the submitted record unchanged to outgoing old input. Define an explicit
-public-field policy before cookie serialization, including nested password/token
-fields and custom credential names. Update authored recipes/docs and prove secret
-exclusion through real HTTP/RPC redirects and the following SSR request. Keep
-ordinary one-time field restoration and the existing failure/cookie timing rules.
+Codex public-input checkpoint (2026-10-05): `getFormData` now defaults to
+nonempty validation errors only. Public old input requires `flash.input` paths
+or `flashInput(data, { fields })`. Selection copies own finite scalar leaves and
+scalar arrays, rebuilds nested containers and leaves server data intact. Whole
+objects/files/accessors are omitted. Credential/prototype paths are excluded;
+custom secrets must stay outside the application-owned field list. Generic
+`flash()` cannot bypass selection through the reserved namespace. No-rules form
+options also have the correct parsed-DTO return type. Forms/docs and the new
+`safe-old-input` package guide use explicit policies. Its source runs verbatim in
+generated Node/Cloudflare production fixtures; decoded cookie bytes, RPC failures
+and following SSR state prove selected restoration and credential exclusion.
+The broader Workers HTTP/SSE redirect/late-write gate still passes. See the
+[evidence and limits](./release-0.9.0.md#codex-rt11-input-2026-10-05).
+
+Next inspect the generated login/register/reset form state and real inbound
+actions. `pages/auth/login/index.ts` currently puts password in a public `Store`;
+move credentials to browser-owned fields and keep server arguments local.
+Do not equate helper/API fixtures with actual generated form acceptance. Verify
+failed login/storage, successful redirect, logout and rotation through their
+real pages, cookie headers and subsequent authenticated requests. Document
+concurrent requests/tabs and accepted flash replay behavior, then verify the
+remaining realtime identity guarantees. Include the new public-form guide in
+installed-tarball example acceptance. RT-11 remains open for these criteria.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.

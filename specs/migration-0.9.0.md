@@ -78,6 +78,32 @@ Read the [session guide](../docs/session.md) for registration and the auth bridg
 Standalone SSG rendering now installs the same bare translation/config helpers
 as the SSR entry before component lifecycle hooks run.
 
+## Explicit public old input
+
+`getFormData()` no longer flashes submitted values by default. Nonempty
+validation errors remain automatic; `flash: true` also means errors only.
+Replace `flash: { input: true }` with an explicit public-field list, for example
+`flash: { input: ['name', 'address.city'] }`. `flash: false` disables both
+categories and `errors: false` still disables errors. The no-rules overload now
+correctly returns the parsed DTO when options contain only a flash policy.
+
+Manual calls require `flashInput(data, { fields: ['name', 'address.city'] })`.
+Older JavaScript calls without the policy retain no submitted values.
+`flash()` calls cannot write the reserved `__input` namespace; migrate such
+calls to `flashInput()` before upgrading. Whole object branches are no longer
+copied: select nested leaves. Scalar arrays are
+copied; object arrays need numeric leaf paths such as `contacts.0.label`. Files,
+Date values, accessors and other unsupported values are omitted. Selected values
+are detached from later source mutations. Parsed/validated server data is intact.
+
+The cookie is signed, not encrypted. Common credential names are excluded even
+if selected, and `old()` also excludes those names from older signed payloads.
+Unknown custom secrets must remain outside the public field list. Keep that
+list in server code and do not place credentials in arbitrary flash/error
+messages. Read the full [selection and cookie contract](../docs/session.md#flash-and-old-input).
+Merge the explicit field policy into application form recipes before upgrading.
+This does not make previously issued cookies secret-free or durably single-use.
+
 ## Atomic OAuth state storage
 
 Cookie-based `createOAuth` now requires `stateStore`. Its `create` callback
