@@ -88,6 +88,57 @@ remain archived, and the verification log below retains test evidence.
 Record completed slices and exact verification commands here. Focused checks do
 not replace the final monorepo and runtime release gates.
 
+<a id="codex-table-scroll-area-2026-10-04"></a>
+## Codex Table and ScrollArea (2026-10-04)
+
+Author: Codex. All six Table exports now declare native prop/event targets.
+Top-level Table props reach HTMLTableElement; wrapperProps owns the overflow div.
+The two section helpers target HTMLTableSectionElement, rows target
+HTMLTableRowElement, and header/data cells target HTMLTableCellElement. Public
+TableCellAttributes and TableHeadAttributes cover colspan, rowspan, headers and
+header-only scope/abbr. Native captions and explicit sections compose through SSR,
+hydration and fresh client rendering. Rows keep native child actions. The striped
+flag now applies even-row colors, and row transitions respect reduced motion.
+
+ScrollArea now renders one named region with a required label. Native attributes,
+styles and scroll events target the actual viewport. Keyboard focus defaults to
+zero; callers can opt out when they provide another keyboard path. Height accepts
+nonnegative finite pixels or nonempty CSS strings. Authored styles follow generated
+height/overflow styles. The demo, migration guide and packaged agent guidance match
+the new contracts. The optional Table overflow wrapper example uses a named region
+with tabindex=0, following [MDN overflow accessibility guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 391 tests
+  in 35 files pass. Public declarations cover all seven native component targets,
+  wrapper events, closed cell attributes and required ScrollArea naming. SSR tests
+  cover composition, sizing/style ownership and invalid semantic props.
+- `pnpm --filter cossack exec vitest run tests/table-scroll-area-browser.test.js tests/ui-ejection.test.js`:
+  32 tests pass, including 31 source-ejection checks with strict NodeNext compilation.
+- The final browser-only rerun passes after strengthening named-wrapper and retained
+  node checks. It uses real Tailwind/UI styling and HTTP-served SSR. No-JavaScript
+  markup, captions/sections/cells, all event targets, stripes, dynamic updates,
+  native child actions, keyboard scrolling in both axes, reduced motion and fresh
+  rendering after unmount pass. Table, section, row, cell and viewport nodes survive
+  hydration; no server parser module enters the browser graph.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes: installed declarations expose the seven
+  controls, wrapper and cell contracts, and the guide; exact-symbol Table output
+  matches across CLI/MCP. Six existing packaged examples compile and execute.
+  Discovery runs with Node networking disabled; installation may use the registry.
+  A final UI tarball content check also verifies the guide's clarified region-role
+  wording, added after the installed acceptance run had packed its UI dependency.
+
+Logs: `/tmp/cossack-table-{build,ui,browser-ejection,browser-final,root-types,types,agent-docs,guide-pack}.log`.
+The new guide adds no executable example. Authors still own valid table content,
+header relationships and CSS string validity. Other browser engines, assistive
+technologies and the full generated-app/runtime matrix remain open.
+
+Fifty-six of 65 UI source rows are reviewed. Continue Resizable, then Sidebar and
+every pending row, followed by blocks/icons. RT-23 and CLI-07/CLI-08 remain open;
+release status stays 24 of 58 complete. Versions stay 0.8.3 until REL-04.
+
 <a id="codex-typography-item-2026-10-04"></a>
 ## Codex Typography and Item (2026-10-04)
 

@@ -522,3 +522,30 @@ component(Typography, {variant:'h7'});
 component(Item, {interactive:true});
 // @ts-expect-error Item is not a native button.
 component(Item, {disabled:true});
+
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, ScrollArea, type TableCellAttributes, type TableHeadAttributes } from '@cossackframework/ui';
+component(Table, {'aria-label':'People',wrapperProps:{'@scroll':event=>{const wrapper:HTMLDivElement=event.currentTarget;void wrapper;}},'@click':event=>{const table:HTMLTableElement=event.currentTarget;void table;}});
+component(TableHeader, {'@click':event=>{const head:HTMLTableSectionElement=event.currentTarget;void head;}});
+component(TableBody, {'@click':event=>{const body:HTMLTableSectionElement=event.currentTarget;void body;}});
+component(TableRow, {'@click':event=>{const row:HTMLTableRowElement=event.currentTarget;void row;}});
+const headerAttributes:TableHeadAttributes={scope:'col',abbr:'Name',colspan:2};
+const cellAttributes:TableCellAttributes={headers:'name',rowspan:2};
+component(TableHead, {...headerAttributes,'@click':event=>{const cell:HTMLTableCellElement=event.currentTarget;void cell;}});
+component(TableCell, {...cellAttributes,'@click':event=>{const cell:HTMLTableCellElement=event.currentTarget;void cell;}});
+component(ScrollArea, {label:'Messages',height:100,'@scroll':event=>{const viewport:HTMLDivElement=event.currentTarget;void viewport;}});
+// @ts-expect-error Scroll regions require a name.
+component(ScrollArea, {height:100});
+// @ts-expect-error The label owns the region name.
+component(ScrollArea, {label:'Messages','aria-label':'Other'});
+// @ts-expect-error ScrollArea is a div, not a textarea.
+component(ScrollArea, {label:'Messages',rows:3});
+// @ts-expect-error Table props target a table, not a form input.
+component(Table, {'@click':(event:MouseEvent & {currentTarget:HTMLInputElement})=>event});
+// @ts-expect-error Cell attributes do not apply to the table.
+component(Table, {colspan:2});
+// @ts-expect-error Scope applies to header cells only.
+component(TableCell, {scope:'col'});
+// @ts-expect-error Header scopes are closed.
+component(TableHead, {scope:'column'});
+// @ts-expect-error Row props are closed.
+component(TableRow, {clas:'row'});

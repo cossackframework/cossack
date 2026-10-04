@@ -350,10 +350,21 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(uiSymbols.some(symbol => symbol.name === 'QuoteAttributes'));
     assert.ok(uiSymbols.some(symbol => symbol.name === 'OrderedListAttributes'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-typography-item'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Typography', '--json']);
+    for (const [name, target] of [['Table', 'HTMLTableElement'], ['TableHeader', 'HTMLTableSectionElement'], ['TableBody', 'HTMLTableSectionElement'], ['TableRow', 'HTMLTableRowElement'], ['TableHead', 'HTMLTableCellElement'], ['TableCell', 'HTMLTableCellElement'], ['ScrollArea', 'HTMLDivElement']]) {
+      const control = uiSymbols.find(symbol => symbol.name === name);
+      assert.equal(control.propsContract.status, 'declared');
+      assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      assert.ok(control.propsContract.members.some(member => member.name === '@click' && member.type.includes(target)));
+    }
+    const scrollArea = uiSymbols.find(symbol => symbol.name === 'ScrollArea');
+    assert.ok(scrollArea.propsContract.members.some(member => member.name === 'label' && !member.optional));
+    assert.ok(uiSymbols.find(symbol => symbol.name === 'Table').propsContract.members.some(member => member.name === 'wrapperProps' && member.type.includes('HTMLDivElement')));
+    for (const name of ['TableCellAttributes', 'TableHeadAttributes']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-table-scroll-area'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'Table', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Typography']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Typography' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['Table']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'Table' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

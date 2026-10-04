@@ -105,3 +105,11 @@ export type QuoteAttributes = GlobalAttributes<HTMLQuoteElement> & Attributes<{ 
 export type OrderedListAttributes = GlobalAttributes<HTMLOListElement> & Attributes<{
     start: number; reversed: boolean; type: '1' | 'a' | 'A' | 'i' | 'I';
 }>;
+
+/** Attributes shared by native data and header cells. */
+export type TableCellAttributes = GlobalAttributes<HTMLTableCellElement> & Attributes<{
+    colspan: number; rowspan: number; headers: string;
+}>;
+export type TableHeadAttributes = TableCellAttributes & Attributes<{
+    scope: 'row' | 'col' | 'rowgroup' | 'colgroup'; abbr: string;
+}>;

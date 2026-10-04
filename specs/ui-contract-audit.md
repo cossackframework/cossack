@@ -105,7 +105,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Progress](../packages/ui/src/components/Progress.ts) | Reviewed foundation | Required name, unknown versus determinate values, validated ranges, owned ARIA, human-readable values, reduced motion, native div events, SSR/Chromium and ejected-source coverage. |
 | [RadioGroup](../packages/ui/src/components/RadioGroup.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Resizable](../packages/ui/src/components/Resizable.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
-| [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [ScrollArea](../packages/ui/src/components/ScrollArea.ts) | Reviewed foundation | Single named viewport, typed native props/events, keyboard scrolling in both axes, numeric/CSS sizing, SSR/hydration and ejection coverage. |
 | [Select](../packages/ui/src/components/Select.ts) | Reviewed foundation | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Separator](../packages/ui/src/components/Separator.ts) | Reviewed foundation | Orientation-specific hr/div native types, textual decorative ARIA states, static separator ownership, one-pixel geometry, SSR/Chromium and ejected-source coverage. |
 | [Sheet](../packages/ui/src/components/Sheet.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
@@ -114,7 +114,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Slider](../packages/ui/src/components/Slider.ts) | Reviewed foundation | Published types, SSR validation and themed keyboard/state browser acceptance. |
 | [Spinner](../packages/ui/src/components/Spinner.ts) | Reviewed foundation | Typed native SVG props/events, validated geometry, decorative/status states, SVG title namespace and updates, reduced motion, SSR/Chromium and ejected-source coverage. |
 | [Switch](../packages/ui/src/components/Switch.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
-| [Table](../packages/ui/src/components/Table.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Table](../packages/ui/src/components/Table.ts) | Reviewed foundation | All six exports typed; separate table/wrapper targets, native cell metadata, captions and section composition, working stripes, themed hydration and child-action coverage. |
 | [Tabs](../packages/ui/src/components/Tabs.ts) | Reviewed foundation | Typed root/list contracts, controlled/default state, scoped IDs, rich-label names, RTL/manual navigation, keyed focus and responsive indicator browser acceptance. |
 | [Textarea](../packages/ui/src/components/Textarea.ts) | Reviewed foundation | Published native props/events, escaped SSR values, retained hydration and Chromium labels/keyboard/validation/FormData. |
 | [Toast](../packages/ui/src/components/Toast.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
@@ -125,12 +125,12 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Table and ScrollArea. Table needs explicit wrapper/table attribute
-ownership and typed contracts for all six exports, including native captions,
-headers, cell attributes/events and real table-fragment hydration. ScrollArea puts
-native props on an outer wrapper while an inner div actually scrolls; define
-viewport naming, keyboard focus, scroll event targets and sizing/style ownership.
-Preserve native child actions and verify the actual themed browser behavior.
+Next audit Resizable, then Sidebar. Resizable currently resets its initial size
+when state equals 50, ignores native props, accepts ambiguous children, and uses
+mouse-only document listeners without unmount cleanup. Define panel/handle
+ownership, pointer and keyboard resizing, constraints and stable defaults. Sidebar
+needs explicit navigation/disclosure types, accessible collapsed/offcanvas behavior,
+native link semantics and focus handling. Preserve actual themed browser coverage.
 
 Continue the pending display, layout and chat components, then review blocks and
 icons separately. Do not mechanically replace every prop index signature with a

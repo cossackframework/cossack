@@ -1226,3 +1226,19 @@ no longer suggests a pointer cursor or adds focus styles. Use native child butto
 and links for actions. Item props/events now target a typed native div; slots keep
 their own native behavior. Boolean layout flags are validated and reduced motion
 removes the hover transition. See the packaged `native-typography-item` guide.
+
+## Table and ScrollArea
+
+Table's top-level native props and event listeners now target the table. Move
+attributes and styles intended for its overflow div into `wrapperProps`. Name the
+table with a caption or ARIA attribute. For keyboard access to horizontal overflow,
+set wrapperProps `tabindex: 0`, `role: "region"` and an accessible name where appropriate. The five
+section/row/cell helpers now declare native props; use `colspan`, `rowspan`, `headers`
+and header-only `scope`/`abbr`. `striped` now applies actual even-row theme colors.
+
+ScrollArea requires a nonempty `label` and renders a single named region. Native
+props, styles and `@scroll` now target that scrolling div. Both existing CSS classes
+remain on this element; update selectors that assumed a nested viewport. It defaults
+to `tabindex: 0`; use -1 only when keyboard access is supplied elsewhere. Numeric
+height means nonnegative finite pixels, while strings remain CSS values. Authored
+style follows generated height/overflow and may override them.

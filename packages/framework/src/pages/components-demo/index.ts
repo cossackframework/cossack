@@ -588,7 +588,7 @@ export class ComponentsDemo extends Cossack {
                     <h2 class="text-lg font-semibold">ScrollArea · Resizable</h2>
                     <div class="flex flex-wrap items-start gap-6">
                         <div class="border border-border rounded-lg w-64">
-                            ${component(ScrollArea, { height: '120px' }, html`
+                            ${component(ScrollArea, { label: 'Example items', height: '120px' }, html`
                                 <div class="p-3 space-y-1">
                                     <p class="text-sm">Scroll me!</p>
                                     ${[1,2,3,4,5,6,7,8,9,10].map(i => html`<p class="text-xs text-muted-foreground">Item ${i}</p>`)}
