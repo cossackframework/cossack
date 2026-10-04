@@ -1407,3 +1407,45 @@ is decorative, with owned `src`, empty `alt` and `aria-hidden`. Its native load/
 callbacks do not implement retries or fallback icons. The filename remains when
 an image fails. Image source and alternate text cannot be overridden through
 `thumbnailProps`; use a separate informative image if its content needs describing.
+
+## Bubble, Message and Marker native chat contracts
+
+All three components now forward typed native root div attributes and `@events`.
+They remain display components. Native child links, buttons and form controls own
+their actions; the application owns transcript/list/live-region semantics.
+
+`BubbleReaction` now requires a localized `label` as the text equivalent of its
+decorative `emoji`. Counts must be nonnegative safe integers. Zero stays visible.
+Use `reactionsLabel` to localize the list's accessible name (default `Reactions`).
+Reaction records are readonly; the parent rerenders changes. Display reactions are
+list items, not interactive toggles.
+
+```ts
+component(Bubble, {
+  variant: 'sent',
+  time: '10:30 AM',
+  datetime: '10:30',
+  reactionsLabel: 'Reactions',
+  reactions: [{ emoji: '👍', label: 'Like', count: 0 }],
+}, 'Message text');
+```
+
+Bubble's width limit now applies to its content box. The default maximum remains
+75%, and `--cs-bubble-max-width` can override it. Reactions wrap in normal flow
+instead of overlapping following content. Corners and alignment use logical edges
+for RTL. Message uses an 80% body limit and supplies a 100% bubble limit inside it,
+so nested bubbles do not apply both percentage limits. Authored CSS may override
+these defaults; constrain oversized media and code blocks in application content.
+
+Message now renders supplied name, time and avatar for **both** variants. Omit
+metadata explicitly when a sent row should not show it. Keep parent/child variants
+consistent. Native child actions and input state survive ordinary metadata updates.
+
+Bubble and Message render a native `time` element only when `datetime` accompanies
+nonempty `time` text. The caller owns the valid machine-readable value and all time
+zone/locale conversion. Without it, arbitrary display text stays in a span.
+
+Marker validates its default/unread variant, forwards root props and hides only
+its decorative lines. Its phrasing children remain readable. Unread styling adds
+no announcement, keyboard handling or focus change. None of these controls adds
+automatic live-region or message-log semantics.

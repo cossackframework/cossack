@@ -11,21 +11,22 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-Current partial work: RT-23 has **61 of 65 UI source rows reviewed**, through
-[Attachment](./release-0.9.0.md#codex-attachment-2026-10-04).
+Current partial work: RT-23 has **64 of 65 UI source rows reviewed**, through
+[Bubble, Marker and Message](./release-0.9.0.md#codex-chat-display-2026-10-04).
 These component checkpoints do not close RT-23 or the release matrix.
-Completed Sidebar and Toast reviews are indexed in the
+Past component reviews are indexed in the
 [archived checkpoints](./release-0.9.0.md#archived-checkpoints); their full evidence is preserved.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with Bubble**, then Marker, Message and MessageScroller in
-   the [UI audit](./ui-contract-audit.md). Bubble ignores native root props and
-   constrains width inside an unsized wrapper. Define native targets, reaction
-   names/counts, timestamps and RTL/narrow layout while preserving child actions.
-   The [RT-23 plan](./release-0.9.0-plan.md#rt-23) gives its purpose and checks.
-   Attachment now has explicit status styling, typed native targets and named
-   removal; the parent owns removing records and restoring focus.
+1. Continue **RT-23 with MessageScroller**, the last pending source row in the
+   [UI audit](./ui-contract-audit.md). Define named native viewport ownership,
+   follow/anchor behavior, jump-button focus and cleanup for scheduled work.
+   The [RT-23 plan](./release-0.9.0-plan.md#rt-23) explains each requirement and
+   the source baseline. Update the framework demo and generated Chat when needed.
+   Bubble/Marker/Message now preserve native props, metadata and child actions;
+   reactions have text equivalents and normal-flow layout. Their browser checks
+   cover narrow/RTL composition and input focus/value retention.
    Keep SSR, themed browser, source ejection and installed CLI/MCP guidance in scope.
    Blocks/icons, generated-app and assistive-technology acceptance remain separate gates.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable

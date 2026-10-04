@@ -6,6 +6,118 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-attachment-2026-10-04"></a>
+## Codex Attachment (2026-10-04)
+
+Author: Codex. Attachment now requires a filename and forwards separate typed
+native root, removal-button and thumbnail props. Its public types replace the
+ignored arbitrary signature. Positional children reject instead of disappearing.
+Status colors use an explicit neutral/success/error variant; English status words
+no longer select conflicting colors. Final-extension inference is case-insensitive
+and guards inherited object properties; bare and hidden dot-only names use file.
+
+Removal has a filename-specific default name and a localized override. The native
+non-submit button supports keyboard activation, disabled props and fieldsets.
+Native button callbacks run before onRemove and can veto it; callback-time disabling
+also suppresses removal. The owning list removes records and restores focus. Root
+bubbling handlers run after the button action. Decorative previews retain native
+load/error behavior without inventing fallback/retry or upload operations.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 505 tests
+  across 40 files pass. SSR and public declarations cover required filenames,
+  native targets, explicit statuses, icon inference, validation, decoration,
+  localized names, option consumption and unsupported children.
+- `pnpm --filter cossack exec vitest run tests/attachment-browser.test.js tests/ui-ejection.test.js`:
+  36 tests pass, including 35 source-ejection checks and strict NodeNext compilation.
+  The HTTP/Tailwind Chromium fixture checks readable no-JavaScript output,
+  retained hydration, actual root/button/image targets, Tab/Enter/Space, no form
+  submission, native cancellation/directive behavior, disabled fields/buttons,
+  localized names/status, actual image load/error, narrow/RTL layout, reduced
+  motion, retained focus and parent-owned removal/focus recovery. Disabled
+  synthetic dispatch separately verifies the handler guard; native keyboard
+  checks prove disabled Tab exclusion. No global timers/listeners are introduced.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose the required
+  filename, native div/button targets, public helper types, status variants and
+  authored guide. Exact-symbol Attachment output matches across CLI/MCP. Six
+  existing packaged examples compile and execute. Discovery disables Node
+  networking; installation can use the registry. The new guide has no executable
+  example.
+
+The first checks caught fixture syntax and a structurally compatible DOM type in
+an intended negative test. Both fixtures are corrected. The browser motion check
+now accepts the shared theme's near-zero reduced-motion duration instead of
+requiring literal zero. No failing behavior was hidden by changing the contract.
+
+Logs: `/tmp/cossack-attachment-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
+Other engines, assistive technology and the full generated-app/runtime matrix
+remain open. Sixty-one of 65 UI source rows are reviewed. Continue Bubble,
+Marker, Message and MessageScroller, then blocks/icons and the full matrix.
+RT-23 and CLI-07/CLI-08 remain open; release status stays 24 of 58 complete.
+
+<a id="codex-carousel-2026-10-04"></a>
+## Codex Carousel (2026-10-04)
+
+Author: Codex. Carousel now requires id, label and explicit named slides with
+stable values. Public root, viewport and slide prop types replace the ignored
+open signature. slideSize defaults to 100%; global and per-slide CSS sizes retain
+compact layouts. The demo uses 12rem cards. Controls navigate real slide geometry
+and use measured scroll boundaries, including when all content fits.
+
+Native scrolling and tab order remain available without JavaScript. Hydration
+adds named button controls, viewport-only keyboard navigation, RTL, settled change
+notifications and announcements. Nested controls retain their own keys. Native
+caller handlers run before internal updates, so a rerender cannot remove a
+listener before its event is delivered. The browser test exposed this ordering
+issue and now verifies actual targets and keyboard vetoes.
+
+Focus navigation records its identity before deferred scroll events, preserving
+selection across an immediate reorder. Keyed inputs retain identity and focus;
+removed or disabled focused content recovers to the viewport. Geometry and
+inherited direction changes retain the active anchor. Reduced motion uses instant
+movement, rapid commands use the pending destination, and pointer/wheel input
+interrupts pending animation. Cleanup releases observers/listeners and cancels
+settlement timers and animation frames.
+
+The [WAI carousel pattern](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/)
+informs naming, group roles and retained control focus. This implementation keeps
+native overflow content in reading/tab order and does not automatically rotate or
+hide offscreen slides from assistive technology. The checkpoint does not establish
+full pattern, assistive-technology or cross-browser acceptance.
+
+Verification:
+
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 479 tests
+  across 39 files pass. SSR and declarations cover native ownership, required
+  identity/content/names, empty lists, compact/individual sizes, validation and
+  browser-method safety during server rendering.
+- `pnpm --filter cossack exec vitest run tests/carousel-browser.test.js tests/ui-ejection.test.js`:
+  35 tests pass, including 34 source-ejection checks and strict NodeNext compilation.
+  The HTTP/Tailwind Chromium fixture verifies no-JavaScript native tab/scroll
+  behavior, retained hydration, real native event targets, no form submission,
+  unavailable controls, viewport keys, nested controls, caller veto, direct and
+  inherited RTL, resize, keyed reorder, removed/disabled focus, empty/repopulated
+  lists, translated slide/empty labels without spurious value changes, native
+  scrolling, full/compact/per-slide sizes, actual overflow boundaries,
+  smooth/reduced-motion navigation, rapid requests and unmount/remount cleanup.
+  Pointer/wheel cancellation uses synthetic browser events to interrupt pending
+  movement; it is not a hardware gesture acceptance claim.
+- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
+- `pnpm test:agent-docs:local` passes against the final Carousel metadata fix.
+  Installed catalogs expose required identity/slides, native targets, public slide
+  and viewport types, sizing and authored guidance. Exact-symbol Carousel results
+  match across CLI/MCP. Six existing packaged examples compile and execute.
+  Discovery disables Node networking; installation can use the registry. The
+  Carousel guide adds no executable example.
+
+Logs: `/tmp/cossack-carousel-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
+Sixty of 65 UI source rows are reviewed. Continue Attachment and the four remaining
+chat rows, then blocks/icons and the full generated-app/runtime matrix. RT-23 and
+CLI-07/CLI-08 remain open. Release status stays 24 of 58 complete; versions remain
+0.8.3 until REL-04.
+
 <a id="codex-toast-2026-10-04"></a>
 ## Codex Toast (2026-10-04)
 

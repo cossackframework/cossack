@@ -656,3 +656,22 @@ const attachmentImageEvent: AttachmentThumbnailProps = {'@load':(event:Event & {
 component(Attachment, {name:'file',onRemove:(event:MouseEvent & {currentTarget:HTMLInputElement})=>event});
 // @ts-expect-error Status words do not select visual states.
 component(Attachment, {name:'file',statusVariant:'uploaded'});
+
+import { Bubble, Message, Marker, type BubbleReaction, type BubbleProps, type MessageProps, type MarkerProps } from '@cossackframework/ui';
+const reactions: readonly BubbleReaction[] = [{emoji:'👍',label:'Like',count:0}];
+const bubbleProps: BubbleProps = {reactions,datetime:'10:30',time:'10:30 AM',reactionsLabel:'Reactions','@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;}};
+const messageProps: MessageProps = {name:'Alice',time:'Yesterday','@keydown':event=>{const root:HTMLDivElement=event.currentTarget;void root;}};
+const markerProps: MarkerProps = {'data-day':'today','@click':event=>{const root:HTMLDivElement=event.currentTarget;void root;}};
+component(Bubble,bubbleProps,'Message');component(Message,messageProps,component(Bubble,{},'Text'));component(Marker,markerProps,'Today');
+// @ts-expect-error Every reaction needs a localized text equivalent.
+const unlabeledReaction: BubbleReaction = {emoji:'👍'};
+// @ts-expect-error Root events target a div.
+component(Bubble,{'@click':(event:MouseEvent & {currentTarget:HTMLButtonElement})=>event});
+// @ts-expect-error Root events target a div.
+component(Message,{'@keydown':(event:KeyboardEvent & {currentTarget:HTMLInputElement})=>event});
+// @ts-expect-error Marker does not forward button-only attributes.
+component(Marker,{disabled:true});
+// @ts-expect-error Reaction counts are numbers.
+component(Bubble,{reactions:[{emoji:'👍',label:'Like',count:'3'}]});
+// @ts-expect-error Time metadata is a string.
+component(Message,{datetime:new Date()});

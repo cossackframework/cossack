@@ -515,12 +515,12 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 <a id="rt-23"></a>
 ### RT-23: DataTable and UI contracts
 
-Codex status (2026-10-04): 61 UI foundations, including DataTable, have reviewed
+Codex status (2026-10-04): 64 UI foundations, including DataTable, have reviewed
 contracts. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[Attachment verification](./release-0.9.0.md#codex-attachment-2026-10-04) for the latest checkpoint.
+[Chat display verification](./release-0.9.0.md#codex-chat-display-2026-10-04) for the latest checkpoint.
 
-Next: Audit Bubble using the source findings in the
+Next: Audit MessageScroller using the source findings in the
 [handoff](./handoff-0.9.0.md), then continue every pending audit row.
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close
@@ -529,21 +529,43 @@ the broader audit or full release matrix. RT-23 remains open.
 The completed [Attachment plan](./release-0.9.0-plan-archive.md#codex-attachment-plan-2026-10-04)
 and its verification remain archived for regression context.
 
-Codex next batch — Bubble:
+The completed [Bubble plan](./release-0.9.0-plan-archive.md#codex-chat-display-plan-2026-10-04)
+is archived with the combined Bubble/Marker/Message evidence.
 
-- Forward typed root div attributes/events and define any additional native
-  target props deliberately. Keep message children as renderer content with
-  independent links, buttons and form controls; a bubble itself is not an action.
-- Move width constraints to the actual outer content box. Verify long words,
-  multiline text and nested Attachment cards at narrow widths, both standalone
-  and inside Message. Use logical edges for sent/received tails and reactions.
-- Define reaction labels/counts and timestamp semantics. Keep display-only
-  reactions noninteractive; do not imply toggling or application-owned mutations.
-  Validate variants and finite counts rather than silently rendering invalid data.
-- Verify SSR/hydration, native event targets, child keyboard actions, focus during
-  updates, RTL/narrow geometry, source ejection and installed guidance. Update
-  migration notes. Then continue Marker, Message and MessageScroller; their source
-  findings are in the UI audit. Component checks do not close RT-23.
+Codex next batch — MessageScroller:
+
+Purpose: Users must be able to read history and operate message controls while
+new content arrives. Automatic following must respect that intent and component
+lifetime; keyboard users need a named, reachable viewport and jump action.
+
+Baseline: The root discards arbitrary props, scrollRef exposes internal ownership,
+and the viewport has no name or tab stop. onMount and ClientTask schedule uncancelled
+frames. Growth is inferred from scrollHeight without resize observation. The jump
+button appears for any distance from the bottom, regardless of new messages, and
+can disappear while focused. No cleanup releases scheduled work.
+
+- Define typed root/viewport props with native event targets, a stable identity
+  and viewport name. Keep native scrolling and child controls usable without JS.
+  Compose caller scroll handlers before internal updates. Validate finite,
+  nonnegative threshold values and localizable labels.
+- Specify initial following, appending, streaming text, delayed media/viewport
+  resizing and manual history reading. Follow growth only when the user was
+  already following. Preserve a stable visible anchor when history is prepended
+  or content above changes; document fallback behavior when that anchor disappears.
+  Avoid competing with native scroll anchoring. Test actual geometry and user input.
+- Give the jump action an accurate name, native non-submit behavior and a focus
+  destination when it disappears. Preserve focus in message child controls. Do
+  not infer that scrolling up means unseen messages have arrived or add a noisy
+  live region around every streaming token.
+- Own observers, event listeners and animation frames. Defer setup until refs are
+  connected, guard queued work by lifetime, and cancel it on cleanup. Keep any
+  public scrolling method browser-only and safe while disconnected.
+- Verify SSR/hydration, real keyboard/scroll behavior, late content sizing,
+  append/prepend/replacement, focused controls, threshold/empty states, resizing,
+  cleanup/remounts, source ejection and installed CLI/MCP guidance. Update the
+  framework demo and generated Chat template if the public contract changes.
+  Record migration behavior and separate fixture evidence from native transport
+  or full generated-app acceptance. Then audit blocks/icons and the RT-23 gate.
 
 Purpose: Applications need a typed table for real server data, and agents need
 reliable component attributes, events, and accessibility guidance.

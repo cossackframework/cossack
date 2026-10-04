@@ -88,117 +88,61 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-attachment-2026-10-04"></a>
-### Codex Attachment (2026-10-04)
+<a id="codex-chat-display-2026-10-04"></a>
+### Codex Bubble, Marker and Message (2026-10-04)
 
-Author: Codex. Attachment now requires a filename and forwards separate typed
-native root, removal-button and thumbnail props. Its public types replace the
-ignored arbitrary signature. Positional children reject instead of disappearing.
-Status colors use an explicit neutral/success/error variant; English status words
-no longer select conflicting colors. Final-extension inference is case-insensitive
-and guards inherited object properties; bare and hidden dot-only names use file.
+Author: Codex. These three display components now forward typed native div
+attributes/events. Bubble reactions require localized text equivalents, accept
+readonly records and validate nonnegative safe counts, including visible zero.
+They render as a named native list with decorative emoji and readable text.
+Wrapping reactions now take up normal layout space instead of overlapping the
+next timestamp/message. Native child actions remain independent.
 
-Removal has a filename-specific default name and a localized override. The native
-non-submit button supports keyboard activation, disabled props and fieldsets.
-Native button callbacks run before onRemove and can veto it; callback-time disabling
-also suppresses removal. The owning list removes records and restores focus. Root
-bubbling handlers run after the button action. Decorative previews retain native
-load/error behavior without inventing fallback/retry or upload operations.
-
-Verification:
-
-- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 505 tests
-  across 40 files pass. SSR and public declarations cover required filenames,
-  native targets, explicit statuses, icon inference, validation, decoration,
-  localized names, option consumption and unsupported children.
-- `pnpm --filter cossack exec vitest run tests/attachment-browser.test.js tests/ui-ejection.test.js`:
-  36 tests pass, including 35 source-ejection checks and strict NodeNext compilation.
-  The HTTP/Tailwind Chromium fixture checks readable no-JavaScript output,
-  retained hydration, actual root/button/image targets, Tab/Enter/Space, no form
-  submission, native cancellation/directive behavior, disabled fields/buttons,
-  localized names/status, actual image load/error, narrow/RTL layout, reduced
-  motion, retained focus and parent-owned removal/focus recovery. Disabled
-  synthetic dispatch separately verifies the handler guard; native keyboard
-  checks prove disabled Tab exclusion. No global timers/listeners are introduced.
-- Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
-- `pnpm test:agent-docs:local` passes. Installed catalogs expose the required
-  filename, native div/button targets, public helper types, status variants and
-  authored guide. Exact-symbol Attachment output matches across CLI/MCP. Six
-  existing packaged examples compile and execute. Discovery disables Node
-  networking; installation can use the registry. The new guide has no executable
-  example.
-
-The first checks caught fixture syntax and a structurally compatible DOM type in
-an intended negative test. Both fixtures are corrected. The browser motion check
-now accepts the shared theme's near-zero reduced-motion duration instead of
-requiring literal zero. No failing behavior was hidden by changing the contract.
-
-Logs: `/tmp/cossack-attachment-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
-Other engines, assistive technology and the full generated-app/runtime matrix
-remain open. Sixty-one of 65 UI source rows are reviewed. Continue Bubble,
-Marker, Message and MessageScroller, then blocks/icons and the full matrix.
-RT-23 and CLI-07/CLI-08 remain open; release status stays 24 of 58 complete.
-
-<a id="codex-carousel-2026-10-04"></a>
-### Codex Carousel (2026-10-04)
-
-Author: Codex. Carousel now requires id, label and explicit named slides with
-stable values. Public root, viewport and slide prop types replace the ignored
-open signature. slideSize defaults to 100%; global and per-slide CSS sizes retain
-compact layouts. The demo uses 12rem cards. Controls navigate real slide geometry
-and use measured scroll boundaries, including when all content fits.
-
-Native scrolling and tab order remain available without JavaScript. Hydration
-adds named button controls, viewport-only keyboard navigation, RTL, settled change
-notifications and announcements. Nested controls retain their own keys. Native
-caller handlers run before internal updates, so a rerender cannot remove a
-listener before its event is delivered. The browser test exposed this ordering
-issue and now verifies actual targets and keyboard vetoes.
-
-Focus navigation records its identity before deferred scroll events, preserving
-selection across an immediate reorder. Keyed inputs retain identity and focus;
-removed or disabled focused content recovers to the viewport. Geometry and
-inherited direction changes retain the active anchor. Reduced motion uses instant
-movement, rapid commands use the pending destination, and pointer/wheel input
-interrupts pending animation. Cleanup releases observers/listeners and cancels
-settlement timers and animation frames.
-
-The [WAI carousel pattern](https://www.w3.org/WAI/ARIA/apg/patterns/carousel/)
-informs naming, group roles and retained control focus. This implementation keeps
-native overflow content in reading/tab order and does not automatically rotate or
-hide offscreen slides from assistive technology. The checkpoint does not establish
-full pattern, assistive-technology or cross-browser acceptance.
+Bubble constrains its actual content box to 75% by default. Message owns an 80%
+body and sets the bubble limit to 100% inside it, avoiding nested percentage
+limits. Long words and metadata wrap; logical corners/alignment follow RTL.
+Message preserves supplied name, time and avatar for both variants. Explicit
+datetime plus display time produces a native time element; arbitrary time text
+alone remains a span. Marker exposes its label and hides only decorative lines.
+None adds automatic live-region semantics, keyboard actions or global resources.
 
 Verification:
 
-- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 479 tests
-  across 39 files pass. SSR and declarations cover native ownership, required
-  identity/content/names, empty lists, compact/individual sizes, validation and
-  browser-method safety during server rendering.
-- `pnpm --filter cossack exec vitest run tests/carousel-browser.test.js tests/ui-ejection.test.js`:
-  35 tests pass, including 34 source-ejection checks and strict NodeNext compilation.
-  The HTTP/Tailwind Chromium fixture verifies no-JavaScript native tab/scroll
-  behavior, retained hydration, real native event targets, no form submission,
-  unavailable controls, viewport keys, nested controls, caller veto, direct and
-  inherited RTL, resize, keyed reorder, removed/disabled focus, empty/repopulated
-  lists, translated slide/empty labels without spurious value changes, native
-  scrolling, full/compact/per-slide sizes, actual overflow boundaries,
-  smooth/reduced-motion navigation, rapid requests and unmount/remount cleanup.
-  Pointer/wheel cancellation uses synthetic browser events to interrupt pending
-  movement; it is not a hardware gesture acceptance claim.
+- UI build and `pnpm --filter @cossackframework/ui exec vitest run`: 539 tests
+  across 41 files pass. SSR and public declarations cover native targets,
+  timestamp contracts, sent metadata, readonly labeled reactions, zero/invalid
+  counts, variants, decorative content and retained native children.
+- `pnpm --filter cossack exec vitest run tests/chat-display-browser.test.js tests/ui-ejection.test.js`:
+  39 tests pass, including 38 source-ejection checks and strict NodeNext compilation.
+  The real HTTP/Tailwind Chromium fixture checks no-JavaScript readable output,
+  retained hydration, native event targets, Tab/Enter/Space/link behavior, no form
+  submission, draft focus/value retention, reaction accessibility-tree text,
+  timestamps, 12 wrapped reactions, RTL corners/avatar order, narrow layouts and
+  standalone/composed width measurements with nested Attachment content.
+- `pnpm --filter @cossackframework/scaffold exec vitest run`: 113 tests in eight
+  files pass. The generated Chat render fixture executes its actual method with
+  real UI/renderer components for sent, received, streaming and empty content.
+  Translation, records and callbacks are fixture inputs; no transport/server
+  acceptance is inferred from that render test.
 - Root `pnpm tsc --noEmit` and all 11 `pnpm typecheck` configurations pass.
-- `pnpm test:agent-docs:local` passes against the final Carousel metadata fix.
-  Installed catalogs expose required identity/slides, native targets, public slide
-  and viewport types, sizing and authored guidance. Exact-symbol Carousel results
-  match across CLI/MCP. Six existing packaged examples compile and execute.
-  Discovery disables Node networking; installation can use the registry. The
-  Carousel guide adds no executable example.
+- `pnpm test:agent-docs:local` passes. Installed catalogs expose native div
+  targets for all three components, readonly reactions, timestamp metadata,
+  public reaction types and the authored guide. Exact-symbol Bubble results match
+  across CLI/MCP. Six existing packaged examples compile and execute. Discovery
+  disables Node networking; installation can use the registry. The new guide
+  adds no executable example.
 
-Logs: `/tmp/cossack-carousel-{build,ui,browser-ejection,root-types,types,agent-docs}.log`.
-Sixty of 65 UI source rows are reviewed. Continue Attachment and the four remaining
-chat rows, then blocks/icons and the full generated-app/runtime matrix. RT-23 and
-CLI-07/CLI-08 remain open. Release status stays 24 of 58 complete; versions remain
-0.8.3 until REL-04.
+The first browser run exposed a failed nested width override: Tailwind arbitrary
+selectors interpret unescaped underscores in the class name. Replacing that
+selector with the inherited --cs-bubble-max-width contract fixes the measured
+geometry. Package type checking also caught an incompatible constructor union in
+a test; the test now uses individually typed factories without widening props.
+
+Logs: `/tmp/cossack-chat-display-{build,ui,browser-ejection,scaffold,root-types,types,agent-docs}.log`.
+Cross-browser/assistive-technology and full generated-app/runtime acceptance remain
+open. Sixty-four of 65 UI source rows are reviewed. Continue MessageScroller,
+then blocks/icons and the full matrix. RT-23 and CLI-07/CLI-08 remain open; the
+release stays 24 of 58 complete, with all unchecked tasks still in scope.
 
 ### Archived checkpoints
 
@@ -209,6 +153,8 @@ parent task. Status remains 24 complete and 34 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-attachment-2026-10-04"></a>[Codex Attachment (2026-10-04)](./release-0.9.0-verification-archive.md#codex-attachment-2026-10-04) |
+| <a id="codex-carousel-2026-10-04"></a>[Codex Carousel (2026-10-04)](./release-0.9.0-verification-archive.md#codex-carousel-2026-10-04) |
 | <a id="codex-toast-2026-10-04"></a>[Codex Toast (2026-10-04)](./release-0.9.0-verification-archive.md#codex-toast-2026-10-04) |
 | <a id="codex-sidebar-2026-10-04"></a>[Codex Sidebar (2026-10-04)](./release-0.9.0-verification-archive.md#codex-sidebar-2026-10-04) |
 | <a id="codex-resizable-2026-10-04"></a>[Codex Resizable (2026-10-04)](./release-0.9.0-verification-archive.md#codex-resizable-2026-10-04) |

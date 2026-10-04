@@ -939,12 +939,12 @@ export class ComponentsDemo extends Cossack {
                                     avatar: component(Avatar, { src: 'https://i.pravatar.cc/80?img=5', alt: 'Alice', size: 28 }),
                                 }, component(Bubble, {
                                     variant: 'received',
-                                    reactions: [{ emoji: '👀', count: 2 }],
+                                    reactions: [{ emoji: '👀', label: 'Watching', count: 2 }],
                                 }, 'Hey! Did you see the new components?'))}
                                 ${component(Bubble, {
                                     variant: 'sent',
                                     time: '10:31 AM',
-                                    reactions: [{ emoji: '👍', count: 1 }, { emoji: '🎉' }],
+                                    reactions: [{ emoji: '👍', label: 'Like', count: 1 }, { emoji: '🎉', label: 'Celebrate' }],
                                 }, 'Yes! They look great.')}
                                 ${component(Message, {
                                     name: 'Alice',
@@ -958,7 +958,7 @@ export class ComponentsDemo extends Cossack {
                                 ${component(Bubble, {
                                     variant: 'sent',
                                     time: '10:33 AM',
-                                    reactions: [{ emoji: '❤️', count: 3 }],
+                                    reactions: [{ emoji: '❤️', label: 'Love', count: 3 }],
                                 }, html`<img src="https://picsum.photos/200/120" class="rounded-lg" alt="" />`)}
                                 ${component(Message, {
                                     name: 'Alice',

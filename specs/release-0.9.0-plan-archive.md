@@ -4770,3 +4770,25 @@ Codex next batch — Attachment:
   behavior, localization, narrow/RTL layout, source ejection and installed CLI/MCP
   guidance. Add migration notes for the public contract changes. This is an
   implementation plan; Attachment remains pending until the evidence passes.
+
+<a id="codex-chat-display-plan-2026-10-04"></a>
+## Bubble implementation plan — Codex, 2026-10-04
+
+Archived after the [Bubble/Marker/Message checkpoint](./release-0.9.0.md#codex-chat-display-2026-10-04).
+The original plan follows; its future instructions describe the earlier state.
+
+Codex next batch — Bubble:
+
+- Forward typed root div attributes/events and define any additional native
+  target props deliberately. Keep message children as renderer content with
+  independent links, buttons and form controls; a bubble itself is not an action.
+- Move width constraints to the actual outer content box. Verify long words,
+  multiline text and nested Attachment cards at narrow widths, both standalone
+  and inside Message. Use logical edges for sent/received tails and reactions.
+- Define reaction labels/counts and timestamp semantics. Keep display-only
+  reactions noninteractive; do not imply toggling or application-owned mutations.
+  Validate variants and finite counts rather than silently rendering invalid data.
+- Verify SSR/hydration, native event targets, child keyboard actions, focus during
+  updates, RTL/narrow geometry, source ejection and installed guidance. Update
+  migration notes. Then continue Marker, Message and MessageScroller; their source
+  findings are in the UI audit. Component checks do not close RT-23.

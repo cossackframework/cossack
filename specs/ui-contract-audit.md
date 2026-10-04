@@ -66,7 +66,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [AvatarGroup](../packages/ui/src/components/AvatarGroup.ts) | Reviewed foundation | Named native group, readonly stable keyed items, native props, validated geometry/counts, localized overflow, RTL/reverse overlap, keyed state retention, SSR/Chromium and source-ejection coverage. |
 | [Badge](../packages/ui/src/components/Badge.ts) | Reviewed foundation | Typed native span attributes/events, validated variants, readable status text, SSR/Chromium and ejected-source coverage. |
 | [Breadcrumb](../packages/ui/src/components/Breadcrumb.ts) | Reviewed foundation | Typed native root/list/link/text targets, stable readonly items, current-page links/text, rich names, hidden separators, native keyboard/modifiers, keyed focus, SSR/accessibility snapshots/Chromium, scaffold and ejected-source coverage. |
-| [Bubble](../packages/ui/src/components/Bubble.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Bubble](../packages/ui/src/components/Bubble.ts) | Reviewed foundation | Typed native div props, readonly labeled reactions and zero counts, explicit time metadata, normal-flow wrapping, logical corners, composed widths and SSR/Chromium/ejection/installed guidance. |
 | [Button](../packages/ui/src/components/Button.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
 | [ButtonGroup](../packages/ui/src/components/ButtonGroup.ts) | Reviewed foundation | Named typed native div, consumed props, direct-control border joining, RTL/vertical layout, focus rings and ordinary native child behavior; SSR/Chromium and ejected-source coverage. |
 | [Calendar](../packages/ui/src/components/Calendar.ts) | Reviewed foundation | Strict UTC Gregorian dates, typed root props, SSR selected month, bounded grid keyboard navigation, controlled/default values, locale/week starts and focus ownership. |
@@ -91,9 +91,9 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 | [Item](../packages/ui/src/components/Item.ts) | Reviewed foundation | Typed native div props, visual-only hover, native child actions, reduced motion, slot ownership, SSR/Chromium and source-ejection coverage. |
 | [Kbd](../packages/ui/src/components/Kbd.ts) | Reviewed foundation | Typed native HTMLElement attributes/events on descriptive kbd markup, no implicit shortcut behavior, SSR/Chromium and ejected-source coverage. |
 | [Label](../packages/ui/src/components/Label.ts) | Reviewed foundation | Published type fixture, SSR tests and native-controls Chromium acceptance. |
-| [Marker](../packages/ui/src/components/Marker.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Marker](../packages/ui/src/components/Marker.ts) | Reviewed foundation | Typed native div props, validated visual variants, readable phrasing content and decorative lines; SSR, native browser events, narrow/RTL layout and installed guidance. |
 | [Menubar](../packages/ui/src/components/Menubar.ts) | Reviewed foundation | Named scoped menus, typed root/trigger/panel contracts, roving focus, RTL/typeahead, native dismissal, dynamic focus recovery, bounded positioning, SSR/Chromium and ejected-source compilation. |
-| [Message](../packages/ui/src/components/Message.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
+| [Message](../packages/ui/src/components/Message.ts) | Reviewed foundation | Typed native div props, preserved sent/received metadata and avatars, explicit time metadata, responsive body ownership, child focus/actions and generated Chat render coverage. |
 | [MessageScroller](../packages/ui/src/components/MessageScroller.ts) | Pending | Audit props/spread ownership, events, naming, keyboard and focus against implementation. |
 | [Modal](../packages/ui/src/components/Modal.ts) | Reviewed foundation | Typed native dialog attributes/events, controlled/default state, native dismissal and modal focus; SSR/hydration and themed Chromium acceptance. |
 | [MultiSelect](../packages/ui/src/components/MultiSelect.ts) | Reviewed foundation | Typed input props/events, stable IDs, controlled/default tags, repeated form values, visible validation, keyboard/chip focus, composition, external form reset and SSR/fresh-render acceptance. |
@@ -125,16 +125,15 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Next passes
 
-Next audit Bubble, then Marker, Message and MessageScroller. Bubble ignores root
-native props and puts its 75% content width inside an unsized wrapper. Define
-native targets, reaction text/naming, timestamp semantics and RTL geometry; retain
-native child actions. Verify standalone and Message composition in a real browser.
-Marker needs native root props and decorative divider semantics. Message ignores
-root props and drops sent metadata. MessageScroller needs viewport ownership,
-scroll/focus contracts and cleanup for scheduled work. Blocks and icons follow.
+Next audit MessageScroller, the final pending source row. It ignores native root
+props, gives the viewport no keyboard tab stop or accessible name, and schedules
+animation frames without cleanup. Its scroll/task behavior needs browser evidence
+for appended/prepended content, delayed image sizing, manual history reading and
+remounts. Define actual viewport event targets, follow/anchor behavior and jump
+control focus before implementation. The detailed RT-23 plan preserves these goals.
+Then review blocks and icons separately.
 
-Continue the pending display, layout and chat components, then review blocks and
-icons separately. Do not mechanically replace every prop index signature with a
+Finish the pending source row, then review blocks and icons separately. Do not mechanically replace every prop index signature with a
 global type: the actual spread destination determines allowed attributes, native
 event targets and accessibility contracts. Keep unknown or unsupported behavior
 explicit in installed catalogs. Reviewed foundations still need the broader
