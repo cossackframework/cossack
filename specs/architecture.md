@@ -37,6 +37,16 @@ Deno and Desktop consume core directly; they do not depend on framework to defin
 an adapter. Core publishes an empty runtime module beside these type declarations
 so Deno's strict ESM resolver can load their `.js` references during type checking.
 
+Deno development tooling is isolated in `@cossackframework/deno-adapter/vite`.
+Vite transforms the SSR module graph in Node; its module runner evaluates that
+code in a Deno child. Authenticated loopback channels carry module requests and
+proxied application traffic. The native Deno request is preserved for WebSocket
+upgrades while its public URL and headers reflect the original Vite request.
+Server edits replace the process; browser assets and HMR remain Vite-owned.
+Both parent and child bound shutdown, including loss of the parent's ownership
+pipe. This is a local development lifecycle, not durable state or rollback of
+external effects. The production adapter entry does not import this Node tooling.
+
 The storage capability model lives at
 `@cossackframework/core/storage-capabilities`, also re-exported by framework.
 It is independent of platform bindings and application configuration. Profiles

@@ -958,7 +958,7 @@ function denoEntry(providers = []) {
   const oauthImport = providers.length
     ? "import { oauth, handleOAuthUser } from './auth';\n"
     : '';
-  const routes = oauthRouteBlock(providers, 'frameworkApp');
+  const routes = oauthRouteBlock(providers, 'app');
   return `import { createApp } from '@cossackframework/framework/router';
 import { createDenoAdapter } from '@cossackframework/deno-adapter';
 import { App } from './App';
@@ -966,7 +966,7 @@ import { template } from './root';
 ${oauthImport}
 export const env: Record<string, unknown> = Deno.env.toObject();
 export const runtime = createDenoAdapter({ env, port: Number(env.PORT ?? 8000), hostname: String(env.HOST ?? '0.0.0.0') });
-export const frameworkApp = createApp({
+export const app = createApp({
   AppComponent: App,
   htmlTemplate: template,
   runtimeAdapter: runtime,
@@ -974,11 +974,11 @@ export const frameworkApp = createApp({
 ${routes}
 export default {
   fetch: (request: Request, requestEnv?: Record<string, unknown>) =>
-    runtime.fetch(frameworkApp, request, requestEnv),
+    runtime.fetch(app, request, requestEnv),
 };
 
 if (import.meta.main) {
-  runtime.serve(frameworkApp);
+  runtime.serve(app);
 }
 `;
 }
@@ -1664,6 +1664,10 @@ export async function renderRecipe(recipe, options = {}) {
       if (recipe.adapter === 'node') {
         viteConfig = "import { cossackNode } from '@cossackframework/node-adapter/vite';\n" + viteConfig;
         viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackNode()]),");
+      }
+      if (recipe.adapter === 'deno') {
+        viteConfig = "import { cossackDeno } from '@cossackframework/deno-adapter/vite';\n" + viteConfig;
+        viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackDeno()]),");
       }
       const webRequirements = JSON.stringify(recipeCapabilityRequirements(recipe));
       const desktopRequirements = JSON.stringify(recipeCapabilityRequirements(recipe, 'desktop'));

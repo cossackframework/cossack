@@ -6,6 +6,48 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-deno-cli-start-2026-10-04"></a>
+### Codex: Deno CLI production startup (2026-10-04)
+
+`cossack start` now selects the Deno executable for Deno projects instead of
+running the built entry in Node. It uses the generated baseline environment,
+network and read permissions; application arguments retain their ordering and
+literal values. `COSSACK_DENO_BINARY` selects an executable, otherwise the CLI
+uses `deno` on PATH. Missing builds direct the user to `pnpm run build`, which
+includes the generated SSR build.
+
+Normal and JSON startup for Node/Deno now share bounded process supervision.
+JSON output retains its existing event contract and excludes child output and
+arguments. No `started` event is emitted when the executable cannot spawn.
+Cloudflare dispatch is unchanged. Custom Deno permission sets remain available
+through the generated `deno.json` task.
+
+Verification:
+
+- Generated Deno app: **1 pass / 42 unrelated cases skipped**. In addition to
+  browser/runtime acceptance, both CLI output modes start a real Deno server
+  from a project subdirectory, preserve arguments containing spaces and `--`,
+  serve native HTTP, and reclaim the server after SIGTERM/SIGINT. JSON metadata
+  identifies Deno; its child PID and listening port no longer exist after exit.
+  Log: `/tmp/cossack-deno-cli-generated.log`.
+- CLI lifecycle: **13 pass / 38 unrelated cases skipped**, including normal Node
+  cleanup and Deno missing-build/executable diagnostics. Broader CLI subprocess
+  and adapter regressions: **43 tests / 2 files pass**. Logs:
+  `/tmp/cossack-deno-cli-lifecycle.log`, `/tmp/cossack-deno-cli-contracts.log`.
+- Root `pnpm tsc --noEmit` and all **11 package type checks** pass. Logs:
+  `/tmp/cossack-deno-cli-root-types.log`, `/tmp/cossack-deno-cli-package-types.log`.
+- `COSSACK_DENO_BINARY=<Deno executable> pnpm test:deno` passes the full local
+  package build/pack/install gate, generated-app TypeScript, Deno/Chromium
+  HTTP/SSE/WebSocket and normal/JSON CLI startup, **2 typed native smoke tests**,
+  and the workspace generated-app case. The installed check invokes the tarball
+  CLI's own executable. Log: `/tmp/cossack-deno-cli-installed.log`.
+
+A `started` event still means process creation, not HTTP readiness. Termination
+and a bounded wait do not prove graceful draining of arbitrary application work.
+Actual Deno development integration, RT-28 development traces, Electron
+launch/packaging and the final release matrix remain open. **26 complete,
+32 open**; versions stay at 0.8.3.
+
 <a id="codex-deno-production-2026-10-04"></a>
 ### Codex: Real Deno production acceptance (2026-10-04)
 

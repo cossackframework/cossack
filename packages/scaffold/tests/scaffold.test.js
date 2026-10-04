@@ -800,6 +800,8 @@ describe('composition', () => {
     expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
     const deno = JSON.parse(files.get('deno.json').content.toString());
     expect(deno.nodeModulesDir).toBe('manual');
+    expect(files.get('vite.config.ts').content.toString()).toContain("mode === 'desktop' ? [] : [cossackDeno()]");
+    expect(files.get('src/index.ts').content.toString()).toContain('export const app = createApp(');
     expect(files.get('src/index.ts').content.toString()).toContain('port: Number(env.PORT ?? 8000)');
     expect(files.get('src/index.ts').content.toString()).toContain("hostname: String(env.HOST ?? '0.0.0.0')");
     expect(deno.tasks.build).toBe('pnpm run build');

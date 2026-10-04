@@ -88,47 +88,50 @@ remain archived, and the verification log below retains test evidence.
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
 
-<a id="codex-deno-cli-start-2026-10-04"></a>
-### Codex: Deno CLI production startup (2026-10-04)
+<a id="codex-deno-development-2026-10-04"></a>
+### Codex: Native Deno development through Vite (2026-10-04)
 
-`cossack start` now selects the Deno executable for Deno projects instead of
-running the built entry in Node. It uses the generated baseline environment,
-network and read permissions; application arguments retain their ordering and
-literal values. `COSSACK_DENO_BINARY` selects an executable, otherwise the CLI
-uses `deno` on PATH. Missing builds direct the user to `pnpm run build`, which
-includes the generated SSR build.
+The Deno adapter now has a separate Node-only `/vite` entry. Generated web
+configurations use `cossackDeno()`; Desktop configurations exclude it. Vite
+transforms modules and serves browser assets while its module runner evaluates
+server code in a Deno child. The generated source entry exports `app`, `env`
+and `runtime`; production fetch/serve behavior is retained.
 
-Normal and JSON startup for Node/Deno now share bounded process supervision.
-JSON output retains its existing event contract and excludes child output and
-arguments. No `started` event is emitted when the executable cannot spawn.
-Cloudflare dispatch is unchanged. Custom Deno permission sets remain available
-through the generated `deno.json` task.
+Module requests and application traffic use authenticated loopback connections.
+The child removes private bridge headers/configuration before calling the app.
+Forwarding preserves the native request needed by Deno's WebSocket upgrade;
+cloning it accepted a client handshake but lost server callbacks in the initial
+prototype. Source reload replaces the child, preserving Vite's browser HMR
+connection. Late proxy resets are handled without crashing Vite. Parent and
+child both bound shutdown; an ownership pipe triggers child cleanup after a
+parent crash, with a child-owned deadline for stuck application work.
 
 Verification:
 
-- Generated Deno app: **1 pass / 42 unrelated cases skipped**. In addition to
-  browser/runtime acceptance, both CLI output modes start a real Deno server
-  from a project subdirectory, preserve arguments containing spaces and `--`,
-  serve native HTTP, and reclaim the server after SIGTERM/SIGINT. JSON metadata
-  identifies Deno; its child PID and listening port no longer exist after exit.
-  Log: `/tmp/cossack-deno-cli-generated.log`.
-- CLI lifecycle: **13 pass / 38 unrelated cases skipped**, including normal Node
-  cleanup and Deno missing-build/executable diagnostics. Broader CLI subprocess
-  and adapter regressions: **43 tests / 2 files pass**. Logs:
-  `/tmp/cossack-deno-cli-lifecycle.log`, `/tmp/cossack-deno-cli-contracts.log`.
-- Root `pnpm tsc --noEmit` and all **11 package type checks** pass. Logs:
-  `/tmp/cossack-deno-cli-root-types.log`, `/tmp/cossack-deno-cli-package-types.log`.
-- `COSSACK_DENO_BINARY=<Deno executable> pnpm test:deno` passes the full local
-  package build/pack/install gate, generated-app TypeScript, Deno/Chromium
-  HTTP/SSE/WebSocket and normal/JSON CLI startup, **2 typed native smoke tests**,
-  and the workspace generated-app case. The installed check invokes the tarball
-  CLI's own executable. Log: `/tmp/cossack-deno-cli-installed.log`.
+- Generated native runtime/browser acceptance: cold WebSockets, HTTP/SSE/socket
+  actions, repeated cookies, public URL, environment-file/process precedence,
+  private-header/config exclusion, server edits, process replacement, startup
+  failure/repair, normal shutdown and parent crash with ignored cleanup.
+  Both recovery cases pass (`/tmp/cossack-deno-dev-recovery.log`).
+- Deno adapter: **21 tests / 3 files**; scaffold: **113 / 8**
+  (`/tmp/cossack-deno-dev-unit.log`). Root `pnpm tsc --noEmit` and all **11 package
+  type checks** pass (`/tmp/cossack-deno-dev-root-types.log`,
+  `/tmp/cossack-deno-dev-package-types.log`).
+- The expanded `pnpm test:deno` gate includes installed development/recovery,
+  production and CLI startup, typed native smoke tests, and workspace cases.
+  **The full gate passes** with Deno 2.9.6: installed Vite 8.3.2, production and
+  normal/JSON startup, both development recovery cases, **2 typed native smoke
+  tests**, then **3 workspace cases / 42 unrelated cases skipped** with Vite 8.1.4.
+  Log: `/tmp/cossack-deno-dev-gate.log`.
 
-A `started` event still means process creation, not HTTP readiness. Termination
-and a bounded wait do not prove graceful draining of arbitrary application work.
-Actual Deno development integration, RT-28 development traces, Electron
-launch/packaging and the final release matrix remain open. **26 complete,
-32 open**; versions stay at 0.8.3.
+The implementation follows Vite's [runtime module-runner API](https://vite.dev/guide/api-environment-runtimes).
+This is trusted local development, not a sandbox. Middleware mode is explicitly
+rejected. Reload resets process-local state; bounded termination does not undo
+external effects or prove application cleanup. On Linux containers, the crash
+check accepts a terminated zombie retained by PID 1 as no longer executing.
+Public CLI development trace parity, HTTPS acceptance, Electron launch/packaging
+and the full release matrix remain open. **26 complete, 32 open**; versions stay
+at 0.8.3. No deployment or publication occurred.
 
 ### Archived checkpoints
 
@@ -139,6 +142,7 @@ parent task. Current status is 26 complete and 32 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
+| <a id="codex-deno-cli-start-2026-10-04"></a>[Codex Deno CLI production startup (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-cli-start-2026-10-04) |
 | <a id="codex-deno-production-2026-10-04"></a>[Codex real Deno production acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-deno-production-2026-10-04) |
 | <a id="codex-node-websocket-development-2026-10-04"></a>[Codex unified Node development sockets and bindings (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-websocket-development-2026-10-04) |
 | <a id="codex-node-development-2026-10-04"></a>[Codex Node Vite development HTTP and trace acceptance (2026-10-04)](./release-0.9.0-verification-archive.md#codex-node-development-2026-10-04) |

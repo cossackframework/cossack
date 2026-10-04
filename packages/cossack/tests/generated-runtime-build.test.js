@@ -1700,3 +1700,10 @@ it.skipIf(!process.env.COSSACK_DENO_BINARY)('executes a generated Deno applicati
   await verifyDenoRuntimeApplication(root);
   await verifyDenoCliStartup(root, process.env.COSSACK_DENO_BINARY);
 },120000);
+
+it.skipIf(!process.env.COSSACK_DENO_BINARY).each([false, true])('serves generated Deno development through a native module runner (crash=%s)', async crash => {
+  const { writeDenoRuntimeAcceptance, verifyDenoDevelopmentApplication } = await import('./fixtures/deno-runtime-acceptance.js');
+  const root = await project('deno');
+  await writeDenoRuntimeAcceptance(root);
+  await verifyDenoDevelopmentApplication(root, crash);
+},120000);

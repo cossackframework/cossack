@@ -25,7 +25,9 @@ Partial acceptance does not close RT-28 or REL-03.
    [checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
    Deno CLI startup now uses the actual runtime with normal/JSON lifecycle
    supervision; see the [CLI checkpoint](./release-0.9.0.md#codex-deno-cli-start-2026-10-04).
-   Next implement Deno development acceptance through the public CLI/Vite path.
+   Native Deno/Vite development, reload and recovery now pass; see the
+   [development checkpoint](./release-0.9.0.md#codex-deno-development-2026-10-04).
+   Next verify public CLI development trace parity and HTTPS, then Desktop.
    Preserve the public inspector import
    (filesystem imports duplicate capture owners), ordered WebSocket application
    errors, and capture ownership. Keep the Node adapter and core inside the

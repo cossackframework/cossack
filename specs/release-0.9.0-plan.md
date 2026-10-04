@@ -980,7 +980,11 @@ no longer depend on framework-owned types. See the
 
 Deno `cossack start` now dispatches to Deno and supervises normal/JSON execution
 and cancellation; see the [CLI checkpoint](./release-0.9.0.md#codex-deno-cli-start-2026-10-04).
-Next implement actual Deno development acceptance. Production execution alone does not verify RT-28
+Native Deno/Vite development now executes server modules in Deno through Vite's
+module runner. Generated and installed acceptance covers browser transports,
+cold sockets, server reload, bindings, startup repair and parent-crash cleanup;
+see the [development checkpoint](./release-0.9.0.md#codex-deno-development-2026-10-04).
+Next verify public CLI development traces and HTTPS. These checks do not close RT-28
 development traces, graceful generated-server draining, Deno Deploy, Electron or
 the complete REL-03 matrix.
 

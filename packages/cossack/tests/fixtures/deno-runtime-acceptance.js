@@ -35,7 +35,7 @@ export async function writeDenoRuntimeAcceptance(root) {
     export const POST=defineApi({handler:async({c})=>{
       const headers=new Headers({'content-type':'application/json'});
       headers.append('set-cookie','first=1; Path=/');headers.append('set-cookie','second=2; Path=/');
-      return new Response(JSON.stringify({runtime:Deno.version.deno,args:Deno.args,body:await c.req.text(),binding:c.env.DENO_ACCEPTANCE_BINDING}),{headers});
+      return new Response(JSON.stringify({runtime:Deno.version.deno,pid:Deno.pid,url:c.req.url,control:Deno.env.get('COSSACK_DENO_DEVELOPMENT')??null,privateHeader:c.req.header('x-cossack-deno-token')??null,override:c.env.DENO_DEV_OVERRIDE,args:Deno.args,body:await c.req.text(),binding:c.env.DENO_ACCEPTANCE_BINDING}),{headers});
     }});
   `,
   );
@@ -255,4 +255,193 @@ export async function verifyDenoCliStartup(root, binary, cli) {
     }
     if (failure) throw new Error(`${failure.stack}\nCLI stdout:\n${stdout}\nCLI stderr:\n${stderr}`);
   }
+}
+
+export async function verifyDenoDevelopmentApplication(root, crash = false) {
+  await fs.writeFile(
+    path.join(root, '.env.development'),
+    'DENO_ACCEPTANCE_BINDING=mode-file\nDENO_DEV_OVERRIDE=file-value\n',
+  );
+  const child = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+    import { createServer } from 'vite';
+    const server = await createServer({ server: { port: 0, host: '127.0.0.1' } });
+    await server.listen();
+    console.log('DENO_DEV_ORIGIN=http://127.0.0.1:' + server.httpServer.address().port);
+    process.on('message', async message => { if (message === 'STOP') { await server.close(); process.exit(0); } });
+  `,
+    ],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        NODE_ENV: 'development',
+        VITEST: '',
+        APP_URL: '',
+        DENO_DEV_OVERRIDE: 'process-value',
+        DENO_ACCEPTANCE_BINDING: undefined,
+      },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    },
+  );
+  let output = '';
+  child.stdout.on('data', (data) => {
+    output += data;
+  });
+  child.stderr.on('data', (data) => {
+    output += data;
+  });
+  const exited = once(child, 'exit');
+  exited.catch(() => {});
+  let browser, pid, failure;
+  const sockets = [];
+  try {
+    await expect
+      .poll(
+        () => {
+          if (child.exitCode !== null || child.signalCode !== null) throw new Error(output);
+          return /DENO_DEV_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)?.[1];
+        },
+        { timeout: 30000 },
+      )
+      .toBeTruthy();
+    const origin = /DENO_DEV_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
+    const client = await (await fetch(origin + '/@vite/client')).text();
+    const token = /const wsToken = "([^"]+)"/.exec(client)?.[1];
+    expect(token).toBeTruthy();
+    const hmr = new WebSocket(origin.replace('http:', 'ws:') + '/?token=' + token, 'vite-hmr');
+    sockets.push(hmr);
+    await once(hmr, 'message');
+    const query = new URLSearchParams({ routePath: '/deno-live', pathname: '/deno-live', params: '{}' });
+    const cold = new WebSocket(origin.replace('http:', 'ws:') + '/ws/page/user:anonymous?' + query, {
+      headers: { origin },
+    });
+    sockets.push(cold);
+    const [state] = await once(cold, 'message');
+    expect(JSON.parse(String(state)).state.count).toBe(0);
+    const native = async () => {
+      const response = await fetch(origin + '/api/deno-check', {
+        method: 'POST',
+        body: 'development',
+        signal: AbortSignal.timeout(10000),
+      });
+      expect(response.status, output).toBe(200);
+      expect(response.headers.getSetCookie()).toEqual(['first=1; Path=/', 'second=2; Path=/']);
+      const result = await response.json();
+      expect(result).toMatchObject({
+        runtime: expect.stringMatching(/^2\./),
+        body: 'development',
+        binding: 'mode-file',
+        override: 'process-value',
+        control: null,
+        privateHeader: null,
+        url: origin + '/api/deno-check',
+      });
+      return result;
+    };
+    pid = (await native()).pid;
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    for (const route of ['deno-http', 'deno-sse', 'deno-live']) {
+      await page.goto(origin + '/' + route);
+      await expect(page.locator('#count')).toHaveText('0');
+      await page.getByRole('button', { name: 'Increment', exact: true }).click();
+      await expect(page.locator('#count')).toHaveText('2');
+    }
+    const file = path.join(root, 'src/pages/deno-http/index.ts');
+    const source = await fs.readFile(file, 'utf8');
+    const closed = once(cold, 'close');
+    const reloaded = page.waitForEvent('load', { timeout: 20000 });
+    await fs.writeFile(file, source.replace('this.count+=2', 'this.count+=5'));
+    await closed;
+    await expect
+      .poll(
+        async () => {
+          try {
+            return (await native()).pid;
+          } catch {
+            return pid;
+          }
+        },
+        { timeout: 20000 },
+      )
+      .not.toBe(pid);
+    expect(() => process.kill(pid, 0)).toThrow();
+    pid = (await native()).pid;
+    expect(hmr.readyState).toBe(WebSocket.OPEN);
+    await reloaded;
+    await page.goto(origin + '/deno-http');
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await expect(page.locator('#count')).toHaveText('5');
+    await browser.close();
+    browser = undefined;
+    for (const socket of sockets) socket.terminate();
+    const entryFile = path.join(root, 'src/index.ts');
+    const entrySource = await fs.readFile(entryFile, 'utf8');
+    await fs.writeFile(entryFile, entrySource + "\nthrow new Error('DENO_STARTUP_FAILURE_FIXTURE');\n");
+    await expect
+      .poll(
+        async () => {
+          try {
+            return (await fetch(origin + '/api/deno-check', { method: 'POST', signal: AbortSignal.timeout(10000) }))
+              .status;
+          } catch {
+            return 0;
+          }
+        },
+        { timeout: 20000 },
+      )
+      .toBe(500);
+    await fs.writeFile(entryFile, entrySource + (crash ? '\nruntime.dispose = () => new Promise(() => {});\n' : ''));
+    await expect
+      .poll(
+        async () => {
+          try {
+            return (await native()).pid;
+          } catch {
+            return pid;
+          }
+        },
+        { timeout: 20000 },
+      )
+      .not.toBe(pid);
+    pid = (await native()).pid;
+    if (crash) child.kill('SIGKILL');
+  } catch (error) {
+    failure = new Error(`${error.stack}\n${output}`);
+  } finally {
+    await browser?.close();
+    for (const socket of sockets) socket.terminate();
+    if (child.connected) child.send('STOP');
+    else child.kill('SIGTERM');
+    const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
+    const [code, signal] = await exited;
+    clearTimeout(timer);
+    if (!failure) {
+      expect({ code, signal }, output).toEqual(crash ? { code: null, signal: 'SIGKILL' } : { code: 0, signal: null });
+      await expect
+        .poll(
+          async () => {
+            try {
+              process.kill(pid, 0);
+              // Container PID 1 may retain a terminated orphan as a zombie.
+              if (process.platform === 'linux') {
+                const state = await fs.readFile(`/proc/${pid}/stat`, 'utf8');
+                return state.slice(state.lastIndexOf(')') + 2).startsWith('Z');
+              }
+              return false;
+            } catch {
+              return true;
+            }
+          },
+          { timeout: 10000 },
+        )
+        .toBe(true);
+    }
+  }
+  if (failure) throw failure;
 }
