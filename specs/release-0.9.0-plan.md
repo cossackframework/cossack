@@ -4,7 +4,7 @@ Compacted by Codex on 2026-10-04. The release has 58 tasks: 24 complete and 34 o
 The [release checklist](./release-0.9.0.md) owns completion status and verification evidence.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
 
-Completed tasks below retain their anchors and archive links. Outcomes are in the checklist.
+The completed task index retains all task anchors and archive links. Outcomes are in the checklist.
 The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous document,
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
@@ -96,37 +96,39 @@ Add focused tests during each group, and run broader gates after integration.
 
 Preserve regression coverage for completed prerequisites while closing the open criteria.
 
+## Completed task index
+
+Reference only; preserve regression coverage. Full criteria and reviews remain
+in the archive. The release checklist retains outcomes and verification evidence.
+
+| Task | Completed work and archived context |
+| --- | --- |
+| <a id="cli-01"></a>CLI-01 | [Lifecycle flags, help, and creation dry runs](./release-0.9.0-plan-archive.md#cli-01) |
+| <a id="cli-02"></a>CLI-02 | [Consistent command validation](./release-0.9.0-plan-archive.md#cli-02) |
+| <a id="cli-03"></a>CLI-03 | [JSON diagnostics and noninteractive execution](./release-0.9.0-plan-archive.md#cli-03) |
+| <a id="cli-04"></a>CLI-04 | [Inspect, check, and explain project behavior](./release-0.9.0-plan-archive.md#cli-04) |
+| <a id="cli-05"></a>CLI-05 | [Complete application recipes](./release-0.9.0-plan-archive.md#cli-05) |
+| <a id="cli-06"></a>CLI-06 | [Structured upgrades](./release-0.9.0-plan-archive.md#cli-06) |
+| <a id="rt-02"></a>RT-02 | [Validated server actions](./release-0.9.0-plan-archive.md#rt-02) |
+| <a id="rt-03"></a>RT-03 | [Observable server resources](./release-0.9.0-plan-archive.md#rt-03) |
+| <a id="rt-04"></a>RT-04 | [State, store, and computed diagnostics](./release-0.9.0-plan-archive.md#rt-04) |
+| <a id="rt-05"></a>RT-05 | [Typed tasks and stale-work cancellation](./release-0.9.0-plan-archive.md#rt-05) |
+| <a id="rt-06"></a>RT-06 | [Optimistic updates and rollback](./release-0.9.0-plan-archive.md#rt-06) |
+| <a id="rt-07"></a>RT-07 | [Typed routes and effective route metadata](./release-0.9.0-plan-archive.md#rt-07) |
+| <a id="rt-08"></a>RT-08 | [Typed URL state](./release-0.9.0-plan-archive.md#rt-08) |
+| <a id="rt-09"></a>RT-09 | [Navigation completion and diagnostics](./release-0.9.0-plan-archive.md#rt-09) |
+| <a id="rt-14"></a>RT-14 | [Resource authorization policies](./release-0.9.0-plan-archive.md#rt-14) |
+| <a id="rt-18"></a>RT-18 | [Cache and rate-limit contracts](./release-0.9.0-plan-archive.md#rt-18) |
+| <a id="rt-19"></a>RT-19 | [Realtime lifecycle and recovery](./release-0.9.0-plan-archive.md#rt-19) |
+| <a id="rt-25"></a>RT-25 | [Runtime capability checks](./release-0.9.0-plan-archive.md#rt-25) |
+| <a id="cf-03"></a>CF-03 | [Secrets, placeholders, and binding types](./release-0.9.0-plan-archive.md#cf-03) |
+| <a id="cf-05"></a>CF-05 | [Distributed SSE coordination](./release-0.9.0-plan-archive.md#cf-05) |
+| <a id="cf-06"></a>CF-06 | [Built-artifact runtime tests](./release-0.9.0-plan-archive.md#cf-06) |
+| <a id="cf-07"></a>CF-07 | [Public-only SSG and protected assets](./release-0.9.0-plan-archive.md#cf-07) |
+| <a id="cf-11"></a>CF-11 | [Tracked credential removal](./release-0.9.0-plan-archive.md#cf-11) |
+| <a id="rel-01"></a>REL-01 | [Reported regressions](./release-0.9.0-plan-archive.md#rel-01) |
+
 ## CLI and agent tooling
-
-<a id="cli-01"></a>
-### CLI-01: Lifecycle flags, help, and creation dry runs
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cli-01).
-
-<a id="cli-02"></a>
-### CLI-02: Consistent command validation
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cli-02).
-
-<a id="cli-03"></a>
-### CLI-03: JSON diagnostics and noninteractive execution
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cli-03).
-
-<a id="cli-04"></a>
-### CLI-04: Inspect, check, and explain project behavior
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cli-04).
-
-<a id="cli-05"></a>
-### CLI-05: Complete application recipes
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cli-05).
-
-<a id="cli-06"></a>
-### CLI-06: Structured upgrades
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cli-06).
 
 <a id="cli-07"></a>
 ### CLI-07: Local MCP tools
@@ -253,46 +255,6 @@ Cover ordinary results, generators, errors, timeout, disconnect, cancellation,
 duplicate consumers, and cleanup. Consuming a call twice never dispatches a
 second mutation. Type tests prove yielded and final result inference.
 
-<a id="rt-02"></a>
-### RT-02: Validated server actions
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-02).
-
-<a id="rt-03"></a>
-### RT-03: Observable server resources
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-03).
-
-<a id="rt-04"></a>
-### RT-04: State, store, and computed diagnostics
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-04).
-
-<a id="rt-05"></a>
-### RT-05: Typed tasks and stale-work cancellation
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-05).
-
-<a id="rt-06"></a>
-### RT-06: Optimistic updates and rollback
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-06).
-
-<a id="rt-07"></a>
-### RT-07: Typed routes and effective route metadata
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-07).
-
-<a id="rt-08"></a>
-### RT-08: Typed URL state
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-08).
-
-<a id="rt-09"></a>
-### RT-09: Navigation completion and diagnostics
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-09).
-
 <a id="rt-10"></a>
 ### RT-10: Typed form controller
 
@@ -407,11 +369,6 @@ rotation, callback replay, failed provider exchange, and account-mapping errors.
 Error messages identify the failing stage without leaking sensitive values.
 The auth library remains independent of framework and database. Related task: RT-11.
 
-<a id="rt-14"></a>
-### RT-14: Resource authorization policies
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-14).
-
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
 
@@ -482,16 +439,6 @@ Done when: The same fixture produces equivalent Studio and CLI facts. Named
 environments never fall back to an unintended top-level binding. Read-only
 inspection does not create bookkeeping tables. Both callers close temporary
 connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
-
-<a id="rt-18"></a>
-### RT-18: Cache and rate-limit contracts
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-18).
-
-<a id="rt-19"></a>
-### RT-19: Realtime lifecycle and recovery
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-19).
 
 <a id="rt-20"></a>
 ### RT-20: SSR and hydration diagnostics
@@ -620,11 +567,6 @@ Done when: Misspelled configuration paths and incorrect inferred types fail
 type tests. Missing bindings produce a named diagnostic before application use.
 Concurrent environments cannot share configuration state. Diagnostics, hydration,
 and catalogs never expose secret values. Dependencies: CLI-04, RT-25, and CF-03.
-
-<a id="rt-25"></a>
-### RT-25: Runtime capability checks
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rt-25).
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
@@ -903,11 +845,6 @@ cannot fall back to local or another environment after failure. Add documented
 opt-in remote smoke coverage and label unrun remote checks accurately.
 Dependencies: RT-15, RT-16, and CF-01.
 
-<a id="cf-03"></a>
-### CF-03: Secrets, placeholders, and binding types
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cf-03).
-
 <a id="cf-04"></a>
 ### CF-04: Resource selection and setup
 
@@ -932,21 +869,6 @@ Done when: A generated app contains valid bindings or a precise unresolved actio
 Plan-only runs create nothing. Tests cover wrong accounts, unavailable resources,
 unsupported provisioning, and repeated application of the plan. Dependencies:
 CLI-03, RT-24, RT-25, and CF-01.
-
-<a id="cf-05"></a>
-### CF-05: Distributed SSE coordination
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cf-05).
-
-<a id="cf-06"></a>
-### CF-06: Built-artifact runtime tests
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cf-06).
-
-<a id="cf-07"></a>
-### CF-07: Public-only SSG and protected assets
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cf-07).
 
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets
@@ -1027,21 +949,11 @@ returns 404. Development guide claims must be tested with the actual CLI and
 generated configuration; an acceptance fixture's private SSR bridge does not
 establish supported Node dev behavior. Track the implementation under REL-03.
 
-<a id="cf-11"></a>
-### CF-11: Tracked credential removal
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#cf-11).
-
 ## Release gates
 
 These tasks establish release readiness after implementation. A passing narrow
 test is evidence for its behavior only. It does not close unrelated features
 or the final release audit.
-
-<a id="rel-01"></a>
-### REL-01: Reported regressions
-
-Complete. [Archived criteria and review](./release-0.9.0-plan-archive.md#rel-01).
 
 <a id="rel-02"></a>
 ### REL-02: Executable docs and published packages

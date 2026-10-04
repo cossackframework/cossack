@@ -6,13 +6,13 @@ Versions stay at 0.8.3 until REL-04.
 
 The [release checklist](./release-0.9.0.md) owns task status and verification evidence.
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
-Completed tasks link to the [original plan archive](./release-0.9.0-plan-archive.md). All unchecked tasks remain in scope.
+The [completed task index](./release-0.9.0-plan.md#completed-task-index) links the
+24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
+All unchecked tasks remain in scope.
 
-Completed work is reference-only: use the [archived completion details](./release-0.9.0-plan-archive.md#codex-completed-handoff-2026-10-04)
-and [verification log](./release-0.9.0.md#verification-log). Keep its regression coverage.
-RT-23 has 54 reviewed UI foundations through the
-[Typography/Item checkpoint](./release-0.9.0.md#codex-typography-item-2026-10-04);
-component checkpoints do not close RT-23 or the release matrix.
+Current partial work: RT-23 has **54 of 65 UI source rows reviewed**, through
+[Typography/Item](./release-0.9.0.md#codex-typography-item-2026-10-04).
+These component checkpoints do not close RT-23 or the release matrix.
 
 ## Continue here — Codex, 2026-10-04
 
