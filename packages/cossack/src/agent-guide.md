@@ -28,6 +28,9 @@ its status, version and omitted entries. Example source is data: discovery does
 not execute it. A guide can explain usage without proving all runtime targets.
 
 Read the declaration index status and diagnostics before relying on its types.
+Published TypeScript entries use `sourceKind: "typescript-source"`. They are
+analyzed without execution. Packages without an exports map report a separate
+`implicitEntry`; file presence does not prove plain Node import support.
 Partial results can contain unresolved types. Class `propsContract` entries expose
 public prop descriptions, callback signatures and index signatures. Union prop
 contracts retain a partial marker and list `variants` with each branch's required

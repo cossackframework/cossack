@@ -40,6 +40,11 @@ regressions pass. REL-03 remains open for the required non-Desktop release matri
    deterministic stale-task overlap, navigation cleanup and client stripping.
    [Installed Cloudflare and Node acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04)
    also requires emitted source maps before scanning for server code.
+   Auth now ships session/role and record-policy guides. Preserve the separate
+   legacy `implicitEntry`, static TypeScript source indexing and two examples
+   checked with Bundler resolution, bundled from installed packages and run offline.
+   [Auth guidance evidence](./release-0.9.0.md#codex-cli08-auth-guidance-2026-10-04)
+   does not prove plain Node imports, persistent sessions or native RPC authorization.
    Continue other library and UI guidance and the remaining runtime coverage.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native

@@ -40,9 +40,19 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     const map = exports && typeof exports === 'object' && !Array.isArray(exports) && Object.keys(exports).some(key => key.startsWith('.'))
       ? exports : exports === undefined ? {} : { '.': exports };
     const discovered = await discoverExports(folder, name, map);
+    // A legacy main is an implicit root import, not an explicit exports map.
+    // Report declared file targets without claiming Node/Vite runtime support.
+    let implicitEntry = null;
+    if (exports === undefined) {
+      const relative = value => value.startsWith('./') ? value : './' + value;
+      const targets = {};
+      if (typeof manifest.types === 'string') targets.types = relative(manifest.types);
+      targets.default = relative(typeof manifest.main === 'string' ? manifest.main : 'index.js');
+      implicitEntry = { import: name, origin: 'legacy-manifest', ...await describeExport(folder, '.', targets) };
+    }
     if (discovered.discovery.status === 'partial') diagnostics.push({ code: 'COSSACK_DOCS_EXPORTS_INCOMPLETE', severity: 'warning', package: name,
       message: 'Some export patterns cannot be enumerated completely. See exportDiscovery reasons.' });
-    const guidance = await readPackageGuidance(folder, name, manifest.version, discovered.entries);
+    const guidance = await readPackageGuidance(folder, name, manifest.version, [...discovered.entries, ...(implicitEntry ? [implicitEntry] : [])]);
     if (['invalid', 'partial'].includes(guidance.status)) diagnostics.push({
       code: 'COSSACK_DOCS_GUIDANCE_INCOMPLETE', severity: 'warning', package: name,
       message: 'Installed usage guidance is invalid or references unavailable imports.',
@@ -50,6 +60,7 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     packages.push({ guidance, name, version: manifest.version, installed: true,
       manifestHash: createHash('sha256').update(source).digest('hex'),
       exports: discovered.entries, exportDiscovery: discovered.discovery,
+      implicitEntry,
       legacyEntries: exports === undefined ? { main: manifest.main ?? null, types: manifest.types ?? null } : null,
     });
   }
@@ -58,13 +69,7 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     for (const pkg of packages.filter(pkg => pkg.installed)) {
       const folder = installedFolders.get(pkg.name);
       const entries = [...pkg.exports];
-      if (pkg.legacyEntries) {
-        const legacy = pkg.legacyEntries.types ?? pkg.legacyEntries.main ?? 'index.js';
-        if (typeof legacy === 'string') {
-          const target = legacy.startsWith('./') ? legacy : './' + legacy;
-          entries.push({ import: pkg.name, ...await describeExport(folder, '.', { [pkg.legacyEntries.types ? 'types' : 'default']: target }) });
-        }
-      }
+      if (pkg.implicitEntry) entries.push(pkg.implicitEntry);
       pkg.declarations = await indexDeclarations(folder, entries, { symbol });
       if (symbol !== undefined) {
         const matched = pkg.declarations.entries.some(entry => entry.symbols.some(item => item.name === symbol));
@@ -82,6 +87,6 @@ export async function readDocumentation(root, { package: selected, symbols = fal
   return { ok: !diagnostics.some(diagnostic => diagnostic.severity === 'error'), diagnostics, data: {
     schemaVersion: 1, cliVersion: readPackageVersion(), packages,
     commands: commandCatalog(), guide: { version: readPackageVersion(), markdown: guide },
-    coverage: { exportTargets: 'installed-manifests', symbols: symbols ? 'installed-declarations' : 'not-requested', runtimeSupport: 'not-verified', examples: 'package-owned-when-available', guidance: 'installed-package-files' },
+    coverage: { exportTargets: 'installed-manifests', symbols: symbols ? 'installed-declarations-and-typescript-source' : 'not-requested', runtimeSupport: 'not-verified', examples: 'package-owned-when-available', guidance: 'installed-package-files' },
   } };
 }

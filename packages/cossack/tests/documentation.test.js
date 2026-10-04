@@ -66,6 +66,18 @@ it('CLI emits one standard envelope containing the shared service data',async()=
   expect(log).toHaveBeenCalledTimes(1);
   expect(JSON.parse(log.mock.calls[0][0])).toEqual({schemaVersion:1,command:'docs',...result});
 });
+it('CLI text distinguishes a legacy TypeScript entry from declaration files', async () => {
+  const { root, folder, manifest } = await fixture();
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name: manifest.name, version: manifest.version, main: 'index.ts' }));
+  await fs.writeFile(path.join(folder, 'index.ts'), 'export function resolve(value: string): string { return value; } throw new Error("DO_NOT_EXECUTE");');
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await docsCommand([], { cwd: root, flags: { package: manifest.name, symbols: true } })).toBe(0);
+  const output = log.mock.calls.map(call => call[0]).join('\n');
+  expect(output).toContain('@cossackframework/core (legacy manifest: present)');
+  expect(output).toContain('Declarations: index.ts (typescript-source, indexed)');
+  expect(output).toContain('resolve:');
+  expect(output).not.toContain('DO_NOT_EXECUTE');
+});
 it('CLI subprocess accepts offline discovery and rejects invalid flags before effects',async()=>{
   const {root}=await fixture(); const bin=fileURLToPath(new URL('../bin/cossack.js',import.meta.url));
   const {stdout,stderr}=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--json'],{cwd:root});
@@ -76,7 +88,7 @@ it('CLI subprocess accepts offline discovery and rejects invalid flags before ef
 it('CLI exposes signatures and requires a selected package before compilation',async()=>{
   const {root}=await fixture(); const bin=fileURLToPath(new URL('../bin/cossack.js',import.meta.url));
   const {stdout}=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbols','--json'],{cwd:root});
-  expect(JSON.parse(stdout)).toMatchObject({ok:true,data:{coverage:{symbols:'installed-declarations'},packages:[{declarations:{status:'indexed',entries:[{symbols:[{name:'present',type:'string'}]}]}}]}});
+  expect(JSON.parse(stdout)).toMatchObject({ok:true,data:{coverage:{symbols:'installed-declarations-and-typescript-source'},packages:[{declarations:{status:'indexed',entries:[{symbols:[{name:'present',type:'string'}]}]}}]}});
   const filtered=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbols','--symbol','present','--json'],{cwd:root});
   expect(JSON.parse(filtered.stdout).data.packages[0].declarations.selection).toEqual({name:'present',matched:true});
   const invalidFilter=await exec(process.execPath,[bin,'docs','--package','@cossackframework/core','--symbol','present','--json'],{cwd:root}).catch(error=>error);

@@ -11,7 +11,8 @@
   },
   "main": "src/index.ts",
   "files": [
-    "src"
+    "src",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"

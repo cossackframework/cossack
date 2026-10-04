@@ -79,7 +79,8 @@ The CLI and MCP share `documentation-service.js`. It reads fresh manifests for a
 explicit Cossack package allowlist, without executing module entrypoints. Export
 conditions and availability are facts. Optional per-package declaration indexing
 uses the CLI's pinned TypeScript 6 API alias, without replacing the project's
-TypeScript 7 compiler. Programs read installed declaration graphs afresh, resolve
+TypeScript 7 compiler. Programs read installed declaration and published TypeScript
+graphs afresh, resolve
 aliases/re-exports and report public signatures with diagnostics and source hashes.
 Member comments, JSDoc tags and index signatures remain visible. Exported classes
 with public props expose their instantiated declaration shape. Union and unknown
@@ -87,7 +88,10 @@ prop contracts are explicit. No DOM behavior or accessibility is inferred.
 Export discovery expands bounded file/type matches with Node pattern precedence
 and null exclusions, while reporting unsupported or incomplete scans. TypeScript
 extension substitution discovers adjacent declarations without running JavaScript.
-Missing type coverage remains explicit. No project tsconfig plugins or module
+Published TypeScript entries have an explicit source-kind marker. Legacy manifests
+without an exports map expose a separate implicit root entry; blocked exports
+never fall back to main. This reports declared file targets, not full Node legacy
+resolution. Missing type coverage remains explicit. No project tsconfig plugins or module
 entrypoints execute. Type-only declarations
 do not establish runtime value availability. Runtime compatibility is not inferred
 from file presence or from declaration signatures. Command schemas and packaged guidance belong to

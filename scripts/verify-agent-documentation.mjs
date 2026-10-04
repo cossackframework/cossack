@@ -7,6 +7,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
 const exec = promisify(execFile);
 // Only the test client comes from the repository. The server and CLI run from the installation.
@@ -100,6 +101,50 @@ require('node:module').syncBuiltinESMExports();
     }
     console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports.`);
 
+    // Auth publishes TypeScript source. Check its examples with bundler
+    // resolution, then bundle and execute under the guard. The tsx loader
+    // attempts local IPC even when invoked directly; do not weaken the guard.
+    // This is an explicit repository-owned test, never a discovery operation.
+    const auth = catalog.data.packages.find(pkg => pkg.name === '@cossackframework/auth');
+    assert.equal(auth.guidance.status, 'available');
+    assert.equal(auth.guidance.version, auth.version);
+    assert.equal(auth.guidance.exampleExecution, 'not-performed');
+    assert.equal(auth.guidance.runtimeSupport, 'not-verified');
+    assert.deepEqual(auth.exports, []);
+    assert.equal(auth.implicitEntry.origin, 'legacy-manifest');
+    const authExamples = [];
+    for (const [id, exampleId] of [['session-and-role-guards', 'session-role-decisions'], ['resource-policies', 'owned-record-decisions']]) {
+      const example = auth.guidance.guides.find(guide => guide.id === id)?.examples.find(example => example.id === exampleId);
+      assert.ok(example, `Missing packaged auth example ${id}/${exampleId}`);
+      const file = path.join(scratch, `${id}-${exampleId}.ts`);
+      await fs.writeFile(file, example.source);
+      authExamples.push(file);
+    }
+    const authConfig = path.join(scratch, 'auth-tsconfig.json');
+    await fs.writeFile(authConfig, JSON.stringify({ compilerOptions: {
+      target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, noEmit: true,
+      types: [], lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+    }, files: authExamples }));
+    await exec(process.execPath, [...nodeArgs, tsc, '-p', authConfig], { cwd: projectDir, env, timeout: 60_000 });
+    const bundlerRequire = createRequire(installedRequire.resolve('tsx/package.json'));
+    const bundler = pathToFileURL(bundlerRequire.resolve('esbuild')).href;
+    const bundleScript = path.join(scratch, 'bundle-auth.mjs');
+    const bundled = authExamples.map(file => file.replace(/\.ts$/, '.mjs'));
+    await fs.writeFile(bundleScript, `import esbuild from ${JSON.stringify(bundler)};
+const sources = ${JSON.stringify(authExamples)};
+const outputs = ${JSON.stringify(bundled)};
+for (let i = 0; i < sources.length; i++) esbuild.buildSync({
+  entryPoints: [sources[i]], outfile: outputs[i], bundle: true,
+  platform: 'neutral', mainFields: ['module', 'main'], format: 'esm', target: 'es2022', logLevel: 'silent',
+});
+`);
+    await exec(process.execPath, [...nodeArgs, bundleScript], { cwd: projectDir, env, timeout: 30_000 });
+    for (const file of bundled) {
+      const result = await exec(process.execPath, [...nodeArgs, file], { cwd: projectDir, env, timeout: 30_000 });
+      assert.equal(result.stderr, '');
+    }
+    console.log(`Checked, bundled and executed ${authExamples.length} packaged auth examples with Node networking disabled.`);
+
     const args = ['docs', '--package', '@cossackframework/renderer', '--symbols', '--json'];
     const documented = await invoke(args);
     assert.equal(documented.ok, true);
@@ -121,6 +166,17 @@ require('node:module').syncBuiltinESMExports();
     const coreRemote = await client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/core', symbols: true, symbol: 'input' } });
     assert.equal(coreRemote.isError, false);
     assert.deepEqual(coreRemote.structuredContent.data, coreDocs.data);
+
+    const authDocs = await invoke(['docs', '--package', '@cossackframework/auth', '--symbols', '--json']);
+    assert.equal(authDocs.ok, true);
+    assert.equal(authDocs.data.coverage.runtimeSupport, 'not-verified');
+    const authEntry = authDocs.data.packages[0].declarations.entries.find(entry => entry.sourceKind === 'typescript-source');
+    for (const name of ['createAuth', 'createAuthorizer', 'createResourcePolicy', 'ResourceAuthorizationError']) {
+      assert.ok(authEntry?.symbols.some(symbol => symbol.name === name && symbol.status === 'indexed'), `Missing auth symbol ${name}`);
+    }
+    const authRemote = await client.callTool({ name: 'read_documentation', arguments: { package: '@cossackframework/auth', symbols: true } });
+    assert.equal(authRemote.isError, false);
+    assert.deepEqual(authRemote.structuredContent.data, authDocs.data);
 
     // Compile and execute the public reporter from installed tarballs. Only the
     // authored fixture runs; CLI and MCP readers themselves never execute tests.

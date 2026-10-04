@@ -6,6 +6,57 @@ The [release checklist](./release-0.9.0.md) owns current task status.
 The [handoff](./handoff-0.9.0.md) owns continuation instructions.
 Historical next steps and counts below describe their recorded checkpoint only.
 
+<a id="codex-cli08-auth-guidance-2026-10-04"></a>
+### Codex: Auth guidance and published TypeScript discovery (2026-10-04)
+
+Auth now publishes `agent-docs.json` with session/role and record-policy guides.
+The examples check trusted session resolution before role guards, anonymous and
+forbidden responses, OR/AND roles, immutable permission presentation and typed
+record lookup. They use fixed local Hono fixtures. Session persistence, expiry,
+revocation, login/cookie issuance and native RPC enforcement remain separate work.
+The auth library retains its TypeScript `main` and gains no framework dependency.
+
+The shared reader reports a separate `implicitEntry` for manifests without an
+exports map. It keeps the explicit `exports` array empty. Blocked exports never
+fall back to main. Missing entry files omit their dependent guides. File presence
+does not implement full Node legacy resolution or prove import compatibility.
+Static indexing now reads published TypeScript and follows its source graph without
+executing entrypoints or configuration plugins. Source kind and coverage identify
+this analysis explicitly. Public aliases, signatures and comments remain visible;
+private members stay excluded. Source edits change the declaration hash.
+Runtime support remains `not-verified`; example execution remains `not-performed`
+in discovery output.
+
+The separate acceptance harness checks the exact two auth example sources with
+strict Bundler resolution. It then uses the installed esbuild dependency to create
+neutral ESM bundles and executes those bundles under the unchanged Node network
+guard. Bundling also runs under the guard. An initial tsx-loader implementation
+triggered its local IPC connection and failed the final zero-attempt assertion.
+The bundled implementation removes that attempt without making exceptions in the
+guard. This proves bundled Node execution, not plain Node source imports or native
+Cloudflare authentication.
+
+- `pnpm --filter cossack exec vitest run tests/declaration-index.test.js tests/documentation.test.js tests/package-guidance.test.js tests/mcp.test.js`:
+  **58 tests pass**. Log: `/tmp/cossack-cli08-auth-readers.log`.
+- `pnpm --filter cossack exec vitest run tests/documentation.test.js`:
+  **8 tests pass**, including the added legacy/source-kind CLI text regression.
+  Log: `/tmp/cossack-cli08-auth-cli-text.log`. An earlier retry overlapped a package
+  rebuild and returned incomplete subprocess output. The isolated retry passes.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: pass for the root and all eleven packages.
+  Logs: `/tmp/cossack-cli08-auth-root-types.log` and `/tmp/cossack-cli08-auth-package-types.log`.
+- `pnpm test:agent-docs:local`: passes twelve installed tarballs, ten standalone
+  examples, two strictly checked/bundled auth examples, three application pages,
+  offline CLI/MCP parity, reporter types, Cloudflare HTTP/SSE/WebSocket traces,
+  client JavaScript/source-map stripping and UI catalogs. The final attempt log
+  is absent. Log: `/tmp/cossack-cli08-auth-installed-cloudflare.log`.
+  Installed versions include Hono 4.13.12, esbuild through tsx 4.23.15, TypeScript
+  7.0.2, Vite 8.3.2, Cloudflare plugin 1.62.5 and Wrangler 4.147.0.
+  This turn did not repeat the separate Node/Deno application or Desktop gates.
+
+CLI-08, RT-13, REL-02 and REL-03 retain their remaining acceptance criteria.
+Desktop stays complete by user decision. Release status stays **27 complete / 31 open**.
+No deployment, provisioning, publishing or push occurred. Versions remain 0.8.3.
+
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Native Desktop requests and Linux packaging (2026-10-04)
 

@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): fresh CLI/MCP catalogs include ten standalone examples and three complete action/resource/task pages. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Broader library/component/recipe coverage and runtime guidance remain open. See [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-04): fresh CLI/MCP catalogs include ten standalone examples, two bundled auth examples and three complete action/resource/task pages. Auth guidance includes legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Broader library/component/recipe coverage and runtime guidance remain open. See [auth guidance](#codex-cli08-auth-guidance-2026-10-04) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -93,6 +93,17 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-cli08-auth-guidance-2026-10-04"></a>
+### Codex: Auth guidance and published TypeScript discovery (2026-10-04)
+
+Auth ships session/role and record-policy guides with two executable examples.
+Legacy manifests expose a separate implicit root entry. Static indexing reads
+published TypeScript without executing it and reports its source kind.
+The examples use strict Bundler type checking and installed esbuild bundling.
+Their Node execution retains the full offline guard.
+See [commands, results and limits](./release-0.9.0-verification-archive.md#codex-cli08-auth-guidance-2026-10-04).
+CLI-08 stays open. Desktop stays completed by user decision.
 
 <a id="codex-cli08-application-guidance-2026-10-04"></a>
 ### Codex: Executable application guidance (2026-10-04)

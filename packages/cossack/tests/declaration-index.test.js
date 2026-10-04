@@ -243,3 +243,35 @@ it('preserves mutually exclusive callback requirements and unknown union branche
   expect(mixed.status).toBe('partial');
   expect(mixed.variants.find(variant=>variant.type==='string')).toMatchObject({status:'unknown',members:[],indexSignatures:[]});
 },30000);
+
+it('indexes published TypeScript main aliases without evaluating module bodies', async () => {
+  const { folder, read } = await fixture({
+    'index.ts': `export { parse as normalize, Widget } from './source'; throw new Error('DO_NOT_EVALUATE_SOURCE_MAIN');`,
+    'source.ts': `/** Normalize a label. */
+      export function parse(value: string): string { return value.trim(); }
+      export class Widget { public count = 0; private secret = 'PRIVATE_SOURCE_VALUE'; run(value: number): number { return value + this.count; } }
+      throw new Error('DO_NOT_EVALUATE_SOURCE_DEPENDENCY');`,
+  });
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name: '@cossackframework/core', version: '0.2.0', main: 'index.ts' }));
+  const before = (await read()).data.packages[0];
+  expect(before.exports).toEqual([]);
+  expect(before.implicitEntry).toMatchObject({ import: '@cossackframework/core', origin: 'legacy-manifest', targets: [{ target: './index.ts', status: 'present' }] });
+  expect(before.declarations.resolutions).toContainEqual(expect.objectContaining({ status: 'typescript-source', file: 'index.ts' }));
+  expect(before.declarations.entries[0]).toMatchObject({ sourceKind: 'typescript-source', status: 'indexed' });
+  const symbols = before.declarations.entries[0].symbols;
+  expect(symbols.find(symbol => symbol.name === 'normalize')).toMatchObject({ documentation: 'Normalize a label.', callSignatures: ['(value: string): string'], runtime: 'not-verified' });
+  expect(symbols.find(symbol => symbol.name === 'Widget').members.map(member => member.name)).toEqual(['count', 'run']);
+  expect(JSON.stringify(before)).not.toContain('PRIVATE_SOURCE_VALUE');
+  await fs.writeFile(path.join(folder, 'source.ts'), 'export function parse(value: number): boolean { return value > 0; } export class Widget {}');
+  const after = (await read()).data.packages[0];
+  expect(after.declarations.declarationHash).not.toBe(before.declarations.declarationHash);
+  expect(after.declarations.entries[0].symbols.find(symbol => symbol.name === 'normalize').callSignatures).toEqual(['(value: number): boolean']);
+});
+
+it('does not use a TypeScript main to bypass a blocked explicit root export', async () => {
+  const { folder, read } = await fixture({ 'index.ts': 'export const hidden = 1; throw new Error("DO_NOT_IMPORT");' });
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name: '@cossackframework/core', version: '0.2.0', main: 'index.ts', exports: { '.': null } }));
+  const pkg = (await read()).data.packages[0];
+  expect(pkg.implicitEntry).toBeNull();
+  expect(pkg.declarations.entries).toEqual([]);
+});

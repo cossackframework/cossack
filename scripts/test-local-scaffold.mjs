@@ -90,10 +90,10 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
     ...(pkg.devDependencies ?? {}),
     '@cossackframework/scaffold': `file:${tarballs.get('@cossackframework/scaffold')}`,
   };
-  // UI discovery needs a directly resolvable dependency in the documentation fixture.
-  // This adds no UI feature files or runtime imports to the minimal application.
-  if (documentation && !pkg.dependencies?.['@cossackframework/ui']) {
-    pkg.devDependencies['@cossackframework/ui'] = `file:${tarballs.get('@cossackframework/ui')}`;
+  // Guidance fixtures need directly resolvable packages, without composing
+  // their features into the minimal application.
+  if (documentation) for (const name of ['@cossackframework/ui', '@cossackframework/auth']) {
+    if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 

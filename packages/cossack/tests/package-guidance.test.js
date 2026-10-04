@@ -102,3 +102,21 @@ it('reads the authored core guides and omits input guidance when its installed e
   expect(after.guides.map(guide => guide.id)).toContain('typed-url-state');
   expect(after.guides.some(guide => guide.imports.includes(name + '/input'))).toBe(false);
 });
+
+it('discovers legacy TypeScript root guidance without inventing an exports map or running source', async () => {
+  const { folder, read } = await fixture();
+  const rootGuide = { ...guide, imports: [name] };
+  await fs.writeFile(path.join(folder, 'agent-docs.json'), JSON.stringify({ schemaVersion: 1, guides: [rootGuide] }));
+  await fs.writeFile(path.join(folder, 'main.ts'), 'throw new Error("DO_NOT_EVALUATE_SOURCE_MAIN")');
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version: '1.0.0', main: 'main.ts' }));
+  const pkg = (await read()).data.packages[0];
+  expect(pkg.exports).toEqual([]);
+  expect(pkg.guidance).toMatchObject({ status: 'available', guides: [rootGuide], runtimeSupport: 'not-verified', exampleExecution: 'not-performed' });
+  await fs.rm(path.join(folder, 'main.ts'));
+  expect((await read()).data.packages[0].guidance).toMatchObject({ status: 'partial', guides: [], omitted: [{ id: guide.id, reason: 'imports-unavailable' }] });
+  await fs.writeFile(path.join(folder, 'main.ts'), 'throw new Error("DO_NOT_EVALUATE_SOURCE_MAIN")');
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version: '1.1.0', main: 'main.ts', exports: { '.': null } }));
+  const blocked = (await read()).data.packages[0];
+  expect(blocked.implicitEntry).toBeNull();
+  expect(blocked.guidance.guides).toEqual([]);
+});

@@ -104,7 +104,12 @@ pnpm exec cossack docs --package @cossackframework/core --symbols --json
 The index follows declared `.d.ts`, `.d.mts` and `.d.cts` targets, including legacy
 `types` entries. TypeScript also resolves adjacent declarations for `.js`, `.mjs`
 and `.cjs` targets and legacy main/default-index paths. `resolutions` records the
-candidate import, target, conditions and resolved declaration. Missing public type
+candidate import, target, conditions and resolved file. Packages without an
+`exports` map report a separate `implicitEntry` for their declared `main` and
+`types` targets, or the default `index.js`. Their `exports` array stays empty.
+An explicit blocked root never falls back to `main`. This reports file presence,
+not full legacy Node resolution or runtime compatibility.
+Missing public type
 coverage remains in `unresolvedImports` and makes the index partial. It resolves aliases and re-exports and reports generic/overloaded
 call signatures, constructors, public instance/static and object/namespace members,
 documentation and
@@ -116,8 +121,12 @@ The CLI pins TypeScript API 6.0.3 for this analysis. It does not replace the pro
 compiler. Analysis uses ES2022, ESNext modules, Bundler resolution, strict checking
 and no automatic ambient type packages. It does not load project tsconfig plugins.
 Missing platform globals, unresolved imports or unsupported syntax produce a partial
-index with diagnostic codes and source locations. A missing type entry produces an
-unavailable index. The declaration hash changes when referenced declarations change,
+index with diagnostic codes and source locations. If no declaration or TypeScript
+source resolves, the index is unavailable. Published `.ts`, `.mts` and `.cts` entries are also indexed
+statically. Their resolution status and entry `sourceKind` are `typescript-source`.
+Declaration entries use `sourceKind: "declaration"`. Symbol coverage is
+`installed-declarations-and-typescript-source`.
+The declaration hash changes when referenced declarations or TypeScript source change,
 even if the package version and manifest do not. Reads do not reuse an old program.
 
 Declaration signatures do not prove runtime exports. For example, a class reached
@@ -125,8 +134,9 @@ through `export type *` has a constructor declaration but provides no runtime va
 All runtime availability remains `not-verified`. Discovery considers matching
 runtime files and declaration siblings, so type-only installations can expose
 signatures while their runtime targets remain missing. It does not execute or infer
-types from JavaScript bodies. A resolver-selected source file is reported as
-`source-not-indexed` instead of silently treated as a declaration. Candidate
+types from JavaScript bodies. A resolver-selected JavaScript file without a type
+entry is reported as `source-not-indexed`. TypeScript source bodies are analyzed
+without execution. Candidate
 conditions are preserved; the catalog does not select a runtime environment.
 The first 100 compiler diagnostics are included, alongside the total count.
 
@@ -208,6 +218,13 @@ cancellation of an asynchronous refinement. Discovery itself reports
 The recipe examples inspect dependencies and capability requirements through the
 pure scaffold registry without writing files. The protected-route example also
 checks auth/database/UI dependencies, D1 requirements and an unsupported provider.
+Auth guidance covers trusted session resolution, role guards and typed record
+policies. Two additional examples check middleware ordering, anonymous/forbidden
+decisions, immutable presentation permissions and action lookup. Auth currently
+publishes TypeScript source. The acceptance harness checks these examples with
+Bundler resolution, bundles them with the installed esbuild dependency, then
+executes them under the offline guard. This does not prove plain Node imports, real session storage,
+login/cookie issuance or framework RPC authorization.
 Three more core examples are complete application pages. They cover validated
 component actions, read-only server resources and lifecycle tasks. These pages
 need the framework Vite plugins, generated entry and a browser. An ordinary

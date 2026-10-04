@@ -157,6 +157,13 @@ server stripping. Installed Cloudflare and Node acceptance passes. Discovery nev
 invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04) and the
 [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04).
 The RT-23 UI catalog audit is complete.
+Auth now contributes session/role and record-policy guides with two executable
+examples. Discovery exposes legacy root targets separately from an exports map
+and statically indexes published TypeScript with explicit source-kind markers.
+The auth examples use Bundler type resolution and installed esbuild bundling.
+They use local Hono fixtures and do not prove real sessions, login/cookie issuance
+or native framework authorization. See the
+[auth checkpoint](./release-0.9.0.md#codex-cli08-auth-guidance-2026-10-04).
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
 [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
 

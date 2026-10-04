@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 const format = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.InTypeAlias;
 const signatureFormat = ts.TypeFormatFlags.NoTruncation;
 
-/** Index installed declaration modules, without tsconfig plugins or runtime imports. */
+/** Index installed declarations and published TypeScript without executing modules. */
 export async function indexDeclarations(folder, exports, { symbol: selectedSymbol } = {}) {
   const canonical = await fs.realpath(folder);
   const compilerOptions = {
@@ -16,17 +16,18 @@ export async function indexDeclarations(folder, exports, { symbol: selectedSymbo
   };
   const resolutions = [];
   for (const entry of exports) for (const target of entry.targets) {
-    if (!['present', 'missing'].includes(target.status) || !/\.(?:[cm]?js|d\.[cm]?ts)$/.test(target.target)) continue;
+    if (!['present', 'missing'].includes(target.status) || !/\.(?:[cm]?js|(?:d\.)?[cm]?ts)$/.test(target.target)) continue;
     const resolved = ts.resolveModuleName(target.target, path.join(folder, '__cossack_catalog__.ts'), compilerOptions, ts.sys).resolvedModule;
     const file = resolved?.resolvedFileName;
     resolutions.push({ import: entry.import ?? entry.subpath, conditions: target.conditions, target: target.target,
       file: file ? path.relative(folder, file).split(path.sep).join('/') : null,
-      status: file ? /\.d\.[cm]?ts$/.test(file) ? 'declaration' : 'source-not-indexed' : 'missing',
+      status: file ? /\.d\.[cm]?ts$/.test(file) ? 'declaration' : /\.[cm]?ts$/.test(file) ? 'typescript-source' : 'source-not-indexed' : 'missing',
     });
   }
-  const indexedImports = new Set(resolutions.filter(item => item.status === 'declaration').map(item => item.import));
+  const indexable = item => ['declaration', 'typescript-source'].includes(item.status);
+  const indexedImports = new Set(resolutions.filter(indexable).map(item => item.import));
   const unresolvedImports = [...new Set(resolutions.filter(item => !indexedImports.has(item.import)).map(item => item.import))];
-  const files = [...new Set(resolutions.filter(item => item.status === 'declaration').map(item => path.resolve(folder,item.file)))];
+  const files = [...new Set(resolutions.filter(indexable).map(item => path.resolve(folder,item.file)))];
   if (!files.length) return { compilerVersion: ts.version, status: 'unavailable', resolutions, unresolvedImports, entries: [], diagnostics: [], diagnosticCount: 0 };
   const program = ts.createProgram(files, compilerOptions);
   const checker = program.getTypeChecker();
@@ -98,7 +99,8 @@ export async function indexDeclarations(folder, exports, { symbol: selectedSymbo
   const entries = files.map(file => {
     const sf = program.getSourceFile(file);
     const module = sf && checker.getSymbolAtLocation(sf);
-    if (!module) return { file: localPath(file), status: 'not-a-module', symbols: [] };
+    const sourceKind = sf?.isDeclarationFile ? 'declaration' : 'typescript-source';
+    if (!module) return { file: localPath(file), sourceKind, status: 'not-a-module', symbols: [] };
     const publicExports = checker.getExportsOfModule(module).map(symbol => ({ name: symbol.name, symbol }));
     const assignment = sf.statements.find(statement => ts.isExportAssignment(statement) && statement.isExportEquals);
     const assigned = assignment && checker.getSymbolAtLocation(assignment.expression);
@@ -121,11 +123,11 @@ export async function indexDeclarations(folder, exports, { symbol: selectedSymbo
         valueMembers: !(target.flags & ts.SymbolFlags.Class) && (valueType.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) ? members(valueType, declaration) : [],
         staticMembers: target.flags & ts.SymbolFlags.Class ? members(valueType, declaration) : [],
         // A class reached through `export type *` still has a class declaration.
-        // These are declaration signatures, never proof of a runtime value export.
+        // Static signatures never prove a runtime value export or compatibility.
         runtime: 'not-verified',
       };
     }).sort((a,b) => a.name.localeCompare(b.name));
-    return { file: localPath(file), status: symbols.some(symbol => symbol.status === 'unresolved') ? 'partial' : 'indexed', symbols,
+    return { file: localPath(file), sourceKind, status: symbols.some(symbol => symbol.status === 'unresolved') ? 'partial' : 'indexed', symbols,
       ...(selectedSymbol === undefined ? {} : { availableSymbols: publicExports.map(item => item.name).sort() }) };
   });
   const declarationHash = createHash('sha256');
