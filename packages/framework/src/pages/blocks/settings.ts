@@ -1,10 +1,10 @@
 import { Cossack, Page, ClientState, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component } from '@cossackframework/renderer';
-import { SettingsPanel, type SettingsSection } from '@cossackframework/ui/blocks';
+import { SettingsPanel, type SettingsSection, type SettingsValues } from '@cossackframework/ui/blocks';
 
-const SECTIONS: SettingsSection[] = [
+const SECTIONS: readonly SettingsSection[] = [
     {
-        title: 'Notifications',
+        id: 'notifications', title: 'Notifications',
         description: 'Configure how you receive updates.',
         rows: [
             { label: 'Email notifications', hint: 'Get notified by email when something happens.', type: 'switch', key: 'email' },
@@ -13,23 +13,24 @@ const SECTIONS: SettingsSection[] = [
         ],
     },
     {
-        title: 'Profile',
+        id: 'profile', title: 'Profile',
         rows: [
             { label: 'Display name', type: 'text', key: 'name' },
             { label: 'Username', type: 'text', key: 'username' },
         ],
     },
     {
-        title: 'Danger zone',
+        id: 'danger', title: 'Danger zone',
         rows: [
-            { label: 'Delete account', hint: 'This action is permanent and cannot be undone.', type: 'button', action: 'Delete', key: 'delete' },
+            { label: 'Delete account', hint: 'This action is permanent and cannot be undone.', type: 'button', action: 'Delete', variant: 'destructive', key: 'delete' },
         ],
     },
 ];
 
 @Page({ transport: 'http' })
 export default class SettingsBlocksPage extends Cossack {
-    @ClientState() settings: Record<string, boolean | string> = {
+    @ClientState() lastAction = '';
+    @ClientState() settings: SettingsValues = {
         email: true,
         push: false,
         digest: true,
@@ -44,11 +45,12 @@ export default class SettingsBlocksPage extends Cossack {
                     <h1 class="text-2xl font-bold text-foreground mb-1">Settings</h1>
                     <p class="text-sm text-muted-foreground mb-8">Manage your account preferences.</p>
                     ${component(SettingsPanel, {
-                        sections: SECTIONS,
+                        id: 'account-settings', sections: SECTIONS,
                         values: this.settings,
                         onChange: (v) => { this.settings = v; },
-                        onAction: (key) => { console.log('action:', key); },
+                        onAction: (key) => { this.lastAction = key; },
                     })}
+                    <p role="status" class="text-sm text-muted-foreground mt-4">${this.lastAction ? `Requested action: ${this.lastAction}. This demo does not persist changes.` : ''}</p>
                 </div>
             </main>
         `;

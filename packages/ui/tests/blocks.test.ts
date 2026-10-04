@@ -28,8 +28,9 @@ describe('@cossackframework/ui/blocks', () => {
       stats: [{ id: 'users', label: 'Users', value: 42 }],
     })).toContain('Users');
     expect(renderBlock(SettingsPanel, {
+      id: 'settings',
       sections: [{
-        title: 'Account',
+        id: 'account', title: 'Account',
         rows: [{ label: 'Name', type: 'text', key: 'name' }],
       }],
     })).toContain('Account');

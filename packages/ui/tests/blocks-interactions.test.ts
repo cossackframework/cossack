@@ -13,10 +13,10 @@ describe('@cossackframework/ui/blocks interactions', () => {
     const onChange = vi.fn();
     const settings = new SettingsPanel() as unknown as {
       props: Record<string, unknown>;
-      updateValue(key: string, value: boolean | string): void;
+      updateValue(key: string, value: boolean | string, control: { matches: () => boolean; readOnly: boolean }): void;
     };
-    settings.props = { sections: [], onChange };
-    settings.updateValue('email', true);
+    settings.props = { id: 'settings', sections: [{ id: 'account', title: 'Account', rows: [{ key: 'email', label: 'Email', type: 'switch' }] }], onChange };
+    settings.updateValue('email', true, { matches: () => false, readOnly: false });
     expect(onChange).toHaveBeenCalledWith({ email: true });
   });
 

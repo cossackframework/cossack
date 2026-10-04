@@ -516,12 +516,11 @@ frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 ### RT-23: DataTable and UI contracts
 
 Codex status (2026-10-04): All 65 component-source foundations, including DataTable,
-have reviewed contracts. Icon, AuthForm, CommandPalette and DashboardStat also have reviewed foundations; SettingsPanel remains pending. The [component audit](./ui-contract-audit.md) owns component coverage and
+have reviewed contracts. Icon and all four blocks also have reviewed foundations; original RT-23 acceptance still needs its final audit. The [component audit](./ui-contract-audit.md) owns component coverage and
 pending rows. See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) for prior summaries and
-[DashboardStat verification](./release-0.9.0.md#codex-dashboard-stat-2026-10-04) for the latest checkpoint.
+[SettingsPanel verification](./release-0.9.0.md#codex-settings-panel-2026-10-04) for the latest checkpoint.
 
-Next: Audit the composed blocks using the source findings in the
-[handoff](./handoff-0.9.0.md), then continue every pending audit row.
+Next: Follow the acceptance audit in the [handoff](./handoff-0.9.0.md).
 Keep native attributes/events, form behavior, SSR/hydration, keyboard navigation,
 labels, focus and packaged guidance in scope. Component checkpoints do not close
 the broader audit or full release matrix. RT-23 remains open.
@@ -529,32 +528,13 @@ the broader audit or full release matrix. RT-23 remains open.
 Completed UI batch plans and their review links are retained in the
 [plan archive](./release-0.9.0-plan-archive.md). Preserve their regression coverage.
 
-Codex next batch — SettingsPanel. Preserve the completed DashboardStat
-[plan](./release-0.9.0-plan-archive.md#codex-dashboard-stat-plan-2026-10-04) and regression evidence.
-
-- Audit SettingsPanel's row variants, value types and state ownership. Its private
-  values field has the same name as the public prop, so check Cossack prop mirroring
-  before choosing controlled/default behavior. Verify native labels/descriptions,
-  real input/switch/button callbacks, updates and focus during row changes.
-  Current text controls bind a value attribute rather than a reactive property,
-  label spans are not connected to controls, action buttons lack an explicit type,
-  and the key "delete" implicitly selects a destructive appearance. Replace these
-  with explicit native value ownership, stable field IDs/names/descriptions and
-  declared action intent. Keep immutable sections/rows and callback snapshots;
-  verify SSR defaults, controlled rejection, native edits/reset and disabled state.
-  Current-source follow-up (Codex, 2026-10-04): Input forwards `.value`; Switch
-  forwards native checkbox attributes and binds `.checked` with dirty checking.
-  A rejected controlled proposal must restore the native value even when the
-  accepted prop is unchanged. Test that behavior through real input events,
-  not direct calls to a private method. Keep local values separate from mirrored
-  props, capture defaults once, and define how added/removed rows use those defaults.
-  Native form reset must agree with that ownership model, honor prevented reset,
-  and release any form listener or queued work on cleanup. Preserve typed native
-  control targets and fresh callback snapshots; do not infer labels from keys.
-- For every export, prove public type failures, SSR/hydration, themed native browser
-  behavior, current primitive composition, published/ejected imports and CLI/MCP
-  guidance. Update generated consumers where needed. Then finish the original
-  DataTable/generated-app acceptance and broader runtime/accessibility gates.
+Next: Audit the original acceptance below against current source and tests.
+[Generated DataTable integration](./release-0.9.0.md#codex-data-table-integration-2026-10-04)
+already records Node/workerd server-resource, URL-state, selection and focus cases.
+Revalidate the generated fixtures and installed catalog after the UI changes.
+Do not keep RT-23 open solely for the broader REL-03 runtime matrix; close it only
+when its own criteria and all inventory rows are supported by evidence. Keep
+other-engine, assistive-technology and full release gates explicitly separate.
 
 Purpose: Applications need a typed table for real server data, and agents need
 reliable component attributes, events, and accessibility guidance.

@@ -1598,3 +1598,29 @@ positive/negative meaning have visible text, localized through `trendLabels` and
 `toneLabels`. An increase in cost may be unfavorable; a decrease in errors may
 be favorable. Native optional spread classes now merge with component classes
 through `ifDefined` instead of replacing them during browser updates.
+
+## SettingsPanel values, identity and native forms
+
+SettingsPanel now requires an instance `id`, unique section IDs and unique row
+keys across the panel. Sections, rows and value records are readonly. Replace the
+old loosely typed row object with the `SettingsRow` union. Text values must be
+strings, switch values booleans; absent values default to empty text or false.
+
+The old `values` prop was described as initial state and collided with the private
+state field. Use `defaultValues` for local state captured once, or `values` with
+`onChange` for controlled state. Do not combine them or switch ownership later.
+Callbacks receive fresh snapshots of current controls. Controlled callers must
+accept proposals; rejected edits restore native values. Keep persistence and
+async error handling in the application.
+
+Fields now have connected labels, descriptions and native names (defaulting to
+row keys). Text uses reactive properties. Each button row requires `action` text
+and the panel requires `onAction`. Replace key-based destructive styling with
+`variant: 'destructive'`; all actions use `type='button'`. Root props and events
+now target `HTMLDivElement`; root tabindex is owned for focus fallback.
+
+Inside an application-owned form, a non-prevented native reset proposes the
+snapshot captured at first render. Local state resets; controlled state follows
+the parent's acceptance. Reset callbacks run after the native default action and
+are cancelled on cleanup. Keyed row updates preserve controls; focus is repaired
+after movement/removal without taking focus from another active element.

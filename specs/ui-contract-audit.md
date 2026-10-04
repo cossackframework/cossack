@@ -125,8 +125,7 @@ final published-runtime matrix. Type checks cannot prove correct labeling in eve
 
 ## Blocks and icons
 
-All 65 rows above have reviewed foundations. Icon, AuthForm, CommandPalette and DashboardStat also have reviewed foundations; SettingsPanel remains
-pending. They were always part of RT-23; the component count does not close the task.
+All 65 rows above have reviewed foundations. Icon and all four blocks also have reviewed foundations. They were always part of RT-23; the component count does not close the task.
 
 | Source | Contract audit | Evidence / next action |
 | --- | --- | --- |
@@ -134,11 +133,11 @@ pending. They were always part of RT-23; the component count does not close the 
 | [AuthForm](../packages/ui/src/blocks/AuthForm/index.ts) | Reviewed foundation | Stable field identity, SSR/controlled modes, native credentials/autofill, explicit providers, safe errors, request cancellation and focus; published/ejected Chromium, public types and agent guidance. |
 | [CommandPalette](../packages/ui/src/blocks/CommandPalette/index.ts) | Reviewed foundation | Shared Command dialog/search ownership, readonly grouped records, typed native targets, icons/hints, controlled/default proposals and opt-in shortcuts; published/ejected Chromium and real demo acceptance. |
 | [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Reviewed foundation | Native list/definition semantics and props, stable readonly metrics, explicit direction/tone, visible localized meaning, responsive wrapping, published/ejected Chromium, real demo and installed guidance. |
-| [SettingsPanel](../packages/ui/src/blocks/SettingsPanel/index.ts) | Pending | Audit row types, controlled/default values, state/prop ownership, field names/descriptions, callbacks, updates and current Input/Switch/Button composition. |
+| [SettingsPanel](../packages/ui/src/blocks/SettingsPanel/index.ts) | Reviewed foundation | Readonly row schema, explicit controlled/default values, native labels/names/reset, safe actions, callback snapshots, keyed focus, published/ejected Chromium, actual demo and installed guidance. |
 
 ## Next passes
 
-Continue with SettingsPanel.
+Audit RT-23 against its original generated-app, type, keyboard/focus and catalog criteria.
 Preserve the [Icon regressions](./release-0.9.0.md#codex-icon-2026-10-04),
 including raw-artwork trust boundaries, native SVG namespaces and SSR escaping.
 
@@ -147,7 +146,7 @@ ejected imports. Preserve meaningful native keyboard/focus behavior, public type
 SSR/hydration and installed guidance. Do not mechanically replace every index
 signature: each actual target and state owner determines its contract.
 
-Then finish the broader RT-23 generated-app acceptance and full release matrix,
+Revalidate the existing RT-23 generated-app acceptance,
 including DataTable server data, filters, sorting, pagination and stable selection.
 Source foundations and fixture checks do not establish other-browser or assistive-
 technology acceptance. The [verification log](./release-0.9.0.md#verification-log)

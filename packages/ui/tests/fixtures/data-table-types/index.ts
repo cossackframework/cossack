@@ -763,3 +763,22 @@ component(DashboardStat,{stats,role:'button'});
 // @ts-expect-error Native events target a list, not a button.
 component(DashboardStat,{stats,'@click':(event:MouseEvent & {currentTarget:HTMLButtonElement})=>{}});
 void incompleteStat;
+
+import { SettingsPanel, type SettingsPanelProps, type SettingsRow, type SettingsSection, type SettingsValues } from '@cossackframework/ui/blocks';
+const settingSections: readonly SettingsSection[] = [{id:'account',title:'Account',rows:[{key:'email',label:'Email',type:'switch'}]}];
+const settingValues:SettingsValues={email:true};
+const settingsProps:SettingsPanelProps={id:'settings',sections:settingSections,values:settingValues,onChange:values=>{void values;},'@click':event=>{const div:HTMLDivElement=event.currentTarget;void div;}};
+component(SettingsPanel,settingsProps);
+// @ts-expect-error controlled values require onChange
+component(SettingsPanel,{id:'settings',sections:settingSections,values:settingValues});
+// @ts-expect-error controlled and default values cannot be combined
+component(SettingsPanel,{id:'settings',sections:settingSections,values:settingValues,defaultValues:{},onChange:()=>{}});
+// @ts-expect-error action text is required
+const missingAction:SettingsRow={type:'button',key:'run',label:'Run'};
+// @ts-expect-error no arbitrary props
+component(SettingsPanel,{id:'settings',sections:settingSections,magic:true});
+// @ts-expect-error readonly values cannot be mutated
+settingValues.email=false;
+// @ts-expect-error sections are readonly
+settingSections.push({id:'x',title:'X',rows:[]});
+void missingAction;

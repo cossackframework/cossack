@@ -11,7 +11,7 @@ components.
 |---|---|---|
 | Granularity | Single primitive (Button, Modal, Table) | Full section (Auth form, Dashboard, Settings) |
 | Depends on | `@cossackframework/core`, `@cossackframework/renderer` | UI components + app state |
-| Ejectable | `cossack add ui <name>` | AuthForm, CommandPalette and DashboardStat have CLI entries; copy other blocks for now |
+| Ejectable | `cossack add ui <name>` | All four blocks have CLI entries |
 | Goal | Reusable building blocks | Opinionated starting points |
 
 ## Available Blocks
@@ -67,6 +67,13 @@ The grid uses one column on narrow screens, two from the `sm` breakpoint, and
 AuthForm requires an instance `id` and an application-owned `onSubmit` callback.
 See its installed guide for credential handling, safe errors and provider actions.
 
+SettingsPanel requires a stable `id` and readonly sections with unique section IDs
+and row keys. Use `values` plus `onChange` for controlled settings, or `defaultValues`
+for local state. Buttons require `action` text and `onAction`; destructive styling
+requires `variant: 'destructive'`. They are non-submit buttons. Wrap the block in
+an application form for native submission/reset. A reset proposes the initial
+snapshot; controlled parents can accept or reject it. See the installed guide for
+field names, disabled state, row updates and callback ownership.
 
 ## Creating a New Block
 

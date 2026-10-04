@@ -458,10 +458,21 @@ require('node:module').syncBuiltinESMExports();
     assert.ok(dashboardStat.propsContract.members.some(member => member.name === '@click' && member.type.includes('HTMLUListElement')));
     for (const name of ['StatItem', 'StatTrend', 'StatTone']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-dashboard-stat'));
-    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'DashboardStat', '--json']);
+    const settingsPanel = uiSymbols.find(symbol => symbol.name === 'SettingsPanel');
+    assert.equal(settingsPanel.propsContract.status, 'partial');
+    assert.equal(settingsPanel.propsContract.variants.length, 2);
+    for (const branch of settingsPanel.propsContract.variants) {
+      assert.ok(!branch.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
+      for (const name of ['id', 'sections']) assert.ok(branch.members.some(member => member.name === name && !member.optional));
+      assert.ok(branch.members.some(member => member.name === '@click' && member.type.includes('HTMLDivElement')));
+      assert.ok(branch.members.some(member => member.name === 'sections' && member.type.includes('readonly')));
+    }
+    for (const name of ['SettingsValues', 'SettingsRow', 'SettingsSection']) assert.ok(uiSymbols.some(symbol => symbol.name === name));
+    assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'native-settings-panel'));
+    const uiFiltered = await invoke(['docs', '--package', uiPackage.name, '--symbols', '--symbol', 'SettingsPanel', '--json']);
     assert.equal(uiFiltered.ok, true);
-    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['DashboardStat']);
-    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'DashboardStat' } });
+    assert.deepEqual(uiFiltered.data.packages[0].declarations.entries.flatMap(entry => entry.symbols.map(symbol => symbol.name)), ['SettingsPanel']);
+    const uiRemote = await client.callTool({ name: 'read_documentation', arguments: { package: uiPackage.name, symbols: true, symbol: 'SettingsPanel' } });
     assert.equal(uiRemote.isError, false, JSON.stringify(uiRemote));
     assert.deepEqual(uiRemote.structuredContent.data, uiFiltered.data);
     console.log('Installed UI prop descriptions and index contracts match across CLI/MCP.');

@@ -4906,3 +4906,28 @@ Reviewed foundation: [CommandPalette checkpoint](./release-0.9.0.md#codex-comman
   localized change text and tone instead of relying on color or row-key guesses. Compose the corrected Icon; do not encode meaning with color alone.
 
 Reviewed foundation: [DashboardStat checkpoint](./release-0.9.0.md#codex-dashboard-stat-2026-10-04).
+
+<a id="codex-settings-panel-plan-2026-10-04"></a>
+## Codex SettingsPanel plan (2026-10-04)
+
+- Audit SettingsPanel's row variants, value types and state ownership. Its private
+  values field has the same name as the public prop, so check Cossack prop mirroring
+  before choosing controlled/default behavior. Verify native labels/descriptions,
+  real input/switch/button callbacks, updates and focus during row changes.
+  Current text controls bind a value attribute rather than a reactive property,
+  label spans are not connected to controls, action buttons lack an explicit type,
+  and the key "delete" implicitly selects a destructive appearance. Replace these
+  with explicit native value ownership, stable field IDs/names/descriptions and
+  declared action intent. Keep immutable sections/rows and callback snapshots;
+  verify SSR defaults, controlled rejection, native edits/reset and disabled state.
+  Current-source follow-up (Codex, 2026-10-04): Input forwards `.value`; Switch
+  forwards native checkbox attributes and binds `.checked` with dirty checking.
+  A rejected controlled proposal must restore the native value even when the
+  accepted prop is unchanged. Test that behavior through real input events,
+  not direct calls to a private method. Keep local values separate from mirrored
+  props, capture defaults once, and define how added/removed rows use those defaults.
+  Native form reset must agree with that ownership model, honor prevented reset,
+  and release any form listener or queued work on cleanup. Preserve typed native
+  control targets and fresh callback snapshots; do not infer labels from keys.
+
+Reviewed foundation: [SettingsPanel checkpoint](./release-0.9.0.md#codex-settings-panel-2026-10-04).

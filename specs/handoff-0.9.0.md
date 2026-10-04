@@ -11,21 +11,24 @@ The [completed task index](./release-0.9.0-plan.md#completed-task-index) links t
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
 All unchecked tasks remain in scope.
 
-RT-23: **65/65 component-source foundations plus Icon, AuthForm, CommandPalette
-and DashboardStat reviewed**. Completed [verification records](./release-0.9.0-verification-archive.md)
-and [batch plans](./release-0.9.0-plan-archive.md) are archived. The latest
-[DashboardStat checkpoint](./release-0.9.0.md#codex-dashboard-stat-2026-10-04)
-records native metric semantics, independent direction/tone and optional-class
-regressions. SettingsPanel and remaining acceptance are open; RT-23 is not complete.
+RT-23: **65/65 component-source foundations plus Icon and all four blocks reviewed**.
+Completed [verification records](./release-0.9.0-verification-archive.md) and
+[batch plans](./release-0.9.0-plan-archive.md) are archived. The latest
+[SettingsPanel checkpoint](./release-0.9.0.md#codex-settings-panel-2026-10-04)
+records value ownership, native reset and focus regressions. RT-23 still needs
+its final acceptance audit; do not count this component milestone as task completion.
 
 ## Continue here — Codex, 2026-10-04
 
-1. Continue **RT-23 with SettingsPanel**. It needs typed row/value ownership,
-   connected labels, explicit action intent and safe native action/reset behavior.
-   The [RT-23 plan](./release-0.9.0-plan.md#rt-23) retains source findings, including
-   unchanged controlled values and renderer dirty checking. Preserve compiled/ejected
-   consumers and installed guidance. Then audit original RT-23 acceptance against
-   the existing generated DataTable evidence; retain the full release scope.
+1. Audit **RT-23 against its original acceptance**. All UI inventory rows now have
+   reviewed foundations. Revalidate the generated DataTable Node/workerd cases in
+   `packages/cossack/tests/generated-runtime-build.test.js` (filter: `integrates the DataTable`)
+   and `tests/data-table-browser.test.js`, and inspect their actual coverage.
+   The [integration checkpoint](./release-0.9.0.md#codex-data-table-integration-2026-10-04)
+   records prior selection, query, hydration and focus evidence. Current installed
+   acceptance retains DataTable and all reviewed UI guide/prop checks. Match those
+   results to the [original criteria](./release-0.9.0-plan.md#rt-23), then close the
+   task if proved. Keep broader REL-03/runtime/other-engine gates separate.
 2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
    examples and verified runtime support. Use the shared services described in
    [tool usage](../docs/local-agent-tools.md) and extend
