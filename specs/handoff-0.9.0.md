@@ -8,45 +8,45 @@ The [release checklist](./release-0.9.0.md) owns task status and verification ev
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
 Completed tasks link to the [original plan archive](./release-0.9.0-plan-archive.md). All unchecked tasks remain in scope.
 
-## Completed work
+## Completed work — reference only
 
-Completed IDs: CLI-01–06, RT-02–09, RT-14, RT-18, RT-19, RT-25,
-CF-03, CF-05–07, CF-11 and REL-01.
-See the [archived completion details](./release-0.9.0-plan-archive.md#codex-completed-handoff-2026-10-04)
-and the [verification log](./release-0.9.0.md#verification-log) for implementation and test history.
-Earlier handoff details remain available through `git show 8f084e0:specs/handoff-0.9.0.md`.
+24 tasks are complete: CLI-01–06; RT-02–09, RT-14, RT-18, RT-19, RT-25;
+CF-03, CF-05–07, CF-11; REL-01. Keep their regression coverage.
+[Archived details](./release-0.9.0-plan-archive.md#codex-completed-handoff-2026-10-04)
+and the [verification log](./release-0.9.0.md#verification-log) retain outcomes, tests and limits.
+RT-23 has 35 reviewed UI foundations; the latest committed checkpoint is
+[Menubar](./release-0.9.0.md#codex-menubar-2026-10-04) (`3d8721e`).
+Component checkpoints do not close RT-23 or the release matrix.
 
-## Continue here
+## Continue here — Codex, 2026-10-04
 
-1. Continue RT-23 using the [UI contract audit](./ui-contract-audit.md).
-   Thirty-five foundations are reviewed. See the
-   [Menubar checkpoint](./release-0.9.0.md#codex-menubar-2026-10-04) for the latest evidence.
-   Next audit NavigationMenu, then the remaining pending rows.
-   The broader component audit and full release matrix remain open.
-2. Continue CLI-07/CLI-08 with authored API/component/recipe guidance, executable examples and verified runtime support.
-   Existing inspection, documentation and exact-symbol tools are described in [usage](../docs/local-agent-tools.md).
-   Extend [installed-tarball acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04),
-   which covers CLI/MCP parity and discovery with Node networking disabled.
-   Discovery reads examples without executing them. Runtime availability remains unverified.
-3. Continue CLI-07 stored test results and RT-28 snapshots/traces through shared services.
-   Then follow the remaining checklist and linked plans. Close tasks only against their original acceptance criteria.
+1. Finish the **uncommitted NavigationMenu work** before the next
+   [UI audit row](./ui-contract-audit.md). Stable identities, typed native attributes,
+   named navigation, focus/timer handling, demo/scaffold consumers and regression
+   fixtures are in the working tree. The browser fixture still fails: after Space
+   opens Products, Tab loses focus and closes the panel instead of reaching Core.
+   Investigate the root focusout handler and native focus transfer. The fixture
+   contains temporary `focusEvents`, `NAV_FOCUS` and panel-tabindex removal probes;
+   remove them after fixing the regression. Later browser scenarios remain unverified.
+   Earlier unit, scaffold, ejection and type checks passed; rerun affected checks
+   after the fix. Add packaged guidance, migration notes and installed-documentation
+   acceptance, then record evidence before marking this component reviewed.
+2. Continue **CLI-07/CLI-08**: authored API/component/recipe guidance, executable
+   examples and verified runtime support. Use the shared services described in
+   [tool usage](../docs/local-agent-tools.md) and extend
+   [installed-tarball acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
+   Discovery reads examples without executing them; runtime availability remains unverified.
+3. Add **CLI-07 stored test results and RT-28 snapshots/traces** through shared
+   services. Then follow every remaining checklist item and its detailed plan.
+   Close tasks only against their original acceptance criteria.
 
-## Next audit context
-
-Codex (2026-10-04): NavigationMenu still derives panel IDs from global indexes
-and uses document-wide lookups. Add stable section identities and a named navigation
-root with typed native attributes/events. Keep native links and disclosure semantics.
-Provide keyboard activation in hover mode, timer cancellation, outside/Escape
-dismissal and focus-safe transitions. Its spread uses unsupported onMouseenter names.
-Preserve hover/click options and verify independent instances, updates and removal.
-
-Update both the components demo and scaffold public layout. The latter stores
-translated sections in `@State`; identities must remain stable across label changes.
-Run scaffold recipe tests as well as public type, SSR, themed browser and installed
-guidance checks. Ejection now includes menu/disclosure helpers and merges named
-imports; extend source compilation coverage when NavigationMenu changes.
-Audit every remaining UI row afterward. Existing action-menu controllers deliberately
-move focus on opening; navigation hover must preserve native link/focus behavior.
+NavigationMenu acceptance must cover native links/disclosures, hover and click
+activation, independent instances, Escape/outside dismissal, disabled state,
+updates/removal and focus preservation. Scaffold section identities must survive
+translation changes. Run scaffold recipes, public types, SSR, themed Chromium,
+ejected-source compilation, root/package type checks and installed guidance checks.
+The current browser failure is recorded in `/tmp/cossack-navigation-tab-debug2.log`;
+logs are local and may disappear. Use the fixture to reproduce it.
 
 ## Limits to retain
 
