@@ -4,7 +4,8 @@ Author: Codex. Compacted on 2026-10-04. Branch: `fix-084`.
 24 of 58 release tasks are complete. 34 remain open.
 Versions stay at 0.8.3 until REL-04.
 
-The [release checklist](./release-0.9.0.md) owns task status and verification evidence.
+The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
+The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links the
 24 finished tasks to archived criteria and reviews. Preserve their regression coverage.
@@ -59,4 +60,4 @@ These component checkpoints do not close RT-23 or the release matrix.
 - Preserve the user's `reports.md` and `.zcodeignore`. Do not stage them.
   Use `git diff --check -- . ':!reports.md'` for the known report whitespace exception.
 - The user arranges GLM continuation. This handoff does not authorize delegation, new chats, messages, publishing or deployment.
-- Keep this file focused on current state and next steps. Record historical evidence in the release verification log.
+- Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.

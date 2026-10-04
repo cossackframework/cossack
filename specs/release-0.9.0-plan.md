@@ -1,7 +1,8 @@
 # Cossack 0.9.0 implementation plan
 
 Compacted by Codex on 2026-10-04. The release has 58 tasks: 24 complete and 34 open.
-The [release checklist](./release-0.9.0.md) owns completion status and verification evidence.
+The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
+The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
 
 The completed task index retains all task anchors and archive links. Outcomes are in the checklist.
