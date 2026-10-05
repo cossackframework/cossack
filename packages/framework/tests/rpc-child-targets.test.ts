@@ -8,7 +8,7 @@ import { registerSseStoreEntry } from '../src/transports/sse';
 const { registry } = vi.hoisted(() => ({ registry: { pages: {} as Record<string, any>, layouts: {}, loadings: {} } }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 let childId = '';
 let mutations = 0;
 let cleaned = 0;

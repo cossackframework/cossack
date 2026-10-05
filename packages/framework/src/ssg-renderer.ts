@@ -1,3 +1,4 @@
+import type { ConfigRequirementCollection } from './config-requirements.js';
 import './i18n-globals.js';
 import './config-globals.js';
 import { getModuleDefault } from './module-default.js';
@@ -166,6 +167,7 @@ export async function renderSsgPage(
   localeInput?: SsgLocaleInput,
   filePathToId: Record<string, string> = {},
   requestMiddlewares: readonly MiddlewareHandler[] = [],
+  configRequirements: ConfigRequirementCollection = {},
 ): Promise<string> {
   // Get page options for transport type
   const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
@@ -184,7 +186,7 @@ export async function renderSsgPage(
   // `c.env`) so `config('app.url')` returns the correct value. Other bindings
   // default to empty — config factories fall back to their defaults.
   const envBindings: Record<string, unknown> = { APP_URL: baseUrl };
-  const configStore = prepareConfigStore(configFactories ?? {}, envBindings);
+  const configStore = prepareConfigStore(configFactories ?? {}, envBindings, { requirements: configRequirements, context: { runtime: 'ssg' } });
 
   // Seed the i18n runtime (one-time) so SSG output renders in the default
   // locale. Done AFTER building the config store so the default locale can be

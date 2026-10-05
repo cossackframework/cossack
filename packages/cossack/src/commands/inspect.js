@@ -1,7 +1,6 @@
-import { explainRoute, checkRouteModel } from '../inspection-service.js';
+import { explainRoute, checkRouteModel, inspectProject } from '../inspection-service.js';
 import { commandSpecs, inspectRoutesSpec } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
-import { inspectDeployment } from '../deployment.js';
 import { inspectProviders } from '../providers-inspection.js';
 import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from '../output.js';
 import { buildEffectiveRouteModel } from '../scan-routes.js';
@@ -65,11 +64,10 @@ async function checkRoutes(ctx) {
 async function inspectCloudflare(args, ctx, command) {
   try {
     const root = await findProjectRoot(ctx.cwd);
-    const { summary, diagnostics } = await inspectDeployment(root, ctx.flags.env ?? process.env.CLOUDFLARE_ENV);
-    const valid = !diagnostics.some(item => item.severity === 'error');
-    const ok = command === 'inspect' || valid;
-    const data = { scope: 'cloudflare', ...summary,
-      readiness: { configuration: valid ? 'valid' : 'invalid', build: 'not-checked', remote: 'not-checked' } };
+    const environment = ctx.flags.env ?? process.env.CLOUDFLARE_ENV;
+    const { ok, data, diagnostics } = await inspectProject(root, { scope: 'cloudflare', environment, check: command === 'check' });
+    const summary = data;
+    const valid = data.readiness.configuration === 'valid';
     if (ctx.flags.json === true) writeResult(command, { ok, data, diagnostics });
     else {
       console.log(`Worker: ${summary.worker ?? '(unnamed)'}\nEnvironment: ${summary.environment ?? '(default)'}\nConfig: ${summary.configPath}`);

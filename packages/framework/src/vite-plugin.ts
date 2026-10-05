@@ -568,13 +568,15 @@ const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
  * export default configs;
  * ```
  */
-export function cossackConfig(): Plugin {
+export function cossackConfig(options: { environment?: string } = {}): Plugin {
   let projectRoot = '';
+  let selectedEnvironment: string | undefined;
   return {
     name: 'cossack-config',
     enforce: 'pre',
     configResolved(config) {
       projectRoot = config.root;
+      selectedEnvironment = options.environment ?? process.env.CLOUDFLARE_ENV;
       generateConfigTypes(projectRoot);
     },
     configureServer(server) {
@@ -599,17 +601,21 @@ export function cossackConfig(): Plugin {
       const isSsrEnvironment = this.environment?.name !== 'client';
       if (!isSsrEnvironment) {
         // Config reads env bindings — server-only. Never ship to the client.
-        return `const configs = {};\nexport default configs;\n`;
+        return `const configs = {};\nexport const requirements = {};\nexport const environment = null;\nexport default configs;\n`;
       }
       return `
         // Loads src/config/*.ts (if present). Globs the well-known config
         // directory so an absent folder resolves to {} (no-op).
         const modules = import.meta.glob(${JSON.stringify(CONFIG_GLOB)}, { eager: true });
         const configs = {};
+        const requirements = {};
         for (const [filePath, mod] of Object.entries(modules)) {
           const name = filePath.split('/').pop().replace(/\\.ts$/, '');
           configs[name] = mod.default;
+          if (mod.requirements !== undefined) requirements[name] = mod.requirements;
         }
+        export { requirements };
+        export const environment = ${JSON.stringify(selectedEnvironment ?? null)};
         export default configs;
       `;
     },

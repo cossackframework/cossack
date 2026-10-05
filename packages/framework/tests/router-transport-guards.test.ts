@@ -7,7 +7,7 @@ const { constructed, registry } = vi.hoisted(() => ({
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 
 const pagePath = '/src/pages/private/index.ts';
 const layoutPath = '/src/pages/layout.ts';

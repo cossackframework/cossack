@@ -146,6 +146,7 @@ export const commandSpecs = {
   }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
     ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for routes.' }] : [] }),
   config: new CommandSpec({ name: 'config', globals: ['json', 'help', 'dry-run'], flags: {
+    env, check: bool('Check declared requirements against the selected runtime/environment without executing factories.'),
     generate: bool('Generate .cossack/config.d.ts without evaluating configuration factories.'),
   }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
     ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for config.' }] : [] }),

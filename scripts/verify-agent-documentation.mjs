@@ -217,7 +217,7 @@ globalThis.Deno = {
     await fs.mkdir(d1WorkerRoot);
     await fs.writeFile(path.join(d1WorkerRoot, 'worker.mjs'), `
 import { findNote } from '../compiled/cloudflare-d1-bound-query-bound-query.js';
-import { prepareConfigStore, runWithConfig, config, requireEnv, requireBinding } from '@cossackframework/framework/config';
+import { prepareConfigStore, runWithConfig, config, requireEnv, requireBinding, requireConfigVariable } from '@cossackframework/framework/config';
 
 
 export default {
@@ -225,12 +225,18 @@ export default {
     const pathname = new URL(request.url).pathname;
     if (pathname === '/config') {
       const store = prepareConfigStore({ app: () => ({
-        name: requireEnv('APP_NAME'), database: requireBinding('DB'),
-      }) }, { ...env, APP_NAME: request.headers.get('x-config-name') });
+        name: requireEnv('APP_NAME'), database: requireBinding('DB'), port: requireConfigVariable('PORT', 'number'),
+      }) }, { ...env, APP_NAME: request.headers.get('x-config-name'), PORT: '81' }, { requirements: { app: { variables: { APP_NAME: { type: 'string' }, PORT: { type: 'number', coerce: true } }, bindings: { DB: { kind: 'd1' } } } }, context: { runtime: 'cloudflare' } });
       return runWithConfig(store, async () => {
         await new Promise(resolve => setTimeout(resolve, 20));
-        return Response.json({ name: config('app.name'), bindingPreserved: requireBinding('DB') === env.DB });
+        return Response.json({ name: config('app.name'), port: config('app.port'), bindingPreserved: requireBinding('DB') === env.DB });
       });
+    }
+    if (pathname === '/invalid-declared-config') {
+      let factoryEntered = false;
+      try { prepareConfigStore({ app: () => { factoryEntered = true; return {}; } }, { PORT: 'WORKER_PRIVATE_SENTINEL' }, { requirements: { app: { variables: { PORT: { type: 'number', coerce: true } } } }, context: { runtime: 'cloudflare' } }); }
+      catch (error) { return Response.json({ code: error.code, requirement: error.requirementName, factoryEntered, message: error.message }, { status: 503 }); }
+      return new Response('Expected declaration failure', { status: 500 });
     }
     if (pathname === '/missing-config') {
       try { prepareConfigStore({ app: () => ({ database: requireBinding('DB') }) }, { APP_SECRET: 'WORKER_PRIVATE_SENTINEL' }); }
@@ -269,8 +275,14 @@ export default {
       const configResponses = await Promise.all(['first', 'second'].map(name => d1Worker.fetch('/config', { headers: { 'x-config-name': name } })));
       for (const [index, result] of configResponses.entries()) {
         assert.equal(result.status, 200);
-        assert.deepEqual(await result.json(), { name: index === 0 ? 'first' : 'second', bindingPreserved: true });
+        assert.deepEqual(await result.json(), { name: index === 0 ? 'first' : 'second', port: 81, bindingPreserved: true });
       }
+      const invalid = await d1Worker.fetch('/invalid-declared-config');
+      assert.equal(invalid.status, 503);
+      const invalidFailure = await invalid.json();
+      assert.equal(invalidFailure.code, 'COSSACK_CONFIG_VARIABLE_INVALID');
+      assert.equal(invalidFailure.requirement, 'PORT'); assert.equal(invalidFailure.factoryEntered, false);
+      assert.ok(!JSON.stringify(invalidFailure).includes('WORKER_PRIVATE_SENTINEL'));
       const missing = await d1Worker.fetch('/missing-config');
       assert.equal(missing.status, 503);
       const failure = await missing.json();

@@ -10718,3 +10718,120 @@ Installed config checking retains scaffold skipLibCheck policy; strict cache
 ambient-type acceptance remains separate. RT-24 stays open; counts remain
 **30 complete / 28 open**. Desktop remains complete by user decision, with its
 remaining platform checks waived.
+
+
+### Codex: Declared configuration requirements (2026-10-05)
+
+Author: **Codex**. Tasks: **RT-24**, with shared **CLI-07/CLI-08/CF-04** inspection
+and documentation integration. This is a verified implementation slice; RT-24
+remains open. Release counts remain **30 complete / 28 open**.
+
+**Behavior and API:** Config files can export literal named requirements beside
+their synchronous default factory. Shared portable normalization/checking covers
+required/optional string, number and boolean variables, strict opt-in coercion,
+secret classification, binding kinds and runtime filters. Conflicting active
+rules reject by name; compatible rules promote required/secret flags. Metadata
+accessors and customized runtime-array iterators reject without execution.
+Diagnostics exclude values. Runtime binding validation checks minimal public
+method shapes without invoking methods; it does not establish platform branding
+or connectivity. Parsed scalars stay in server request stores.
+
+`prepareConfigStore` validates all active requirements before the first factory.
+`configVariable(name, type)` and `requireConfigVariable` expose typed validated
+scalars. Legacy `env` remains string-based and `binding` preserves raw identity.
+SSR derives runtime from its actual adapter and preserves selected environment.
+SSG explicitly uses `ssg` and supplies APP_URL only. Realtime authorization replay
+was found still using the low-level evaluator; it now uses fresh preparation,
+retains runtime/environment in server-local snapshots and fails closed before
+factory, middleware, authorization or operation callbacks.
+
+**Tooling:** Node-only `framework/config-inspection` uses Vite's AST parser;
+`framework/config-requirements` is portable. Static literals and simple local
+const export aliases are accepted. Dynamic expressions, imported exports,
+mutations, getters, spreads, computed fields, unsupported exported forms and
+ambiguous top-level effects remain unknown. Review fixed false absence for
+exported binding patterns and TypeScript enum/namespace/import-alias forms.
+Static parsing never evaluates modules, factory bodies or user compiler plugins.
+Its conservative policy can also reject unrelated dynamic top-level initializers.
+
+`cossack config --check --env staging --json` validates privately parsed selected
+Wrangler facts. It does not inherit production vars/bindings into a named
+environment, read .env/process overrides, contact remote resources, or expose raw
+or parsed values. Required secret existence stays unverified even when a secret
+name is declared. Unsupported Node/Deno declaration checks return an explicit
+unavailable diagnostic instead of invented missing values. Runtime validation
+supports their supplied bindings. Failure with --check --generate stops writes.
+Cloudflare CLI inspection/checks and MCP use the shared inspection service;
+deployment invokes the same checker before tools or artifact deletion.
+
+**Ownership/review:** Codex checked Git status and preserved user-owned reports.md
+and .zcodeignore. Three bounded agents exclusively owned AST inspection/tests,
+pure-checker tests, and CLI requirement inspection/config command/tests. Codex
+owned the shared types/checker, runtime integration, deployment/shared-service
+integration, installed fixtures, final review and acceptance. Agents reported
+changed files and focused results; Codex integrated and reviewed all changes.
+The package compiler caught the missing Hono context-key type; Codex declared it
+and reran declaration emission successfully. No tests read a replaced distribution
+during the final gate.
+
+**Observed source checks:**
+
+- Framework combined config, SSR/SSG, realtime/auth, HTTP/SSE/WebSocket and RPC
+  regression run: **24 files / 800 tests pass**.
+  Log: /tmp/cossack-config-requirements-framework.log.
+- CLI config/requirement inspection/deployment/inspection acceptance:
+  **6 files / 62 tests pass**. Actual shared Cloudflare inspection matches CLI
+  diagnostics and excludes private numeric/factory sentinels.
+  Log: /tmp/cossack-config-requirements-cli.log.
+- Actual stdio SDK MCP suite: **18/18 pass**, including shared requirement
+  diagnostics and parser/dependency-output secrecy.
+  Log: /tmp/cossack-config-requirements-mcp.log.
+- Framework `pnpm --filter @cossackframework/framework exec tsc -p
+  tsconfig.declarations.json` and root `pnpm tsc --noEmit` pass after final source
+  edits. Root references alone do not compile package sources.
+- Changed JS/helper syntax checks and task-owned diff checks pass.
+
+**Installed/runtime evidence:** Fresh `COSSACK_KEEP_SMOKE=1 pnpm
+test:agent-docs:local` passes against all final implementation changes. It builds
+and packs fresh non-Desktop packages, verifies the installed config CLI and type
+inference, executes 76 packaged examples plus four auth examples, checks installed
+reporter/public declarations and offline CLI/MCP parity, and passes Cloudflare
+HTTP/SSE/WebSocket browser traces, packaged guidance, source-map-enabled
+production stripping and UI documentation parity. Retained project/tarballs:
+`/tmp/cossack-local-pack-5dbkLj`. Log:
+`/tmp/cossack-config-requirements-final-installed.log`.
+
+The config helper checks literal catalogs without factory execution, generated
+inference from typed accessors, missing requirements stopping generation without
+changing output, secret availability remaining unverified, and deterministic
+removal. Installed type checking follows scaffold skipLibCheck policy. The exact
+packaged configuration example now exercises typed number/boolean coercion.
+The installed workerd fixture checks real D1 shape/identity, concurrent scoped
+configuration, numeric coercion, and invalid declared values stopping factory
+execution with no private sentinel in errors. These are local runtime checks;
+no deployed Cloudflare resources or secret values were queried.
+
+A coordinator-owned real Vite SSR build loads named requirement metadata and the
+selected environment without entering factories. Feeding its actual virtual
+exports into preparation rejects a private invalid port before factory entry,
+then accepts/coerces valid bindings. The final combined framework run includes
+this build test. Client build acceptance excludes factory bodies, private values
+and requirement metadata.
+
+Current official [binding docs](https://developers.cloudflare.com/workers/runtime-apis/bindings/),
+[D1 API](https://developers.cloudflare.com/d1/worker-api/d1-database/),
+[R2 API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/),
+[KV API](https://developers.cloudflare.com/kv/api/), and
+[Durable Object namespace API](https://developers.cloudflare.com/durable-objects/api/namespace/)
+were retrieved for binding shape review; current Workers types/schema retrieval
+from the preceding scoped-factory checkpoint remains applicable.
+
+**Limits/next work:** Direct Vite declaration preflight, Node/Deno declaration-source
+policy and full secret-classification/hydration acceptance remain RT-24 work.
+Secret classification cannot prevent deliberate application exposure in props,
+factories or responses. Async factories remain unsupported. Installed config
+type checks use scaffold skipLibCheck policy; strict cache Worker ambient-type
+acceptance remains separate. Full cossack/release-matrix acceptance is not claimed.
+Desktop remains complete by user decision, with platform checks waived. No
+remote resource, deployment, publication or push occurred. No new external blocker
+was found; the remaining release tasks still need implementation/acceptance.

@@ -20,7 +20,7 @@ vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: any, next: (
     return middlewareStore.current!.run(c.req.header('x-request-owner') ?? 'owner',
         () => middlewareStore.database ? middlewareStore.database(c, next) : next());
 }] }));
-vi.mock('virtual:cossack-config', () => ({ default: { sample: ({ env }: any) => ({ name: env('APP_URL') }) } }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: { sample: ({ env }: any) => ({ name: env('APP_URL') }) } }));
 const path = '/src/pages/stream/index.ts';
 const layout = '/src/pages/layout.ts';
 middlewareStore.current = new AsyncLocalStorage<string>();

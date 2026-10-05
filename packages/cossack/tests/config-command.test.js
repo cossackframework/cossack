@@ -69,11 +69,18 @@ it('preserves authored output with a coded failure while allowing a read-only ca
 it.each([
   [['--dry-run'], 'COSSACK_OPTION_CONFLICT'],
   [['--generate=false', '--dry-run'], 'COSSACK_OPTION_CONFLICT'],
-  [['--env=production'], 'COSSACK_OPTION_UNKNOWN'],
   [['--force'], 'COSSACK_OPTION_UNKNOWN'],
   [['extra'], 'COSSACK_ARGUMENT_UNEXPECTED'],
 ])('rejects invalid options before writes: %j', async (args, code) => {
   const root = await fixture();
   expect(await cli(root, ...args)).toMatchObject({ ok: false, exitCode: 1, diagnostics: [{ code }] });
+  await expect(fs.access(path.join(root, '.cossack'))).rejects.toThrow();
+});
+it('fails unavailable declaration checks before generation and accepts selected-environment catalogs', async () => {
+  const root = await fixture();
+  const catalog = await cli(root, '--env=production');
+  expect(catalog).toMatchObject({ ok: true, data: { environment: 'production', evaluation: 'not-performed', validation: 'not-performed' } });
+  const result = await cli(root, '--check', '--generate');
+  expect(result).toMatchObject({ ok: false, exitCode: 1, diagnostics: [{ code: 'COSSACK_CONFIG_CHECK_UNAVAILABLE' }] });
   await expect(fs.access(path.join(root, '.cossack'))).rejects.toThrow();
 });

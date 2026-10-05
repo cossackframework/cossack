@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Context } from 'hono';
 import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, syncSseState, __sseStoreSize } from '../src/transports/sse';
 import type { RouterContext } from '../src/route-ids';
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 
 vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: Context, next: () => Promise<void>) => {
     const identity = c.get('cossack.realtimeIdentity');

@@ -7,7 +7,7 @@ import { collectSsgRoutes } from '../src/ssg-renderer';
 const { registry } = vi.hoisted(() => ({ registry: { pages: {} as Record<string, any>, layouts: {} as Record<string, any>, loadings: {} } }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 @Page({ ssg: true })
 class Actual extends Cossack { render() { return html`<main>selected default page</main>`; } }
 @Page()

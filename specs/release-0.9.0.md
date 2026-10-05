@@ -52,7 +52,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, coercion, selected-environment preflight and full redaction acceptance remain. See [factory scope checkpoint](#codex-rt24-factory-scope-2026-10-05).
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight and full classification/hydration secrecy acceptance remain. See [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
@@ -1391,3 +1391,42 @@ Installed config checking retains scaffold skipLibCheck policy; strict cache
 ambient-type acceptance remains separate. RT-24 stays open; counts remain
 **30 complete / 28 open**. Desktop remains complete by user decision, with its
 remaining platform checks waived.
+
+
+<a id="codex-rt24-declared-requirements-2026-10-05"></a>
+### Codex: Declared configuration requirements (2026-10-05)
+
+Author: **Codex**. RT-24 remains open; counts remain **30 complete / 28 open**.
+Literal named requirements now declare scalar types/coercion, required names,
+secret classification, binding kinds and runtime applicability. The portable
+checker validates all active declarations before the first factory. Typed scalar
+accessors preserve legacy string env behavior. SSR, SSG and realtime replay use
+fresh preparation; snapshots preserve the originating runtime/environment and
+replay fails closed before middleware, authorization and operations.
+
+Node-only AST inspection never evaluates application modules. Dynamic, mutated,
+unsupported or ambiguous exports remain unknown. CLI config --check, check
+cloudflare and deploy use private selected Wrangler declarations and the same
+checker. Invalid deployment requirements stop before tool execution or artifact
+writes. Catalogs contain metadata/names, not raw or parsed scalar values. Remote
+resources and secrets remain explicitly unverified. Binding checks are structural.
+
+See [configuration contract](./config.md#declared-requirements-codex-2026-10-05),
+[detailed plan](./release-0.9.0-plan.md#rt-24) and
+[verification record](./release-0.9.0-verification-archive.md#codex-declared-configuration-requirements-2026-10-05).
+
+**Verification:** 800 framework tests, 62 CLI/shared-inspection tests and 18
+actual stdio MCP tests pass. Framework declaration
+emission and root `pnpm tsc --noEmit` pass. Fresh installed tarballs pass config
+CLI/inference and failure-before-write checks, 76 packaged examples plus four
+auth examples, real D1/workerd requirement validation, Cloudflare HTTP/SSE/
+WebSocket browser checks, guidance and production stripping. Retained gate:
+`/tmp/cossack-local-pack-5dbkLj`. Exact counts and logs are in the linked archive.
+A real Vite SSR build also proves metadata/environment collection without factory
+evaluation and validation before factory entry.
+
+**Limits:** Direct Vite preflight, Node/Deno declaration-source support and full
+hydration secrecy remain.
+Secret classification cannot prevent deliberate application exposure. Async
+factories and strict installed cache ambient-type checks remain separate. Desktop
+stays complete by user decision; remaining platform checks are waived.

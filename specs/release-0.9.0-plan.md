@@ -869,6 +869,32 @@ and selected-environment preflight before any factory side effect. Helpers still
 validate at invocation. Async factories and full classification/hydration secrecy
 are not covered by this checkpoint. RT-24 stays open; counts stay 30 / 28.
 
+
+Codex declared-requirement checkpoint (2026-10-05): literal named requirements
+exports describe scalar type/coercion, required/secret flags, binding kind and
+runtime filters. The pure checker validates before any factory. SSR/SSG use it;
+realtime authorization replay now also prepares fresh scopes and preserves the
+originating runtime/environment. Typed configVariable/requireConfigVariable
+return coerced scalars; legacy env remains string-based. Metadata normalization
+rejects accessors/custom iterators without invoking them. Static inspection treats
+unsupported exported forms and dynamic/mutated metadata as unknown, and never
+evaluates factories. CLI --check, Cloudflare checks and deployment preflight share
+private selected Wrangler declaration facts. Failures stop before types/build or
+artifact writes. Remote resources and secret values/existence remain unverified.
+Node/Deno runtime validation works; their declaration preflight is unavailable.
+
+Continue with direct Vite build preflight, the remaining declaration-source
+policy for Node/Deno, and full secret-classification/hydration acceptance. Keep
+binding shape checks scoped to structural validation, not remote connectivity.
+Document that classification cannot prevent deliberate public exposure. Retain
+synchronous factory policy and separate strict installed cache ambient types.
+Fresh installed config/workerd/browser/documentation acceptance passes, along
+with combined source/CLI/MCP regressions and root/package type checking. A real
+Vite SSR build checks named metadata collection and failure before factory entry.
+Retained gate: /tmp/cossack-local-pack-5dbkLj.
+RT-24 stays open; counts stay 30 complete / 28 open. Final acceptance evidence is
+in the [declared requirements record](./release-0.9.0-verification-archive.md#codex-declared-configuration-requirements-2026-10-05).
+
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
 

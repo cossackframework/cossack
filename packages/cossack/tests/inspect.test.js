@@ -1,3 +1,4 @@
+import { inspectProject } from '../src/inspection-service.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -104,6 +105,19 @@ describe('Cloudflare configuration inspection', () => {
     output.mockClear();
     expect(await inspectCommand(['routes', '/'], { ...ctx, flags: { json: true, env: 'production' } })).toBe(0);
     expect(JSON.parse(output.mock.calls[0][0]).data.reasons.join(' ')).toContain('Runtime cloudflare: sse transport is available');
+  });
+
+  it('checks configuration declarations with the same value-free diagnostics as config preflight', async () => {
+    const ctx = await fixture({ vars: { PORT: 'PRIVATE_NUMERIC_SENTINEL' } });
+    await fs.mkdir(path.join(ctx.cwd, 'src/config'), { recursive: true });
+    await fs.writeFile(path.join(ctx.cwd, 'src/config/app.ts'), "export const requirements = { variables: { PORT: { type: 'number', coerce: true } } }; export default () => { throw new Error('FACTORY_EXECUTED'); };");
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await checkCommand(['cloudflare'], ctx)).toBe(1);
+    const result = JSON.parse(output.mock.calls[0][0]);
+    expect(await inspectProject(ctx.cwd, { scope: 'cloudflare', check: true })).toEqual({ ok: result.ok, data: result.data, diagnostics: result.diagnostics });
+    expect(result.data.configurationRequirements.validation).toBe('declarations-only');
+    expect(result.diagnostics).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'COSSACK_CONFIG_VARIABLE_INVALID', name: 'PORT' })]));
+    expect(JSON.stringify(result)).not.toMatch(/PRIVATE_NUMERIC_SENTINEL|FACTORY_EXECUTED/);
   });
 
   it('rejects unknown environments with a structured diagnostic', async () => {

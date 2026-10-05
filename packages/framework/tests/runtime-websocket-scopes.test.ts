@@ -13,7 +13,7 @@ vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: any, next: (
   c.set('cossack.captureRealtimeIdentity', async () => ({ version: 1, provider: 'fixture.session', data: { reference: 'opaque' } }));
   await next();
 }] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 const disposed: number[] = [];
 let sequence = 0;
 const instances: Cossack[] = [];

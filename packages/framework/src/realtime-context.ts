@@ -1,10 +1,10 @@
 import { Context, type MiddlewareHandler } from 'hono';
 import { assertResponseHeadersMutable, getLocaleCatalog, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
-import configFactories from 'virtual:cossack-config';
+import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
 import { ensureRequestContextAlsWired, runWithContext } from './request-context-als.js';
 import { withRuntimeRouteParams } from './runtime-websocket.js';
-import { buildConfig, runWithConfig, type EnvFunction } from './config.js';
+import { prepareConfigStore, runWithConfig } from './config.js';
 import { ensureLocaleAlsWired, runWithLocale } from './i18n-context.js';
 import { cloneRealtimeIdentity, snapshotRealtimeRequest, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-identity.js';
 
@@ -80,10 +80,11 @@ export async function withRealtimeAuthorization<T>(
     };
     try {
         const env = original.env as Record<string, unknown>;
-        const envFn: EnvFunction = (key, fallback) => env?.[key] === undefined || env[key] === null ? fallback ?? '' : String(env[key]);
-        const config = buildConfig(configFactories as Record<string, unknown>, envFn);
+        const configContext = original.configContext ?? { runtime: 'cloudflare' as const, ...(configEnvironment ? { environment: configEnvironment } : {}) };
+        const store = prepareConfigStore(configFactories as Record<string, unknown>, env, { requirements: configRequirements, context: configContext });
+        c.set('cossack.configContext', configContext);
         ensureLocaleAlsWired();
-        await runWithContext(c, () => runWithConfig({ env, config }, () =>
+        await runWithContext(c, () => runWithConfig(store, () =>
             runWithLocale({ locale: original.locale, messages: getLocaleCatalog(original.locale) ?? {} }, () => dispatch(0))));
     }
     catch (error) {

@@ -67,6 +67,8 @@ declare module 'virtual:cossack-config' {
   import type { ConfigFactory } from './config';
   /** Config factories from `src/config/*.ts`, keyed by file name (no extension). */
   const configs: Record<string, ConfigFactory>;
+  export const requirements: import('./config-requirements').ConfigRequirementCollection;
+  export const environment: string | null;
   export default configs;
 }
 

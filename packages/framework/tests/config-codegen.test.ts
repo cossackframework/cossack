@@ -73,13 +73,13 @@ it('generates empty registries and refreshes development additions and removals'
   unlinkSync(file); watcher.emit('unlink', file);
   expect(readFileSync(join(root, '.cossack/config.d.ts'), 'utf8')).not.toContain('new.ts');
   httpServer.emit('close'); expect(watcher.listenerCount('add')).toBe(0);
-  expect(plugin.load.call({ environment: { name: 'client' } }, '\0virtual:cossack-config')).toBe('const configs = {};\nexport default configs;\n');
+  expect(plugin.load.call({ environment: { name: 'client' } }, '\0virtual:cossack-config')).toBe('const configs = {};\nexport const requirements = {};\nexport const environment = null;\nexport default configs;\n');
 });
 it('keeps factory source and values out of a built client bundle', async () => {
   const { build } = await import('vite');
   const root = project();
-  writeFileSync(join(root, 'src/config/private.ts'), `throw new Error('COSSACK_FACTORY_EXECUTION_SENTINEL'); export default () => ({ token: 'COSSACK_PRIVATE_VALUE_SENTINEL' });`);
-  writeFileSync(join(root, 'entry.ts'), `import configs from 'virtual:cossack-config'; console.log(configs);`);
+  writeFileSync(join(root, 'src/config/private.ts'), `throw new Error('COSSACK_FACTORY_EXECUTION_SENTINEL'); export const requirements = { variables: { COSSACK_METADATA_SENTINEL: { type: 'string', secret: true } } }; export default () => ({ token: 'COSSACK_PRIVATE_VALUE_SENTINEL' });`);
+  writeFileSync(join(root, 'entry.ts'), `import configs, { requirements, environment } from 'virtual:cossack-config'; console.log(configs, requirements, environment);`);
   const built = await build({ root, configFile: false, logLevel: 'silent', plugins: [cossackConfig()],
     build: { write: false, lib: { entry: join(root, 'entry.ts'), formats: ['es'], fileName: 'client' } } });
   const bundles = Array.isArray(built) ? built : [built];
@@ -88,6 +88,37 @@ it('keeps factory source and values out of a built client bundle', async () => {
   expect(output).toContain('console.log');
   expect(output).not.toContain('COSSACK_FACTORY_EXECUTION_SENTINEL');
   expect(output).not.toContain('COSSACK_PRIVATE_VALUE_SENTINEL');
+  expect(output).not.toContain('COSSACK_METADATA_SENTINEL');
   expect(output).not.toContain('src/config/private');
   expect(readFileSync(join(root, '.cossack/config.d.ts'), 'utf8')).toContain('private.ts');
+});
+it('collects actual SSR declarations and selected environment without running factories', async () => {
+  const { build } = await import('vite');
+  const { prepareConfigStore, runWithConfig, requireConfigVariable } = await import('../src/config');
+  const root = project();
+  writeFileSync(join(root, 'src/config/app.ts'), `
+export const requirements = { variables: { PORT: { type: 'number', coerce: true } } };
+export const calls: string[] = [];
+export default ({ env }: { env: (name: string) => string }) => { calls.push('entered'); return { name: env('APP_NAME') }; };
+`);
+  const entry = join(root, 'entry.ts');
+  writeFileSync(entry, `import factories, { requirements, environment } from 'virtual:cossack-config';
+export { factories, requirements, environment }; export { calls } from './src/config/app.ts';`);
+  const built = await build({ root, configFile: false, logLevel: 'silent', plugins: [cossackConfig({ environment: 'staging' })],
+    build: { ssr: entry, write: false, minify: false } });
+  const bundles = Array.isArray(built) ? built : [built];
+  const chunk = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : []).find(output => output.type === 'chunk');
+  expect(chunk?.type).toBe('chunk');
+  const loaded = await import(/* @vite-ignore */ 'data:text/javascript;base64,' + Buffer.from((chunk as any).code).toString('base64'));
+  expect(loaded.environment).toBe('staging');
+  expect(loaded.requirements).toEqual({ app: { variables: { PORT: { type: 'number', coerce: true } } } });
+  expect(loaded.calls).toEqual([]);
+  const options = { requirements: loaded.requirements, context: { runtime: 'node' as const, environment: loaded.environment } };
+  expect(() => prepareConfigStore(loaded.factories, { PORT: 'PRIVATE_PORT_SENTINEL' }, options))
+    .toThrow(expect.objectContaining({ code: 'COSSACK_CONFIG_VARIABLE_INVALID', requirementName: 'PORT', environment: 'staging' }));
+  expect(loaded.calls).toEqual([]);
+  const store = prepareConfigStore(loaded.factories, { PORT: '81', APP_NAME: 'SSR app' }, options);
+  expect(store.config).toEqual({ app: { name: 'SSR app' } });
+  expect(loaded.calls).toEqual(['entered']);
+  await runWithConfig(store, () => expect(requireConfigVariable('PORT', 'number')).toBe(81));
 });

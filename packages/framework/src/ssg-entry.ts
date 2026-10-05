@@ -21,7 +21,7 @@
 // `runSsg` therefore only consumes values captured here at load time.
 
 import registry from 'virtual:cossack-pages';
-import configFactories from 'virtual:cossack-config';
+import configFactories, { requirements as configRequirements } from 'virtual:cossack-config';
 import requestMiddlewares from 'virtual:cossack-middlewares';
 import { supportedLocales, defaultLocale, loadCatalog } from 'virtual:cossack-lang';
 import { collectSsgRoutes, getStaticParams, renderSsgPage, type HtmlTemplate } from './ssg-renderer.js';
@@ -115,6 +115,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
           locale,
           args.manifest.filePathToId,
           requestMiddlewares,
+          configRequirements,
         );
 
         rendered.push(routePath);

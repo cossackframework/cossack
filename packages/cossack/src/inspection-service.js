@@ -1,5 +1,6 @@
 /** Shared, output-free inspection used by CLI commands and local agent tools. */
 import { buildEffectiveRouteModel } from './scan-routes.js';
+import { inspectConfigurationRequirements } from './config-inspection.js';
 import { inspectDeployment } from './deployment.js';
 import { inspectProviders } from './providers-inspection.js';
 
@@ -136,8 +137,10 @@ export async function inspectProject(root, { scope, environment = process.env.CL
   }
   if (scope === 'cloudflare') {
     const { summary, diagnostics } = await inspectDeployment(root, environment);
+    const configurationRequirements = await inspectConfigurationRequirements(root, { environment, check: true });
+    diagnostics.push(...configurationRequirements.diagnostics);
     const valid = !diagnostics.some(item => item.severity === 'error');
-    return { ok: !check || valid, diagnostics, data: { scope, ...summary,
+    return { ok: !check || valid, diagnostics, data: { scope, ...summary, configurationRequirements,
       readiness: { configuration: valid ? 'valid' : 'invalid', build: 'not-checked', remote: 'not-checked' } } };
   }
   if (scope === 'providers') {

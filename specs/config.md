@@ -167,8 +167,7 @@ generateConfigTypes(process.cwd());
 ```
 
 Generation is deterministic and does not replace authored files or symlinked
-output destinations. This tooling is not a runtime API. Required variable/binding metadata remain RT-24 work; generated
-types do not prove a selected environment supplies the declared values.
+output destinations. This tooling is not a runtime API. Generated types do not prove a selected environment supplies the declared values.
 
 ### CLI discovery and generation
 
@@ -183,7 +182,7 @@ writing. Repeated generation writes only when content changes. An authored
 `COSSACK_CONFIG_GENERATION_CONFLICT`; read-only discovery still works.
 
 The catalog reports filename-based type origins, not expanded inferred types,
-verified factory exports, or verified runtime requirements. Existing apps must include `.cossack/config.d.ts` in
+verified factory exports, or verified runtime values. Literal requirement metadata is described below. Existing apps must include `.cossack/config.d.ts` in
 TypeScript before its augmentation is visible.
 
 `prepareConfigStore(factories, bindings)` creates a fresh scope for synchronous
@@ -197,9 +196,81 @@ failure restore an enclosing scope. Async factory functions remain unsupported.
 SSR supplies the current request bindings. SSG supplies only `APP_URL` from the
 resolved base URL; a required live binding fails before locale initialization,
 user middleware, or page lifecycle begins. SSG does not invent bindings or waive
-required accessors. Requirements declared independently of factories, coercion,
-and selected-environment preflight remain RT-24 work. Required helpers currently
-validate when invoked; they do not scan requirements before the first factory.
+required accessors. Legacy required helpers validate when invoked. Independent declarations now
+validate before the first factory, as described below.
 `buildConfig` remains a low-level evaluator with an injected reader; it does not
 establish an accessor scope. Integrations that need scoped imported helpers
 should use `prepareConfigStore`.
+
+
+### Declared requirements (Codex, 2026-10-05)
+
+Export a literal `requirements` object beside a synchronous factory:
+
+```ts
+import { requireConfigVariable, requireBinding, type ConfigRequirements }
+  from '@cossackframework/framework/config';
+
+export const requirements = {
+  variables: {
+    PORT: { type: 'number', coerce: true },
+    TOKEN: { type: 'string', secret: true },
+    LABEL: { type: 'string', required: false },
+  },
+  bindings: { DB: { kind: 'd1', runtimes: ['cloudflare'] } },
+} as const satisfies ConfigRequirements;
+export default () => ({ port: requireConfigVariable('PORT', 'number') });
+```
+
+The virtual server module collects declarations. `prepareConfigStore` validates
+all active metadata and values before any factory runs. Integrations pass
+`{ requirements: { app: requirements }, context: { runtime: 'node' } }` as its
+third argument. SSR derives runtime from its adapter, with Cloudflare as the
+adapter-free default; unknown adapters retain unknown runtime. Its selected
+environment comes from `cossackConfig({ environment })` or `CLOUDFLARE_ENV`.
+Realtime authorization snapshots preserve the originating runtime/environment.
+Replay uses the same fresh preparation before middleware, authorization checks
+or operations; configuration failure denies replay without exposing values.
+SSG uses runtime `ssg`. It supplies only APP_URL. A live binding can be explicitly
+Cloudflare-only; omitting runtimes makes the rule apply in every runtime.
+
+Variable types are `string`, `number`, and `boolean`. Required defaults to true,
+coerce and secret to false. Numeric coercion accepts finite decimal/exponent
+strings after trimming, and rejects hex, empty values, NaN and Infinity.
+Boolean coercion accepts booleans, 1/0 and the strings true/false/1/0 after
+trimming. It rejects yes/no, uppercase aliases and object conversion. Strict
+rules accept only values of the declared type. Optional absent values stay
+undefined. Duplicate active declarations must agree on type/coercion or binding
+kind; required and secret classification are promoted if any declaration needs
+them. Accessors report a mismatch if the caller requests the wrong type.
+
+Binding kinds are object, d1, kv, r2, durable-object and service. Specific kinds
+check a minimal public method shape at runtime and selected binding category
+in tooling. They require Cloudflare; object accepts a non-null object/function
+in other runtimes. This is structural validation, not resource connectivity or
+complete platform branding. Binding methods are never invoked by validation.
+
+`configVariable(name, type)` returns a typed optional scalar;
+`requireConfigVariable` requires it. They read validated server-only values.
+`env()` keeps its string behavior and `binding()` preserves raw identity.
+Secret classification does not stop application code from deliberately exposing
+a value through public props, factories or responses. Nothing automatically
+serializes the requirement store. Full hydration secrecy remains release work.
+
+`cossack config --check --env staging --json`, `cossack check cloudflare` and
+`cossack deploy` reuse the checker with privately parsed selected Wrangler facts.
+Deployment failures stop before types, build, artifact deletion or upload.
+Checks do not read process/development values, evaluate factories, or contact
+remote resources. Secret existence and values remain unverified, even if a
+required secret name is declared. Node/Deno declaration preflight is explicitly
+unavailable; runtime checks work with their supplied bindings. Direct Vite builds
+do not yet perform declaration preflight.
+
+Static inspection accepts literal named exports (and simple local const aliases),
+including TypeScript as/satisfies wrappers. Dynamic expressions, imported exports,
+mutations, computed keys, getters, spreads, unsupported exported forms and
+ambiguous top-level effects are unknown. Invalid schemas and parser failures
+have value-free diagnostics. Source text and scalar values never enter catalogs.
+The inspector is conservative: unrelated dynamic top-level const initializers can
+also make declared metadata unknown. It is Node-only tooling; the shared
+`framework/config-requirements` runtime checker imports no Node APIs.

@@ -21,7 +21,7 @@ vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c:any,next:()=>Promise<void>)=>{
     c.set('user',c.env?.TEST_POLICY_USER); await next();
 }] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 
 // Finite application I/O lets teardown prove eventual remote cleanup even when
 // a caller has already timed out/disconnected. Cancellation is not rollback.

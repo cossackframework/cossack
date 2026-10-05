@@ -214,17 +214,21 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 6. Continue [RT-24](./release-0.9.0-plan.md#rt-24) from the
-   [factory scope checkpoint](./release-0.9.0.md#codex-rt24-factory-scope-2026-10-05).
-   Generated types and CLI discovery are implemented; SSR/SSG now evaluate
-   factories inside fresh binding scopes. 94 focused tests and the fresh
-   installed config/documentation/browser/workerd gate pass. Worker acceptance
-   checks concurrent request values, raw D1 identity and names-only errors.
-   Next add independent requirement metadata/coercion/runtime applicability and
-   selected-environment preflight before any factory runs; current helpers fail
-   only when invoked. Prove full classification/hydration secrecy. Async factories
-   remain unsupported. Strict installed cache ambient-type checking stays
-   separate from scaffold-policy config inference. RT-24 stays open; counts
-   remain 30 complete / 28 open. Retained gate: /tmp/cossack-local-pack-VQ1yPC.
+   [declared requirements checkpoint](./release-0.9.0.md#codex-rt24-declared-requirements-2026-10-05).
+   Generated types, scoped factories, typed scalar coercion, independent metadata
+   and selected Wrangler declaration checks are implemented. SSR/SSG and realtime
+   replay validate before factories; replay preserves runtime/environment and
+   fails closed before authorization. AST catalogs never execute application code;
+   unsupported/dynamic exports remain unknown. Config --check, check cloudflare
+   and deploy use the same portable rules and private declaration facts.
+   Continue direct Vite build preflight, Node/Deno declaration-source support,
+   and full classification/hydration secrecy. Secret existence and remote resource
+   readiness remain unverified. Classification cannot stop deliberate application
+   exposure. Async factories remain unsupported; strict installed cache ambient
+   types remain separate. Counts remain 30 complete / 28 open. Preserve the final
+   results linked from the checkpoint. Fresh installed CLI/workerd/browser/docs
+   acceptance and source/CLI/MCP/type checks pass. Retained gate:
+   /tmp/cossack-local-pack-5dbkLj. Desktop stays closed with platform checks waived.
 7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
    checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
    fixed failure-code and payload-redaction tests. Next review the remaining

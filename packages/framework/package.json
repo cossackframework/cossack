@@ -126,6 +126,14 @@
     "./config-codegen": {
       "types": "./dist/esm/config-codegen.d.ts",
       "import": "./dist/esm/config-codegen.js"
+    },
+    "./config-requirements": {
+      "types": "./dist/esm/config-requirements.d.ts",
+      "import": "./dist/esm/config-requirements.js"
+    },
+    "./config-inspection": {
+      "types": "./dist/esm/config-inspection.d.ts",
+      "import": "./dist/esm/config-inspection.js"
     }
   },
   "files": [

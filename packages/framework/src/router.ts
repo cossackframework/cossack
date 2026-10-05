@@ -87,7 +87,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
-import configFactories from 'virtual:cossack-config';
+import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, resolveNearestSpecialPage, createNotFoundResolver, classifyRoute, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
@@ -113,6 +113,7 @@ import { runWithContext } from './request-context-als.js';
 import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
 import { runWithConfig, prepareConfigStore } from './config.js';
+import type { ConfigRuntime, ConfigRequirementContext } from './config-requirements.js';
 import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 import { createAssetsMiddleware } from './assets.js';
@@ -372,7 +373,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
-  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>({ strict: false });
+  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any; 'cossack.configContext'?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } }>({ strict: false });
   const resolveNotFound = createNotFoundResolver(Object.keys(pages));
   const executedPolicies = Symbol('cossack:executed-route-policies');
   const policy = (source: string, index: number, middleware: Middleware): Middleware => async (c, next) => {
@@ -429,7 +430,12 @@ export function createApp(options: CreateAppOptions = {}) {
   // request, not once at module load.
   app.use('*', async (c, next) => {
     const envBindings = c.env as unknown as Record<string, unknown>;
-    const store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings);
+    const configContext = { runtime: (options.runtimeAdapter ? ['cloudflare', 'node', 'deno', 'desktop'].includes(options.runtimeAdapter.name) ? options.runtimeAdapter.name : 'unknown' : 'cloudflare') as ConfigRuntime,
+      ...(configEnvironment ? { environment: configEnvironment } : {}) };
+    const store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings, {
+      requirements: configRequirements, context: configContext,
+    });
+    c.set('cossack.configContext', configContext);
     return runWithConfig(store, () => next());
   });
 

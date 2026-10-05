@@ -4,9 +4,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { deployCommand } from '../src/commands/deploy.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../src/deployment.js';
+import { inspectConfigurationRequirements } from '../src/config-inspection.js';
 import { runProjectTool } from '../src/project-tools.js';
 
 vi.mock('../src/deployment.js', () => ({ inspectDeployment: vi.fn(), inspectBuiltDeployment: vi.fn() }));
+vi.mock('../src/config-inspection.js', () => ({ inspectConfigurationRequirements: vi.fn() }));
 vi.mock('../src/project-tools.js', () => ({ runProjectTool: vi.fn() }));
 const roots = [];
 afterEach(async () => {
@@ -19,6 +21,7 @@ async function setup(flags = {}) {
   await fs.writeFile(path.join(cwd, 'package.json'), '{}');
   inspectDeployment.mockResolvedValue({ config: {}, summary: { configPath: path.join(cwd, 'wrangler.jsonc'), worker: 'app-staging' }, diagnostics: [] });
   inspectBuiltDeployment.mockResolvedValue(path.join(cwd, 'dist/wrangler.json'));
+  inspectConfigurationRequirements.mockResolvedValue({ valid: true, diagnostics: [], validation: 'declarations-only', remoteSecrets: 'not-checked' });
   runProjectTool.mockResolvedValue(0);
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
   return { cwd, flags: { json: true, ...flags }, dryRun: flags['dry-run'] === true, log };
@@ -62,6 +65,16 @@ describe('deploy command', () => {
     inspectDeployment.mockResolvedValue({ config: {}, summary: {}, diagnostics: [{ code: 'COSSACK_SECRET_IN_VARS', severity: 'error', message: 'Move APP_SECRET.' }] });
     expect(await deployCommand([], ctx)).toBe(1);
     expect(runProjectTool).not.toHaveBeenCalled();
+  });
+
+  it('validates selected requirements before any tool or build write', async () => {
+    const ctx = await setup({ env: 'staging' });
+    inspectConfigurationRequirements.mockResolvedValue({ valid: false, diagnostics: [{ code: 'COSSACK_CONFIG_REQUIRED_MISSING', severity: 'error', message: 'Configuration variable PORT is required.' }] });
+    expect(await deployCommand([], ctx)).toBe(1);
+    expect(inspectConfigurationRequirements).toHaveBeenCalledWith(ctx.cwd, { environment: 'staging', check: true });
+    expect(runProjectTool).not.toHaveBeenCalled();
+    expect(inspectBuiltDeployment).not.toHaveBeenCalled();
+    expect(JSON.parse(ctx.log.mock.calls[0][0])).toMatchObject({ ok: false, data: { steps: [], configurationRequirements: { valid: false } } });
   });
 
   it.each([{ env: true }, { env: ['staging', 'production'] }, { typo: true }])('rejects ambiguous options %j', async flags => {

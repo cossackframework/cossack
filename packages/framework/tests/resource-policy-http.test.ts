@@ -9,7 +9,7 @@ vi.mock('virtual:cossack-pages',()=>({default:registry}));
 vi.mock('virtual:cossack-middlewares',()=>({default:[async(c:any,next:()=>Promise<void>)=>{
     c.set('user',c.env?.TEST_ACTOR); c.header('X-Cossack-Request-Id','policy-request'); await next();
 }]}));
-vi.mock('virtual:cossack-config',()=>({default:{}}));
+vi.mock('virtual:cossack-config',()=>({requirements:{},environment:null,default:{}}));
 
 interface Actor {id:string;tenant:string;}
 interface Post {id:number;owner:string;tenant:string;title:string;}

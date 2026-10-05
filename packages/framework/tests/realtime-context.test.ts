@@ -2,12 +2,13 @@ import { Context, type MiddlewareHandler } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getLocale, getRequestContext, RESPONSE_HEADER_STATE_KEY } from '@cossackframework/core';
 import { captureRealtimeIdentity, revalidateRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from '../src/realtime-context';
-import { binding, config } from '../src/config';
+import { binding, config, requireEnv, requireConfigVariable } from '../src/config';
 
-const { globalMiddlewares } = vi.hoisted(() => ({ globalMiddlewares: [] as MiddlewareHandler[] }));
+const { globalMiddlewares, requirements, factories } = vi.hoisted(() => ({ requirements: {} as Record<string, any>, factories: {} as Record<string, any>, globalMiddlewares: [] as MiddlewareHandler[] }));
+factories.realtime = ({ env }: { env: (key: string) => string }) => ({ marker: env('marker') });
 vi.mock('virtual:cossack-middlewares', () => ({ default: globalMiddlewares }));
-vi.mock('virtual:cossack-config', () => ({ default: { realtime: ({ env }: { env: (key: string) => string }) => ({ marker: env('marker') }) } }));
-afterEach(() => { globalMiddlewares.length = 0; });
+vi.mock('virtual:cossack-config', () => ({ requirements, environment: null, default: factories }));
+afterEach(() => { globalMiddlewares.length = 0; for (const key of Object.keys(requirements)) delete requirements[key]; for (const key of Object.keys(factories)) delete factories[key]; factories.realtime = ({ env }: { env: (key: string) => string }) => ({ marker: env('marker') }); });
 
 const identity = { version: 1 as const, provider: 'fixture.session', data: { reference: 'opaque', fingerprint: 'digest' } };
 const context = () => new Context(new Request('http://localhost/sse/route?scopeKey=team', { headers: {
@@ -113,4 +114,24 @@ describe('realtime authorization context', () => {
         expect(insideMiddleware).toBe(false);
         expect(original.get('user')).toEqual({ id: 'old-user' });
     });
+});
+
+it('prepares required helpers and typed declarations in each realtime replay scope', async () => {
+    requirements.realtime = { variables: { marker: { type: 'string' }, PORT: { type: 'number', coerce: true } } };
+    factories.realtime = () => ({ marker: requireEnv('marker'), port: requireConfigVariable('PORT', 'number') });
+    const original = context(); original.env.PORT = '81'; original.set('cossack.configContext', { runtime: 'node', environment: 'staging' });
+    const snapshot = snapshotRealtimeRequest(original, {});
+    expect(snapshot.configContext).toEqual({ runtime: 'node', environment: 'staging' });
+    const operation = vi.fn(() => { expect(config('realtime.port')).toBe(81); return requireEnv('marker'); });
+    expect(await withRealtimeAuthorization(snapshot, null, [], () => true, operation)).toMatchObject({ value: 'binding' });
+    expect(operation).toHaveBeenCalledOnce(); expect(binding('marker')).toBeUndefined();
+});
+it('fails realtime replay before factories, middleware, authorization or operations', async () => {
+    const factory = vi.fn(() => ({})); factories.realtime = factory;
+    requirements.realtime = { bindings: { DB: { kind: 'd1', runtimes: ['node'] } } };
+    const original = context(); original.set('cossack.configContext', { runtime: 'node' });
+    const middleware = vi.fn(async (_c, next) => { await next(); });
+    const check = vi.fn(() => true); const operation = vi.fn();
+    expect(await withRealtimeAuthorization(snapshotRealtimeRequest(original, {}), null, [middleware], check, operation)).toBeNull();
+    expect(factory).not.toHaveBeenCalled(); expect(middleware).not.toHaveBeenCalled(); expect(check).not.toHaveBeenCalled(); expect(operation).not.toHaveBeenCalled();
 });

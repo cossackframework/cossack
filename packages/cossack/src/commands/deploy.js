@@ -3,6 +3,7 @@ import { commandSpecs } from '../command-specs.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from '../output.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../deployment.js';
+import { inspectConfigurationRequirements } from '../config-inspection.js';
 import { runProjectTool } from '../project-tools.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -26,6 +27,9 @@ export async function deployCommand(args, ctx) {
       return ok ? 0 : 1;
     };
     if (inspection.diagnostics.some(item => item.severity === 'error')) return report(false, inspection.diagnostics);
+    const requirements = await inspectConfigurationRequirements(root, { environment, check: true });
+    data.configurationRequirements = requirements;
+    if (!requirements.valid) return report(false, requirements.diagnostics);
     // Vite flattens the selected environment into the artifact. Do not pass
     // --env to Wrangler after building; deploy that exact artifact instead.
     const options = { env: { CLOUDFLARE_ENV: environment ?? '' },

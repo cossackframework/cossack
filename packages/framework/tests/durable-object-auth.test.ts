@@ -11,7 +11,7 @@ vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: any, next: (
     c.set('user', { id: session.userId });
     await next();
 }] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 
 const pagePath = '/src/pages/room/index.ts';
 const routeGuard = vi.fn(async (c: any, next: () => Promise<void>) => { c.set('routeGuard', true); await next(); });

@@ -2,12 +2,12 @@ import 'reflect-metadata';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { Cossack, Page } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import { config, env, requireEnv, requireBinding, ConfigBindingError } from '../src/config';
+import { config, env, requireEnv, requireBinding, ConfigBindingError, requireConfigVariable } from '../src/config';
 import { renderSsgPage } from '../src/ssg-renderer';
-const { factories, registry, middlewareEntered } = vi.hoisted(() => ({
-  middlewareEntered: vi.fn(), factories: {} as Record<string, unknown>, registry: { pages: {} as Record<string, unknown>, layouts: {}, loadings: {} },
+const { factories, requirements, registry, middlewareEntered } = vi.hoisted(() => ({
+  requirements: {} as Record<string, any>, middlewareEntered: vi.fn(), factories: {} as Record<string, unknown>, registry: { pages: {} as Record<string, unknown>, layouts: {}, loadings: {} },
 }));
-vi.mock('virtual:cossack-config', () => ({ default: factories }));
+vi.mock('virtual:cossack-config', () => ({ requirements, environment: 'staging', default: factories }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [async (_c: unknown, next: () => Promise<void>) => { middlewareEntered(); await next(); }] }));
 const entered = vi.fn();
@@ -22,7 +22,7 @@ class ConfigApi extends Cossack {
 }
 registry.pages['/src/pages/api/config.ts'] = { default: ConfigApi };
 const { createApp } = await import('../src/router');
-beforeEach(() => { for (const key of Object.keys(factories)) delete factories[key]; entered.mockClear(); middlewareEntered.mockClear(); gate = Promise.resolve(); });
+beforeEach(() => { for (const key of Object.keys(requirements)) delete requirements[key]; for (const key of Object.keys(factories)) delete factories[key]; entered.mockClear(); middlewareEntered.mockClear(); gate = Promise.resolve(); });
 it('prepares each real HTTP request with its own required bindings before its handler', async () => {
   factories.app = () => ({ name: requireEnv('APP_NAME'), database: requireBinding('DB') });
   const app = createApp();
@@ -74,4 +74,59 @@ it('fails SSG required live bindings before page lifecycle starts', async () => 
     undefined, {}, [async (_c, next) => { middleware(); await next(); }]))
     .rejects.toMatchObject({ code: 'COSSACK_BINDING_MISSING', bindingName: 'DB' });
   expect(pageStarted).not.toHaveBeenCalled(); expect(middleware).not.toHaveBeenCalled();
+});
+
+it('rejects declared requirements before any HTTP factory or middleware', async () => {
+  const factory = vi.fn(() => ({ name: 'unused' })); factories.app = factory;
+  requirements.app = { variables: { PORT: { type: 'number', coerce: true } } };
+  const app = createApp(); let captured: unknown;
+  app.onError((error, c) => { captured = error; return c.text('Configuration unavailable', 500); });
+  expect((await app.request('/api/config', {}, { PORT: 'PRIVATE_SENTINEL' })).status).toBe(500);
+  expect(captured).toMatchObject({ code: 'COSSACK_CONFIG_VARIABLE_INVALID', requirementName: 'PORT', runtime: 'cloudflare', environment: 'staging' });
+  expect(String(captured)).not.toContain('PRIVATE_SENTINEL');
+  expect(factory).not.toHaveBeenCalled(); expect(entered).not.toHaveBeenCalled(); expect(middlewareEntered).not.toHaveBeenCalled();
+});
+it('exposes declared coercion through actual HTTP factory preparation', async () => {
+  requirements.app = { variables: { PORT: { type: 'number', coerce: true } } };
+  factories.app = () => ({ name: requireConfigVariable('PORT', 'number') });
+  let release!: () => void; gate = new Promise<void>(resolve => { release = resolve; });
+  const app = createApp();
+  const responses = ['81', '82'].map(PORT => app.request('/api/config', {}, { PORT }));
+  await vi.waitFor(() => expect(entered).toHaveBeenCalledTimes(2)); release();
+  const [first, second] = await Promise.all(responses);
+  expect(await first.json()).toEqual({ name: 81, environmentName: '' });
+  expect(await second.json()).toEqual({ name: 82, environmentName: '' });
+});
+it('rejects live binding metadata before SSG factories, middleware or page lifecycle', async () => {
+  const factory = vi.fn(() => ({})); const middleware = vi.fn(); pageStarted.mockClear();
+  await expect(renderSsgPage(ConfigSsgPage, '/config', undefined, {}, 'https://config.example', SsgApp,
+    undefined, undefined, undefined, { app: factory }, undefined, {}, [async (_c, next) => { middleware(); await next(); }],
+    { app: { bindings: { DB: { kind: 'd1' } } } }))
+    .rejects.toMatchObject({ code: 'COSSACK_CONFIG_RUNTIME_UNSUPPORTED', requirementName: 'DB', runtime: 'ssg' });
+  expect(factory).not.toHaveBeenCalled(); expect(middleware).not.toHaveBeenCalled(); expect(pageStarted).not.toHaveBeenCalled();
+});
+it('allows SSG with declared APP_URL and explicitly Cloudflare-only bindings', async () => {
+  const output = await renderSsgPage(ConfigSsgPage, '/config', undefined, {}, 'https://config.example', SsgApp,
+    undefined, undefined, undefined, { app: () => ({ url: requireConfigVariable('APP_URL', 'string') }) }, undefined, {}, [],
+    { app: { variables: { APP_URL: { type: 'string' } }, bindings: { DB: { kind: 'd1', runtimes: ['cloudflare'] } } } });
+  expect(output).toContain('https://config.example');
+});
+
+it('uses the actual adapter runtime for declarations', async () => {
+  requirements.app = { bindings: { DB: { kind: 'd1' } } };
+  factories.app = vi.fn(() => ({ name: 'unused' }));
+  const app = createApp({ runtimeAdapter: { name: 'node' } }); let captured: unknown;
+  app.onError((error, c) => { captured = error; return c.text('Configuration unavailable', 500); });
+  expect((await app.request('/api/config')).status).toBe(500);
+  expect(captured).toMatchObject({ code: 'COSSACK_CONFIG_RUNTIME_UNSUPPORTED', runtime: 'node', environment: 'staging' });
+  expect(factories.app).not.toHaveBeenCalled();
+});
+it('keeps custom adapters unknown instead of treating them as Cloudflare', async () => {
+  requirements.app = { variables: { PORT: { type: 'number', runtimes: ['unknown'] } } };
+  factories.app = vi.fn(() => ({ name: 'unused' }));
+  const app = createApp({ runtimeAdapter: { name: 'custom' } }); let captured: unknown;
+  app.onError((error, c) => { captured = error; return c.text('Configuration unavailable', 500); });
+  expect((await app.request('/api/config')).status).toBe(500);
+  expect(captured).toMatchObject({ code: 'COSSACK_CONFIG_REQUIRED_MISSING', runtime: 'unknown' });
+  expect(factories.app).not.toHaveBeenCalled();
 });

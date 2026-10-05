@@ -1,3 +1,6 @@
+import { checkConfigRequirements, ConfigRequirementError, type ConfigRequirementCollection, type ConfigRequirementContext, type VariableType, type VariableValue } from './config-requirements.js';
+export { ConfigRequirementError } from './config-requirements.js';
+export type { ConfigRequirements, VariableRequirement, BindingRequirement } from './config-requirements.js';
 // src/config.ts
 //
 // Application configuration accessors backed by AsyncLocalStorage (ALS),
@@ -51,6 +54,10 @@ export interface ConfigStore {
     env: Record<string, unknown>;
     /** The evaluated config tree, keyed by config file name (sans extension). */
     config: Record<string, unknown>;
+    /** Parsed declared values remain server-only, like raw bindings. */
+    variables?: Record<string, string | number | boolean>;
+    variableTypes?: Record<string, VariableType>;
+    requirementContext?: Pick<ConfigRequirementContext, 'runtime' | 'environment'>;
 }
 
 /**
@@ -177,8 +184,13 @@ export function runWithConfig<T>(
 export function prepareConfigStore(
     factories: Record<string, unknown>,
     envBindings: Record<string, unknown> = {},
+    options: { requirements?: ConfigRequirementCollection; context?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } = {},
 ): ConfigStore {
-    const store: ConfigStore = { env: envBindings, config: {} };
+    const context = { runtime: 'cloudflare' as const, ...options.context, mode: 'runtime' as const };
+    const checked = checkConfigRequirements(options.requirements ?? {}, envBindings, context);
+    if (checked.diagnostics.length) throw new ConfigRequirementError(checked.diagnostics[0]);
+    const store: ConfigStore = { env: envBindings, config: {}, variables: checked.variables,
+        variableTypes: checked.variableTypes, requirementContext: context };
     return configAls.run(store, () => {
         const envFn: EnvFunction = (key, fallback) => {
             const value = envBindings[key];
@@ -345,4 +357,28 @@ export function requireEnv(key: string): string {
             `${describeAvailable(availableBindingNames())}`);
     }
     return String(value);
+}
+
+/** Read a declared, validated scalar with the requested concrete type. */
+export function configVariable<T extends VariableType>(name: string, type: T): VariableValue<T> | undefined {
+    const store = requestStore();
+    if (!store) return undefined;
+    const context = store.requirementContext ?? { runtime: 'unknown' as const };
+    const declared = store.variableTypes?.[name];
+    if (declared === undefined || declared !== type) {
+        throw new ConfigRequirementError({ code: declared === undefined ? 'COSSACK_CONFIG_REQUIREMENT_UNDECLARED' : 'COSSACK_CONFIG_VARIABLE_TYPE_MISMATCH',
+            severity: 'error', kind: 'variable', name, ...context,
+            message: `Configuration variable "${name}" ${declared === undefined ? 'has no active declaration' : 'does not match the requested type'}.` });
+    }
+    return store.variables?.[name] as VariableValue<T> | undefined;
+}
+/** Require a declared scalar; preparation has already applied strict coercion. */
+export function requireConfigVariable<T extends VariableType>(name: string, type: T): VariableValue<T> {
+    const value = configVariable(name, type);
+    if (value === undefined) {
+        const context = requestStore()?.requirementContext ?? { runtime: 'unknown' as const };
+        throw new ConfigRequirementError({ code: 'COSSACK_CONFIG_REQUIRED_MISSING', severity: 'error', kind: 'variable', name, ...context,
+            message: `Configuration variable "${name}" is required but absent.` });
+    }
+    return value;
 }

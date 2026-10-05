@@ -1,4 +1,5 @@
 import { Context } from 'hono';
+import type { ConfigRequirementContext } from './config-requirements.js';
 import { getLocale } from '@cossackframework/core';
 
 /** Structural auth protocol: the framework does not depend on the auth package. */
@@ -15,6 +16,7 @@ export interface RealtimeRequestSnapshot {
     env: unknown;
     params: Record<string, string>;
     locale: string;
+    configContext?: Pick<ConfigRequirementContext, 'runtime' | 'environment'>;
 }
 
 /** Configuration failures differ from temporary provider/storage failures. */
@@ -64,5 +66,7 @@ export function snapshotRealtimeRequest(c: Context, params: Record<string, strin
     const headers = new Headers(c.req.raw.headers);
     for (const name of ['cookie', 'authorization', 'proxy-authorization', 'set-cookie', 'x-user-id', 'x-user-data',
         'x-api-key', 'x-auth-token', 'x-component-path', 'x-provider-name', 'connection', 'upgrade']) headers.delete(name);
-    return { url: c.req.url, path: c.req.path, headers: [...headers], env: c.env, params: { ...params }, locale };
+    const configContext = c.get('cossack.configContext') as RealtimeRequestSnapshot['configContext'];
+    return { url: c.req.url, path: c.req.path, headers: [...headers], env: c.env, params: { ...params }, locale,
+        ...(configContext ? { configContext: { runtime: configContext.runtime, ...(configContext.environment !== undefined ? { environment: configContext.environment } : {}) } } : {}) };
 }
