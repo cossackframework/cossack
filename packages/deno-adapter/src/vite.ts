@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { DevEnvironment, createServerHotChannel, loadEnv, type Plugin, type NormalizedServerHotChannel } from 'vite';
 import { connectDenoDevelopmentEvents } from './development-events';
 import { createProxyServer } from 'http-proxy-3';
@@ -91,7 +92,7 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
           } else response.writeHead(404).end();
         } catch (error) {
           response.writeHead(500).end();
-          vite.config.logger.error(`[cossack deno] module transport failed: ${error}`);
+          logRuntimeFailure({ runtime: 'deno' }, 'dispatch');
         }
       });
       await new Promise<void>((resolve, reject) => {
@@ -242,7 +243,7 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
               );
           })
           .catch((error) => {
-            vite.config.logger.error(String(error));
+            logRuntimeFailure({ runtime: 'deno' }, 'upgrade');
             socket.destroy();
           });
       };
@@ -267,11 +268,16 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
             .then((run) => {
               if (!response.destroyed)
                 proxy.web(request, response, { target: run.target, headers: headers(request) }, (error) => {
-                  if (response.headersSent) response.destroy(error);
-                  else next(error);
+                  logRuntimeFailure({ runtime: 'deno' }, 'delivery');
+                  if (response.headersSent) response.destroy();
+                  else { response.writeHead(502); response.end('Deno development upstream unavailable'); }
                 });
             })
-            .catch(next);
+            .catch(() => {
+              logRuntimeFailure({ runtime: 'deno' }, 'initialization');
+              if (response.headersSent) response.destroy();
+              else { response.writeHead(500); response.end('Deno development runtime unavailable'); }
+            });
         });
     },
     hotUpdate: {
@@ -288,7 +294,7 @@ export function cossackDeno(options: DenoDevelopmentOptions = {}): Plugin {
         try {
           await refresh();
         } catch (error) {
-          server.config.logger.error(`[cossack deno] reload failed: ${error}`);
+          logRuntimeFailure({ runtime: 'deno' }, 'initialization');
         }
         return [];
       },

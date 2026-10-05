@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite compiler-channel review, native fault acceptance, source-map resolution, build/startup budgets and remote Workers Logs ingestion remain open. See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets are implemented; direct Vite budgets, native development faults, startup measurement, source-map resolution and remote Workers Logs ingestion remain open. See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -1575,3 +1575,54 @@ remote logging or native Deno fault acceptance. Final Deno rerun after correctin
 the generic dispatch callback: **30/30** (`deno-final.log`). Final root typecheck
 and owned-file diff checks pass. Reports and `.zcodeignore` remain untouched and
 excluded from the commit.
+
+<a id="codex-cf08-budgets-deno-transport-2026-10-05"></a>
+### Codex: Project size budgets and Deno development transport (2026-10-05)
+
+`package.json` literal `cossack.buildBudgets` now configures warning/error limits
+for upload/gzip KiB. CLI build and deploy share a local measurement service after
+fresh Cloudflare artifact validation. Stale redirects are removed before builds.
+A violated error budget stops before upload; warnings allow continuation. Dry-run
+deployment reuses the measurement instead of invoking deployment twice. JSON
+reports selected metrics/limits and fixed diagnostics; private tool stdout/stderr
+is bounded and omitted. Unsupported precision, ambiguous summaries, missing
+metrics, malformed settings and tool failures cannot pass a hard budget.
+Wrangler reports two decimals; comparisons use its upper rounding interval,
+not invented exact bytes. `providerStartupMs` remains unavailable locally and
+fails a configured hard gate; build duration is not substituted for startup.
+
+Deno Vite invoke/startup/socket/reload/proxy catches now emit fixed events and
+safe HTTP500/502 bodies without forwarding arbitrary exceptions into Vite's
+public error renderer. Authenticated compiler results remain unchanged on the
+private ModuleRunner channel. Recovery/socket destruction remain covered.
+Deno 2.9.6 was obtained with pnpm's temporary tool runner; native smoke includes
+real socket action-failure redaction and preserved1013 closure.
+
+CF-08 remains open; **30 complete / 28 open**. Budgets currently require CLI
+Cloudflare build/deploy paths, not direct Vite or Node/Deno artifacts. Provider
+startup/local profiling, production source-map resolution and remote log
+acceptance remain. Native Deno development startup/cleanup fault fixtures remain
+open despite passing native socket smoke. Desktop remains closed by user decision.
+
+Verification: final combined budget/deployment suites **44/44 across 5 files**
+pass, including a real generated Cloudflare app that generates types, builds,
+verifies the artifact and rejects an actual measured size before upload.
+Initial fixture runs stopped at existing APP_URL preflight because the generated
+URL was localhost; corrected to an HTTPS test URL, then the real budget failure
+passed. Reviewer-found summary precision, manifest parse privacy and rejected
+tool resolution gaps have regressions and fixed diagnostics.
+
+Full Deno adapter suite **34/34 across 6 files** and native Deno socket smoke
+**2/2** pass. Deno build/declaration emission and root `pnpm tsc --noEmit` pass.
+CLI JSON matrix initially **54/54** passes in the combined 72-case run; after
+final source changes, all **4 selected build/deploy cases** pass with 50 unrelated
+cases skipped. Final generated/combined run includes budget-step reporting and
+warning-only dry-run reuse. Syntax checks and owned-file diff checks pass.
+Logs: `/tmp/cossack-budget-{complete,cli-final,deno-tests,deno-native-final,deno-build,typecheck-verified}.log`.
+The earlier precision/input/rejection fixes were reviewed independently.
+No fresh full tarball gate ran in this checkpoint; the actual measurement helper
+also checked the retained prior installed artifact locally (539.89 KiB upload /
+157.41 KiB gzip) and rejected a 0.001 KiB threshold. This is local tool evidence,
+not provider startup, deployed source-map resolution or remote logs. Existing
+package-wide type failures recorded previously remain outside this checkpoint.
+Reports and `.zcodeignore` remain untouched and excluded from staging.

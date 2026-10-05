@@ -1,0 +1,38 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { buildCommand } from '../src/commands/build.js';
+import { runCaptured } from '../src/spawn.js';
+import { inspectDeployment, inspectBuiltDeployment } from '../src/deployment.js';
+import { runProjectToolCaptured } from '../src/project-tools.js';
+vi.mock('../src/spawn.js', () => ({ run: vi.fn(), runCaptured: vi.fn() }));
+vi.mock('../src/deployment.js', () => ({ inspectDeployment: vi.fn(), inspectBuiltDeployment: vi.fn() }));
+vi.mock('../src/project-tools.js', () => ({ runProjectToolCaptured: vi.fn() }));
+let root;
+afterEach(async () => { vi.resetAllMocks(); vi.restoreAllMocks(); if (root) await fs.rm(root, { recursive: true, force: true }); });
+it('does not expose malformed manifest values through human build diagnostics', async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-build-budget-command-'));
+  await fs.writeFile(path.join(root, 'package.json'), '{"token":"PRIVATE_MANIFEST_TOKEN",bad}');
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  expect(await buildCommand([], { cwd: root, flags: {} })).toBe(1);
+  expect(error).toHaveBeenCalledExactlyOnceWith('Cannot read project build budgets. Check package.json.');
+  expect(runCaptured).not.toHaveBeenCalled();
+});
+it('checks fresh built artifacts and fails an exceeded build budget in one safe envelope', async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-build-budget-command-'));
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ cossack: { buildBudgets: { uploadKiB: { error: 1 } } } }));
+  const metadata = path.join(root, '.wrangler/deploy/config.json');
+  await fs.mkdir(path.dirname(metadata), { recursive: true }); await fs.writeFile(metadata, '{}');
+  runCaptured.mockImplementation(async () => { await expect(fs.access(metadata)).rejects.toThrow(); return { code: 0 }; });
+  inspectDeployment.mockResolvedValue({ config: {}, diagnostics: [] });
+  inspectBuiltDeployment.mockResolvedValue('/verified/wrangler.json');
+  runProjectToolCaptured.mockResolvedValue({ code: 0, stdout: 'PRIVATE\nTotal Upload: 2.00 KiB / gzip: 0.50 KiB', stderr: '' });
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await buildCommand([], { cwd: root, flags: { json: true, env: 'staging' } })).toBe(1);
+  expect(inspectDeployment).toHaveBeenCalledWith(root, 'staging');
+  expect(log).toHaveBeenCalledOnce();
+  const report = JSON.parse(log.mock.calls[0][0]);
+  expect(report).toMatchObject({ command: 'build', ok: false, data: { environment: 'staging', buildBudgets: { valid: false } } });
+  expect(JSON.stringify(report)).not.toContain('PRIVATE');
+});

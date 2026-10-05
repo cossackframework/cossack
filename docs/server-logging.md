@@ -37,8 +37,12 @@ matched route template and allowlisted HTTP method, omitting concrete paths and
 queries. SSG loader/render/cleanup diagnostics use fixed events and failed-page
 messages; controlled public-route failures retain `COSSACK_SSG_NOT_PUBLIC`.
 
-This is partial release acceptance. Deno Vite module transport/reload and trusted
-compiler diagnostic channels still need review. Native Deno startup/cleanup,
+Deno Vite transport/startup/reload/proxy catches also emit fixed events and safe
+HTTP failures; they do not forward arbitrary exceptions into Vite's public error
+renderer. Compiler results stay on the authenticated private ModuleRunner channel.
+
+This is partial release acceptance. Native Deno development startup/cleanup,
 remote Workers Logs ingestion, production source-map resolution and configurable
-build/startup budgets remain unverified by these source tests. Local workerd
+startup budgets remain unverified by these source tests. CLI Cloudflare upload
+size budgets are described in [Build budgets](./build-budgets.md). Local workerd
 checks prove local emission and redaction, not remote logging service ingestion.

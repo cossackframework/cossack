@@ -1296,6 +1296,17 @@ Remaining criteria: Deno Vite trusted compiler-channel review, native fault
 acceptance, remote ingestion, production source maps and build/startup budgets.
 See [verification](./release-0.9.0-verification-archive.md#codex-framework-deno-redaction-2026-10-05).
 
+Codex budget/Deno transport checkpoint (2026-10-05): CLI build/deploy now
+share literal project warning/error size budgets measured by local Wrangler
+against validated fresh Cloudflare artifacts, with explicit .01 KiB precision
+and conservative rounding. Arbitrary tool output is private/bounded. Provider
+startup is unavailable locally; configured hard startup budgets fail. Deno Vite
+caught errors no longer leak into console or public middleware; private compiler
+results are preserved. Remaining criteria: direct Vite budgets, local/provider
+startup, native development faults, source-map resolution and remote logs. See
+[checkpoint](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05)
+and [budget contract](../docs/build-budgets.md).
+
 <a id="cf-09"></a>
 ### CF-09: Preview and CI resource lifecycle
 

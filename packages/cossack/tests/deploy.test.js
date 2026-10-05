@@ -5,11 +5,11 @@ import os from 'node:os';
 import { deployCommand } from '../src/commands/deploy.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../src/deployment.js';
 import { inspectConfigurationRequirements } from '../src/config-inspection.js';
-import { runProjectTool } from '../src/project-tools.js';
+import { runProjectTool, runProjectToolCaptured } from '../src/project-tools.js';
 
 vi.mock('../src/deployment.js', () => ({ inspectDeployment: vi.fn(), inspectBuiltDeployment: vi.fn() }));
 vi.mock('../src/config-inspection.js', () => ({ inspectConfigurationRequirements: vi.fn() }));
-vi.mock('../src/project-tools.js', () => ({ runProjectTool: vi.fn() }));
+vi.mock('../src/project-tools.js', () => ({ runProjectTool: vi.fn(), runProjectToolCaptured: vi.fn() }));
 const roots = [];
 afterEach(async () => {
   vi.restoreAllMocks(); vi.resetAllMocks(); vi.unstubAllEnvs();
@@ -27,6 +27,29 @@ async function setup(flags = {}) {
   return { cwd, flags: { json: true, ...flags }, dryRun: flags['dry-run'] === true, log };
 }
 describe('deploy command', () => {
+  it('allows warning budgets and reuses local measurement for dry-run deployment', async () => {
+    const ctx = await setup({ 'dry-run': true });
+    await fs.writeFile(path.join(ctx.cwd, 'package.json'), JSON.stringify({ cossack: { buildBudgets: { uploadKiB: { warning: 10, error: 30 } } } }));
+    runProjectToolCaptured.mockResolvedValue({ code: 0, stdout: 'Total Upload: 20.00 KiB / gzip: 1.00 KiB', stderr: '' });
+    expect(await deployCommand([], ctx)).toBe(0);
+    expect(runProjectTool).toHaveBeenCalledTimes(2);
+    expect(runProjectToolCaptured).toHaveBeenCalledOnce();
+    const result = JSON.parse(ctx.log.mock.calls[0][0]);
+    expect(result.ok).toBe(true); expect(result.diagnostics[0].severity).toBe('warning');
+    expect(result.data.steps.at(-1).name).toBe('budgets');
+  });
+  it('stops an exceeded budget before upload and returns sanitized measured limits', async () => {
+    const ctx = await setup();
+    await fs.writeFile(path.join(ctx.cwd, 'package.json'), JSON.stringify({ cossack: { buildBudgets: { uploadKiB: { error: 10 } } } }));
+    runProjectToolCaptured.mockResolvedValue({ code: 0, stdout: 'PRIVATE_BINDING\nTotal Upload: 20.00 KiB / gzip: 1.00 KiB', stderr: '' });
+    expect(await deployCommand([], ctx)).toBe(1);
+    expect(runProjectTool).toHaveBeenCalledTimes(2);
+    expect(runProjectToolCaptured.mock.calls[0][2]).toContain('--dry-run');
+    const result = JSON.parse(ctx.log.mock.calls[0][0]);
+    expect(result.data.buildBudgets.measurements[0].value).toBe(20);
+    expect(result.diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_EXCEEDED');
+    expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  });
   it('selects the environment before types and build, then dry-runs the exact artifact', async () => {
     const ctx = await setup({ env: 'staging', mode: 'test', 'dry-run': true });
     expect(await deployCommand([], ctx)).toBe(0);

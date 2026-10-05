@@ -60,12 +60,15 @@ Deno.test('serves HTTP and upgrades a real WebSocket', async () => {
 });
 
 Deno.test('closes the socket when a WebSocket action fails', async () => {
+  const logged: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { logged.push(args); };
   const component = {
     _id: 'root',
     destroyAsync: async () => {},
     activeComponents: new Map(),
     getInitialState: () => ({ public: {} }),
-    executeAction: async () => { throw new Error('action failed'); },
+    executeAction: async () => { throw Object.assign(new Error('PRIVATE_NATIVE_ACTION'), { credentials: 'PRIVATE_NATIVE_CREDENTIALS' }); },
   };
   const adapter = createDenoAdapter({ port: 0, assetsRoot: './missing' });
   const app = new Hono();
@@ -91,7 +94,10 @@ Deno.test('closes the socket when a WebSocket action fails', async () => {
     if (event.code !== 1013 || event.reason !== 'Runtime unavailable') {
       throw new Error(`Unexpected WebSocket close: ${event.code} ${event.reason}`);
     }
+    if (JSON.stringify(logged).includes('PRIVATE_NATIVE_')) throw new Error('Native failure leaked exception data');
+    if (!logged.some(args => (args[0] as { event?: string; stage?: string })?.event === 'cossack.runtime.failure'
+      && (args[0] as { stage?: string }).stage === 'dispatch')) throw new Error('Native failure event missing');
   } finally {
-    await server.shutdown();
+    try { await server.shutdown(); } finally { console.error = originalError; }
   }
 });

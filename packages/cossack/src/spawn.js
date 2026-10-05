@@ -35,9 +35,23 @@ export function runCaptured(cmd, args = [], opts = {}) {
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', chunk => { if (!opts.discardOutput) stdout += chunk; });
-    child.stderr.on('data', chunk => { if (!opts.discardOutput) stderr += chunk; });
-    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    let capturedBytes = 0;
+    let outputTruncated = false;
+    const capture = (chunk, stream) => {
+      if (opts.discardOutput || outputTruncated) return;
+      capturedBytes += chunk.length;
+      if (opts.maxOutputBytes && capturedBytes > opts.maxOutputBytes) {
+        outputTruncated = true;
+        child.kill('SIGTERM');
+        return;
+      }
+      if (stream === 'stdout') stdout += chunk;
+      else stderr += chunk;
+    };
+    child.stdout.on('data', chunk => capture(chunk, 'stdout'));
+    child.stderr.on('data', chunk => capture(chunk, 'stderr'));
+    child.on('close', (code) => resolve({ code: outputTruncated ? 1 : code ?? 1, stdout, stderr,
+      ...(outputTruncated ? { outputTruncated: true } : {}) }));
     child.on('error', (err) => resolve({ code: 1, stdout, stderr: `${stderr}${err.message}` }));
   });
 }

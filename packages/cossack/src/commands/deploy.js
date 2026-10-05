@@ -7,6 +7,7 @@ import { inspectConfigurationRequirements } from '../config-inspection.js';
 import { runProjectTool } from '../project-tools.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { readBuildBudgets, checkBuildBudgets } from '../build-budgets.js';
 
 export async function deployCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.deploy, args, ctx, deployHelp)) return 0;
@@ -14,6 +15,7 @@ export async function deployCommand(args, ctx) {
   let data;
   try {
     const root = await findProjectRoot(ctx.cwd);
+    const budgets = await readBuildBudgets(root);
     const environment = ctx.flags.env ?? process.env.CLOUDFLARE_ENV;
     const inspection = await inspectDeployment(root, environment);
     data = { ...inspection.summary, dryRun: ctx.dryRun, steps: [], artifact: null };
@@ -51,11 +53,20 @@ export async function deployCommand(args, ctx) {
         severity: 'error', message: `${name} failed with exit code ${exitCode}. Run without --json for tool diagnostics.` }]);
     }
     data.artifact = await inspectBuiltDeployment(root, inspection.config);
+    const budgetDiagnostics = [];
+    if (Object.keys(budgets).length) {
+      const budgetStarted = performance.now();
+      data.buildBudgets = await checkBuildBudgets(root, data.artifact, budgets, { env: options.env });
+      data.steps.push({ name: 'budgets', exitCode: data.buildBudgets.valid ? 0 : 1, durationMs: Math.round(performance.now() - budgetStarted) });
+      budgetDiagnostics.push(...data.buildBudgets.diagnostics);
+      if (!data.buildBudgets.valid) return report(false, budgetDiagnostics);
+      if (ctx.dryRun) return report(true, budgetDiagnostics);
+    }
     const started = performance.now();
     const exitCode = await runProjectTool(root, 'wrangler', ['deploy', '--config', data.artifact,
       ...(ctx.dryRun ? ['--dry-run'] : [])], options);
     data.steps.push({ name: 'deploy', exitCode, durationMs: Math.round(performance.now() - started) });
-    return report(exitCode === 0, exitCode === 0 ? [] : [{ code: 'COSSACK_DEPLOY_UPLOAD_FAILED',
+    return report(exitCode === 0, exitCode === 0 ? budgetDiagnostics : [...budgetDiagnostics, { code: 'COSSACK_DEPLOY_UPLOAD_FAILED',
       severity: 'error', message: 'Wrangler deployment failed. Run without --json for tool diagnostics.' }]);
   } catch (error) {
     if (ctx.flags.json === true) {

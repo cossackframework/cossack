@@ -268,3 +268,9 @@ State is memory-only in Node.js mode : use an external database for persistence.
 ## Static Site Generation (SSG)
 
 For fully static pages, use the SSG feature to pre-render pages at build time. See [Static Site Generation](./static-site-generation.md).
+
+### Project build budgets
+
+Optional `package.json` `cossack.buildBudgets` limits gate fresh Cloudflare
+artifacts before upload. Warning/error diagnostics report measured upload/gzip
+KiB and their rounding resolution. See [Build budgets](./build-budgets.md).

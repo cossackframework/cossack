@@ -657,3 +657,7 @@ manager output stays outside the machine-readable protocol.
 ## Exit codes
 
 Every command returns `0` on success and a non-zero code on failure, making the CLI safe to use in scripts, CI, and `&&` chains.
+
+Cloudflare `cossack build` and `cossack deploy` can enforce literal project
+`cossack.buildBudgets` settings in `package.json`. Machine results report public
+measurements without binding output. See [Build budgets](./build-budgets.md).
