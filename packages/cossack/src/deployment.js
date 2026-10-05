@@ -1,3 +1,4 @@
+import { readCloudflareDeclarationConfig } from '@cossackframework/framework/config-preflight';
 import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -101,25 +102,7 @@ async function projectWrangler(root) {
 
 /** Use Wrangler's own parser, normalization, and environment inheritance rules. */
 export async function readDeploymentConfig(root, configPath, environment) {
-  const wrangler = await projectWrangler(root);
-  if (!wrangler.experimental_readRawConfig || !wrangler.unstable_readConfig) {
-    throw new DeploymentError('COSSACK_WRANGLER_API_UNSUPPORTED',
-      'The installed Wrangler version lacks the configuration APIs required by Cossack.');
-  }
-  try {
-    const args = { config: configPath, ...(environment ? { env: environment } : {}) };
-    const { rawConfig } = wrangler.experimental_readRawConfig({ config: configPath });
-    if (environment && !Object.hasOwn(rawConfig.env ?? {}, environment)) {
-      throw new DeploymentError('COSSACK_ENVIRONMENT_UNKNOWN',
-        `Cloudflare environment "${environment}" is not defined in the Wrangler configuration.`);
-    }
-    return wrangler.unstable_readConfig(args, { hideWarnings: true });
-  } catch (error) {
-    if (error instanceof DeploymentError) throw error;
-    // Wrangler parser errors can contain configuration excerpts with secrets.
-    throw new DeploymentError('COSSACK_WRANGLER_CONFIG_INVALID',
-      'Wrangler could not validate the configuration. Check its syntax and binding declarations.');
-  }
+  return readCloudflareDeclarationConfig(root, configPath, environment);
 }
 
 /** Local inspection only: never reads secret values from Cloudflare or provisions resources. */
@@ -145,7 +128,9 @@ export async function inspectDeployment(root, environment) {
     // raw top-level Durable Object bindings with the selected environment so a
     // silently dropped binding fails before the build.
     const wrangler = await projectWrangler(root);
-    const { rawConfig } = wrangler.experimental_readRawConfig({ config: configPath });
+    let rawConfig;
+    try { ({ rawConfig } = wrangler.experimental_readRawConfig({ config: configPath })); }
+    catch { throw new DeploymentError('COSSACK_WRANGLER_CONFIG_INVALID', 'Wrangler could not validate the configuration. Check its syntax and binding declarations.'); }
     const declared = rawConfig.env?.[environment]?.durable_objects?.bindings;
     for (const binding of rawConfig.durable_objects?.bindings ?? []) {
       if (!declared?.some(candidate => candidate.name === binding.name && candidate.class_name === binding.class_name)) {

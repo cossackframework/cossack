@@ -134,6 +134,10 @@
     "./config-inspection": {
       "types": "./dist/esm/config-inspection.d.ts",
       "import": "./dist/esm/config-inspection.js"
+    },
+    "./config-preflight": {
+      "types": "./dist/esm/config-preflight.d.ts",
+      "import": "./dist/esm/config-preflight.js"
     }
   },
   "files": [

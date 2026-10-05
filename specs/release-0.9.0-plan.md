@@ -895,6 +895,21 @@ Retained gate: /tmp/cossack-local-pack-5dbkLj.
 RT-24 stays open; counts stay 30 complete / 28 open. Final acceptance evidence is
 in the [declared requirements record](./release-0.9.0-verification-archive.md#codex-declared-configuration-requirements-2026-10-05).
 
+Codex direct-build checkpoint (2026-10-05): direct `cossackConfig()` builds
+now share the Node-only private Wrangler reader and safe inspection facade with
+CLI config checks, capability binding discovery and deployment. Explicit target
+options take precedence; scaffold/package/adapter metadata resolves the runtime.
+Cloudflare checks selected declarations before type generation and build output.
+Node/Deno/unknown targets check metadata, conflicts and runtime compatibility;
+their supplied values remain unverified. Development startup permits incomplete
+configuration. Build/watch cycles reread source and Wrangler facts and watch
+factory files and metadata origins. Failed build/render hooks now prevent SSG
+publication; a new cycle resets that environment's failure state. A separate
+named-environment parser failure is sanitized before deployment diagnostics.
+RT-24 remains open for Node/Deno declaration-source policy and full hydration
+secrecy acceptance. Counts stay 30 complete / 28 open. See the
+[direct-build verification](./release-0.9.0-verification-archive.md#codex-direct-vite-configuration-preflight-2026-10-05).
+
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
 

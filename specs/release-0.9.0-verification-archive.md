@@ -10835,3 +10835,67 @@ acceptance remains separate. Full cossack/release-matrix acceptance is not claim
 Desktop remains complete by user decision, with platform checks waived. No
 remote resource, deployment, publication or push occurred. No new external blocker
 was found; the remaining release tasks still need implementation/acceptance.
+
+### Codex: Direct Vite configuration preflight (2026-10-05)
+
+Author: **Codex**. Tasks: **RT-24**, shared CLI/Cloudflare tooling, and failed-build
+SSG publication protection. This completes a bounded implementation slice;
+RT-24 remains open. Counts remain **30 complete / 28 open**.
+
+**Changes:** The Node-only `framework/config-preflight` export shares private
+Wrangler normalization and safe declaration inspection across Vite, CLI and
+build binding discovery. Direct builds reject missing/wrong binding declarations,
+invalid scalar coercion and ambiguous metadata before config type generation,
+module transforms and output cleanup. Explicit runtime/environment options win;
+scaffold metadata precedes package metadata and adapter dependencies. Cloudflare
+uses the selected named declarations, without assuming variables inherit.
+Node/Deno/unknown targets validate metadata, conflicts and runtime compatibility
+only; process/development values are not inspected. Development startup permits
+incomplete values. Build/watch cycles reread facts and watch factory files,
+Wrangler paths and project metadata. Failed build/render hooks suppress SSG
+publication for their environment. Deployment's secondary named-environment raw
+parse now sanitizes exceptions. Public catalogs contain no scalar values.
+
+**Ownership/review:** Codex preserved the existing reports.md and .zcodeignore.
+An implementation subagent owned only the new config-build-preflight.test.ts;
+it reported 15 passing source cases. A read-only audit found the secondary parse
+redaction gap. Codex integrated and reviewed all changes, fixed factory-file
+watch registration, and added the parser-failure regression. No overlapping
+package builds and tests consumed workspace dist.
+
+**Verification:**
+
+- Focused framework suite: **131 tests / 6 files** pass, including 15 direct-build
+  cases with real Vite builds, client stripping, before-write rejection,
+  selected environments, target inference and fresh watch-hook checks.
+- Full framework suite: **1,686 tests / 86 files** pass.
+- Combined CLI/deployment/inspection/actual stdio MCP suite: **73 tests / 6 files**
+  pass, including the parser exception redaction regression.
+- Framework declaration emission and root `pnpm tsc --noEmit` pass. The root
+  solution alone does not compile package sources; package emission was also run.
+- Fresh installed tarballs pass CLI config inference/removal and direct Vite
+  failure-before-write acceptance. The failing installed build preserves an
+  existing output marker and generated declarations, names the missing variable,
+  and does not evaluate factory sentinels. **76 packaged examples + 4 auth examples**
+  compile and execute; D1 and prepared config pass real workerd checks.
+
+- Full `COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` gate passes (exit 0),
+  including Cloudflare HTTP/SSE/WebSocket browser traces, CLI/MCP trace parity,
+  production exclusion, packaged action/resource/task/public-form browser/type
+  checks and source-map stripping, UI prop contracts and offline documentation
+  parity. Desktop build/pack/platform checks are excluded from this gate.
+
+Current installed tooling: Wrangler 4.147.0, Cloudflare Vite plugin 1.62.5,
+Vite 8.3.2. Current official Wrangler API/environment docs were checked; tests
+exercise project-local parsers rather than a handwritten inheritance model.
+
+Logs: /tmp/cossack-vite-preflight-{focused,framework,cli,installed}.log.
+Retained gate: /tmp/cossack-local-pack-r8P8f3.
+
+**Limits/next work:** Node/Deno declaration-source policy and full secret
+classification/hydration secrecy acceptance remain RT-24 work. Remote resources
+and secret existence are unverified. Classification cannot prevent intentional
+application exposure. Async factories remain unsupported; strict installed cache
+ambient types remain separate. Desktop remains complete by user decision;
+platform checks were waived, not run. Versions remain 0.8.3 until REL-04.
+No deployment, publication or remote provisioning occurred.

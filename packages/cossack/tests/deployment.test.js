@@ -87,6 +87,25 @@ describe('deployment inspection with project Wrangler', () => {
     expect(JSON.stringify(summary.bindings)).not.toMatch(/"provisioning":"(?:existing|automatic)"/);
   });
 
+  it('sanitizes a failed second Wrangler parse for environment inheritance', async () => {
+    const root = await project({ env: { staging: {} } });
+    await fs.unlink(path.join(root, 'node_modules/wrangler'));
+    await fs.mkdir(path.join(root, 'node_modules/wrangler'));
+    await fs.writeFile(path.join(root, 'node_modules/wrangler/package.json'), JSON.stringify({ type: 'module', exports: './index.js' }));
+    await fs.writeFile(path.join(root, 'node_modules/wrangler/index.js'), `
+      let reads = 0;
+      export function experimental_readRawConfig() {
+        if (++reads > 1) throw new Error('PRIVATE_WRANGLER_PARSE_SENTINEL');
+        return { rawConfig: { env: { staging: {} } } };
+      }
+      export function unstable_readConfig() { return { name: 'fixture', vars: {} }; }
+    `);
+    await expect(inspectDeployment(root, 'staging')).rejects.toMatchObject({
+      code: 'COSSACK_WRANGLER_CONFIG_INVALID',
+      message: 'Wrangler could not validate the configuration. Check its syntax and binding declarations.',
+    });
+  });
+
   it('rejects unknown environments instead of silently using defaults', async () => {
     const root = await project({});
     await expect(inspectDeployment(root, 'typo')).rejects.toMatchObject({ code: 'COSSACK_ENVIRONMENT_UNKNOWN' });

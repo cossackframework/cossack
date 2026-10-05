@@ -1,4 +1,6 @@
-import { CONFIG_GLOB, generateConfigTypes } from './config-codegen.js';
+import { checkConfigBuildRequirements } from './config-preflight.js';
+import type { ConfigRuntime } from './config-requirements.js';
+import { CONFIG_GLOB, generateConfigTypes, discoverConfigFactories } from './config-codegen.js';
 import type { Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
@@ -568,15 +570,29 @@ const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
  * export default configs;
  * ```
  */
-export function cossackConfig(options: { environment?: string } = {}): Plugin {
+export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: string } = {}): Plugin {
   let projectRoot = '';
   let selectedEnvironment: string | undefined;
+  let isBuild = false;
+  const preflight = async () => {
+    const result = await checkConfigBuildRequirements(projectRoot, { runtime: options.runtime, environment: selectedEnvironment });
+    if (!result.valid) { const first = result.diagnostics.find(diagnostic => diagnostic.severity === 'error')!; throw Object.assign(new Error(result.diagnostics.map(diagnostic => `${diagnostic.code}: ${diagnostic.message}`).join('\n')), { code: first.code }); }
+  };
   return {
     name: 'cossack-config',
     enforce: 'pre',
-    configResolved(config) {
+    async configResolved(config) {
       projectRoot = config.root;
+      isBuild = config.command === 'build';
       selectedEnvironment = options.environment ?? process.env.CLOUDFLARE_ENV;
+      if (isBuild) await preflight();
+      generateConfigTypes(projectRoot);
+    },
+    async buildStart() {
+      if (!isBuild) return;
+      for (const file of ['src/config', 'package.json', '.cossack/scaffold.json', 'wrangler.jsonc', 'wrangler.json', 'wrangler.toml']) this.addWatchFile(resolve(projectRoot, file));
+      for (const file of discoverConfigFactories(projectRoot)) this.addWatchFile(resolve(projectRoot, 'src/config', file));
+      await preflight();
       generateConfigTypes(projectRoot);
     },
     configureServer(server) {

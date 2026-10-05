@@ -62,9 +62,9 @@ config('custom.nested.count');
 `);
   check();
 });
-it('generates empty registries and refreshes development additions and removals', () => {
+it('generates empty registries and refreshes development additions and removals', async () => {
   const root = project(); const plugin = cossackConfig() as any;
-  plugin.configResolved({ root });
+  await plugin.configResolved({ root });
   expect(generateConfigTypes(root).factories).toEqual([]);
   const watcher = new EventEmitter() as any; watcher.add = () => {};
   const httpServer = new EventEmitter(); plugin.configureServer({ watcher, httpServer, config: { logger: { error: (message: string) => { throw new Error(message); } } } });
@@ -78,7 +78,7 @@ it('generates empty registries and refreshes development additions and removals'
 it('keeps factory source and values out of a built client bundle', async () => {
   const { build } = await import('vite');
   const root = project();
-  writeFileSync(join(root, 'src/config/private.ts'), `throw new Error('COSSACK_FACTORY_EXECUTION_SENTINEL'); export const requirements = { variables: { COSSACK_METADATA_SENTINEL: { type: 'string', secret: true } } }; export default () => ({ token: 'COSSACK_PRIVATE_VALUE_SENTINEL' });`);
+  writeFileSync(join(root, 'src/config/private.ts'), `export const requirements = { variables: { COSSACK_METADATA_SENTINEL: { type: 'string', secret: true } } }; export default () => { throw new Error('COSSACK_FACTORY_EXECUTION_SENTINEL'); return { token: 'COSSACK_PRIVATE_VALUE_SENTINEL' }; };`);
   writeFileSync(join(root, 'entry.ts'), `import configs, { requirements, environment } from 'virtual:cossack-config'; console.log(configs, requirements, environment);`);
   const built = await build({ root, configFile: false, logLevel: 'silent', plugins: [cossackConfig()],
     build: { write: false, lib: { entry: join(root, 'entry.ts'), formats: ['es'], fileName: 'client' } } });

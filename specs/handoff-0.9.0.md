@@ -214,21 +214,26 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 6. Continue [RT-24](./release-0.9.0-plan.md#rt-24) from the
-   [declared requirements checkpoint](./release-0.9.0.md#codex-rt24-declared-requirements-2026-10-05).
+   [direct build checkpoint](./release-0.9.0.md#codex-rt24-direct-vite-preflight-2026-10-05).
    Generated types, scoped factories, typed scalar coercion, independent metadata
    and selected Wrangler declaration checks are implemented. SSR/SSG and realtime
    replay validate before factories; replay preserves runtime/environment and
    fails closed before authorization. AST catalogs never execute application code;
    unsupported/dynamic exports remain unknown. Config --check, check cloudflare
    and deploy use the same portable rules and private declaration facts.
-   Continue direct Vite build preflight, Node/Deno declaration-source support,
-   and full classification/hydration secrecy. Secret existence and remote resource
+   Direct Vite preflight now shares the Node-only Wrangler check with CLI and
+   deployment; watch cycles recheck origins and failed builds suppress SSG
+   publication. Node/Deno builds check metadata and compatibility only. Continue
+   Node/Deno declaration-source support and full classification/hydration secrecy. Secret existence and remote resource
    readiness remain unverified. Classification cannot stop deliberate application
    exposure. Async factories remain unsupported; strict installed cache ambient
    types remain separate. Counts remain 30 complete / 28 open. Preserve the final
    results linked from the checkpoint. Fresh installed CLI/workerd/browser/docs
    acceptance and source/CLI/MCP/type checks pass. Retained gate:
-   /tmp/cossack-local-pack-5dbkLj. Desktop stays closed with platform checks waived.
+   /tmp/cossack-local-pack-r8P8f3. Latest verification: 1,686 framework tests,
+   73 CLI/deployment/stdio MCP tests, root/package types, full installed
+   direct-build/workerd/browser/docs gate pass. Desktop stays closed with
+   platform checks waived.
 7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
    checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
    fixed failure-code and payload-redaction tests. Next review the remaining

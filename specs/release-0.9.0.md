@@ -52,7 +52,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight and full classification/hydration secrecy acceptance remain. See [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight is implemented; Node/Deno declaration-source support and full classification/hydration secrecy acceptance remain. See [direct build checkpoint](#codex-rt24-direct-vite-preflight-2026-10-05) and [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
@@ -1430,3 +1430,30 @@ hydration secrecy remain.
 Secret classification cannot prevent deliberate application exposure. Async
 factories and strict installed cache ambient-type checks remain separate. Desktop
 stays complete by user decision; remaining platform checks are waived.
+
+<a id="codex-rt24-direct-vite-preflight-2026-10-05"></a>
+### Codex: Direct Vite configuration preflight (2026-10-05)
+
+Author: **Codex**. Direct builds now check Cloudflare requirements through the
+same Node-only private Wrangler reader as CLI inspection and deployment, before
+type generation and output cleanup. Explicit target options and project metadata
+select the runtime; named environments use their own declarations. Build/watch
+cycles reread metadata and declarations. Node/Deno builds check metadata and
+compatibility while leaving supplied values unverified. Development startup
+permits incomplete configuration. Failed build/render hooks suppress SSG
+publication, and deployment's secondary parser failure is sanitized.
+
+**Verification:** 1,686 framework tests, 73 combined CLI/deployment/stdio MCP tests,
+framework declaration emission and root `pnpm tsc --noEmit` pass. The focused
+131-case suite includes 15 direct-build cases. Fresh installed direct Vite
+failure-before-write, config inference, 76 usage examples + 4 auth examples,
+real D1/prepared-config workerd checks, reporter parity and Cloudflare
+HTTP/SSE/WebSocket browser traces, packaged application/source-map stripping,
+UI contracts and offline documentation parity pass. Full installed gate exits 0.
+Exact evidence and limits:
+[verification archive](./release-0.9.0-verification-archive.md#codex-direct-vite-configuration-preflight-2026-10-05).
+
+**Remaining:** RT-24 stays open for Node/Deno declaration-source policy and full
+classification/hydration secrecy acceptance. Secret existence and resource
+readiness remain unverified. Counts remain **30 complete / 28 open**. Desktop
+platform checks remain waived. Versions remain 0.8.3 until REL-04.

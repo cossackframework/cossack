@@ -80,11 +80,30 @@ config('requirements-acceptance.port', '81');
       assert.ok(!error.stdout.includes('REQUIREMENTS_FACTORY_EXECUTED'));
     }
     assert.equal(await fs.readFile(output, 'utf8'), beforeFailure);
+    // Run the published plugin through the installed Vite binary. Failure must
+    // precede output cleanup and generated-type writes, without importing factories.
+    const vite = path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js');
+    const preservedOut = path.join(scratch, 'preserved-build-output');
+    await fs.mkdir(preservedOut);
+    await fs.writeFile(path.join(preservedOut, 'owned.txt'), 'PRESERVED_BUILD_OUTPUT');
+    try {
+      await exec(process.execPath, [vite, 'build', '--outDir', preservedOut], { cwd: projectDir, timeout: 60000 });
+      assert.fail('Direct Vite build must reject the missing declaration');
+    } catch (error) {
+      assert.equal(error.code, 1);
+      const diagnostics = String(error.stdout ?? '') + String(error.stderr ?? '');
+      assert.ok(diagnostics.includes('COSSACK_CONFIG_REQUIRED_MISSING'));
+      assert.ok(diagnostics.includes('REQUIRED_ACCEPTANCE_PORT'));
+      assert.ok(!diagnostics.includes('REQUIREMENTS_FACTORY_EXECUTED'));
+      assert.ok(!diagnostics.includes('CONFIG_PRIVATE_SENTINEL'));
+    }
+    assert.equal(await fs.readFile(path.join(preservedOut, 'owned.txt'), 'utf8'), 'PRESERVED_BUILD_OUTPUT');
+    assert.equal(await fs.readFile(output, 'utf8'), beforeFailure);
     await fs.unlink(metadataFactory); metadataOwned = false; await invoke('--generate');
     const repeated = await invoke('--generate'); assert.equal(repeated.generation.changed, false);
     await fs.unlink(factory); factoryOwned = false; await invoke('--generate');
     assert.ok(!(await fs.readFile(output, 'utf8')).includes('acceptance.ts'));
-    console.log('Installed configuration CLI generation, inference and removal acceptance passed.');
+    console.log('Installed configuration CLI generation, inference, direct Vite preflight and removal acceptance passed.');
   } finally {
     if (factoryOwned) await fs.rm(factory, { force: true });
     if (metadataOwned) await fs.rm(metadataFactory, { force: true });

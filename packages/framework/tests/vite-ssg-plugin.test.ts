@@ -214,3 +214,20 @@ describe('CossackSsgOptions', () => {
     expect(plugin.name).toBe('cossack-ssg');
   });
 });
+
+describe('failed build cleanup', () => {
+  it('does not render SSG from stale manifests after build or render errors', async () => {
+    const plugin = cossackSsg() as any;
+    const context = { environment: { name: 'client' } };
+    const log = vi.spyOn(console, 'log');
+    try {
+      vi.stubEnv('VITEST', '');
+      plugin.buildStart.call(context); plugin.buildEnd.call(context, new Error('preflight failed'));
+      await expect(plugin.closeBundle.call(context)).resolves.toBeUndefined();
+      expect(log).not.toHaveBeenCalled();
+      plugin.buildStart.call(context); plugin.renderError.call(context, new Error('output failed'));
+      await expect(plugin.closeBundle.call(context)).resolves.toBeUndefined();
+      expect(log).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); vi.unstubAllEnvs(); }
+  });
+});

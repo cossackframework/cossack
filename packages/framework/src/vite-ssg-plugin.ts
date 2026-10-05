@@ -91,6 +91,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
   // parent build's mode (e.g. `vite build --mode staging`) instead of
   // hardcoding 'production'. Defaults to 'production' for safety.
   let buildMode = 'production';
+  const failedEnvironments = new Set<string>();
 
   return {
     name: 'cossack-ssg',
@@ -99,10 +100,14 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       buildMode = config.mode;
     },
 
+    buildStart() { failedEnvironments.delete(this.environment?.name ?? 'client'); },
+    buildEnd(error) { if (error) failedEnvironments.add(this.environment?.name ?? 'client'); },
+    renderError() { failedEnvironments.add(this.environment?.name ?? 'client'); },
+
     async closeBundle() {
       // Run exactly once, after the client build produced the manifests.
       if (this.environment?.name !== 'client') return;
-      if (!enabled) return;
+      if (!enabled || failedEnvironments.has(this.environment?.name ?? 'client')) return;
       // Never run SSG during unit tests (vitest builds via the framework config).
       if (process.env.VITEST) return;
 

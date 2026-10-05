@@ -371,3 +371,18 @@ All exports come from `@cossackframework/framework/config`.
 | `ConfigStore` | Internal: the per-request store (`{ env, config }`) held in ALS. |
 | `CossackConfigRegistry` | Interface users augment via `declare module` to register typed config shapes for inference. Empty by default. |
 | `runWithConfig(store, fn)` | Internal: runs `fn` inside a config ALS scope. Used by the framework's middleware and SSG renderer. |
+
+### Build-time requirement checks
+
+`cossackConfig()` checks literal factory requirements before generating types or
+writing build output. Cloudflare builds use the selected Wrangler environment.
+Variables and binding declarations are checked locally; remote resources and
+secret existence remain unverified. The check never executes application factories.
+
+Use `cossackConfig({ runtime: 'cloudflare', environment: 'staging' })` to select
+the target explicitly. Otherwise project metadata selects the runtime and
+`CLOUDFLARE_ENV` selects the named environment. Build watch cycles recheck factory
+metadata and Wrangler configuration. Node and Deno builds validate metadata,
+conflicting declarations and runtime compatibility, but do not read `.env` or
+process values. Their runtime values remain unchecked until request preparation.
+Development startup allows incomplete values so configuration can be completed.
