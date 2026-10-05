@@ -1154,6 +1154,7 @@ class NodePart implements Part {
               this._adoptTemplate(template);
             } catch (e) {
               if (e instanceof HydrateMismatch) {
+                reportHydrationMismatch(e, 'component', result.clazz.name || 'anonymous');
                 this.clear();
                 this._clearTemplateCache();
                 this.updateComponentTemplate(template);
@@ -1206,9 +1207,7 @@ class NodePart implements Part {
     const pairs = findSequencePairs(nodes);
     // If the SSR item count doesn't match, we can't safely adopt — rebuild.
     if (pairs.length !== items.length) {
-      throw new HydrateMismatch(
-        `sequence length mismatch: SSR has ${pairs.length} items, client has ${items.length}`,
-      );
+      throw new HydrateMismatch('sequence-length', 'sequence', `${items.length} client items`, `${pairs.length} SSR items`);
     }
     this._childParts = [];
     this._partKeys = keys ? [] : this._partKeys;
@@ -2570,14 +2569,44 @@ export const render = (result: TemplateResult, container: Node) => {
  * template (structural mismatch). Caught by `hydrate()` which falls back to a
  * full `render()` so correctness is guaranteed even when adoption gives up.
  */
-class HydrateMismatch extends Error {}
+type HydrateMismatchCategory = 'sequence-length' | 'missing-node' | 'element-tag' | 'element-namespace' | 'node-type'
+  | 'unexpected-node' | 'missing-part-anchor' | 'missing-part-element';
+
+class HydrateMismatch extends Error {
+  constructor(
+    readonly category: HydrateMismatchCategory,
+    readonly path: string,
+    readonly expected: string,
+    readonly actual: string,
+  ) {
+    super(`${category} at ${path}: expected ${expected}; found ${actual}`);
+  }
+}
 
 const describeNode = (n: Node | undefined): string => {
   if (!n) return '<none>';
   if (n.nodeType === Node.ELEMENT_NODE) return `<${(n as Element).nodeName.toLowerCase()}>`;
-  if (n.nodeType === Node.COMMENT_NODE) return `<!--${n.nodeValue}-->`;
-  if (n.nodeType === Node.TEXT_NODE) return `text"${(n.nodeValue || '').slice(0, 30)}"`;
+  if (n.nodeType === Node.COMMENT_NODE) return 'comment';
+  if (n.nodeType === Node.TEXT_NODE) return 'text';
   return `nodeType:${n.nodeType}`;
+};
+
+const reportHydrationMismatch = (
+  mismatch: HydrateMismatch,
+  boundary: 'root' | 'component',
+  component?: string,
+) => {
+  const safeComponent = component?.replace(/[^a-zA-Z0-9_$]/g, '_').slice(0, 80);
+  console.warn({
+    event: 'cossack.hydration.mismatch',
+    boundary,
+    ...(safeComponent ? { component: safeComponent } : {}),
+    category: mismatch.category,
+    path: mismatch.path,
+    expected: mismatch.expected,
+    actual: mismatch.actual,
+    action: 'full-render-fallback',
+  });
 };
 
 /**
@@ -2650,17 +2679,17 @@ const reconcileNodeLists = (
     // Skip existing filler to stay aligned with the next meaningful node.
     while (ei < exNodes.length && isFiller(exNodes[ei])) ei++;
     const exNode = exNodes[ei];
-    if (!exNode) throw new HydrateMismatch(`existing shorter than blueprint at ${path} (expected ${describeNode(bpNode)})`);
+    const nodePath = `${path}/${bpNode.nodeType === Node.ELEMENT_NODE ? (bpNode as Element).nodeName.toLowerCase() : 'node'}[${bi}]`;
+    if (!exNode) throw new HydrateMismatch('missing-node', nodePath, describeNode(bpNode), '<none>');
     // Elements must match by tag; text/comment nodes by type. Without the
     // tag check a <p> in the DOM would silently absorb a <div> template's
     // parts, producing a corrupted tree.
     if (bpNode.nodeType === Node.ELEMENT_NODE) {
-      if (
-        exNode.nodeType !== Node.ELEMENT_NODE ||
-        bpNode.nodeName !== exNode.nodeName ||
-        (bpNode as Element).namespaceURI !== (exNode as Element).namespaceURI
-      ) {
-        throw new HydrateMismatch(`tag mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
+      if (exNode.nodeType !== Node.ELEMENT_NODE || bpNode.nodeName !== exNode.nodeName) {
+        throw new HydrateMismatch('element-tag', nodePath, describeNode(bpNode), describeNode(exNode));
+      }
+      if ((bpNode as Element).namespaceURI !== (exNode as Element).namespaceURI) {
+        throw new HydrateMismatch('element-namespace', nodePath, describeNode(bpNode), describeNode(exNode));
       }
       map.set(bpNode, exNode);
       if (bpNode.nodeName === 'TEXTAREA') {
@@ -2677,7 +2706,7 @@ const reconcileNodeLists = (
       );
     } else {
       if (bpNode.nodeType !== exNode.nodeType) {
-        throw new HydrateMismatch(`type mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
+        throw new HydrateMismatch('node-type', nodePath, describeNode(bpNode), describeNode(exNode));
       }
       map.set(bpNode, exNode);
     }
@@ -2708,7 +2737,7 @@ const reconcileNodeLists = (
   // render is the safe outcome.
   while (ei < exNodes.length && isFiller(exNodes[ei])) ei++;
   if (ei < exNodes.length) {
-    throw new HydrateMismatch(`existing longer than blueprint (unexpected ${describeNode(exNodes[ei])})`);
+    throw new HydrateMismatch('unexpected-node', `${path}/node[${ei}]`, 'end of template', describeNode(exNodes[ei]));
   }
 };
 
@@ -2724,13 +2753,13 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
     if (part instanceof NodePart) {
       const start = map.get(part.startNode);
       const end = map.get(part.endNode);
-      if (!start || !end) throw new HydrateMismatch('node part anchors not found');
+      if (!start || !end) throw new HydrateMismatch('missing-part-anchor', 'part', 'start and end anchors', 'missing anchor');
       part.startNode = start as Comment;
       part.endNode = end as Comment;
       part._beginHydration();
     } else if (part instanceof AttributePart || part instanceof SpreadPart) {
       const el = map.get((part as any).element);
-      if (!el) throw new HydrateMismatch('attribute part element not found');
+      if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
       (part as any).element = el;
     }
   }
@@ -2782,7 +2811,7 @@ export const hydrate = (result: TemplateResult, container: Node) => {
       // output, manual DOM edits, etc.). Safe fall back to a full render so
       // behaviour is always correct. Warn so the lost hydration is visible —
       // a silent fallback here would hide a real SSR/client divergence.
-      console.warn('[cossack] hydration mismatch, falling back to render:', (e as Error).message);
+      reportHydrationMismatch(e, 'root');
       return render(result, container);
     }
     throw e;

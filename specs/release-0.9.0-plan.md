@@ -723,6 +723,13 @@ receive actionable diagnostics. Valid SSR hydrates without duplicate listeners
 or duplicate resource loads. Browser tests cover nested components and retained
 layout services. Dependencies: RT-04, RT-12, and RT-29.
 
+Codex checkpoint (2026-10-05): Root and nested component structural fallbacks
+now emit structured diagnostics with a mismatch category, DOM path, expected and
+actual node shape, and nested component name. Text values and comment contents
+stay out of the event. The full renderer suite and root typecheck pass. State
+comparison, source/field metadata, retained layout/service browser tests and
+reusable test helpers remain open. See the [verification checkpoint](./release-0.9.0.md#codex-rt20-safe-hydration-diagnostics-2026-10-05).
+
 <a id="rt-21"></a>
 ### RT-21: SSG diagnostics and compatibility
 

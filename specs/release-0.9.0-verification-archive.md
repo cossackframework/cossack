@@ -10469,6 +10469,31 @@ The change does not audit all framework logs. SSR, API, SSG and other log paths
 remain separate review work. CF-08 stays open. Release status remains **30
 complete / 28 open**. No deployment or publication occurred.
 
+<a id="codex-rt20-safe-hydration-diagnostics-2026-10-05"></a>
+### Codex: Safe hydration mismatch diagnostics (2026-10-05)
+
+Root hydration fallback warnings now identify the mismatch category, structural
+DOM path, expected and actual node shape, and fallback action. Nested component
+fallbacks also identify the component class. Text values and comment contents
+are omitted. The renderer does not include application state or absolute source
+paths in these events.
+
+The tests create a root node-type mismatch and a nested component tag mismatch.
+They assert that the warning includes its structural facts and excludes private
+rendered-text markers. Normal hydration tests still require node identity to
+survive matching templates.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/renderer exec vitest run`: **24 files / 333 tests pass**.
+- `pnpm tsc --noEmit`: passes.
+- `git diff --check` for the changed renderer files: passes.
+
+Limits: This work does not compare server and browser state values or report a
+field/source location. It does not add a test helper or browser coverage for
+retained layout services. RT-20 remains open. Release status remains **30
+complete / 28 open**.
+
 <a id="codex-rt12-navigation-fixture-2026-10-05"></a>
 ### Codex: Navigation ownership browser acceptance (2026-10-05)
 

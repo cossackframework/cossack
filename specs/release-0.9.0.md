@@ -48,7 +48,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
 - [x] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
-- [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers.
+- [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers. Codex (2026-10-05): root and nested structural mismatch events now report a category, DOM path, expected/actual node shape, and nested component name without logging rendered text or comment data. All 333 renderer tests and root typechecking pass. State comparison, source/field metadata, retained layout/service browser cases, and reusable test helpers remain open. See [the hydration diagnostics checkpoint](#codex-rt20-safe-hydration-diagnostics-2026-10-05).
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
@@ -1004,6 +1004,25 @@ deployed Worker Logs account. Source-map stack resolution, configurable bundle
 and startup budgets, and a review of non-RPC logs remain unverified. Task status
 remains **30 complete / 28 open**.
 
+<a id="codex-rt20-safe-hydration-diagnostics-2026-10-05"></a>
+### Codex: Safe hydration mismatch diagnostics (2026-10-05)
+
+Hydration mismatch warnings now use structured fields for the fallback action,
+boundary, category, DOM path and expected/actual node shape. Nested component
+fallbacks also include the component class name. Text values and comment contents
+are not included in these diagnostics.
+
+**Verification:** `pnpm --filter @cossackframework/renderer exec vitest run`
+passes **333 tests in 24 files**. New regressions cover a root node-type mismatch
+and a nested component tag mismatch. Both confirm the warning identifies the
+failure shape and excludes a private rendered-text marker. Root
+`pnpm tsc --noEmit` and `git diff --check` for the changed renderer files pass.
+
+RT-20 remains open. This slice does not compare SSR and browser state values or
+identify a source file or field. It adds no reusable test helper and does not
+verify retained layout services in a browser. Task status remains
+**30 complete / 28 open**.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
@@ -1195,3 +1214,4 @@ parent task. Current status is 30 complete and 28 open.
 | <a id="codex-rt24-typed-paths-2026-10-05-index"></a>[Codex: Reject misspelled typed configuration paths (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt24-typed-paths-2026-10-05) |
 | <a id="codex-rt12-construction-rollback-2026-10-05-index"></a>[Codex: Roll back partial service-scope construction (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-service-scope-construction-rollback-2026-10-05) |
 | <a id="codex-cf08-rpc-logging-2026-10-05-index"></a>[Codex: Correlated RPC failure logs (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf08-rpc-logging-2026-10-05) |
+| <a id="codex-rt20-safe-hydration-diagnostics-2026-10-05-index"></a>[Codex: Safe hydration mismatch diagnostics (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt20-safe-hydration-diagnostics-2026-10-05) |
