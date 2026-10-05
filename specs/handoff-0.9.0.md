@@ -2,35 +2,31 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest Codex batch verifies **preview staging secrets and tagged-receipt recovery**
-([evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06)).
-**51 complete / 7 open**, versions 0.8.3; no numbered task closes. Generated apps
-can supply required secrets via private `--secrets-file` maps; native deployment
-receives `secret_text` without shared defaults or production bindings. Wrangler
-warnings can contain values: provider captures stderr, isolates mode-700 tool
-logs and removes them. Prepared config is mode 600; no secret values in journals,
-public results or client bundles. CI scopes its secret map to creation only.
+Latest Codex batch verifies **native Workflow lifecycle and executable guide**
+([evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06)).
+**51 complete / 7 open**, versions 0.8.3; no numbered task closes. Source and
+installed acceptance prove failed-step retry, external event completion, redacted
+terminal failure and persisted pause/process-kill/restart/resume without repeating
+completed steps. Wrangler's harness disables persistence; restart acceptance
+uses a new native local process against the same persisted directory.
 
-Lost tagged receipts can be independently recovered from the native latest
-deployment. Read-only inspect does not write; cleanup persists recovered proof
-before immutable-ID deletion. Older tagged deployments, replacement identity,
-foreign latest tags and missing/unknown latest evidence cannot authorize cleanup.
+All four Workflow guide snippets compile unchanged with generated binding
+types. Separate NodeNext imports and negative input/event checks pass. Operations
+and authorization are explicit contract fixtures only. Each source/installed
+batch: **4 pass / 3 files**; root/all ten non-Desktop package types pass. No
+repack: reused `/tmp/cossack-preview-secret-recovery-installed`. Prior preview
+secret/tagged-recovery acceptance remains valid in the archive.
 
-Checks: CLI/provider/loader/native transport/contracts **182 pass**, scaffold
-**89 pass**, source generated-app native smoke **1 pass**, final installed
-**29 pass**. Root/all ten non-Desktop package types pass. Hosted CI/cloud
-mutation is **not run**. Changed CLI/Scaffold tarballs: `/tmp/cossack-preview-secret-recovery-artifacts`;
-fresh gate: `/tmp/cossack-preview-secret-recovery-installed`. Unchanged dependencies reused.
-
-Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. CF-09 needs
-hosted account/CI isolation and retry proof; a created preview without a matching
-tagged deployment remains manual-recovery only. API token/account environment
-remain unconfigured. Strict Workflow Waiting/event-resume/failure acceptance is
-unproven; pinned local status reports Running. CF-08 remote logs/maps/startup,
-Deno Deploy and final versioned artifact gates remain. Do not polish working
-budgets or repeat unchanged gates. Preserve earlier proofs and baseline user
-`reports.md`, `.zcodeignore`, and two uncommitted Workflow probes. No cloud
-provisioning/deployment/push/publication occurred. Desktop stays completed/waived.
+Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. SVC-04's
+remaining lifecycle criterion is actual native Waiting status; pinned Miniflare
+reports Running at the event barrier. Do not replace that assertion or repeat
+ephemeral harness restarts as durability proof. CF-09 needs hosted account/CI
+isolation and retry proof; a preview without a matching tagged deployment remains
+manual-recovery only. API token/account environment remain unconfigured. CF-08
+remote logs/maps/startup, Deno Deploy and final versioned artifact gates remain.
+Preserve earlier proofs and baseline user reports.md/.zcodeignore and two older
+uncommitted Workflow probes. No cloud mutation/deployment/push/publication.
+Desktop remains completed/waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -51,7 +47,8 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 
 1. Finish CF-08/09 observability and isolated previews; reuse completed CF-10 acceptance.
    Local logs/static plans do not prove remote readiness or log ingestion.
-2. Revisit SVC-04 only with a real path to waiting/lifecycle proof; preserve its probe.
+2. Revisit SVC-04 only with real native Waiting proof; event/failure and paused
+   process-restart criteria are now verified. Preserve the strict older probes.
 3. Complete REL-02/03 non-Desktop published/generated/build/unit/runtime gates,
    then versioning and the requirement audit (REL-04/05).
 4. Use at most three implementation agents with exclusive ownership, targeted

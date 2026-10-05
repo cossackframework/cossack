@@ -64,7 +64,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 - [x] [SVC-02](./release-0.9.0-plan.md#svc-02) Named UTC schedules share jobs validation, occurrence deduplication, retries and cleanup; generated/installed Cron, local one-shot, build and CLI/MCP inspection pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
 - [x] [SVC-03](./release-0.9.0-plan.md#svc-03) Typed escaped notifications, scoped preferences/inboxes, durable delivery status and explicit Cloudflare/SMTP providers. Source/installed Queue/D1 and loopback SMTP retry, uncertainty and restart acceptance pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
-- [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: typed contracts, native bridge, recipe and read-only inspection are implemented and source-verified. Native waiting-status acceptance fails: pinned Miniflare reports running at the event barrier. Interruption/resume/event completion and installed Workflow acceptance remain unproven. [Exact gap](#codex-rt26-complete-svc04-open-2026-10-06).
+- [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: typed contracts, native bridge, recipe and read-only inspection are implemented and source-verified. Source and installed native retry, external event, terminal failure and persisted pause/process-restart/resume acceptance pass. Waiting-status acceptance remains unproven: pinned Miniflare reports running at the event barrier. [Evidence and exact remaining criterion](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
 - [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
 ## Cloudflare deployment
@@ -1973,3 +1973,18 @@ and checks latest ownership before cleanup. Generated-app source/installed
 build and native workerd smoke pass; hosted CI proof is still absent.
 [Exact evidence and residual criteria](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
 Desktop remains completed/waived; versions remain 0.8.3.
+
+
+### Codex — native Workflow lifecycle and executable guide (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** Source and installed native
+acceptance prove retry, external event completion, redacted terminal failure and
+persisted pause/process-kill/restart/resume without repeating completed steps.
+All four Workflow guide examples compile unchanged with generated types; public
+exports also compile under NodeNext, with negative input/event checks.
+[Commands, evidence and limits](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
+
+Each source/installed batch: **4 pass / 3 files**. Root/all ten non-Desktop
+package type checks pass. Desktop remains waived. SVC-04 stays open for native
+Waiting status; no Running-to-Waiting substitution. Hosted execution and final
+REL gates remain open. Unchanged tarballs reused; no package repack.

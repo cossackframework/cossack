@@ -126,8 +126,14 @@ failed/terminated/unknown; an unfamiliar provider status remains unknown.
 The current local Miniflare provider can report `running` during an external
 event wait. The wrapper preserves that provider status; it does not infer a
 waiting state from private step outputs. A running status alone does not prove
-that an authored callback is executing. Native waiting-status and restart
-acceptance remain open in the 0.9.0 checklist.
+that an authored callback is executing. Native waiting-status acceptance remains
+open in the 0.9.0 checklist. Local native acceptance verifies completed-step
+reuse after pausing at an event boundary, killing Wrangler, and starting a new
+process against the same persisted state directory. It also verifies external
+event completion, a retried step and redacted terminal failure. This does not
+prove recovery from every interruption point or hosted account durability.
+Wrangler's test harness disables persistence; restarting that harness cannot
+prove recovery. The restart test uses `wrangler dev --local --persist-to` instead.
 
 For unit tests, `createLocalWorkflowProvider(definition, { env, sleep })` uses an
 in-memory instance map. It executes callbacks, retries, sleeps and external events

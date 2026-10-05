@@ -166,14 +166,16 @@ test adapter must not be described as durable production infrastructure.
 <a id="svc-04"></a>
 ### SVC-04: Durable multi-step workflows
 
-Codex status (2026-10-06): partial implementation is source-verified. Native
-creation and completed/retried steps work; the strict waiting-status assertion
-fails because pinned Miniflare reports running at its event barrier and never
-assigns Waiting. Interruption/resume/event completion, native failure and installed
-Workflow acceptance remain unproven. Do not replace waiting with running to close
-the task. Preserve the two batch-owned uncommitted acceptance fixtures. Continue
-independent open tasks until native provider waiting-state support or equivalent
-real provider evidence is available. [Evidence](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
+Codex status (2026-10-06): source and installed native acceptance now proves
+external event completion, failed-step retry, redacted terminal failure and
+persisted pause/process-kill/restart/resume without repeating completed steps.
+The harness disables persistence; the restart proof uses a new native Wrangler
+process with the same explicit persisted directory. The strict waiting-status
+assertion remains unsatisfied: pinned Miniflare reports running at its event
+barrier and never assigns Waiting. Do not substitute running, paused or inferred
+private step state for Waiting. Preserve the two earlier uncommitted probes.
+Only the Waiting criterion remains missing from this lifecycle batch; hosted
+durability is not claimed. [Evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
 
 Purpose: Some processes must pause, resume, and retry individual steps across
 requests or restarts. A long async function inside an RPC response cannot provide
@@ -450,8 +452,12 @@ tarball/runtime/recipe matrix and executable documentation coverage remain open.
 export targets, 74 Node imports, strict Bundler/NodeNext declaration imports,
 representative generated compositions, and fresh native D1 migration/model
 acceptance. Templates now declare authoritative operations; existing applied
-callback migration histories still reject changed checksums. Native Workflow
-lifecycle and the remaining final artifact/runtime matrix keep REL-02 open.
+callback migration histories still reject changed checksums. Native Workflow Waiting and the remaining final artifact/runtime matrix keep
+REL-02 open. A subsequent source/installed batch compiles all four unchanged
+Workflow guide snippets with generated Cloudflare types, checks NodeNext public
+exports and rejects invalid input/event types. Application-owned operation and
+authorization stubs prove contracts only; they do not implement those services.
+[Workflow evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
 [Evidence and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
 
 Approach: Pack packages into a temporary local artifact set. Install them into
@@ -817,3 +823,16 @@ tagged deployment exists still cannot establish independent ownership for
 automatic deletion; preserve/manual-recover its state. Existing staging storage
 is retained, not provisioned per branch. Do not convert these gaps into waivers.
 SVC-04 native Waiting, CF-08 remote and final REL gates remain unchanged.
+
+
+## Codex — native Workflow lifecycle and guide batch (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** SVC-04 now has source and
+installed native event/retry/failure and persisted process-restart evidence.
+REL-02 gains unchanged Workflow guide compilation through public exports.
+Source and installed combined checks each pass four cases; root/all ten
+non-Desktop types pass. Unchanged installed artifacts reused. Desktop waived.
+[Full evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
+Native Waiting status, hosted Cloudflare/CI, Deno Deploy and final versioned
+artifact gates remain open. Continue independent final acceptance rather than
+retesting or relabeling Miniflare Running.

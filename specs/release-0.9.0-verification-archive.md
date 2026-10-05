@@ -13422,3 +13422,63 @@ remains manual-recovery only. Existing staging D1/KV/R2 is retained, not provisi
 per branch. Strict SVC-04 Waiting/lifecycle, CF-08 remote/provider startup and
 final versioned REL/runtime gates remain unchanged. No cloud mutation, deployment,
 push or publication; versions remain 0.8.3. Preserved all four baseline changes.
+
+
+## Codex — Workflow native lifecycle (2026-10-06)
+
+<a id="codex-workflow-native-lifecycle-2026-10-06"></a>
+
+**51 complete / 7 open; SVC-04 and REL-02 remain open.** Two implementation
+agents owned the native event/failure fixture and executable guide test
+respectively. Codex reviewed both, implemented the separate persisted native
+runner and integrated the batch. No public API/package behavior changed.
+
+Proven source and installed acceptance:
+
+- Generated Cloudflare Workflow entry executes an actual failed step, retries
+  once, accepts a validated external event and completes. D1 counters prove
+  first=1, attempts=2 and last=1. Invalid events reject without private payload.
+- A separate native instance fails permanently; native status is errored with
+  the dummy private error, while public inspection reports failed with fixed
+  WORKFLOW_FAILED and excludes provider errors, payloads and outputs.
+- A native local Wrangler process pauses fully at an event boundary, then its
+  POSIX process group is killed. A new PID uses the same explicit persisted
+  directory, reads actual native paused state, resumes, receives an event and
+  completes with first=1, attempts=2 and last=1. No completed-step repeat.
+  Wrangler createTestHarness hardcodes persist:false; the restart test uses
+  wrangler dev --local --persist-to instead of pretending harness roots persist.
+- All four TypeScript fences in docs/workflows.md compile unchanged under
+  strict Bundler resolution with generated Cloudflare binding types. A separate
+  NodeNext consumer checks core Workflow and framework entry/provider exports.
+  Negative cases reject numeric reference, nonboolean event and undeclared
+  event discriminator. Application operations/authorization are explicit type
+  fixtures only, not transaction/authentication implementation acceptance.
+
+Verified commands, all exit 0:
+
+```sh
+pnpm --filter cossack exec vitest run tests/workflow-failure-native.test.js tests/workflow-restart-native.test.js tests/workflow-documentation-acceptance.test.js
+COSSACK_WORKFLOWS_INSTALLED_ROOT=/tmp/cossack-preview-secret-recovery-installed pnpm --filter cossack exec vitest run tests/workflow-failure-native.test.js tests/workflow-restart-native.test.js tests/workflow-documentation-acceptance.test.js
+pnpm tsc --noEmit
+pnpm run typecheck -- --exclude-desktop
+```
+
+Results: **4 pass / 3 files** source, **4 pass / 3 files** installed; root
+and all ten non-Desktop package type checks pass. Logs:
+`/tmp/cossack-workflow-batch-source.log`,
+`/tmp/cossack-workflow-batch-installed.log`,
+`/tmp/cossack-workflow-batch-root-types.log`,
+`/tmp/cossack-workflow-batch-package-types.log`. Reused unchanged tarballs and
+the existing installed gate; no repack or broad unchanged matrix repeated.
+Documentation prose now states the precise local restart proof and limits.
+
+**Exact remaining SVC-04 criterion:** observable native Waiting status is still
+unproven. The pinned Miniflare implementation reports Running at the external
+event barrier; this batch does not substitute Running, Paused or private step
+metadata. Earlier strict failing probes are preserved unchanged, uncommitted.
+The process interruption proof pauses before killing; it does not cover every
+possible mid-effect crash or prove hosted Cloudflare durability. No real cloud
+API, deployment, CI run, provisioning, push or publication occurred. CF-08/09
+hosted criteria, Deno Deploy and final REL artifact gates remain open. Versions
+stay 0.8.3. Desktop checks remain waived, not passed. Preserved baseline
+reports.md, .zcodeignore and both older uncommitted Workflow probes.
