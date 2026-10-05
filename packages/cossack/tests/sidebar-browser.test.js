@@ -4,32 +4,35 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
-import { html, renderToString, minifyHtml } from '../../renderer/dist/server.js';
-import { component } from '../../renderer/dist/index.js';
-import { Sidebar } from '../../ui/dist/index.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
-const require = createRequire(new URL('../../framework/package.json', import.meta.url));
+const installed = process.env.COSSACK_SIDEBAR_INSTALLED_ROOT;
+const packageRoot = name => installed ? path.join(installed, 'node_modules/@cossackframework', name) : path.join(repository, 'packages', name);
+const require = createRequire(installed ? path.join(installed, 'package.json') : new URL('../../framework/package.json', import.meta.url));
 const { build } = await import(require.resolve('vite'));
 const {default:tailwind}=await import(require.resolve('@tailwindcss/vite'));
 
 it('preserves Sidebar navigation, disclosures, collapsed modes and native links', async () => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-sidebar-'));
   let server,browser;
-  const templateSource=`(p={})=>{const items=[{value:'home',label:'Home',href:'/home',linkProps:{'@click':p.capture}},{value:'projects',label:'Projects',href:'/projects',children:[{value:'one',label:'Project one',href:'/one',active:true},{value:'nested',label:'Nested',children:[{value:'deep',label:'Deep page',href:'/deep'}]}]},{value:'new',label:'New tab',href:'/new',linkProps:{target:'_blank'}},{value:'download',label:'Download',href:'/download.txt',linkProps:{download:'export.txt'}},{value:'external',label:'External',href:'https://example.test/away'},{value:'mail',label:'Email',href:'mailto:test@example.test'},{value:'prevent',label:'Prevented',href:'/prevent',linkProps:{'@click':p.cancel}}].filter(item=>!p.removeHome||item.value!=='home');return html\`<button id="before">Before</button>\${component(Sidebar,{id:'main-nav',label:'Main pages',title:'Application',items:p.reverse?[...items].reverse():items,navProps:{'data-nav':'main','@click':p.capture},collapsed:p.collapsed??false,dir:p.dir??'ltr',width:p.width??'260px',style:'min-height:0;height:500px;',onToggle:p.toggle,onNavigate:p.navigate,'data-root':'main','@click':p.capture,footer:html\`<button type="button" id="footer">Account</button>\`})}<button id="opener" aria-controls="mobile-nav" aria-expanded=\${!(p.mobileHidden??true)} @click=\${p.openMobile}>Open mobile navigation</button>\${component(Sidebar,{id:'mobile-nav',label:'Mobile pages',items:[{value:'mobile-home',label:'Mobile home',href:'/home'}],collapsible:'offcanvas',restoreFocusTo:'opener',collapsed:p.mobileHidden??true,style:'min-height:0;height:200px;',onToggle:p.toggleMobile,onNavigate:p.navigate})}<button id="after">After</button>\`};`;
-  const template=new Function('html','component','Sidebar',`return (${templateSource.slice(0,-1)})`)(html,component,Sidebar);
+  const templateSource=`(p={})=>{const items=[{value:'home',label:'Home',href:'/home',linkProps:{'@click':p.capture}},{value:'projects',label:'Projects',href:'/projects',children:[{value:'one',label:'Project one',href:'/one',active:true},{value:'nested',label:'Nested',children:[{value:'deep',label:'Deep page',href:'/deep'}]}]},{value:'new',label:'New tab',href:'/new',linkProps:{target:'_blank'}},{value:'download',label:'Download',href:'/download.txt',linkProps:{download:'export.txt'}},{value:'external',label:'External',href:'https://example.test/away'},{value:'mail',label:'Email',href:'mailto:test@example.test'},{value:'prevent',label:'Prevented',href:'/prevent',linkProps:{'@click':p.cancel}}].filter(item=>!p.removeHome||item.value!=='home');return html\`<button id="before">Before</button>\${component(Sidebar,{id:'main-nav',label:'Main pages',title:'Application',items:p.reverse?[...items].reverse():items,navProps:{'data-nav':'main','@click':p.capture},collapsed:p.collapsed??false,dir:p.dir??'ltr',width:p.width??'260px',style:'min-height:0;height:500px;',onToggle:p.toggle,onNavigate:p.navigate,'data-root':'main','@click':p.capture,footer:html\`<button type="button" id="footer">Account<span id="account-details" class="group-[.is-collapsed]:hidden">Account details</span></button>\`})}<button id="opener" aria-controls="mobile-nav" aria-expanded=\${!(p.mobileHidden??true)} @click=\${p.openMobile}>Open mobile navigation</button>\${component(Sidebar,{id:'mobile-nav',label:'Mobile pages',items:[{value:'mobile-home',label:'Mobile home',href:'/home'}],collapsible:'offcanvas',restoreFocusTo:'opener',collapsed:p.mobileHidden??true,style:'min-height:0;height:200px;',onToggle:p.toggleMobile,onNavigate:p.navigate})}<button id="after">After</button>\`};`;
   try {
     const scope=path.join(root,'node_modules/@cossackframework');await fs.mkdir(scope,{recursive:true});
-    for(const name of ['renderer','core','ui'])await fs.symlink(path.join(repository,'packages',name),path.join(scope,name),'dir');
+    for(const name of ['renderer','core','ui'])await fs.symlink(packageRoot(name),path.join(scope,name),'dir');
+    const publicImports=path.join(root,'library.mjs');
+    await fs.writeFile(publicImports,`export {html,renderToString,minifyHtml} from '@cossackframework/renderer/server';export {component} from '@cossackframework/renderer';export {Sidebar} from '@cossackframework/ui';`);
+    const {html,renderToString,minifyHtml,component,Sidebar}=await import(pathToFileURL(publicImports).href);
+    const template=new Function('html','component','Sidebar',`return (${templateSource.slice(0,-1)})`)(html,component,Sidebar);
     await fs.writeFile(path.join(root,'index.html'),`<html><head><meta charset="utf-8"></head><body><main id="app">${minifyHtml(renderToString(template(),{hydrate:true}))}</main><script type="module" src="/main.js"></script></body></html>`);
     await fs.mkdir(path.join(root,'public'));await fs.writeFile(path.join(root,'public/download.txt'),'fixture export');
     await fs.writeFile(path.join(root,'style.css'),`
 @import ${JSON.stringify(require.resolve('tailwindcss/index.css'))} source(none);
-@import ${JSON.stringify(path.join(repository,'packages/ui/src/theme/base.css'))};
-@import ${JSON.stringify(path.join(repository,'packages/ui/src/theme/theme.css'))};
-@source ${JSON.stringify(path.join(repository,'packages/ui/src'))};
+@import ${JSON.stringify(path.join(packageRoot('ui'),'src/theme/base.css'))};
+@import ${JSON.stringify(path.join(packageRoot('ui'),'src/theme/theme.css'))};
+@source ${JSON.stringify(path.join(packageRoot('ui'),'src'))};
+@source ${JSON.stringify(path.join(root,'main.js'))};
 `);
     await fs.writeFile(path.join(root,'main.js'),`
 import './style.css';
@@ -46,6 +49,7 @@ hydrate(template(current()),container);window.retained=initial.every(node=>node.
     const built = await build({ root, configFile: false, logLevel: 'silent', plugins:[tailwind()], build: { outDir: 'dist', emptyOutDir: true } });
     const chunks = (Array.isArray(built) ? built : [built]).flatMap(result => result.output).filter(chunk => chunk.type === 'chunk');
     const modules = chunks.flatMap(chunk => Object.keys(chunk.modules));
+    if(installed)expect(modules.some(id=>id.includes(installed)&&id.includes('cossackframework')&&id.includes('ui'))).toBe(true);
     expect(modules.some(id => id.includes('/parse5/') || id.endsWith('/ssr-form-values.js'))).toBe(false);
     server = createServer(async (request, response) => {
       const pathname = new URL(request.url, 'http://localhost').pathname;
@@ -63,6 +67,7 @@ hydrate(template(current()),container);window.retained=initial.every(node=>node.
     await staticSummary.click();await browserExpect(staticPage.getByRole('link',{name:'Project one',exact:true})).toBeHidden();await staticSummary.click();await browserExpect(staticPage.getByRole('link',{name:'Project one',exact:true})).toBeVisible();
     await staticPage.getByRole('link',{name:'Home',exact:true}).click();await browserExpect(staticPage).toHaveURL(/\/home$/);await noJS.close();
     const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(url);await page.waitForFunction(()=>window.retained!==undefined);expect(await page.evaluate(()=>window.retained)).toBe(true);
+    await browserExpect(page.locator('#account-details')).toBeVisible();
     const sidebarRoot=page.locator('#main-nav'),summary=page.locator('[data-sidebar-value="projects"] > details > summary'),details=summary.locator('..'),home=page.getByRole('link',{name:'Home',exact:true});
     const accessibility = await page.context().newCDPSession(page);
     const { root: domRoot } = await accessibility.send('DOM.getDocument');
@@ -79,11 +84,11 @@ hydrate(template(current()),container);window.retained=initial.every(node=>node.
     await page.keyboard.press('Space');expect(await details.evaluate(el=>el.open)).toBe(true);await page.getByRole('link',{name:'Project one',exact:true}).focus();await page.keyboard.press('Escape');await browserExpect(summary).toBeFocused();expect(await details.evaluate(el=>el.open)).toBe(false);
     await summary.click();await page.locator('[data-sidebar-value="nested"] > details > summary').click();await browserExpect(page.getByRole('link',{name:'Deep page'})).toBeVisible();
     await page.evaluate(()=>{window.savedSummary=document.querySelector('[data-sidebar-value="projects"] > details > summary');window.savedHome=document.querySelector('a[href="/home"]');});await home.focus();await page.evaluate(()=>window.update({reverse:true}));await browserExpect(home).toBeFocused();expect(await page.evaluate(()=>window.savedSummary===document.querySelector('[data-sidebar-value="projects"] > details > summary')&&window.savedHome===document.querySelector('a[href="/home"]'))).toBe(true);
-    await sidebarRoot.getByRole('button',{name:'Collapse navigation',exact:true}).click();await browserExpect(sidebarRoot).toHaveClass(/is-collapsed/);await browserExpect.poll(()=>sidebarRoot.evaluate(el=>el.getBoundingClientRect().width)).toBe(72);
+    await sidebarRoot.getByRole('button',{name:'Collapse navigation',exact:true}).click();await browserExpect(sidebarRoot).toHaveClass(/is-collapsed/);await browserExpect(sidebarRoot.locator('.cs-sidebar__footer')).toHaveClass(/is-collapsed/);await browserExpect(page.locator('#account-details')).toBeHidden();await browserExpect.poll(()=>sidebarRoot.evaluate(el=>el.getBoundingClientRect().width)).toBe(72);
     await browserExpect(page.getByRole('link',{name:'Project one',exact:true})).toBeVisible();await browserExpect(page.getByRole('link',{name:'Deep page'})).toBeVisible();await home.focus();await page.keyboard.press('Enter');expect(await page.evaluate(()=>window.visits.at(-1))).toEqual({value:'home',tag:'A'});
     expect(await page.evaluate(()=>window.targets)).toEqual(expect.arrayContaining(['A#/home','NAV#main-nav-nav','ASIDE#main-nav']));
     await page.evaluate(()=>window.update({dir:'rtl'}));expect(await sidebarRoot.evaluate(el=>getComputedStyle(el).direction)).toBe('rtl');await browserExpect(summary).toHaveAccessibleName('Projects');
-    await sidebarRoot.getByRole('button',{name:'Expand navigation',exact:true}).click();await page.evaluate(()=>window.update({acceptToggle:false}));await sidebarRoot.getByRole('button',{name:'Collapse navigation',exact:true}).click();await browserExpect(sidebarRoot).not.toHaveClass(/is-collapsed/);expect(await page.evaluate(()=>window.toggles.at(-1))).toBe(true);await page.evaluate(()=>window.update({acceptToggle:true}));
+    await sidebarRoot.getByRole('button',{name:'Expand navigation',exact:true}).click();await browserExpect(page.locator('#account-details')).toBeVisible();await browserExpect(sidebarRoot.locator('.cs-sidebar__footer')).not.toHaveClass(/is-collapsed/);await page.evaluate(()=>window.update({acceptToggle:false}));await sidebarRoot.getByRole('button',{name:'Collapse navigation',exact:true}).click();await browserExpect(sidebarRoot).not.toHaveClass(/is-collapsed/);expect(await page.evaluate(()=>window.toggles.at(-1))).toBe(true);await page.evaluate(()=>window.update({acceptToggle:true}));
     const count=await page.evaluate(()=>window.visits.length);
     const popupPromise=page.waitForEvent('popup');await page.getByRole('link',{name:'New tab',exact:true}).click();const popup=await popupPromise;await browserExpect(popup).toHaveURL(/\/new$/);await popup.close();
     const modifiedPromise=page.context().waitForEvent('page');await home.click({modifiers:['Control']});const modified=await modifiedPromise;await browserExpect(modified).toHaveURL(/\/home$/);await modified.close();

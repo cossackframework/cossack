@@ -13017,3 +13017,250 @@ no release evidence. CF-09 still needs native provider/CI wiring, persisted
 creation intent, independent ownership verification, real isolated smoke tests,
 retry cleanup and production promotion/migration order. SVC-04's strict failed
 native waiting probes are unchanged. No credentials or live mutation were used.
+
+
+<a id="codex-production-source-maps-release-gates-2026-10-06"></a>
+## Codex — production source maps and release gates (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** This batch completes local
+production-map/prepared-upload acceptance within CF-08, migration-history upgrade
+acceptance within REL-04, and substantial REL-02/03 integration gates. Desktop
+remains complete by user decision; its remaining platform checks are waived.
+Versions remain 0.8.3. Two implementation agents owned separate fixture/guide and
+browser-test files; Codex reviewed their changes, fixed shared production/API
+issues, integrated and verified the batch. No budget feature expansion occurred.
+
+### Production maps and published native loading
+
+Generated web SSR builds now emit linked private server maps; generated Cloudflare
+configuration sets `upload_source_maps: true`. Client maps remain opt-in and
+Desktop's existing false setting is retained. Existing application configuration
+is preserved. The logging guide explains private diagnosis, deployment artifact
+matching and the distinction between caught fixed failure logs and remote
+uncaught-stack remapping.
+
+`production-source-maps.test.js` builds actual minimal and Workflows Cloudflare
+applications, starts native Wrangler/workerd HTTP listeners and requests a real
+fault through a random-token, test-only private channel. Actual JavaScript stack
+coordinates resolve through that module's linked emitted map to the exact authored
+TypeScript file, line 2 and Error-constructor column 12, with exact sourcesContent.
+Public failures omit the exception and source path; server maps return 404 and
+private fixture values are absent from public client artifacts.
+
+Wrangler `deploy --dry-run --outfile` then prepares its real multipart upload
+body. Tests inspect actual application/source-map parts containing the authored
+TypeScript and accompanying Worker JavaScript byte-for-byte identical to the
+artifact whose native fault was checked. This is prepared-upload proof, **not
+remote upload, provider log ingestion or Cloudflare remapping proof**. Initial
+hidden-map local resolution did not prove Wrangler selection: Wrangler requires
+sourceMappingURL for this prebuilt path. Final linked maps and actual multipart
+checks replace that insufficient evidence. --outdir alone also omits the prebuilt
+entry map and was not used as a proxy for upload parts.
+
+Framework's public Workflow entry now exports `./provider.js`; the extensionless
+published native import was a real defect exposed by the package gate. Both
+installed compositions load the final native graph. Workflow **loading** does not
+prove waiting, interruption, event resume, retries or lifecycle completion.
+Framework publication tests retain demo exclusions and now require the real
+portable S3 and public Markdown artifacts/dependencies. No production dependency
+was added to make stale tests pass. Trace-mapping is an explicit CLI test dev
+dependency; its existing lock snapshot is reused.
+
+Final commands, all exit 0:
+
+- `pnpm --filter cossack exec vitest run tests/production-source-maps.test.js`
+  — **2 passed**. `/tmp/cossack-source-map-final-source.log`.
+- `COSSACK_SOURCE_MAPS_INSTALLED_ROOT=/tmp/cossack-source-map-linked-installed
+  pnpm --filter cossack exec vitest run tests/production-source-maps.test.js`
+  — **2 passed**. `/tmp/cossack-source-map-final-installed.log`.
+- Changed Framework/Scaffold tarballs in `/tmp/cossack-source-map-linked-artifacts`;
+  fresh offline installation in `/tmp/cossack-source-map-linked-installed`, with
+  unchanged dependency tarballs reused and no workspace aliases. Logs:
+  `/tmp/cossack-source-map-linked-framework-pack.log`,
+  `/tmp/cossack-source-map-linked-pack.log`,
+  `/tmp/cossack-source-map-linked-install.log`.
+
+Official contract reviewed: https://developers.cloudflare.com/workers/observability/source-maps/ .
+Wrangler's real local source-map selection and serialized FormData were also
+inspected. No provider upload was inferred from documentation or mocks.
+
+### Migration history and SQLite upgrade proof
+
+The migration guide explains why replacing applied callback definitions with
+otherwise equivalent authoritative operations changes checksums. Preserve exact
+applied definitions/toolchain, append only required new pending migrations, review
+a live plan and apply that exact plan on the same runner. Baseline markers do not
+reconcile changed history; never rewrite journal rows to bypass validation.
+
+Two real SQLite tests execute the generated definitions: retained historical
+callbacks plus the new declarative session-public-ID migration preserve rows and
+historical checksums, including rollback of only the new migration. Blind template
+replacement rejects plan/up/down even after baseline insertion. These tests are
+included in the final **171-passing Scaffold suite** below. They do not validate
+an application's remote database, reconcile mixed histories automatically or
+complete the version/changelog/release-note criteria of REL-04.
+
+### Builds, units, bundle audit and type checks
+
+Canonical dependency builds ran with the user-waived Desktop package excluded:
+Core/Renderer, Framework build:types, Node/Deno/UI/Database and Studio builds;
+Test-utils build; real Framework `vite build`; `pnpm audit:bundle`. All final
+builds exit 0, including real client/Worker/SSG artifacts and **32 neutral database
+modules** in the Workers-safe audit. Framework build/audit logs:
+`/tmp/cossack-release-build-framework.log`, `/tmp/cossack-release-bundle-audit.log`.
+The literal root `pnpm build` was not run because it includes Desktop.
+
+The serial non-CLI/non-Desktop workspace unit command initially failed one stale
+Scaffold Node-import assertion. The Framework suite then found stale publication
+assertions, the real Workflow extension defect and cold-import timeouts under
+unbounded concurrency. Assertions were corrected to existing public behavior;
+the actual import was fixed. The final Framework run bounded workers to four and
+retained the existing import deadlines. No failing test was skipped.
+
+Final package results: Auth 298, Database 121 + **2 external-provider skips**,
+Renderer 343, Core 1,716, Deno 42, Node 52, Test-utils 17, Scaffold 171, UI 651,
+Studio 69, Framework 2,045. Together: **5,525 passed / 2 skipped**. Logs:
+`/tmp/cossack-release-noncli-units.log` (initial failed composite),
+`/tmp/cossack-release-scaffold-units-fixed.log`,
+`/tmp/cossack-release-remaining-units.log`,
+`/tmp/cossack-release-framework-units-bounded.log` (117 files / 2,045 passed).
+Database PostgreSQL/MySQL skips require COSSACK_TEST_POSTGRES_URL and
+COSSACK_TEST_MYSQL_URL; neither skip is claimed passed.
+
+Subsequent browser-gate config tests add eight passing cases and the Sidebar
+repair adds two passing unit cases. All changed contracts were rerun after the
+last shared source change: `pnpm --filter @cossackframework/ui exec vitest run
+ tests/sidebar-contracts.test.ts --maxWorkers=1` — **24 passed**;
+`pnpm --filter @cossackframework/framework exec vitest run
+ tests/package-contract.test.ts tests/playwright-config.test.ts --maxWorkers=2`
+— **25 passed**. Logs: `/tmp/cossack-release-sidebar-contracts.log`,
+`/tmp/cossack-release-final-contracts.log`. This is composite evidence, not a
+single unchanged all-package green invocation.
+
+Final `pnpm tsc --noEmit` and `pnpm run typecheck -- --exclude-desktop` both exit 0
+after all TypeScript changes/builds. All **10 non-Desktop package configs** pass;
+Desktop prints waived/not passed. Logs: `/tmp/cossack-release-integrated-root-types.log`,
+`/tmp/cossack-release-integrated-package-types.log`. An earlier check overlapped
+UI pretest deleting declarations and failed Studio; the final settled checks
+supersede that race. Owned syntax/whitespace checks pass; user reports.md whitespace
+is excluded rather than changed.
+
+### Full CLI run and bounded follow-ups
+
+`COSSACK_DENO_BINARY=$(cat /tmp/cossack-deno-binary.txt) pnpm --filter cossack
+ exec vitest run --maxWorkers=1 --no-file-parallelism
+ --exclude tests/workflows-release-acceptance.test.js -t '^(?!.*[Dd]esktop).*'`
+finished in 2,332.90 seconds: **1,028 passed / 1 failed / 8 skipped**, 123 passing
+files and one failed file. `/tmp/cossack-release-cli-final.log`. Native Deno cases
+executed. Strict previously failed Workflow probes were excluded explicitly and
+remain unproven; they were not waived or rewritten. This run is **not green**.
+
+The one failure was Studio's 5-second aggregate test deadline for three separately
+bounded subprocesses, followed by its child-cleanup assertion after timeout. The
+outer test budget now allows 65 seconds; each child retains its 20-second bound
+and the production deliberately hanging Studio fixture retains --timeout=100.
+Targeted Studio rerun passes, including the no-live-child assertion:
+`pnpm --filter cossack exec vitest run tests/cli-subprocess.test.js
+ -t 'Studio has bounded startup' --maxWorkers=1` — **1 passed / 38 filtered**,
+`/tmp/cossack-release-studio-subprocess-fixed.log`.
+
+The name filter accidentally selected out two required tests containing
+“non-Desktop”. Both files were subsequently run without that filter:
+`pnpm --filter cossack exec vitest run tests/skill-guide-consistency.test.js
+ tests/guidance-family-inventory.test.js --maxWorkers=1` — **4 passed**,
+`/tmp/cossack-release-cli-nondesktop-guidance.log`. The six actual Desktop cases
+remain waived, not passed. Source-map settings changed during the live CLI run;
+final changed artifacts have separate source/installed proof above. Do not call
+this composite one immutable final green CLI run.
+
+### Browser integration and installed Sidebar acceptance
+
+Initial default Playwright reused a temporary CLI app on port 5173 and produced
+invalid fixture results. Those results were discarded. Dedicated COSSACK_E2E_PORT
+now validates a port, disables reuse, binds an explicit loopback host and enforces
+strictPort; eight config regressions cover dev/SSG/default/invalid settings.
+This host left unused loopback TCP connections in SYN-SENT, so Playwright's initial
+HTTP availability check stalled before launching any server. NO_PROXY alone did
+not fix it. Codex launched owned dev/preview servers first, verified actual HTTP
+200 responses, and used a temporary config importing the repository config with
+only absolute testDir and webServer:undefined overrides. This preserves all
+repository suites/browser assertions without trusting an unrelated listener.
+
+Reproduction: start `pnpm --filter @cossackframework/framework run dev --host
+ 127.0.0.1 --port 15173 --strictPort`. Temporary
+`/tmp/cossack-release-browser.config.mts`:
+
+```ts
+import base from '/home/tan/Sites/cossack/packages/framework/playwright.config.ts';
+export default { ...base, testDir: '/home/tan/Sites/cossack/packages/framework/e2e', webServer: undefined };
+```
+
+Run with `NO_PROXY=localhost,127.0.0.1,::1 COSSACK_E2E_PORT=15173`:
+`pnpm --filter @cossackframework/framework exec playwright test
+ --config /tmp/cossack-release-browser.config.mts --workers=2 --reporter=line`.
+Full development run completed: **278 passed / 19 failed** across 297 cases,
+9.9 minutes; `/tmp/cossack-release-browser-owned-server-final.log`. Not green.
+
+All 19 failures now have verified follow-ups. Repairs select actual disclosed
+sidebar links, wait for hydration, verify real event/count/key/resize behavior,
+use accessible native controls and current static-alert/calendar/avatar semantics,
+and target the actual SSE chat input. Dashboard overflow remains forbidden, but
+its assertion waits for the shell's existing responsive margin transition to
+settle. No force clicks, assertion removals or skips hide failures.
+
+Sidebar had omitted its footer's icon-rail state marker. The shared component now
+propagates it, with unit regression and strict actual-browser footer/name/avatar
+checks. An agent's component run encountered two unchanged cases during the UI
+rebuild: 41 passed / 2 failed, then both pass in a stable targeted rerun. The final
+integrated run supersedes those affected-file results:
+
+- Same owned-server command with these eight paths: core-features/decorators.spec.ts,
+  core-features/navigation.spec.ts, core-features/loading-states.spec.ts,
+  pages/counter-http.spec.ts, pages/optimistic-counter.spec.ts,
+  pages/components-demo.spec.ts, pages/sse-chat.spec.ts,
+  pages/dashboard-stat-block.spec.ts — **87 passed**, 2.6 minutes, exit 0.
+  `/tmp/cossack-release-browser-batch-final.log`. All original failed cases are
+  covered. Unchanged passing cases retain earlier full-run evidence; this is
+  composite coverage of the 297 cases, not a second full green invocation.
+- `pnpm --filter @cossackframework/framework run build:ssg` and owned
+  `pnpm --filter @cossackframework/framework exec vite preview --host 127.0.0.1
+  --port 15174 --strictPort`, then same temporary Playwright config with
+  COSSACK_TEST_SSG=1 / COSSACK_E2E_PORT=15174 / loopback NO_PROXY — **6 passed**,
+  exit 0. `/tmp/cossack-release-ssg-build.log`,
+  `/tmp/cossack-release-ssg-browser.log`. SSG artifacts precede the final Sidebar
+  marker repair; changed Sidebar behavior has separate final native proof.
+- UI canonical build exits 0: `/tmp/cossack-release-sidebar-build.log`.
+  Pack only changed UI with `pnpm --filter @cossackframework/ui exec pnpm
+  --config.ignore-scripts=true pack --pack-destination /tmp/cossack-sidebar-release-artifacts`.
+  Fresh offline --ignore-scripts install `/tmp/cossack-sidebar-release-installed`
+  reuses all unchanged final tarballs. Pack/install logs:
+  `/tmp/cossack-release-sidebar-pack-final.log`,
+  `/tmp/cossack-release-sidebar-install-final.log`.
+- `pnpm --filter cossack exec vitest run tests/sidebar-browser.test.js --maxWorkers=1`
+  — **1 passed**; same command with
+  COSSACK_SIDEBAR_INSTALLED_ROOT=/tmp/cossack-sidebar-release-installed — **1 passed**.
+  `/tmp/cossack-release-sidebar-browser-source-final.log`,
+  `/tmp/cossack-release-sidebar-browser-installed.log`. Actual public ESM imports,
+  packaged themes and client module graph are checked; no workspace UI alias.
+  Footer collapse/expansion and retained keyboard/focus/disclosure/native-link,
+  no-JavaScript, offcanvas and cleanup assertions pass.
+
+Initial Sidebar fixture CJS require.resolve could not select import-only exports;
+using an actual public ESM module fixed the fixture. An invalid pack flag failed
+before packaging; the final config flag succeeded. Neither failed attempt counts
+as acceptance. Owned temporary dev/preview servers are stopped after verification.
+
+### Exact remaining criteria
+
+SVC-04: strict native waiting/interruption/event resume/failure/retry and installed
+lifecycle. CF-08: remote Workers Logs ingestion/deployed remapping, provider startup,
+native development faults and remaining original module-graph/receipt criteria.
+CF-09: actual ownership-verifying native preview provider/CI lifecycle, isolated
+resources/smoke, retry cleanup and production promotion/migration ordering.
+REL-02: final native/provider/published matrix, including Workflow lifecycle.
+REL-03: final-version non-Desktop matrix and Deno Deploy; local results above are
+composite and not remote acceptance. REL-04: version/dependency/lockfile/changelog/
+release-note alignment after gates. REL-05: final requirement audit. No requirement
+was relaxed to improve counts. No cloud mutation, deployment, publication, push or
+credential rotation occurred. Preserve user reports.md/.zcodeignore and the two
+prior uncommitted Workflow probes; they are not included in this commit.

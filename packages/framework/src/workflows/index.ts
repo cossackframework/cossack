@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowStep as NativeStep, type WorkflowEvent } from 'cloudflare:workers';
 import { executeWorkflow, workflowData, WorkflowError, type WorkflowDefinition, type WorkflowEnvelope, type WorkflowEvents, type WorkflowDriver, type WorkflowData, type WorkflowStepOptions } from '@cossackframework/core/workflows';
-export * from './provider';
+export * from './provider.js';
 /** Explicit native entry: import only in a Cloudflare Worker export graph. */
 export interface CloudflareWorkflowClass<Env> { new(ctx: ExecutionContext, env: Env): WorkflowEntrypoint<Env, WorkflowEnvelope>; }
 export function createCloudflareWorkflow<T, E extends WorkflowEvents, Env>(definition: WorkflowDefinition<T, E, Env>): CloudflareWorkflowClass<Env> {

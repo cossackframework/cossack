@@ -46,3 +46,24 @@ remote Workers Logs ingestion, production source-map resolution and configurable
 startup budgets remain unverified by these source tests. CLI Cloudflare upload
 size budgets are described in [Build budgets](./build-budgets.md). Local workerd
 checks prove local emission and redaction, not remote logging service ingestion.
+
+
+## Production server source maps
+
+New web projects emit server maps through the generated
+`environments.ssr.build.sourcemap` setting. Cloudflare artifacts use `dist/ssr`;
+standalone Node/Deno builds use `dist/server`. Client maps remain opt-in. Cloudflare
+projects also set `upload_source_maps: true`; deploy the built Wrangler artifact
+so this setting and the matching server maps stay together. Existing applications
+preserve their owned configuration during upgrades: add these settings explicitly.
+Server JavaScript references its matching map with `sourceMappingURL`, which
+Wrangler needs when uploading a prebuilt Worker. Keep server maps outside
+`dist/client` and other publicly served asset roots.
+
+These maps resolve generated JavaScript locations to authored TypeScript during
+private diagnosis. They do not change the fixed failure events or add stack
+traces, source paths or caught exception values to public responses. Cloudflare's
+remote remapping handles uncaught exception stacks after invocation; a framework
+catch that emits only a fixed code does not supply an exception stack to remap.
+Local map verification does not prove uploaded maps or Workers Logs ingestion.
+See [Cloudflare source maps and stack traces](https://developers.cloudflare.com/workers/observability/source-maps/).

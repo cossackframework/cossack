@@ -34,6 +34,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "0.3.31",
     "@modelcontextprotocol/client": "^2.3.0",
     "@playwright/test": "^1.61.1",
     "@types/deno": "^2.7.0",

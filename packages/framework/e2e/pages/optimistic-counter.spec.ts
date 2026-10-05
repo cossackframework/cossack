@@ -3,6 +3,7 @@ import { test, expect } from '../fixtures';
 test.describe('Optimistic Counter Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/optimistic-counter');
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
   });
 
   test('routes upgrade handshakes to the Durable Object and completes a correlated server action', async ({ page }) => {
@@ -66,13 +67,12 @@ test.describe('Optimistic Counter Page', () => {
   });
 
   test('should toggle details panel', async ({ page }) => {
-    const toggleButton = page.locator('button:has-text("Show Info"), button:has-text("Hide Info")');
-
-    await toggleButton.click();
-    await page.waitForTimeout(100);
-
-    // Should show debug info
-    await expect(page.locator('body')).toContainText('Debug Information');
+    const details = page.getByRole('heading', { name: 'Debug Information', exact: true });
+    await expect(details).not.toBeVisible();
+    await page.getByRole('button', { name: 'Show Info', exact: true }).click();
+    await expect(details).toBeVisible();
+    await page.getByRole('button', { name: 'Hide Info', exact: true }).click();
+    await expect(details).not.toBeVisible();
   });
 
   test('should show computed values', async ({ page }) => {

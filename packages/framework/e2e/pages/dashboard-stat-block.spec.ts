@@ -11,6 +11,8 @@ test('renders the shared metric list with explicit change meaning and responsive
     for (const width of [320, 1400]) {
         await page.setViewportSize({ width, height: 900 });
         await expect.poll(() => metrics.evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length)).toBe(width === 320 ? 1 : 4);
-        expect(await metrics.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+        // The shared shell animates its sidebar margin after viewport changes.
+        // Verify the settled responsive layout, retaining the no-overflow rule.
+        await expect.poll(() => metrics.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
     }
 });

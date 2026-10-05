@@ -80,6 +80,8 @@ describe('framework publication contract', () => {
       'ssg-request.js',
       'assets.js',
       'sitemap-generator.js',
+      'markdown-processor.js',
+      'storage/s3-provider.js',
       'client/devtools.js',
     ]) {
       expect(fs.existsSync(path.join(distDir, relativePath)), relativePath).toBe(true);
@@ -88,7 +90,6 @@ describe('framework publication contract', () => {
       'App.js',
       'index.js',
       'demo-catalog.js',
-      'markdown-processor.js',
       'storage/s3.js',
       'models/user.js',
       'bootstrap/middlewares.js',
@@ -107,19 +108,29 @@ describe('framework publication contract', () => {
     expect(types).not.toMatch(/import\(["'][^"']*src\/index["']\)/);
   });
 
-  it('keeps only runtime libraries as production dependencies', () => {
+  it('declares portable provider and published Markdown dependencies while excluding demo libraries', () => {
     expect(Object.keys(frameworkPackage.dependencies).sort()).toEqual([
+      '@aws-sdk/client-s3',
       '@cossackframework/core',
       '@cossackframework/renderer',
+      '@types/mdast',
+      'rehype-raw',
+      'rehype-slug',
+      'rehype-stringify',
+      'remark-frontmatter',
+      'remark-gfm',
+      'remark-parse',
+      'remark-rehype',
+      'remark-sugar-high',
+      'remark-toc',
+      'unified',
+      'vfile-matter',
     ]);
     for (const name of [
-      '@aws-sdk/client-s3',
       '@aws-sdk/s3-request-presigner',
       '@cossackframework/solar-icons',
       '@cossackframework/ui',
-      'remark-parse',
       'tsx',
-      'unified',
     ]) {
       expect(frameworkPackage.dependencies).not.toHaveProperty(name);
       expect(frameworkPackage.devDependencies).toHaveProperty(name);

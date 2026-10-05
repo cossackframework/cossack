@@ -460,6 +460,7 @@ function wranglerConfig(recipe, projectName) {
   "compatibility_flags": ["${compatibilityFlag}", "enable_request_signal"],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
+  "upload_source_maps": true,
   "assets": { "binding": "ASSETS", "run_worker_first": true },
   "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {

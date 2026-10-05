@@ -756,3 +756,26 @@ No full numbered task closes: **51 complete / 7 open**. Deno Deploy/final matrix
 native Workflow lifecycle and remote Cloudflare criteria remain. CF-09 needs a
 native ownership-verifying resource provider before usable preview execution;
 no disconnected prototype is retained. No unchanged installed gate was repacked.
+
+
+## Codex verified local acceptance batch — 2026-10-06
+
+No numbered task closes: **51 complete / 7 open**. [Full criterion mapping and
+reproducible verification](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06). CF-08's local production-map criterion now
+resolves an actual workerd fault to exact authored TypeScript; final Wrangler
+prepared upload parts contain its matching map/module in source and installed
+minimal/Workflows apps. Remote ingestion/remapping and other original criteria
+remain open. Workflow public ESM loading is fixed; loading is not lifecycle proof.
+
+REL-04 migration guidance now explains preserved applied callbacks, appended
+pending operations and why baseline cannot repair checksums. Two real SQLite
+upgrade/rejection cases pass; version/changelog/release-note work remains gated.
+REL-02/03 builds, units, bundle audit and all ten non-Desktop package types have
+passing final evidence. Full CLI and browser runs had failures; bounded repairs
+and the final 87-case browser batch pass. Six SSG cases and changed Sidebar's
+installed public native browser acceptance pass. Keep composite/remote limits.
+
+Next finish native Workflow lifecycle and actual preview provider/CI ownership,
+then remote operational/runtime acceptance and final versioned artifact gates.
+Do not reopen Desktop or expand working budgets to fill these gaps. No cloud
+mutation or package publication occurred; preserve the earlier failed probes.

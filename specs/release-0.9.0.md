@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets, signed per-invocation result reuse and the default scaffold direct Vite primary-Worker gate are implemented; explicit auxiliary Worker policies and local startup profiling are implemented and natively verified. Wider module graphs/authenticated multi-Worker receipts, provider startup, native development faults, source-map resolution and remote Workers Logs ingestion remain open. See [auxiliary validation](#codex-auxiliary-budgets-2026-10-05). See [local startup](#codex-local-startup-2026-10-05). See [receipt integration](#codex-budget-receipts-2026-10-05). See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets, signed per-invocation result reuse and the default scaffold direct Vite primary-Worker gate are implemented; explicit auxiliary Worker policies and local startup profiling are implemented and natively verified. Wider module graphs/authenticated multi-Worker receipts, provider startup, native development faults and remote Workers Logs ingestion remain open. Codex (2026-10-06): native production stack resolution and actual prepared source-map upload parts pass in source and installed minimal/Workflows apps; remote remapping remains unproven. [Batch evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06). See [auxiliary validation](#codex-auxiliary-budgets-2026-10-05). See [local startup](#codex-local-startup-2026-10-05). See [receipt integration](#codex-budget-receipts-2026-10-05). See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [x] [CF-10](./release-0.9.0-plan.md#cf-10) Executable public installation/deployment guide, custom domains, named environments, SSG and tested compatibility. [Codex installed acceptance and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06); remote preview/resource readiness remains separate.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -86,7 +86,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
 - [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs.
 - [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: generated standalone Deno draining now passes real signals and installed public types; Deno Deploy and the full final matrix remain. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06).
-- [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes.
+- [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes. Codex: migration-history preservation and rejection paths pass real SQLite acceptance; version/release preparation remains gated. [Evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06).
 - [ ] [REL-05](./release-0.9.0-plan.md#rel-05) Audit every checklist item against implementation and verification evidence before marking the goal complete.
 
 ## Verification log
@@ -1934,3 +1934,22 @@ lifecycle, remote logs/source maps/previews, Deno Deploy/draining and remaining
 final release gates retain their full criteria. Versions remain 0.8.3. Applied
 legacy callback migration histories reject changed checksums; no history was
 rewritten. No cloud mutation, deployment, publication or push occurred.
+
+
+### Codex: Production maps and release-gate integration (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** [Exact commands, failures,
+follow-ups and remaining criteria](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06). Native private stack mapping and real
+prepared Wrangler upload parts pass in source/installed minimal and Workflows apps;
+published Workflow extension is fixed. Migration-history upgrade guidance passes
+two real SQLite tests. Shared Sidebar footer rail state and installed behavior pass.
+
+Non-Desktop builds, Framework production/SSG build and database bundle audit pass.
+Package units: 5,525 passed / two external-provider skips, plus eight new config
+and two new Sidebar cases. Final root and all ten package typechecks pass.
+Full CLI: 1,028 passed / one failed / eight filtered; Studio and accidentally
+filtered non-Desktop guidance have passing follow-ups. Full browser: 278 passed /
+19 failed; all failed cases pass the final 87-case integrated rerun. SSG: six pass.
+These are composite results, not single full green invocations or remote proof.
+Desktop remains waived; versions stay 0.8.3. Open: SVC-04, CF-08, CF-09,
+REL-02, REL-03, REL-04, REL-05. No cloud mutation/deployment/publication/push.

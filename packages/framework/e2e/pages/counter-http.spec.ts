@@ -3,6 +3,7 @@ import { test, expect } from '../fixtures';
 test.describe('Counter HTTP Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/counter-http');
+    await page.waitForFunction(() => (window as any).__cossackReady === true);
   });
 
   test('should display counter value', async ({ page }) => {
@@ -18,7 +19,7 @@ test.describe('Counter HTTP Page', () => {
     const initialMatch = body?.match(/Count:\s*(\d+)/);
     const initialValue = initialMatch ? parseInt(initialMatch[1], 10) : 0;
 
-    await page.click('button:has-text("+")');
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
 
     await page.waitForFunction((expected) => {
       const text = document.body.textContent || '';
@@ -29,7 +30,7 @@ test.describe('Counter HTTP Page', () => {
 
   test('should decrement counter and redirect to tasks', async ({ page }) => {
     // Note: The decrement button redirects to /tasks
-    await page.click('button:has-text("-")');
+    await page.getByRole('button', { name: 'Decrement', exact: true }).click();
 
     // Wait for redirect to tasks page
     await page.waitForURL(/\/tasks/, { timeout: 10000 });
@@ -37,7 +38,7 @@ test.describe('Counter HTTP Page', () => {
   });
 
   test('should handle redirect on decrement', async ({ page }) => {
-    const decrementButton = page.locator('button:has-text("-")');
+    const decrementButton = page.getByRole('button', { name: 'Decrement', exact: true });
 
     await decrementButton.click();
 
@@ -51,7 +52,7 @@ test.describe('Counter HTTP Page', () => {
     const initialMatch = body?.match(/Count:\s*(\d+)/);
     const initialValue = initialMatch ? parseInt(initialMatch[1], 10) : 0;
 
-    await page.click('button:has-text("+")');
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
 
     await page.waitForFunction((expected) => {
       const text = document.body.textContent || '';

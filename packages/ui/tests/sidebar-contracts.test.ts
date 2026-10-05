@@ -13,6 +13,12 @@ it('keeps group destinations and child links in the icon rail with readable name
  const out=renderToString(component(Sidebar,{...props,collapsed:true}));
  expect(out).toContain('width:72px');expect(out).toContain('is-collapsed');expect(out).toContain('href="/projects/one"');expect(out).toContain('Current project');expect(out).toContain('sr-only');expect(out).not.toContain('cs-sidebar__toggle');
 });
+it.each([false,true])('propagates icon rail state to the slotted footer (collapsed=%s)',collapsed=>{
+ const out=renderToString(component(Sidebar,{...props,collapsed,footer:html`<span class="group-[.is-collapsed]:hidden">Account details</span>`}));
+ const footer=out.match(/class="([^"]*cs-sidebar__footer[^"]*)"/)?.[1];
+ expect(footer).toBeDefined();expect(footer!.split(/\s+/).includes('is-collapsed')).toBe(collapsed);
+ expect(out).toContain('Account details');
+});
 it('renders offcanvas content hidden and inert instead of merely translating it',()=>{
  const out=renderToString(component(Sidebar,{...props,collapsible:'offcanvas',restoreFocusTo:'opener',collapsed:true}));
  expect(out).toContain('display:none!important');expect(out).toMatch(/\sinert(?:\s|=|>)/);expect(out).toMatch(/\shidden(?:\s|=|>)/);expect(out).toContain('aria-hidden="true"');

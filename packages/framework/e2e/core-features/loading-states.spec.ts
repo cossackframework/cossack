@@ -63,7 +63,13 @@ test.describe('Loading States', () => {
     test('should show progress during page navigation', async ({ page }) => {
       await page.goto('/');
 
-      await page.click('a[href="/lifecycle"]');
+      await page.waitForFunction(() => (window as any).__cossackReady === true);
+      const sidebar = page.getByTestId('desktop-sidebar');
+      const group = sidebar.locator('li[data-sidebar-value="group:Lifecycle & Reactivity"] > details');
+      if (await group.getAttribute('open') === null) {
+        await group.locator(':scope > summary').click();
+      }
+      await sidebar.getByRole('link', { name: 'Lifecycle and loading', exact: true }).click();
 
       await page.waitForURL(/\/lifecycle/);
 

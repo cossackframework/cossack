@@ -156,6 +156,9 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
     devDependencies:
+      '@jridgewell/trace-mapping':
+        specifier: 0.3.31
+        version: 0.3.31
       '@modelcontextprotocol/client':
         specifier: ^2.3.0
         version: 2.3.0

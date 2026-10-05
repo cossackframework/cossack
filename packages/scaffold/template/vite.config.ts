@@ -76,6 +76,11 @@ export default defineConfig(({ mode, command }) => ({
       },
     },
     ssr: {
+      build: {
+        // Keep authored server locations in private build artifacts for diagnosis.
+        // Client maps remain opt-in; Desktop keeps its existing build defaults.
+        sourcemap: mode !== 'desktop',
+      },
       resolve: mode === 'desktop' && command === 'build'
         ? {
             // Forge omits node_modules from packaged applications. Bundle the

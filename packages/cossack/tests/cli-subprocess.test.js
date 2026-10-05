@@ -282,7 +282,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(timeout.code).toBe(1);
     expect(timeout.stderr).toBe('');
     expect(parseEnvelope(timeout.stdout).diagnostics[0].code).toBe('COSSACK_STUDIO_STARTUP_TIMEOUT');
-  });
+  }, 65000); // Three subprocesses retain their independent 20-second bounds.
 });
 afterEach(async () => {
   const running = liveChildren.size;

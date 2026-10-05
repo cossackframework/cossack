@@ -43,10 +43,17 @@ const chromeChannel = hasSystemChrome() ? { channel: 'chrome' as const } : {};
  *   # or: COSSACK_TEST_SSG=1 pnpm exec playwright test e2e/pages/ssg.spec.ts
  */
 const ssgMode = !!process.env.COSSACK_TEST_SSG;
-const port = ssgMode ? 4173 : 5173;
+// Dedicated release runs must not reuse an unrelated generated-app listener.
+const requestedPort = process.env.COSSACK_E2E_PORT;
+const port = requestedPort === undefined ? (ssgMode ? 4173 : 5173) : Number(requestedPort);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error('COSSACK_E2E_PORT must be an integer between 1 and 65535');
+}
+const host = requestedPort === undefined ? 'localhost' : '127.0.0.1';
+const address = `http://${host}:${port}`;
 const command = ssgMode
-  ? 'pnpm run build:ssg && pnpm exec vite preview --port 4173'
-  : 'pnpm dev';
+  ? `pnpm run build:ssg && pnpm exec vite preview --host ${host} --port ${port} --strictPort`
+  : `pnpm dev --host ${host} --port ${port} --strictPort`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -56,7 +63,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : 4,
   reporter: 'html',
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: address,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     // Video recording requires Playwright's ffmpeg binary, which can't be
@@ -81,8 +88,8 @@ export default defineConfig({
   ],
   webServer: {
     command,
-    url: `http://localhost:${port}`,
-    reuseExistingServer: !process.env.CI,
+    url: address,
+    reuseExistingServer: !process.env.CI && requestedPort === undefined,
     timeout: ssgMode ? 240 * 1000 : 180 * 1000,
     cwd: __dirname,
   },

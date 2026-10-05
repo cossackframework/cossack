@@ -10,8 +10,8 @@
  * This build-time script scans only `.d.ts`, `.d.mts`, and `.d.cts` files and
  * appends `.js` to extensionless relative import/export/require specifiers. It
  * does not modify runtime JavaScript or application source files. It runs from
- * the `core`, `renderer` and `node-adapter` builds because those packages own the declarations
- * consumed by strict ESM clients; it is not a build step for `deno-adapter` itself.
+ * the `core`, `renderer`, `node-adapter` and `deno-adapter` builds because
+ * those packages own declarations consumed by strict ESM clients.
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';

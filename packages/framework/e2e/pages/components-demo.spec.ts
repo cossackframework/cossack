@@ -50,11 +50,16 @@ test.beforeEach(async ({ page }) => {
     await expect(page.locator('input.cs-input--error')).toBeVisible();
   });
 
-  test('renders alerts with role=alert', async ({ page }) => {
-    const alerts = page.locator('div[role="alert"]');
-    expect(await alerts.count()).toBe(4);
-    await expect(page.locator('div[role="alert"]:has-text("Success")')).toBeVisible();
-    await expect(page.locator('div[role="alert"]:has-text("Error")')).toBeVisible();
+  test('renders all static alert variants without live announcements', async ({ page }) => {
+    const alerts = page.locator('.cs-alert');
+    await expect(alerts).toHaveCount(4);
+    for (const [variant, title] of [['default', 'Heads up'], ['success', 'Success'], ['warning', 'Warning'], ['destructive', 'Error']]) {
+      const alert = page.locator(`.cs-alert--${variant}`);
+      await expect(alert).toBeVisible();
+      await expect(alert).toContainText(title);
+      await expect(alert).not.toHaveAttribute('role');
+      await expect(alert).not.toHaveAttribute('aria-live');
+    }
   });
 
   test('renders the card with header/body/footer slots', async ({ page }) => {
@@ -107,7 +112,7 @@ test.beforeEach(async ({ page }) => {
         outlineBtn: bw(document.querySelector('button.cs-button--outline')),
         input: bw(document.querySelector('input.cs-input')),
         card: bw(document.querySelector('.cs-card')),
-        alert: bw(document.querySelector('div[role="alert"]')),
+        alert: bw(document.querySelector('.cs-alert--default')),
       };
     });
     for (const [name, w] of Object.entries(widths)) {
@@ -300,10 +305,13 @@ test.beforeEach(async ({ page }) => {
     const avatars = group.locator('.cs-avatar-group__item .cs-avatar');
     expect(await avatars.count()).toBe(4);
     // Overflow shows "+2" (6 items, max 4).
-    await expect(group.locator('.cs-avatar-group__overflow')).toHaveText('+2');
+    await expect(group.locator('.cs-avatar-group__overflow [aria-hidden="true"]')).toHaveText('+2');
+    await expect(group.locator('.cs-avatar-group__overflow .sr-only')).toHaveText('2 more people');
     // Second group uses square shape.
     const squareGroup = page.locator('.cs-avatar-group').nth(1);
-    await expect(squareGroup.locator('.cs-avatar-group__overflow')).toHaveText('+2');
+    await expect(squareGroup.locator('.cs-avatar-group__item .cs-avatar')).toHaveCount(3);
+    await expect(squareGroup.locator('.cs-avatar-group__overflow [aria-hidden="true"]')).toHaveText('+2');
+    await expect(squareGroup.locator('.cs-avatar-group__overflow .sr-only')).toHaveText('2 more people');
   });
 
   test('tabs switch panels on click with sliding indicator', async ({ page }) => {
@@ -428,14 +436,18 @@ test.beforeEach(async ({ page }) => {
   });
 
   test('calendar renders a month grid and supports date selection', async ({ page }) => {
-    const calendar = page.locator('.cs-calendar');
+    const calendar = page.locator('#demo-calendar');
     await expect(calendar).toBeVisible();
     // 7 weekday headers (Su..Sa)
-    expect(await calendar.locator('.cs-calendar__weekdays span').count()).toBe(7);
+    await expect(calendar.getByRole('columnheader')).toHaveCount(7);
     // Pick the 15th day cell
-    await calendar.locator('.cs-calendar__day:has-text("15")').click();
+    const day = calendar.locator('.cs-calendar__day[data-date$="-15"]');
+    const selectedDate = await day.getAttribute('data-date');
+    expect(selectedDate).toMatch(/^\d{4}-\d{2}-15$/);
+    await day.click();
+    await expect(day.locator('..')).toHaveAttribute('aria-selected', 'true');
     // The selected status text updates with an ISO date ending in -15.
-    await expect(page.locator('text=/Selected: \\d{4}-\\d{2}-15/')).toBeVisible();
+    await expect(page.getByText(`Selected: ${selectedDate}`, { exact: true })).toBeVisible();
   });
 
   test('date-picker popover opens on trigger click', async ({ page }) => {
@@ -474,8 +486,12 @@ test.beforeEach(async ({ page }) => {
     const boxes = page.locator('.cs-input-otp__box');
     await expect(boxes).toHaveCount(6);
     // Typing a digit fills the first box and the live status updates.
-    await boxes.first().click();
+    const input = page.locator('.cs-input-otp__input');
+    await input.click();
+    await expect(input).toBeFocused();
     await page.keyboard.type('4');
+    await expect(input).toHaveValue('4');
+    await expect(boxes.first()).toHaveText('4');
     // The OTP status <code> reflects the joined value (starts with "4").
     await expect(page.locator('code.text-xs')).toContainText(/^4/, { timeout: 5000 });
   });

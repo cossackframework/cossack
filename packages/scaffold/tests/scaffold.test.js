@@ -632,7 +632,7 @@ describe('composition', () => {
     expect(productionEntry).toContain('export async function createEnv');
     expect(productionEntry).toContain('...variables');
     expect(productionEntry).toContain('bindings.EMAIL = createNodeEmailSender');
-    expect(productionEntry).toContain("import { createNodeAdapter, serveStatic } from '@cossackframework/node-adapter'");
+    expect(productionEntry).toContain("import { createNodeAdapter, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter'");
     expect(productionEntry).toContain("new URL('../client', import.meta.url)");
     expect(productionEntry).toContain("urlPath.startsWith('/assets/')");
     expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");

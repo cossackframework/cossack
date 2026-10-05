@@ -2,37 +2,38 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest Codex batch verifies **generated standalone Deno draining** within REL-03.
-Release remains **51 complete / 7 open**, versions 0.8.3. No numbered task closes.
-[Evidence and exact limits](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06): 42 Deno unit tests, two real native smoke tests,
-four Deno preset cases, generated and installed real signal/type acceptance,
-root and all ten non-Desktop package typechecks pass. Generated entries install
-`installDenoShutdown` only when directly executed; shared signals drain requests
-and runtime under one deadline, then force abort with status 1 if necessary.
-Changed Deno/Scaffold tarballs: `/tmp/cossack-deno-shutdown-artifacts`; fresh gate:
-`/tmp/cossack-deno-shutdown-installed`. Reuse unchanged earlier installed proofs.
-CF-10's completed guide/import/D1/Node acceptance and resolved CLI failures remain
-in the [previous batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
+Latest Codex batch verifies **production maps, migration-history guidance and
+local release gates**. **51 complete / 7 open**, versions 0.8.3; no numbered task
+closes. [Exact evidence and remaining criteria](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06). Generated private maps
+resolve actual workerd stack coordinates and accompany the matching module in
+Wrangler's real prepared upload body. Source/installed minimal and Workflows
+compositions pass; native Workflow loading is fixed, lifecycle remains unproven.
 
-Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. SVC-04's
-native Waiting/event-resume/failure/installed lifecycle remains unproven; preserve
-its two earlier uncommitted failed probes and strict assertion. Continue other
-gates independently. CF-08 requires remote logs/source maps and remaining original
-acceptance; CF-09 requires actual preview lifecycle/isolation/cleanup. REL-02/03
-retain full final non-Desktop matrices, native Workflow and Deno Deploy.
-CF-09 requires a native ownership-verifying provider: the current resource
-provider is read-only. No disconnected prototype is retained. Do not polish budgets without closing a requirement.
+Non-Desktop dependency/Framework/SSG builds and bundle audit pass. Units: 5,525
+passed / two external database skips, plus eight new config/two Sidebar cases.
+Final root/all ten package typechecks pass. Full CLI: 1,028 passed / one failed /
+eight filtered; Studio and required non-Desktop guidance pass follow-ups. Full
+browser: 278 passed / 19 failed; all failures covered by final **87 passed** batch.
+SSG six pass; Sidebar source/installed native acceptance passes. These are
+composite results, not one immutable full green run. Do not repeat unchanged gates.
 
-Migration templates now declare authoritative operations. Fresh schemas match
-legacy callbacks, but applied callback migration histories reject changed
-checksums. Do not rewrite history or claim automatic upgrade reconciliation;
-REL-04's migration guide must explain this boundary. Reuse unchanged guide/import
-proofs. Latest Framework/Scaffold/Node tarballs: `/tmp/cossack-release-batch-final`; corrected
-installed CF gate: `/tmp/cossack-local-pack-Kkq9IK/minimal-production`.
+Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Preserve strict
+native Waiting/event-resume/failure probes. CF-08 remote logs/remapping/provider
+acceptance remains; CF-09 needs a real ownership-verifying preview provider/CI
+lifecycle, isolated smoke, cleanup and promotion. Current provider is read-only.
+Deno Deploy and final versioned non-Desktop/published/native matrices remain.
+Preserve applied migration definitions: the guide's SQLite upgrade/rejection
+proof does not reconcile remote or mixed histories. Version/release work is gated.
 
-Preserve user reports.md/.zcodeignore and prior Workflow probes. Desktop remains
-complete with remaining platform checks waived. No live cloud mutation,
-deployment, publication or push. Commit only this batch's owned verified files.
+Changed Framework/Scaffold tarballs: /tmp/cossack-source-map-linked-artifacts;
+fresh map gate: /tmp/cossack-source-map-linked-installed. Changed UI tarball:
+/tmp/cossack-sidebar-release-artifacts; fresh Sidebar gate:
+/tmp/cossack-sidebar-release-installed. Reuse unchanged dependency tarballs.
+[Prior Deno draining proof](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06)
+and [completed CF-10 proof](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06)
+remain valid. Owned dev/preview servers are stopped. Preserve user reports.md,
+.zcodeignore and earlier Workflow probes; no cloud mutation/deployment/push/publication.
+Desktop remains completed with remaining platform checks waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.

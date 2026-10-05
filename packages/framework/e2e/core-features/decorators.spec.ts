@@ -50,16 +50,13 @@ test.describe('Decorators', () => {
   test.describe('@ClientState Decorator', () => {
     test('should track client-side state changes', async ({ page }) => {
       await page.goto('/events');
-
-      const initialText = await page.locator('body').textContent();
-
-      await page.click('body');
-      await page.waitForTimeout(100);
-
-      const afterClickText = await page.locator('body').textContent();
-
-      expect(initialText).toBeDefined();
-      expect(afterClickText).toBeDefined();
+      await expect(page.getByRole('heading', { name: "@On('mount')", exact: true })
+        .locator('..').locator('strong')).toHaveText('yes');
+      const count = page.getByRole('heading', { name: "@On('click')", exact: true })
+        .locator('..').locator('strong');
+      await expect(count).toHaveText('0');
+      await page.getByRole('heading', { name: 'Event Syntax Demo', exact: true }).click();
+      await expect(count).toHaveText('1');
     });
   });
 
@@ -81,31 +78,40 @@ test.describe('Decorators', () => {
     test('should handle element click events', async ({ page }) => {
       await page.goto('/events');
 
-      const clickButton = page.locator('button').first();
-      if (await clickButton.isVisible()) {
-        await clickButton.click();
-        await page.waitForTimeout(100);
-      }
+      await expect(page.getByRole('heading', { name: "@On('mount')", exact: true })
+        .locator('..').locator('strong')).toHaveText('yes');
+      const count = page.getByRole('heading', { name: "@On('click')", exact: true })
+        .locator('..').locator('strong');
+      await expect(count).toHaveText('0');
+      const containerHeading = page.getByRole('heading', { name: 'Event Syntax Demo', exact: true });
+      await containerHeading.click();
+      await expect(count).toHaveText('1');
+      await containerHeading.click();
+      await expect(count).toHaveText('2');
     });
 
     test('should handle document-level events', async ({ page }) => {
       await page.goto('/events');
-
+      await expect(page.getByRole('heading', { name: "@On('mount')", exact: true })
+        .locator('..').locator('strong')).toHaveText('yes');
+      const key = page.getByRole('heading', { name: "@OnDocument('keydown')", exact: true })
+        .locator('..').locator('strong');
+      await expect(key).toHaveText('None');
       await page.keyboard.press('a');
-      await page.waitForTimeout(100);
-
-      const body = await page.locator('body').textContent();
-      expect(body).toBeDefined();
+      await expect(key).toHaveText('a');
     });
 
     test('should handle window events', async ({ page }) => {
       await page.goto('/events');
-
+      await expect(page.getByRole('heading', { name: "@On('mount')", exact: true })
+        .locator('..').locator('strong')).toHaveText('yes');
+      const size = page.getByRole('heading', { name: "@OnWindow('resize')", exact: true })
+        .locator('..').locator('strong');
       const viewportSize = page.viewportSize();
-      if (viewportSize) {
-        await page.setViewportSize({ width: viewportSize.width + 100, height: viewportSize.height });
-        await page.waitForTimeout(100);
-      }
+      expect(viewportSize).not.toBeNull();
+      await expect(size).toHaveText(`${viewportSize!.width}x${viewportSize!.height}`);
+      await page.setViewportSize({ width: viewportSize!.width + 100, height: viewportSize!.height });
+      await expect(size).toHaveText(`${viewportSize!.width + 100}x${viewportSize!.height}`);
     });
   });
 

@@ -1927,6 +1927,70 @@ and native request ownership rules still apply. Opt in to stored development
 captures through `cossackPages({ developmentTraces: true })` and the public
 inspector. Do not expose native handlers through a loopback HTTP endpoint.
 
+## Codex: Preserve applied generated migration definitions (2026-10-06)
+
+Freshly generated applications now include authoritative `operations` on all
+selected ORM migrations. Plan and apply those definitions normally. Their callbacks
+are retained in the template for reference, but operations control execution when
+both forms exist. Callback edits can still change the definition checksum.
+
+An existing application has a different upgrade path. An applied callback-only
+migration has a checksum derived from its name, replacement list, and the runtime
+source of its `up` and `down` functions. Adding `operations` changes that checksum,
+even when the resulting schema is identical. Blindly replacing old migration
+files with the current generated templates makes planning, applying, and rolling
+back reject with `Applied migration ... has a changed checksum.` A matching schema
+does not establish matching migration history.
+
+Before merging a scaffold upgrade:
+
+1. Back up the target database and retain the exact migration definitions and
+   execution toolchain that produced its applied history. Inspect the selected
+   environment and target; local history does not establish remote history.
+2. Check the upgrade file changes against that history. Keep every applied
+   migration's original name, replacement list, callbacks, and declaration form.
+   Do not add operations to it, rename it, or delete it from the runner's list.
+   Merge unrelated generated application changes separately. Scaffold file
+   ownership is not evidence that a migration is safe to replace.
+3. Put each required schema change in a new, uniquely named pending migration
+   after the applied definitions. New pending migrations can declare operations.
+   Do not copy creation SQL for tables that already exist. For an application
+   whose sessions lack `public_id`, retain its applied `0002_create_sessions`
+   definition and append `0008_add_session_public_id` only if that migration name
+   is unused and the column/index are actually absent. If its old callback form
+   is already applied, keep that form instead of replacing it.
+4. Construct `MigrationRunner` with the unchanged applied definitions plus the new
+   pending definitions. Call `plan()` on the live target. Applied callbacks are
+   validated but are not run or included in the pending plan. New declarative
+   migrations can therefore produce a complete plan without converting history.
+   Review the statements and provider limitations, then pass that exact array to
+   the same live runner's `applyPlan(plan)`. Replan after any definition, connection,
+   or history change. Serialized JSON cannot be applied as a live plan.
+5. Verify the schema and retained application data. A failed or interrupted DDL
+   operation can require provider-specific recovery; a failure is not proof that
+   all external effects were rolled back. Do not automatically replay uncertain
+   operations against a changed schema.
+
+Pending callback-only migrations still execute through explicit `up()`, but their
+read-only plan is incomplete. Convert an unapplied definition only after checking
+all targets on which it might already have run. Mixed deployed histories require
+an application-specific migration strategy, not a blanket template replacement.
+
+If checksums already differ, restore the original applied definitions before
+continuing. Keep the original build/transformation settings when those affect
+function source. Do not update/delete `_cossack_migrations` rows to force a green
+check. `baseline(schemaHash)` only inserts a separate `baseline:<hash>` marker;
+it does not reconcile changed migrations, validate schema equivalence, or make
+existing definitions safe. The `replaces` mechanism belongs to deliberately
+reviewed squashed histories and is not a checksum bypass for this upgrade.
+
+The local SQLite acceptance test proves two specific paths: retaining applied
+generated callback definitions while applying a new declarative session-public-ID
+migration preserves existing rows and historical checksums; replacing the applied
+definitions rejects, even after adding a baseline marker. It also checks rollback
+of the new migration without rewriting older history. This is local execution
+proof, not validation of an application's remote D1/PostgreSQL/MySQL state.
+
 ## Codex: Read-only plans and typed Markdown (2026-10-05)
 
 Migration and seeder planning no longer invokes application callbacks. Callback-only

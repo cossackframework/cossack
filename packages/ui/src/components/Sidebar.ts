@@ -126,7 +126,7 @@ export class Sidebar extends Cossack {
                     @click=${()=>this.props.onToggle?.(!this.props.collapsed)}><span aria-hidden="true">${component(Icon,{entry:HamburgerMenuIcon,size:16})}</span></button>` : null}
             </div>
             <nav ...=${navProps} id=${`${id}-nav`} aria-label=${label} tabindex="-1" class="cs-sidebar__nav flex-1 overflow-y-auto py-2 px-2"><ul class="space-y-0.5">${repeat(items,item=>item.value,item=>this.renderItem(item,rail))}</ul></nav>
-            ${footer != null ? html`<div class="cs-sidebar__footer group border-t p-2 shrink-0">${footer}</div>` : null}
+            ${footer != null ? html`<div class=${`cs-sidebar__footer group border-t p-2 shrink-0 ${rail ? 'is-collapsed' : ''}`}>${footer}</div>` : null}
         </aside>`;
     }
     private icon(item: SidebarItem, rail: boolean) {
