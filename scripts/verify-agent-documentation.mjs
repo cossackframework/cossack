@@ -27,13 +27,21 @@ export async function verifyAgentDocumentation(projectDir, { runtime = 'cloudfla
   // Applies to this Node process and MCP workers. Record attempts even if code swallows errors.
   // This exercises Node network APIs, not OS isolation against hostile native addons.
   await fs.writeFile(guard, `const fs = require('node:fs');
-const deny = () => { fs.appendFileSync(${JSON.stringify(attempts)}, 'network attempt\\n'); throw new Error('OFFLINE_ACCEPTANCE'); };
+const deny = () => { fs.appendFileSync(${JSON.stringify(attempts)}, new Error('network attempt').stack + '\\n'); throw new Error('OFFLINE_ACCEPTANCE'); };
 globalThis.fetch = deny;
 require('node:net').Socket.prototype.connect = deny;
 require('node:tls').connect = deny;
 for (const name of ['node:http', 'node:https']) { const mod = require(name); mod.request = deny; mod.get = deny; }
 const dns = require('node:dns');
-for (const key of Object.keys(dns)) if (key === 'lookup' || key.startsWith('resolve')) dns[key] = deny;
+// Permit only the numeric IPv4 loopback lookup needed by examples that bind a
+// local server. All outbound DNS and connection APIs remain blocked.
+dns.lookup = (hostname, options, callback) => {
+  if (hostname !== '127.0.0.1') return deny();
+  if (typeof options === 'function') { callback = options; options = {}; }
+  const result = { address: hostname, family: 4 };
+  queueMicrotask(() => options?.all ? callback(null, [result]) : callback(null, hostname, 4));
+};
+for (const key of Object.keys(dns)) if (key.startsWith('resolve')) dns[key] = deny;
 for (const key of Object.keys(dns.promises)) if (key === 'lookup' || key.startsWith('resolve')) dns.promises[key] = deny;
 require('node:module').syncBuiltinESMExports();
 `);
@@ -78,6 +86,7 @@ require('node:module').syncBuiltinESMExports();
       ...['runtime-capability-planning', 'cache-storage-guarantees'].map(id => ['@cossackframework/framework', id]),
       ...['node-runtime-lifecycle'].map(id => ['@cossackframework/node-adapter', id]),
       ...['deno-fetch-and-assets'].map(id => ['@cossackframework/deno-adapter', id]),
+      ...['safe-studio-workflows'].map(id => ['@cossackframework/studio', id]),
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ['@cossackframework/ui', 'native-controls'],
@@ -776,7 +785,12 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     } finally { await replaceManifest(original); }
     await client.close();
     assert.equal(stderr, '');
-    await assert.rejects(fs.access(attempts), { code: 'ENOENT' });
+    try {
+      const deniedNetwork = await fs.readFile(attempts, 'utf8');
+      assert.fail(`Installed documentation attempted blocked network access:\n${deniedNetwork}`);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
     console.log('Installed CLI/MCP documentation acceptance passed with Node networking disabled.');
   } finally {
     await client.close();

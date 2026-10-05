@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixty-four standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 63 published-package guides have at least one example; every one of the 68 packaged examples is typechecked and executed by installed acceptance. Framework guides cover runtime capability and cache guarantees; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixty-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 64 published-package guides have at least one example; every one of the 70 packaged examples is typechecked and executed by installed acceptance. Framework guides cover runtime capability and cache guarantees; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -727,17 +727,19 @@ REL-02/REL-03 remain open for non-Desktop acceptance. Release status is
 <a id="codex-cli08-guide-coverage-2026-10-05"></a>
 ### Codex: Execute every published package guide example (2026-10-05)
 
-The offline catalog now contains examples across all 63 published-package guides
-and 68 examples in total. This includes runtime-capability and cache guides for
+The offline catalog now contains examples across all 64 published-package guides
+and 70 examples in total. This includes runtime-capability and cache guides for
 the framework plus lifecycle, fetch-binding and development-plugin guides for
-the Node and Deno adapters. The verifier selects all published examples from
-Core, renderer, framework, database, Node and Deno adapters, scaffold and UI; it
-separately bundles and executes the four auth examples. Its TypeScript harness
+the Node and Deno adapters, plus Studio's local/remote and embedded lifecycle
+guidance. The verifier selects all published examples from
+Core, renderer, framework, database, Node and Deno adapters, Studio, scaffold and UI; it
+separately bundles and executes the four auth examples. It executes Studio's
+embedded lifecycle with a fake connection and never opens a real database. Its TypeScript harness
 uses the same decorator metadata settings as Core's package config. `test-utils`
 is an internal workspace package outside the published tarball set.
 
 **Verification:** the fresh-tarball `pnpm test:agent-docs:local` gate typechecks
-and executes all sixty-four standalone usage examples plus four auth examples.
+and executes all sixty-six standalone usage examples plus four auth examples.
 It also passes generated Cloudflare browser traces and source stripping, local
 workerd D1, offline CLI/MCP parity, and UI catalog contract checks. The Deno
 fetch example runs against the installed adapter with a Node compatibility shim
@@ -750,6 +752,32 @@ CLI-08 remains open for broader package API and recipe coverage. Desktop remains
 complete by user decision; its waived platform checks are not claimed as passed.
 REL-02/REL-03 remain open for non-Desktop acceptance. Release status is
 **28 complete / 30 open**. No deployment or publication occurred.
+
+<a id="codex-cli08-studio-guidance-2026-10-05"></a>
+### Codex: Studio agent guidance and offline import hygiene (2026-10-05)
+
+The published Studio package now documents local versus remote D1 selection,
+provider normalization, and embedded startup/shutdown. The lifecycle example
+uses a fake connection, confirms loopback readiness, aborts, and verifies that
+Studio closes the connection; it does not open a database.
+
+The installed offline gate exposed an eager import of the remote-D1 helper from
+Studio's public entry. That helper loads database tooling, which initializes the
+`tsx` TypeScript loader and opens local IPC even when an application supplies a
+connection. Studio now loads the remote helper only for `remote: true`. The gate
+still blocks outbound DNS, fetch, HTTP, TLS and socket connections; it supplies
+only a synthetic `127.0.0.1` resolution for loopback listeners and reports stack
+traces for denied calls.
+
+**Verification:** `pnpm tsc --noEmit` passes; Studio lifecycle/security tests
+pass **7 tests / 2 files**; the fresh-tarball `pnpm test:agent-docs:local` gate
+passes all **66 standalone and 4 auth examples** across **64 package guides**.
+Generated Cloudflare traces and application pages, local workerd D1, offline
+CLI/MCP parity, UI contracts and production stripping pass. Desktop remains
+complete by user decision and is excluded from this gate. CLI-08 remains open for
+broader package API and recipe coverage; REL-02/REL-03 remain open for the full
+non-Desktop release checks. Status remains **28 complete / 30 open**. No
+deployment or publication occurred.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)

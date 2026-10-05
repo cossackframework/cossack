@@ -95,6 +95,7 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   if (documentation) for (const name of [
     '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
     '@cossackframework/node-adapter', '@cossackframework/deno-adapter',
+    '@cossackframework/studio',
   ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }

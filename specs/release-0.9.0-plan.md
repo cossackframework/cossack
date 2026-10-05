@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Sixty-four standalone examples compile and execute from installed tarballs,
+Sixty-six standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -160,11 +160,12 @@ SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 39 UI guides now have executable
-examples; all 63 published-package guides have at least one example. The installed gate
-executes all sixty-eight package examples, including four separately bundled auth
+examples; all 64 published-package guides have at least one example. The installed gate
+executes all seventy package examples, including four separately bundled auth
 examples. Framework guidance now covers runtime capability planning and cache
 guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
-cleanup and the separate Vite development integrations. Four packaged pages exercise component actions,
+cleanup and the separate Vite development integrations; Studio guidance covers
+local/remote data selection and embedded lifecycle. Four packaged pages exercise component actions,
 resources and lifecycle tasks in generated applications. The harness uses the exact
 catalog source, owns the browser/server lifecycle and requires emitted client source
 maps before checking server stripping. Installed Cloudflare and Node acceptance
@@ -221,8 +222,10 @@ installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
 Discovery never executes examples, but the separate installed acceptance runs
 every packaged example. Declaration presence does not prove runtime imports or
 native attribute behavior. Platform diagnostics and bounded scans can
-produce partial catalogs. Discovery tests block Node networking, but installation
-can use the registry. Broader library API and recipe guidance remains open.
+produce partial catalogs. Installed acceptance blocks outbound Node networking
+while allowing a synthetic `127.0.0.1` DNS answer for loopback-only listeners.
+Package installation can use the registry. Broader library API and recipe
+guidance remains open.
 The catalog uses a pinned TypeScript 6.0.3 compiler API independently of the
 workspace TypeScript 7 compiler. CLI-08 remains open.
 

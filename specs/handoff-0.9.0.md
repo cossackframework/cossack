@@ -3,7 +3,8 @@
 Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
 28 of 58 release tasks are complete. 30 remain open.
 Versions stay at 0.8.3 until REL-04.
-Codex owns the remaining work. The user no longer plans a GLM handoff.
+GLM may implement the next phase; Codex reviews changes, runs acceptance and
+records the result here. Keep this file current for each handoff.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -30,7 +31,7 @@ The full [criterion audit](./release-0.9.0-verification-archive.md#codex-rt13-co
 separates local native fixtures from deployed readiness. REL-03 remains open for
 the required non-Desktop release matrix.
 
-## Continue here — Codex, 2026-10-05
+## Next implementation phase — GLM, with Codex review (2026-10-05)
 
 1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
    guidance, executable examples and verified runtime support through the
@@ -78,15 +79,17 @@ the required non-Desktop release matrix.
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
    plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-guide-coverage-2026-10-05).
-   All 63 published-package guides now include examples, and all sixty-eight
+   All 64 published-package guides now include examples, and all seventy
    examples run in the installed gate. Framework guidance now covers runtime
    capabilities and cache guarantees; Node and Deno guidance covers adapter
-   lifecycle, binding precedence and development plugins. `test-utils` is an
+   lifecycle, binding precedence and development plugins; Studio guidance covers
+   local/remote selection and embedded cleanup. `test-utils` is an
    internal workspace package, outside the published tarball acceptance. Continue
    broader library API and recipe coverage. The UI
    examples
    cover SSR only; they do not close browser or assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
+   See the [Studio/offline-import checkpoint](./release-0.9.0.md#codex-cli08-studio-guidance-2026-10-05): the public Studio entry now defers the remote-D1 helper, avoiding eager `tsx` IPC when a caller supplies its own connection. The full installed documentation gate passes with outbound network APIs blocked and only synthetic numeric loopback resolution permitted. Desktop remains closed by user decision; do not spend work on its waived platform matrix.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
    recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
    verifies independent public references, owner/purpose checks, fixed errors and

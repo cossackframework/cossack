@@ -11,7 +11,6 @@ import {
   detectStudioProvider,
   normalizeStudioProvider,
 } from './lib/provider.js';
-import { createRemoteD1Connection } from './lib/remote-d1.js';
 import { StudioDatabase } from './lib/service.js';
 import type { StudioConnection, StudioProvider } from './lib/schema-types.js';
 import { serveStudioAsset, toWebRequest, writeWebResponse } from './server/http.js';
@@ -167,13 +166,19 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid Studio port: ${port}`);
   }
-  const connection = options.connection ?? (options.remote
-    ? await createRemoteD1Connection({
-        projectRoot,
-        binding: options.database,
-        environment: options.env,
-      })
-    : await createProjectConnection(projectRoot, options));
+  let connection = options.connection;
+  if (!connection && options.remote) {
+    // Remote D1 setup imports database tooling and its TypeScript loader. Keep
+    // that process-level initialization out of ordinary local Studio imports.
+    const { createRemoteD1Connection } = await import('./lib/remote-d1.js');
+    connection = await createRemoteD1Connection({
+      projectRoot,
+      binding: options.database,
+      environment: options.env,
+    });
+  } else if (!connection) {
+    connection = await createProjectConnection(projectRoot, options);
+  }
   const database = new StudioDatabase(connection, {
     applicationName: options.applicationName ?? await resolveApplicationName(projectRoot),
   });

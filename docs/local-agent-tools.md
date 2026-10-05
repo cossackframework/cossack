@@ -176,9 +176,11 @@ and packs the local packages, creates a minimal application, and installs the
 tarballs. Dependency installation can use the registry.
 
 The discovery phase runs the installed CLI and MCP server with Node fetch, socket,
-HTTP and DNS calls disabled. The guard records attempted calls even when callers
-catch their errors. This is a regression check for ordinary Node networking, not
-an operating-system sandbox for untrusted code.
+HTTP, TLS and outbound DNS calls disabled. It permits only a synthetic DNS answer
+for the numeric `127.0.0.1` address used to bind an embedded test server. The guard
+records denied calls even when callers catch their errors. This is a regression
+check for ordinary Node networking, not an operating-system sandbox for untrusted
+code.
 
 The test checks packaged and generated guides, installed versions, command
 schemas, renderer declarations, CLI/MCP parity and refreshed exports after a
@@ -231,6 +233,10 @@ eventual consistency. Node and Deno adapter guides cover upgrade/fetch lifecycle
 binding precedence, cleanup and their separate Vite development plugins. The
 internal `test-utils` workspace package is not part of the published tarball set,
 so it is deliberately excluded from installed package guidance.
+Studio guidance explains local versus live D1 access and how embedded startup
+reports readiness without exposing the private launch token. Its installed
+lifecycle example uses a fake connection and aborts as soon as the loopback
+server is ready; it never opens a real database.
 Three more core examples are complete application pages. They cover validated
 component actions, read-only server resources and lifecycle tasks. These pages
 need the framework Vite plugins, generated entry and a browser. An ordinary
@@ -249,9 +255,9 @@ Standalone examples prove Node execution. The application checks cover local
 Cloudflare and Node development and production client stripping. They do not
 prove live deployment or every transport and runtime combination. Other APIs,
 components, recipes and runtime targets still need their own coverage.
-The latest tarball gate typechecks and executes all 64 standalone examples from
-published package exports plus four separately bundled auth examples, for 68
-examples across 63 package guides. The Deno fetch example uses a small Node
+The latest tarball gate typechecks and executes all 66 standalone examples from
+published package exports plus four separately bundled auth examples, for 70
+examples across 64 package guides. The Deno fetch example uses a small Node
 compatibility shim for Hono's Deno static-file import; this checks the installed
 adapter path and binding precedence, not native Deno or Deno Deploy readiness.
 
