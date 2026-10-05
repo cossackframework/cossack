@@ -1,3 +1,4 @@
+import { verifyBudgetBuildModes } from './verify-budget-build-modes.mjs';
 import { verifyBuildBudgets } from './verify-build-budgets.mjs';
 import { verifyConfigHydration } from './verify-config-hydration.mjs';
 import { verifyDesktopTraceReaders } from '../packages/cossack/tests/fixtures/desktop-trace-readers.js';
@@ -662,6 +663,7 @@ try {
     if (!nodeDevelopmentOnly) {
       await verifyConfigHydration(minimalProjectDir);
       await verifyBuildBudgets(minimalProjectDir);
+      await verifyBudgetBuildModes(minimalProjectDir);
     }
   }
   if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {

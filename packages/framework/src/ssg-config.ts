@@ -13,6 +13,7 @@
  *   5. DEFAULT_SITE_URL                        — final fallback
  */
 
+import { cloudflareConfigCandidates } from './cloudflare-config-path.js';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 
@@ -33,6 +34,8 @@ export interface GetSiteUrlOptions {
   projectRoot?: string;
   /** Cloudflare environment selected at build time. Defaults to CLOUDFLARE_ENV. */
   environment?: string;
+  /** Explicit Cloudflare source path; otherwise uses Cloudflare plugin path selection. */
+  configPath?: string;
 }
 
 /**
@@ -48,13 +51,9 @@ export function getSiteUrl(options?: GetSiteUrlOptions): string {
     return process.env.APP_URL;
   }
 
-  // 2. wrangler.jsonc
-  const fromJsonc = readWranglerJsonc(root, environment);
-  if (fromJsonc) return fromJsonc;
-
-  // 3. wrangler.toml
-  const fromToml = readWranglerToml(root, environment);
-  if (fromToml) return fromToml;
+  const source = cloudflareConfigCandidates(root, options?.configPath).find(file => fs.existsSync(file));
+  const fromWrangler = source ? (source.endsWith('.toml') ? readWranglerToml(source, environment) : readWranglerJsonc(source, environment)) : undefined;
+  if (fromWrangler) return fromWrangler;
 
   // 4. .env -> APP_URL
   const dotEnv = readDotEnv(root, environment);
@@ -149,9 +148,7 @@ function stripJsonComments(str: string): string {
  * Read `vars.APP_URL` from `wrangler.jsonc` at the given root.
  * Returns the value or `undefined` if not present / file missing / parse error.
  */
-function readWranglerJsonc(root: string, environment?: string): string | undefined {
-  const filePath = path.join(root, fs.existsSync(path.join(root, 'wrangler.jsonc'))
-    ? 'wrangler.jsonc' : 'wrangler.json');
+function readWranglerJsonc(filePath: string, environment?: string): string | undefined {
   let content: string;
   try {
     content = fs.readFileSync(filePath, 'utf-8');
@@ -187,8 +184,7 @@ function readWranglerJsonc(root: string, environment?: string): string | undefin
  * scalar values, which is all we need for this config. Returns the value or
  * `undefined` if not present / file missing.
  */
-function readWranglerToml(root: string, environment?: string): string | undefined {
-  const filePath = path.join(root, 'wrangler.toml');
+function readWranglerToml(filePath: string, environment?: string): string | undefined {
   let content: string;
   try {
     content = fs.readFileSync(filePath, 'utf-8');

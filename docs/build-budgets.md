@@ -59,8 +59,10 @@ Reuse is deliberately conservative. Symlinks, external modules, custom builds,
 rebundling, auxiliary Workers and unsupported legacy configuration trigger a fresh
 CLI measurement after a successful build. Inventory is bounded to 4,096 files
 and 64 MiB, including tool identity files; exceeding that bound disables reuse,
-not budget enforcement. Watch-build policy and custom Cloudflare config path
-acceptance remain release work.
+not budget enforcement. Budgeted watch builds are rejected with `COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED`:
+Vite application hooks do not verify every watch rebuild. Run `vite build` for a
+completed measurement. This guard checks root and environment watch settings,
+including custom builders; it adds no restriction when budgets are absent.
 
 JSON results contain `data.buildBudgets.measurements`, `diagnostics` and `valid`.
 Only selected metrics enter the result. Tool stdout/stderr stays private because
@@ -82,3 +84,35 @@ startup acceptance remain separate work. See [Wrangler startup profiling](https:
 Cloudflare changed its platform limit to uncompressed Worker size in September
 2026; gzip is informational. The framework does not hardcode a provider limit.
 See [Cloudflare's size-limit change](https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/).
+
+For a custom source Wrangler file, set the same path for the CLI and Vite:
+
+```sh
+CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH=deployment/worker.jsonc pnpm exec cossack deploy --dry-run
+```
+
+Paths resolve from the project/Vite root. A missing selected file fails without
+falling back to a root Wrangler file. For direct Vite composition, explicit
+`configPath` takes priority over the environment variable. Pass one shared value
+to every plugin that inspects the Worker:
+
+```ts
+import { cloudflare } from '@cloudflare/vite-plugin';
+import { cossackBuildBudgets, cossackPages, cossackConfig } from '@cossackframework/framework/vite-plugin';
+import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
+
+const configPath = 'deployment/worker.jsonc';
+const plugins = [
+  cloudflare({ configPath }),
+  cossackBuildBudgets({ configPath }),
+  cossackPages({ configPath, capabilities: { runtime: 'cloudflare' } }),
+  cossackConfig({ configPath }),
+  // If the application uses SSG:
+  cossackSsg({ configPath }),
+];
+```
+
+The CLI does not evaluate Vite config to discover plugin options. Use the
+environment variable for CLI inspection and deployment so preflight, binding
+checks, type generation, SSG URL discovery and artifact validation select the same source. The
+selection order matches the [Cloudflare plugin API](https://developers.cloudflare.com/workers/vite-plugin/reference/api/).

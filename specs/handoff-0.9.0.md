@@ -9,26 +9,33 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [signed budget receipts and default scaffold](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
-New Cloudflare projects include `cossackBuildBudgets()` after Cloudflare. CLI
-build/deploy reuse invocation-signed safe metric receipts only when settings,
-environment, bounded artifact/module inventory, installed Wrangler and Node
-identity match. Unsupported graphs get a fresh successful-build measurement;
-unrelated failed builds retain build diagnostics. No budget-skip bypass exists.
-Framework owns shared Node-only APIs consumed by CLI. Built artifact reads and
-measurement clear ambient target selection. Use installed Vite CLI or
-`createBuilder().buildApp()`; `vite.build()` bypasses application hooks.
-Verified: 1,736 framework tests / 95 files, affected CLI 56 tests / 6 files,
-expanded native integration 3 tests (build/deploy reuse with zero CLI fallback measurements),
-91 scaffold tests with 9 Desktop cases skipped, root/framework typechecks and
-framework declaration emission. Fresh Cloudflare installed-package gate passes
-at `/tmp/cossack-local-pack-gZdSQv` with Vite 8.3.2 / Wrangler 4.147.0, including
-signed selected-target CLI diagnostics and direct Vite limits/privacy. This does
-not close REL-03's wider runtime matrix. Read-only review found no defects.
-Next: custom Cloudflare config path acceptance and watch-build semantics;
-define auxiliary Worker policies, then startup/provider metrics, native
-DEV faults, production source-map resolution and remote logs. CF-08 remains
-open; no parent task closes. Counts remain 30 complete / 28 open. No blocked work.
+Latest Codex progress: [custom config paths and watch policy](./release-0.9.0-verification-archive.md#codex-custom-config-watch-2026-10-05).
+Primary Worker budget/config/page-binding checks accept explicit `configPath`.
+SSG URL discovery shares the same source-path rules and accepts explicit options.
+CLI source selection uses `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`, shared with
+Vite and type generation; missing selected paths fail without root fallback.
+The default Cloudflare budget plugin and signed invocation receipts remain
+verified. Budgeted watch builds reject with a fixed code before measurement;
+application hooks do not verify each watch generation. No watch support is claimed.
+Framework owns shared Node-only tooling; CLI consumes it. Built artifact reads
+and measurements still clear ambient environment selection. Use installed CLI
+or `createBuilder().buildApp()`; `vite.build()` bypasses application hooks.
+Verified: framework 1,757 tests / 96 files, affected CLI 60 / 6 files, native
+nested/environment and explicit-path builds, prompt native watch rejection,
+root/framework typechecks, declarations and helper syntax. Final repacked
+framework/CLI acceptance passes in the retained fixture at
+`/tmp/cossack-local-pack-gZdSQv/minimal-production`, including published SSG URL
+discovery with Vite 8.3.2 / Wrangler 4.147.0. This is a focused package update,
+not a full release matrix. First explicit-path
+acceptance found the page binding reader gap; it was repaired and checks rerun.
+CLI build also resolves the project-installed Vite for captured and human output;
+installed acceptance exposed the previous reliance on the parent PATH.
+Agents contributed an independent watch audit and seven exclusive selector tests;
+Codex integrated/reviewed their work and owns shared implementation.
+Next: define auxiliary Worker policies and wider module graphs, then
+startup/provider metrics, native DEV faults, production source maps and remote
+logs. CF-08 remains open; no task closes. Counts stay 30 complete / 28 open.
+No blocked work. Desktop is complete and platform checks remain waived.
 
 Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
 and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
@@ -59,7 +66,7 @@ Latest completed checkpoint: [Cloudflare environment and database targets](./rel
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
 Latest CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
-Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and build/startup budgets remain open. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
+Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
 Latest runtime progress: [RT-20 hydration diagnostics](./release-0.9.0.md#codex-rt20-safe-hydration-diagnostics-2026-10-05) now reports typed root and nested component fallback events without logging rendered text. All 333 renderer tests and root typechecking pass. Source/field metadata, state comparison, retained layout/service browser cases and reusable test helpers remain open.
 
 Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05) adds a schema-backed Core controller with typed field paths, validation, reset, dirty/touched state, server error mapping, duplicate-module validation-error support and stale-result protection. The 9 focused tests, all 1,568 Core tests and root typecheck pass. This is a partial foundation; accessible bindings, UI adapters, keyboard/label/error/focus browser tests and file transport acceptance remain. The `getFormData()` guide example's missing `async` was also fixed.

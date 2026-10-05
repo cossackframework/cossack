@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { cossackBuildBudgets } from '../src/vite-build-budgets';
 import { checkBuildBudgets } from '../src/build-budgets';
 import { inspectBuiltDeployment } from '../src/deployment-artifact';
-import { resolveConfigRuntime, readCloudflareDeclarationConfig } from '../src/config-preflight';
+import { findCloudflareConfig, resolveConfigRuntime, readCloudflareDeclarationConfig } from '../src/config-preflight';
 vi.mock('../src/build-budgets', async original => ({ ...await original<typeof import('../src/build-budgets')>(), checkBuildBudgets: vi.fn() }));
 vi.mock('../src/deployment-artifact', () => ({ inspectBuiltDeployment: vi.fn() }));
 vi.mock('../src/config-preflight', () => ({ findCloudflareConfig: vi.fn(async root => join(root, 'wrangler.jsonc')), resolveConfigRuntime: vi.fn(async () => 'cloudflare'), readCloudflareDeclarationConfig: vi.fn(async () => ({ name: 'selected' })) }));
@@ -64,4 +64,34 @@ it('rejects unsupported runtimes before artifact or measurement work', async () 
   const { root, resolved } = await fixture(); vi.mocked(resolveConfigRuntime).mockResolvedValueOnce('node');
   await expect(resolved({ root })).rejects.toMatchObject({ code: 'COSSACK_BUILD_BUDGET_RUNTIME_UNSUPPORTED' });
   expect(checkBuildBudgets).not.toHaveBeenCalled();
+});
+
+it.each([{ build: { watch: {} } }, { build: { watch: true } }, { environments: { ssr: { build: { watch: {} } } } },
+  { environments: { client: { build: { watch: {} } } } }])('rejects configured watch builds before deleting previous artifact metadata: %j', async config => {
+  const { root, resolved } = await fixture();
+  await mkdir(join(root, '.wrangler/deploy'), { recursive: true });
+  await writeFile(join(root, '.wrangler/deploy/config.json'), '{"configPath":"preserved"}');
+  await expect(resolved({ root, ...config })).rejects.toMatchObject({ code: 'COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED' });
+  await expect(access(join(root, '.wrangler/deploy/config.json'))).resolves.toBeUndefined();
+  expect(inspectBuiltDeployment).not.toHaveBeenCalled(); expect(checkBuildBudgets).not.toHaveBeenCalled();
+});
+it.each([null, undefined, false])('allows disabled watch configuration %j', async watch => {
+  const { root, resolved, hook, builder } = await fixture(); await resolved({ root, build: { watch } });
+  await hook.handler(builder); expect(checkBuildBudgets).toHaveBeenCalledOnce();
+});
+it('rejects custom builders that enable watching after resolution', async () => {
+  const { root, resolved, hook, builder } = await fixture(); await resolved({ root });
+  (builder.environments.ssr.config as any).build = { watch: {} };
+  await expect(hook.handler(builder)).rejects.toMatchObject({ code: 'COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED' });
+  expect(checkBuildBudgets).not.toHaveBeenCalled();
+});
+it('does not impose watch policy when no budgets are configured', async () => {
+  const { root, resolved, hook, builder } = await fixture({}); await resolved({ root, build: { watch: {} } });
+  await hook.handler(builder); expect(checkBuildBudgets).not.toHaveBeenCalled();
+});
+it('passes an explicit custom source path to the shared config selector', async () => {
+  const { root } = await fixture();
+  const plugin = cossackBuildBudgets({ configPath: 'deployment/worker.toml', environment: 'staging' });
+  await (plugin.configResolved as (config: any) => Promise<void>)({ root });
+  expect(findCloudflareConfig).toHaveBeenLastCalledWith(root, 'deployment/worker.toml');
 });

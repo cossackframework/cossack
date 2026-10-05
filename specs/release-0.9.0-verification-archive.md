@@ -11314,3 +11314,86 @@ private diagnostics. Watch/custom-config-path acceptance, auxiliary Worker
 policies, provider startup metrics, native development faults, deployed source
 maps and remote logs remain open. No live deployment/provisioning occurred.
 CF-08 remains open; **30 complete / 28 open**, no blocked work.
+
+<a id="codex-custom-config-watch-2026-10-05"></a>
+## Codex custom Cloudflare config and watch policy (2026-10-05)
+
+Ownership: coordinator owns shared config/binding APIs, page/config/budget plugin
+changes, CLI integration and native/installed acceptance. One agent audited Vite
+8.1.4 / Cloudflare plugin 1.47.0 watch orchestration without edits or execution.
+Another agent exclusively added the seven selector regressions in
+`cloudflare-config-path.test.ts` and ran them successfully. Coordinator reviewed
+and integrated both; user-owned reports.md and .zcodeignore remain untouched.
+
+Implemented explicit/environment/root source selection with no missing-selected
+fallback. Declaration preflight and page build bindings support explicit plugin
+paths; CLI inspection uses Cloudflare's documented environment control, propagated
+to type generation and Vite. Native acceptance covers a nested config with a
+rebased main, selected environment, signed CLI reuse without fallback measurement,
+and direct explicit plugin options without a root Wrangler config.
+
+Watch policy is intentionally explicit: budgeted watch builds reject with a fixed
+code before deleting artifact metadata/building. Vite currently returns watchers
+before output completion and marks environments built; buildApp is not rerun for
+subsequent watch generations. Root/environment settings and mutated custom
+builders are guarded. Unconfigured budgets and normal DEV get no added guard.
+No per-watch-generation measurement support is claimed.
+
+Verification:
+- Final framework **1,757/1,757 across 96 files**:
+  `/tmp/cossack-custom-config-framework-complete.log`.
+- Final affected CLI **60/60 across 6 files**:
+  `/tmp/cossack-custom-config-cli-verified.log`, including five native cases.
+- Seven agent-authored selector tests passed independently; focused plugin and
+  actual Vite declaration preflight **33/33 across two files** passed.
+- Root `pnpm tsc --noEmit`, framework package check and final declarations pass;
+  new/changed installed helper syntax passes.
+- Initial combined CLI run: **57 passed / 1 failed**. Explicit direct Vite
+  composition reached a page capability reader still using the root config.
+  Added its matching source-path option and reran the full combined checks.
+
+Scope: primary Worker only; CLI does not evaluate Vite config to infer explicit
+plugin options, so use CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH for CLI custom configs.
+Programmatic Worker config overrides, auxiliary budget policies, wider module
+inventories, startup profiles/provider metrics, production source-map resolution
+and remote logs remain open. Desktop platform checks remain waived; no live
+resources were created or deployed. CF-08 stays open, **30 complete / 28 open**.
+
+Installed acceptance initially exposed a separate CLI executable-resolution gap:
+`cossack build` attempted a bare vite executable absent from the parent PATH,
+while invoking the installed Vite by absolute path succeeded. Build now uses the
+shared project-tool resolver for captured and human output, matching deploy.
+Two new command regressions cover unbudgeted JSON/human builds; native receipt
+assertions distinguish the Vite invocation from additional Wrangler measurements.
+The final affected CLI total above is 60 after this repair. Initial installed
+failure and the diagnostic reproduction are recorded in
+`/tmp/cossack-custom-config-installed{,-debug}.log`.
+
+Further integration review found SSG's sync URL reader still selected root files.
+The async config reader and SSG now share a pure Node source-path candidate
+helper. `getSiteUrl` and `cossackSsg` accept explicit configPath; JSONC/TOML tests
+prove selected environment URLs, explicit-over-environment priority and no root
+fallback for a missing selected source. Final framework total above is 1,757.
+
+Installed fixture corrections: pnpm-workspace overrides initially pinned the
+older framework despite updated manifest dependencies. Corrected the fixture's
+framework/CLI overrides, verified resolved package paths and selected distinct
+final tarball filenames. A later COSSACK_APP_URL_INVALID result correctly
+rejected the scaffold's placeholder domain; the helper now supplies its HTTPS
+acceptance domain. Intermediate logs are retained in
+`/tmp/cossack-custom-config-installed-{final,debug-nonce,verified}.log`.
+
+Final installed package acceptance: **PASS**, terminal exit 0 in
+`/tmp/cossack-custom-config-installed-ssg-final.log`. Repacked final framework
+and CLI into `/tmp/cossack-custom-config-tarballs`, updated both retained fixture
+overrides and verified installed resolution to those final tarballs. Executed
+`verifyBudgetBuildModes` in `/tmp/cossack-local-pack-gZdSQv/minimal-production`
+with Vite 8.3.2 / Wrangler 4.147.0. It verifies CLI build/deploy signed receipts
+using a custom config without a root Wrangler file, direct explicit plugin paths,
+published SSG URL discovery through both environment and explicit paths, prompt
+native watch rejection, missing receipts after rejection and private output.
+The helper restores its fixture files and is now wired into the Cloudflare
+agent-docs tarball gate. This is focused final-package acceptance in the retained
+fixture, not another full gate or full non-Desktop release matrix. The preceding
+full Cloudflare gate is recorded in the signed-receipt checkpoint.
+No blocked work; task counts remain 30 complete / 28 open.

@@ -52,6 +52,8 @@ export interface CossackSsgOptions {
    * `config('app.url')` resolves). Resolved at build time inside the entry.
    */
   baseUrl?: string;
+  /** Cloudflare source config for URL discovery. Defaults to plugin environment selection. */
+  configPath?: string;
   /** Output directory. Defaults to `<root>/dist/client`. */
   outDir?: string;
   /**
@@ -134,7 +136,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       // sitemap (avoids resolving getSiteUrl twice). Resolved here (not in the
       // entry) so the plugin and entry agree on a single value.
       const { getSiteUrl } = await import('./ssg-config.js');
-      const baseUrl = options.baseUrl || getSiteUrl({ projectRoot });
+      const baseUrl = options.baseUrl || getSiteUrl({ projectRoot, configPath: options.configPath });
       console.log(`[cossack/ssg] Using base URL: ${baseUrl}`);
 
       // --- Run the orchestrator through Vite (runnerImport loads ssg-entry,

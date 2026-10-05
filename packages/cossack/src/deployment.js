@@ -1,4 +1,4 @@
-import { readCloudflareDeclarationConfig } from '@cossackframework/framework/config-preflight';
+import { readCloudflareDeclarationConfig, findCloudflareConfig } from '@cossackframework/framework/config-preflight';
 import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -88,12 +88,9 @@ export async function readDeploymentConfig(root, configPath, environment) {
 
 /** Local inspection only: never reads secret values from Cloudflare or provisions resources. */
 export async function inspectDeployment(root, environment) {
-  let configPath;
-  for (const name of ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml']) {
-    if (await exists(path.join(root, name))) { configPath = path.join(root, name); break; }
-  }
+  const configPath = await findCloudflareConfig(root);
   if (!configPath) throw new DeploymentError('COSSACK_WRANGLER_CONFIG_MISSING',
-    'No Wrangler configuration was found in the project root.');
+    'No selected Wrangler configuration was found. Check the project root or CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH.');
   const config = await readDeploymentConfig(root, configPath, environment);
   const diagnostics = [];
   const bindings = [];

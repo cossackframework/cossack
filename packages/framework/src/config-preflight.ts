@@ -3,6 +3,7 @@ import { readFile, access } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { cloudflareConfigCandidates } from './cloudflare-config-path.js';
 import { inspectConfigRequirements } from './config-inspection.js';
 import { checkConfigRequirements, type BindingKind, type ConfigRuntime, type ConfigRequirementDiagnostic } from './config-requirements.js';
 
@@ -12,8 +13,8 @@ export class ConfigPreflightError extends Error {
 }
 async function exists(file: string) { try { await access(file); return true; } catch { return false; } }
 async function json(file: string): Promise<any> { try { return JSON.parse(await readFile(file, 'utf8')); } catch { return undefined; } }
-export async function findCloudflareConfig(root: string): Promise<string | undefined> {
-  for (const name of ['wrangler.jsonc', 'wrangler.json', 'wrangler.toml']) if (await exists(join(root, name))) return join(root, name);
+export async function findCloudflareConfig(root: string, explicit?: string): Promise<string | undefined> {
+  for (const file of cloudflareConfigCandidates(root, explicit)) if (await exists(file)) return file;
 }
 /** Match project metadata priority without importing the Node-only scaffold package. */
 export async function resolveConfigRuntime(root: string, explicit?: ConfigRuntime): Promise<ConfigRuntime> {
@@ -65,13 +66,13 @@ function bindingKinds(config: Record<string, any>): Record<string, BindingKind> 
 }
 /** Names only, for existing build capability checks. */
 export function cloudflareBindingNames(config: Record<string, any>): string[] { return Object.keys(bindingKinds(config)).sort(); }
-export interface ConfigInspectionOptions { runtime?: ConfigRuntime; environment?: string; check?: boolean; }
-/** Static catalog/declaration check. Does not import application modules or read .env/process values. */
-export async function inspectConfigurationRequirements(root: string, { runtime: explicit, environment, check = false }: ConfigInspectionOptions = {}) {
+export interface ConfigInspectionOptions { runtime?: ConfigRuntime; environment?: string; configPath?: string; check?: boolean; }
+/** Static catalog/declaration check. Does not import application modules or inspect runtime variable values. */
+export async function inspectConfigurationRequirements(root: string, { runtime: explicit, environment, configPath: selectedPath, check = false }: ConfigInspectionOptions = {}) {
   const inspection = await inspectConfigRequirements(root);
   const diagnostics: (Pick<ConfigRequirementDiagnostic, 'code' | 'severity' | 'message'> & Partial<ConfigRequirementDiagnostic>)[] = [...inspection.diagnostics];
   const runtime = await resolveConfigRuntime(root, explicit);
-  const configPath = await findCloudflareConfig(root);
+  const configPath = await findCloudflareConfig(root, selectedPath);
   const data = { factories: inspection.factories, runtime, environment: environment ?? null,
     evaluation: 'not-performed', validation: 'not-performed', remoteResources: 'not-checked', remoteSecrets: 'not-checked',
     unverifiedSecrets: [] as string[], variableTypes: undefined as Record<string, import('./config-requirements.js').VariableType> | undefined,

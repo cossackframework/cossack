@@ -7,13 +7,12 @@ import { deployCommand } from '../src/commands/deploy.js';
 import { readBudgetReceipt, checkBuildBudgets, evaluateBuildBudgets } from '../src/build-budgets.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../src/deployment.js';
 import { inspectConfigurationRequirements } from '../src/config-inspection.js';
-import { runCaptured } from '../src/spawn.js';
-import { runProjectTool } from '../src/project-tools.js';
+import { runProjectTool, runProjectToolCaptured } from '../src/project-tools.js';
 vi.mock('../src/build-budgets.js', async original => ({ ...await original(), readBudgetReceipt: vi.fn(), checkBuildBudgets: vi.fn() }));
 vi.mock('../src/deployment.js', () => ({ inspectDeployment: vi.fn(), inspectBuiltDeployment: vi.fn() }));
 vi.mock('../src/config-inspection.js', () => ({ inspectConfigurationRequirements: vi.fn() }));
 vi.mock('../src/spawn.js', () => ({ run: vi.fn(), runCaptured: vi.fn() }));
-vi.mock('../src/project-tools.js', () => ({ runProjectTool: vi.fn() }));
+vi.mock('../src/project-tools.js', () => ({ runProjectTool: vi.fn(), runProjectToolCaptured: vi.fn() }));
 const roots = [];
 afterEach(async () => { vi.resetAllMocks(); vi.restoreAllMocks(); await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 async function setup() {
@@ -23,7 +22,7 @@ async function setup() {
   inspectDeployment.mockResolvedValue({ config: {}, summary: { worker: 'selected', configPath: path.join(root, 'wrangler.jsonc') }, diagnostics: [] });
   inspectBuiltDeployment.mockResolvedValue(path.join(root, 'dist/ssr/wrangler.json'));
   inspectConfigurationRequirements.mockResolvedValue({ valid: true, diagnostics: [] });
-  runCaptured.mockResolvedValue({ code: 0 }); runProjectTool.mockResolvedValue(0);
+  runProjectToolCaptured.mockResolvedValue({ code: 0 }); runProjectTool.mockResolvedValue(0);
   const pass = evaluateBuildBudgets(budgets, 'Total Upload: 10.00 KiB / gzip: 1.00 KiB');
   checkBuildBudgets.mockResolvedValue(pass); readBudgetReceipt.mockResolvedValue(pass);
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -39,7 +38,7 @@ it.each(['build', 'deploy'])('%s reuses a verified successful receipt without an
 it.each(['build', 'deploy'])('%s preserves structured budget failure when the plugin rejects', async command => {
   const f = await setup();
   readBudgetReceipt.mockResolvedValue(evaluateBuildBudgets(f.budgets, 'Total Upload: 200.00 KiB / gzip: 1.00 KiB'));
-  runCaptured.mockResolvedValue({ code: 1 }); runProjectTool.mockImplementation(async (_, tool) => tool === 'vite' ? 1 : 0);
+  runProjectToolCaptured.mockResolvedValue({ code: 1 }); runProjectTool.mockImplementation(async (_, tool) => tool === 'vite' ? 1 : 0);
   expect(await (command === 'build' ? buildCommand : deployCommand)([], f.ctx)).toBe(1);
   expect(checkBuildBudgets).not.toHaveBeenCalled();
   const report = JSON.parse(f.log.mock.calls.at(-1)[0]); expect(report.diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_EXCEEDED');
@@ -47,7 +46,7 @@ it.each(['build', 'deploy'])('%s preserves structured budget failure when the pl
   if (command === 'deploy') { expect(report.data.steps.map(step => step.name)).toEqual(['types', 'build', 'budgets']); expect(report.data.steps[1].exitCode).toBe(1); }
 });
 it.each(['build', 'deploy'])('%s does not disguise unrelated failures with a passing receipt', async command => {
-  const f = await setup(); runCaptured.mockResolvedValue({ code: 1 }); runProjectTool.mockImplementation(async (_, tool) => tool === 'vite' ? 1 : 0);
+  const f = await setup(); runProjectToolCaptured.mockResolvedValue({ code: 1 }); runProjectTool.mockImplementation(async (_, tool) => tool === 'vite' ? 1 : 0);
   expect(await (command === 'build' ? buildCommand : deployCommand)([], f.ctx)).toBe(1);
   expect(checkBuildBudgets).not.toHaveBeenCalled();
   expect(JSON.parse(f.log.mock.calls.at(-1)[0]).diagnostics[0].code).toBe(command === 'build' ? 'COSSACK_BUILD_FAILED' : 'COSSACK_DEPLOY_BUILD_FAILED');
@@ -59,7 +58,7 @@ it.each(['build', 'deploy'])('%s measures once when a successful build has no re
 it.each(['build', 'deploy'])('%s stops if budget settings changed during the build', async command => {
   const f = await setup();
   const change = () => fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ cossack: { buildBudgets: { uploadKiB: { error: 1 } } } }));
-  runCaptured.mockImplementation(async () => { await change(); return { code: 0 }; });
+  runProjectToolCaptured.mockImplementation(async () => { await change(); return { code: 0 }; });
   runProjectTool.mockImplementation(async (_, tool) => { if (tool === 'vite') await change(); return 0; });
   expect(await (command === 'build' ? buildCommand : deployCommand)([], f.ctx)).toBe(1); expect(checkBuildBudgets).not.toHaveBeenCalled();
   expect(JSON.parse(f.log.mock.calls.at(-1)[0]).diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_SETTINGS_CHANGED');

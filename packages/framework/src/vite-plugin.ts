@@ -70,6 +70,8 @@ export type MarkdownProcessor = (
 ) => MarkdownResult | Promise<MarkdownResult>;
 
 export interface CossackPagesOptions {
+  /** Cloudflare source config for build binding checks; relative to the Vite root. */
+  configPath?: string;
   /** Opt in to project-local browser trace records for CLI/MCP. Development only. */
   developmentTraces?: boolean;
   /** Selected build features. Bindings are names only, never secret values. */
@@ -190,7 +192,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       if (options.capabilities) {
         const { runtime } = options.capabilities;
         const bindings = options.capabilities.bindings ?? (runtime === 'cloudflare'
-          ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV) : []);
+          ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV, options.configPath) : []);
         const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
         capabilityBindings = bindings;
         refreshCapabilityPages();
@@ -571,12 +573,12 @@ const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
  * export default configs;
  * ```
  */
-export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: string } = {}): Plugin {
+export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: string; configPath?: string } = {}): Plugin {
   let projectRoot = '';
   let selectedEnvironment: string | undefined;
   let isBuild = false;
   const preflight = async () => {
-    const result = await checkConfigBuildRequirements(projectRoot, { runtime: options.runtime, environment: selectedEnvironment });
+    const result = await checkConfigBuildRequirements(projectRoot, { runtime: options.runtime, environment: selectedEnvironment, configPath: options.configPath });
     if (!result.valid) { const first = result.diagnostics.find(diagnostic => diagnostic.severity === 'error')!; throw Object.assign(new Error(result.diagnostics.map(diagnostic => `${diagnostic.code}: ${diagnostic.message}`).join('\n')), { code: first.code }); }
   };
   return {
@@ -592,6 +594,8 @@ export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: 
     async buildStart() {
       if (!isBuild) return;
       for (const file of ['src/config', 'package.json', '.cossack/scaffold.json', 'wrangler.jsonc', 'wrangler.json', 'wrangler.toml']) this.addWatchFile(resolve(projectRoot, file));
+      const selectedConfig = options.configPath ?? process.env.CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH;
+      if (selectedConfig) this.addWatchFile(resolve(projectRoot, selectedConfig));
       for (const file of discoverConfigFactories(projectRoot)) this.addWatchFile(resolve(projectRoot, 'src/config', file));
       await preflight();
       generateConfigTypes(projectRoot);

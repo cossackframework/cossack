@@ -120,3 +120,15 @@ it('checks conflicting scalar declarations without claiming Node environment val
   writeFileSync(join(root, 'src/config/other.ts'), 'export const requirements = { variables: { PORT: { type: "string" } } }; export default () => ({});');
   await rejectsWithCode(actualBuild(root), 'COSSACK_CONFIG_REQUIREMENT_CONFLICT');
 });
+
+it('validates an explicit nested source config instead of a misleading root config', async () => {
+  const root = fixture('{ variables: { PORT: { type: "number", coerce: true } } }', { vars: {} });
+  mkdirSync(join(root, 'deployment'));
+  writeFileSync(join(root, 'deployment/worker.jsonc'), JSON.stringify({ name: 'custom-preflight', compatibility_date: '2026-01-01', vars: { PORT: '82' } }));
+  await expect(actualBuild(root, { configPath: 'deployment/worker.jsonc' })).resolves.toBeDefined();
+  await rejectsWithCode(actualBuild(root), 'COSSACK_CONFIG_REQUIRED_MISSING');
+});
+it('does not fall back to root declarations when the explicit source config is missing', async () => {
+  const root = fixture('{}');
+  await rejectsWithCode(actualBuild(root, { configPath: 'missing.jsonc' }), 'COSSACK_CONFIG_CHECK_UNAVAILABLE');
+});

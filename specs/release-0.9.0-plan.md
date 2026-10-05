@@ -1294,8 +1294,42 @@ published exports, default composition and selected-target signed diagnostics
 with Vite 8.3.2 / Wrangler 4.147.0; broader REL-03 acceptance remains. See the
 [verification record](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
 
-Remaining: custom Cloudflare config path acceptance, watch-build semantics,
-auxiliary Worker budget policies and wider module graphs. The receipt's
+Codex custom-source/watch integration (2026-10-05): the shared selector now
+honors explicit `configPath`, then `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`, then
+root defaults, matching Cloudflare's plugin order. Explicit paths are available
+on `cossackConfig`, `cossackPages` and `cossackBuildBudgets`; declaration and page
+binding checks use the selected file. CLI inspection uses the environment path,
+which also reaches Wrangler type generation and Vite. Missing selected files
+cannot silently fall back. Native nested-config and explicit plugin composition
+acceptance passes after repairing the page binding reader uncovered by the first
+run. Framework 1,757 tests, affected CLI 60 tests, root/framework types and
+emitted declarations pass. See the [verification record](./release-0.9.0-verification-archive.md#codex-custom-config-watch-2026-10-05).
+
+Installed acceptance exposed another DX gap: direct CLI build depended on vite
+being in the caller's PATH. Build now resolves the project-installed Vite for
+captured and human paths; both unbudgeted modes have regressions. Final affected
+CLI total is 60; native build/deploy receipts remain verified.
+
+SSG review also found its sync URL discovery still selecting root files. It now
+shares the source candidate helper; getSiteUrl/cossackSsg support explicit paths.
+JSONC/TOML regressions prove selected environment URLs and no root fallback for
+missing selected sources. Final full framework total is 1,757.
+
+Final repacked framework/CLI acceptance passes in the retained installed fixture
+with Vite 8.3.2 / Wrangler 4.147.0: custom-path CLI receipts, explicit Vite options,
+published SSG URL discovery and prompt native watch rejection/privacy. The helper
+is included in future Cloudflare tarball gates. This focused final-package update
+is not a rerun of the full gate or REL-03 runtime matrix.
+
+Watch policy: configured budgets reject root or environment build.watch before
+output/measurement, and recheck custom builder options in buildApp. Installed
+Vite returns watchers before output completion and does not rerun buildApp for
+each generation. This is explicit unsupported behavior, not successful watch
+budget acceptance. Supporting future watch measurement requires synchronized
+Worker/client generation completion and fresh receipts per generation. Ordinary
+DEV and builds without budgets get no new watch restriction.
+
+Remaining: auxiliary Worker budget policies and wider module graphs. The receipt's
 4,096-file/64-MiB inventory cap is a conservative reuse bound, not a provider
 limit; failing to fingerprint never weakens budget enforcement.
 Local/provider startup costs, native development fault acceptance, remote logs

@@ -33,11 +33,25 @@ describe('ssg-config', () => {
     dir = tempDir();
     vi.stubEnv('APP_URL', undefined);
     vi.stubEnv('CLOUDFLARE_ENV', undefined);
+    vi.stubEnv('CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH', undefined);
   });
 
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
     vi.unstubAllEnvs();
+  });
+
+  it.each(['jsonc', 'toml'])('uses a selected custom %s source and environment for public URLs', extension => {
+    fs.mkdirSync(path.join(dir, 'deployment'));
+    const selected = `deployment/worker.${extension}`;
+    writeFile(dir, 'wrangler.jsonc', '{"vars":{"APP_URL":"https://wrong-root.test"}}');
+    writeFile(dir, selected, extension === 'toml' ? '[vars]\nAPP_URL="https://custom.test"\n[env.staging.vars]\nAPP_URL="https://custom-staging.test"'
+      : '{"vars":{"APP_URL":"https://custom.test"},"env":{"staging":{"vars":{"APP_URL":"https://custom-staging.test"}}}}');
+    vi.stubEnv('CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH', selected);
+    expect(getSiteUrl({ projectRoot: dir, environment: 'staging' })).toBe('https://custom-staging.test');
+    vi.stubEnv('CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH', 'missing.jsonc');
+    expect(getSiteUrl({ projectRoot: dir, configPath: selected })).toBe('https://custom.test');
+    expect(getSiteUrl({ projectRoot: dir })).toBe(DEFAULT_SITE_URL);
   });
 
   it.each(['wrangler.json', 'wrangler.jsonc'])('uses the build environment from %s', name => {

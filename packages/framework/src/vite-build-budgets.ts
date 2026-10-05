@@ -9,12 +9,17 @@ import { BUDGET_RUN_ENV, clearBudgetReceipt, fingerprintBudgetArtifact, writeBud
 import type { ConfigRuntime } from './config-requirements.js';
 
 /** Place after cloudflare(). Budgets apply to the primary deployment Worker. */
-export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environment?: string } = {}): Plugin {
+export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environment?: string; configPath?: string } = {}): Plugin {
   let root = '';
   let environment: string | undefined;
   let budgets: BuildBudgets = {};
   let expected: Record<string, any> | undefined;
   const fail = (code: string, message: string): never => { throw Object.assign(new Error(`${code}: ${message}`), { code }); };
+  const rejectWatch = (config: { build?: { watch?: unknown }; environments?: Record<string, { build?: { watch?: unknown } }> }) => {
+    if (config.build?.watch || Object.values(config.environments ?? {}).some(item => item.build?.watch)) {
+      fail('COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED', 'Build budgets require a completed application build. Use vite build without --watch.');
+    }
+  };
   return {
     name: 'cossack-build-budgets',
     enforce: 'post',
@@ -25,10 +30,11 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
       budgets = await readBuildBudgets(root);
       if (process.env[BUDGET_RUN_ENV]) await clearBudgetReceipt(root);
       if (!Object.keys(budgets).length) return;
+      rejectWatch(config);
       if (await resolveConfigRuntime(root, options.runtime) !== 'cloudflare') {
         fail('COSSACK_BUILD_BUDGET_RUNTIME_UNSUPPORTED', 'Configured build budgets require a Cloudflare Worker artifact.');
       }
-      const file = await findCloudflareConfig(root);
+      const file = await findCloudflareConfig(root, options.configPath);
       if (!file) fail('COSSACK_DEPLOY_CONFIG_MISSING', 'Cloudflare configuration is required for build budgets.');
       expected = await readCloudflareDeclarationConfig(root, file!, environment);
       // A failed or custom build cannot reuse metadata from an earlier build.
@@ -38,6 +44,10 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
       order: 'post',
       async handler(builder) {
         if (!Object.keys(budgets).length) return;
+        rejectWatch(builder.config);
+        if (Object.values(builder.environments).some(item => item.config.build?.watch)) {
+          fail('COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED', 'Build budgets require a completed application build. Use vite build without --watch.');
+        }
         const workers = Object.values(builder.environments).filter(item => item.config.consumer === 'server');
         if (!workers.length || workers.some(item => !item.isBuilt)) {
           fail('COSSACK_BUILD_BUDGET_BUILD_INCOMPLETE', 'Cloudflare Worker environments must finish before budget measurement.');

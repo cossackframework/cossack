@@ -88,13 +88,53 @@ it('reuses the default Vite measurement for a successful native CLI dry run', as
   const built = JSON.parse(log.mock.calls.at(-1)[0]);
   expect(built.data.buildBudgets.valid).toBe(true);
   expect(built.data.buildBudgets.measurements[0].value).toBeGreaterThan(0);
-  expect(captured).not.toHaveBeenCalled();
+  expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   expect(await deployCommand([], { cwd: projectDir, flags: { json: true, 'dry-run': true }, dryRun: true })).toBe(0);
   const result = JSON.parse(log.mock.calls.at(-1)[0]);
   expect(result.data.buildBudgets.valid).toBe(true);
   expect(result.data.buildBudgets.measurements[0].value).toBeGreaterThan(0);
   expect(result.diagnostics).toEqual([expect.objectContaining({ code: 'COSSACK_BUILD_BUDGET_EXCEEDED', severity: 'warning' })]);
-  expect(captured).not.toHaveBeenCalled();
+  expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   const receipt = JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8'));
   expect(receipt).toMatchObject({ version: 1, outcome: 'measured', signature: expect.stringMatching(/^[a-f\d]{64}$/) });
 }, 120000);
+
+it('builds and validates a nested custom config through CLI environment selection and explicit Vite options', async () => {
+  const { projectDir, configPath, config } = await fixture({ uploadKiB: { warning: 0.001 } });
+  const selected = 'deployment/worker.jsonc';
+  await fs.mkdir(path.join(projectDir, 'deployment'));
+  config.main = '../src/index.ts';
+  config.env = { staging: { name: config.name + '-custom', vars: { ...config.vars, APP_URL: 'https://custom-budget.example.test' }, secrets: config.secrets, durable_objects: config.durable_objects } };
+  await fs.writeFile(path.join(projectDir, selected), JSON.stringify(config)); await fs.rm(configPath);
+  vi.stubEnv('CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH', selected);
+  const captured = vi.spyOn(projectTools, 'runProjectToolCaptured');
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await deployCommand([], { cwd: projectDir, flags: { json: true, env: 'staging', 'dry-run': true }, dryRun: true })).toBe(0);
+  const report = JSON.parse(log.mock.calls.at(-1)[0]);
+  expect(report.data.worker).toBe(config.env.staging.name);
+  expect(report.data.buildBudgets.valid).toBe(true); expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
+  const viteConfig = path.join(projectDir, 'vite.config.ts');
+  const source = await fs.readFile(viteConfig, 'utf8');
+  await fs.writeFile(viteConfig, source.replace('cloudflare({', "cloudflare({ configPath: 'deployment/worker.jsonc',")
+    .replace('cossackBuildBudgets()', "cossackBuildBudgets({ configPath: 'deployment/worker.jsonc' })")
+    .replace('cossackConfig()', "cossackConfig({ configPath: 'deployment/worker.jsonc' })")
+    .replace('cossackPages({', "cossackPages({ configPath: 'deployment/worker.jsonc',"));
+  vi.stubEnv('CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH', '');
+  const require = createRequire(path.join(projectDir, 'package.json'));
+  const vite = path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js');
+  const built = await promisify(execFile)(process.execPath, [vite, 'build'], { cwd: projectDir, env: { ...process.env, CLOUDFLARE_ENV: 'staging' }, maxBuffer: 16 * 1024 * 1024, timeout: 120000 });
+  expect(built.stdout + built.stderr).toContain('COSSACK_BUILD_BUDGET_EXCEEDED');
+}, 120000);
+
+it('rejects actual Vite watch mode promptly when budgets require a completed artifact', async () => {
+  const { projectDir } = await fixture({ uploadKiB: { error: 100000 } });
+  const require = createRequire(path.join(projectDir, 'package.json'));
+  const vite = path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js');
+  let failure;
+  try { await promisify(execFile)(process.execPath, [vite, 'build', '--watch'], { cwd: projectDir, env: process.env, maxBuffer: 16 * 1024 * 1024, timeout: 15000 }); }
+  catch (error) { failure = error; }
+  expect(failure?.code).toBe(1);
+  expect(failure.stdout + failure.stderr).toContain('COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED');
+  await expect(fs.access(path.join(projectDir, '.cossack/build-budget-receipt.json'))).rejects.toThrow();
+  await expect(fs.access(path.join(projectDir, '.wrangler/deploy/config.json'))).rejects.toThrow();
+}, 30000);

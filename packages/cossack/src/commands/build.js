@@ -1,5 +1,5 @@
 import { commandSpecs } from '../command-specs.js';
-import { run, runCaptured } from '../spawn.js';
+import { runProjectTool, runProjectToolCaptured } from '../project-tools.js';
 import { runWithSpec } from '../command-spec.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings, BUDGET_RUN_ENV } from '../build-budgets.js';
@@ -22,7 +22,7 @@ export async function buildCommand(args, ctx) {
     // SSG runs inside `vite build` via the cossackSsg plugin's closeBundle hook,
     // so there is no separate SSG step to invoke here.
     if (ctx.flags.json === true || Object.keys(budgets).length) {
-      const { code } = await runCaptured('vite', ['build', ...args], {
+      const { code } = await runProjectToolCaptured(root, 'vite', ['build', ...args], {
         ...(environment || token ? { env: { ...environment, ...(token ? { [BUDGET_RUN_ENV]: token } : {}) } } : {}), cwd: root, discardOutput: true,
       });
       if (hasBudgets) {
@@ -59,8 +59,8 @@ export async function buildCommand(args, ctx) {
           message: 'Vite build failed. Run cossack build without --json for tool diagnostics.' }] : [] };
     }
     return environment
-      ? run('vite', ['build', ...args], { env: environment, cwd: root })
-      : run('vite', ['build', ...args], { cwd: root });
+      ? runProjectTool(root, 'vite', ['build', ...args], { env: environment, cwd: root })
+      : runProjectTool(root, 'vite', ['build', ...args], { cwd: root });
   });
 }
 

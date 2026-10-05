@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets, signed per-invocation result reuse and the default scaffold direct Vite primary-Worker gate are implemented; custom-config/watch acceptance, auxiliary Worker policies, native development faults, startup measurement, source-map resolution and remote Workers Logs ingestion remain open. See [receipt integration](#codex-budget-receipts-2026-10-05). See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets, signed per-invocation result reuse and the default scaffold direct Vite primary-Worker gate are implemented; auxiliary Worker policies, native development faults, startup measurement, source-map resolution and remote Workers Logs ingestion remain open. See [receipt integration](#codex-budget-receipts-2026-10-05). See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -1678,3 +1678,42 @@ subagent found no actionable defects; coordinator owns all implementation.
 See [full evidence and limitations](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
 No parent task closes: CF-08 remains open. Counts stay **30 complete / 28 open**.
 Desktop is complete with remaining platform checks waived. No blocked work.
+
+<a id="codex-custom-config-watch-2026-10-05"></a>
+### Codex custom Cloudflare config and watch policy (2026-10-05)
+
+Unified source selection for configuration preflight, page binding checks,
+primary-Worker budgets and CLI deployment inspection. Explicit plugin
+`configPath` options override `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`; the shared
+selector otherwise uses standard root Wrangler files. A missing selected path
+fails without fallback. CLI custom paths use the environment variable so type
+generation, Vite and artifact validation select the same source.
+
+Budgeted watch builds now reject before building with
+`COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED`. Vite application hooks do not validate
+every watch generation; no per-rebuild budget support is claimed. Root and
+environment options are checked again for mutated custom builders. Unconfigured
+budgets and ordinary development receive no added watch restriction.
+
+Verified: full framework **1,757 tests / 96 files**, affected CLI **60 / 6 files**,
+root/framework typechecks, declarations and script syntax. Native tests include
+nested selected-environment CLI reuse, direct explicit config paths and prompt
+watch rejection. Initial explicit-path acceptance exposed the page binding
+reader's missing option; it was fixed and combined checks rerun successfully.
+See [evidence and limits](./release-0.9.0-verification-archive.md#codex-custom-config-watch-2026-10-05).
+CF-08 remains open; **30 complete / 28 open**, no blocked work. Desktop remains
+complete with platform checks waived.
+
+Installed acceptance also found and repaired `cossack build` relying on the
+parent PATH: JSON/budgeted and human builds now resolve the project's own Vite
+through the shared project-tool runner. The final CLI total above includes both
+new unbudgeted command regressions and native receipt reuse.
+
+SSG's URL reader now shares source selection and accepts the matching path option
+on getSiteUrl/cossackSsg. JSONC/TOML regressions cover selected environments and
+missing-source behavior; the final framework total above includes them.
+
+Final focused installed-package acceptance passes with updated framework/CLI
+tarballs in `/tmp/cossack-local-pack-gZdSQv/minimal-production` (Vite 8.3.2 /
+Wrangler 4.147.0), including published SSG URL discovery. This is a retained
+fixture update, not a fresh full release matrix; details are in the archive.
