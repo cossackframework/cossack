@@ -70,7 +70,7 @@ the required non-Desktop release matrix.
    Earlier examples cover native dialogs/disclosures, tabs, toggles, icons,
    radio/range controls, searchable choice, repeated tag values, semantic
    lists/actions, named tables/scroll regions and other UI surfaces. The full
-   fresh-tarball docs gate passes sixty-eight standalone
+   fresh-tarball docs gate passes sixty-nine standalone
    examples, four auth
    examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
@@ -78,8 +78,8 @@ the required non-Desktop release matrix.
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
-   plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-guide-coverage-2026-10-05).
-   All 65 published-package guides now include examples, and all seventy-two
+   plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
+   All 66 published-package guides now include examples, and all seventy-three
    examples run in the installed gate. Framework guidance now covers runtime
    capabilities and cache guarantees; Node and Deno guidance covers adapter
    lifecycle, binding precedence and development plugins; Studio guidance covers
@@ -92,6 +92,7 @@ the required non-Desktop release matrix.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
    See the [Studio/offline-import checkpoint](./release-0.9.0.md#codex-cli08-studio-guidance-2026-10-05): the public Studio entry now defers the remote-D1 helper, avoiding eager `tsx` IPC when a caller supplies its own connection. The installed gate blocks outbound network APIs and permits only synthetic numeric loopback resolution.
    The [locale guidance checkpoint](./release-0.9.0.md#codex-cli08-localization-2026-10-05) adds installed examples for Accept-Language fallback (including `q=0` exclusions) and CLDR plural formatting. Core now ignores explicitly unacceptable language ranges. The Core i18n suite passes 74 tests and the fresh installed gate passes. These examples cover pure Core helpers; they do not prove framework middleware or response-cache behavior.
+   The [migration/seeding checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05) adds an installed Node SQLite lifecycle example for migration apply/status/rollback and idempotent seeding. It proves the documented Node API against an in-memory SQLite database, not provider portability or deployment readiness.
    Desktop remains closed by user decision. Do not spend work on its waived platform matrix.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
    recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)

@@ -255,10 +255,12 @@ Standalone examples prove Node execution. The application checks cover local
 Cloudflare and Node development and production client stripping. They do not
 prove live deployment or every transport and runtime combination. Other APIs,
 components, recipes and runtime targets still need their own coverage.
-The latest tarball gate typechecks and executes all 68 standalone examples from
-published package exports plus four separately bundled auth examples, for 72
-examples across 65 package guides. Core guidance now includes locale negotiation,
-`q=0` exclusions and CLDR plural formatting. The Deno fetch example uses a small
+The latest tarball gate typechecks and executes all 69 standalone examples from
+published package exports plus four separately bundled auth examples, for 73
+examples across 66 package guides. Database guidance now exercises the installed
+Node SQLite migration apply/status/rollback and repeatable seeder lifecycle as
+well as bound Node SQLite and Cloudflare D1 queries. Core guidance includes locale
+negotiation, `q=0` exclusions and CLDR plural formatting. The Deno fetch example uses a small
 Node compatibility shim for Hono's Deno static-file import; this checks the installed
 adapter path and binding precedence, not native Deno or Deno Deploy readiness.
 

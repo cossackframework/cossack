@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixty-eight standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 65 published-package guides have at least one example; every one of the 72 packaged examples is typechecked and executed by installed acceptance. Core guidance now covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guides cover runtime capability and cache guarantees; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixty-nine standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 66 published-package guides have at least one example; every one of the 73 packaged examples is typechecked and executed by installed acceptance. Core guidance covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guides cover runtime capability and cache guarantees; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Database guidance covers bound Node SQLite and Cloudflare D1 queries plus reversible migration and idempotent seeding lifecycle; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [migration/seeding guidance](#codex-cli08-migration-guidance-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -800,6 +800,29 @@ stripping pass. Desktop is complete by user decision and is excluded. CLI-08
 remains open for broader package API and recipe coverage; REL-02/REL-03 remain
 open for the full non-Desktop release checks. Status remains **28 complete / 30
 open**. No deployment or publication occurred.
+
+<a id="codex-cli08-migration-guidance-2026-10-05"></a>
+### Codex: Installed migration and seeding guidance (2026-10-05)
+
+Database agent guidance now includes an installed Node SQLite lifecycle example.
+It applies a named migration, checks its recorded checksum status, runs an
+idempotent upsert seeder twice, verifies the stable key is not duplicated, and
+rolls the migration back. The guide distinguishes trusted static migration DDL
+from bound data values and explains the D1 transaction boundary. It does not
+claim that SQLite SQL is portable to D1/PostgreSQL/MySQL or that a deployed
+database is ready.
+
+**Verification:** the database package passes **93 tests** and its bundle audit
+passes (**28 neutral modules; Cloudflare entry is Workers-safe**). The clean
+`COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` run typechecks and executes
+**69 standalone examples plus 4 auth examples** from fresh tarballs, and passes
+local workerd D1, offline CLI/MCP parity, Cloudflare traces, generated application
+behavior, UI contracts and production source-map stripping. Desktop is excluded
+because the user closed it for this release; waived platform checks are not
+claimed as passed. The latest installed guide count is **66 guides / 73 examples**.
+CLI-08 remains open for broader library API and recipe coverage; REL-02/REL-03
+remain open for the full non-Desktop release checks. Status remains **28 complete
+/ 30 open**. No live database, deployment or publication was used.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)

@@ -89,6 +89,7 @@ require('node:module').syncBuiltinESMExports();
       ...['safe-studio-workflows'].map(id => ['@cossackframework/studio', id]),
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
+      ['@cossackframework/database', 'node-sqlite-migrations-and-seeding'],
       ['@cossackframework/ui', 'native-controls'],
       ['@cossackframework/ui', 'radio-and-range'],
       ['@cossackframework/ui', 'one-time-code'],

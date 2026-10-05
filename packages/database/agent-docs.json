@@ -34,6 +34,23 @@
           "source": "import { createORM } from '@cossackframework/database';\nimport { d1, type D1DatabaseBinding } from '@cossackframework/database/cloudflare';\n\nexport async function findNote(database: D1DatabaseBinding, body: string) {\n  const orm = createORM({ adapter: await d1(database), entities: [] });\n  try {\n    const result = await orm.sql<{ body: string }>`SELECT body FROM notes WHERE body = ${body}`;\n    return result.rows[0]?.body;\n  } finally {\n    await orm.close();\n  }\n}\n"
         }
       ]
+    },
+    {
+      "id": "node-sqlite-migrations-and-seeding",
+      "title": "Apply migrations and rerunnable seeders",
+      "summary": "Run a reversible migration, verify its recorded status, and seed stable records idempotently.",
+      "imports": [
+        "@cossackframework/database",
+        "@cossackframework/database/node"
+      ],
+      "markdown": "Use MigrationRunner to apply versioned schema changes and SeederRunner for application data. Migrations are ordered by their stable names and store a checksum; once applied, edit by adding a new migration instead of changing its source. This example uses reviewed, static SQLite DDL because it targets the Node SQLite adapter. Keep values in seeder SQL bound parameters.\n\nSeeder callbacks run in configuration order and are not recorded as applied migrations. Make them safe to repeat with a stable key or upsert. The default `auto` transaction policy uses a transaction when the adapter supports it. D1 does not support interactive transactions, so `auto` runs without one there and `required` fails before the callback. D1 migrations use an atomic prepared batch.\n\nThis in-memory example proves the installed Node SQLite migration and seeder APIs, including apply, status, repeat execution and rollback. It does not establish D1, PostgreSQL or MySQL compatibility for SQLite-specific SQL, nor does it prove a deployed database is ready.",
+      "examples": [
+        {
+          "id": "migration-and-seeder-lifecycle",
+          "language": "typescript",
+          "source": "import { createORM, defineSeeder, MigrationRunner, SeederRunner, type Migration } from '@cossackframework/database';\nimport { nodeSQLite } from '@cossackframework/database/node';\n\nconst migration = {\n  name: '0001_create_guide_notes',\n  up({ orm, schema }) {\n    schema.raw(orm.sql.fragment`CREATE TABLE guide_notes (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, body TEXT NOT NULL)`);\n  },\n  down({ orm, schema }) {\n    schema.raw(orm.sql.fragment`DROP TABLE guide_notes`);\n  },\n} satisfies Migration;\n\nconst orm = createORM({ adapter: await nodeSQLite(), entities: [] });\ntry {\n  const migrations = new MigrationRunner(orm, [migration]);\n  const applied = await orm.run(() => migrations.up());\n  if (applied[0] !== migration.name) throw new Error('Migration was not applied');\n\n  const status = await orm.run(() => migrations.status());\n  if (status[0]?.state !== 'applied') throw new Error('Migration checksum status is not applied');\n\n  const welcome = defineSeeder({\n    name: 'welcome-note',\n    async run({ sql }) {\n      await sql`INSERT INTO guide_notes (key, body) VALUES (${'welcome'}, ${'Hello'}) ON CONFLICT (key) DO UPDATE SET body = excluded.body`;\n    },\n  });\n  const seeders = new SeederRunner(orm, [welcome]);\n  await seeders.run();\n  await seeders.run();\n\n  const notes = await orm.sql<{ key: string; body: string }>`SELECT key, body FROM guide_notes`;\n  if (notes.rows.length !== 1 || notes.rows[0]?.key !== 'welcome') {\n    throw new Error('Repeating the seeder must not duplicate its stable key');\n  }\n\n  const reverted = await orm.run(() => migrations.down());\n  if (reverted[0] !== migration.name) throw new Error('Migration was not reverted');\n} finally {\n  await orm.close();\n}\n"
+        }
+      ]
     }
   ]
 }
