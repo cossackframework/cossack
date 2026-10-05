@@ -3,10 +3,14 @@ import 'reflect-metadata';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import { flash, flashed, flashedAll, flashInput, old, signValue } from '@cossackframework/core';
-import { createFlashMiddleware } from '../src/middlewares/flash';
+import { __resetProcessFlashClaimsForTests, createFlashMiddleware } from '../src/middlewares/flash';
 import { isCloudflareRuntime } from '../src/transports/sse';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    __resetProcessFlashClaimsForTests();
+});
 
 const SECRET = 'flash-test-secret-16-chars-min';
 
@@ -178,17 +182,77 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
         expect(body2).toEqual({ success: null, oldName: null, allFlashed: [] });
     });
 
-    it('documents expiry-only replay behavior when a process runtime has no durable coordinator', async () => {
+    it('atomically consumes copied flash cookies once per process when no durable coordinator exists', async () => {
         const app = makeApp();
+        app.all('/crpc', c => c.text('ok'));
         const post = await dispatch(app, '/submit', { method: 'POST' });
         const token = getSetCookie(post, 'cossack_flash')!;
         const copiedCookie = `cossack_flash=${token}`;
+
+        // Background work must leave the token available for the page request.
+        const background = await dispatch(app, '/crpc', { cookie: copiedCookie });
+        expect(background.status).toBe(200);
+        expect(background.headers.getSetCookie()).toEqual([]);
+
         const [first, replay] = await Promise.all([
             dispatch(app, '/form', { cookie: copiedCookie }),
             dispatch(app, '/form', { cookie: copiedCookie }),
         ]);
-        expect((await first.json()).success).toBe('Saved successfully!');
-        expect((await replay.json()).success).toBe('Saved successfully!');
+        const bodies = await Promise.all([first.json(), replay.json()]);
+        expect(bodies.filter(body => body.success === 'Saved successfully!')).toHaveLength(1);
+        expect(bodies.filter(body => body.success === null)).toHaveLength(1);
+
+        const laterReplay = await dispatch(app, '/form', { cookie: copiedCookie });
+        expect(await laterReplay.json()).toMatchObject({ success: null, oldName: null });
+    });
+
+    it('fails closed at process claim capacity and purges expired claims before accepting new ones', async () => {
+        __resetProcessFlashClaimsForTests(1);
+        let now = 1_750_000_000_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+
+        const makeExpiryApp = (maxAge: number, value: string) => {
+            const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
+            app.use('*', createFlashMiddleware({ maxAge }));
+            app.post('/write', c => { flash('notice', value); return c.redirect('/read'); });
+            app.get('/read', c => c.json({ notice: flashed<string>('notice') ?? null }));
+            return app;
+        };
+        const shortApp = makeExpiryApp(1, 'short');
+        const longApp = makeExpiryApp(10, 'long');
+        const request = (app: typeof shortApp, path: string, cookie?: string, method = 'GET') => app.fetch(
+            new Request(`https://test${path}`, {
+                method,
+                headers: cookie ? { cookie: `cossack_flash=${cookie}` } : undefined,
+            }),
+            { APP_SECRET: SECRET },
+        );
+
+        try {
+            const shortWrite = await request(shortApp, '/write', undefined, 'POST');
+            const shortToken = getSetCookie(shortWrite, 'cossack_flash')!;
+            expect((await (await request(shortApp, '/read', shortToken)).json()).notice).toBe('short');
+
+            now += 100;
+            const longWrite = await request(longApp, '/write', undefined, 'POST');
+            const longToken = getSetCookie(longWrite, 'cossack_flash')!;
+            const full = await request(longApp, '/read', longToken);
+            expect(full.status).toBe(503);
+            expect(await full.json()).toMatchObject({ code: 'COSSACK_FLASH_REPLAY_UNAVAILABLE' });
+            expect(getSetCookie(full, 'cossack_flash')).toBe('');
+            const stillClaimed = await request(shortApp, '/read', shortToken);
+            expect(await stillClaimed.json()).toEqual({ notice: null });
+
+            // The first claim is now expired, while the second token is still
+            // live. Expiry cleanup must free the slot without evicting a live claim.
+            now += 901;
+            const accepted = await request(longApp, '/read', longToken);
+            expect(accepted.status).toBe(200);
+            expect(await accepted.json()).toEqual({ notice: 'long' });
+        } finally {
+            vi.restoreAllMocks();
+            __resetProcessFlashClaimsForTests();
+        }
     });
 
     it('does not consume a Cloudflare flash token on background RPC and atomically rejects replayed page reads', async () => {

@@ -91,6 +91,7 @@ require('node:module').syncBuiltinESMExports();
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ['@cossackframework/database', 'node-sqlite-migrations-and-seeding'],
       ['@cossackframework/database', 'typed-model-queries'],
+      ['@cossackframework/database', 'node-sqlite-transaction-rollback'],
       ['@cossackframework/ui', 'native-controls'],
       ['@cossackframework/ui', 'radio-and-range'],
       ['@cossackframework/ui', 'one-time-code'],

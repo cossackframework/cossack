@@ -10,7 +10,10 @@ export async function writeNavigationOwnershipAcceptance(root) {
   };
   // Test-only identity source. This is not an authentication example.
   await write('src/bootstrap/middlewares.ts', `export default [async(c,next)=>{
-    c.set('user',{id:c.req.query('viewer')??'alice'});await next();
+    const user={id:c.req.query('viewer')??'alice'};
+    c.set('user',user);
+    c.set('cossack.captureRealtimeIdentity',async()=>({version:1,provider:'fixture.session',data:{reference:user.id}}));
+    await next();
   }];`);
   await write('src/Ownership.ts', `
     import {Cossack,CossackService,Service,State,ClientStore,Client} from '@cossackframework/core';

@@ -38,6 +38,76 @@ interface SignedFlashPayload {
     data: Record<string, unknown>;
 }
 
+const DEFAULT_PROCESS_FLASH_CLAIM_CAPACITY = 10_000;
+type FlashClaimExpiry = { nonce: string; expiresAt: number };
+const processFlashClaims = new Map<string, number>();
+const processFlashClaimExpiries: FlashClaimExpiry[] = [];
+let processFlashClaimCapacity = DEFAULT_PROCESS_FLASH_CLAIM_CAPACITY;
+
+function pushFlashClaimExpiry(entry: FlashClaimExpiry): void {
+    const heap = processFlashClaimExpiries;
+    let index = heap.push(entry) - 1;
+    while (index > 0) {
+        const parent = Math.floor((index - 1) / 2);
+        if (heap[parent].expiresAt <= entry.expiresAt) break;
+        heap[index] = heap[parent];
+        index = parent;
+    }
+    heap[index] = entry;
+}
+
+function popFlashClaimExpiry(): FlashClaimExpiry | undefined {
+    const heap = processFlashClaimExpiries;
+    const first = heap[0];
+    const last = heap.pop();
+    if (!first || !last || heap.length === 0) return first;
+
+    let index = 0;
+    while (true) {
+        const left = index * 2 + 1;
+        const right = left + 1;
+        if (left >= heap.length) break;
+        const child = right < heap.length && heap[right].expiresAt < heap[left].expiresAt ? right : left;
+        if (heap[child].expiresAt >= last.expiresAt) break;
+        heap[index] = heap[child];
+        index = child;
+    }
+    heap[index] = last;
+    return first;
+}
+
+function purgeExpiredProcessFlashClaims(now: number): void {
+    while (processFlashClaimExpiries[0]?.expiresAt <= now) {
+        const expired = popFlashClaimExpiry()!;
+        if (processFlashClaims.get(expired.nonce) === expired.expiresAt) {
+            processFlashClaims.delete(expired.nonce);
+        }
+    }
+}
+
+/** Process/isolate-local replay guard for Node and Deno when no durable store is configured. */
+function claimProcessFlash(nonce: string, expiresAt: number): 'claimed' | 'replayed' | 'full' {
+    const now = Date.now();
+    purgeExpiredProcessFlashClaims(now);
+    if (expiresAt <= now) return 'replayed';
+    if (processFlashClaims.has(nonce)) return 'replayed';
+    if (processFlashClaims.size >= processFlashClaimCapacity) return 'full';
+
+    // This check-and-insert is synchronous, so overlapping requests in this
+    // JavaScript isolate have exactly one winner before either can yield again.
+    processFlashClaims.set(nonce, expiresAt);
+    pushFlashClaimExpiry({ nonce, expiresAt });
+    return 'claimed';
+}
+
+/** @internal Reset the module-local replay guard in focused tests. */
+export function __resetProcessFlashClaimsForTests(capacity = DEFAULT_PROCESS_FLASH_CLAIM_CAPACITY): void {
+    if (!Number.isSafeInteger(capacity) || capacity < 1) throw new RangeError('Flash claim capacity must be positive.');
+    processFlashClaims.clear();
+    processFlashClaimExpiries.length = 0;
+    processFlashClaimCapacity = capacity;
+}
+
 function isSignedFlashPayload(value: unknown): value is SignedFlashPayload {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const payload = value as Record<string, unknown>;
@@ -109,9 +179,13 @@ export function createFlashMiddleware(
                                     error: 'Flash data is temporarily unavailable.' }, 503);
                             }
                         } else {
-                            // Node/Deno remain stateless without an application
-                            // replay store; the signed expiry still bounds replay.
-                            incoming = payload.data;
+                            const claimed = claimProcessFlash(payload.nonce, payload.expiresAt);
+                            if (claimed === 'full') {
+                                deleteCookie(c, COOKIE_NAME, { path: '/' });
+                                return c.json({ code: 'COSSACK_FLASH_REPLAY_UNAVAILABLE',
+                                    error: 'Flash data is temporarily unavailable.' }, 503);
+                            }
+                            if (claimed === 'claimed') incoming = payload.data;
                         }
                     }
                 }

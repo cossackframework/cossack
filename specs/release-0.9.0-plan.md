@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Seventy-five standalone examples compile and execute from installed tarballs,
+Seventy-six standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -160,8 +160,8 @@ SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 39 UI guides now have executable
-examples; all 71 published-package guides have at least one example. The installed gate
-executes all seventy-nine package examples, including four separately bundled auth
+examples; all 73 published-package guides have at least one example. The installed gate
+executes all eighty package examples, including four separately bundled auth
 examples. Database guidance exercises typed model filters and query-builder
 projections as well as a reversible Node SQLite migration and repeatable seeder
 lifecycle. Framework guidance covers runtime capability planning and cache
@@ -179,6 +179,13 @@ passes. Discovery never invokes it. See [application acceptance](./release-0.9.0
 the [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04)
 and the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
 The RT-23 UI catalog audit is complete.
+The latest database guide, `node-sqlite-transaction-rollback`, proves a
+two-row transaction commits both writes and rolls back a rejected callback from
+the installed Node SQLite adapter. The fresh offline gate compiles and executes
+76 standalone examples plus four bundled auth examples. The guide states that
+D1 uses sequential `batch()` operations rather than interactive ORM transactions;
+it does not claim D1 transaction support. CLI-08 remains open for broader
+library, component and recipe guidance.
 Auth now contributes session/role, record-policy, OAuth diagnostic and shared
 credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map
 and statically indexes published TypeScript with explicit source-kind markers.
@@ -235,6 +242,18 @@ generated Cloudflare page examples, CLI/MCP parity, UI catalog checks and
 production stripping. This adds renderer library guidance but does not close
 broader API/component/recipe coverage or CLI-08. See the
 [renderer guide acceptance](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05).
+
+Checkpoint (Codex, 2026-10-05): the database catalog adds an installed Node
+SQLite example for `ORM.transaction()`. It verifies both writes commit together
+and that a thrown callback rolls back its partial write. Its guidance states
+that D1 does not support interactive ORM transactions and that independent
+connections do not form a distributed transaction. The fresh offline gate now
+executes 76 non-auth examples plus four separately bundled auth examples (80
+total), across 73 published-package guides. This corrects the prior handoff's
+one-guide undercount. It proves the Node SQLite path,
+not D1 interactive transactions or cross-provider behavior. CLI-08 remains open
+for wider API, component and recipe coverage. See the
+[transaction example acceptance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05).
 
 Remaining: Complete broader authored API/component/recipe coverage across
 the libraries, beyond the now-executable UI guides. Preserve RT-23 regressions
@@ -504,9 +523,14 @@ prevent a wall-clock guarantee, and idle sockets are checked on the next action
 or delivery. Barrier tests now prove generic session and signed-flash request
 scopes remain separate while handlers overlap in one isolate. Auth-managed
 session rotation already uses an atomic store replacement with one winner.
-These tests prove request isolation, not durable single-use flash: a copied,
-valid signed cookie can still be replayed until expiry. Continue documenting and
-verifying the remaining concurrency guarantees before closing RT-11.
+The process-runtime guard now atomically claims each valid signed nonce in a
+bounded module-local store. It prevents concurrent and later replay within one
+loaded module instance in its JavaScript process or isolate, but does not
+coordinate across processes or isolates and does not survive restart. Capacity
+fails closed rather than evicting a live claim. Continue verifying broader
+concurrent request semantics and documenting these runtime limits before closing
+RT-11. See the
+[process-local flash checkpoint](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05).
 
 Codex database-session checkpoint (2026-10-05): the built-in database
 `SessionStore.set()` and `unset()` now update one JSON key in one SQL statement
@@ -526,8 +550,9 @@ Account writes, reset consumption and response delivery are separate steps;
 fixed errors do not establish rollback. Flash now signs and checks its expiry on
 the server. Cloudflare consumes each nonce once through a dedicated
 `COSSACK_SSE` SQLite Durable Object, with alarm cleanup and atomic two-Worker
-coverage. Node/Deno remain stateless, so copied tokens replay until signed
-expiry. See the [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05).
+coverage. Node/Deno use a bounded module-local claim store when no coordinator
+is available. See the [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05)
+and [process-local checkpoint](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05).
 Audit the remaining concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
@@ -581,6 +606,18 @@ RT-12 remains open. The complete CLI package suite has not passed: parallel
 execution triggered subprocess/test timeouts, and the serial retry exceeded an
 existing five-second CLI assertion before it was stopped. Rerun it during REL-03
 and resolve any failures that reproduce without load contention.
+
+Codex navigation-ownership checkpoint (2026-10-05): the first generated browser
+run reached authenticated SSE in both Node and Cloudflare but received HTTP 409.
+The synthetic-user fixture had not supplied the required
+`captureRealtimeIdentity` provider; the transport correctly failed closed. The
+fixture now supplies a test-only identity descriptor. The focused generated
+acceptance passes both runtime cases, including layout/component state ownership,
+cleanup-once behavior, SSE open/closure, WebSocket open/target replacement and
+stale socket cleanup. This fixture does not authenticate a real user. Runtime
+metadata/lifecycle behavior and the full CLI/release gates remain open, so this
+checkpoint does not close RT-12. See the
+[browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
 
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
@@ -1012,8 +1049,10 @@ Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-comp
 Purpose: A generated binding must point to a real resource or use supported
 provisioning. A fake Hyperdrive ID postpones an inevitable failure until deployment.
 
-Baseline: D1 scaffolds use supported automatic provisioning. Hyperdrive still
-uses a rejected placeholder. Full resource selection/setup flows remain open.
+Baseline: D1 scaffolds set `database_name` without a `database_id`; under the
+pinned Wrangler version, the named remote database must already exist.
+Hyperdrive still uses an all-zero placeholder ID. Full resource selection/setup
+flows remain open.
 
 Approach: Add a resource plan that distinguishes existing, create, provider-managed,
 and unresolved resources. Support D1, R2, KV, Hyperdrive, and bindings needed by
@@ -1030,6 +1069,14 @@ Done when: A generated app contains valid bindings or a precise unresolved actio
 Plan-only runs create nothing. Tests cover wrong accounts, unavailable resources,
 unsupported provisioning, and repeated application of the plan. Dependencies:
 CLI-03, RT-24, RT-25, and CF-01.
+
+Codex scaffold-guidance checkpoint (2026-10-05): generated D1 configuration and
+README now consistently require the named remote database to exist before
+deployment. Hyperdrive guidance calls out the all-zero configuration ID and
+keeps database credentials in Cloudflare configuration. The offline scaffold
+tests verify generated configuration comments and rendered instructions. No
+account discovery, resource selection or provisioning was added, so CF-04
+remains open. See the [checkpoint](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05).
 
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets

@@ -68,6 +68,23 @@
           "source": "import { BaseEntity, Column, Entity, MoreThanOrEqual, PrimaryGeneratedColumn, createORM } from '@cossackframework/database';\nimport { nodeSQLite } from '@cossackframework/database/node';\n\n@Entity()\nclass Note extends BaseEntity {\n  @PrimaryGeneratedColumn()\n  declare id: number;\n\n  @Column({ type: 'text' })\n  declare title: string;\n\n  @Column({ type: 'integer' })\n  declare priority: number;\n\n  @Column({ type: 'boolean' })\n  declare published: boolean;\n}\n\nconst orm = createORM({ adapter: await nodeSQLite(), entities: [Note] });\ntry {\n  const notes = orm.sql.id('notes');\n  await orm.sql`CREATE TABLE ${notes} (id INTEGER PRIMARY KEY, title TEXT NOT NULL, priority INTEGER NOT NULL, published INTEGER NOT NULL)`;\n  await orm.model(Note).insert([\n    { title: 'Draft', priority: 1, published: false },\n    { title: 'Query guide', priority: 3, published: true },\n    { title: 'Release notes', priority: 2, published: true },\n  ]);\n\n  const highPriority = await orm.model(Note).find({\n    where: { published: true, priority: MoreThanOrEqual(2) },\n    select: ['id', 'title'],\n    order: { title: 'asc' },\n    take: 2,\n  });\n  if (highPriority.length !== 2 || highPriority[0]?.title !== 'Query guide') {\n    throw new Error('The typed find filter or ordering returned unexpected rows');\n  }\n\n  const projection = await orm.model(Note).query('note')\n    .select('id', 'title')\n    .where(where => where.eq('published', true))\n    .orderBy('priority', 'desc')\n    .getRawMany();\n  if (projection[0]?.title !== 'Query guide' || 'priority' in (projection[0] ?? {})) {\n    throw new Error('The typed projection returned unexpected columns');\n  }\n} finally {\n  await orm.close();\n}\n"
         }
       ]
+    },
+    {
+      "id": "node-sqlite-transaction-rollback",
+      "title": "Commit or roll back one Node database transaction",
+      "summary": "Group related writes in an interactive transaction and verify that failures leave no partial changes.",
+      "imports": [
+        "@cossackframework/database",
+        "@cossackframework/database/node"
+      ],
+      "markdown": "Call `orm.transaction(async () => { ... })` to group writes on an adapter that supports interactive transactions. The callback uses the transaction-scoped driver, and a rejected callback rolls its writes back. Keep every operation that must commit together inside the callback. This example uses Node's in-memory SQLite adapter and only proves that runtime path. Cloudflare D1 supports atomic sequential `batch()` calls but not interactive ORM transactions; `orm.transaction()` fails before its callback on D1. Separate database connections also do not form one distributed transaction.",
+      "examples": [
+        {
+          "id": "atomic-transfer-and-rollback",
+          "language": "typescript",
+          "source": "import { createORM } from '@cossackframework/database';\nimport { nodeSQLite } from '@cossackframework/database/node';\n\nconst orm = createORM({ adapter: await nodeSQLite(), entities: [] });\ntry {\n  await orm.sql`CREATE TABLE accounts (id TEXT PRIMARY KEY, balance INTEGER NOT NULL CHECK (balance >= 0))`;\n  await orm.sql`INSERT INTO accounts (id, balance) VALUES (${'alice'}, ${100}), (${'bob'}, ${30})`;\n\n  await orm.transaction(async () => {\n    await orm.sql`UPDATE accounts SET balance = balance - ${25} WHERE id = ${'alice'}`;\n    await orm.sql`UPDATE accounts SET balance = balance + ${25} WHERE id = ${'bob'}`;\n  });\n\n  const readBalances = () => orm.sql<{ id: string; balance: number }>`SELECT id, balance FROM accounts ORDER BY id`;\n  let balances = await readBalances();\n  if (balances.rows[0]?.balance !== 75 || balances.rows[1]?.balance !== 55) {\n    throw new Error('The transfer did not commit both writes');\n  }\n\n  let rejected = false;\n  try {\n    await orm.transaction(async () => {\n      await orm.sql`UPDATE accounts SET balance = balance - ${10} WHERE id = ${'alice'}`;\n      throw new Error('cancel this transfer');\n    });\n  } catch (error) {\n    rejected = error instanceof Error && error.message === 'cancel this transfer';\n  }\n  if (!rejected) throw new Error('The transaction callback error was not returned');\n\n  balances = await readBalances();\n  if (balances.rows[0]?.balance !== 75 || balances.rows[1]?.balance !== 55) {\n    throw new Error('The failed transfer left a partial write');\n  }\n} finally {\n  await orm.close();\n}\n"
+        }
+      ]
     }
   ]
 }

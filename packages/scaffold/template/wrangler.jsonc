@@ -15,8 +15,8 @@
       "name": "EMAIL"
     }
   ],
-  // Wrangler provisions D1 on deployment when database_id is omitted.
-  // Local development uses a local database. Apply migrations explicitly.
+  // Create this named D1 database in your Cloudflare account before deploying.
+  // Local development uses a separate local database; apply migrations explicitly.
   "d1_databases": [
     {
       "binding": "DB",

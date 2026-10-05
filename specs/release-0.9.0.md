@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include seventy-five standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 71 published-package guides have at least one example; all 79 packaged examples are typechecked and executed by installed acceptance. Renderer guides now cover escaped server HTML, conditional templates, keyed lists, initial form values and safe CSS interpolation. Core guidance covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guidance covers runtime capability, cache guarantees and request-scoped typed configuration/raw bindings; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Database guidance covers bound Node SQLite and Cloudflare D1 queries, typed model filters and projections, plus reversible migration and idempotent seeding lifecycle; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [renderer API guides](#codex-cli08-renderer-guides-2026-10-05), [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [typed database queries](#codex-cli08-database-queries-2026-10-05), [request-scoped configuration](#codex-cli08-request-config-2026-10-05), [migration/seeding guidance](#codex-cli08-migration-guidance-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include seventy-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 73 published-package guides have at least one example; all 80 packaged examples are typechecked and executed by installed acceptance. Renderer guides now cover escaped server HTML, conditional templates, keyed lists, initial form values and safe CSS interpolation. Core guidance covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guidance covers runtime capability, cache guarantees and request-scoped typed configuration/raw bindings; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Database guidance covers bound Node SQLite and Cloudflare D1 queries, typed model filters and projections, reversible migration and idempotent seeding lifecycle, and atomic Node SQLite transactions with rollback. The D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound; D1 does not support interactive ORM transactions. Broader library/API/component/recipe coverage remains open. See [transaction guidance](#codex-cli08-transactions-2026-10-05), [renderer API guides](#codex-cli08-renderer-guides-2026-10-05), [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [typed database queries](#codex-cli08-database-queries-2026-10-05), [request-scoped configuration](#codex-cli08-request-config-2026-10-05), [migration/seeding guidance](#codex-cli08-migration-guidance-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -39,8 +39,8 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno copied cookies remain replayable until signed expiry. Remaining: broader concurrent request semantics and process-runtime replay guarantees. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
-- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures and scoped disposal. Codex adds static TypeScript-source `serviceOwnership` for imported/re-exported tokens and inherited layout decorators, and classifies imported core `@Service()` syntax as declared, missing or unknown without running project code. Remaining: runtime metadata/lifecycle behavior and browser navigation lifetime acceptance. See the [ownership-inspection checkpoint](./release-0.9.0-plan.md#rt-12).
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno claim each signed nonce once per loaded module instance in a bounded 10,000-entry store; expired claims are purged and capacity fails closed. This does not coordinate across processes/isolates or survive restart. Remaining: broader concurrent request semantics and cross-process replay guarantees. See [process-local flash claims](#codex-rt11-process-flash-claims-2026-10-05), [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
+- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures and scoped disposal. Codex adds static TypeScript-source `serviceOwnership` for imported/re-exported tokens and inherited layout decorators, and classifies imported core `@Service()` syntax as declared, missing or unknown without running project code. Generated Node/Cloudflare browser acceptance now passes navigation, SSE and WebSocket ownership checks after the synthetic auth fixture supplies its required identity provider. Remaining: runtime metadata/lifecycle behavior and broader release acceptance. See the [ownership-inspection checkpoint](./release-0.9.0-plan.md#rt-12) and [browser checkpoint](#codex-rt12-navigation-fixture-2026-10-05).
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
@@ -72,7 +72,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-01](./release-0.9.0-plan.md#cf-01) Select environment before Vite build and share it across SSG, bindings, migrations, and deployment; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation.
-- [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs.
+- [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs. Codex (2026-10-05): scaffold guidance now names the D1 database that must exist before deploy and explains how to replace the Hyperdrive placeholder ID without exposing origin credentials. Focused scaffold tests pass. Resource selection/provisioning is not implemented; see [checkpoint](#codex-cf04-scaffold-guidance-2026-10-05).
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
@@ -193,10 +193,12 @@ frame and stop reconnecting. The generated deployment fixture uses a one-way
 session fingerprint instead of retaining the bearer session ID. Desktop remains
 complete by user decision.
 
-Barrier tests confirm generic session and flash scopes stay separate across
-overlapping requests in one isolate. Auth-managed rotation already has an
-atomic single-winner test. Signed flash tokens remain replayable until expiry;
-these request-isolation checks do not claim durable one-use semantics.
+At the time of this WebSocket checkpoint, barrier tests confirmed generic
+session and flash scopes stayed separate across overlapping requests in one
+isolate, but signed flash tokens still replayed within their expiry. The later
+[process-local claim checkpoint](#codex-rt11-process-flash-claims-2026-10-05)
+adds one-winner behavior within a module instance; this checkpoint does not
+claim cross-process durability.
 
 The focused core/framework/adapter tests, Cloudflare WebSocket peer integration,
 generated deployment acceptance, and concurrent session/flash scope tests pass.
@@ -244,8 +246,9 @@ expiry timestamp. The middleware checks that signed expiry after HMAC
 verification, so a copied token cannot outlive its configured `maxAge` just by
 bypassing the browser's cookie jar. `maxAge` must be a positive whole number of
 seconds. Invalid, expired and older raw-data tokens provide no flash and are
-cleared. The 30-second default still allows a copied valid token to be replayed
-within its signed window; durable one-winner consumption remains open.
+cleared. At this expiry-only checkpoint, a copied valid token could still be
+replayed within its signed window. The later process-local and Cloudflare claim
+checkpoints add one-winner consumption with different durability limits.
 
 - Framework suite: **1,544 tests / 79 files pass**.
 - Core flash and crypto suites: **39 tests / 2 files pass**.
@@ -907,6 +910,49 @@ These results precede the [development runner and RT-28 audit](#codex-rt28-compl
 Remaining installed OS integration, other OS packages and signing acceptance
 are waived by the user's decision to mark Desktop complete for this release.
 
+<a id="codex-cf04-scaffold-guidance-2026-10-05"></a>
+### Codex: Accurate Cloudflare scaffold resource guidance (2026-10-05)
+
+Generated D1 config and README now agree: create a remote D1 database matching
+the configured `database_name` before deployment; local development uses the
+separate Wrangler database. The README also explains replacing the all-zero
+Hyperdrive configuration ID and keeping origin credentials in the Cloudflare
+configuration. Scaffold tests check both generated comments and README output.
+This is accurate setup guidance, not resource selection, authenticated account
+inspection, provisioning or full Cloudflare resource management. CF-04 remains
+open.
+
+<a id="codex-rt11-process-flash-claims-2026-10-05"></a>
+### Codex: Process-local flash replay claims (2026-10-05)
+
+Without the Cloudflare Durable Object coordinator, flash middleware now claims
+each signed nonce once in a synchronous, module-local store. A min-heap removes
+expired claims, the live-claim capacity is bounded at 10,000, and a full store
+fails closed with `COSSACK_FLASH_REPLAY_UNAVAILABLE` (503) without evicting a
+live claim. This guarantees one winner only within the current loaded module
+instance in its process or isolate; it does not coordinate across processes or
+isolates and does not survive restart. Cloudflare continues using the Durable
+Object claim path.
+
+**Verification:** `pnpm --filter @cossackframework/framework exec vitest run
+tests/flash-middleware.test.ts` passes **1 file / 21 tests**;
+`pnpm --filter cossack exec vitest run
+tests/sse-coordinator-integration.test.js -t 'atomically consumes signed
+flash nonces'` passes **1 test**; root `pnpm tsc --noEmit` passes.
+
+<a id="codex-rt12-navigation-fixture-2026-10-05"></a>
+### Codex: Navigation ownership acceptance fixture (2026-10-05)
+
+The synthetic user middleware in the generated navigation ownership fixture now
+provides the structural `captureRealtimeIdentity` callback required by
+authenticated realtime. The fixture continues to use a query parameter as a
+test identity and is not an authentication example. `pnpm --filter cossack
+exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation
+ownership'` passes **2 runtime cases** (Node and Cloudflare; 62 unrelated tests
+skipped). Navigation, cleanup, SSE and WebSocket ownership assertions now pass.
+RT-12 remains open for runtime metadata/lifecycle behavior and broader release
+gates.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
@@ -1091,3 +1137,7 @@ parent task. Current status is 28 complete and 30 open.
 | <a id="codex-rt11-cloudflare-flash-claims-2026-10-05"></a>[Codex: Cloudflare one-use flash claims (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-cloudflare-flash-claims-2026-10-05) |
 | <a id="codex-rt01-per-call-deadlines-2026-10-05"></a>[Codex: Per-call RPC deadlines and cancellation (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt01-per-call-deadlines-2026-10-05) |
 | <a id="codex-cli08-renderer-guides-2026-10-05"></a>[Codex: Installed renderer API guides (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-renderer-guides-2026-10-05) |
+| <a id="codex-cli08-transactions-2026-10-05"></a>[Codex: Installed transaction and rollback example (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-transactions-2026-10-05) |
+| <a id="codex-cf04-scaffold-guidance-2026-10-05"></a>[Codex: Accurate Cloudflare scaffold resource guidance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf04-scaffold-guidance-2026-10-05) |
+| <a id="codex-rt11-process-flash-claims-2026-10-05"></a>[Codex: Process-local flash replay claims (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05) |
+| <a id="codex-rt12-navigation-fixture-2026-10-05"></a>[Codex: Navigation ownership browser acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-navigation-fixture-2026-10-05) |

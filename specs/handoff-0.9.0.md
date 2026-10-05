@@ -3,8 +3,11 @@
 Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
 30 of 58 release tasks are complete. 28 remain open.
 Versions stay at 0.8.3 until REL-04.
-**Codex owns implementation, review, acceptance and status for every remaining
-task.** The earlier GLM handoff is superseded; do not delegate this release.
+**Codex coordinates implementation, review, acceptance and status for every
+remaining task.** For this continuation the user authorized up to three scoped
+subagents when work is independent. Assign exclusive files, keep integration
+and final verification with Codex, and preserve user-owned changes. This
+supersedes the earlier no-delegation instruction.
 Keep this file current as work progresses.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
@@ -26,8 +29,9 @@ all 30 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
-Latest CLI-08 progress: [installed renderer API guides](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds executable examples for conditional templates, keyed list markup, server form values and safe CSS composition. The fresh offline tarball gate passes all 75 standalone examples and four auth examples (79 total). CLI-08 stays open for broader library API, component and recipe coverage.
+Latest CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
+Latest Cloudflare progress: [CF-04 scaffold guidance](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05) now describes the named D1 and Hyperdrive setup correctly; its 100 focused scaffold tests pass, but resource selection/provisioning remains open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
 
@@ -77,7 +81,7 @@ REL-03 remains open for the required non-Desktop release matrix.
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
    plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
-   All 71 published-package guides now include examples, and all seventy-nine
+   All 73 published-package guides now include examples, and all eighty
    packaged examples run in the installed gate. Database guidance now includes
    typed model filters and query-builder projections; see the [latest query
    acceptance](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
@@ -96,7 +100,7 @@ REL-03 remains open for the required non-Desktop release matrix.
    The [locale guidance checkpoint](./release-0.9.0.md#codex-cli08-localization-2026-10-05) adds installed examples for Accept-Language fallback (including `q=0` exclusions) and CLDR plural formatting. Core now ignores explicitly unacceptable language ranges. The Core i18n suite passes 74 tests and the fresh installed gate passes. These examples cover pure Core helpers; they do not prove framework middleware or response-cache behavior.
    The [migration/seeding checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05) adds an installed Node SQLite lifecycle example for migration apply/status/rollback and idempotent seeding. It proves the documented Node API against an in-memory SQLite database, not provider portability or deployment readiness.
    The [request-config checkpoint](./release-0.9.0.md#codex-cli08-request-config-2026-10-05) adds an installed framework guide for request-time config factories, typed dotted paths, string environment values and raw bindings. Its example compiles and runs from the framework tarball and verifies safe missing-binding errors. Broader library and recipe coverage remains open.
-   The [latest renderer checkpoint](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds four installed examples, raising the package catalog to 71 guides and the acceptance run to 79 examples including auth. Continue broader library API/component/recipe coverage and preserve the acceptance distinction between SSR output and browser interaction.
+   The [renderer checkpoint](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds four installed examples, raising the package catalog to 72 guides and the acceptance run to 79 examples including auth at that checkpoint. The [latest transaction checkpoint](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) brings the totals to 73 guides and 80 examples. A recount corrected the previous handoff's one-guide undercount. Continue broader library API/component/recipe coverage and preserve the acceptance distinction between SSR output and browser interaction.
    Desktop remains closed by user decision. Do not spend work on its waived platform matrix.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
    recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
@@ -148,10 +152,12 @@ REL-03 remains open for the required non-Desktop release matrix.
    frame, slow storage and backpressure prevent a strict wall-clock revocation
    guarantee; idle sockets are checked on the next action or delivery. Generic
    session and signed-flash scopes now have barrier tests that overlap requests
-   in one isolate. Auth-session rotation has an atomic one-winner test, but a
-   copied signed-flash cookie remains replayable until expiry; durable one-use
-   semantics and the remaining concurrency contract are still open. The built-in
-   database session store now mutates individual JSON keys atomically on
+   in one isolate. Auth-session rotation has an atomic one-winner test. Node/Deno
+   now claim flash nonces once in a bounded module-local store; capacity fails
+   closed without evicting live tokens. This does not coordinate across
+   processes or isolates and does not survive restart. See the [process-local
+   flash checkpoint](./release-0.9.0.md#codex-rt11-process-flash-claims-2026-10-05).
+   The built-in database session store now mutates individual JSON keys atomically on
    SQLite/PostgreSQL/MySQL, with a deterministic lost-update regression and
    dialect compilation checks; custom stores must preserve the same key-level
    behavior. Same-key writes remain last-writer-wins. See the
@@ -163,8 +169,11 @@ REL-03 remains open for the required non-Desktop release matrix.
    once in `COSSACK_SSE`, preserves background requests and rejects copied-token
    page replays. Native two-Worker tests and middleware tests cover concurrent
    claims, replay, invalid expiry, missing binding and coordinator failure.
-   Node/Deno remain stateless until expiry. Preserve that limit and the
+   Node/Deno use a bounded module-local claim store. Preserve that limit and the
    [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05).
+   The flash middleware and Cloudflare coordinator focused tests and root type
+   check pass. RT-11 remains open for broader request concurrency and replay
+   guarantees across processes/isolates or restart.
    The fresh installed agent-docs gate passes with the clarified core guide.
    The older, unrelated coordinator RPC stream test still reports
    `COSSACK_RPC_STREAM_TRUNCATED` in this checkout; it reproduced against the
@@ -191,7 +200,13 @@ REL-03 remains open for the required non-Desktop release matrix.
    subprocess tests and root TypeScript checking. A throwing initializer proves
    service modules are not run. Static `@Service()` identity is classified as
    declared/missing/unknown. Repeat the full CLI suite during REL-03; runtime
-   metadata/lifecycle behavior and browser navigation ownership remain open.
+   metadata/lifecycle behavior remains open.
+   The targeted generated browser acceptance now passes **2 cases** (Node and
+   Cloudflare) for navigation and layout/component ownership, cleanup, SSE and
+   WebSocket lifetime. The earlier HTTP 409 came from synthetic-user middleware
+   missing `captureRealtimeIdentity`; the fixture now supplies a test-only
+   descriptor. Runtime metadata/lifecycle behavior remains open, so RT-12 stays
+   open. See the [browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 
@@ -205,9 +220,12 @@ REL-03 remains open for the required non-Desktop release matrix.
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 still needs native pre-header disconnect delivery and initialization/restoration concurrency acceptance. Per-call deadlines and cancellation are implemented and covered across component HTTP/SSE/WebSocket and layout-service HTTP calls; this does not prove native disconnect delivery or stop ignored server application I/O.
 - The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
-- Browser ownership acceptance remains open. The existing `di-demo.spec.ts` checks service state retention inside a layout and reset after leaving it, but this session's targeted Playwright command did not start Vite or produce test output within about 75 seconds, so it was stopped without claiming a pass.
+- Browser ownership acceptance passes its focused generated Node and Cloudflare
+  cases, including SSE and WebSocket ownership. The fixture uses a synthetic
+  identity provider only; this does not establish real authentication or close
+  RT-12's remaining runtime metadata/lifecycle acceptance.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
-- RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno copied tokens remain replayable until signed expiry. Native calls require explicit parsing and authorization.
+- RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno claims are limited to one loaded module instance in its JavaScript process or isolate. They are not distributed or restart durable. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.
 - Cancellation and optimistic rollback do not terminate ignored application I/O, undo external effects or replay uncertain mutations.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
@@ -236,5 +254,8 @@ REL-03 remains open for the required non-Desktop release matrix.
   Use `git diff --check -- . ':!reports.md'` for the known report whitespace exception.
 - Keep the database JSON bootstrap in default CommonJS eval mode. Miniflare
   Workers inherit eval flags; `--input-type=module` stalls the synchronous bridge.
-- Continue the remaining tasks directly. Do not delegate, create new chats, send messages, publish, or deploy without new authorization.
+- For this continuation, use up to three independent, file-scoped subagents when
+  useful; do not let agents share implementation files. Keep shared APIs,
+  integration and final verification with Codex. Do not create new chats, send
+  messages, publish or deploy without authorization.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.

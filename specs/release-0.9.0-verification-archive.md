@@ -10343,7 +10343,7 @@ sanitizing it.
 
 The installed-docs verifier selects and compiles each example from its tarball
 catalog, then runs it with Node network APIs blocked. The full published-package
-catalog now has 71 guides, and the installed run has 75 non-auth examples plus
+catalog now has 72 guides, and the installed run has 75 non-auth examples plus
 four separately bundled auth examples.
 
 **Verification:**
@@ -10365,3 +10365,99 @@ accessibility. The renderer has existing DOM/hydration tests; this checkpoint
 does not rerun the entire package suite. CLI-08 remains open for wider
 library/component/recipe coverage and REL-02/REL-03 acceptance. No Desktop
 checks, deployment or publication were run.
+
+<a id="codex-cli08-transactions-2026-10-05"></a>
+### Codex: Installed transaction and rollback example (2026-10-05)
+
+The database catalog now includes `node-sqlite-transaction-rollback`. It uses
+the published Node SQLite adapter and `ORM.transaction()` to transfer funds
+between two rows. The example checks that both writes commit, then throws after
+one write in another callback and verifies that neither balance changes. The
+guide explains that every operation which must commit together belongs inside
+the callback; the example does not cover distributed transactions across
+connections.
+
+The guidance makes a runtime distinction needed by Cloudflare agents: D1
+supports atomic sequential `batch()` operations but does not support interactive
+ORM transactions. Calling `orm.transaction()` against D1 fails before the
+callback. This example proves only Node's in-memory SQLite adapter.
+
+The installed verifier compiles and executes the example from the package
+tarball with outbound Node network access disabled. With this guide, the
+published catalog contains 73 guides and acceptance covers 76 standalone
+examples plus four separately bundled auth examples (80 total). The full gate
+also checks generated Cloudflare pages, CLI/MCP parity, UI catalog contracts,
+production stripping and local workerd D1 behavior.
+
+**Limits:** No Cloudflare account or deployed database was contacted. This does
+not prove interactive transaction support on D1, provider portability, or
+atomicity across separate adapters. CLI-08 remains open for broader
+library/component/recipe coverage; REL-02/REL-03 retain the final non-Desktop
+acceptance gates. Desktop remains complete by user decision with its waived
+platform checks unclaimed.
+
+<a id="codex-cf04-scaffold-guidance-2026-10-05"></a>
+### Codex: Accurate Cloudflare scaffold resource guidance (2026-10-05)
+
+Generated D1 config comments and the README now state that the named remote
+database must exist before deploy. The README shows `wrangler d1 create` with
+the default generated name, explains the pinned Wrangler behavior, and tells
+users to replace the Hyperdrive all-zero placeholder with a real configuration
+ID while keeping origin credentials in Cloudflare configuration. This corrects
+the scaffold's earlier claim that D1 would be provisioned automatically when
+`database_id` was omitted.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/scaffold exec vitest run tests/scaffold.test.js tests/adapter.test.js`: **2 files / 100 tests pass**.
+- `pnpm tsc --noEmit`: passes.
+- `git diff --check` for the scaffold files: passes.
+
+No Wrangler account calls were made. This is offline setup guidance and a
+generated-output regression only; resource selection, authenticated account
+inspection and provisioning remain unimplemented. CF-04 stays open. Release
+status remains **30 complete / 28 open**. No deployment or publication occurred.
+
+<a id="codex-rt11-process-flash-claims-2026-10-05"></a>
+### Codex: Process-local flash replay claims (2026-10-05)
+
+Without a Cloudflare Durable Object coordinator, the framework now atomically
+claims each signed flash nonce in a synchronous module-local store. A min-heap
+purges expired entries. At the 10,000 live-claim limit, flash reads fail closed
+with `COSSACK_FLASH_REPLAY_UNAVAILABLE` (503), clear the cookie, and preserve all
+live claims. This gives one winner within a loaded module instance in its
+current process or isolate. It does not coordinate across processes/isolates
+and does not survive restart. Cloudflare continues to use its durable DO claim.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/flash-middleware.test.ts`: **1 file / 21 tests pass**.
+- `pnpm --filter cossack exec vitest run tests/sse-coordinator-integration.test.js -t 'atomically consumes signed flash nonces'`: **1 test passes**; two unrelated tests skipped.
+- Root `pnpm tsc --noEmit`: passes after integration.
+
+The tests cover a copied-cookie race, background-request non-consumption,
+capacity failure without eviction of a still-live token, expiry cleanup and the
+Cloudflare atomic claim path. They do not prove cross-process, cross-isolate or
+restart durability. RT-11 remains open for the broader concurrency contract.
+Release status remains **30 complete / 28 open**.
+
+<a id="codex-rt12-navigation-fixture-2026-10-05"></a>
+### Codex: Navigation ownership browser acceptance (2026-10-05)
+
+The first run of this acceptance returned HTTP 409 at authenticated SSE for both
+generated Node and Cloudflare apps. The test middleware set a synthetic user but
+omitted `captureRealtimeIdentity`, so the framework correctly rejected an
+incomplete authenticated-realtime setup. The fixture now supplies a test-only
+versioned identity descriptor; no production runtime code changed.
+
+**Verification:**
+
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'isolates navigation ownership'`: **2 cases pass** (Node and Cloudflare); 62 unrelated tests skipped.
+- Root `pnpm tsc --noEmit`: passes after the fixture change.
+
+The focused browser cases now pass navigation state retention, failed-navigation
+cleanup, async cleanup ownership, user/scope changes, SSE open and retirement,
+WebSocket open/target replacement, and stale-owner disposal. The synthetic
+fixture is not real authentication. RT-12 remains open for runtime
+metadata/lifecycle acceptance and the full CLI/release gates. Release status
+remains **30 complete / 28 open**. No deployment or publication occurred.
