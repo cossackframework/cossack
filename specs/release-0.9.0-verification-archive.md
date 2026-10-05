@@ -10124,3 +10124,38 @@ still repeats its data. Already-started actions/frames can finish after session
 revocation; response delivery and application storage effects are not rolled
 back. Desktop remains complete by user decision; waived platform checks are not
 claimed as passed. No deployment or publication occurred.
+
+<a id="codex-cli08-ui-example-2026-10-05"></a>
+### Codex: Installed UI example and SSR acceptance (2026-10-05)
+
+The UI package's `native-controls` guide now includes an executable accessible
+profile form using `Button`, `Input` and `Label`. Its source is retrieved from
+the installed CLI catalog, typechecked against installed package declarations,
+then bundled and executed under Node. Bundling matches the app's Vite handling
+of the UI barrel's Solar icon TypeScript source. Rendered output checks the
+label/control relationship, email/name/required attributes, linked help and
+submit button. This example covers server rendering only; it does not establish
+browser interaction or assistive-technology behavior.
+
+The isolated example compiler uses the root workspace's `skipLibCheck` policy.
+The UI declarations transitively include core Cloudflare APIs whose ambient
+Worker types belong to generated Worker projects; the examples themselves use
+only renderer and UI APIs.
+
+**Verification:**
+
+- `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local`:
+  fresh package builds and installation pass; **13 standalone examples**, four
+  auth examples, four generated application pages, HTTP/SSE/WebSocket browser
+  traces, offline CLI/MCP parity, UI declaration contracts and production
+  source-map stripping pass. Database package tests pass **15 files / 92 tests**.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`:
+  **1 file / 13 tests pass**.
+- `pnpm tsc --noEmit` passes.
+- `git diff --check -- . ':!reports.md'` passes.
+
+CLI-08 remains open for broader API/component/recipe examples and real Worker
+runtime coverage, including D1. Desktop is complete by user decision; the
+focused docs gate excludes Desktop, and waived platform checks are not claimed
+as passed. REL-02/REL-03 keep their existing acceptance criteria. Release status
+remains **28 complete / 30 open**. No deployment or publication occurred.

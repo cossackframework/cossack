@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twelve standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include thirteen standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. UI's native-controls guide now has an executable accessible SSR form example. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [UI guide acceptance](#codex-cli08-ui-example-2026-10-05), [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -219,6 +219,32 @@ Worker runtime execution of the D1 guide. REL-02 and REL-03 retain their full
 criteria. Desktop remains complete by user decision; its waived platform
 checks are not claimed as passed. The release count remains **28 complete / 30
 open**.
+
+<a id="codex-cli08-ui-example-2026-10-05"></a>
+### Codex: Installed UI example and SSR acceptance (2026-10-05)
+
+The UI package's `native-controls` guide now includes an executable accessible
+profile form using `Button`, `Input` and `Label`. It compiles against the
+installed package declarations and verifies server-rendered label/control
+relationships, required/email semantics, help text and the submit button. The
+acceptance bundles this example before Node execution because the installed UI
+barrel exposes Solar icon TypeScript source; this follows the app's Vite
+dependency pipeline. No browser interaction or assistive-technology behavior is
+claimed by this example.
+
+- `pnpm test:agent-docs:local`: passes fresh packed-package installation,
+  **13 standalone examples**, four auth examples, four generated application
+  pages, offline CLI/MCP parity, Cloudflare HTTP/SSE/WebSocket traces, UI
+  declaration contracts and production source-map stripping. Database tests
+  pass **15 files / 92 tests**. Desktop is excluded from this focused docs gate.
+- The example typecheck uses the repository's `skipLibCheck` policy because
+  imported Cloudflare declarations refer to ambient Worker globals absent from
+  the runtime-neutral example harness.
+
+CLI-08 remains open for broader package/component/recipe examples and real
+Worker execution of the D1 guidance. REL-02/REL-03 retain their full criteria.
+Desktop is complete by user decision; its waived platform checks are not claimed
+as passed. Release status remains **28 complete / 30 open**.
 
 <a id="codex-rt11-forms-2026-10-05"></a>
 ### Codex: Generated auth form privacy and session actions (2026-10-05)
@@ -642,4 +668,5 @@ parent task. Current status is 28 complete and 30 open.
 | <a id="codex-popover-2026-10-04"></a>[Codex: native Popover contract (2026-10-04)](./release-0.9.0-verification-archive.md#codex-popover-2026-10-04) |
 | <a id="codex-action-menus-2026-10-04"></a>[Codex: DropdownMenu and ContextMenu contracts (2026-10-04)](./release-0.9.0-verification-archive.md#codex-action-menus-2026-10-04) |
 | <a id="codex-cli08-database-guidance-2026-10-05"></a>[Codex: Installed database guidance and cold-start acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-database-guidance-2026-10-05) |
+| <a id="codex-cli08-ui-example-2026-10-05"></a>[Codex: Installed UI example and SSR acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-ui-example-2026-10-05) |
 | <a id="codex-rt11-flash-expiry-2026-10-05"></a>[Codex: Server-enforced flash cookie expiry (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-flash-expiry-2026-10-05) |

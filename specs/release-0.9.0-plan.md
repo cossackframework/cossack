@@ -184,13 +184,17 @@ Vite discovers after its initial dependency scan.
 The Cloudflare D1 guide now has an installed example that runs against a fake
 binding contract and proves SQL values stay parameterized. This exercises the
 published adapter path but does not prove the guide in Miniflare/workerd or
-against a deployed database.
+against a deployed database. The UI `native-controls` guide now has one
+executable SSR form example; it compiles and runs against the installed UI and
+renderer tarballs. The test bundles the UI barrel for Node, matching Vite's
+handling of its Solar icon TypeScript dependency. The example validates
+accessible rendered markup, not browser interaction or assistive technology.
 
 Remaining: Complete authored API/component/recipe coverage and examples across
 the libraries and UI, and verify runtime guidance in generated Worker
-applications, including the D1 example. Preserve RT-23 regressions and finish
-REL-02 acceptance. The full installed docs gate passes, but CLI-08 and
-REL-02/REL-03 remain open.
+applications, including the D1 example. Most UI guides still have no executable
+examples. Preserve RT-23 regressions and finish REL-02 acceptance. The full
+installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
 Discovery never executes examples. Declaration presence does not prove runtime
 imports or native attribute behavior. Platform diagnostics and bounded scans can
 produce partial catalogs. Discovery tests block Node networking, but installation

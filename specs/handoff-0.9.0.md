@@ -59,14 +59,18 @@ the required non-Desktop release matrix.
    The database package now publishes parameterized Node SQLite and Cloudflare
    D1 guides. The D1 example runs against an installed binding-contract fixture
    and verifies bound values; it has not run under a generated Worker with
-   Miniflare D1. The full fresh-tarball docs gate passes twelve standalone
+   Miniflare D1. The UI `native-controls` guide now includes an executable
+   accessible SSR profile form covering linked labels/help, native validation
+   and submit semantics. The full fresh-tarball docs gate passes thirteen standalone
    examples, four auth examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
    cold-start Vite cache fix clears optimizer state between
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
-   [the CLI-08 checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05).
+   [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
+   and [UI example checkpoint](./release-0.9.0.md#codex-cli08-ui-example-2026-10-05).
    Continue other library/UI guidance and real Worker runtime coverage for the
-   D1 guide.
+   D1 guide. The UI example is SSR-only; it does not close browser or
+   assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
    recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
