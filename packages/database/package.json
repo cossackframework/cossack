@@ -48,6 +48,10 @@
       "types": "./dist/runtime/cloudflare.d.ts",
       "import": "./dist/runtime/cloudflare.js"
     },
+    "./cloudflare-turso": {
+      "types": "./dist/runtime/cloudflare-turso.d.ts",
+      "import": "./dist/runtime/cloudflare-turso.js"
+    },
     "./deno": {
       "types": "./dist/runtime/deno.d.ts",
       "import": "./dist/runtime/deno.js"

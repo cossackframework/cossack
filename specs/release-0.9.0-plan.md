@@ -185,10 +185,13 @@ when generated fixtures rewrite their page/transport graph. Fixture startup now
 clears those artifacts, and the template pre-bundles API/devtools entries that
 Vite discovers after its initial dependency scan.
 
-The Cloudflare D1 guide now has an installed example that runs against a fake
-binding contract and proves SQL values stay parameterized. This exercises the
-published adapter path but does not prove the guide in Miniflare/workerd or
-against a deployed database. Twelve of 39 UI guides have executable SSR examples:
+The Cloudflare D1 guide now runs from installed package exports inside a local
+Wrangler test Worker with local D1 and proves SQL values stay parameterized.
+This exercises workerd and the published adapter path, but does not contact a
+Cloudflare account or prove a deployed database. The runtime test also exposed
+and fixed the D1 import graph: root SQL now requires an explicit adapter, Node
+URL selection stays in the Node entry, and remote Workers Turso uses its own
+optional `cloudflare-turso` entry. Twelve of 39 UI guides have executable SSR examples:
 native controls, normalized one-time codes, named breadcrumbs, URL-backed
 pagination, polite status and zero-valued progress, linked fields and empty
 states, loading/display surfaces, native layout, named avatars, a server-controlled
@@ -200,8 +203,7 @@ server-rendered markup and callback ownership; they do not establish browser
 interaction or assistive technology.
 
 Remaining: Complete authored API/component/recipe coverage and examples across
-the libraries and UI, and verify runtime guidance in generated Worker
-applications, including the D1 example. Twenty-seven of 39 UI guides still have
+the libraries and UI. Twenty-seven of 39 UI guides still have
 no executable example. Preserve RT-23 regressions and finish REL-02 acceptance. The full
 installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
 Discovery never executes examples. Declaration presence does not prove runtime

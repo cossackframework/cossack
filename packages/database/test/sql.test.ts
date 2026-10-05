@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { compileSQL, sql, SQL, SQLFragment } from "../src/index.js";
+import { compileSQL, sql, SQL as PortableSQL, SQLFragment } from "../src/index.js";
+import { SQL, nodeSQLite } from "../src/runtime/node.js";
 import { mysqlDialect, postgresDialect, sqliteDialect } from "../src/dialect/dialects.js";
 
 describe("SQL fragments", () => {
@@ -52,6 +53,15 @@ describe("SQL fragments", () => {
     await client`INSERT INTO messages (body) VALUES (${"safe"})`;
     const result = await client<{ body: string }>`SELECT body FROM messages`;
     expect(result.rows).toEqual([{ body: "safe" }]);
+    await client.close();
+  });
+
+  it("uses an injected adapter from the runtime-neutral SQL export", async () => {
+    const client = new PortableSQL({ adapter: await nodeSQLite() });
+    await client`CREATE TABLE notes (body TEXT NOT NULL)`;
+    await client`INSERT INTO notes (body) VALUES (${"portable"})`;
+    const result = await client<{ body: string }>`SELECT body FROM notes`;
+    expect(result.rows).toEqual([{ body: "portable" }]);
     await client.close();
   });
 });

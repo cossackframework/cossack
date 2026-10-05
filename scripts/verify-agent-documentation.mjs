@@ -158,7 +158,46 @@ for (const { entry, outfile } of ${JSON.stringify(bundleEntries)}) esbuild.build
     assert.equal(preparedD1.length, 1);
     assert.ok(!preparedD1[0].text.includes(hostileD1Value), 'D1 values must not be interpolated into SQL text');
     assert.deepEqual(preparedD1[0].values, [hostileD1Value]);
-    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports; D1 bound-value acceptance passed.`);
+    const { createTestHarness } = await import(installedRequire.resolve('wrangler'));
+    const d1WorkerRoot = path.join(scratch, 'd1-worker-runtime');
+    await fs.mkdir(d1WorkerRoot);
+    await fs.writeFile(path.join(d1WorkerRoot, 'worker.mjs'), `
+import { findNote } from '../compiled/cloudflare-d1-bound-query-bound-query.js';
+
+export default {
+  async fetch(request, env) {
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS notes (body TEXT NOT NULL)').run();
+    await env.DB.prepare('DELETE FROM notes').run();
+    await env.DB.prepare('INSERT INTO notes (body) VALUES (?)').bind('trusted note').run();
+    const payload = await request.json();
+    return Response.json({
+      known: await findNote(env.DB, payload.known),
+      hostile: (await findNote(env.DB, payload.hostile)) ?? null,
+    });
+  },
+};
+`);
+    const d1ConfigPath = path.join(d1WorkerRoot, 'wrangler.jsonc');
+    await fs.writeFile(d1ConfigPath, JSON.stringify({
+      name: 'cossack-agent-docs-d1-runtime',
+      main: 'worker.mjs',
+      compatibility_date: '2026-10-05',
+      d1_databases: [{ binding: 'DB', database_name: 'agent-docs-d1-runtime' }],
+    }));
+    const d1Worker = createTestHarness({ root: scratch, workers: [{ configPath: d1ConfigPath }] });
+    try {
+      await d1Worker.listen();
+      const response = await d1Worker.fetch('/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ known: 'trusted note', hostile: hostileD1Value }),
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { known: 'trusted note', hostile: null });
+    } finally {
+      await d1Worker.close();
+    }
+    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports; D1 passed fake-binding and real workerd acceptance.`);
 
     // Auth publishes TypeScript source. Check its examples with bundler
     // resolution, then bundle and execute under the guard. The tsx loader

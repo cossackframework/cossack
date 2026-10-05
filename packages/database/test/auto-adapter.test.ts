@@ -10,7 +10,7 @@ const runtime = vi.hoisted(() => ({
 
 vi.mock("../src/runtime/node.js", () => runtime);
 
-import { SQL } from "../src/sql/client.js";
+import { SQL } from "../src/sql/node-client.js";
 
 function fakeAdapter(): Adapter {
   const driver: Driver = {

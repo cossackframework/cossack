@@ -35,8 +35,7 @@ the required non-Desktop release matrix.
 1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
    guidance, executable examples and verified runtime support through the
    [shared documentation services](../docs/local-agent-tools.md). Generated
-   declarations alone do not prove usage or runtime compatibility. Desktop's new
-   bootstrap is documented in its package guide and migration notes.
+   declarations alone do not prove usage or runtime compatibility.
    Core guidance now includes typed URL state, standalone schemas and nested forms.
    Preserve the focused `core/input` export and
    [ten installed examples](./release-0.9.0.md#codex-cli08-input-2026-10-04).
@@ -56,10 +55,14 @@ the required non-Desktop release matrix.
    state storage, and native fixtures prove one exchange/account/session despite
    a provider that accepts repeated codes. Bundling does not prove plain
    Node imports or production hashing limits.
-   The database package now publishes parameterized Node SQLite and Cloudflare
-   D1 guides. The D1 example runs against an installed binding-contract fixture
-   and verifies bound values; it has not run under a generated Worker with
-   Miniflare D1. Twelve UI guides now include executable SSR examples for native
+   The database package publishes parameterized Node SQLite and Cloudflare D1
+   guides. The exact D1 example now runs from a fresh installed tarball inside
+   workerd with local D1 and proves SQL-looking values remain bound. It does not
+   test a deployed Cloudflare database. The runtime test exposed a packaging
+   defect: the root SQL entry pulled in Node adapters, and D1's Cloudflare entry
+   pulled in optional Turso. Root `SQL` now takes an explicit adapter; Node
+   auto-selection remains under `/node`, and remote Workers Turso has a separate
+   `/cloudflare-turso` entry. Twelve UI guides now include executable SSR examples for native
    controls, one-time codes, breadcrumbs, URL pagination, status/progress, linked
    fields/empty states, display/layout surfaces and avatars, a typed server data
    table, localized dashboard metrics and controlled account settings
@@ -69,9 +72,10 @@ the required non-Desktop release matrix.
    cold-start Vite cache fix clears optimizer state between
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
-   and [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-2-2026-10-05).
-   Continue library/UI guidance; 27 of 39 UI guides still lack executable
-   examples. Add real Worker runtime coverage for the D1 guide. These UI examples
+   and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
+   plus the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-2-2026-10-05).
+   Continue library, component and recipe coverage; 27 of 39 UI guides still lack
+   executable examples. These UI examples
    cover SSR only; they do not close browser or assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash

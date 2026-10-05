@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twenty-four standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Twelve UI guides now include executable SSR examples for native controls, one-time codes, breadcrumbs, URL pagination, status/progress, linked fields/empty states, display/layout surfaces, avatars, a typed server data table, localized metrics and controlled settings. Twenty-seven of 39 UI guides still have no executable example. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [UI guide acceptance](#codex-cli08-ui-coverage-2-2026-10-05), [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twenty-four standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Twelve UI guides have executable SSR examples. Twenty-seven of 39 UI guides still have no example. Broader library/component/recipe coverage remains open. See [latest D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [UI guide acceptance](#codex-cli08-ui-coverage-2-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -214,8 +214,7 @@ trace and packaged-page acceptance stable on cold generated applications.
   **13 tests pass**.
 - `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'`: pass.
 
-CLI-08 remains open for broader library/component/recipe guidance and real
-Worker runtime execution of the D1 guide. REL-02 and REL-03 retain their full
+CLI-08 remains open for broader library/component/recipe guidance. REL-02 and REL-03 retain their full
 criteria. Desktop remains complete by user decision; its waived platform
 checks are not claimed as passed. The release count remains **28 complete / 30
 open**.
@@ -567,10 +566,42 @@ D1 bound-value fixture passes. `pnpm --filter cossack exec vitest run
 tests/package-guidance.test.js` passes 13 tests.
 
 Twenty-seven UI guides remain without examples. CLI-08 stays open for broader
-library/component/recipe coverage and real Worker execution of the D1 guide.
+library/component/recipe coverage. The D1 guide now also runs in workerd with
+local D1; this does not test deployment to a Cloudflare account.
 Desktop remains complete by user decision; waived platform checks are not passed.
 REL-02/REL-03 remain open for non-Desktop criteria. Release status remains
 **28 complete / 30 open**. No deployment or publication occurred.
+
+<a id="codex-cli08-d1-workerd-2026-10-05"></a>
+### Codex: D1 guide execution in workerd (2026-10-05)
+
+The installed docs verifier now executes the packaged D1 example inside a local
+Wrangler test Worker with a local D1 database. It creates a temporary `notes`
+table, returns a stored value, and confirms SQL-looking input returns no row.
+This uses the exact compiled guide example and installed package exports; it
+does not contact a Cloudflare account or claim deployed compatibility.
+
+The new Worker test exposed a package boundary defect: the neutral package root
+re-exported a URL-selecting SQL client that pulled Node adapter imports into a
+D1 Worker bundle, while the Cloudflare entry contained the optional remote Turso
+import. The neutral `SQL` constructor now accepts explicit adapters, URL-based
+selection is in the Node entry, and remote Workers Turso has its own
+`@cossackframework/database/cloudflare-turso` entry. This keeps a fresh D1 app
+independent of optional Turso packages.
+
+**Verification:** the database package builds and its bundle audit passes;
+**15 files / 93 tests** pass. Root `pnpm tsc --noEmit` passes. A fresh local
+tarball install contains no Turso peers; `verifyAgentDocumentation()` passes
+24 standalone examples, four auth examples, the real workerd D1 case, installed
+CLI/MCP parity, Cloudflare transport traces, application guides, UI contracts,
+and source-map-enabled client stripping. The complete direct verifier run passed
+from that installed project.
+
+CLI-08 stays open for broader library/component/recipe examples; 27 of 39 UI
+guides remain without examples. Desktop remains complete by user decision, with
+waived platform checks not claimed as passed. REL-02/REL-03 remain open for
+non-Desktop criteria. Release status remains **28 complete / 30 open**. No
+deployment or publication occurred.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)

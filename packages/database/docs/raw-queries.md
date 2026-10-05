@@ -150,10 +150,10 @@ Within a scope, the global tag also exposes `execute()`, `transaction()`,
 
 ## Standalone SQL client
 
-Use `SQL` when models and entity metadata are unnecessary:
+Use the Node runtime's `SQL` client when models and entity metadata are unnecessary:
 
 ```ts
-import { SQL } from "@cossackframework/database";
+import { SQL } from "@cossackframework/database/node";
 
 const client = new SQL("sqlite:app.db");
 
@@ -172,8 +172,9 @@ try {
 ```
 
 In Node.js, URL or path inference supports PostgreSQL, MySQL, Turso HTTPS URLs, and
-SQLite. Bun delegates to native Bun SQL. Workers and Deno require an explicit
-adapter rather than environment guessing:
+SQLite. Bun delegates to native Bun SQL. The package root's `SQL` export accepts
+explicit adapters and remains runtime neutral. Workers and Deno should use an
+explicit adapter rather than URL guessing:
 
 ```ts
 const client = new SQL({ adapter });

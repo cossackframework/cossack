@@ -286,3 +286,5 @@ export async function mysql(
 
 export { SQLiteDriver, PostgresDriver, MySQLDriver };
 export { turso, type TursoOptions, type TursoEmbeddedOptions, type TursoRemoteOptions } from "./turso.js";
+export { SQL } from "../sql/node-client.js";
+export type { SQLClient, SQLOptions } from "../sql/client.js";

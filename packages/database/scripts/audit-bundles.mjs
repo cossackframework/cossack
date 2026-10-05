@@ -37,12 +37,14 @@ for (const value of [
   "node:async_hooks",
   "better-sqlite3",
   "@tursodatabase/database",
+  "@tursodatabase/serverless",
 ]) {
   if (cloudflare.includes(value)) {
     throw new Error(`Cloudflare entry contains forbidden runtime dependency ${value}.`);
   }
 }
-if (!cloudflare.includes("@tursodatabase/serverless")) {
+const cloudflareTurso = await readFile(resolve("dist/runtime/cloudflare-turso.js"), "utf8");
+if (!cloudflareTurso.includes("@tursodatabase/serverless")) {
   throw new Error("Cloudflare Turso adapter must import @tursodatabase/serverless.");
 }
 

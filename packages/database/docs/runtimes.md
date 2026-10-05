@@ -10,10 +10,11 @@ eagerly include Node built-ins, native SQLite packages, or unused drivers.
 
 | Runtime entry | Adapters |
 | --- | --- |
-| `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, Turso |
+| `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, Turso, automatic `SQL` client |
 | `@cossackframework/database/deno` | Turso embedded SQLite, PostgreSQL, MySQL, remote Turso, or an injected driver |
 | `@cossackframework/database/bun` | Native Bun SQL for SQLite, PostgreSQL, MySQL |
 | `@cossackframework/database/cloudflare` | D1 and Hyperdrive PostgreSQL/MySQL |
+| `@cossackframework/database/cloudflare-turso` | Remote Turso for Workers |
 | `@cossackframework/database/deno` | Injected SQLite, PostgreSQL, MySQL-compatible drivers |
 | `@cossackframework/database/adapter` | Public contracts for custom adapters |
 
@@ -96,6 +97,10 @@ const adapter = await turso({
   authToken: process.env.TURSO_AUTH_TOKEN!,
 });
 ```
+
+Workers that use remote Turso should import `turso` from
+`@cossackframework/database/cloudflare-turso`. Keeping that optional provider in
+its own entry lets a D1-only Worker bundle without the Turso client installed.
 
 Node adapters install `AsyncLocalStorage` request scopes automatically.
 
