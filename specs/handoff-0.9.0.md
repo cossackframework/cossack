@@ -62,19 +62,18 @@ the required non-Desktop release matrix.
    defect: the root SQL entry pulled in Node adapters, and D1's Cloudflare entry
    pulled in optional Turso. Root `SQL` now takes an explicit adapter; Node
    auto-selection remains under `/node`, and remote Workers Turso has a separate
-   `/cloudflare-turso` entry. Twelve UI guides now include executable SSR examples for native
-   controls, one-time codes, breadcrumbs, URL pagination, status/progress, linked
-   fields/empty states, display/layout surfaces and avatars, a typed server data
-   table, localized dashboard metrics and controlled account settings
-   in an app-owned form. The full fresh-tarball docs gate passes
-   twenty-four standalone examples, four auth examples, four generated pages, Cloudflare
+   `/cloudflare-turso` entry. Seventeen UI guides now include executable SSR examples.
+   The latest five cover native radio/range controls, searchable choice, repeated
+   tag values, semantic lists/actions, and named tables/scroll regions. The full
+   fresh-tarball docs gate passes twenty-nine standalone examples, four auth
+   examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
    cold-start Vite cache fix clears optimizer state between
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
-   plus the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-2-2026-10-05).
-   Continue library, component and recipe coverage; 27 of 39 UI guides still lack
+   plus the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-3-2026-10-05).
+   Continue library, component and recipe coverage; 22 of 39 UI guides still lack
    executable examples. These UI examples
    cover SSR only; they do not close browser or assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
