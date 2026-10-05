@@ -17,7 +17,7 @@ import {
     DEFAULT_LOCALE,
 } from '@cossackframework/core';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { runWithConfig, buildConfig, type ConfigFactory, type ConfigStore, type EnvFunction } from './config.js';
+import { runWithConfig, prepareConfigStore, type ConfigFactory } from './config.js';
 import type { MiddlewareHandler } from 'hono';
 import { runPublicSsgRequest } from './ssg-request.js';
 import { resolveSseScopeKey } from './transports/sse.js';
@@ -184,14 +184,7 @@ export async function renderSsgPage(
   // `c.env`) so `config('app.url')` returns the correct value. Other bindings
   // default to empty — config factories fall back to their defaults.
   const envBindings: Record<string, unknown> = { APP_URL: baseUrl };
-  const envFn: EnvFunction = (key, def) => {
-    const v = envBindings?.[key];
-    return v !== undefined && v !== null ? String(v) : def ?? '';
-  };
-  const builtConfig: Record<string, unknown> = configFactories
-    ? buildConfig(configFactories as Record<string, unknown>, envFn)
-    : {};
-  const configStore: ConfigStore = { env: envBindings, config: builtConfig };
+  const configStore = prepareConfigStore(configFactories ?? {}, envBindings);
 
   // Seed the i18n runtime (one-time) so SSG output renders in the default
   // locale. Done AFTER building the config store so the default locale can be
@@ -199,7 +192,7 @@ export async function renderSsgPage(
   // var via `src/config/app.ts`). The catalogs are resolved by the caller from
   // `virtual:cossack-lang`; this runs outside `runWithConfig` because it is a
   // one-time init — we pass the resolved locale explicitly.
-  const configLocale = (builtConfig.app as Record<string, unknown> | undefined)?.locale;
+  const configLocale = (configStore.config.app as Record<string, unknown> | undefined)?.locale;
   ensureSsgLocaleInitialized(
     localeInput?.catalogs ?? {},
     typeof configLocale === 'string' ? configLocale : localeInput?.defaultLocale,

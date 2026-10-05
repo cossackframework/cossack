@@ -112,7 +112,7 @@ import { createRequestContextMiddleware } from './middlewares/request-context.js
 import { runWithContext } from './request-context-als.js';
 import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
-import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
+import { runWithConfig, prepareConfigStore } from './config.js';
 import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 import { createAssetsMiddleware } from './assets.js';
@@ -429,12 +429,8 @@ export function createApp(options: CreateAppOptions = {}) {
   // request, not once at module load.
   app.use('*', async (c, next) => {
     const envBindings = c.env as unknown as Record<string, unknown>;
-    const envFn: EnvFunction = (key, def) => {
-      const v = envBindings?.[key];
-      return v !== undefined && v !== null ? String(v) : def ?? '';
-    };
-    const built = buildConfig(configFactories as Record<string, unknown>, envFn);
-    return runWithConfig({ env: envBindings, config: built }, () => next());
+    const store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings);
+    return runWithConfig(store, () => next());
   });
 
   // Built-in API CORS runs inside the request config scope but before project

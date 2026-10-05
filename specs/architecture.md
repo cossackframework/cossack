@@ -1221,3 +1221,10 @@ module references are type-only; factories are evaluated during request
 or SSG configuration preparation. CLI discovery emits source/type origins without
 executing modules or publishing values. Explicit authored registry entries take
 precedence over inferred entries for the same key.
+
+Request and SSG configuration preparation use the same `prepareConfigStore`
+helper. Each synchronous factory evaluates inside a fresh ALS scope containing
+only the selected environment and an initially empty config tree. The completed
+store is then used by downstream request work. This temporary scope restores its
+caller on success or failure; async descendants retain their request's store.
+SSG supplies APP_URL only, so required live bindings fail before rendering.

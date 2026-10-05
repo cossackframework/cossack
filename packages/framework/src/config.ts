@@ -169,6 +169,26 @@ export function runWithConfig<T>(
     return configAls.run(store, fn as () => T);
 }
 
+/**
+ * Prepare one environment's configuration in a fresh scope before application
+ * middleware runs. Factory accessors see only these bindings, never an outer
+ * request. The completed tree is published after all factories succeed.
+ */
+export function prepareConfigStore(
+    factories: Record<string, unknown>,
+    envBindings: Record<string, unknown> = {},
+): ConfigStore {
+    const store: ConfigStore = { env: envBindings, config: {} };
+    return configAls.run(store, () => {
+        const envFn: EnvFunction = (key, fallback) => {
+            const value = envBindings[key];
+            return value !== undefined && value !== null ? String(value) : fallback ?? '';
+        };
+        store.config = buildConfig(factories, envFn);
+        return store;
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Accessors
 // ---------------------------------------------------------------------------

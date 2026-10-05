@@ -46,25 +46,14 @@ The config middleware is registered **first** in `createApp()` (before user midd
 
 ```typescript
 app.use('*', async (c, next) => {
-    const envBindings = c.env as unknown as Record<string, unknown>;
-    const envFn = (key, def) => {
-        const v = envBindings?.[key];
-        return v !== undefined && v !== null ? String(v) : def ?? '';
-    };
-    const built = {};
-    for (const [name, factory] of Object.entries(configFactories)) {
-        if (typeof factory !== 'function') {
-            throw new Error(`[Cossack] Config file "${name}" must default-export a factory function.`);
-        }
-        built[name] = factory({ env: envFn });
-    }
-    return runWithConfig({ env: envBindings, config: built }, () => next());
+    const store = prepareConfigStore(configFactories, c.env);
+    return runWithConfig(store, () => next());
 });
 ```
 
 Steps:
-1. Build an `env` function that reads from `c.env` (the request's Cloudflare bindings).
-2. Evaluate every config factory, building a `Record<fileName, configObject>` tree. Each factory is validated to be a function : a misconfigured config file throws a clear error naming the offending file.
+1. Enter a fresh preparation scope containing `c.env` and an empty config tree.
+2. Evaluate every config factory inside that scope, building a `Record<fileName, configObject>` tree. Files without a factory are skipped with a named warning. Required accessors inside valid factories fail with a named error before downstream application code.
 3. Wrap the remainder of the request (`next()`) inside `runWithConfig`, which enters the `AsyncLocalStorage` scope.
 
 Because the scope wraps `next()`, all downstream middleware, route handlers, component `bootstrap()` / `init()` / `render()` / `head()` calls, and their async descendants resolve `config()` and `env()` against this request's values.
@@ -197,8 +186,20 @@ The catalog reports filename-based type origins, not expanded inferred types,
 verified factory exports, or verified runtime requirements. Existing apps must include `.cossack/config.d.ts` in
 TypeScript before its augmentation is visible.
 
-Current RT-24 limitation: SSR and SSG evaluate factories before entering
-`runWithConfig`. Use the passed `env` reader inside factories today; imported
-`requireEnv`/`requireBinding` helpers do not yet see that pending scope. The
-remaining runtime-preparation work must validate declared requirements and
-enter a fresh scope before factory evaluation, with explicit SSG applicability.
+`prepareConfigStore(factories, bindings)` creates a fresh scope for synchronous
+factory evaluation. Injected `env` and imported `env`, `binding`, `requireEnv`, and
+`requireBinding` all use the supplied bindings. An enclosing request's bindings
+are not inherited. The completed tree is published after every factory succeeds;
+`config()` inside a factory sees the empty preparation tree. Enter the returned
+store with `runWithConfig` for downstream code. Both preparation success and
+failure restore an enclosing scope. Async factory functions remain unsupported.
+
+SSR supplies the current request bindings. SSG supplies only `APP_URL` from the
+resolved base URL; a required live binding fails before locale initialization,
+user middleware, or page lifecycle begins. SSG does not invent bindings or waive
+required accessors. Requirements declared independently of factories, coercion,
+and selected-environment preflight remain RT-24 work. Required helpers currently
+validate when invoked; they do not scan requirements before the first factory.
+`buildConfig` remains a low-level evaluator with an injected reader; it does not
+establish an accessor scope. Integrations that need scoped imported helpers
+should use `prepareConfigStore`.

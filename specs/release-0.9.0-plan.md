@@ -858,6 +858,17 @@ requirements, since its only supplied binding is APP_URL. Acceptance must includ
 interleaved request isolation and sentinel secrecy in errors, metadata and
 hydration, beyond filename catalog/client virtual-module tests.
 
+Codex scoped factory checkpoint (2026-10-05): prepareConfigStore fixes the prior
+scope finding above. SSR and SSG use it; required factory accessors see only their
+supplied environment, nested callers restore after success/failure, and failure
+stops middleware/page lifecycle. Eight focused suites pass 94 tests; framework
+emission/root typecheck and fresh installed documentation/browser/workerd gate
+pass. The Worker fixture checks concurrent values, raw D1 identity and value-free
+errors. Continue with separate requirement declarations/coercion/runtime checks
+and selected-environment preflight before any factory side effect. Helpers still
+validate at invocation. Async factories and full classification/hydration secrecy
+are not covered by this checkpoint. RT-24 stays open; counts stay 30 / 28.
+
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
 

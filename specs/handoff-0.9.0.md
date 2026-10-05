@@ -214,17 +214,17 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 6. Continue [RT-24](./release-0.9.0-plan.md#rt-24) from the
-   [CLI/installed checkpoint](./release-0.9.0.md#codex-rt24-config-cli-2026-10-05).
-   CLI discovery/generation now shares Vite's scanner and never evaluates
-   factories. Combined CLI suites pass 34/34, framework 50/50, fresh installed
-   documentation/browser acceptance and separate installed config inference pass.
-   Next centralize request configuration preparation: current SSR/SSG factories
-   run before runWithConfig, so imported required helpers cannot see bindings.
-   Add separate requirement metadata/coercion/runtime applicability and selected
-   environment validation; prove interleaved isolation and full secret redaction.
-   Strict installed cache declarations need Worker ambient types; the installed
-   config fixture follows scaffold skipLibCheck while source-generator strict
-   checks pass. RT-24 stays open; counts remain 30 complete / 28 open.
+   [factory scope checkpoint](./release-0.9.0.md#codex-rt24-factory-scope-2026-10-05).
+   Generated types and CLI discovery are implemented; SSR/SSG now evaluate
+   factories inside fresh binding scopes. 94 focused tests and the fresh
+   installed config/documentation/browser/workerd gate pass. Worker acceptance
+   checks concurrent request values, raw D1 identity and names-only errors.
+   Next add independent requirement metadata/coercion/runtime applicability and
+   selected-environment preflight before any factory runs; current helpers fail
+   only when invoked. Prove full classification/hydration secrecy. Async factories
+   remain unsupported. Strict installed cache ambient-type checking stays
+   separate from scaffold-policy config inference. RT-24 stays open; counts
+   remain 30 complete / 28 open. Retained gate: /tmp/cossack-local-pack-VQ1yPC.
 7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
    checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
    fixed failure-code and payload-redaction tests. Next review the remaining

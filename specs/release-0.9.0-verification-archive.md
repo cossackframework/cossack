@@ -10674,3 +10674,47 @@ redaction acceptance remain. The virtual-module sentinel test does not prove all
 direct-import or hydration secrecy. Counts remain **30 complete / 28 open**;
 Desktop-only platform acceptance remains waived. No external deployment or
 remote resource provisioning occurred.
+
+<a id="codex-rt24-factory-scope-2026-10-05"></a>
+### Codex: Prepare factories in their request binding scope (2026-10-05)
+
+SSR and SSG previously evaluated factories before entering the configuration
+scope, so imported required helpers saw no bindings or could inherit an outer
+scope. `prepareConfigStore` now evaluates synchronous factories inside a fresh
+scope containing the selected bindings and an empty config tree. It publishes
+the completed tree only after factories succeed, then SSR/SSG use that store for
+downstream work. Nested preparation restores its caller on success and failure.
+Missing factory requirements stop subsequent factories, user middleware and
+page lifecycle. SSG supplies only APP_URL and fails named required live bindings.
+The low-level buildConfig evaluator remains available; it does not create a scope.
+
+Codex integrated the exclusive-file scope-test subagent and reviewed all changes.
+Coordinator-owned actual router/SSG tests verify interleaved HTTP requests,
+omitted environments, required helper failures and middleware exclusion. The
+packaged request-config guide now demonstrates scoped preparation.
+
+**Verification:** eight focused framework suites pass **94 tests** (71 scope,
+config/router/SSG/CORS tests plus 23 SSG public/service/global tests). The changed
+runtime-preparation suite was rerun **5/5** after adding middleware assertions.
+Framework declaration emission, root `pnpm tsc --noEmit` and task-owned diff
+checks pass. Fresh `COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` passes the
+installed config CLI/inference/removal helper, 76 packaged examples, four auth
+examples, offline CLI/MCP checks, installed Cloudflare HTTP/SSE/WebSocket and
+packaged guidance/source-map stripping acceptance, and UI documentation parity.
+Its real workerd fixture now verifies concurrent prepared request values, raw
+D1 binding identity, and named missing-binding diagnostics excluding a private
+sentinel. Retained evidence: `/tmp/cossack-local-pack-VQ1yPC`.
+
+The Worker acceptance follows current [Cloudflare ALS documentation](https://developers.cloudflare.com/workers/runtime-apis/nodejs/asynclocalstorage/)
+and [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/);
+Codex retrieved current types and inspected Wrangler's config schema before
+extending the local harness. No remote resources were created or deployed.
+
+**Limits:** required helpers still validate when called, rather than reading
+independent declarations before the first factory. Variable/binding metadata,
+coercion, runtime applicability, selected-environment preflight and full
+classification/hydration secrecy remain. Async factories remain unsupported.
+Installed config checking retains scaffold skipLibCheck policy; strict cache
+ambient-type acceptance remains separate. RT-24 stays open; counts remain
+**30 complete / 28 open**. Desktop remains complete by user decision, with its
+remaining platform checks waived.

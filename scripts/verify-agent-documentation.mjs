@@ -217,9 +217,26 @@ globalThis.Deno = {
     await fs.mkdir(d1WorkerRoot);
     await fs.writeFile(path.join(d1WorkerRoot, 'worker.mjs'), `
 import { findNote } from '../compiled/cloudflare-d1-bound-query-bound-query.js';
+import { prepareConfigStore, runWithConfig, config, requireEnv, requireBinding } from '@cossackframework/framework/config';
+
 
 export default {
   async fetch(request, env) {
+    const pathname = new URL(request.url).pathname;
+    if (pathname === '/config') {
+      const store = prepareConfigStore({ app: () => ({
+        name: requireEnv('APP_NAME'), database: requireBinding('DB'),
+      }) }, { ...env, APP_NAME: request.headers.get('x-config-name') });
+      return runWithConfig(store, async () => {
+        await new Promise(resolve => setTimeout(resolve, 20));
+        return Response.json({ name: config('app.name'), bindingPreserved: requireBinding('DB') === env.DB });
+      });
+    }
+    if (pathname === '/missing-config') {
+      try { prepareConfigStore({ app: () => ({ database: requireBinding('DB') }) }, { APP_SECRET: 'WORKER_PRIVATE_SENTINEL' }); }
+      catch (error) { return Response.json({ code: error.code, binding: error.bindingName, message: error.message }, { status: 503 }); }
+      return new Response('Expected a missing binding', { status: 500 });
+    }
     await env.DB.prepare('CREATE TABLE IF NOT EXISTS notes (body TEXT NOT NULL)').run();
     await env.DB.prepare('DELETE FROM notes').run();
     await env.DB.prepare('INSERT INTO notes (body) VALUES (?)').bind('trusted note').run();
@@ -234,6 +251,7 @@ export default {
     const d1ConfigPath = path.join(d1WorkerRoot, 'wrangler.jsonc');
     await fs.writeFile(d1ConfigPath, JSON.stringify({
       name: 'cossack-agent-docs-d1-runtime',
+      compatibility_flags: ['nodejs_compat'],
       main: 'worker.mjs',
       compatibility_date: '2026-10-05',
       d1_databases: [{ binding: 'DB', database_name: 'agent-docs-d1-runtime' }],
@@ -248,10 +266,21 @@ export default {
       });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { known: 'trusted note', hostile: null });
+      const configResponses = await Promise.all(['first', 'second'].map(name => d1Worker.fetch('/config', { headers: { 'x-config-name': name } })));
+      for (const [index, result] of configResponses.entries()) {
+        assert.equal(result.status, 200);
+        assert.deepEqual(await result.json(), { name: index === 0 ? 'first' : 'second', bindingPreserved: true });
+      }
+      const missing = await d1Worker.fetch('/missing-config');
+      assert.equal(missing.status, 503);
+      const failure = await missing.json();
+      assert.equal(failure.code, 'COSSACK_BINDING_MISSING'); assert.equal(failure.binding, 'DB');
+      assert.ok(!JSON.stringify(failure).includes('WORKER_PRIVATE_SENTINEL'));
+
     } finally {
       await d1Worker.close();
     }
-    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports; D1 passed fake-binding and real workerd acceptance.`);
+    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports; D1 and prepared configuration passed real workerd acceptance.`);
 
     // Auth publishes TypeScript source. Check its examples with bundler
     // resolution, then bundle and execute under the guard. The tsx loader
