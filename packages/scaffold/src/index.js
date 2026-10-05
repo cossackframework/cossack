@@ -981,7 +981,7 @@ function denoEntry(providers = []) {
     : '';
   const routes = oauthRouteBlock(providers, 'app');
   return `import { createApp } from '@cossackframework/framework/router';
-import { createDenoAdapter } from '@cossackframework/deno-adapter';
+import { createDenoAdapter, installDenoShutdown } from '@cossackframework/deno-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
@@ -999,7 +999,10 @@ export default {
 };
 
 if (import.meta.main) {
-  runtime.serve(app);
+  const server = runtime.serve(app);
+  installDenoShutdown(server, {
+    onComplete: result => Deno.exit(result.forced || result.cleanupFailed ? 1 : 0),
+  });
 }
 `;
 }

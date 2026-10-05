@@ -2,26 +2,26 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Completed **CF-10**. Release: **51 complete / 7 open**, versions still 0.8.3.
-[Verified batch, exact commands and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). Public installed guide
-acceptance passes default/staging builds, SSG, dry runs and local dev with zero
-remote attempts. Generated-app CI now runs it; hosted CI was not executed here.
-
-Installed package imports/types and representative generated apps pass their
-recorded checks. Fresh native D1 proves all seven authoritative migration plans
-and User/Session model requests. Node standalone SIGTERM/SIGINT draining,
-deadlines and HTTP/2 are verified. All 19 failures from the initial full CLI run
-have passing targeted follow-ups; the three skipped Deno cases also execute and
-pass. Three Desktop skips remain waived. Do not describe the initial full run
-as green. Final root and all ten non-Desktop package typechecks pass.
+Latest Codex batch verifies **generated standalone Deno draining** within REL-03.
+Release remains **51 complete / 7 open**, versions 0.8.3. No numbered task closes.
+[Evidence and exact limits](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06): 42 Deno unit tests, two real native smoke tests,
+four Deno preset cases, generated and installed real signal/type acceptance,
+root and all ten non-Desktop package typechecks pass. Generated entries install
+`installDenoShutdown` only when directly executed; shared signals drain requests
+and runtime under one deadline, then force abort with status 1 if necessary.
+Changed Deno/Scaffold tarballs: `/tmp/cossack-deno-shutdown-artifacts`; fresh gate:
+`/tmp/cossack-deno-shutdown-installed`. Reuse unchanged earlier installed proofs.
+CF-10's completed guide/import/D1/Node acceptance and resolved CLI failures remain
+in the [previous batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
 
 Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. SVC-04's
 native Waiting/event-resume/failure/installed lifecycle remains unproven; preserve
 its two earlier uncommitted failed probes and strict assertion. Continue other
 gates independently. CF-08 requires remote logs/source maps and remaining original
 acceptance; CF-09 requires actual preview lifecycle/isolation/cleanup. REL-02/03
-retain full final non-Desktop matrices, native Workflow, Deno Deploy and generated
-Deno shutdown/draining. Do not polish budgets without closing a requirement.
+retain full final non-Desktop matrices, native Workflow and Deno Deploy.
+CF-09 requires a native ownership-verifying provider: the current resource
+provider is read-only. No disconnected prototype is retained. Do not polish budgets without closing a requirement.
 
 Migration templates now declare authoritative operations. Fresh schemas match
 legacy callbacks, but applied callback migration histories reject changed
@@ -82,8 +82,8 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
 - Desktop installed OS integration, Windows/macOS packaging and conditional
   signing checks were waived when the user closed Desktop for this release.
-  Deno Deploy, generated Deno server shutdown/draining and the required non-Desktop
-  release matrix remain separate acceptance gaps. Node standalone draining is verified.
+  Deno Deploy and the required non-Desktop release matrix remain acceptance gaps.
+  Generated Node and Deno standalone draining are verified.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

@@ -31,7 +31,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && vite build && tsc -p tsconfig.declarations.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && vite build && tsc -p tsconfig.declarations.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "test": "vitest --run"
   },
   "dependencies": {

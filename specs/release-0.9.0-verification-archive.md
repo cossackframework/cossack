@@ -12943,3 +12943,77 @@ final non-Desktop release matrix, Deno Deploy and generated Deno shutdown/draini
 No requirement was weakened to improve task counts. Versioning/migration/release
 preparation remain gated; versions stay 0.8.3. No cloud mutation, deployment,
 publication, push or credential rotation occurred.
+
+
+<a id="codex-deno-standalone-draining-2026-10-06"></a>
+## Codex — generated standalone Deno draining (2026-10-06)
+
+REL-03's generated Deno shutdown/draining criterion is verified. No numbered
+release task closes: **51 complete / 7 open**. Deno Deploy and the final required
+non-Desktop matrix still keep REL-03 open; SVC-04's native lifecycle gap still
+keeps REL-02 open. Desktop remains completed by user decision; checks are waived.
+
+Implementation: `deno-adapter` exports explicit `installDenoShutdown`, with
+SIGTERM/SIGINT sharing one promise, uninstallable ownership, a default 10-second
+HTTP/runtime deadline, and fixed completion facts. Adapter servers expose
+`forceShutdown` backed by native `Deno.serve` AbortController. Scaffold installs
+ownership only inside `import.meta.main`, exits 0 after successful drain or 1 for
+forced/failed cleanup. Embedded imports install no owner. README, web guide,
+agent guidance and architecture document scope. Native ignored application work
+is neither completed nor rolled back. Public declarations now rewrite relative
+runtime extensions; negative NodeNext fixtures reject invalid options/results.
+The repeatable Deno gate includes the generated signal regression.
+
+Exact verification (all listed final commands exit 0):
+
+- `pnpm --filter @cossackframework/deno-adapter run build` — canonical build.
+  `/tmp/cossack-deno-shutdown-build.log`.
+- `pnpm --filter @cossackframework/deno-adapter exec vitest run` — 8 files,
+  **42 passed**; six signal-owner and two adapter native-abort wiring regressions.
+  `/tmp/cossack-deno-shutdown-combined.log`.
+- Deno 2.9.6 `test --allow-env --allow-net --allow-read
+  packages/deno-adapter/tests/deno-smoke.test.ts` — **2 passed**, real native HTTP
+  and WebSocket dispatch/failure cleanup. Binary recorded at
+  `/tmp/cossack-deno-binary.txt`; `/tmp/cossack-deno-shutdown-native-smoke.log`.
+- `COSSACK_DENO_BINARY=<recorded executable> pnpm --filter cossack exec vitest run
+  tests/generated-deno-shutdown.test.js` — **1 passed** after adding strict
+  public type checks. `/tmp/cossack-deno-shutdown-types-source.log`.
+- `pnpm --filter @cossackframework/scaffold exec vitest run
+  tests/scaffold.test.js -t 'renders the deno/'` — **4 passed**, other 77 filtered.
+  `/tmp/cossack-deno-shutdown-scaffold.log`. Initial nonexistent filter selected
+  no cases; that invocation is not passing test evidence.
+- Pack only changed Deno adapter and Scaffold once into
+  `/tmp/cossack-deno-shutdown-artifacts`; fresh offline install into
+  `/tmp/cossack-deno-shutdown-installed` reuses unchanged prior tarballs. No
+  workspace aliases. Initial install launcher could not resolve pnpm outside the
+  repository; absolute pnpm launcher then succeeded. Pack/install logs:
+  `/tmp/cossack-deno-shutdown-pack.log`,
+  `/tmp/cossack-deno-shutdown-scaffold-pack.log`,
+  `/tmp/cossack-deno-shutdown-install.log`.
+- `COSSACK_DENO_BINARY=<recorded executable>
+  COSSACK_DENO_SHUTDOWN_INSTALLED_ROOT=/tmp/cossack-deno-shutdown-installed
+  pnpm --filter cossack exec vitest run tests/generated-deno-shutdown.test.js`
+  — **1 passed**. Real installed public CLI generates the app; strict NodeNext
+  imports and negative declarations pass; built standalone Deno entry finishes
+  an accepted HTTP response on SIGTERM, rejects new admission, shares repeated
+  signals, and bounds a stuck request on SIGINT to the default deadline with
+  status 1 and client disconnect. `/tmp/cossack-deno-shutdown-installed.log`.
+- `pnpm tsc --noEmit` and `pnpm run typecheck -- --exclude-desktop` — root and all
+  ten non-Desktop package checks pass after integration. Logs:
+  `/tmp/cossack-deno-shutdown-root-types.log`,
+  `/tmp/cossack-deno-shutdown-package-types.log`. Desktop excluded, not passed.
+
+Scope: existing full CLI/published guide proofs were not repeated. No Deno Deploy,
+hosted CI, full release build/unit/browser matrix or remote Cloudflare action ran.
+Official native shutdown/abort contract consulted:
+https://docs.deno.com/api/deno/http-server/ . Native process behavior is proved
+by the fixture, not inferred from documentation alone.
+
+CF-09 implementation feasibility was checked in parallel. Existing
+`cloudflare-resource-provider.js` is read-only and supplies no remote creation,
+independent ownership attestation, deploy or deletion primitives. The proposed
+unconnected provider-injected prototype was removed; its fixture tests provide
+no release evidence. CF-09 still needs native provider/CI wiring, persisted
+creation intent, independent ownership verification, real isolated smoke tests,
+retry cleanup and production promotion/migration order. SVC-04's strict failed
+native waiting probes are unchanged. No credentials or live mutation were used.

@@ -319,6 +319,12 @@ forced shutdown or failed cleanup exits with status 1. Disposal can cancel frame
 work, but external I/O that ignores cancellation may still complete. Shutdown does
 not roll back database writes or other side effects.
 
+Generated standalone Deno entries use the same signal and deadline policy through
+`installDenoShutdown()`. They call native graceful HTTP shutdown and dispose the
+runtime together, then abort outstanding connections if the deadline expires.
+The default exported fetch handler and embedded imports install no process
+handlers. See [Deno serving](../packages/deno-adapter/docs/web.md).
+
 ---
 
 ## Static Site Generation (SSG)

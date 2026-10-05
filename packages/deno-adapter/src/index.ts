@@ -32,7 +32,8 @@ export interface DenoApplication {
 }
 
 export interface DenoServer {
-  shutdown?(): Promise<void>;
+  shutdown(): Promise<void>;
+  forceShutdown(): void;
   finished?: Promise<void>;
 }
 
@@ -262,7 +263,9 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
       if (stopped) throw new Error('Deno runtime is disposed');
       const deno = denoGlobal();
       if (!deno?.serve) throw new Error('createDenoAdapter().serve() requires Deno 2.9 or newer.');
+      const abort = new AbortController();
       const serveOptions = {
+        signal: abort.signal,
         ...(options.hostname ? { hostname: options.hostname } : {}),
         ...(options.port !== undefined ? { port: options.port } : {}),
       };
@@ -277,6 +280,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
       return new Proxy(server, {
         get(target, property) {
           if (property === 'finished') return finished;
+          if (property === 'forceShutdown') return () => abort.abort();
           if (property === 'shutdown') return () => shutdown ??= settle([
             dispose(), Promise.resolve().then(() => target.shutdown?.()),
           ]);
@@ -289,3 +293,5 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
 }
 
 export type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/core';
+export { installDenoShutdown } from './shutdown';
+export type { DenoShutdownServer, DenoShutdownOptions, DenoShutdownResult } from './shutdown';

@@ -502,8 +502,9 @@ CLI lifecycle and trace checks. See the [runtime evidence index](./release-0.9.0
 and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
 `pnpm test:deno` owns the repeatable native Deno gate.
 
-Remaining: generated Deno server shutdown/draining, Deno Deploy and the required
-non-Desktop final release matrix. Node standalone draining is verified in the
+Remaining: Deno Deploy and the required non-Desktop final release matrix.
+Generated Deno standalone shutdown/draining is verified under real signals and
+installed tarballs in the [Codex acceptance](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06). Node standalone draining is verified in the
 [Codex batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). The initial full CLI run failed; all 19 failures
 now have passing targeted evidence, and initially skipped Deno cases executed.
 This composite evidence is not a second green full-suite run. Desktop development and native Linux checks
@@ -742,3 +743,16 @@ CLI failure follow-ups are verified. [Commands, counts and limitations](./releas
 Open: SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05. Preserve Workflow
 waiting probes and checksum rejection; finish independent gates before versioning.
 Desktop remains complete by user decision, with platform checks waived.
+
+
+## Codex verified Deno acceptance — 2026-10-06
+
+Generated standalone Deno draining is complete within REL-03: native signals,
+accepted responses, admission shutdown, repeated-signal ownership, forced
+10-second deadline and strict installed public types all pass. All 42 adapter
+unit tests, two native smoke tests, four Deno preset rendering cases, root and
+ten non-Desktop package typechecks pass. [Exact evidence and limits](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06).
+No full numbered task closes: **51 complete / 7 open**. Deno Deploy/final matrix,
+native Workflow lifecycle and remote Cloudflare criteria remain. CF-09 needs a
+native ownership-verifying resource provider before usable preview execution;
+no disconnected prototype is retained. No unchanged installed gate was repacked.

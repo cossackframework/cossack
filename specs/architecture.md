@@ -1349,3 +1349,10 @@ components are disposed once; retries start with a fresh component. The first
 socket is accepted before releasing fresh ownership so stateless joins cannot
 mistake pending readiness for idle state. Restored state comes from storage;
 state-query metadata cannot create an unused extra component or replace its owner.
+
+Generated standalone Deno entries explicitly install the Deno adapter's signal
+owner only under `import.meta.main`. SIGTERM/SIGINT share one operation that
+stops admitting HTTP, drains accepted responses and disposes the runtime. A
+single 10-second deadline covers those operations; expiration aborts the native
+listener and generated entries exit 1. Embedded imports install no handlers.
+Ignored application work is neither completed nor rolled back by forced shutdown.

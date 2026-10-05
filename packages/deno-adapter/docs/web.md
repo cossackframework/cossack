@@ -122,6 +122,31 @@ deno task start
 The generated start task grants only environment, network, and static-file read
 permissions. Add permissions only when application-side Deno APIs require them.
 
+Generated standalone entries install signal ownership only when run directly:
+
+```ts
+import { installDenoShutdown } from '@cossackframework/deno-adapter';
+
+if (import.meta.main) {
+  const server = runtime.serve(app);
+  installDenoShutdown(server, {
+    timeoutMs: 10_000,
+    onComplete: result => Deno.exit(result.forced || result.cleanupFailed ? 1 : 0),
+  });
+}
+```
+
+SIGTERM and SIGINT share one shutdown operation. The server stops admitting
+connections and drains accepted HTTP responses while runtime disposal closes
+WebSockets and waits for active component actions. The same deadline bounds
+both. When it expires, the adapter aborts the HTTP server and reports `forced`;
+this does not prove that ignored application I/O finished or rolled back.
+`cleanupCompleted` reports whether the drain settled before the deadline and
+`cleanupFailed` reports a rejected drain. The callback chooses process exit
+status; the helper itself never exits. Imports register no process listeners.
+Embedded hosts may call the returned owner's `shutdown()` explicitly, or
+`uninstall()` to relinquish signal ownership without stopping the server.
+
 ## Deno Deploy
 
 The exported default `fetch` handler is deployable without a separate Node
