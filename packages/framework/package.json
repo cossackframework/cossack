@@ -154,6 +154,18 @@
     "./auxiliary-build-budgets": {
       "types": "./dist/esm/auxiliary-deployment.d.ts",
       "import": "./dist/esm/auxiliary-deployment.js"
+    },
+    "./locale": {
+      "types": "./dist/esm/middlewares/locale.d.ts",
+      "import": "./dist/esm/middlewares/locale.js"
+    },
+    "./markdown-processor": {
+      "types": "./dist/esm/markdown-processor.d.ts",
+      "import": "./dist/esm/markdown-processor.js"
+    },
+    "./markdown-frontmatter": {
+      "types": "./dist/esm/markdown-frontmatter.d.ts",
+      "import": "./dist/esm/markdown-frontmatter.js"
     }
   },
   "files": [

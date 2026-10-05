@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 36 complete and 22 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 38 complete and 20 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -110,6 +110,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="rt-16"></a>RT-16 | [Migration and seeder plans](./release-0.9.0-plan-archive.md#codex-rt-16-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05) |
+| <a id="rt-22"></a>RT-22 | [Markdown metadata and localized output](./release-0.9.0-plan-archive.md#codex-rt-22-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05) |
 | <a id="rt-24"></a>RT-24 | [Inferred configuration and required bindings](./release-0.9.0-plan-archive.md#codex-rt-24-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05) |
 | <a id="rt-20"></a>RT-20 | [SSR and hydration diagnostics](./release-0.9.0-plan-archive.md#codex-rt-20-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05) |
 | <a id="cli-01"></a>CLI-01 | [Lifecycle flags, help, and creation dry runs](./release-0.9.0-plan-archive.md#cli-01) |
@@ -611,30 +613,6 @@ rejections. Relationship errors name both entities and fields. Pagination remain
 stable under its documented ordering. Transaction tests demonstrate commit and
 rollback with actual supported drivers. Related tasks: RT-16, RT-17, and CF-02.
 
-<a id="rt-16"></a>
-### RT-16: Migration and seeder plans
-
-Purpose: An agent must see database changes and their target before applying
-them. A dry run that executes arbitrary migration or seeder effects is not a plan.
-
-Baseline: Partial implementation includes SQL plans, destructive-operation flags,
-checksums, read-only history, environment/target context, and structured output.
-Seeder preview returns metadata without running the callback.
-
-Approach: Complete the common plan contract across providers and commands. Include
-direction, ordered steps, SQL, affected objects, risk, target identity, and plan
-completeness. Mark dynamic data-dependent operations as unknown when they cannot
-be safely planned. Do not pretend that omitted SQL means no changes. Recheck
-history/checksums before applying a previously computed plan.
-
-Start in database `migration/`, `seeding/`, `tooling/`, and CLI database commands.
-Reuse the current adapter factory context and isolated JSON transport.
-
-Done when: Planning leaves application data, migration bookkeeping, and generated
-files unchanged. Apply reaches the displayed target. Already-applied and changed
-migrations report correctly. Tests cover reversal, squash, callbacks, failure,
-and provider-specific limitations. Dependencies: RT-15, CLI-03, and CF-02.
-
 <a id="rt-17"></a>
 ### RT-17: Shared database inspection for Studio and CLI
 
@@ -657,29 +635,6 @@ Done when: The same fixture produces equivalent Studio and CLI facts. Named
 environments never fall back to an unintended top-level binding. Read-only
 inspection does not create bookkeeping tables. Both callers close temporary
 connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
-
-<a id="rt-22"></a>
-### RT-22: Markdown metadata and localized output
-
-Purpose: Content pages need typed metadata and predictable URLs. Two documents
-must not silently write the same page or use the wrong locale during SSG.
-
-Baseline: Markdown processing, frontmatter, and sitemap generation exist.
-Shared frontmatter schemas and complete content/locale collision coverage remain open.
-
-Approach: Define the supported frontmatter fields and extension mechanism.
-Report wrong types with source locations. Derive route and output paths through
-the same route model as TypeScript pages. Detect collisions across content,
-parameterized pages, aliases, and locale variants. Render each locale with its
-own request/configuration scope and canonical URL rules.
-
-Start in framework `markdown-processor.ts`, `vite-plugin.ts`,
-`sitemap-generator.ts`, and SSG modules, plus `docs/markdown.md`.
-
-Done when: Invalid metadata fails before output. Mixed Markdown/TypeScript route
-collisions are rejected. Locale pages contain the correct language, metadata,
-and links with no cross-render leakage. Type tests cover the author-facing
-frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics

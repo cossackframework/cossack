@@ -195,7 +195,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       if (renderedRoutes.length > 0) {
         console.log('\n[cossack/ssg] Generating sitemap...');
         const sitemap = (await import('./sitemap-generator.js')).generateSitemapFromUrls(
-          renderedRoutes,
+          [...new Set(plannedPages.map(page => page.canonicalUrl ?? page.routePath))],
           { baseUrl, lastmod: new Date() },
         );
         fs.writeFileSync(path.join(outDir, 'sitemap.xml'), sitemap, 'utf-8');
@@ -229,7 +229,7 @@ interface SsgEntryModule {
     baseUrl?: string;
   }) => Promise<{ rendered: string[]; failed: { routePath: string; error: string }[];
     outcomes?: { routePath: string; sourceFile: string; status: string; [key: string]: unknown }[] }>;
-  drainRenderedHtml: () => { routePath: string; html: string }[];
+  drainRenderedHtml: () => { routePath: string; html: string; canonicalUrl?: string }[];
 }
 
 /**
@@ -284,7 +284,7 @@ async function loadEntry(
           // UI's transitive TypeScript icon imports in Vite's module graph;
           // Node cannot strip types inside node_modules. SSR config alone
           // does not apply to runnerImport's separate inline environment.
-          noExternal: ['@cossackframework/ui', '@cossackframework/solar-icons'],
+          noExternal: ['@cossackframework/framework', '@cossackframework/ui', '@cossackframework/solar-icons'],
         },
       },
     },

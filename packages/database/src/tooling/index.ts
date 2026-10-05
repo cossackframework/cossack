@@ -241,12 +241,13 @@ async function seedCommand(
     ? onlyFlag.split(",").map((name) => name.trim()).filter(Boolean)
     : undefined;
   if (enabled(args, "dry-run")) {
-    const known = runner.list();
-    if (only?.some(name => !known.some(seeder => seeder.name === name))) throw new ConfigurationError("Unknown seeder in --only.");
-    const selected = only ? known.filter(seeder => only.includes(seeder.name)) : known;
-    out(`Would run: ${selected.map(seeder => seeder.name).join(", ") || "(none)"}. Seeder callbacks were not executed.`);
-    return { dryRun: true, complete: false, seeders: selected,
-      reason: "Seeder SQL depends on application callbacks and is not executed during a dry run." };
+    const seeders = await runner.plan(only === undefined ? {} : { only });
+    for (const seeder of seeders) {
+      out(`${seeder.name}: ${seeder.complete ? "planned" : "incomplete"}`);
+      for (const statement of seeder.statements) out(`[${statement.risk}] ${statement.text}`);
+      if (seeder.reason) out(seeder.reason);
+    }
+    return { dryRun: true, complete: seeders.every(seeder => seeder.complete), seeders };
   }
   const results = await runner.run(only === undefined ? {} : { only });
   if (!results.length) {

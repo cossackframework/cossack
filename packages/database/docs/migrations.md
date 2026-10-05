@@ -71,7 +71,7 @@ cossack-orm migration generate add_user_profiles \
 Generation compares the committed model snapshot with current decorated model
 metadata. It does not introspect the database. Adding or removing a `@Column()`,
 entity, rename marker, or index produces deterministic TypeScript containing
-reviewable `up()` and inverse `down()` SQL. The snapshot advances only after the
+reviewable `operations.up` and inverse `operations.down` SQL. The snapshot advances only after the
 migration file is written successfully. When the output is directly inside
 `migrationDirectory` and its `index.ts` exports the standard `migrations` array,
 the generator registers the new migration automatically; otherwise it prints a
@@ -160,11 +160,14 @@ target, and `readOnly` flag. A remote command requires a factory so the adapter
 can honor that selection. See [D1 tooling](./runtimes.md#d1-tooling) for generated
 Cloudflare projects.
 
-`plan` reads migration history without creating its table. It renders queued
-schema operations through a disconnected ORM that rejects live queries. Each
-entry includes its direction, checksum, mode, SQL, parameter count, risk, and
-whether the preview is complete. Parameter values are omitted. Raw SQL risk
-classification is conservative and does not replace reviewing the SQL.
+`plan` reads migration history without creating its table and never executes
+migration callbacks. Generated migrations declare authoritative `operations` for
+`up` and `down`. Those same operations drive execution; callbacks cannot override
+them. Each entry includes its direction, checksum, mode, ordered SQL, affected
+objects, parameter counts, risk, target connection identity, atomicity and
+provider limitations. Parameter values are omitted. Raw SQL object discovery and
+risk classification are conservative; `affectedObjectsComplete: false` makes
+that limit explicit. Review the SQL itself.
 Use `--direction down` to preview the most recent reversal. A squash that
 replaces fully applied migrations reports `mode: "consolidate"` without
 replaying application SQL.
@@ -185,10 +188,34 @@ release verification. Never point it at production for a smoke test. Remote
 commands require `--target remote` (or `--remote`); an environment name alone
 always uses local state.
 
-Migration callbacks are trusted application code. Keep writes on the provided
-`schema` and use the provided `orm`; planning cannot isolate external services
-or a separately captured database connection. Callbacks that need live queries
-produce an incomplete plan. Do not treat that result as a complete preview.
+Legacy callbacks remain executable through explicit `up()` and `down()`, but
+planning reports them as incomplete without invoking them. This is an intentional
+0.9 change: a disconnected ORM cannot stop a callback from writing files, calling
+external services, or using another captured connection. Configuration module
+loading is still trusted application code; this boundary does not sandbox imports.
+
+For application-controlled review and apply in one process:
+
+```ts
+const runner = new MigrationRunner(orm, migrations);
+const plan = await runner.plan();
+// Review plan, including incomplete entries and provider limitations.
+await runner.applyPlan(plan);
+```
+
+`applyPlan()` accepts only the exact plan returned by that live runner. It rejects
+incomplete plans and rechecks all migration definitions, checksums, history and
+target identity before writing. Its private SQL/parameter snapshot prevents later
+application mutations from changing the approved batch. JSON reports are inspection
+artifacts; they cannot be imported as executable approvals. Separate CLI invocations
+must replan on their selected target. Concurrent external writers still need a
+provider-specific deployment lock; history rechecks are not a distributed lock.
+
+Bookkeeping SQL is reported separately, including squash consolidation deletes
+and the replacement history insert. Missing declarative `down` operations mean a
+reversal is unknown and cannot be applied from a plan. MySQL DDL can commit
+implicitly; a transaction is not a guarantee of schema rollback. Providers with
+neither transactions nor an atomic batch report possible partial application.
 
 `--dry-run` also previews snapshot, generate, squash, and schema pull file
 changes without writing them. `status` and `check` read history without

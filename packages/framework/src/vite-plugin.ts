@@ -13,7 +13,8 @@ import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
 import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
 import { readBuildBindingNames } from './build-bindings.js';
-import { classifyRoute, filePathToHttpRoute } from './route-ids.js';
+import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
+import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -61,7 +62,7 @@ function injectMarkdownByline(html: string, author: string, date: string): strin
  */
 export interface MarkdownResult {
   html: string;
-  frontmatter: Record<string, unknown>;
+  frontmatter: unknown;
 }
 
 export type MarkdownProcessor = (
@@ -350,7 +351,15 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           warnIfMarkdownIsUnconfigured((message) => this.warn(message));
           return;
         }
-        const { html: htmlContent, frontmatter } = await options.markdownProcessor(code, id);
+        const result = await options.markdownProcessor(code, id);
+        const frontmatter = isValidatedMarkdownFrontmatter(result.frontmatter) ? result.frontmatter
+          : validateMarkdownFrontmatter(result.frontmatter, { source: code, filename: id, extensions: (options.markdownProcessor as any).frontmatterExtensions });
+        const sourceRoute = filePathToRoutePath('/' + relative(projectRoot, id).replaceAll('\\', '/'));
+        if (frontmatter.aliases?.length && /\[|:[A-Za-z_]/.test(sourceRoute)) {
+          this.error({ code: 'COSSACK_MARKDOWN_ALIAS_DYNAMIC', id,
+            message: 'Markdown output aliases require a static source route.' });
+        }
+        const htmlContent = result.html;
         const author = typeof frontmatter.author === 'string' ? frontmatter.author : '';
         const date = typeof frontmatter.date === 'string' ? frontmatter.date : '';
         const renderedMarkdown = injectMarkdownByline(htmlContent, author, date);
@@ -363,11 +372,13 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             const markdownContent = ${JSON.stringify(renderedMarkdown)};
 
             class MdxPage extends Cossack {
+              static markdownFrontmatter = Object.freeze(${JSON.stringify(frontmatter)});
               head() {
                 return {
                   title: ${JSON.stringify(frontmatter.title || '')},
                   description: ${JSON.stringify(frontmatter.description || '')},
-                  image: ${JSON.stringify(frontmatter.image || '')}
+                  image: ${JSON.stringify(frontmatter.image || '')},
+                  links: [{ tag: 'link', attributes: { rel: 'canonical', href: new URL(${JSON.stringify(frontmatter.canonical ?? sourceRoute)} , this.isServer ? this.c.req.url : globalThis.location.href).href } }]
                 };
               }
 
@@ -383,7 +394,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             // static content (no server logic), so pre-render them by default —
             // they can't opt in via @Page({ ssg: true }) like .ts pages because
             // they aren't TypeScript.
-            Reflect.defineMetadata('page:options', { transport: 'http', ssg: true }, MdxPage);
+            Reflect.defineMetadata('page:options', { transport: 'http', ssg: ${frontmatter.ssg !== false} }, MdxPage);
 
             export default MdxPage;
           `,

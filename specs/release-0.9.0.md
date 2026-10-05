@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 36 complete / 22 open.
+  acceptance; the numbered release task count is 38 complete / 20 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -44,13 +44,13 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
-- [ ] [RT-16](./release-0.9.0-plan.md#rt-16) Structured migration/seeder plans including SQL, destructive operations, environment, and target.
+- [x] [RT-16](./release-0.9.0-plan.md#rt-16) Read-only migration/seeder plans, authoritative declarations, target identity, conservative risks, stale-plan rejection and apply/reversal/rollback. SQLite/local D1 and installed public runtime/types pass. [Evidence](#codex-rt16-rt22-complete-2026-10-05).
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
 - [x] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
 - [x] [RT-20](./release-0.9.0-plan.md#rt-20) Redacted development text/structure/state diagnostics with component, relative source and field paths; valid nested hydration preserves nodes, listeners, resources and layout services. Installed development/production browser acceptance passes. [Evidence](#codex-rt20-rt24-complete-2026-10-05).
 - [x] [RT-21](./release-0.9.0-plan.md#rt-21) SSG compiler compatibility, structured per-route outcomes and safe publication; real Vite and installed generated Cloudflare artifacts passed. [Evidence](#codex-rt21-rt29-complete-2026-10-05).
-- [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
+- [x] [RT-22](./release-0.9.0-plan.md#rt-22) Typed/validated Markdown metadata, output collision preflight, isolated locale rendering and canonical aliases/sitemap. Generated and installed Vite/type acceptance passes. [Evidence](#codex-rt16-rt22-complete-2026-10-05).
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
 - [x] [RT-24](./release-0.9.0-plan.md#rt-24) Generated config inference, required variables/bindings, pre-factory named failures and scoped environments. Installed Node/Deno types, tooling policy, SSR/RPC/browser isolation and secret exclusion pass alongside prior Cloudflare acceptance. [Evidence](#codex-rt20-rt24-complete-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
@@ -1805,3 +1805,15 @@ Root and renderer/core/framework typechecks and builds passed.
 Release: **36 complete / 22 open**. Desktop checks remain waived. Node/Deno
 value inspection remains explicitly unavailable until hosts supply runtime values;
 this is not a claim that secrets or remote resources exist.
+
+<a id="codex-rt16-rt22-complete-2026-10-05"></a>
+### Codex: RT-16 and RT-22 complete (2026-10-05)
+
+Database: 104 tests/17 files. Framework metadata/SSG/localization: 108/8 plus
+42/3 existing scope regressions. Native Markdown acceptance: 6/6. Installed
+Markdown: five behavior/type/rejection cases plus the focused parser retry pass;
+installed SQLite plan runtime/types pass. Root/package typechecks, builds,
+Workers-safe database bundle audit and owned whitespace checks pass.
+[Full criterion audit, commands, retry and limits](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05).
+Release: **38 complete / 20 open**. No remote provider acceptance is claimed.
+Desktop checks remain waived; versions stay 0.8.3 until REL-04.

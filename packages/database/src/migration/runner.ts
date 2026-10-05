@@ -6,18 +6,23 @@ import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import type { SchemaOperation } from "../schema/operations.js";
 import { compileSQL, SQLFragment } from "../sql/fragment.js";
-import type { BatchStatement, Driver } from "../adapter/types.js";
+import { digestEvidence, serializeEvidence, planTarget, executionPolicy, operationStatements, snapshotOperation } from "./plan.js";
+import type { BatchStatement } from "../adapter/types.js";
 
 async function checksum(migration: Migration): Promise<string> {
-  const bytes = new TextEncoder().encode(
-    `${migration.name}\n${JSON.stringify(migration.replaces ?? [])}\n` +
-      `${migration.up.toString()}\n${migration.down.toString()}`,
-  );
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (!migration.operations && migration.up && migration.down) {
+    const source = `${migration.name}\n${JSON.stringify(migration.replaces ?? [])}\n` +
+      `${Function.prototype.toString.call(migration.up)}\n${Function.prototype.toString.call(migration.down)}`;
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  }
+  return digestEvidence({ name: migration.name, replaces: migration.replaces ?? [], operations: migration.operations,
+    up: migration.up ? Function.prototype.toString.call(migration.up) : null,
+    down: migration.down ? Function.prototype.toString.call(migration.down) : null });
 }
 
 export class MigrationRunner {
+  private readonly planned = new WeakMap<object, { direction: "up" | "down"; history: string; checksums: string; output: string; target: string; definitions: readonly Migration[] }>();
   constructor(
     readonly orm: ORM,
     readonly migrations: readonly Migration[],
@@ -76,29 +81,31 @@ export class MigrationRunner {
     return result;
   }
 
-  /** Preview queued schema SQL with a disconnected ORM that rejects live queries. */
+  /** Inspect declarative operations only. Application callbacks are never invoked. */
   async plan(direction: "up" | "down" = "up"): Promise<readonly MigrationPlanEntry[]> {
-    const history = new Set((await this.applied({ readOnly: true })).map(item => item.name));
-    const statuses = await this.status({ readOnly: true });
+    const appliedRows = await this.applied({ readOnly: true });
+    const history = new Set(appliedRows.map(item => item.name));
+    const appliedByName = new Map(appliedRows.map(item => [item.name, item]));
+    const definitions = this.sorted().map(migration => ({ ...migration,
+      ...(migration.replaces ? { replaces: [...migration.replaces] } : {}),
+      ...(migration.operations ? { operations: { up: migration.operations.up.map(snapshotOperation),
+        ...(migration.operations.down ? { down: migration.operations.down.map(snapshotOperation) } : {}) } } : {}),
+    }));
+    const hashes = await Promise.all(definitions.map(checksum));
+    const target = planTarget(this.orm);
+    const statuses: MigrationStatus[] = definitions.map((migration, index) => {
+      const applied = appliedByName.get(migration.name);
+      return { migration, checksum: hashes[index]!, ...(applied ? { applied } : {}),
+        state: !applied ? "pending" : applied.checksum === hashes[index] ? "applied" : "changed" };
+    });
     const changed = statuses.find(item => item.state === "changed");
     if (changed) throw new MigrationError(`Applied migration ${changed.migration.name} has a changed checksum.`);
     const selected = direction === "up"
       ? statuses.filter(item => item.state === "pending")
       : statuses.filter(item => item.applied).sort((left, right) =>
         right.applied!.batch - left.applied!.batch || right.migration.name.localeCompare(left.migration.name)).slice(0, 1);
-    const dialect = dialectFor(this.orm.driver.dialect);
-    const block = async (): Promise<never> => {
-      throw new MigrationError("This migration needs live database queries and cannot be fully previewed.");
-    };
-    const driver: Driver = {
-      dialect: this.orm.driver.dialect,
-      capabilities: this.orm.driver.capabilities,
-      execute: block, batch: block, transaction: block, reserve: block,
-      introspect: block, close: async () => {},
-    };
     const entries: MigrationPlanEntry[] = [];
     for (const status of selected) {
-      const schema = new SchemaBuilder();
       let reason: string | undefined;
       const replacements = status.migration.replaces ?? [];
       const appliedReplacements = replacements.filter(name => history.has(name));
@@ -106,30 +113,68 @@ export class MigrationRunner {
         throw new MigrationError(`Cannot apply squashed migration ${status.migration.name}: only some replaced migrations are applied.`);
       }
       const consolidate = direction === "up" && replacements.length > 0 && appliedReplacements.length === replacements.length;
-      try {
-        if (!consolidate) await this.orm.runWithDriver(driver, preview => status.migration[direction]({ orm: preview, schema }));
-      } catch {
-        reason = "Migration code cannot be fully previewed without executing live queries, or its callback failed.";
+      const operations = status.migration.operations?.[direction];
+      if (!consolidate && operations === undefined) {
+        reason = "Migration callbacks are not executed during planning. Declare authoritative operations for this direction.";
       }
-      const statements = schema.operations().flatMap(item => {
-        if (item instanceof SQLFragment) {
-          const query = compileSQL(item, dialect);
-          const risk = /\b(DROP|TRUNCATE|DELETE)\b/i.test(query.text) ? "destructive" as const
-            : /^\s*CREATE\s+(TABLE|(?:UNIQUE\s+)?INDEX)\b/i.test(query.text) ? "safe" as const
-            : "unknown" as const;
-          return [{ text: query.text, parameterCount: query.parameters.length, risk }];
-        }
-        const operation = item as SchemaOperation;
-        const risk = ["drop-table", "drop-column", "alter-column"].includes(operation.kind)
-          ? "destructive" as const : "safe" as const;
-        return renderOperation(operation, dialect).map(text => ({ text, parameterCount: 0, risk }));
-      });
-      entries.push({ name: status.migration.name, direction, checksum: status.checksum,
+      let statements: MigrationPlanEntry["statements"] = [];
+      try { statements = consolidate ? [] : operationStatements(operations ?? [], this.orm); }
+      catch { reason = "The declared operations are unsupported by this provider and cannot be planned."; }
+      const q = this.orm.sql.id.bind(this.orm.sql);
+      const bookkeepingOperations: SQLFragment[] = [this.orm.sql.fragment`
+        CREATE TABLE IF NOT EXISTS ${q(this.tableName)} (
+          ${q("name")} varchar(255) PRIMARY KEY NOT NULL,
+          ${q("checksum")} varchar(64) NOT NULL,
+          ${q("batch")} integer NOT NULL,
+          ${q("applied_at")} varchar(64) NOT NULL
+        )
+      `];
+      if (consolidate) for (const name of replacements) bookkeepingOperations.push(this.orm.sql.fragment`DELETE FROM ${this.orm.sql.id(this.tableName)} WHERE ${this.orm.sql.id("name")} = ${name}`);
+      if (direction === "up") bookkeepingOperations.push(this.orm.sql.fragment`INSERT INTO ${this.orm.sql.id(this.tableName)} (${this.orm.sql.id("name")}, ${this.orm.sql.id("checksum")}, ${this.orm.sql.id("batch")}, ${this.orm.sql.id("applied_at")}) VALUES (${status.migration.name}, ${status.checksum}, ${0}, ${"applied-at-apply-time"})`);
+      else bookkeepingOperations.push(this.orm.sql.fragment`DELETE FROM ${this.orm.sql.id(this.tableName)} WHERE ${this.orm.sql.id("name")} = ${status.migration.name}`);
+      const bookkeeping = operationStatements(bookkeepingOperations, this.orm);
+      entries.push(Object.freeze({ target, ...executionPolicy(this.orm),
+        affectedObjects: Object.freeze([...new Set([...statements, ...bookkeeping].flatMap(statement => statement.affectedObjects))]), name: status.migration.name, direction, checksum: status.checksum,
         mode: consolidate ? "consolidate" : direction === "up" ? "apply" : "revert",
-        ...(replacements.length ? { replaces: replacements } : {}),
-        statements, complete: reason === undefined, ...(reason ? { reason } : {}) });
+        ...(replacements.length ? { replaces: Object.freeze([...replacements]) } : {}),
+        statements, bookkeeping, complete: reason === undefined, ...(reason ? { reason } : {}) }));
     }
-    return entries;
+    const result = Object.freeze(entries);
+    this.planned.set(result, { direction, history: serializeEvidence(appliedRows),
+      checksums: serializeEvidence(hashes),
+      output: serializeEvidence(result), target: serializeEvidence(target), definitions });
+    return result;
+  }
+
+  /** Plans are bound to this live runner/connection and cannot be imported from JSON. */
+  async applyPlan(plan: readonly MigrationPlanEntry[]): Promise<readonly string[]> {
+    const evidence = this.planned.get(plan);
+    if (!evidence || plan.some(entry => !entry.complete)) throw new MigrationError("Cannot apply an incomplete or foreign migration plan.");
+    if (evidence.output !== serializeEvidence(plan) || evidence.target !== serializeEvidence(planTarget(this.orm)) ||
+        evidence.history !== serializeEvidence(await this.applied({ readOnly: true })) ||
+        evidence.checksums !== serializeEvidence(await Promise.all(this.sorted().map(checksum)))) {
+      throw new MigrationError("Migration plan is stale. Replan after migration definitions, target or history changes.");
+    }
+    this.planned.delete(plan);
+    if (!plan.length) return [];
+    const execution = new MigrationRunner(this.orm, evidence.definitions, this.tableName);
+    return evidence.direction === "up" ? execution.up({ count: plan.length }) : execution.down({ count: plan.length });
+  }
+
+  private async queueMigration(migration: Migration, direction: "up" | "down", schema: SchemaBuilder): Promise<void> {
+    const operations = migration.operations?.[direction];
+    if (migration.operations) {
+      if (!operations) throw new MigrationError(`Migration ${migration.name} has no declarative ${direction} operations.`);
+      const dialect = dialectFor(this.orm.driver.dialect);
+      for (const operation of operations) {
+        if (operation instanceof SQLFragment) schema.raw(operation);
+        else for (const text of renderOperation(operation, dialect)) schema.raw(this.orm.sql.unsafe(text));
+      }
+    } else {
+      const callback = migration[direction];
+      if (!callback) throw new MigrationError(`Migration ${migration.name} has no ${direction} callback or operations.`);
+      await callback({ orm: this.orm, schema });
+    }
   }
 
   async up(options: { readonly count?: number } = {}): Promise<readonly string[]> {
@@ -178,7 +223,7 @@ export class MigrationRunner {
       }
       const apply = async () => {
         const schema = new SchemaBuilder();
-        await status.migration.up({ orm: this.orm, schema });
+        await this.queueMigration(status.migration, "up", schema);
         const bookkeeping = this.orm.sql.fragment`
           INSERT INTO ${this.orm.sql.id(this.tableName)}
             (${this.orm.sql.id("name")}, ${this.orm.sql.id("checksum")}, ${this.orm.sql.id("batch")}, ${this.orm.sql.id("applied_at")})
@@ -194,6 +239,8 @@ export class MigrationRunner {
 
   async down(options: { readonly count?: number } = {}): Promise<readonly string[]> {
     const statuses = await this.status();
+    const changed = statuses.find(item => item.state === "changed");
+    if (changed) throw new MigrationError(`Applied migration ${changed.migration.name} has a changed checksum.`);
     const applied = statuses
       .filter((item): item is MigrationStatus & { applied: AppliedMigration } => Boolean(item.applied))
       .sort((left, right) => right.applied.batch - left.applied.batch || right.migration.name.localeCompare(left.migration.name))
@@ -202,7 +249,7 @@ export class MigrationRunner {
     for (const status of applied) {
       const revert = async () => {
         const schema = new SchemaBuilder();
-        await status.migration.down({ orm: this.orm, schema });
+        await this.queueMigration(status.migration, "down", schema);
         await this.executeAtomic(
           schema,
           this.orm.sql.fragment`DELETE FROM ${this.orm.sql.id(this.tableName)} WHERE ${this.orm.sql.id("name")} = ${status.migration.name}`,

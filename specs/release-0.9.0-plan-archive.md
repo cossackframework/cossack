@@ -5528,3 +5528,59 @@ Wrangler supplies the test secret locally. The helper restores original files,
 artifacts and caches. Native Node/Deno hydration and declaration-source policy,
 failure diagnostics and broader secret-classification acceptance remain open;
 intentional app publication is not automatic redaction. Counts stay 30 / 28.
+
+## Codex: Completed RT-16 and RT-22 context (2026-10-05)
+
+Original purpose, approach and full criteria are retained below. Both tasks are
+complete; [acceptance and provider limits](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05)
+explain the verified declarations, safe planning, output publication and locale
+scoping. Dynamic callbacks, raw SQL uncertainty and provider transaction limits
+remain explicit contract boundaries. Release: 38 complete / 20 open.
+
+<a id="codex-rt-16-completed-2026-10-05"></a>
+### RT-16: Migration and seeder plans
+
+Purpose: An agent must see database changes and their target before applying
+them. A dry run that executes arbitrary migration or seeder effects is not a plan.
+
+Baseline: Partial implementation includes SQL plans, destructive-operation flags,
+checksums, read-only history, environment/target context, and structured output.
+Seeder preview returns metadata without running the callback.
+
+Approach: Complete the common plan contract across providers and commands. Include
+direction, ordered steps, SQL, affected objects, risk, target identity, and plan
+completeness. Mark dynamic data-dependent operations as unknown when they cannot
+be safely planned. Do not pretend that omitted SQL means no changes. Recheck
+history/checksums before applying a previously computed plan.
+
+Start in database `migration/`, `seeding/`, `tooling/`, and CLI database commands.
+Reuse the current adapter factory context and isolated JSON transport.
+
+Done when: Planning leaves application data, migration bookkeeping, and generated
+files unchanged. Apply reaches the displayed target. Already-applied and changed
+migrations report correctly. Tests cover reversal, squash, callbacks, failure,
+and provider-specific limitations. Dependencies: RT-15, CLI-03, and CF-02.
+
+
+<a id="codex-rt-22-completed-2026-10-05"></a>
+### RT-22: Markdown metadata and localized output
+
+Purpose: Content pages need typed metadata and predictable URLs. Two documents
+must not silently write the same page or use the wrong locale during SSG.
+
+Baseline: Markdown processing, frontmatter, and sitemap generation exist.
+Shared frontmatter schemas and complete content/locale collision coverage remain open.
+
+Approach: Define the supported frontmatter fields and extension mechanism.
+Report wrong types with source locations. Derive route and output paths through
+the same route model as TypeScript pages. Detect collisions across content,
+parameterized pages, aliases, and locale variants. Render each locale with its
+own request/configuration scope and canonical URL rules.
+
+Start in framework `markdown-processor.ts`, `vite-plugin.ts`,
+`sitemap-generator.ts`, and SSG modules, plus `docs/markdown.md`.
+
+Done when: Invalid metadata fails before output. Mixed Markdown/TypeScript route
+collisions are rejected. Locale pages contain the correct language, metadata,
+and links with no cross-render leakage. Type tests cover the author-facing
+frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.

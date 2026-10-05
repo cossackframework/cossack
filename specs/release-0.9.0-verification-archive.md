@@ -11850,3 +11850,84 @@ runtime type validation; nullable/custom classes are skipped. No full release
 matrix or remote deployment/log ingestion/resource existence was claimed. Those
 criteria remain under other task IDs. Desktop checks are waived by user decision.
 Release: **36 complete / 22 open**. Versions remain 0.8.3 until REL-04. No blocker.
+
+<a id="codex-rt16-rt22-complete-2026-10-05"></a>
+## Codex: RT-16 and RT-22 completed acceptance (2026-10-05)
+
+Closed both parent tasks against their full archived criteria. Three implementation
+agents owned separate database plans, Markdown metadata, and generated acceptance
+files. Codex reviewed all changes and integrated exports, tooling, route/locale
+scopes, canonical publication and final verification. No Desktop work was reopened.
+
+RT-16: Declarative migration/seed operations are authoritative for preview and
+execution. Plans include direction, ordered SQL, risks, affected objects and their
+completeness, bookkeeping, target identity, atomicity and provider limitations.
+Callbacks are never invoked by planning and explicitly produce incomplete plans.
+SQLite tests compare file bytes, application rows, history and generated files
+before/after planning. Exact returned plans bind to the live runner/connection,
+recheck definitions (including parameters) and full history, and apply detached
+snapshots. Tests cover changed/already-applied status, legacy checksums, reversal,
+squash consolidation/partial-history rejection, foreign/stale plans, mid-apply
+mutation, SQL failure/rollback, transaction requirements and dialect limits.
+Actual local D1 applies/reverts the reviewed declarative plan. Target metadata uses
+own data descriptors and a bounded field whitelist; secrets/getters are excluded.
+Generated migrations and seed dry-runs use the same declarations/plan service.
+
+RT-22: Public frontmatter types and explicit extension validators reject wrong or
+unknown metadata with file/line/column diagnostics without rejected values.
+The shared routing model preflights Markdown/TypeScript, parameterized and alias
+output collisions before publishing HTML. Authored locale scopes override visitor
+preferences for content and remain isolated through async work. Real generated
+Node Vite builds produce English/French Markdown and parameterized TypeScript
+pages with correct language, metadata, links and active hydration catalogs.
+Aliases reuse canonical HTML once; canonical links are unique and the sitemap
+contains four canonical URLs for five output pages. Installed public imports and
+positive/negative author-facing type contracts pass from fresh tarball apps.
+
+Final verification (source stable before builds and checks):
+
+- `pnpm --dir packages/database exec vitest run`: **104 tests / 17 files passed**,
+  including actual SQLite, local D1, tooling JSON/dry-run and provider limitations.
+- Framework targeted combined run: **108 tests / 8 files passed**, covering
+  metadata/types/processor, localization, SSG entry/rendering, sitemap and Vite SSG.
+  Additional existing config/public-route/service scope regressions: **42 / 3**.
+- `pnpm --dir packages/cossack exec vitest run tests/markdown-release-acceptance.test.js --maxWorkers=1`:
+  **6/6 native generated-app checks passed**.
+- The same command with `COSSACK_MARKDOWN_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production`:
+  **5 installed behavior/type/rejection cases passed**; the fixture-source parser
+  exceeded its initial five-second timeout while installing. After giving it the
+  same 180-second fixture allowance, `-t 'writes parseable'` passed **1/1**; the
+  five unchanged cases were skipped on this focused retry, not rerun or waived.
+- `node scripts/verify-database-plans.mjs /tmp/cossack-local-pack-gZdSQv/minimal-production`:
+  installed public types, unchanged planning bytes, unknown-callback rejection,
+  selected SQLite apply/revert, parameter secrecy, seed commit/rollback and stale
+  migration-plan rejection passed.
+- Framework `build:types`, database `build`, database `audit:bundle` (29 neutral
+  modules and Workers-safe Cloudflare entry), framework/database `tsc --noEmit`,
+  required root `pnpm tsc --noEmit`, script syntax and owned diff whitespace passed.
+
+Only changed framework/database runtime packages were packed, once after their
+final runtime fixes, into /tmp/cossack-rt16-22-tarballs/{framework,database}.tgz.
+Packing disabled lifecycle scripts because equivalent build/test/audit evidence
+was collected explicitly. Gate installation and each fresh Markdown application
+use their local override policy and disable install scripts; actual Vite/runtime
+execution then passes. No unchanged hydration/config packages were repacked.
+
+Logs: /tmp/cossack-rt16-database-final-suite.log,
+/tmp/cossack-rt22-final-combined.log, /tmp/cossack-rt22-scope-regressions.log,
+/tmp/cossack-rt22-native-final.log, /tmp/cossack-rt22-installed-final.log,
+/tmp/cossack-rt22-installed-parser.log, /tmp/cossack-rt16-installed-final.log,
+/tmp/cossack-rt16-bundle-audit.log, /tmp/cossack-rt16-22-final-root-types.log,
+/tmp/cossack-rt22-framework-final-types.log, /tmp/cossack-rt16-database-final-types.log.
+
+Limits: no remote Cloudflare database or live PostgreSQL/MySQL server was used.
+PostgreSQL/MySQL evidence covers dialect/driver policies, not production rollback;
+MySQL DDL explicitly warns of implicit commits. Raw SQL object/risk inference is
+conservative; bound values are private, authored SQL literals remain visible.
+JSON plans cannot be imported for execution; CLI apply checks current definitions
+rather than accepting prior JSON. External callback effects remain application
+owned. Static aliases are copies, not runtime redirects. Default translation
+fallback catalogs may appear in hydration; active locale/body do not leak.
+Broader RT-15, CLI-08 and REL-02/03 provider/documentation/release gates stay open.
+Desktop checks are waived by user decision, not passed.
+Release: **38 complete / 20 open**. Versions stay 0.8.3 until REL-04. No blocker.

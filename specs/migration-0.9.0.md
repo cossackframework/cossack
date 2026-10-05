@@ -1909,3 +1909,41 @@ Page syntax errors can recover after repair. The renderer stays on the private o
 and native request ownership rules still apply. Opt in to stored development
 captures through `cossackPages({ developmentTraces: true })` and the public
 inspector. Do not expose native handlers through a loopback HTTP endpoint.
+
+## Codex: Read-only plans and typed Markdown (2026-10-05)
+
+Migration and seeder planning no longer invokes application callbacks. Callback-only
+operations report an incomplete plan with an explicit unknown reason. To obtain
+a complete plan, declare `operations`: migrations use `{ up: [...], down: [...] }`
+and seeders use an array of SQL fragments. These declarations drive execution as
+well as preview; callbacks on the same declaration are ignored. Generated
+migrations now use this form. Omit `down` for an irreversible baseline.
+
+Apply the returned array through the same live runner's `applyPlan(plan)`. The
+runner checks definitions, connection identity and migration history before
+applying its detached snapshot. Serialized JSON is inspection output and cannot
+be imported as an executable plan. CLI apply commands still perform their own
+current-definition/history checks; they do not consume a prior CLI JSON preview.
+Bound parameter values are excluded from the public plan. SQL literals remain
+authored SQL. Provider limits appear on the plan; MySQL DDL can commit implicitly
+and D1 does not offer interactive transactions.
+
+Unchanged callback-only migrations retain their historical checksum. Converting
+an already-applied migration to declarative operations changes its definition: add
+a new migration instead of editing applied history. Dynamic callbacks remain
+available for explicit execution, with application-owned external effects.
+
+Markdown standard metadata now has a shared typed contract. Unknown metadata
+fields require an explicit validator passed to `createMarkdownProcessor` from
+`@cossackframework/framework/markdown-processor`. Use ISO calendar dates for `date`,
+language tags for `locale`, and HTTP(S) or root-relative URLs for `canonical`.
+Validation errors name the file, field and location without echoing rejected values.
+
+`aliases` are additional static output copies of the canonical page. They must be
+literal, unencoded, root-relative static paths on SSG-enabled static source routes.
+They are not runtime redirects. Duplicate output paths, including TypeScript
+parameter outputs, fail before publication. Aliases reuse canonical HTML and do
+not add duplicate sitemap entries. Markdown locale metadata takes precedence
+over visitor preferences; a named locale requires its application catalog when
+catalogs exist. The default catalog may still be included as the documented
+translation fallback in hydration.

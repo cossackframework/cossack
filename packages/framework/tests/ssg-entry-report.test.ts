@@ -52,3 +52,18 @@ it('drains all successful public outputs once and resets between runs', async ()
   expect(drainRenderedHtml()).toEqual([{ routePath: '/one', html: '<html>public</html>' }]); expect(drainRenderedHtml()).toEqual([]);
   await runSsg(args); expect(drainRenderedHtml()).toHaveLength(1);
 });
+
+it('publishes aliases from one canonical render and rejects alias collisions before rendering', async () => {
+  defaults(); route('/article', '/src/pages/article.md');
+  fixture.routes[0].frontmatter = { aliases: ['/docs'], canonical: '/article' };
+  const result = await runSsg(args);
+  expect(result.failed).toEqual([]); expect(fixture.render).toHaveBeenCalledTimes(1);
+  const pages = drainRenderedHtml();
+  expect(pages.map(page => page.routePath)).toEqual(['/article', '/docs']);
+  expect(pages[0].html).toBe(pages[1].html); expect(pages[1].canonicalUrl).toContain('/article');
+  fixture.routes.length = 0; for (const key of Object.keys(fixture.pages)) delete fixture.pages[key]; fixture.render.mockClear();
+  route('/article', '/src/pages/article.md');
+  fixture.routes[0].frontmatter = { aliases: ['/docs'] }; route('/docs', '/src/pages/docs.ts');
+  const collision = await runSsg(args);
+  expect(collision.failed).toHaveLength(2); expect(fixture.render).not.toHaveBeenCalled(); expect(drainRenderedHtml()).toEqual([]);
+});

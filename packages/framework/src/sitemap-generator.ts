@@ -1,3 +1,4 @@
+import type { MarkdownFrontmatter } from './markdown-frontmatter.js';
 import type { Cossack, PageOptions } from '@cossackframework/core';
 
 // Re-export types from core
@@ -8,6 +9,7 @@ export interface SsgRoute {
   filePath: string;
   component: new () => Cossack;
   pageOptions?: PageOptions;
+  frontmatter?: MarkdownFrontmatter;
 }
 
 export interface SitemapOptions {
@@ -163,6 +165,11 @@ export function generateSitemapFromUrls(
   const entries: SitemapEntry[] = urls
     .filter((url) => !shouldExcludeRoute(url))
     .map((url) => {
+      if (/^https?:\/\//.test(url)) {
+        const canonical = new URL(url);
+        if (canonical.username || canonical.password) throw new Error('Sitemap canonical URLs must not contain credentials.');
+        return { loc: canonical.href, lastmod: lastmodStr, changefreq: defaultChangefreq, priority: defaultPriority };
+      }
       // Normalize route path
       let routePath = url;
       if (!routePath.startsWith('/')) {

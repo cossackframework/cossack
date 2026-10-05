@@ -77,3 +77,18 @@ it.each(['en', 'es'])('parallel SSG isolates catalog values even when its second
     }
     expect(snapshot()).toEqual(outside);
 });
+
+
+it('authored content locale overrides visitor cookies and stays isolated across concurrent paths', async () => {
+    const app = new Hono(); const gate = barrier(2);
+    app.use('*', createLocaleMiddleware({ resolveLocale: context => context.req.path.slice(1) }));
+    app.get('/:locale', async c => { const before = snapshot(); await gate(); return c.json({ before, after: snapshot() }); });
+    const reports = await Promise.all(['en', 'fr'].map(async locale => {
+        const response = await app.request('https://content.test/' + locale, { headers: { cookie: 'cossack_locale=es' } });
+        expect(response.status).toBe(200); return response.json() as Promise<{ before: ReturnType<typeof snapshot>; after: ReturnType<typeof snapshot> }>;
+    }));
+    for (const [index, locale] of ['en', 'fr'].entries()) {
+        expect(reports[index].before).toEqual(reports[index].after);
+        expect(reports[index].after.locale).toBe(locale);
+    }
+});

@@ -19,10 +19,8 @@ describe("migration planning", () => {
     const driver = new MemoryDriver();
     const orm = createORM({ adapter: { driver }, entities: [] });
     const runner = new MigrationRunner(orm, [{ name: "001_test",
-      up({ schema, orm }) {
-        schema.raw(orm.sql.fragment`CREATE TABLE example (id integer DEFAULT ${42})`);
-        schema.dropTable("obsolete");
-      }, down() {},
+      operations: { up: [orm.sql.fragment`CREATE TABLE example (id integer DEFAULT ${42})`,
+        { kind: "drop-table", tableName: "obsolete" }], down: [] },
     }]);
     const plan = await orm.run(() => runner.plan());
     expect(plan).toMatchObject([{ name: "001_test", complete: true, statements: [
@@ -42,7 +40,7 @@ describe("migration planning", () => {
       down() {},
     }]);
     expect(await orm.run(() => runner.plan())).toMatchObject([
-      { complete: false, reason: expect.stringContaining("cannot be fully previewed"), statements: [] },
+      { complete: false, reason: expect.stringContaining("not executed during planning"), statements: [] },
     ]);
     expect(driver.statements.every(statement => statement.operation === "select")).toBe(true);
     await orm.close();
@@ -77,9 +75,9 @@ describe("migration planning", () => {
     const orm = createORM({ adapter: { driver: new MemoryDriver() }, entities: [PlanEntity],
       namingStrategy: { ...defaultNamingStrategy, tableName: name => `app_${name.toLowerCase()}` } });
     try {
-      const runner = new MigrationRunner(orm, [{ name: "001_schema", up({ orm, schema }) {
-        schema.createTable(orm.schema().entities[0]!);
-      }, down() {} }]);
+      const runner = new MigrationRunner(orm, [{ name: "001_schema", operations: {
+        up: [{ kind: "create-table", entity: orm.schema().entities[0]! }], down: [],
+      } }]);
       expect(await orm.run(() => runner.plan())).toMatchObject([{ complete: true,
         statements: [{ text: expect.stringContaining('CREATE TABLE "app_planentity"') }] }]);
     } finally { await orm.close(); }

@@ -110,20 +110,22 @@ describe("D1 tooling target selection", () => {
       expect((await adapter.driver.introspect!()).entities.map(entity => entity.tableName)).toEqual(["example"]);
       expect(adapter.tooling).toMatchObject({ target: "local", binding: "DB", databaseName: "staging-db" });
       const orm = createORM({ adapter, entities: [] });
-      const runner = new MigrationRunner(orm, [{ name: "001_items",
+      const runner = new MigrationRunner(orm, [{ name: "001_items", operations: { up: [orm.sql.unsafe("CREATE TABLE items (id integer PRIMARY KEY, label text UNIQUE)")], down: [{ kind: "drop-table", tableName: "items" }] },
         up({ schema, orm }) { schema.raw(orm.sql.unsafe("CREATE TABLE items (id integer PRIMARY KEY, label text UNIQUE)")); },
         down({ schema }) { schema.dropTable("items"); },
       }]);
       await orm.run(async () => {
         expect(await runner.plan()).toMatchObject([{ name: "001_items", complete: true, mode: "apply" }]);
         expect((await orm.executeFragment(orm.sql.unsafe('PRAGMA table_info("_cossack_migrations")'), "select")).rows).toEqual([]);
-        expect(await runner.up()).toEqual(["001_items"]);
+        expect(await runner.applyPlan(await runner.plan())).toEqual(["001_items"]);
         expect(await runner.plan()).toEqual([]);
         expect((await runner.status({ readOnly: true }))[0]?.state).toBe("applied");
         expect(await runner.plan("down")).toMatchObject([{ mode: "revert", statements: [{ risk: "destructive" }] }]);
         const schema = await orm.introspect();
         expect(schema.entities.map(entity => entity.tableName)).toEqual(["example", "items"]);
         expect(schema.entities[1]?.columns.find(column => column.columnName === "label")?.unique).toBe(true);
+        expect(await runner.applyPlan(await runner.plan("down"))).toEqual(["001_items"]);
+        expect((await orm.introspect()).entities.map(entity => entity.tableName)).toEqual(["example"]);
       });
     } finally { await adapter.driver.close(); }
   }, 30_000);

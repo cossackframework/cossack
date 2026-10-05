@@ -92,7 +92,7 @@ const htmlTemplate = await loadHtmlTemplate();
  */
 export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
   _renderedHtml.length = 0;
-  const baseUrl = args.baseUrl;
+  const baseUrl = args.baseUrl ?? 'https://example.com';
   // The registry is imported from the SSR build, where layouts are eagerly
   // loaded (see vite-plugin.ts: `{ eager: true }` for SSR). The union type
   // reflects the client's lazy shape; narrow here since SSG is server-only.
@@ -146,6 +146,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
           code: 'COSSACK_SSG_NO_PARAMS', message: 'generateStaticParams returned no routes.' } });
     }
     for (const params of paramsList) {
+      for (const outputRoute of [route.routePath, ...(route.frontmatter?.aliases ?? [])]) {
       const outcome: SsgRouteOutcome = { routePath: route.routePath, sourceFile: route.filePath,
         durationMs: 0, status: 'skipped' };
       outcomes.push(outcome);
@@ -153,7 +154,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
         if (!params || typeof params !== 'object' || Array.isArray(params)
           || Object.values(params).some(value => typeof value !== 'string')) throw new Error();
         outcome.params = { ...params };
-        outcome.routePath = resolveStaticRoutePath(route.routePath, params);
+        outcome.routePath = resolveStaticRoutePath(outputRoute, params);
         // Backslashes, query/hash syntax and parent segments cannot name static output.
         if (!outcome.routePath.startsWith('/') || /[\\?#\u0000]/.test(outcome.routePath)
           || outcome.routePath.split('/').some(segment => segment === '.' || segment === '..')) throw new Error();
@@ -170,6 +171,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
         reject(outcome, 'COSSACK_SSG_DUPLICATE_OUTPUT', 'Multiple static routes resolve to the same output file.');
       } else outputs.set(outcome.outputPath!, outcome);
       plans.push({ route, outcome });
+      }
     }
   }
   if (failed.length) {
@@ -177,15 +179,19 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
       code: 'COSSACK_SSG_VALIDATION_ABORTED', message: 'Static rendering was skipped because output validation failed.' };
     return { rendered, failed, outcomes };
   }
+  const sourceHtml = new Map<string, string>();
   for (const { route, outcome } of plans) {
     const started = performance.now();
     try {
-      const html = await renderSsgPage(route.component, outcome.routePath, outcome.params!, layouts,
+      const primaryPath = resolveStaticRoutePath(route.routePath, outcome.params!);
+      const sourceKey = JSON.stringify([route.filePath, primaryPath]);
+      const html = sourceHtml.get(sourceKey) ?? await renderSsgPage(route.component, primaryPath, outcome.params!, layouts,
         baseUrl, AppComponent, htmlTemplate, route.filePath, args.manifest.filePathToId[route.filePath],
         configFactories, locale, args.manifest.filePathToId, requestMiddlewares, configRequirements);
+      sourceHtml.set(sourceKey, html);
       outcome.status = 'rendered';
       rendered.push(outcome.routePath);
-      _renderedHtml.push({ routePath: outcome.routePath, html });
+      _renderedHtml.push({ routePath: outcome.routePath, html, ...(route.frontmatter ? { canonicalUrl: new URL(route.frontmatter.canonical ?? resolveStaticRoutePath(route.routePath, outcome.params!), baseUrl).href } : {}) });
     } catch (error) {
       let publicRouteFailure = false;
       try { publicRouteFailure = error instanceof SsgPublicRouteError; } catch { /* hostile exceptions stay private */ }
@@ -208,6 +214,7 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
 export interface RenderedPage {
   routePath: string;
   html: string;
+  canonicalUrl?: string;
 }
 const _renderedHtml: RenderedPage[] = [];
 export function drainRenderedHtml(): RenderedPage[] {

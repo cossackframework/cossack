@@ -1,5 +1,6 @@
 import { defineConfig } from "../../src/config.js";
 import { MemoryDriver } from "../../src/adapter/memory.js";
+import { sql } from "../../src/sql/tag.js";
 import { defineSeeder } from "../../src/seeding/types.js";
 
 export default defineConfig({
@@ -8,7 +9,7 @@ export default defineConfig({
     ...(context.environment ? { environment: context.environment } : {}),
   } }),
   entities: [],
-  migrations: [{ name: "001_queued", up({ orm, schema }) {
+  migrations: [{ name: "001_queued", operations: { up: [sql.unsafe("CREATE TABLE users (id integer primary key)")], down: [{ kind: "drop-table", tableName: "users" }] }, up({ orm, schema }) {
     schema.raw(orm.sql.unsafe("CREATE TABLE users (id integer primary key)"));
   }, down({ schema }) { schema.dropTable("users"); } }],
   seeds: [defineSeeder({ name: "fixture", run() { throw new Error("Dry-run must not execute this callback"); } })],

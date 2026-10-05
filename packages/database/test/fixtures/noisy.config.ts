@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { defineConfig } from "../../src/config.js";
+import { sql } from "../../src/sql/tag.js";
 import { MemoryDriver } from "../../src/adapter/memory.js";
 
 console.log("sensitive-fixture-import-log");
@@ -21,7 +22,7 @@ export default defineConfig({
     process.env.COSSACK_JSON_ISOLATION_FIXTURE = "changed-in-command";
     return { driver: new NoisyDriver(), tooling: { provider: "noisy-fixture", target: context.target } };
   },
-  migrations: [{ name: "001_noisy", up({ orm, schema }) {
+  migrations: [{ name: "001_noisy", operations: { up: [sql.unsafe("CREATE TABLE isolated (id integer)")], down: [] }, up({ orm, schema }) {
     console.error("sensitive-fixture-plan-log");
     schema.raw(orm.sql.unsafe("CREATE TABLE isolated (id integer)"));
   }, down() {} }],

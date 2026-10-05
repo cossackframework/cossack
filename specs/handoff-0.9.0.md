@@ -2,29 +2,33 @@
 
 ## Current handoff — Codex (2026-10-05)
 
-Completed **RT-20 and RT-24**. Release: **36 complete / 22 open**.
-[Acceptance, commands and limits](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05).
-Hydration now provides safe development source/field diagnostics and preserves
-nested SSR nodes, listeners, resource loads and retained layout services.
-Configuration acceptance covers named pre-factory failures, environment isolation,
-generated types, CLI declaration policy and private SSR/RPC/browser output on
-native and installed Node/Deno apps. Renderer343/25, Core1587/100 and framework147/6
-pass. Installed hydration3/3 and both installed config runtimes pass. Required
-root/package types and builds pass. No blocker for this batch.
+Completed **RT-16 and RT-22**. Release: **38 complete / 20 open**.
+[Criteria, commands, installed retry and limits](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05).
+Database planning now previews authoritative declarations without invoking
+callbacks, applies detached/stale-checked plans, and preserves historical callback
+checksums. Typed Markdown validates before output, isolates locale rendering and
+preflights collisions; aliases copy canonical HTML and do not duplicate sitemaps.
+Database104/17, framework108/8 plus42/3, native Markdown6/6, installed Markdown
+five cases plus parser retry, and installed SQLite/public types pass. Builds,
+root/package types and Workers-safe bundle audit pass. No blocker for this batch.
 
-Continue 2–3 independent full acceptance tasks; inspect RT-22 content/localized
-output and existing service gaps. Keep shared APIs/integration with Codex and give
-agents exclusive implementation files. Prefer closing existing acceptance gaps;
-avoid further Cloudflare budget polishing unless it closes a required criterion.
+Continue 2–3 independent full acceptance tasks. RT-15/RT-17 share database tooling:
+keep their shared APIs/integration with Codex and use exclusive implementation
+ownership or sequential integration. Consider RT-10 or a bounded service task
+only after confirming its full acceptance can be closed. Prefer existing gaps;
+avoid Cloudflare budget polishing unless required to close a criterion.
 Do not replace dist while consumers run; repeat only invalidated checks. Update
 records once per verified batch and commit only verified owned files.
 
-Node/Deno config value inspection remains explicitly unavailable until production
-hosts supply values. Classification does not prevent intentional app publication.
-Remote deployment/log ingestion and the broader release matrix retain their own
-open tasks. Versions stay 0.8.3 until REL-04. Preserve user reports.md and
-.zcodeignore. Desktop remains complete; its remaining platform checks are waived.
-Prior RT-12/27 and RT-21/29 completion is archived and must not be reopened.
+Plans are live runner/connection objects; serialized JSON is inspection output.
+CLI apply checks current definitions/history, not a prior JSON preview. Raw SQL
+risk/object inference is conservative. Local D1/SQLite pass; live PostgreSQL/MySQL
+and remote Cloudflare acceptance are not claimed. MySQL DDL may commit implicitly.
+Default translation fallback hydration is intentional; aliases are static copies.
+[Migration changes](./migration-0.9.0.md) record declarations and Markdown rules.
+Versions stay 0.8.3 until REL-04. Preserve user reports.md and .zcodeignore.
+Desktop remains complete with remaining checks waived. Prior completed tasks stay
+archived and must not be reopened.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -41,7 +45,7 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 36 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 38 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.

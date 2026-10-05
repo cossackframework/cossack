@@ -34,6 +34,8 @@ import { config } from '../config.js';
 export interface LocaleMiddlewareOptions {
     /** Resolve from `Accept-Language` when no cookie is set. Default: false. */
     autoDetectBrowser?: boolean;
+    /** Authored URL/content identity takes precedence over visitor preferences. */
+    resolveLocale?: (context: Context) => string | undefined;
 }
 
 /** A request's fallback follows its own environment, never the first request. */
@@ -90,18 +92,24 @@ export function createLocaleMiddleware(
         ensureLocaleAlsWired();
         const resolvedDefaultLocale = resolveDefaultLocale(config('app.locale', DEFAULT_LOCALE));
 
+        const explicitLocale = options.resolveLocale?.(c);
+
         // No `src/lang/` folder → feature is inactive; pass through with the
         // default locale so `getLocale()` still returns something sensible.
         if (supportedLocales.length === 0) {
-            const fallback = config('app.locale', DEFAULT_LOCALE);
+            const fallback = explicitLocale || config('app.locale', DEFAULT_LOCALE);
             return runWithLocale({ locale: fallback, messages: {}, defaultLocale: fallback, catalogs: {} }, () => next());
         }
 
         let locale: string | undefined;
+        if (explicitLocale) {
+            locale = supportedLocales.find(value => value.toLowerCase() === explicitLocale.toLowerCase());
+            if (!locale) throw Object.assign(new Error('Content locale has no application catalog.'), { code: 'COSSACK_MARKDOWN_LOCALE_UNAVAILABLE' });
+        }
 
         // 1. Explicit user choice via cookie.
         const cookieLocale = readCookie(c, LOCALE_COOKIE_NAME);
-        if (cookieLocale) {
+        if (!locale && cookieLocale) {
             const normalized = normalizeRequestLocale(cookieLocale);
             if (isSupported(normalized)) locale = normalized;
         }

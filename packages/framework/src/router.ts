@@ -469,7 +469,16 @@ export function createApp(options: CreateAppOptions = {}) {
   // Locale middleware — resolves per-request locale and wraps the remainder
   // of the request in an AsyncLocalStorage scope so `__()` / `getLocale()`
   // resolve the right locale for each visitor. No-op without `src/lang/`.
-  app.use('*', createLocaleMiddleware({ autoDetectBrowser: options.i18n?.autoDetectBrowser }));
+  const contentLocales = new Map<string, string>();
+  for (const source of resolvePageRouteFiles(Object.keys(pages))) {
+    if (!/\.mdx?$/.test(source)) continue;
+    const component = getModuleDefault(pages[source]);
+    const locale = typeof component === 'function' ? (component as any).markdownFrontmatter?.locale : undefined;
+    if (typeof locale === 'string') contentLocales.set(filePathToRoutePath(source), locale);
+  }
+  app.use('*', createLocaleMiddleware({ autoDetectBrowser: options.i18n?.autoDetectBrowser,
+    resolveLocale: context => contentLocales.get(context.req.path.replace(/\/$/, '') || '/'),
+  }));
 
   // Flash middleware — two-phase signed-cookie lifecycle for flash data
   // (POST writes → GET reads once). No-op (no cookie, no outgoing data) when

@@ -43,12 +43,7 @@ interface LayoutModule {
   default: new (...args: any[]) => Cossack;
 }
 
-interface SsgRoute {
-  routePath: string;
-  filePath: string;
-  component: new (...args: any[]) => Cossack;
-  pageOptions?: PageOptions;
-}
+import type { SsgRoute } from './sitemap-generator.js';
 
 /**
  * Server-safe last-resort App for direct renderSsgPage() callers that do not
@@ -111,6 +106,7 @@ export function collectSsgRoutes(pages: Record<string, unknown>, layouts: Record
           filePath: path,
           component: PageComponent,
           pageOptions,
+          ...(/\.mdx?$/.test(path) && (PageComponent as any).markdownFrontmatter ? { frontmatter: (PageComponent as any).markdownFrontmatter } : {}),
         });
       }
     }
@@ -163,8 +159,16 @@ export async function renderSsgPage(
   const configStore = prepareConfigStore(configFactories ?? {}, envBindings, { requirements: configRequirements, context: { runtime: 'ssg' } });
 
   const configLocale = (configStore.config.app as Record<string, unknown> | undefined)?.locale;
+  const contentLocale = /\.mdx?$/.test(sourcePath) ? (PageComponent as any).markdownFrontmatter?.locale : undefined;
   const localeStore = ssgLocaleStore(localeInput?.catalogs ?? {},
     typeof configLocale === 'string' ? configLocale : localeInput?.defaultLocale);
+  if (contentLocale) {
+    const catalogs = localeInput?.catalogs ?? {};
+    const active = Object.keys(catalogs).find(locale => locale.toLowerCase() === contentLocale.toLowerCase());
+    if (Object.keys(catalogs).length && !active) throw Object.assign(new Error('Markdown locale has no application catalog.'), { code: 'COSSACK_MARKDOWN_LOCALE_UNAVAILABLE' });
+    localeStore.locale = active ?? contentLocale;
+    localeStore.messages = catalogs[localeStore.locale] ?? {};
+  }
   ensureLocaleAlsWired();
 
   // Wrap the entire render in the config ALS scope so any `config()` / `env()`
@@ -173,6 +177,7 @@ export async function renderSsgPage(
     routePath: resolveStaticRoutePath(routePath, staticParams ?? {}), pageFilePath: sourcePath,
     baseUrl, env: envBindings, middlewares: requestMiddlewares, routeMiddlewares,
   }, async (context) => {
+    const render = async () => {
     const requestServiceScope = createRootServiceScope();
     requestServiceScope.bindRequest({ context, env: envBindings });
     const renderInstances: Cossack[] = [];
@@ -253,7 +258,13 @@ export async function renderSsgPage(
       });
 
       // Head Merging (page → layouts → app, inside-out)
-      const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
+      let headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
+      const contentMetadata = /\.mdx?$/.test(sourcePath) ? (PageComponent as any).markdownFrontmatter : undefined;
+      if (contentMetadata) {
+        const canonical = new URL(contentMetadata.canonical ?? filePathToRoutePath(sourcePath), baseUrl).href;
+        headTags = headTags.filter(tag => !(tag.tag === 'link' && tag.attributes?.rel === 'canonical'));
+        headTags.push({ tag: 'link', attributes: { rel: 'canonical', href: canonical } });
+      }
 
       // Build the initial state payload, mirroring the SSR handler in router.ts
       // so the client hydration code receives the same shape it expects.
@@ -337,6 +348,8 @@ export async function renderSsgPage(
           renderFailed ? { cause: renderError } : undefined);
       }
     }
+    };
+    return contentLocale ? runWithLocale(localeStore, render) : render();
   })));
 }
 

@@ -89,6 +89,8 @@ export { MigrationRunner } from "./migration/runner.js";
 export type {
   Migration,
   MigrationContext,
+  MigrationOperation,
+  DatabasePlanTarget,
   MigrationPlanEntry,
   MigrationPlanStatement,
   AppliedMigration,
@@ -101,6 +103,7 @@ export {
   type SeederContext,
   type SeederFunction,
   type SeederInfo,
+  type SeederPlanEntry,
   type SeederInput,
   type SeederResult,
   type SeederRunOptions,

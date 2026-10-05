@@ -15,6 +15,7 @@
     "rootDir": "src"
   },
   "include": [
+    "src/markdown-processor.ts",
     "src/api-handler.ts",
     "src/api.ts",
     "src/cache.ts",
@@ -58,7 +59,6 @@
     "src/examples/**",
     "src/index.ts",
     "src/lang/**",
-    "src/markdown-processor.ts",
     "src/models/**",
     "src/pages/**",
     "src/services/**",
