@@ -1,14 +1,19 @@
 import { isActionValidationError } from './errors';
 import type { InputSchema, InputOf, RawInputOf } from './input-schema';
 import { RpcError } from './rpc-stream';
-import type { DeepKeysOf } from './validation';
 
-export type FormFieldPath<T extends object> = Extract<DeepKeysOf<T>, string>;
-
-export type FormFieldValue<T extends object, P extends FormFieldPath<T>> =
-  P extends `${infer Key}.${infer Rest}`
-    ? Key extends keyof T ? FormFieldValue<Extract<T[Key], object>, Extract<Rest, FormFieldPath<Extract<T[Key], object>>>> : never
+type FormPaths<T, Depth extends unknown[] = []> = Depth['length'] extends 8 ? never
+  : T extends Date | File | Blob ? never
+  : T extends readonly (infer Item)[] ? `${number}` | (FormPaths<Item, [...Depth, unknown]> extends infer Path extends string ? `${number}.${Path}` : never)
+  : T extends object ? { [Key in Extract<keyof T, string>]: Key | (FormPaths<T[Key], [...Depth, unknown]> extends infer Path extends string ? `${Key}.${Path}` : never) }[Extract<keyof T, string>]
+  : never;
+export type FormFieldPath<T extends object> = FormPaths<T>;
+type ValueAtPath<T, P extends string> = P extends `${infer Key}.${infer Rest}`
+  ? T extends readonly (infer Item)[] ? Key extends `${number}` ? ValueAtPath<Item, Rest> : never
+    : Key extends keyof T ? ValueAtPath<T[Key], Rest> : never
+  : T extends readonly (infer Item)[] ? P extends `${number}` ? Item : never
     : P extends keyof T ? T[P] : never;
+export type FormFieldValue<T extends object, P extends FormFieldPath<T>> = ValueAtPath<T, Extract<P, string>>;
 
 export type FormValidationResult<S extends InputSchema<object, object>> =
   | { valid: true; stale: false; data: InputOf<S> }
@@ -25,6 +30,8 @@ type ErrorBag<T extends object> = Partial<Record<FormFieldPath<T>, string>> & Re
 
 const forbiddenPathKeys = new Set(['__proto__', 'prototype', 'constructor']);
 const safePathPart = /^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/;
+const safeIndex = /^(?:0|[1-9][0-9]{0,4})$/;
+const validPathPart = (part: string) => safePathPart.test(part) || safeIndex.test(part);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -73,7 +80,7 @@ function sameValue(left: unknown, right: unknown, seen = new WeakMap<object, obj
 
 function assertSafePath(path: string): string[] {
   const parts = path.split('.');
-  if (!path || parts.some(part => !safePathPart.test(part) || forbiddenPathKeys.has(part))) {
+  if (!path || parts.some(part => !validPathPart(part) || forbiddenPathKeys.has(part))) {
     throw new TypeError('[Cossack] Invalid form field path.');
   }
   return parts;
@@ -82,7 +89,7 @@ function assertSafePath(path: string): string[] {
 function getAtPath(root: unknown, parts: string[]): unknown {
   let current = root;
   for (let index = 0; index < parts.length; index++) {
-    if (!current || typeof current !== 'object' || Array.isArray(current) && index < parts.length) return undefined;
+    if (!current || typeof current !== 'object' || Array.isArray(current) && !safeIndex.test(parts[index])) return undefined;
     if (!Object.hasOwn(current, parts[index])) return undefined;
     current = (current as Record<string, unknown>)[parts[index]];
   }
@@ -91,16 +98,18 @@ function getAtPath(root: unknown, parts: string[]): unknown {
 
 function setAtPath(root: unknown, parts: string[], value: unknown): void {
   let current = root;
-  for (let index = 0; index < parts.length - 1; index++) {
-    if (!isPlainObject(current)) throw new TypeError('[Cossack] Form field path does not point to an object.');
+  for (let index = 0; index < parts.length; index++) {
+    if (!isPlainObject(current) && !Array.isArray(current)) throw new TypeError('[Cossack] Form field path does not point to an object or array.');
     const key = parts[index];
-    let child = current[key];
-    if (child === undefined || child === null) current[key] = child = Object.create(null);
-    if (!isPlainObject(child)) throw new TypeError('[Cossack] Form field path does not point to an object.');
+    if (Array.isArray(current) && (!safeIndex.test(key) || Number(key) > current.length)) {
+      throw new TypeError('[Cossack] Form array paths must use an existing index or append at its length.');
+    }
+    if (index === parts.length - 1) { (current as Record<string, unknown>)[key] = value; return; }
+    let child = (current as Record<string, unknown>)[key];
+    if (child === undefined || child === null) (current as Record<string, unknown>)[key] = child = safeIndex.test(parts[index + 1]) ? [] : Object.create(null);
+    if (!isPlainObject(child) && !Array.isArray(child)) throw new TypeError('[Cossack] Form field path does not point to an object or array.');
     current = child;
   }
-  if (!isPlainObject(current)) throw new TypeError('[Cossack] Form field path does not point to an object.');
-  current[parts[parts.length - 1]] = value;
 }
 
 function flattenServerErrors(input: unknown): Record<string, string> | undefined {
@@ -115,7 +124,7 @@ function flattenServerErrors(input: unknown): Record<string, string> | undefined
     for (const key of Object.keys(value)) {
       if (key === '_') {
         if (typeof value[key] === 'string') errors[path.join('.') || ''] = value[key] as string;
-      } else if (safePathPart.test(key) && !forbiddenPathKeys.has(key)) {
+      } else if (validPathPart(key) && !forbiddenPathKeys.has(key)) {
         visit(value[key], [...path, key]);
       }
     }
@@ -144,11 +153,20 @@ export class FormController<S extends InputSchema<object, object>> {
   private validationController?: AbortController;
   private submittingState = false;
   private submittedState = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(private readonly schema: S, initialValues: RawInputOf<S>) {
     this.initial = cloneValue(initialValues);
     this.current = cloneValue(initialValues);
   }
+
+  /** Observe state changes. Dispose the returned subscription with its UI owner. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private notify(): void { for (const listener of [...this.listeners]) listener(); }
 
   get values(): RawInputOf<S> { return cloneValue(this.current); }
   get initialValues(): RawInputOf<S> { return cloneValue(this.initial); }
@@ -194,7 +212,7 @@ export class FormController<S extends InputSchema<object, object>> {
 
   markTouched<P extends FormFieldPath<RawInputOf<S>>>(path: P): void {
     assertSafePath(path);
-    this.touchedState.add(path);
+    if (!this.touchedState.has(path)) { this.touchedState.add(path); this.notify(); }
   }
 
   fieldError<P extends FormFieldPath<RawInputOf<S>>>(path: P): string | undefined {
@@ -204,19 +222,22 @@ export class FormController<S extends InputSchema<object, object>> {
   setFieldError<P extends FormFieldPath<RawInputOf<S>>>(path: P, message: string): void {
     assertSafePath(path);
     this.errorState[path] = message;
+    this.notify();
   }
 
-  setFormError(message: string): void { this.errorState[''] = message; }
+  setFormError(message: string): void { this.errorState[''] = message; this.notify(); }
 
   clearErrors<P extends FormFieldPath<RawInputOf<S>>>(path?: P): void {
     if (path === undefined) {
       this.errorState = Object.create(null);
+      this.notify();
       return;
     }
     const prefix = `${path}.`;
     for (const key of Object.keys(this.errorState)) {
       if (key === path || key.startsWith(prefix)) delete this.errorState[key];
     }
+    this.notify();
   }
 
   /** Copy nested schema/RPC field errors into the form's dot-path error map. */
@@ -226,6 +247,7 @@ export class FormController<S extends InputSchema<object, object>> {
     if (!flattened) return false;
     if (!Object.keys(flattened).length && error instanceof Error) flattened[''] = error.message;
     this.errorState = flattened;
+    this.notify();
     return true;
   }
 
@@ -238,6 +260,7 @@ export class FormController<S extends InputSchema<object, object>> {
       const data = await this.schema.parse(cloneValue(this.current), { signal: controller.signal });
       if (revision !== this.revision) return { valid: false, stale: true };
       this.errorState = Object.create(null);
+      this.notify();
       // S retains the concrete parse result, but TypeScript resolves the method
       // through its object constraint inside this generic class.
       return { valid: true, stale: false, data: data as InputOf<S> };
@@ -246,6 +269,7 @@ export class FormController<S extends InputSchema<object, object>> {
       const flattened = flattenServerErrors(fieldErrorsFrom(error));
       if (flattened) {
         this.errorState = flattened;
+        this.notify();
         return { valid: false, stale: false };
       }
       throw error;
@@ -258,6 +282,7 @@ export class FormController<S extends InputSchema<object, object>> {
     if (this.submittingState) return { status: 'busy' };
     this.submittingState = true;
     this.submittedState = false;
+    this.notify();
     const revision = this.revision;
     try {
       const validation = await this.validate();
@@ -275,6 +300,7 @@ export class FormController<S extends InputSchema<object, object>> {
       }
     } finally {
       this.submittingState = false;
+      this.notify();
     }
   }
 
@@ -292,7 +318,7 @@ export class FormController<S extends InputSchema<object, object>> {
     this.validationController?.abort();
     this.validationController = undefined;
     this.submittedState = false;
-    if (path === undefined) this.errorState = Object.create(null);
+    if (path === undefined) { this.errorState = Object.create(null); this.notify(); }
     else this.clearErrors(path as FormFieldPath<RawInputOf<S>>);
   }
 }

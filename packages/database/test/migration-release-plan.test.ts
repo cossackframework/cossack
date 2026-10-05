@@ -120,9 +120,10 @@ it('rolls back declared SQL failure and reports provider limits without pretendi
 });
 
 it('executes the private plan snapshot even if application SQL nodes mutate after revalidation', async () => {
+  let mutations = 0;
   let mutate = () => {};
   const orm = createORM({ adapter: await nodeSQLite(), entities: [], logger: event => {
-    if (event.sql === 'CREATE TABLE detached (id integer)') mutate();
+    if (event.sql === 'CREATE TABLE detached (id integer)' && mutations === 0) { mutations++; mutate(); }
   } });
   try { await orm.run(async () => {
     const fragment = orm.sql.fragment`INSERT INTO detached VALUES (${12})`;
@@ -131,6 +132,8 @@ it('executes the private plan snapshot even if application SQL nodes mutate afte
       up: [orm.sql.unsafe('CREATE TABLE detached (id integer)'), fragment], down: [],
     } }]);
     await runner.applyPlan(await runner.plan());
+    expect(mutations).toBe(1);
+    expect((fragment.nodes.find(node => node.kind === 'value') as { value: number }).value).toBe(99);
     expect((await orm.executeFragment(orm.sql.unsafe('SELECT * FROM detached'))).rows).toEqual([{ id: 12 }]);
   }); } finally { await orm.close(); }
 });

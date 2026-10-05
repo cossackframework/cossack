@@ -5584,3 +5584,98 @@ Done when: Invalid metadata fails before output. Mixed Markdown/TypeScript route
 collisions are rejected. Locale pages contain the correct language, metadata,
 and links with no cross-render leakage. Type tests cover the author-facing
 frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
+
+<a id="codex-rt-10-completed-2026-10-05"></a>
+### RT-10: Typed form controller
+
+Purpose: Forms need values, errors, touched fields, submission state, and reset
+behavior. Authors currently assemble these from stores and validation helpers.
+
+Baseline: Bracket-based FormData parsing and nested validation exist. Reuse them.
+A complete typed controller remains open.
+
+Approach: Add a controller that owns initial/current values, dirty/touched state,
+field errors, and submission lifecycle. Infer valid field paths. Connect server
+validation errors from RT-02 without manual translation. Define file fields,
+array entries, checkbox coercion, double-submit behavior, and reset semantics.
+Expose accessible field bindings without requiring UI-package components.
+
+Start in core `shared/forms.ts`, `validation.ts`, `store.ts`, and
+`docs/forms.md` and `docs/forms-advanced.md`.
+
+Done when: A nested form can submit, display field/form errors, edit, resubmit,
+and reset. File values survive the intended transport. A stale validation result
+cannot overwrite a later edit. Type tests reject invalid field names. Browser
+tests cover keyboard submission, labels, error associations, and focus recovery.
+Dependencies: RT-02 and RT-05.
+
+Codex partial foundation (2026-10-05): Core exports a DOM-free
+`createFormController(schema, initialValues)`. It owns cloned raw values and
+initial values, typed nested dot-path reads/writes, dirty/touched/error state,
+schema validation, reset, single-submit lifecycle, cancellation of stale
+validation, and nested `ActionValidationError`/`RpcError` field-error mapping.
+`File`/`Blob` identity is preserved locally. The docs distinguish this new
+controller from the existing page `@Store()` flow, and correct an async form
+example. The Core suite (95 files / 1,568 tests), 9 focused controller tests,
+root typecheck, and owned-file whitespace check pass. This is not RT-10
+completion: accessible bindings, reactive adapters, keyboard/label/error/focus
+browser tests, nested array-item paths and real file transport acceptance remain.
+
+Codex declaration repair (2026-10-05): the fresh installed documentation gate
+exposed object-to-InputOf<S> typing in FormController.validate. The parsed result
+now retains its concrete schema output type. Core build/declaration emission and
+9 form-controller tests pass, and the fresh installed gate passes after repair.
+Accessible bindings and RT-10 browser acceptance remain open.
+
+Codex completion: Typed native/UI form bindings, nested errors and array/file fields, stale/single-flight lifecycle and reset. Node/workerd keyboard/accessibility and multipart RPC pass from source and installed tarballs. See the [verified batch](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05). Historical partial notes above are superseded.
+
+<a id="codex-rt-15-completed-2026-10-05"></a>
+### RT-15: Database DX and provider capabilities
+
+Purpose: The database package must explain entity relationships, query behavior,
+and provider limits. Similar TypeScript APIs do not prove that every database
+supports identical transactions or schema operations.
+
+Baseline: Active Record entities, relationships, query builders, migrations, and
+multiple adapters exist. The task extends those features rather than adding an ORM.
+
+Approach: Expose finalized entity/relationship metadata to inspection. Add query
+diagnostics with SQL structure, duration, provider, and redacted parameters. Define
+pagination ordering and cursor/offset behavior. Publish a capability matrix for
+transactions, nesting, schema changes, and generated values. Reject unsupported
+operations before effects. Preserve request-local ORM scope.
+
+Start in database `metadata/`, `query/`, `entity/`, `adapter/types.ts`, runtime
+adapters, `orm.ts`, and `docs/relationships.md` within that package.
+
+Done when: Provider-specific tests prove supported operations and expected
+rejections. Relationship errors name both entities and fields. Pagination remains
+stable under its documented ordering. Transaction tests demonstrate commit and
+rollback with actual supported drivers. Related tasks: RT-16, RT-17, and CF-02.
+
+Codex completion: Inspectable finalized metadata, safe query diagnostics, stable pagination and provider capability contracts. Actual SQLite/Turso/PostgreSQL/MySQL generated keys and commit/rollback/savepoints pass; unsupported operations reject before effects. See the [verified batch](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05). Historical partial notes above are superseded.
+
+<a id="codex-rt-17-completed-2026-10-05"></a>
+### RT-17: Shared database inspection for Studio and CLI
+
+Purpose: Studio and CLI must agree about the configured database, environment,
+schema, and migration history. Separate parsers and queries create conflicting answers.
+
+Baseline: Shared D1 discovery exists. Broader provider inspection and one common
+service/result contract remain incomplete.
+
+Approach: Move reusable discovery and read-only inspection into database tooling.
+Expose provider capabilities, resolved target, schema, relationships where known,
+and migration status. Let Studio render the result and CLI serialize it.
+Keep connection lifecycle and disposal in the shared service. Avoid reading
+secret values into response objects.
+
+Start in database `tooling/cloudflare.ts`, `tooling/index.ts`,
+`schema/introspection.ts`, and Studio `src/lib/remote-d1.ts` and `src/index.ts`.
+
+Done when: The same fixture produces equivalent Studio and CLI facts. Named
+environments never fall back to an unintended top-level binding. Read-only
+inspection does not create bookkeeping tables. Both callers close temporary
+connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
+
+Codex completion: Shared read-only Studio/CLI inspection of schema/models/relationships, capabilities, selected targets and migration history. Parity, unchanged bytes/no bookkeeping, environment rejection and temporary disposal pass. See the [verified batch](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05). Historical partial notes above are superseded.

@@ -1,6 +1,6 @@
 import type { FormAttributes, ControlEvent } from "../native-attributes";
 import { html } from "@cossackframework/renderer";
-import { Cossack, Component } from "@cossackframework/core";
+import { Cossack, Component, type FormBindingAttributes } from "@cossackframework/core";
 
 export type FormProps = Omit<FormAttributes, "novalidate" | "?novalidate"> & {
     /**
@@ -14,6 +14,8 @@ export type FormProps = Omit<FormAttributes, "novalidate" | "?novalidate"> & {
      * Omit `submit` for a native `<form method="post">` submission read with
      * `getFormData()` in a page `post()` handler.
      */
+    /** Typed controller submit/reset bindings from createFormBindings or createUiFormBindings. */
+    bindings?: FormBindingAttributes;
     submit?: (event: ControlEvent<HTMLFormElement, SubmitEvent>) => unknown;
     /**
      * Whether to add the native `novalidate` attribute. Defaults to `true` when
@@ -55,12 +57,18 @@ export class Form extends Cossack {
     }
 
     render() {
-        const { submit, novalidate, ...attributes } = this.props;
-        const rest: FormAttributes = attributes;
+        const { submit, bindings, novalidate, ...attributes } = this.props;
+        if (bindings && submit) throw new TypeError('[Cossack] Form accepts either typed bindings or submit, not both.');
+        const rest: FormAttributes = { ...bindings, ...attributes };
+        if (bindings) {
+            rest['@submit'] = bindings['@submit'];
+            rest['@reset'] = bindings['@reset'];
+            rest['aria-busy'] = bindings['aria-busy'];
+        }
 
         // Default novalidate: true only for the RPC path (custom validation);
         // false for native POST so HTML5 checks are kept unless opted out.
-        const wantsNovalidate = novalidate ?? submit !== undefined;
+        const wantsNovalidate = novalidate ?? (submit !== undefined || bindings !== undefined);
 
         // When a submit handler is provided, wrap it to prevent the native
         // submit (page reload) before delegating. Routed through the `@submit`
@@ -74,6 +82,8 @@ export class Form extends Cossack {
             // emit a boolean `true` as the bare attribute name (`novalidate`),
             // not `novalidate="true"`.
             rest["novalidate"] = true;
+        } else {
+            delete rest["novalidate"];
         }
 
         return html`

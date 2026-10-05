@@ -25,10 +25,11 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   private predicate?: SQLFragment;
   private joins: JoinClause[] = [];
   private groups: SQLFragment[] = [];
-  private orders: { fragment: SQLFragment; direction: OrderDirection }[] = [];
-  private limitValue?: number;
-  private offsetValue?: number;
+  private orders: { fragment: SQLFragment; direction: OrderDirection; property?: string }[] = [];
+  private limitValue: number | undefined;
+  private offsetValue: number | undefined;
   private distinctValue = false;
+  private aggregateMode = false;
 
   constructor(
     protected readonly orm: ORM,
@@ -87,7 +88,9 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   }
 
   orderBy(property: keyof EntityShape<T> & string | SQLFragment, direction: OrderDirection = "asc"): this {
+    if (direction !== "asc" && direction !== "desc") throw new ConfigurationError("orderBy() direction must be asc or desc.");
     this.orders.push({
+      ...(typeof property === "string" ? { property } : {}),
       fragment: property instanceof SQLFragment ? property : this.expression().column(property),
       direction,
     });
@@ -131,15 +134,33 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     }
     if (this.predicate) nodes.push({ kind: "text", value: " WHERE " }, { kind: "fragment", value: this.predicate });
     if (this.groups.length) nodes.push({ kind: "text", value: " GROUP BY " }, { kind: "fragment", value: sql.join(this.groups) });
-    if (this.orders.length) {
+    const paginated = this.limitValue !== undefined || this.offsetValue !== undefined;
+    const simple = !this.joins.length && !this.groups.length && !this.distinctValue && !this.selections.length;
+    if (paginated && !simple && !this.aggregateMode && !this.orders.length) {
+      throw new ConfigurationError("Pagination of joined, grouped, distinct or projected results requires explicit unique ordering.");
+    }
+    const orders = this.aggregateMode ? [] : [...this.orders];
+    if (paginated && simple && !this.aggregateMode) {
+      if (!this.metadata.primaryColumns.length) throw new ConfigurationError(`${this.metadata.modelName} pagination requires a primary key or explicit unique ordering.`);
+      for (const primary of this.metadata.primaryColumns) {
+        if (!orders.some(order => order.property === primary.propertyName)) orders.push({
+          fragment: this.expression().column(primary.propertyName as keyof EntityShape<T> & string), direction: "asc", property: primary.propertyName,
+        });
+      }
+    }
+    if (orders.length) {
       const orderNodes: SQLNode[] = [];
-      this.orders.forEach((order, index) => {
+      orders.forEach((order, index) => {
         if (index) orderNodes.push({ kind: "text", value: ", " });
         orderNodes.push({ kind: "fragment", value: order.fragment }, { kind: "text", value: ` ${order.direction.toUpperCase()}` });
       });
       nodes.push({ kind: "text", value: " ORDER BY " }, { kind: "fragment", value: new SQLFragment(orderNodes) });
     }
     if (this.limitValue !== undefined) nodes.push({ kind: "text", value: " LIMIT " }, { kind: "value", value: this.limitValue });
+    if (this.offsetValue !== undefined && this.limitValue === undefined) {
+      if (this.orm.driver.dialect === "mysql") nodes.push({ kind: "text", value: " LIMIT 18446744073709551615" });
+      else if (this.orm.driver.dialect === "sqlite") nodes.push({ kind: "text", value: " LIMIT -1" });
+    }
     if (this.offsetValue !== undefined) nodes.push({ kind: "text", value: " OFFSET " }, { kind: "value", value: this.offsetValue });
     return new SQLFragment(nodes);
   }
@@ -159,11 +180,13 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   }
 
   async count(): Promise<number> {
-    const previous = this.selections;
+    const previous = this.selections, limit = this.limitValue, offset = this.offsetValue;
     this.selections = [this.orm.sql.fragment`COUNT(*) AS ${this.orm.sql.id("__count")}`];
-    const row = (await this.getRawMany() as readonly Record<string, unknown>[])[0];
-    this.selections = previous;
-    return Number(row?.["__count"] ?? 0);
+    this.limitValue = undefined; this.offsetValue = undefined; this.aggregateMode = true;
+    try {
+      const row = (await this.getRawMany() as readonly Record<string, unknown>[])[0];
+      return Number(row?.["__count"] ?? 0);
+    } finally { this.selections = previous; this.limitValue = limit; this.offsetValue = offset; this.aggregateMode = false; }
   }
 
   sum(property: keyof EntityShape<T> & string): Promise<number | null> {
@@ -183,12 +206,18 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   }
 
   async exists(): Promise<boolean> {
-    const previous = this.selections;
+    const previous = { selections: this.selections, limit: this.limitValue, offset: this.offsetValue, aggregate: this.aggregateMode };
     this.selections = [this.orm.sql.fragment`1 AS ${this.orm.sql.id("__exists")}`];
-    this.limit(1);
-    const exists = (await this.getRawMany()).length > 0;
-    this.selections = previous;
-    return exists;
+    this.limitValue = 1;
+    this.offsetValue = undefined;
+    this.aggregateMode = true;
+    try { return (await this.getRawMany()).length > 0; }
+    finally {
+      this.selections = previous.selections;
+      this.limitValue = previous.limit;
+      this.offsetValue = previous.offset;
+      this.aggregateMode = previous.aggregate;
+    }
   }
 
   protected expression(): ExpressionBuilder<T> {
@@ -217,6 +246,8 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     property: keyof EntityShape<T> & string,
   ): Promise<number | null> {
     const previous = this.selections;
+    const limit = this.limitValue, offset = this.offsetValue;
+    this.limitValue = undefined; this.offsetValue = undefined; this.aggregateMode = true;
     this.selections = [
       this.orm.sql.fragment`${this.orm.sql.unsafe(fn)}(${this.expression().column(property)}) AS ${this.orm.sql.id("__aggregate")}`,
     ];
@@ -225,7 +256,7 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
       const value = row?.["__aggregate"];
       return value === null || value === undefined ? null : Number(value);
     } finally {
-      this.selections = previous;
+      this.selections = previous; this.limitValue = limit; this.offsetValue = offset; this.aggregateMode = false;
     }
   }
 }
@@ -372,7 +403,7 @@ export class MutationQueryBuilder<T extends BaseEntity> {
       const column = this.metadata.columnByProperty.get(property);
       if (!column) throw new ConfigurationError(`Unknown property ${this.metadata.modelName}.${property}.`);
       if (index) nodes.push({ kind: "text", value: ", " });
-      nodes.push({ kind: "identifier", path: [column.columnName] });
+      nodes.push({ kind: "identifier", path: [column.columnName] }, { kind: "text", value: " AS " }, { kind: "identifier", path: [column.columnName] });
     });
     return nodes;
   }

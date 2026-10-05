@@ -47,9 +47,10 @@ it('rolls back failed declared seed SQL and marks unsupported transaction requir
 });
 
 it('keeps approved seeder parameter values detached across asynchronous statement execution', async () => {
+  let mutations = 0;
   let mutate = () => {};
   const orm = createORM({ adapter: await nodeSQLite(), entities: [], logger: event => {
-    if (event.sql === 'INSERT INTO detached_seeds VALUES (1)') mutate();
+    if (event.sql === 'INSERT INTO detached_seeds VALUES (?)' && mutations === 0) { mutations++; mutate(); }
   } });
   try { await orm.run(async () => {
     await orm.executeFragment(orm.sql.unsafe('CREATE TABLE detached_seeds (id integer)'), 'ddl');
@@ -57,6 +58,8 @@ it('keeps approved seeder parameter values detached across asynchronous statemen
     mutate = () => { (fragment.nodes.find(node => node.kind === 'value') as { value: number }).value = 99; };
     const runner = new SeederRunner(orm, [{ name: 'detached', operations: [orm.sql.unsafe('INSERT INTO detached_seeds VALUES (1)'), fragment] }]);
     await runner.applyPlan(await runner.plan());
+    expect(mutations).toBe(1);
+    expect((fragment.nodes.find(node => node.kind === 'value') as { value: number }).value).toBe(99);
     expect((await orm.executeFragment(orm.sql.unsafe('SELECT * FROM detached_seeds'))).rows).toEqual([{ id: 1 }, { id: 12 }]);
   }); } finally { await orm.close(); }
 });

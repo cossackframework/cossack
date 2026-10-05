@@ -90,7 +90,10 @@ export interface LoggerEvent {
   readonly durationMs: number;
   readonly dialect: DialectName;
   readonly operation: QueryOperation;
-  readonly error?: unknown;
+  readonly provider: string;
+  readonly outcome: "success" | "failure";
+  /** Arbitrary driver exceptions are never passed to diagnostic observers. */
+  readonly code?: "COSSACK_DATABASE_QUERY_FAILED";
 }
 
 export interface ORMLogger {

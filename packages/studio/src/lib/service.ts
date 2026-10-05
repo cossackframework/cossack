@@ -192,11 +192,13 @@ export class StudioDatabase {
 
   async getSchema(refresh = false): Promise<StudioSchema> {
     if (!this.schema || refresh) {
+      const inspection = await this.connection.inspect?.();
       this.schema = await introspectSchema(
         this.connection,
         this.options.applicationName ?? 'Cossack application',
         this.schema?.connection.databaseVersion,
       );
+      if (inspection) this.schema.inspection = inspection;
     }
     return this.schema;
   }

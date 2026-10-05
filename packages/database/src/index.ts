@@ -129,3 +129,6 @@ export type {
   QueryOperation,
   ORMLogger,
 } from "./adapter/types.js";
+
+export { inspectProviderCapabilities, type ProviderCapabilityReport } from './runtime-capabilities.js';
+export { inspectFinalizedMetadata, type EntityInspection } from './metadata/inspection.js';

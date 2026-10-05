@@ -1947,3 +1947,37 @@ not add duplicate sitemap entries. Markdown locale metadata takes precedence
 over visitor preferences; a named locale requires its application catalog when
 catalogs exist. The default catalog may still be included as the documented
 translation fallback in hydration.
+
+## Codex: Typed forms and database inspection (2026-10-05)
+
+Use Core `createFormBindings(controller, { id })` for native controls or UI
+`createUiFormBindings` for Input/Checkbox props and Form's `bindings` prop.
+Subscribe once to controller changes to request rendering, and dispose both
+subscription and bindings with their UI owner. Use stable HTML IDs and indexed
+paths such as `items.0.name`; selected File values are preserved, never assigned
+back to a native file input. Reset clears owned file controls. Form accepts one
+of `bindings` or `submit`. Stale validation/replies do not overwrite edits;
+reset does not undo server mutations already started.
+
+Database logger events now expose bounded redacted SQL structure and typed
+parameter markers, provider/outcome and a fixed failure code. They omit raw
+errors and literal values; logger exceptions cannot change query outcomes.
+Simple paginated entity queries append primary-key tie breakers. Projected,
+joined, grouped or distinct pages require an explicit unique order. Offset pages
+can shift under concurrent writes; keyset pages use existing predicates/orders.
+
+Use `orm.inspectMetadata()` and `orm.inspectCapabilities()` for finalized entity
+facts and supported provider operations. Unsupported generated identity/arrays,
+parameter limits, transaction modes and queued schema changes reject before
+execution. PostgreSQL increment keys use identity, MySQL uses AUTO_INCREMENT,
+and SQLite increment requires an integer primary key. Column type changes use
+provider-specific SQL; default/constraint changes require explicit SQL. MySQL
+DDL is not rollback-safe.
+
+`cossack schema inspect --json --env staging --target local` and Studio use the
+same database-owned read-only inspection contract. Shared inspection omits column
+default values (`defaultValues: 'omitted'`) and private connection fields.
+Temporary inspection connections always close; borrowed connections keep their
+owner. Adapter factories must honor target/environment and read-only context.
+Remote Studio inspection now requires the application's orm.config.ts remote
+factory; an explicit requested binding must match the inspected target.

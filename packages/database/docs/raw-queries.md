@@ -182,3 +182,17 @@ const client = new SQL({ adapter });
 
 See [Runtimes](./runtimes.md) for adapter setup and
 [Advanced usage](./advanced.md) for transactions and connection reservation.
+
+## Query diagnostics
+
+The ORM logger receives `sql`, parameter type markers, `durationMs`, `dialect`,
+`provider`, `operation`, and `outcome`. A failed query includes only the fixed
+code `COSSACK_DATABASE_QUERY_FAILED`; the event has no error object or message.
+The SQL field is a bounded structural representation: literals and comments are
+removed, and quoted identifiers are anonymous because some providers interpret
+those tokens as values. It is diagnostic output, not executable SQL.
+
+Parameter values are never included. Markers describe null, dates, binary size,
+and JavaScript types. Logger exceptions are ignored so an observer cannot change
+query or transaction results. Explicit callers still receive a `QueryError` and
+must decide separately whether its private cause is safe to disclose.

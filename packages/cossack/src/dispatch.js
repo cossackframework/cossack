@@ -207,7 +207,7 @@ Commands:
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,
                                squash, up, down, status, check, baseline, plan.
-  schema <sub>                 ORM schema commands: pull, diff, check.
+  schema <sub>                 ORM schema commands: inspect, pull, diff, check.
   seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.

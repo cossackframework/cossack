@@ -18,6 +18,7 @@ export * from './shared/action-authorization';
 export * from './shared/store';
 export * from './shared/forms';
 export * from './shared/form-controller';
+export * from './shared/form-bindings';
 export * from './shared/crypto';
 export * from './shared/flash';
 export * from './shared/server-resource';

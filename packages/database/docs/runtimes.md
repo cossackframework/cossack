@@ -467,3 +467,32 @@ if (orm.driver.capabilities.transactions) {
 
 Capabilities include transactions, savepoints, returning clauses, batches,
 connection reservation, cancellation, parameter limits, and batch limits.
+
+## Provider capabilities
+
+`orm.inspectCapabilities()` returns frozen driver declarations, including provider,
+dialect, transaction modes, schema operations, generated values, returning support,
+connection reservation, cancellation, and parameter/batch limits. These facts do
+not establish remote connectivity or a server version. Custom drivers must declare
+accurate limits and implement the advertised methods.
+
+| Operation | SQLite / embedded Turso | PostgreSQL | MySQL | D1 |
+| --- | --- | --- | --- | --- |
+| Interactive transactions | Yes | Yes | Yes | No |
+| Nested savepoints | Yes | Yes | Yes | No |
+| Transactional DDL rollback | Yes | Yes | No | No |
+| Generated increment key | Integer primary key | Identity column | AUTO_INCREMENT | Integer primary key |
+| Explicit generated identity | No | Yes | No | No |
+| Direct column type alteration | No | Yes | Yes | No |
+
+UUID generation happens in the client. PostgreSQL and MySQL column alterations
+support type changes only; changes to defaults or constraints need explicit SQL.
+SQLite type changes need a table-rebuild migration. Schema queues compile every
+operation before execution, so unsupported later operations cannot publish earlier
+DDL. MySQL DDL can implicitly commit and must not be described as rollback-safe.
+
+D1 supports its driver's atomic batch facility, not interactive callbacks or
+nested transactions. Remote Turso and injected drivers use their own declared
+capabilities. Unsupported interactive/nested operations reject before entering the
+callback. Queries over the declared parameter limit reject before driver execution.
+Unsupported generated identity and native array metadata reject during ORM setup.

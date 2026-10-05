@@ -38,7 +38,7 @@ export interface StudioRunOptions {
   onReady?: (info: { origin: string; remote: boolean }) => void;
 }
 
-async function loadProjectORM(projectRoot: string, options: StudioRunOptions): Promise<ORM> {
+async function loadProjectORM(projectRoot: string, options: StudioRunOptions): Promise<{ orm: ORM; config: ORMConfig }> {
   const requireFromProject = createRequire(path.join(projectRoot, 'package.json'));
   let packageJsonPath: string;
   try {
@@ -65,10 +65,11 @@ async function loadProjectORM(projectRoot: string, options: StudioRunOptions): P
     );
   }
   const config = await tooling.loadORMConfig(path.join(projectRoot, 'orm.config.ts'));
-  return tooling.createORMFromConfig(config, { cwd: projectRoot,
+  const orm = await tooling.createORMFromConfig(config, { cwd: projectRoot,
     configPath: path.join(projectRoot, 'orm.config.ts'), target: 'local', readOnly: false,
     ...(options.env ? { environment: options.env } : {}),
   });
+  return { orm, config };
 }
 
 async function loadProjectEnvironment(projectRoot: string): Promise<void> {
@@ -128,7 +129,7 @@ async function createProjectConnection(
   options: StudioRunOptions,
 ): Promise<StudioConnection> {
   await loadProjectEnvironment(projectRoot);
-  const orm = await loadProjectORM(projectRoot, options);
+  const { orm, config } = await loadProjectORM(projectRoot, options);
   const provider = options.provider
     ? normalizeStudioProvider(options.provider)
     : await detectStudioProvider(orm);
@@ -140,7 +141,7 @@ async function createProjectConnection(
     );
   }
   return createLocalConnection({
-    orm,
+    orm, migrations: config.migrations,
     info: {
       provider,
       label: localDatabaseLabel(provider, options.database),
@@ -168,6 +169,7 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
   }
   let connection = options.connection;
   if (!connection && options.remote) {
+    const { inspectStudioProject } = await import('./lib/inspection.js');
     // Remote D1 setup imports database tooling and its TypeScript loader. Keep
     // that process-level initialization out of ordinary local Studio imports.
     const { createRemoteD1Connection } = await import('./lib/remote-d1.js');
@@ -176,6 +178,9 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
       binding: options.database,
       environment: options.env,
     });
+    connection.inspect = () => inspectStudioProject({ projectRoot, target: 'remote',
+      ...(options.env ? { environment: options.env } : {}),
+      ...(options.database ? { binding: options.database } : {}) });
   } else if (!connection) {
     connection = await createProjectConnection(projectRoot, options);
   }
@@ -279,3 +284,5 @@ export {
   detectStudioProvider,
   normalizeStudioProvider,
 } from './lib/provider.js';
+
+export { inspectStudioDatabase, inspectStudioProject, type StudioInspectionOptions } from './lib/inspection.js';

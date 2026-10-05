@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 38 complete / 20 open.
+  acceptance; the numbered release task count is 41 complete / 17 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -38,14 +38,14 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
-- [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration. Codex adds a DOM-free schema-backed controller with typed dot-path access, dirty/touched tracking, reset, validation, stale-result protection and server field-error mapping. Core tests/typecheck pass; accessible bindings and browser acceptance remain open. See [the RT-10 checkpoint](#codex-rt10-form-controller-2026-10-05).
+- [x] [RT-10](./release-0.9.0-plan.md#rt-10) Typed native/UI form bindings, nested errors and array/file fields, stale/single-flight lifecycle and reset. Node/workerd keyboard/accessibility and multipart RPC pass from source and installed tarballs. [Evidence](#codex-rt10-rt15-rt17-complete-2026-10-05).
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno claim each signed nonce once per loaded module instance in a bounded 10,000-entry store; expired claims are purged and capacity fails closed. This does not coordinate across processes/isolates or survive restart. Remaining: broader concurrent request semantics and cross-process replay guarantees. See [process-local flash claims](#codex-rt11-process-flash-claims-2026-10-05), [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
 - [x] [RT-12](./release-0.9.0-plan.md#rt-12) DI ownership, contextual resolution errors and cleanup. Codex verified inherited/nested runtime metadata, concurrent request facilities, static inspection parity, cleanup once and failure continuation in generated Node/Cloudflare browser and SSR/RPC acceptance; [evidence](#codex-rt12-rt27-complete-2026-10-05).
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
-- [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
+- [x] [RT-15](./release-0.9.0-plan.md#rt-15) Inspectable finalized metadata, safe query diagnostics, stable pagination and provider capability contracts. Actual SQLite/Turso/PostgreSQL/MySQL generated keys and commit/rollback/savepoints pass; unsupported operations reject before effects. [Evidence](#codex-rt10-rt15-rt17-complete-2026-10-05).
 - [x] [RT-16](./release-0.9.0-plan.md#rt-16) Read-only migration/seeder plans, authoritative declarations, target identity, conservative risks, stale-plan rejection and apply/reversal/rollback. SQLite/local D1 and installed public runtime/types pass. [Evidence](#codex-rt16-rt22-complete-2026-10-05).
-- [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
+- [x] [RT-17](./release-0.9.0-plan.md#rt-17) Shared read-only Studio/CLI inspection of schema/models/relationships, capabilities, selected targets and migration history. Parity, unchanged bytes/no bookkeeping, environment rejection and temporary disposal pass. [Evidence](#codex-rt10-rt15-rt17-complete-2026-10-05).
 - [x] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
 - [x] [RT-20](./release-0.9.0-plan.md#rt-20) Redacted development text/structure/state diagnostics with component, relative source and field paths; valid nested hydration preserves nodes, listeners, resources and layout services. Installed development/production browser acceptance passes. [Evidence](#codex-rt20-rt24-complete-2026-10-05).
@@ -1817,3 +1817,19 @@ Workers-safe database bundle audit and owned whitespace checks pass.
 [Full criterion audit, commands, retry and limits](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05).
 Release: **38 complete / 20 open**. No remote provider acceptance is claimed.
 Desktop checks remain waived; versions stay 0.8.3 until REL-04.
+
+<a id="codex-rt10-rt15-rt17-complete-2026-10-05"></a>
+## Codex: RT-10, RT-15 and RT-17 completed (2026-10-05)
+
+Closed all three parent tasks against their full acceptance criteria. Native and
+fresh installed Node/workerd browser forms prove nested errors, keyboard/focus,
+file multipart RPC, stale work, single-flight submission and reset. Actual SQLite,
+embedded Turso, PostgreSQL 18 and MySQL 8 prove generated keys and transaction
+commit/rollback/savepoints. Studio and CLI share read-only database inspection,
+selected environments, safe metadata and migration history, with owned disposal.
+[Full commands, retries and limits](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05).
+Core1595/101, database123/20, Studio69/12, affected focused retries, public types,
+builds, bundle audit and required root typecheck pass. Installed browser3/3 and
+SQLite/Studio/CLI acceptance pass. Release: **41 complete / 17 open**.
+No batch blocker; remote Cloudflare and remote Turso were not verified. Desktop
+checks remain waived. Versions remain 0.8.3 until REL-04.

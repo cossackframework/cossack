@@ -123,6 +123,7 @@ export const commandSpecs = {
   schema: new CommandSpec({ name: 'schema', globals: dbGlobals,
     positionals: ['subcommand'], minPositionals: 1, flags: commonDatabase,
     subcommands: {
+      inspect: {},
       pull: { flags: { output: str('Generated model output path.'), force: bool('Replace generated models.') } },
       diff: { flags: { 'allow-destructive': bool('Allow destructive diff operations.') } },
       check: { flags: { 'allow-destructive': bool('Allow destructive diff operations.') } },

@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 38 complete and 20 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 41 complete and 17 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -94,8 +94,8 @@ Add focused tests during each group, and run broader gates after integration.
 | --- | --- | --- |
 | 1. Finish current runtime work | RT-01 | Distributed SSE works through generated apps and retains request ownership. |
 | 2. Establish shared metadata and diagnostics | RT-24 | Tools and types describe the behavior that the compiler and runtime execute. |
-| 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
-| 4. Complete data and content features | RT-15 through RT-17, RT-20, RT-22, RT-26 | Existing features have clear provider contracts and complete failure behavior. |
+| 3. Complete application state and actions | RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
+| 4. Complete data and content features | RT-26 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
@@ -110,6 +110,9 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="rt-10"></a>RT-10 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-10-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
+| <a id="rt-15"></a>RT-15 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-15-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
+| <a id="rt-17"></a>RT-17 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-17-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
 | <a id="rt-16"></a>RT-16 | [Migration and seeder plans](./release-0.9.0-plan-archive.md#codex-rt-16-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05) |
 | <a id="rt-22"></a>RT-22 | [Markdown metadata and localized output](./release-0.9.0-plan-archive.md#codex-rt-22-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05) |
 | <a id="rt-24"></a>RT-24 | [Inferred configuration and required bindings](./release-0.9.0-plan-archive.md#codex-rt-24-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05) |
@@ -385,47 +388,6 @@ Cover ordinary results, generators, errors, timeout, disconnect, cancellation,
 duplicate consumers, and cleanup. Consuming a call twice never dispatches a
 second mutation. Type tests prove yielded and final result inference.
 
-<a id="rt-10"></a>
-### RT-10: Typed form controller
-
-Purpose: Forms need values, errors, touched fields, submission state, and reset
-behavior. Authors currently assemble these from stores and validation helpers.
-
-Baseline: Bracket-based FormData parsing and nested validation exist. Reuse them.
-A complete typed controller remains open.
-
-Approach: Add a controller that owns initial/current values, dirty/touched state,
-field errors, and submission lifecycle. Infer valid field paths. Connect server
-validation errors from RT-02 without manual translation. Define file fields,
-array entries, checkbox coercion, double-submit behavior, and reset semantics.
-Expose accessible field bindings without requiring UI-package components.
-
-Start in core `shared/forms.ts`, `validation.ts`, `store.ts`, and
-`docs/forms.md` and `docs/forms-advanced.md`.
-
-Done when: A nested form can submit, display field/form errors, edit, resubmit,
-and reset. File values survive the intended transport. A stale validation result
-cannot overwrite a later edit. Type tests reject invalid field names. Browser
-tests cover keyboard submission, labels, error associations, and focus recovery.
-Dependencies: RT-02 and RT-05.
-
-Codex partial foundation (2026-10-05): Core exports a DOM-free
-`createFormController(schema, initialValues)`. It owns cloned raw values and
-initial values, typed nested dot-path reads/writes, dirty/touched/error state,
-schema validation, reset, single-submit lifecycle, cancellation of stale
-validation, and nested `ActionValidationError`/`RpcError` field-error mapping.
-`File`/`Blob` identity is preserved locally. The docs distinguish this new
-controller from the existing page `@Store()` flow, and correct an async form
-example. The Core suite (95 files / 1,568 tests), 9 focused controller tests,
-root typecheck, and owned-file whitespace check pass. This is not RT-10
-completion: accessible bindings, reactive adapters, keyboard/label/error/focus
-browser tests, nested array-item paths and real file transport acceptance remain.
-
-Codex declaration repair (2026-10-05): the fresh installed documentation gate
-exposed object-to-InputOf<S> typing in FormController.validate. The parsed result
-now retains its concrete schema output type. Core build/declaration emission and
-9 form-controller tests pass, and the fresh installed gate passes after repair.
-Accessible bindings and RT-10 browser acceptance remain open.
 
 <a id="rt-11"></a>
 ### RT-11: Session and flash recipes
@@ -589,52 +551,7 @@ requests. RPC failures do not consume or lose unrelated state. Passwords and
 tokens never enter serialized old input. Concurrent requests and rotation have
 documented behavior. Dependencies: RT-01, RT-02, and RT-13.
 
-<a id="rt-15"></a>
-### RT-15: Database DX and provider capabilities
 
-Purpose: The database package must explain entity relationships, query behavior,
-and provider limits. Similar TypeScript APIs do not prove that every database
-supports identical transactions or schema operations.
-
-Baseline: Active Record entities, relationships, query builders, migrations, and
-multiple adapters exist. The task extends those features rather than adding an ORM.
-
-Approach: Expose finalized entity/relationship metadata to inspection. Add query
-diagnostics with SQL structure, duration, provider, and redacted parameters. Define
-pagination ordering and cursor/offset behavior. Publish a capability matrix for
-transactions, nesting, schema changes, and generated values. Reject unsupported
-operations before effects. Preserve request-local ORM scope.
-
-Start in database `metadata/`, `query/`, `entity/`, `adapter/types.ts`, runtime
-adapters, `orm.ts`, and `docs/relationships.md` within that package.
-
-Done when: Provider-specific tests prove supported operations and expected
-rejections. Relationship errors name both entities and fields. Pagination remains
-stable under its documented ordering. Transaction tests demonstrate commit and
-rollback with actual supported drivers. Related tasks: RT-16, RT-17, and CF-02.
-
-<a id="rt-17"></a>
-### RT-17: Shared database inspection for Studio and CLI
-
-Purpose: Studio and CLI must agree about the configured database, environment,
-schema, and migration history. Separate parsers and queries create conflicting answers.
-
-Baseline: Shared D1 discovery exists. Broader provider inspection and one common
-service/result contract remain incomplete.
-
-Approach: Move reusable discovery and read-only inspection into database tooling.
-Expose provider capabilities, resolved target, schema, relationships where known,
-and migration status. Let Studio render the result and CLI serialize it.
-Keep connection lifecycle and disposal in the shared service. Avoid reading
-secret values into response objects.
-
-Start in database `tooling/cloudflare.ts`, `tooling/index.ts`,
-`schema/introspection.ts`, and Studio `src/lib/remote-d1.ts` and `src/index.ts`.
-
-Done when: The same fixture produces equivalent Studio and CLI facts. Named
-environments never fall back to an unintended top-level binding. Read-only
-inspection does not create bookkeeping tables. Both callers close temporary
-connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics

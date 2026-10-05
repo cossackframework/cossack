@@ -1,3 +1,6 @@
+import { inspectProviderCapabilities } from "./runtime-capabilities.js";
+import { inspectFinalizedMetadata } from "./metadata/inspection.js";
+import { redactSqlStructure } from "./query/diagnostics.js";
 import type {
   Adapter,
   Driver,
@@ -90,6 +93,17 @@ export class ORM {
     this.logger = options.logger;
     this.metadata = finalizeMetadata(options.entities, options.namingStrategy ?? defaultNamingStrategy);
     for (const metadata of this.metadata) {
+      for (const column of metadata.columns) {
+        if (column.generated === "identity" && !this.inspectCapabilities().generated.identity) {
+          throw new UnsupportedCapabilityError(`generated identity ${metadata.modelName}.${column.propertyName}`, this.driver.dialect);
+        }
+        if (column.generated === "increment" && this.driver.dialect === "sqlite" && (!column.primary || column.logicalType !== "integer")) {
+          throw new UnsupportedCapabilityError(`SQLite integer primary increment ${metadata.modelName}.${column.propertyName}`, this.driver.dialect);
+        }
+        if (column.array && this.driver.dialect !== "postgres") {
+          throw new UnsupportedCapabilityError(`native array ${metadata.modelName}.${column.propertyName}`, this.driver.dialect);
+        }
+      }
       this.metadataByTarget.set(metadata.target, metadata);
       this.metadataByName.set(metadata.modelName, metadata);
     }
@@ -119,6 +133,13 @@ export class ORM {
     }
     this.fallbackScopes.pop();
     return result;
+  }
+
+  inspectMetadata() { return inspectFinalizedMetadata(this.metadata); }
+
+  inspectCapabilities() {
+    const descriptor = Object.getOwnPropertyDescriptor(this.tooling ?? {}, "provider");
+    return inspectProviderCapabilities(this.driver, descriptor && "value" in descriptor ? descriptor.value : undefined);
   }
 
   async transaction<T>(callback: () => Promise<T>): Promise<T> {
@@ -214,25 +235,27 @@ export class ORM {
     if (scoped !== this) return scoped.executeFragment(fragment, operation, signal);
     const compiled = compileSQL(fragment, dialectFor(this.driver.dialect));
     const finalOperation = operation ?? inferOperation(compiled.text);
+    if (compiled.parameters.length > this.driver.capabilities.parameterLimit) {
+      throw new UnsupportedCapabilityError("query parameter limit", this.driver.dialect);
+    }
     const start = performance.now();
     try {
       const result = await this.driver.execute<Row>(compiled, finalOperation, signal);
       this.log({
-        sql: compiled.text,
-        parameters: compiled.parameters.map(redact),
+        sql: redactSqlStructure(compiled.text),
+        parameters: Object.freeze(compiled.parameters.map(redact)),
         durationMs: performance.now() - start,
         dialect: this.driver.dialect,
-        operation: finalOperation,
+        operation: finalOperation, provider: this.inspectCapabilities().provider, outcome: "success",
       });
       return result as QueryResult<Row>;
     } catch (cause) {
       this.log({
-        sql: compiled.text,
-        parameters: compiled.parameters.map(redact),
+        sql: redactSqlStructure(compiled.text),
+        parameters: Object.freeze(compiled.parameters.map(redact)),
         durationMs: performance.now() - start,
         dialect: this.driver.dialect,
-        operation: finalOperation,
-        error: cause,
+        operation: finalOperation, provider: this.inspectCapabilities().provider, outcome: "failure", code: "COSSACK_DATABASE_QUERY_FAILED",
       });
       throw cause instanceof QueryError
         ? cause
@@ -692,8 +715,10 @@ export class ORM {
   }
 
   private log(event: import("./adapter/types.js").LoggerEvent): void {
-    if (typeof this.logger === "function") this.logger(event);
-    else this.logger?.query(event);
+    try {
+      if (typeof this.logger === "function") this.logger(Object.freeze(event));
+      else this.logger?.query(Object.freeze(event));
+    } catch { /* Diagnostic observers do not own query success or application transactions. */ }
   }
 
   private assertOpen(): void {

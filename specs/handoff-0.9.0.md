@@ -2,33 +2,31 @@
 
 ## Current handoff — Codex (2026-10-05)
 
-Completed **RT-16 and RT-22**. Release: **38 complete / 20 open**.
-[Criteria, commands, installed retry and limits](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05).
-Database planning now previews authoritative declarations without invoking
-callbacks, applies detached/stale-checked plans, and preserves historical callback
-checksums. Typed Markdown validates before output, isolates locale rendering and
-preflights collisions; aliases copy canonical HTML and do not duplicate sitemaps.
-Database104/17, framework108/8 plus42/3, native Markdown6/6, installed Markdown
-five cases plus parser retry, and installed SQLite/public types pass. Builds,
-root/package types and Workers-safe bundle audit pass. No blocker for this batch.
+Completed **RT-10, RT-15 and RT-17**. Release: **41 complete / 17 open**.
+[Acceptance, commands, retries and limits](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05).
+Accessible typed native/UI forms pass actual Node/workerd keyboard, focus, error,
+file RPC and stale/reset behavior, including installed tarballs. Database metadata,
+redacted diagnostics and stable paging have actual SQLite/Turso/PostgreSQL/MySQL
+transaction proof. Shared Studio/CLI inspection passes parity, target selection,
+no-write checks and temporary disposal. No batch blocker.
 
-Continue 2–3 independent full acceptance tasks. RT-15/RT-17 share database tooling:
-keep their shared APIs/integration with Codex and use exclusive implementation
-ownership or sequential integration. Consider RT-10 or a bounded service task
-only after confirming its full acceptance can be closed. Prefer existing gaps;
-avoid Cloudflare budget polishing unless required to close a criterion.
-Do not replace dist while consumers run; repeat only invalidated checks. Update
-records once per verified batch and commit only verified owned files.
+Continue 2–3 independent full acceptance tasks with exclusive implementation
+ownership. RT-10 now unblocks SVC-05; assess it and other bounded service tasks
+against their full criteria before assigning files. Keep shared APIs/integration
+with Codex. Prefer existing gaps; avoid Cloudflare budget polishing unless it
+closes a required criterion. Never replace dist while consumers are running.
+Run targeted checks, then combined/type checks once; repeat only invalidated
+checks. Update records once per verified batch and commit verified owned files.
 
-Plans are live runner/connection objects; serialized JSON is inspection output.
-CLI apply checks current definitions/history, not a prior JSON preview. Raw SQL
-risk/object inference is conservative. Local D1/SQLite pass; live PostgreSQL/MySQL
-and remote Cloudflare acceptance are not claimed. MySQL DDL may commit implicitly.
-Default translation fallback hydration is intentional; aliases are static copies.
-[Migration changes](./migration-0.9.0.md) record declarations and Markdown rules.
+Provider proof uses isolated local PostgreSQL 18/MySQL 8 servers (now stopped),
+SQLite and embedded Turso; no remote Cloudflare/Turso or production-provider claim.
+MySQL DDL is not rollback-safe. Offset pages can shift under concurrent writes;
+projected/joined/grouped pages need authored unique ordering. Inspection factories
+must honor read-only selection; unknown adapter target metadata stays unspecified.
+Shared inspection omits default values. See [migration notes](./migration-0.9.0.md).
 Versions stay 0.8.3 until REL-04. Preserve user reports.md and .zcodeignore.
-Desktop remains complete with remaining checks waived. Prior completed tasks stay
-archived and must not be reopened.
+Desktop remains complete with remaining checks waived. Preserve all archived
+completed tasks; do not reopen them.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -45,14 +43,14 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 38 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 41 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
 Latest CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
 Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. RT-11 retains its remaining criteria; RT-12 is completed in the archived acceptance.
-Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05) adds a schema-backed Core controller with typed field paths, validation, reset, dirty/touched state, server error mapping, duplicate-module validation-error support and stale-result protection. The 9 focused tests, all 1,568 Core tests and root typecheck pass. This is a partial foundation; accessible bindings, UI adapters, keyboard/label/error/focus browser tests and file transport acceptance remain. The `getFormData()` guide example's missing `async` was also fixed.
+Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt10-rt15-rt17-complete-2026-10-05).
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
 
@@ -214,7 +212,7 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
    [per-call deadline checkpoint](./release-0.9.0-plan.md#codex-rt01-per-call-deadlines-2026-10-05)
    and [earlier timeout-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
    These changes do not close RT-01.
-4. Follow the detailed plan for all **22 open tasks**. Completed RT-12, RT-20
+4. Follow the detailed plan for all **17 open tasks**. Completed RT-12, RT-20
    and RT-24 criteria and historical checkpoints are archived. Preserve their
    regression coverage; do not treat old partial-status text as current work.
 5. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
@@ -226,13 +224,7 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
    development SSR details, then add whole-request timing, production source-map
    resolution, configurable budgets and remote Workers Logs acceptance. Do not close CF-08 from the local
    framework matrix alone.
-6. Continue **[RT-10](./release-0.9.0-plan.md#rt-10)** from the [headless
-   controller checkpoint](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05).
-   Preserve its 9 Core regression tests and the passing 95-file Core suite.
-   Add UI/reactivity integration, accessible field bindings, real keyboard and
-   focus/error-association browser coverage, and file transport acceptance
-   before closing RT-10. Keep Desktop closed; its remaining platform checks
-   are waived.
+6. Assess bounded service tasks, now that RT-10 closes the SVC-05 prerequisite.
 
 ## Limits to retain
 
@@ -284,11 +276,6 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
   messages, publish or deploy without authorization.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.
 
-Codex build repair (2026-10-05): the installed gate exposed RT-10's generic
-form-controller declaration error; validated data now retains InputOf<S>. Core
-build/declaration emission and 9 focused tests pass. This does not close RT-10's
-accessible binding/browser acceptance. Both build and CLI-generation evidence
-are recorded in the RT-24 CLI checkpoint above.
 
 Codex HTTP/SSR and hydration checkpoint (2026-10-05): integrated exclusive API
 implementation/test and installed hydration-helper subagents, with coordinator

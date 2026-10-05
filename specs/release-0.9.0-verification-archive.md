@@ -11931,3 +11931,120 @@ fallback catalogs may appear in hydration; active locale/body do not leak.
 Broader RT-15, CLI-08 and REL-02/03 provider/documentation/release gates stay open.
 Desktop checks are waived by user decision, not passed.
 Release: **38 complete / 20 open**. Versions stay 0.8.3 until REL-04. No blocker.
+
+<a id="codex-rt10-rt15-rt17-complete-2026-10-05"></a>
+## Codex: RT-10, RT-15 and RT-17 full acceptance (2026-10-05)
+
+Three exclusive implementation owners handled form bindings, database runtime DX,
+and generated form/Studio acceptance. Codex reviewed their code and integrated
+public APIs, schema/provider fixes, shared tooling, Studio rendering and installed
+checks. Existing reports.md and .zcodeignore were preserved. Desktop was not reopened.
+
+RT-10: Core exposes typed observable controller state and accessible native
+bindings, UI exposes the same bindings through Input/Checkbox/Form props. Numeric
+array paths retain field types and reject unsafe indices. Owned subscriptions and
+refs synchronize file/multi-select reset and dispose correctly. Real generated
+Node and workerd apps, with Chromium, prove keyboard submit, stable label/error
+associations, first-invalid/summary focus, nested server and form errors, edits and
+resubmit, coerced checkbox/numeric data, real File bytes over multipart HTTP RPC,
+stale async validation and held server responses, single-flight double submit,
+values/errors/touched/dirty reset and file clearing. Positive/negative public types
+reject invalid paths/values and preserve parsed submit result types. Explicit public
+return interfaces prevent excessive generic declaration expansion without weakening
+the type contract. Application owners dispose bindings/subscriptions; resetting a
+form does not roll back a server effect already started.
+
+RT-15: Detached finalized metadata excludes classes/hooks/default values and names
+both relationship ends. Invalid relationship fields name entities/properties.
+Query diagnostics retain bounded SQL structure/duration/provider/outcome with
+redacted parameters/literals/comments and fixed failure codes; observers cannot
+change query/transaction success. Simple entity pages append primary-key tie
+breakers, offset-only SQL is dialect-valid, and count/aggregates restore the original
+window. Joined/projected/grouped/distinct pages require explicit unique ordering;
+keyset pagination uses existing predicates/orders. Capability reports distinguish
+interactive/nested/batch transactions, DDL rollback, schema/generated values,
+returning/reservation/cancellation and limits. Unsupported identities/arrays,
+parameter limits, transaction modes and queued schema alterations fail before
+effects. Queues render every operation before publishing any DDL. Native SQLite,
+embedded Turso, PostgreSQL 18 and MySQL 8 prove generated keys, commit, rollback and
+nested savepoints. Acceptance exposed and fixed MySQL prepared SAVEPOINT commands,
+Turso transaction handle/RETURNING labels and PostgreSQL/MySQL generated DDL.
+
+RT-17: Database owns the shared versioned read-only inspection service used by
+`cossack schema inspect --json` and Studio. It reports schema/model/relationship
+facts, capabilities, bounded target identity and migration applied/changed/pending
+status/full history, omitting column default values and private connection extras.
+Real SQLite fixtures compare shared service, CLI, Studio project and Studio schema
+payloads; bytes remain unchanged and no migration bookkeeping is created. Exact
+named environment selection is passed read-only, known mismatches fail before
+inspection, and existing D1 tests reject named-environment top-level fallback.
+Owned temporary connections close on success, inspection failure and construction
+failure; borrowed local Studio connections keep their owner. Remote Studio uses the
+application's orm.config.ts adapter factory and checks explicitly selected binding.
+
+Verification after integration:
+
+- Core `vitest run`: **1,595 tests / 101 files passed**.
+- Database `vitest run`, with COSSACK_TEST_POSTGRES_URL and COSSACK_TEST_MYSQL_URL
+  pointing at task-owned isolated loopback servers: **123 / 20 passed**. Native
+  provider acceptance **6/6, zero skips**, including four actual drivers and two
+  pre-effect rejection cases. Final default-omission inspection retry **6/1 passed**.
+- Studio `vitest run`: **69 / 12 passed**. Final shared-inspection affected retry
+  **6/1 passed**. Studio package typecheck passed after annotating the deliberately
+  invalid model with @ts-expect-error.
+- UI combined run initially had **639 passed / 1 failed** while an unfinished old
+  declaration compiler was still writing dist. The coordinator stopped that compiler,
+  emitted/re-wrote stable Core/UI declarations, then reran only affected published
+  DataTable types and new form bindings: **6/2 passed**. Other runtime checks were
+  unchanged. No claim that the initial UI run passed.
+- CLI command/spec/contracts/database combined run: **169 passed / 6 failed**;
+  those six assertions expected legacy Vite spawn rather than the existing safe
+  project-local Node/Vite command. Accurate command/args/cwd/env/shell/JSON assertions
+  were repaired; affected dispatch run **50/50 passed**. The other three files passed
+  unchanged; the complete combined command was not repeated.
+- Native `vitest run tests/form-controller-release-acceptance.test.js --maxWorkers=1`:
+  parser and Cloudflare browser passed; Node initially lacked its explicit SSR build.
+  After correcting only that harness branch, focused Node retry **1/1 passed**,
+  two unchanged cases filtered. The earlier deliberately interrupted run supplies
+  no acceptance evidence.
+- Same form command with COSSACK_FORM_INSTALLED_ROOT set to the fresh installed
+  gate: **3/3 passed**, including both browser runtimes and public type fixtures.
+- `node scripts/verify-database-inspection.mjs <gate>`: actual installed SQLite
+  generated keys/paging, diagnostics privacy, metadata/capabilities, unchanged bytes,
+  no bookkeeping, CLI/Studio parity and positive/negative public types passed.
+  Harness-only initial retries corrected ESM import resolution and the fixture's
+  project/dependency manifest; no runtime repack was needed.
+- `node scripts/verify-form-bindings-types.mjs <gate>`: installed Core/UI public
+  binding imports and positive/negative field/value/result/FormProps types passed.
+- Required root `pnpm tsc --noEmit` and Core/UI/database/Studio package typechecks
+  passed. Core runtime build/declarations, UI runtime build plus final declaration
+  emit/rewrite, database build, Studio server/client/SSR builds and database bundle
+  audit passed. Audit: **32 neutral modules; Workers-safe Cloudflare entry**.
+  Owned diff whitespace and helper syntax checks passed.
+
+Final changed Core/UI/database/Studio/CLI packages were packed once to
+/tmp/cossack-rt10-15-17-tarballs with lifecycle scripts disabled because the equivalent
+checks were recorded explicitly. Renderer/framework and other unchanged packages
+were reused. The gate is /tmp/cossack-local-pack-gZdSQv/minimal-production; gate and
+fresh form apps preserve local pnpm override policy, install with scripts disabled,
+and execute actual production Vite builds/native runtimes. Final installed checks began only after all build/declaration writers exited. Task-owned PostgreSQL/MySQL
+servers shut down after verification; existing system services were not changed.
+
+Logs: /tmp/cossack-rt10-core-suite.log, /tmp/cossack-rt10-ui-suite.log,
+/tmp/cossack-rt10-ui-final-focused.log, /tmp/cossack-rt15-17-database-suite.log,
+/tmp/cossack-rt15-native-providers.log, /tmp/cossack-rt17-inspection-targeted.log,
+/tmp/cossack-rt17-studio-suite.log, /tmp/cossack-rt17-studio-final-inspection.log,
+/tmp/cossack-rt17-cli-combined.log, /tmp/cossack-form-controller-native.log,
+/tmp/cossack-form-controller-node.log, /tmp/cossack-rt10-installed-final.log,
+/tmp/cossack-rt15-17-installed-final.log, /tmp/cossack-rt10-15-17-root-types.log.
+
+Limits: provider proof is local SQLite/embedded Turso/PostgreSQL/MySQL, not remote
+Cloudflare/Turso or a production server compatibility guarantee. D1 rejection uses
+its actual driver with a no-effect mock binding; existing suite retains local D1
+execution/selection coverage. MySQL DDL may commit implicitly. Custom capability
+and adapter selection declarations remain implementer-owned; unknown target facts
+are not guessed. Offset pages can shift under concurrent writes. No opaque cursor
+API was added. Shared inspection intentionally omits default values; Studio's richer
+row-editor indexes/views/locators are separate extensions. Desktop platform checks
+are waived by user decision, not passed. REL-02/03 and CLI-08 remain open for broader
+release/doc coverage. **41 complete / 17 open**, versions 0.8.3 until REL-04. No batch blocker.

@@ -1,3 +1,4 @@
+import type { DatabaseInspection } from '@cossackframework/database/tooling';
 export type StudioProvider =
   | 'd1-local'
   | 'd1-remote'
@@ -26,6 +27,7 @@ export interface StudioQueryResult {
 export interface StudioConnection {
   readonly info: StudioConnectionInfo;
   readonly logicalSchema?: OrmSchema;
+  inspect?(): Promise<DatabaseInspection>;
   execute(sql: string, parameters?: readonly unknown[]): Promise<StudioQueryResult>;
   close(): Promise<void>;
 }
@@ -122,6 +124,7 @@ export interface StudioObject {
 }
 
 export interface StudioSchema {
+  inspection?: DatabaseInspection;
   connection: StudioConnectionInfo;
   applicationName: string;
   objects: StudioObject[];

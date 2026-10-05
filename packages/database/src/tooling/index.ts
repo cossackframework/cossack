@@ -3,7 +3,10 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { register } from "tsx/esm/api";
 import type { ORMConfig, ORMToolingContext } from "../config.js";
-import { createORM, type ORM } from "../orm.js";
+import type { ORM } from "../orm.js";
+import { planTarget } from "../migration/plan.js";
+import { createORMFromConfig, inspectDatabase } from "./inspection.js";
+export { createORMFromConfig, inspectDatabase, inspectConfiguredDatabase, type DatabaseInspection } from "./inspection.js";
 import { MigrationRunner } from "../migration/runner.js";
 import { SeederRunner } from "../seeding/runner.js";
 import {
@@ -88,21 +91,6 @@ export async function loadORMConfig(configPath: string): Promise<ORMConfig> {
   return config;
 }
 
-export async function createORMFromConfig(config: ORMConfig, context?: ORMToolingContext): Promise<ORM> {
-  const selected = context ?? { cwd: process.cwd(), configPath: resolve("orm.config.ts"), target: "local", readOnly: false };
-  if (selected.target === "remote" && typeof config.adapter !== "function") {
-    throw new ConfigurationError("Remote tooling requires an adapter factory that accepts ORMToolingContext.");
-  }
-  const adapter = typeof config.adapter === "function"
-    ? await config.adapter(selected)
-    : config.adapter;
-  return createORM({
-    adapter,
-    entities: config.entities,
-    ...(config.namingStrategy === undefined ? {} : { namingStrategy: config.namingStrategy }),
-    ...(config.logger === undefined ? {} : { logger: config.logger }),
-  });
-}
 
 export async function runORMCommand(
   argv: readonly string[], options: ORMCommandOptions = {},
@@ -151,7 +139,7 @@ export async function runORMCommandInProcess(
     const actions: Record<string, Record<string, readonly string[]>> = {
       migration: { generate: ["output", "allow-destructive"], snapshot: ["force"],
         squash: ["output", "prune"], up: [], down: [], status: [], check: [], baseline: [], plan: ["direction"] },
-      schema: { pull: ["output", "force"], diff: ["allow-destructive"], check: ["allow-destructive"] },
+      schema: { inspect: [], pull: ["output", "force"], diff: ["allow-destructive"], check: ["allow-destructive"] },
       seed: { list: [], run: ["only"] },
     };
     const specific = actions[args.command]?.[args.action ?? ""];
@@ -179,7 +167,7 @@ export async function runORMCommandInProcess(
     const environment = options.environment ?? args.flags.get("env") ?? process.env.CLOUDFLARE_ENV;
     context = { cwd, configPath, target: options.target ?? alias ?? targetFlag ?? "local",
       ...(typeof environment === "string" && environment ? { environment } : {}),
-      readOnly: enabled(args, "dry-run") || ["plan", "status", "check", "diff", "list"].includes(args.action ?? "") };
+      readOnly: enabled(args, "dry-run") || ["plan", "status", "check", "diff", "list", "inspect"].includes(args.action ?? "") };
     phase = "configuration";
     const config = await loadORMConfig(configPath);
     if (args.command === "seed" && args.action === "list") {
@@ -196,7 +184,7 @@ export async function runORMCommandInProcess(
       phase = "operation";
       data = await orm.run(async () => {
         if (args!.command === "migration") return migrationCommand(orm, config, args!, cwd, print);
-        if (args!.command === "schema") return schemaCommand(orm, args!, cwd, print);
+        if (args!.command === "schema") return schemaCommand(orm, config, args!, cwd, print);
         return seedCommand(orm, config, args!, print);
       });
     } finally {
@@ -207,11 +195,8 @@ export async function runORMCommandInProcess(
     }
     // Application factories may return extra connection fields at runtime.
     // Only documented public identity fields enter the machine result.
-    const resolvedTarget = orm.tooling ? Object.fromEntries(
-      ["provider", "target", "accountId", "environment", "binding", "databaseName", "databaseId"]
-        .filter(key => typeof orm.tooling?.[key as keyof NonNullable<ORM["tooling"]>] === "string")
-        .map(key => [key, orm.tooling![key as keyof NonNullable<ORM["tooling"]>]]),
-    ) : null;
+    const { dialect: _dialect, connectionId: _connectionId, ...safeIdentity } = planTarget(orm);
+    const resolvedTarget = orm.tooling ? safeIdentity : null;
     if (json) report(true, { dialect: orm.driver.dialect, resolvedTarget, ...data });
     return 0;
   } catch (cause) {
@@ -500,10 +485,16 @@ async function registerMigration(directory: string, output: string): Promise<boo
 
 async function schemaCommand(
   orm: ORM,
+  config: ORMConfig,
   args: Arguments,
   cwd: string,
   out: (message: string) => void,
 ): Promise<Record<string, unknown>> {
+  if (args.action === "inspect") {
+    const inspection = await inspectDatabase(orm, config.migrations);
+    out(`Inspected ${inspection.schema.entities.length} tables; ${inspection.migrations.length} migrations.`);
+    return { inspection };
+  }
   const actual = await orm.introspect();
   if (args.action === "pull") {
     const output = resolve(cwd, String(args.flags.get("output") ?? "src/entities.generated.ts"));
@@ -559,6 +550,7 @@ function help(): string {
   migration plan [--direction up|down]
   schema pull [--output path] [--force]
   schema diff | check [--allow-destructive]
+  schema inspect
   seed list
   seed run [--only name[,name]]
 

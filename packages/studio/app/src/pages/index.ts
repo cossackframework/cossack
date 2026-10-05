@@ -1572,6 +1572,12 @@ export default class StudioPage extends Cossack {
             </span>
             ${component(Badge, { variant: remote ? 'destructive' : 'secondary' },
               `${schema.connection.label}${remote ? ' · REMOTE D1' : ' · local'}`)}
+            ${schema.inspection ? html`<details data-testid="database-inspection" class="text-xs">
+              <summary>Database capabilities and migrations</summary>
+              <p>Target: ${schema.inspection.target.provider ?? schema.inspection.dialect} · ${schema.inspection.target.target ?? 'unspecified'} ${schema.inspection.target.environment ?? ''}</p>
+              <p>Transactions: ${schema.inspection.capabilities.driver.transactions ? 'supported' : 'unavailable'}; nested savepoints: ${schema.inspection.capabilities.driver.savepoints ? 'supported' : 'unavailable'}</p>
+              <ul>${schema.inspection.migrations.map(item => html`<li>${item.name}: ${item.state}</li>`)}</ul>
+            </details>` : ''}
             ${schema.connection.databaseVersion ? html`
               <span
                 class="hidden shrink-0 text-xs text-muted-foreground md:inline"
