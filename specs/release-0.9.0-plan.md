@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Sixty-six standalone examples compile and execute from installed tarballs,
+Sixty-eight standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -160,13 +160,15 @@ SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 39 UI guides now have executable
-examples; all 64 published-package guides have at least one example. The installed gate
-executes all seventy package examples, including four separately bundled auth
+examples; all 65 published-package guides have at least one example. The installed gate
+executes all seventy-two package examples, including four separately bundled auth
 examples. Framework guidance now covers runtime capability planning and cache
 guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
 cleanup and the separate Vite development integrations; Studio guidance covers
-local/remote data selection and embedded lifecycle. Four packaged pages exercise component actions,
-resources and lifecycle tasks in generated applications. The harness uses the exact
+local/remote data selection and embedded lifecycle; Core guidance covers locale
+negotiation, explicit `q=0` exclusions and CLDR plural formatting. Four packaged
+pages exercise component actions, resources and lifecycle tasks in generated
+applications. The harness uses the exact
 catalog source, owns the browser/server lifecycle and requires emitted client source
 maps before checking server stripping. Installed Cloudflare and Node acceptance
 passes. Discovery never invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04),

@@ -150,6 +150,27 @@
           "source": "import { Cossack, Page, State, old, flashed } from '@cossackframework/core';\nimport { html } from '@cossackframework/renderer';\n\ninterface PublicForm {\n  name: string;\n  email: string;\n  password: string;\n  profile: { city: string };\n}\n\n@Page({ transport: 'http' })\nexport default class PublicFormPage extends Cossack {\n  @State() name = '';\n  @State() email = '';\n  @State() city = '';\n  @State() errors: Record<string, string> | null = null;\n  @State() notice = '';\n\n  async init() {\n    this.name = old<string>('name') ?? '';\n    this.email = old<string>('email') ?? '';\n    this.city = old<string>('profile.city') ?? '';\n    this.errors = flashed<Record<string, string>>('errors') ?? null;\n    this.notice = flashed<string>('success') ?? '';\n  }\n\n  async post() {\n    const { valid } = await this.c.getFormData<PublicForm>({\n      rules: { email: { required: true, email: true, message: 'Enter a valid email.' } },\n      flash: { input: ['name', 'email', 'profile.city'] },\n    });\n    if (!valid) return this.c.redirect('/guidance-old-input');\n    // Process validated data here. Authorize any account or storage operation.\n    return this.c.redirect('/guidance-old-input');\n  }\n\n  render() {\n    return html`<main><h1>Public form fields</h1>\n      <p role=\"alert\">${this.errors?.email ?? ''}</p>\n      <form method=\"post\" action=\"/guidance-old-input\" novalidate>\n        <label>Name <input name=\"name\" value=${this.name} /></label>\n        <label>Email <input name=\"email\" value=${this.email} /></label>\n        <label>City <input name=\"profile[city]\" value=${this.city} /></label>\n        <label>Password <input type=\"password\" name=\"password\" /></label>\n        <button type=\"submit\">Submit</button>\n      </form>\n    </main>`;\n  }\n}\n"
         }
       ]
+    },
+    {
+      "id": "localization-and-worker-isolation",
+      "title": "Resolve locales safely and format translated counts",
+      "summary": "Use packaged catalogs and request-scoped locales without sharing mutable locale state across Cloudflare requests.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Generate catalogs with `pnpm exec cossack lang publish`, then add translations under `src/lang/*.json`; use `pnpm exec cossack lang add <locale>` to add another catalog. The framework installs locale middleware and exposes `__()` during rendering. Locale priority is the `cossack_locale` cookie, `Accept-Language` when `createApp({ i18n: { autoDetectBrowser: true } })` enables it, `APP_LOCALE`, then `en`. Browser detection is off by default. On Workers, the framework stores the active locale in per-request AsyncLocalStorage. Do not set a server-wide current locale or call client-only `setLocale()` from server code. If publicly caching localized HTML, include the effective locale in the cache key or disable shared caching for that response. `__()` supports `:name` placeholders and `|`-separated CLDR plural forms; missing translations fall back to the default catalog and then to the key.\n\nThe examples exercise locale negotiation and plural formatting from the installed core export. They do not configure an application catalog or prove request middleware and cache behavior; use a generated application to verify those boundaries.",
+      "examples": [
+        {
+          "id": "accept-language-fallbacks",
+          "language": "typescript",
+          "source": "import { detectBrowserLocale } from '@cossackframework/core';\n\nconst supported = ['en', 'fr', 'es'];\nconst selected = detectBrowserLocale('fr-CA, fr;q=0.9, en;q=0.8', supported, 'en');\nif (selected !== 'fr') throw new Error('The best supported language range should win');\nconst fallback = detectBrowserLocale('de-DE, de;q=0.9', supported, 'en');\nif (fallback !== 'en') throw new Error('Unsupported languages should use the configured fallback');\nconst excluded = detectBrowserLocale('fr;q=0', supported, 'en');\nif (excluded !== 'en') throw new Error('A q=0 language range must remain unacceptable');\n"
+        },
+        {
+          "id": "cldr-plural-and-placeholder",
+          "language": "typescript",
+          "source": "import { replacePlaceholders, selectPluralForm } from '@cossackframework/core';\n\nconst template = 'У вас :count яблоко|У вас :count яблока|У вас :count яблок';\nconst selected = selectPluralForm(template, 2, 'ru');\nconst message = replacePlaceholders(selected, { count: 2 });\nif (message !== 'У вас 2 яблока') throw new Error('Russian plural category or placeholder was incorrect');\n"
+        }
+      ]
     }
   ]
 }

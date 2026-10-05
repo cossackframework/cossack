@@ -229,7 +229,9 @@ export function detectBrowserLocale(
                 quality: Number.isFinite(quality) ? quality : 1,
             };
         })
-        .filter((e) => e.tag.length > 0)
+        // q=0 explicitly marks a range as unacceptable. Ignore it instead of
+        // selecting that locale merely because it appears in the header.
+        .filter((e) => e.tag.length > 0 && e.quality > 0)
         .sort((a, b) => b.quality - a.quality);
 
     let star = false;
@@ -242,8 +244,9 @@ export function detectBrowserLocale(
         const exact = matchAgainst(tag);
         if (exact) return exact;
     }
-    // `*` (or no preference at all) → first supported locale.
-    if (star || entries.length === 0) return supported[0];
+    // A positive wildcard selects the first supported locale. Empty or
+    // explicitly unacceptable ranges use the caller's fallback.
+    if (star) return supported[0];
     return fallback;
 }
 

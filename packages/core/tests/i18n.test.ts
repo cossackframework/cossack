@@ -167,6 +167,11 @@ describe('detectBrowserLocale', () => {
         ).toBe('en');
     });
 
+    it('does not select a language explicitly marked unacceptable', () => {
+        expect(detectBrowserLocale('fr;q=0', ['fr', 'en'], 'en')).toBe('en');
+        expect(detectBrowserLocale('*;q=0', ['en', 'fr'], 'fr')).toBe('fr');
+    });
+
     it('falls back when nothing matches', () => {
         expect(detectBrowserLocale('de,ja', ['en', 'es'], 'en')).toBe('en');
     });

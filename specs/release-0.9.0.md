@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixty-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 64 published-package guides have at least one example; every one of the 70 packaged examples is typechecked and executed by installed acceptance. Framework guides cover runtime capability and cache guarantees; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixty-eight standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 65 published-package guides have at least one example; every one of the 72 packaged examples is typechecked and executed by installed acceptance. Core guidance now covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guides cover runtime capability and cache guarantees; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -778,6 +778,28 @@ complete by user decision and is excluded from this gate. CLI-08 remains open fo
 broader package API and recipe coverage; REL-02/REL-03 remain open for the full
 non-Desktop release checks. Status remains **28 complete / 30 open**. No
 deployment or publication occurred.
+
+<a id="codex-cli08-localization-2026-10-05"></a>
+### Codex: Request-scoped localization guidance (2026-10-05)
+
+Core now publishes an agent guide for catalog setup, locale-resolution order,
+Cloudflare request isolation, localized response-cache keys and CLDR formatting.
+Its installed examples cover supported Accept-Language fallback, explicitly
+unacceptable `q=0` ranges and Russian plural selection with placeholder
+replacement. The audit found that `detectBrowserLocale()` could select a language
+marked `q=0`; it now ignores zero-quality ranges and uses the configured fallback
+when no acceptable range remains. The guide states that its pure Core examples
+do not prove the framework middleware, catalog loading or cache behavior.
+
+**Verification:** `pnpm tsc --noEmit` passes; the Core i18n suite passes **74
+tests**. The fresh-tarball `pnpm test:agent-docs:local` gate typechecks and
+executes **68 standalone examples plus 4 auth examples** across **65
+published-package guides**. Local workerd D1, installed Cloudflare traces and
+application examples, offline CLI/MCP parity, UI contracts and production
+stripping pass. Desktop is complete by user decision and is excluded. CLI-08
+remains open for broader package API and recipe coverage; REL-02/REL-03 remain
+open for the full non-Desktop release checks. Status remains **28 complete / 30
+open**. No deployment or publication occurred.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)
