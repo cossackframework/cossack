@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Sixty-nine standalone examples compile and execute from installed tarballs,
+Seventy standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -161,13 +161,15 @@ chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 39 UI guides now have executable
 examples; all 66 published-package guides have at least one example. The installed gate
-executes all seventy-three package examples, including four separately bundled auth
+executes all seventy-four package examples, including four separately bundled auth
 examples. Database guidance now exercises a reversible Node SQLite migration and
 repeatable seeder lifecycle. Framework guidance covers runtime capability planning and cache
 guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
 cleanup and the separate Vite development integrations; Studio guidance covers
 local/remote data selection and embedded lifecycle; Core guidance covers locale
-negotiation, explicit `q=0` exclusions and CLDR plural formatting. Four packaged
+negotiation, explicit `q=0` exclusions and CLDR plural formatting. Framework
+configuration guidance covers typed per-request config, string environment
+values, raw Worker bindings and safe required-binding errors. Four packaged
 pages exercise component actions, resources and lifecycle tasks in generated
 applications. The harness uses the exact
 catalog source, owns the browser/server lifecycle and requires emitted client source

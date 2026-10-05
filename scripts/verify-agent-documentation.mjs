@@ -83,7 +83,7 @@ require('node:module').syncBuiltinESMExports();
     const uiExamples = [];
     const denoExamples = [];
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input', 'development-rpc-traces', 'component-actions', 'server-resources', 'lifecycle-tasks', 'safe-old-input', 'localization-and-worker-isolation'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
-      ...['runtime-capability-planning', 'cache-storage-guarantees'].map(id => ['@cossackframework/framework', id]),
+      ...['runtime-capability-planning', 'cache-storage-guarantees', 'request-scoped-configuration'].map(id => ['@cossackframework/framework', id]),
       ...['node-runtime-lifecycle'].map(id => ['@cossackframework/node-adapter', id]),
       ...['deno-fetch-and-assets'].map(id => ['@cossackframework/deno-adapter', id]),
       ...['safe-studio-workflows'].map(id => ['@cossackframework/studio', id]),
