@@ -48,6 +48,14 @@ export class MessageScroller extends Cossack {
     private focusedBeforeRender?: HTMLElement;
 
     render() {
+        // Finish pending geometry reconciliation before the next render can remove
+        // our primary anchor. Otherwise a surviving sibling can retain its offset
+        // from before a resize even though the reader now sees a different one.
+        if (this.frame !== undefined && this.disposeObservers) {
+            this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.frame);
+            this.frame = undefined;
+            this.reconcile();
+        }
         const { id, label, viewportProps, jumpProps, jumpLabel = 'Scroll to latest messages', threshold = 80, initialPosition = 'end', ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('MessageScroller requires a nonempty id without whitespace.');
         if (typeof label !== 'string' || !label.trim() || typeof jumpLabel !== 'string' || !jumpLabel.trim()) throw new Error('MessageScroller label and jumpLabel must be nonempty.');

@@ -4,14 +4,24 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
-import { html, renderToString, minifyHtml } from '../../renderer/dist/server.js';
-import { component, repeat } from '../../renderer/dist/index.js';
-import { MessageScroller } from '../../ui/dist/index.js';
 
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
-const require = createRequire(new URL('../../framework/package.json', import.meta.url));
+const installedRoot = process.env.COSSACK_MESSAGE_SCROLLER_INSTALLED_ROOT;
+const packageRoot = name => installedRoot ? path.join(installedRoot, 'node_modules/@cossackframework', name) : path.join(repository, 'packages', name);
+async function publicEntry(name, subpath = '.') {
+  const root = packageRoot(name);
+  const metadata = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+  const declaration = metadata.exports[subpath];
+  const entry = typeof declaration === 'string' ? declaration : declaration.import;
+  if (typeof entry !== 'string') throw new Error(`Missing public import export ${name}${subpath}`);
+  return import(pathToFileURL(path.resolve(root, entry)).href);
+}
+const { html, renderToString, minifyHtml } = await publicEntry('renderer', './server');
+const { component, repeat } = await publicEntry('renderer');
+const { MessageScroller } = await publicEntry('ui');
+const require = createRequire(installedRoot ? path.join(installedRoot, 'package.json') : new URL('../../framework/package.json', import.meta.url));
 const { build } = await import(require.resolve('vite'));
 const {default:tailwind}=await import(require.resolve('@tailwindcss/vite'));
 
@@ -27,15 +37,15 @@ it('owns transcript following, history anchors, native focus and cleanup', async
   const template = new Function('html','component','repeat','MessageScroller',`return ${templateSource}`)(html,component,repeat,MessageScroller);
   try {
     const scope=path.join(root,'node_modules','@cossackframework'); await fs.mkdir(scope,{recursive:true});
-    for(const name of ['renderer','core','ui'])await fs.symlink(path.join(repository,'packages',name),path.join(scope,name),'dir');
+    for(const name of ['renderer','core','ui'])await fs.symlink(packageRoot(name),path.join(scope,name),'dir');
     await fs.writeFile(path.join(root,'index.html'),`<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><main id="app">${minifyHtml(renderToString(template(),{hydrate:true}))}</main><div id="extra"></div><script type="module" src="/main.js"></script></body></html>`);
     await fs.mkdir(path.join(root,'public'));
     await fs.writeFile(path.join(root,'public','large.svg'),'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="180"><rect width="300" height="180" fill="blue"/></svg>');
     await fs.writeFile(path.join(root,'style.css'),`
 @import ${JSON.stringify(require.resolve('tailwindcss/index.css'))} source(none);
-@import ${JSON.stringify(path.join(repository,'packages/ui/src/theme/base.css'))};
-@import ${JSON.stringify(path.join(repository,'packages/ui/src/theme/theme.css'))};
-@source ${JSON.stringify(path.join(repository,'packages/ui/src'))};
+@import ${JSON.stringify(path.join(packageRoot('ui'),'src/theme/base.css'))};
+@import ${JSON.stringify(path.join(packageRoot('ui'),'src/theme/theme.css'))};
+@source ${JSON.stringify(path.join(packageRoot('ui'),'src'))};
 `);
     await fs.writeFile(path.join(root,'main.js'),`
 import './style.css';
@@ -92,7 +102,16 @@ hydrate(template(current()),container);window.retained=initial.every(element=>el
     const saved=(await anchor())[0];await page.evaluate(()=>window.update({ids:[-2,-1,...Array.from({length:24},(_,i)=>i)]}));await anchored(saved);
     await page.evaluate(()=>window.update({image:true}));await page.waitForFunction(()=>document.querySelector('#late-image')?.complete);await anchored(saved);
     await page.evaluate(()=>window.update({height:'220px',width:'290px',dir:'rtl'}));await anchored(saved);
-    const visible=await anchor(),second=visible[1];await page.evaluate(id=>window.update({ids:[-2,-1,...Array.from({length:24},(_,i)=>i)].filter(value=>String(value)!==id)}),visible[0].id);await anchored(second);
+    // Resize then remove the first visible row before another animation frame.
+    // The fallback sibling must retain its current geometry, not a stale pre-resize offset.
+    const visible=await page.evaluate(async()=>{
+      window.update({width:'310px'});await Promise.resolve();
+      const el=document.querySelector('#transcript-viewport'),top=el.getBoundingClientRect().top;
+      const rows=[...el.querySelectorAll('[data-row]')].filter(row=>row.getBoundingClientRect().bottom>top&&row.getBoundingClientRect().top<top+el.clientHeight);
+      const entries=rows.map(row=>({id:row.dataset.row,offset:row.getBoundingClientRect().top-top}));
+      window.update({ids:[-2,-1,...Array.from({length:24},(_,i)=>i)].filter(value=>String(value)!==entries[0].id)});
+      return entries;
+    }),second=visible[1];await anchored(second);
     const focused=page.locator('#draft-'+second.id);await focused.focus();await focused.fill('Unsaved');const beforeFocused=(await anchor())[0];
     await page.evaluate(()=>window.update({ids:[-4,-3,-2,-1,...Array.from({length:24},(_,i)=>i)]}));await browserExpect(focused).toBeFocused();await browserExpect(focused).toHaveValue('Unsaved');await anchored(beforeFocused);
     await page.evaluate(()=>window.update({text:'More streaming text '.repeat(300)}));await browserExpect(focused).toBeFocused();await anchored(beforeFocused);

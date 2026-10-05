@@ -864,3 +864,28 @@ and root/all ten non-Desktop package types. Unchanged installed artifacts reused
 The serial non-Desktop CLI gate is running, including the strict native Waiting
 probe. Do not claim it passed or restart on an observation timeout. No numbered
 row closes; final hosted/artifact/runtime dependencies remain. Desktop waived.
+
+
+## Codex — CLI gate and hosted readiness batch (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** REL-03's terminal CLI gate
+reports **1,112 passed / 2 failed / 9 skipped**. Codex integrated an exclusive
+UI agent's deterministic resize/removal regression and geometry-flush fix; source
+and a fresh changed-UI tarball consumer pass. Separate checks execute both
+non-Desktop name-filter omissions and the installed-only omission; six Desktop
+cases remain waived. Root/all ten non-Desktop types pass. This is passing targeted
+recovery, not a green rerun of the full CLI suite. Do not repeat unchanged matrices.
+
+SVC-04 still needs actual native Waiting. The private hosted fixture now passes
+installed generation, generated Workflow types, build, upload dry-run, guarded
+native retry/event/failure smoke and client-secret scans. Function API throws reach
+COSSACK_REQUEST_INTERNAL, with a correlated request ID, through the standard
+request boundary. The exception API uses no custom catch/log. Cached Wrangler
+OAuth is authenticated; absence of token environment variables does not imply
+absence of authentication. API-token/CI configuration is still missing. The
+reviewable private plan is `/tmp/cossack-hosted-release-ready-final/review.md`;
+remote resource creation/checks/ownership-verified cleanup awaits approval and
+has not occurred. Neither local fixture success nor the plan proves hosted Waiting,
+Logs/maps/startup, CI isolation or unchanged production. CF-08 also retains its
+compiler and wider graph/aggregate receipt requirements. Final versioned artifact,
+Deno Deploy and release-audit dependencies remain. [Verification](./release-0.9.0-verification-archive.md#codex-cli-gate-scroller-hosted-preparation-2026-10-06).

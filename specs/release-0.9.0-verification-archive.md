@@ -13549,3 +13549,110 @@ production plus safe no-tag recovery; Deno Deploy and final package/runtime
 matrix; gated version/release preparation and final requirement audit. No cloud
 mutation, deployment, provisioning, publication or push. Versions 0.8.3. All four
 baseline changes preserved unchanged.
+
+
+<a id="codex-cli-gate-scroller-hosted-preparation-2026-10-06"></a>
+## Codex — terminal CLI gate, scroller regression and hosted preparation (2026-10-06)
+
+Author: **Codex**. Counts **51 complete / 7 open**, versions **0.8.3**. No numbered
+row closes; Desktop remains completed by user decision with six checks waived.
+Baseline reports.md/.zcodeignore and the two earlier strict Workflow probes remain
+unchanged and unstaged. Two implementation agents exclusively owned the UI leaf
+and hosted fixture respectively; a third reviewed preparation read-only. Coordinator
+reviewed all changes and ran combined/installed acceptance and required types.
+
+The previously running serial CLI gate (session 48392) terminated with exit **1**:
+**134 files passed / 2 failed / 1 skipped; 1,112 tests passed / 2 failed / 9 skipped**.
+Exact command is recorded in the preceding batch; log and structured JSON remain
+`/tmp/cossack-rel03-current-cli.log` and `/tmp/cossack-rel03-current-cli.json`.
+All three native Deno generated-runtime cases executed and passed. Failures:
+
+- Strict preserved Workflow probe: native status remained `running` after retry
+  and first-step counters were proven, instead of actual `waiting`. No relaxation
+  or inferred status; the two probe files remain uncommitted and unchanged.
+- MessageScroller: removing the first visible row after resize used a surviving
+  sibling's stale offset, losing **25px**. A deterministic same-task resize/removal
+  regression fails the old build and passes after flushing pending reconciliation
+  before the next render mutates rows. Original **<1px** tolerance remains. Native
+  focus/draft, following/history, images/resize, veto/disabled controls and observer
+  cleanup assertions remain. Installed mode resolves public exports and packaged
+  CSS/source from a fresh consumer, without repository package symlinks.
+
+Skipped-case accounting: six Desktop/Electron cases are explicitly waived. Two
+non-Desktop cases contained “non-Desktop” in their names and were accidentally
+matched by the broad exclusion; both files now execute without the filter and
+pass. `preview-installed-acceptance` lacked its optional installed-root environment;
+it now passes separately with the unchanged installed gate. No skipped case is
+counted as passed in the original broad report. Targeted recovery is not a green
+full-suite rerun, and the original broad result predates the UI fix.
+
+Final verified commands (exit **0**):
+
+```sh
+pnpm --filter @cossackframework/ui run build
+pnpm --filter @cossackframework/ui exec vitest run tests/message-scroller-contracts.test.ts
+pnpm --filter cossack exec vitest run tests/message-scroller-browser.test.js tests/guidance-family-inventory.test.js tests/skill-guide-consistency.test.js tests/hosted-workflow-fixture.test.js --maxWorkers=1 --no-file-parallelism
+COSSACK_PREVIEW_INSTALLED_ROOT=/tmp/cossack-preview-secret-recovery-installed pnpm --filter cossack exec vitest run tests/preview-installed-acceptance.test.js --maxWorkers=1
+pnpm --filter @cossackframework/ui pack --pack-destination /tmp/cossack-scroller-release-artifacts
+pnpm --dir /tmp/cossack-scroller-release-installed install --ignore-scripts --no-frozen-lockfile
+COSSACK_MESSAGE_SCROLLER_INSTALLED_ROOT=/tmp/cossack-scroller-release-installed pnpm --filter cossack exec vitest run tests/message-scroller-browser.test.js --maxWorkers=1
+node scripts/prepare-hosted-release.mjs --installed-root /tmp/cossack-preview-secret-recovery-installed --out /tmp/cossack-hosted-release-ready-final --build
+pnpm tsc --noEmit
+pnpm run typecheck -- --exclude-desktop
+```
+
+Results: combined source **6 tests / 4 files**, UI contracts **12 / 1 file**,
+installed browser **1 / 1**, separate installed-preview correction **1 / 1**;
+root and all ten non-Desktop package types pass. UI rebuilt/repacked **once**;
+all other package tarballs reused. Fresh consumer copied the existing lockfile and
+changed only the UI tarball reference. Logs: `/tmp/cossack-release-batch-combined.log`,
+`/tmp/cossack-release-batch-scroller-contracts.log`,
+`/tmp/cossack-release-batch-scroller-installed.log`,
+`/tmp/cossack-release-installed-filter-correction.log`,
+`/tmp/cossack-release-batch-root-types.log`,
+`/tmp/cossack-release-batch-package-types.log`,
+`/tmp/cossack-message-scroller-same-frame-repro.log`,
+`/tmp/cossack-message-scroller-ui-build.log`,
+`/tmp/cossack-scroller-pack.log`, `/tmp/cossack-scroller-install.log`.
+
+Hosted fixture/preparation:
+
+- `writeHostedWorkflowAcceptance` writes only three server modules. Both APIs
+  require a nonempty private ACCEPTANCE_KEY; workflow operations use a fixed trusted
+  scope. Retry/terminal-failure sentinels and D1 effect counters permit independent
+  provider evidence. The deliberate function-API exception reaches the framework's
+  standard **request** error boundary without custom logging/catching.
+- `prepare-hosted-release.mjs` requires a fresh private output directory, selects
+  the single authenticated cached Wrangler OAuth account, generates a minimal
+  installed Workflows app and unique resource names, and stores keys/logs privately.
+  Actual generated Workflow types, strict semantic typecheck, Vite build, native
+  Wrangler upload **dry-run** with secret-file input and client secret scans pass.
+  D1 uses an explicit zero-ID placeholder; no existing resource or production route
+  is selected. No provisioning or deployment-write command is implemented.
+- A separate bounded subprocess runs the native local harness with controlled
+  environment and private logs. It proves unauthenticated 401 guards, authenticated
+  500/COSSACK_REQUEST_INTERNAL plus request UUID and redaction, retry attempts=2,
+  first/last side effects=1, approved event completion and redacted terminal failure.
+  The first smoke run incorrectly expected COSSACK_API_INTERNAL for a function
+  route. The corrected assertion matches the actual request-boundary implementation;
+  the final complete preparation/smoke succeeds. Private failure diagnostics are
+  retained without echoing exception details to public output.
+- Subprocesses use existing bounded runCaptured process-group cleanup and an 8MiB
+  capture ceiling. Native listen/close run within the 120s parent deadline. The
+  private review artifact has actual Markdown newlines, not literal escapes.
+
+Private prepared artifacts: `/tmp/cossack-hosted-release-ready-final`; summary log
+`/tmp/cossack-hosted-ready-final.log`. `plan.json` records localSmokePassed=true and
+remoteMutationPerformed=false. Cached OAuth is authenticated with one account;
+API token/account environment and hosted CI credentials remain unconfigured. Do
+not infer authentication absence from those missing environment variables. Account
+metadata, secret files and raw native logs remain outside the repository. Approval
+for the concrete hosted resource/check/ownership-verified cleanup plan is pending;
+no cloud mutation, deployment, provisioning, publication or push occurred.
+
+Remaining criteria: actual native Workflow Waiting; CF-08 compiler diagnostics,
+wider graph/aggregate receipts and provider Logs/remapping/startup; CF-09 hosted
+CI lifecycle/isolation/retry/unchanged production and safe no-tag ownership recovery;
+Deno Deploy and final versioned artifact/runtime matrix; gated versioning/release
+prose completeness and final requirement audit. Local hosted-fixture smoke does
+not prove any remote criterion. Desktop waiver is not runtime acceptance.

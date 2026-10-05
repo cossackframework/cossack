@@ -2006,3 +2006,17 @@ logs/maps/provider startup and the wider receipt criteria remain open. REL-04
 versioning remains gated; type fixtures do not prove application operations.
 The serial non-Desktop CLI gate has started, including the strict older Workflow
 probe; its result is pending, not passed.
+
+
+### Codex — terminal CLI gate, scroller race and hosted preparation (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** Broad CLI: **1,112 passed,
+2 failed, 9 skipped**. The MessageScroller resize/removal race now has a failing
+baseline regression and passing source/installed fix with the original <1px
+criterion. Strict native Waiting still fails; three non-Desktop omissions pass
+separately, six Desktop cases remain waived. Combined source checks **6 / 4 files**,
+UI contracts **12 / 12**, installed browser **1 / 1**, root/all ten non-Desktop
+types pass. UI alone repacked once. Cached OAuth works; token/CI configuration
+is still absent. Hosted preparation passes types/build/dry-run/local native smoke
+and client-secret checks; actual hosted verification awaits approval. No cloud
+mutation, deployment, publication or push. [Exact evidence and limits](./release-0.9.0-verification-archive.md#codex-cli-gate-scroller-hosted-preparation-2026-10-06).

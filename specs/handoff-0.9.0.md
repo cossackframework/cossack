@@ -2,32 +2,34 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest verified Codex batch: **migration examples and native Cloudflare DEV faults**
-([evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06)).
-**51 complete / 7 open**, versions 0.8.3; no numbered task closes. All nine
-unchanged migration TypeScript fences compile under strict Bundler/NodeNext.
-Real Vite/workerd API and SSR failures correlate each returned request ID with
-its own redacted structured event; editing the page recovers in the same process.
-Source and installed combined checks each pass **2 / 2 files**; root/all ten
-non-Desktop package types pass. Contract stubs do not prove app operations.
-No repack: reused `/tmp/cossack-preview-secret-recovery-installed`.
+Latest verified Codex batch: **CLI gate, MessageScroller race and hosted preparation**
+([evidence](./release-0.9.0-verification-archive.md#codex-cli-gate-scroller-hosted-preparation-2026-10-06)).
+**51 complete / 7 open**, versions 0.8.3; no numbered task closes. The broad CLI
+run is terminal: **1,112 passed / 2 failed / 9 skipped**. MessageScroller's 25px
+resize/removal race is fixed with a deterministic regression; source and changed
+UI tarball browser acceptance pass. The strict Workflow probe still fails because
+native local status is Running, not Waiting. Never describe this as a green suite.
+Two non-Desktop cases accidentally name-filtered and one installed-env omission
+now pass separately; the six Desktop cases remain waived. Combined source checks
+pass 6 tests / 4 files; UI contracts 12 / 12; installed browser 1 / 1; root/all ten
+non-Desktop types pass. UI alone repacked once into a fresh consumer:
+`/tmp/cossack-scroller-release-installed`; unchanged package tarballs reused.
 
-**Active verification:** serial non-Desktop CLI suite, including the earlier
-strict Workflow probe and enabling the recorded Deno binary. Exec session **48392**;
-log `/tmp/cossack-rel03-current-cli.log`, JSON `/tmp/cossack-rel03-current-cli.json`.
-Poll the live handle; do not restart because an observation times out. The result
-is pending, not passed. Desktop-named checks are waived.
+**Hosted readiness:** cached Wrangler OAuth is authenticated with one account;
+API-token/account environment and CI credentials remain unconfigured. The private
+fixture `/tmp/cossack-hosted-release-ready-final` passes generated workflow types,
+build, native upload dry-run, authentication guards, retry/event/failure and client
+secret scans. `review.md` describes fresh Worker/Workflow/D1/SSE resources and
+ownership-verified cleanup; `plan.json`, secrets and native logs remain private.
+No remote mutations occurred. Approval for hosted verification is pending; do not
+infer it from elapsed time. Preparation scripts contain no deployment-write command.
 
-Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Workflow
-retry/event/failure and persisted pause/process-restart acceptance remains verified;
-actual native Waiting is still missing (pinned Miniflare reports Running).
-CF-08 native API/SSR DEV faults are now verified; compiler/remote Logs/maps/provider
-startup and wider graph/aggregate receipts remain. CF-09 requires hosted account/CI
-isolation, cleanup/retry and unchanged-production proof; no-tag creation still
-requires safe ownership evidence. Cloudflare account/token remain unconfigured.
-Deno Deploy, final installed/runtime matrix, gated versioning and final audit
-remain. Preserve baseline reports.md/.zcodeignore and two older uncommitted
-Workflow probes. No cloud mutation/deployment/push/publication. Desktop waived.
+Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Missing:
+actual Workflow Waiting; CF-08 compiler diagnostics, wider graphs/aggregate receipts,
+provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
+production and safe no-tag recovery; Deno Deploy and final versioned artifact/runtime
+matrix, then versioning and final audit. Preserve reports.md/.zcodeignore and the
+two earlier strict uncommitted Workflow probes. Desktop remains waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -64,7 +66,7 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 native Node/workerd disconnect and component initialization/restoration acceptance is complete. Cancellation remains cooperative and does not stop ignored application I/O.
-- Initial serial CLI run completed with 1,007 passed, 19 failed and 6 skipped. Every failure now has targeted passing evidence; three skipped Deno cases executed and three Desktop cases remain waived. Final broad release gates still belong to REL-03; do not claim a second green full CLI run.
+- Initial CLI run: 1,007 passed / 19 failed / 6 skipped, with later targeted fixes. Latest terminal run: 1,112 passed / 2 failed / 9 skipped; MessageScroller is subsequently fixed, Waiting remains unproven and three non-Desktop omissions pass separately. Six Desktop cases are waived. Neither composite proves a green full CLI gate.
 - Browser ownership acceptance passes its focused generated Node and Cloudflare
   cases, including SSE and WebSocket ownership. The fixture uses a synthetic
   identity provider only; real authentication has separate RT-13 evidence.
