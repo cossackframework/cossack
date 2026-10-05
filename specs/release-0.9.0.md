@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 30 complete / 28 open.
+  acceptance; the numbered release task count is 32 complete / 26 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -40,7 +40,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration. Codex adds a DOM-free schema-backed controller with typed dot-path access, dirty/touched tracking, reset, validation, stale-result protection and server field-error mapping. Core tests/typecheck pass; accessible bindings and browser acceptance remain open. See [the RT-10 checkpoint](#codex-rt10-form-controller-2026-10-05).
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno claim each signed nonce once per loaded module instance in a bounded 10,000-entry store; expired claims are purged and capacity fails closed. This does not coordinate across processes/isolates or survive restart. Remaining: broader concurrent request semantics and cross-process replay guarantees. See [process-local flash claims](#codex-rt11-process-flash-claims-2026-10-05), [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
-- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures and scoped disposal. Codex adds static TypeScript-source `serviceOwnership` for imported/re-exported tokens and inherited layout decorators, and classifies imported core `@Service()` syntax as declared, missing or unknown without running project code. Generated Node/Cloudflare browser acceptance now passes navigation, SSE and WebSocket ownership checks after the synthetic auth fixture supplies its required identity provider. A later service-constructor failure now disposes earlier instances in the partial scope; focused cleanup tests and root typechecking pass. Remaining: runtime metadata/lifecycle behavior and broader release acceptance. See the [ownership-inspection checkpoint](./release-0.9.0-plan.md#rt-12), [browser checkpoint](#codex-rt12-navigation-fixture-2026-10-05), and [construction rollback checkpoint](#codex-rt12-construction-rollback-2026-10-05).
+- [x] [RT-12](./release-0.9.0-plan.md#rt-12) DI ownership, contextual resolution errors and cleanup. Codex verified inherited/nested runtime metadata, concurrent request facilities, static inspection parity, cleanup once and failure continuation in generated Node/Cloudflare browser and SSR/RPC acceptance; [evidence](#codex-rt12-rt27-complete-2026-10-05).
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
@@ -55,7 +55,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight and installed Cloudflare private-hydration acceptance are implemented; Node/Deno declaration-source/native hydration and broader failure-diagnostic/classification acceptance remain. See [direct build checkpoint](#codex-rt24-direct-vite-preflight-2026-10-05) and [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
-- [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
+- [x] [RT-27](./release-0.9.0-plan.md#rt-27) Translation extraction/catalog checks, generated imported/global key and parameter types, CLI/MCP JSON parity and parallel SSR/SSG locale isolation; [evidence](#codex-rt12-rt27-complete-2026-10-05).
 - [x] [RT-28](./release-0.9.0-plan.md#rt-28) Bounded devtools snapshots and correlated timelines across supported runtimes, shared CLI/MCP records and production exclusion; [completion audit](#codex-rt28-complete-2026-10-04).
 - [ ] [RT-29](./release-0.9.0-plan.md#rt-29) Test utilities using real lifecycle/context/auth/DI/SSR/hydration/RPC behavior, published exports, and their own test suite. GLM (2026-10-02): `@cossackframework/test-utils/server` — `withRequestScope` (production request-context ALS + root service scope, awaited disposal, restoration on failure) and `controlledAsync` (settle-once deferred + shared AbortSignal); own suite now runs in root `pnpm test:unit`; remaining: framework-level RPC dispatch fixtures, auth fixtures, hydration helpers, and tarball-import verification.
 
@@ -115,7 +115,7 @@ its isolated database.
 
 There are now 67 published-package guides with 75 packaged examples. This
 example proves the Node SQLite API only. CLI-08 remains open for broader library
-API and recipe coverage; release status remains **30 complete / 28 open**.
+API and recipe coverage; release status remains **32 complete / 26 open**.
 
 <a id="codex-cli08-request-config-2026-10-05"></a>
 ### Codex: Request-scoped configuration guidance (2026-10-05)
@@ -134,7 +134,7 @@ inference, request-local values, raw binding identity and value redaction.
 - `pnpm tsc --noEmit`: pass.
 
 CLI-08 remains open for broader library API and recipe coverage. Release status
-remains **30 complete / 28 open**.
+remains **32 complete / 26 open**.
 
 <a id="codex-cf-targets-complete-2026-10-05"></a>
 ### Codex: Cloudflare environment and database targets (2026-10-05)
@@ -163,7 +163,7 @@ or database was contacted.
 - `pnpm --filter @cossackframework/database exec vitest run test/tooling.test.ts test/cloudflare-tooling.test.ts`: **32 tests pass**.
 - `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'`: pass.
 
-Release status is **30 complete / 28 open**. Desktop remains complete by user
+Release status is **32 complete / 26 open**. Desktop remains complete by user
 decision; waived platform checks are not claimed as passed.
 
 <a id="codex-rt10-form-controller-2026-10-05"></a>
@@ -969,7 +969,7 @@ and check remain local/read-only. A generated staging app also passed a local
 **Remaining:** This is static configuration planning only. It does not select
 resources, verify account ownership/existence/access, provision resources, or
 test wrong-account and repeated-application behavior. CF-04 remains open; release
-counts remain **30 complete / 28 open**. The dry-run did not upload or create
+counts remain **32 complete / 26 open**. The dry-run did not upload or create
 resources, and remote account/resource readiness remains unverified.
 
 <a id="codex-rt11-process-flash-claims-2026-10-05"></a>
@@ -1036,7 +1036,7 @@ guide now documents this behavior.
 
 RT-12 remains open: this covers failed scope setup only. It does not prove all
 runtime metadata/lifecycle combinations or the complete CLI/release gates. Task
-status remains **30 complete / 28 open**.
+status remains **32 complete / 26 open**.
 
 <a id="codex-cf08-rpc-logging-2026-10-05"></a>
 ### Codex: Correlated RPC failure logs (2026-10-05)
@@ -1052,7 +1052,7 @@ safe event shape.
 CF-08 remains open. These tests run through the local framework harness, not a
 deployed Worker Logs account. Source-map stack resolution, configurable bundle
 and startup budgets, and a review of non-RPC logs remain unverified. Task status
-remains **30 complete / 28 open**.
+remains **32 complete / 26 open**.
 
 <a id="codex-rt20-safe-hydration-diagnostics-2026-10-05"></a>
 ### Codex: Safe hydration mismatch diagnostics (2026-10-05)
@@ -1071,7 +1071,7 @@ failure shape and excludes a private rendered-text marker. Root
 RT-20 remains open. This slice does not compare SSR and browser state values or
 identify a source file or field. It adds no reusable test helper and does not
 verify retained layout services in a browser. Task status remains
-**30 complete / 28 open**.
+**32 complete / 26 open**.
 
 ### Archived checkpoints
 
@@ -1295,7 +1295,7 @@ secret-redaction/request-isolation acceptance remain. Tests prove no factory
 execution/source-value copying and an empty client virtual module, but a fresh
 installed app/browser bundle gate was not run for this checkpoint. Config types
 require generation before standalone typechecking; Vite performs it on startup.
-Task counts remain **30 complete / 28 open**; Desktop platform checks stay waived.
+Task counts remain **32 complete / 26 open**; Desktop platform checks stay waived.
 
 <a id="codex-rt24-config-cli-2026-10-05"></a>
 ### Codex: Configuration CLI and installed acceptance (2026-10-05)
@@ -1344,7 +1344,7 @@ config scope, so imported required helpers inside factories cannot read that
 pending environment. Required variable/binding metadata, coercion, runtime
 applicability, selected-environment preflight and full isolation/hydration
 redaction acceptance remain. The virtual-module sentinel test does not prove all
-direct-import or hydration secrecy. Counts remain **30 complete / 28 open**;
+direct-import or hydration secrecy. Counts remain **32 complete / 26 open**;
 Desktop-only platform acceptance remains waived. No external deployment or
 remote resource provisioning occurred.
 
@@ -1389,14 +1389,14 @@ coercion, runtime applicability, selected-environment preflight and full
 classification/hydration secrecy remain. Async factories remain unsupported.
 Installed config checking retains scaffold skipLibCheck policy; strict cache
 ambient-type acceptance remains separate. RT-24 stays open; counts remain
-**30 complete / 28 open**. Desktop remains complete by user decision, with its
+**32 complete / 26 open**. Desktop remains complete by user decision, with its
 remaining platform checks waived.
 
 
 <a id="codex-rt24-declared-requirements-2026-10-05"></a>
 ### Codex: Declared configuration requirements (2026-10-05)
 
-Author: **Codex**. RT-24 remains open; counts remain **30 complete / 28 open**.
+Author: **Codex**. RT-24 remains open; counts remain **32 complete / 26 open**.
 Literal named requirements now declare scalar types/coercion, required names,
 secret classification, binding kinds and runtime applicability. The portable
 checker validates all active declarations before the first factory. Typed scalar
@@ -1455,7 +1455,7 @@ Exact evidence and limits:
 
 **Remaining:** RT-24 stays open for Node/Deno declaration-source policy and full
 classification/hydration secrecy acceptance. Secret existence and resource
-readiness remain unverified. Counts remain **30 complete / 28 open**. Desktop
+readiness remain unverified. Counts remain **32 complete / 26 open**. Desktop
 platform checks remain waived. Versions remain 0.8.3 until REL-04.
 
 <a id="codex-server-failures-hydration-2026-10-05"></a>
@@ -1480,7 +1480,7 @@ and private hydration/type/client-map acceptance. Retained:
 /tmp/cossack-local-pack-mL6TSQ. The archive records the corrected initial fixture
 failure and final rerun.
 
-**Status:** CF-08 and RT-24 remain open; **30 complete / 28 open**. Remaining
+**Status:** CF-08 and RT-24 remain open; **32 complete / 26 open**. Remaining
 log paths, development SSR details, whole-request timing, remote log ingestion,
 production source-map resolution and budgets still need work. Native Node/Deno
 hydration and declaration-source policy remain unverified. Desktop checks stay
@@ -1505,7 +1505,7 @@ starts at failure capture. Component update catches, Deno, development SSR error
 pages, manifest/SSG/access logs, whole-request timing, remote Workers Logs,
 production source-map resolution and budgets remain open. No live deployment or
 fresh installed-tarball gate is claimed for this checkpoint. Release status stays
-**30 complete / 28 open**. Desktop remains complete with platform checks waived.
+**32 complete / 26 open**. Desktop remains complete with platform checks waived.
 
 Verification: Node adapter **33/33**, framework RPC/stream/logging **501/501**,
 root `pnpm tsc --noEmit`, Node package no-emit check, core build/declaration emit,
@@ -1545,7 +1545,7 @@ startup and background work. Deno socket/runtime/development catches use fixed
 metadata; shared in-memory callbacks use generic dispatch stages rather than
 misclassifying delivery as parsing. Controlled socket closure remains unchanged.
 
-CF-08 and RT-24 remain open; **30 complete / 28 open**. Deno Vite module
+CF-08 and RT-24 remain open; **32 complete / 26 open**. Deno Vite module
 transport/load/reload compiler-channel review, native Deno startup/cleanup fault
 acceptance, remote Worker log ingestion, production source-map resolution and
 artifact/startup budgets remain. Desktop is closed with platform checks waived.
@@ -1598,7 +1598,7 @@ private ModuleRunner channel. Recovery/socket destruction remain covered.
 Deno 2.9.6 was obtained with pnpm's temporary tool runner; native smoke includes
 real socket action-failure redaction and preserved1013 closure.
 
-CF-08 remains open; **30 complete / 28 open**. Budgets currently require CLI
+CF-08 remains open; **32 complete / 26 open**. Budgets currently require CLI
 Cloudflare build/deploy paths, not direct Vite or Node/Deno artifacts. Provider
 startup/local profiling, production source-map resolution and remote log
 acceptance remain. Native Deno development startup/cleanup fault fixtures remain
@@ -1639,7 +1639,7 @@ agent audited direct Vite budgets without edits or tests. See the
 for final commands and results. Core **1,581/97** and framework **1,707/91**
 tests/files pass, as do root/core/framework/Node types and declaration builds.
 No parent acceptance row closes: RT-10, CF-08 and
-REL-03 retain their remaining criteria. Counts stay **30 complete / 28 open**.
+REL-03 retain their remaining criteria. Counts stay **32 complete / 26 open**.
 Desktop remains complete by user decision; platform checks remain waived.
 
 <a id="codex-direct-vite-budgets-2026-10-05"></a>
@@ -1655,7 +1655,7 @@ verified. The final CLI JSON matrix passes **54/54** after three multi-process
 cases adopt the existing 30-second integration allowance; the initial timeout
 failures are recorded. See the [full evidence and limits](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
 CLI receipts/default scaffold integration and other CF-08 criteria remain open.
-Counts remain **30 complete / 28 open**; Desktop checks remain waived.
+Counts remain **32 complete / 26 open**; Desktop checks remain waived.
 
 <a id="codex-budget-receipts-2026-10-05"></a>
 ### Codex signed budget receipts and default scaffold (2026-10-05)
@@ -1676,7 +1676,7 @@ installed-package gate passes at `/tmp/cossack-local-pack-gZdSQv`, including
 selected-target signed CLI diagnostics, direct limits and privacy. A read-only
 subagent found no actionable defects; coordinator owns all implementation.
 See [full evidence and limitations](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
-No parent task closes: CF-08 remains open. Counts stay **30 complete / 28 open**.
+No parent task closes: CF-08 remains open. Counts stay **32 complete / 26 open**.
 Desktop is complete with remaining platform checks waived. No blocked work.
 
 <a id="codex-custom-config-watch-2026-10-05"></a>
@@ -1701,7 +1701,7 @@ nested selected-environment CLI reuse, direct explicit config paths and prompt
 watch rejection. Initial explicit-path acceptance exposed the page binding
 reader's missing option; it was fixed and combined checks rerun successfully.
 See [evidence and limits](./release-0.9.0-verification-archive.md#codex-custom-config-watch-2026-10-05).
-CF-08 remains open; **30 complete / 28 open**, no blocked work. Desktop remains
+CF-08 remains open; **32 complete / 26 open**, no blocked work. Desktop remains
 complete with platform checks waived.
 
 Installed acceptance also found and repaired `cossack build` relying on the
@@ -1735,7 +1735,7 @@ for CLI results, the initial timeout failures and platform/scope limits.
 Independent auxiliary auditing confirms the command currently deploys only the
 primary Worker. Its explicit policy/target follow-up is recorded in the
 [detailed plan](./release-0.9.0-plan.md#codex-local-startup-plan-2026-10-05).
-No parent task closes. CF-08 remains open; counts remain **30 complete / 28 open**.
+No parent task closes. CF-08 remains open; counts remain **32 complete / 26 open**.
 Desktop remains complete by user decision, with remaining platform checks waived.
 
 <a id="codex-auxiliary-budgets-2026-10-05"></a>
@@ -1754,7 +1754,7 @@ initial native failures are recorded in the
 These policies do not upload auxiliary Workers or add authenticated multi-Worker
 receipts. Failed budgeted Vite builds with auxiliary redirects retain generic
 build failures; successful builds receive fresh CLI measurements. CF-08 remains
-open. Counts stay **30 complete / 28 open**. Desktop is complete by user decision;
+open. Counts stay **32 complete / 26 open**. Desktop is complete by user decision;
 remaining Desktop platform checks remain waived.
 
 <a id="codex-runtime-receipt-identity-2026-10-05"></a>
@@ -1771,5 +1771,15 @@ evidence cannot authorize reuse or turn an unavailable metric into zero.
 Verified: **1,926 framework tests / 102 files**, **65 affected CLI tests / 6 files**, root/framework typechecks, declarations and changed-package installed startup/custom-config acceptance. See [verification and limitations](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
 CF-08 remains open for authenticated aggregate receipts, broader module graphs,
 provider startup, production source maps and remote logs. No release task closes;
-counts remain **30 complete / 28 open**. Desktop remains complete with its
+counts remain **32 complete / 26 open**. Desktop remains complete with its
 platform checks waived.
+
+<a id="codex-rt12-rt27-complete-2026-10-05"></a>
+### Codex: RT-12 and RT-27 complete (2026-10-05)
+
+Both tasks meet their full criteria. Core: 100 tests/6 files; framework: 87/8;
+CLI localization/static ownership: 45/3; MCP: 19/1. Generated production Node
+and Cloudflare ownership: both cases passed. Root/core/framework typechecks,
+framework declaration build and changed-package installed localization acceptance
+passed. [Criteria, results and limits](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05).
+Release: **32 complete / 26 open**. Desktop remains complete with its checks waived.

@@ -12,7 +12,7 @@ Cossack ships with a Laravel-inspired localization system: JSON translation file
 Generate the default catalog:
 
 ```sh
-npx cossack lang publish
+pnpm exec cossack lang publish
 ```
 
 This creates `src/lang/en.json` and **automatically wires** everything else:
@@ -68,8 +68,8 @@ This is **off by default** because it can affect caching and SEO (every visitor 
 ## Adding locales
 
 ```sh
-npx cossack lang add es    # creates src/lang/es.json with empty values
-npx cossack lang add fr    # creates src/lang/fr.json
+pnpm exec cossack lang add es    # creates src/lang/es.json with empty values
+pnpm exec cossack lang add fr    # creates src/lang/fr.json
 ```
 
 Fill in the translations, then switch at runtime:
@@ -295,3 +295,79 @@ export const template = `
 | `cossack lang publish --locale=es` | Create `src/lang/es.json`, seeded from `en.json`'s keys. |
 
 Both honor `--force` (overwrite) and `--dry-run` (preview without writing).
+
+
+## Check translations before building
+
+Use the same selected default locale as your app. It defaults to `en`:
+
+```sh
+pnpm exec cossack lang extract --locale=en --json
+pnpm exec cossack lang check --locale=en --json
+pnpm exec cossack lang types --locale=en
+```
+
+`extract` reads source files under `src` and catalogs under `src/lang`. It reports
+literal `__()` keys with a project-relative file, line and column. It recognizes
+the framework global, imports from core/framework (including named aliases),
+namespace calls, and local named or star reexports. It skips unrelated object
+methods and shadowed helpers. Source code is parsed; it is never executed.
+
+Dynamic keys such as `__(key)` and interpolated template keys remain explicit
+unresolved calls. Dynamic parameter objects produce a separate warning. `extract`
+returns the inventory even when catalog errors exist; use `check` to enforce
+validation in CI. Each JSON command emits the standard versioned result envelope.
+Catalog text and parser exception text are omitted from the result.
+
+`check` fails for missing default/locale keys, empty translations, invalid JSON,
+missing call parameters, renamed placeholders, inconsistent plural variants, and
+invalid source syntax. A missing locale key reports the default fallback locale;
+it remains an error even though the runtime can display the fallback. Extra keys
+and keys with no static use produce warnings. When dynamic keys exist, unused-key
+warnings are marked uncertain. Different languages can use different numbers of
+plural forms (one to six). Every variant must preserve the same placeholders,
+and plural entries require a numeric `count`. Placeholder casing is normalized
+because the runtime supports `:Name` and `:NAME` with a `name` parameter.
+
+Analysis is bounded to 4,096 source/catalog files, 1 MiB per file, 16 MiB total,
+and 16,384 directory entries. Symlinks are refused. Unsupported dynamic calls
+need an explicit review; the checker cannot prove which keys they use.
+
+## Generate translation types
+
+`types` checks the catalogs, then writes `.cossack/translations.d.ts`. Include
+that file in the application's TypeScript project alongside the existing inputs:
+
+```json
+{
+  "include": ["src", ".cossack/**/*.d.ts"]
+}
+```
+
+The generated declaration augments `CossackTranslationRegistry` from
+`@cossackframework/core`. Imported and framework-global `__()` calls then reject
+unknown keys and missing required parameters. Keys that contain full sentences
+remain valid literal keys. An app without a registered catalog keeps arbitrary
+string keys and optional parameter maps.
+
+```ts
+// Catalog: { "welcome": "Hello :name", "apples": ":count apple|:count apples" }
+__('welcome', { name: 'Sam' });
+__('apples', { count: 2 });
+// Type errors after generation:
+__('welcome');
+__('unknown');
+__('apples', { count: '2' });
+```
+
+Rerun `types` when catalog contracts change. Generated files with the command's
+ownership header can be updated. An existing file without that header requires
+`--force`; symlink output is refused. `--dry-run` validates and reports the target
+without writing it. The `check` and `extract` commands always remain read-only.
+Use `--locale=fr` when `fr` is the app's default and fallback language.
+
+Local agents can call MCP `inspect_project` with `scope: "localization"`,
+`locale: "en"`, and `check: true`. It uses the same extraction and diagnostics
+as `lang check`, without running project modules or writing generated files.
+Catalog text is omitted from both JSON reports. Dynamic keys remain warnings
+that require an explicit application check.

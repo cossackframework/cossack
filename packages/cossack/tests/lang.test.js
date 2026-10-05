@@ -270,3 +270,72 @@ describe('lang publish auto-wires wrangler.jsonc', () => {
     expect(readFile('wrangler.jsonc')).toContain('"APP_LOCALE": "es"');
   });
 });
+
+describe('lang analysis and generated types', () => {
+  function localizationFixture() {
+    writeFile('src/lang/en.json', JSON.stringify({ welcome: 'Hello :name', apples: ':count apple|:count apples' }));
+    writeFile('src/lang/es.json', JSON.stringify({ welcome: 'Hola :Name', apples: ':count manzana|:count manzanas' }));
+    writeFile('src/page.ts', "__('welcome', { name: 'Sam' }); __('apples', { count: 2 });");
+  }
+  it('checks catalogs and extracts locations without writing project files', async () => {
+    localizationFixture();
+    expect(await langCommand(['check'], ctx)).toBe(0);
+    expect(await langCommand(['extract'], ctx)).toBe(0);
+    expect(fs.existsSync(path.join(tmp, '.cossack'))).toBe(false);
+  });
+  it('generates the registry, updates owned output and requires numeric plural counts', async () => {
+    localizationFixture();
+    expect(await langCommand(['types'], ctx)).toBe(0);
+    expect(readFile('.cossack/translations.d.ts')).toContain('interface CossackTranslationRegistry');
+    expect(readFile('.cossack/translations.d.ts')).toContain('"count": number');
+    expect(readFile('.cossack/translations.d.ts')).toContain('"name": string | number');
+    expect(await langCommand(['types'], ctx)).toBe(0);
+  });
+  it('types dry-run writes nothing', async () => {
+    localizationFixture();
+    ctx.dryRun = true;
+    expect(await langCommand(['types'], ctx)).toBe(0);
+    expect(fs.existsSync(path.join(tmp, '.cossack'))).toBe(false);
+  });
+  it('does not generate a registry after catalog errors', async () => {
+    localizationFixture();
+    writeFile('src/lang/es.json', JSON.stringify({ welcome: 'Hola :person' }));
+    expect(await langCommand(['check'], ctx)).toBe(1);
+    expect(await langCommand(['types'], ctx)).toBe(1);
+    expect(fs.existsSync(path.join(tmp, '.cossack'))).toBe(false);
+  });
+  it('preserves unowned output unless explicitly forced and refuses symlink output', async () => {
+    localizationFixture();
+    writeFile('.cossack/translations.d.ts', 'USER OWNED');
+    expect(await langCommand(['types'], ctx)).toBe(1);
+    expect(readFile('.cossack/translations.d.ts')).toBe('USER OWNED');
+    ctx.force = true;
+    expect(await langCommand(['types'], ctx)).toBe(0);
+    fs.unlinkSync(path.join(tmp, '.cossack/translations.d.ts'));
+    writeFile('outside.d.ts', 'PRIVATE');
+    fs.symlinkSync(path.join(tmp, 'outside.d.ts'), path.join(tmp, '.cossack/translations.d.ts'));
+    expect(await langCommand(['types'], ctx)).toBe(1);
+    expect(readFile('outside.d.ts')).toBe('PRIVATE');
+  });
+  it('rejects locale traversal for all command paths', async () => {
+    ctx.flags.locale = '../escaped';
+    for (const sub of ['publish', 'add', 'check', 'extract', 'types']) expect(await langCommand([sub], ctx)).toBe(1);
+    expect(fs.existsSync(path.join(tmp, 'src/escaped.json'))).toBe(false);
+  });
+  it('emits structured analysis diagnostics with source locations and no translation values', async () => {
+    localizationFixture();
+    writeFile('src/page.ts', "__('welcome'); __(dynamic); __('unknown');");
+    ctx.flags.json = true;
+    const original = console.log;
+    const messages = [];
+    console.log = value => messages.push(value);
+    try { expect(await langCommand(['check'], ctx)).toBe(1); }
+    finally { console.log = original; }
+    const envelope = JSON.parse(messages[0]);
+    expect(envelope.schemaVersion).toBe(1);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.diagnostics).toContainEqual(expect.objectContaining({ code: 'COSSACK_LANG_PARAMETERS_MISSING', file: 'src/page.ts', line: 1 }));
+    expect(envelope.data.unresolved).toHaveLength(1);
+    expect(JSON.stringify(envelope)).not.toContain('Hello :name');
+  });
+});

@@ -12,6 +12,7 @@ export async function writeNavigationOwnershipAcceptance(root) {
   await write('src/bootstrap/middlewares.ts', `export default [async(c,next)=>{
     const user={id:c.req.query('viewer')??'alice'};
     c.set('user',user);
+    c.set('ownership.request',crypto.randomUUID());
     c.set('cossack.captureRealtimeIdentity',async()=>({version:1,provider:'fixture.session',data:{reference:user.id}}));
     await next();
   }];`);
@@ -30,6 +31,66 @@ export async function writeNavigationOwnershipAcceptance(root) {
       props={slot:''}; @ClientStore() draft={text:''};
       render(){return html\`<input id=\${this.props.slot} .value=\${this.draft.text}
         @input=\${(event:Event)=>{this.draft.text=(event.target as HTMLInputElement).value;}}>\`;}
+    }
+  `);
+  await write('src/OwnershipProbe.ts', `
+    import {CossackService,Service,Server,getServiceMetadata} from '@cossackframework/core';
+    export const disposalAudit:Array<{trace:string,marker:string,viewer:string|undefined,request:string,kind:string}>=[];
+    @Service({scope:'transient'}) export class ProbeService extends CossackService {
+      marker=crypto.randomUUID();
+      @Server() async snapshot(){
+        const before={marker:this.marker,viewer:this.user?.id,request:this.c.get('ownership.request' as any),
+          envMatches:this.env===this.c.env,scope:getServiceMetadata(ProbeService)?.scope};
+        await new Promise(resolve=>setTimeout(resolve,30));
+        return {before,after:{marker:this.marker,viewer:this.user?.id,request:this.c.get('ownership.request' as any),envMatches:this.env===this.c.env}};
+      }
+      async onDispose(){
+        if(typeof window!=='undefined')return;
+        await new Promise(resolve=>setTimeout(resolve,20));
+        disposalAudit.push({trace:this.c.req.query('trace')??'',marker:this.marker,viewer:this.user?.id,
+          request:this.c.get('ownership.request' as any),kind:'probe'});
+        if(this.c.req.query('cleanupFailure')==='yes')throw new Error('deliberate service cleanup failure');
+      }
+    }
+    @Service() export class ProbeSibling extends CossackService {
+      marker=crypto.randomUUID();
+      async onDispose(){
+        if(typeof window!=='undefined')return;
+        await new Promise(resolve=>setTimeout(resolve,20));
+        disposalAudit.push({trace:this.c.req.query('trace')??'',marker:this.marker,viewer:this.user?.id,
+          request:this.c.get('ownership.request' as any),kind:'sibling'});
+      }
+    }
+  `);
+  await write('src/pages/probe/layout.ts', `
+    import {Cossack,Page,Inject} from '@cossackframework/core';
+    import {html} from '@cossackframework/renderer';import {ProbeService,ProbeSibling} from '../../OwnershipProbe';
+    @Page({transport:'http',services:[ProbeService,ProbeSibling]}) export default class ProbeLayout extends Cossack {
+      @Inject(ProbeService) service!:ProbeService;
+      render(){return html\`<section data-probe-parent=\${this.service.marker}>\${this.children}</section>\`;}
+    }
+  `);
+  await write('src/pages/probe/nested/layout.ts', `
+    import {Page} from '@cossackframework/core';import ProbeLayout from '../layout';import {ProbeService} from '../../../OwnershipProbe';
+    @Page({transport:'http',services:[ProbeService]}) export default class NestedProbeLayout extends ProbeLayout {}
+  `);
+  await write('src/pages/probe/nested/index.ts', `
+    import {Cossack,Page,Inject,State,getServiceMetadata} from '@cossackframework/core';
+    import {html} from '@cossackframework/renderer';import NestedProbeLayout from './layout';
+    import {ProbeService,ProbeSibling} from '../../../OwnershipProbe';
+    @Page({transport:'http'}) export default class ProbePage extends Cossack {
+      @Inject(ProbeService) service!:ProbeService; @Inject(ProbeSibling) sibling!:ProbeSibling; @State() result:any;
+      async init(){this.result={snapshot:await this.service.snapshot(),sibling:this.sibling.marker,
+        declared:Reflect.getMetadata('page:options',NestedProbeLayout).services.map((token:any)=>
+          ({token:token===ProbeService?'ProbeService':'unexpected',scope:getServiceMetadata(token)?.scope}))};}
+      render(){return html\`<pre id="ownership-probe">\${JSON.stringify(this.result)}</pre>\`;}
+    }
+  `);
+  await write('src/pages/api/ownership-audit.ts', `
+    import {Cossack,Page} from '@cossackframework/core';import {disposalAudit} from '../../OwnershipProbe';
+    @Page({transport:'http'}) export default class OwnershipAudit extends Cossack {
+      get(){const traces=new Set((this.c.req.query('traces')??'').split(','));
+        return this.c.json(disposalAudit.filter(entry=>traces.has(entry.trace)));}
     }
   `);
   await write('src/App.ts', `
@@ -137,6 +198,60 @@ export async function checkNavigationOwnershipBrowser(browser, origin) {
   const check = async label => { for (const id of fields) await browserExpect(page.locator('#'+id)).toHaveValue(label ? label+' '+id : ''); };
   const ids = async () => [await page.locator('#root-service-id').textContent(),await page.locator('#layout-service-id').textContent()];
   try {
+    // Overlapping production SSR requests must retain their own service facilities
+    // after awaits, and finish every service hook before publishing the response.
+    const traces = ['alice','bob'].map(viewer=>({viewer,trace:crypto.randomUUID()}));
+    const probes = await Promise.all(traces.map(async ({viewer,trace})=>{
+      const response=await page.request.get(origin+'/probe/nested?'+new URLSearchParams({viewer,trace,cleanupFailure:'yes'}));
+      expect(response.status()).toBe(200);
+      const html=await response.text();
+      return page.evaluate(html=>{
+        const document=new DOMParser().parseFromString(html,'text/html');
+        return {result:JSON.parse(document.querySelector('#ownership-probe').textContent),
+          owners:[...document.querySelectorAll('[data-probe-parent]')].map(node=>node.getAttribute('data-probe-parent'))};
+      },html);
+    }));
+    const auditResponse=await page.request.get(origin+'/api/ownership-audit?'+new URLSearchParams({traces:traces.map(x=>x.trace).join(',')}));
+    expect(auditResponse.status()).toBe(200);
+    const audit=await auditResponse.json();
+    for(let index=0;index<probes.length;index++){
+      const {result,owners}=probes[index]; const {before,after}=result.snapshot;
+      expect(before).toMatchObject({viewer:traces[index].viewer,envMatches:true,scope:'transient'});
+      expect(after).toEqual({marker:before.marker,viewer:before.viewer,request:before.request,envMatches:true});
+      expect(result.declared).toEqual([{token:'ProbeService',scope:'transient'}]);
+      expect(owners).toHaveLength(2); expect(owners[0]).not.toBe(owners[1]); expect(before.marker).toBe(owners[1]);
+      const completed=audit.filter(entry=>entry.trace===traces[index].trace);
+      expect(completed).toHaveLength(3);
+      expect(completed.map(entry=>entry.marker).sort()).toEqual([...owners,result.sibling].sort());
+      for(const entry of completed)expect(entry).toMatchObject({viewer:before.viewer,request:before.request});
+    }
+    expect(probes[0].result.snapshot.before.request).not.toBe(probes[1].result.snapshot.before.request);
+    expect(probes[0].owners.some(marker=>probes[1].owners.includes(marker))).toBe(false);
+    const manifestResponse=await page.request.get(origin+'/cossack-routes.json');
+    expect(manifestResponse.status()).toBe(200);
+    const manifest=await manifestResponse.json();
+    const ownerRouteId=manifest.filePathToId['/src/pages/probe/nested/layout.ts'];
+    expect(ownerRouteId).toBeTruthy();
+    const rpcTraces=traces.map(({viewer})=>({viewer,trace:crypto.randomUUID()}));
+    const rpcSnapshots=await Promise.all(rpcTraces.map(async({viewer,trace})=>{
+      const response=await page.request.post(origin+'/crpc?'+new URLSearchParams({viewer,trace}),{
+        headers:{origin},data:{service:{ownerRouteId,slot:'0'},action:'snapshot',payload:[],state:{}}});
+      expect(response.status()).toBe(200);
+      return (await response.json())._cossack_return;
+    }));
+    const rpcAudit=await (await page.request.get(origin+'/api/ownership-audit?'+new URLSearchParams({traces:rpcTraces.map(x=>x.trace).join(',')}))).json();
+    for(let index=0;index<rpcSnapshots.length;index++){
+      const {before,after}=rpcSnapshots[index];
+      expect(before).toMatchObject({viewer:rpcTraces[index].viewer,envMatches:true,scope:'transient'});
+      expect(after).toEqual({marker:before.marker,viewer:before.viewer,request:before.request,envMatches:true});
+      const completed=rpcAudit.filter(entry=>entry.trace===rpcTraces[index].trace);
+      expect(completed).toHaveLength(3);
+      expect(completed.some(entry=>entry.marker===before.marker)).toBe(true);
+      expect(new Set(completed.map(entry=>entry.marker)).size).toBe(3);
+      for(const entry of completed)expect(entry).toMatchObject({viewer:before.viewer,request:before.request});
+    }
+    expect(rpcSnapshots[0].before.request).not.toBe(rpcSnapshots[1].before.request);
+    expect(rpcSnapshots[0].before.marker).not.toBe(rpcSnapshots[1].before.marker);
     for (const method of ['GET','POST']) {
       const response = await page.request.fetch(origin+'/api/inherited', {method});
       expect(response.status()).toBe(200);

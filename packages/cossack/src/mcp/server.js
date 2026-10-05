@@ -25,13 +25,14 @@ export async function startMcpServer(project, options = {}) {
   const handle = serveStdio(() => {
     const server = new McpServer({ name: 'cossack', version: versions.cli });
     server.registerTool('inspect_project', {
-      description: 'Inspect static Cossack routes, Cloudflare configuration or cache/rate-limit providers in the bound project. No build, module execution or remote readiness check.',
+      description: 'Inspect static Cossack routes, Cloudflare configuration localization catalogs or cache/rate-limit providers in the bound project. No build, module execution or remote readiness check.',
       inputSchema: z.object({
-        scope: z.enum(['routes', 'cloudflare', 'providers']),
+        scope: z.enum(['routes', 'cloudflare', 'providers', 'localization']),
         environment: z.string().min(1).max(128).optional(),
         route: z.string().min(1).max(2048).optional(),
+        locale: z.string().min(1).max(64).optional(),
         check: z.boolean().default(false),
-      }).strict().refine(value => value.route === undefined || value.scope === 'routes' && !value.check, { message: 'route requires routes inspection without check.' }),
+      }).strict().refine(value => value.route === undefined || value.scope === 'routes' && !value.check, { message: 'route requires routes inspection without check.' }).refine(value => value.locale === undefined || value.scope === 'localization', { message: 'locale requires localization inspection.' }),
       outputSchema: toolResultSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async (input, ctx) => {

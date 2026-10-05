@@ -352,3 +352,18 @@ it.each(['cancel', 'close', 'signal'])('releases busy stdio documentation worker
     await client.close();
   }
 }, 30000);
+
+it('shares localization diagnostics with the CLI without executing source or exposing catalog values', async () => {
+  const root = await fixture();
+  await fs.mkdir(path.join(root, 'src/lang'));
+  await fs.writeFile(path.join(root, 'src/lang/en.json'), JSON.stringify({ welcome: 'private catalog sentinel :name' }));
+  await fs.writeFile(path.join(root, 'src/pages/index.ts'), `import { __ } from '@cossackframework/core'; throw new Error('must not execute'); __('welcome', { name: 'Ada' }); __('missing');`);
+  const { client } = await connect(root);
+  const result = await client.callTool({ name: 'inspect_project', arguments: { scope: 'localization', locale: 'en', check: true } });
+  const expected = await inspectProject(root, { scope: 'localization', locale: 'en', check: true });
+  expect(result.structuredContent).toMatchObject(expected);
+  expect(result.isError).toBe(true);
+  expect(expected.diagnostics.some(item => item.severity === 'error')).toBe(true);
+  expect(JSON.stringify(result)).not.toContain('private catalog sentinel');
+  expect(await fs.readdir(root)).toEqual(expect.not.arrayContaining(['.cossack']));
+}, 30_000);

@@ -14,6 +14,24 @@ function gate() {
 afterEach(() => vi.restoreAllMocks());
 
 describe('awaitable cleanup', () => {
+  it('continues sibling and child disposal when reading a service hook throws', async () => {
+    const failure = new Error('hook getter');
+    const finished = vi.fn();
+    @Service()
+    class Broken { get onDispose(): () => void { throw failure; } }
+    @Service()
+    class Resource { async onDispose() { await Promise.resolve(); finished(); } }
+    const root = new ServiceScope(undefined, [Broken, Resource]);
+    new ServiceScope(root, [Resource]);
+    const error = await root.disposeAsync().catch(error => error);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors).toHaveLength(1);
+    expect(error.errors[0].cause).toBe(failure);
+    expect(finished).toHaveBeenCalledTimes(2);
+    await expect(root.disposeAsync()).rejects.toBeInstanceOf(AggregateError);
+    expect(finished).toHaveBeenCalledTimes(2);
+  });
+
   it('waits for child hooks started by an earlier synchronous disposal, exactly once', async () => {
     const released = gate();
     const finished = vi.fn();

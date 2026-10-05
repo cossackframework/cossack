@@ -64,23 +64,26 @@ context API is required.
 
 When a layout leaves the client route stack, `destroy()` disposes its owned
 scope. Disposal removes service subscriptions, recursively disposes child
-scopes, and invokes each optional `onDispose()` hook once. SSR and service RPC
-root scopes use synchronous disposal in request-handler `finally` blocks.
+scopes, and invokes each optional `onDispose()` hook once. SSR and ordinary
+component/service RPC await disposal in request-handler cleanup.
 Component RPC waits for component and scope cleanup; a streamed result retains
 the scope until completion, failure, or cancellation. `dispose()` is synchronous;
 an async `onDispose()` hook is started and rejection-logged, but navigation and
 request completion do not wait for it. `disposeAsync()` waits for all child and
 service hooks, including cleanup started earlier by `dispose()`, and reports
-failures with an `AggregateError`. Successful completed child disposals are not
+failures with an `AggregateError`. A throwing hook accessor is also collected;
+it does not prevent other services or child scopes from being cleaned.
+Successful completed child disposals are not
 retained by a long-lived browser root.
 
 `destroyAsync()` waits for component and descendant cleanup, then releases an
 owned scope. Independent cleanup still runs if a hook throws. Repeated destroy
 and dispose calls do not repeat hooks. SSG uses these awaitable operations before
 returning HTML; failed cleanup fails generation and retains a preceding render
-error as the cause. Current browser navigation, SSR, and explicit service RPC
-disposal remain nonblocking; use synchronous cleanup when those callers require
-ordering. Component RPC uses awaitable cleanup.
+error as the cause. SSR logs cleanup failures and continues remaining cleanup.
+Browser callers using `destroy()` start cleanup without awaiting it; explicit
+callers can use `destroyAsync()` for completion ordering. Streamed and native-body
+RPC keep their scope until the response completes, fails, or is cancelled.
 
 Duplicate entries in one `services` array and entries lacking `@Service()` are
 configuration errors. Service ownership is never inferred from the first

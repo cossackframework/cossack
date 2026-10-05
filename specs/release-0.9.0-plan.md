@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 30 complete and 28 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 32 complete and 26 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -92,10 +92,10 @@ Add focused tests during each group, and run broader gates after integration.
 
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
-| 1. Finish current runtime work | RT-01, RT-12 | Distributed SSE works through generated apps and retains request ownership. |
+| 1. Finish current runtime work | RT-01 | Distributed SSE works through generated apps and retains request ownership. |
 | 2. Establish shared metadata and diagnostics | RT-24, RT-29 | Tools and types describe the behavior that the compiler and runtime execute. |
 | 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
-| 4. Complete data and content features | RT-15 through RT-17, RT-20 through RT-22, RT-26, RT-27 | Existing features have clear provider contracts and complete failure behavior. |
+| 4. Complete data and content features | RT-15 through RT-17, RT-20 through RT-22, RT-26 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
@@ -117,6 +117,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="cli-05"></a>CLI-05 | [Complete application recipes](./release-0.9.0-plan-archive.md#cli-05) |
 | <a id="cli-06"></a>CLI-06 | [Structured upgrades](./release-0.9.0-plan-archive.md#cli-06) |
 | <a id="cli-07"></a>CLI-07 | [Shared local MCP tools and installed acceptance](./release-0.9.0-plan-archive.md#codex-cli07-final-plan-2026-10-04) |
+| <a id="rt-12"></a>RT-12 | [DI errors, ownership, and cleanup](./release-0.9.0-plan-archive.md#codex-rt-12-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05) |
+| <a id="rt-27"></a>RT-27 | [Localization tooling](./release-0.9.0-plan-archive.md#codex-rt-27-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05) |
 | <a id="rt-02"></a>RT-02 | [Validated server actions](./release-0.9.0-plan-archive.md#rt-02) |
 | <a id="rt-03"></a>RT-03 | [Observable server resources](./release-0.9.0-plan-archive.md#rt-03) |
 | <a id="rt-04"></a>RT-04 | [State, store, and computed diagnostics](./release-0.9.0-plan-archive.md#rt-04) |
@@ -581,71 +583,6 @@ requests. RPC failures do not consume or lose unrelated state. Passwords and
 tokens never enter serialized old input. Concurrent requests and rotation have
 documented behavior. Dependencies: RT-01, RT-02, and RT-13.
 
-<a id="rt-12"></a>
-### RT-12: DI errors, ownership, and cleanup
-
-Purpose: Agents must know where a service is declared, which scope owns it, and
-when it is destroyed. Missing injections and accidental global request state
-must produce useful explanations.
-
-Baseline: Explicit layout scopes, stable service slots, hydration, and awaitable
-cleanup exist. SSG and component RPC use that cleanup. SSR, navigation, and
-explicit service RPC still have different completion behavior.
-
-Approach: Add resolution paths to errors and inspection. Show the requested
-service, requesting component, active layout ancestry, and available declarations.
-Document global singleton versus layout/request scope. Finish cleanup ordering
-where the owning operation needs to await it. Preserve nested shadowing and
-separate service state from component state.
-
-Start in core `shared/container.ts`, `service-scope.ts`, `service-bootstrap.ts`,
-`cossack.ts`, framework `router.ts`, and `specs/service.md`.
-
-Done when: Concurrent users cannot share request facilities. Missing declarations
-show an actionable owner location. Leaving a layout cleans its services once.
-Failures in one hook do not skip others. Inspection matches actual ownership.
-Dependencies: RT-01, RT-09, and CLI-04.
-
-Codex ownership-inspection checkpoint (2026-10-05): `cossack inspect routes`
-now keeps the authored service expressions and adds `serviceOwnership`, resolved
-with a static TypeScript source resolver. Static identifiers and property access
-follow aliases, re-exports and inherited layout decorators to a class declaration
-path and line. The resolver parses but never imports or executes project modules.
-Dynamic expressions and unresolved decorators stay explicitly unknown. CLI docs
-and route explanations show the resolved class identity or uncertainty reason.
-Each token reports whether an imported core `@Service()` decorator is declared,
-missing, or unknown; this is static syntax evidence only. All 88 tests across five
-focused route/inspection suites pass, as do the two
-route-related CLI subprocess tests and root `pnpm tsc --noEmit`. They cover
-alias/re-export identity, inherited layout options, dynamic unknown status and a
-throwing static initializer that must not run. This does not prove decorator
-metadata execution or lifecycle behavior, or verify browser navigation ownership;
-RT-12 remains open. The complete CLI package suite has not passed: parallel
-execution triggered subprocess/test timeouts, and the serial retry exceeded an
-existing five-second CLI assertion before it was stopped. Rerun it during REL-03
-and resolve any failures that reproduce without load contention.
-
-Codex navigation-ownership checkpoint (2026-10-05): the first generated browser
-run reached authenticated SSE in both Node and Cloudflare but received HTTP 409.
-The synthetic-user fixture had not supplied the required
-`captureRealtimeIdentity` provider; the transport correctly failed closed. The
-fixture now supplies a test-only identity descriptor. The focused generated
-acceptance passes both runtime cases, including layout/component state ownership,
-cleanup-once behavior, SSE open/closure, WebSocket open/target replacement and
-stale socket cleanup. This fixture does not authenticate a real user. Runtime
-metadata/lifecycle behavior and the full CLI/release gates remain open, so this
-checkpoint does not close RT-12. See the
-[browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
-
-Codex construction-lifecycle checkpoint (2026-10-05): if a later service
-constructor or hydration step throws while a layout scope is being created,
-the partial scope now disposes earlier instances before rethrowing the primary
-failure. A parent scope tracks and awaits any asynchronous cleanup that began
-during rollback. The service guide describes this behavior. The focused core
-cleanup suite passes all 8 tests and root typechecking passes. This does not
-close RT-12; runtime metadata/lifecycle combinations and the full CLI/release
-gates remain open.
-
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
 
@@ -943,31 +880,6 @@ Done when: Provider tests exercise authorized CRUD, denied cross-user access,
 expired access, cancellation, and metadata. Large transfers stay streamed.
 Published imports replace demo-relative documentation imports. Dependencies:
 RT-14, RT-24, RT-25, and CF-04.
-
-<a id="rt-27"></a>
-### RT-27: Localization tooling
-
-Purpose: Missing keys and mismatched placeholders must fail during development,
-not appear as broken text after deployment. Agents need to find untranslated
-content and use the installed catalog correctly.
-
-Baseline: Runtime localization, per-request locale scope, pluralization, and
-language commands exist. Extraction, cross-catalog checks, and generated key
-types need completion.
-
-Approach: Extract statically discoverable translation calls with source locations.
-Report dynamic keys as unresolved instead of inventing them. Compare locale
-catalogs for missing/unused keys and placeholder differences. Generate key and
-parameter types from the selected catalog contract. Preserve intentional string
-keys and existing pluralization behavior.
-
-Start in core `shared/i18n.ts`, framework locale/context modules, CLI
-`commands/lang.js`, and `docs/localization.md`.
-
-Done when: Fixtures cover missing keys, renamed placeholders, plural forms,
-dynamic keys, and fallback locales. Generated types reject an unknown key or
-missing parameter. Parallel SSR/SSG renders retain the correct locale.
-JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.
 
 <a id="rt-29"></a>
 ### RT-29: Framework-faithful test utilities

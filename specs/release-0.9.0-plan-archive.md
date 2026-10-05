@@ -5196,3 +5196,106 @@ Desktop development was the last runtime gap. Its native gate now covers reload,
 syntax repair, configuration restarts, shutdown, opaque responses, cancellation
 and installed reader parity. Keep the original criteria and prior regressions.
 Installed OS integration and the broader release matrix remain REL-03 work.
+
+<a id="codex-rt-12-completed-2026-10-05"></a>
+## Codex: RT-12 completed context (2026-10-05)
+
+This section preserves the initial purpose, approach and prior partial checkpoints.
+Current status is complete; [final evidence](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05) supersedes historical open notes.
+
+<a id="rt-12"></a>
+### RT-12: DI errors, ownership, and cleanup
+
+Purpose: Agents must know where a service is declared, which scope owns it, and
+when it is destroyed. Missing injections and accidental global request state
+must produce useful explanations.
+
+Baseline: Explicit layout scopes, stable service slots, hydration, and awaitable
+cleanup exist. SSG and component RPC use that cleanup. SSR, navigation, and
+explicit service RPC still have different completion behavior.
+
+Approach: Add resolution paths to errors and inspection. Show the requested
+service, requesting component, active layout ancestry, and available declarations.
+Document global singleton versus layout/request scope. Finish cleanup ordering
+where the owning operation needs to await it. Preserve nested shadowing and
+separate service state from component state.
+
+Start in core `shared/container.ts`, `service-scope.ts`, `service-bootstrap.ts`,
+`cossack.ts`, framework `router.ts`, and `specs/service.md`.
+
+Done when: Concurrent users cannot share request facilities. Missing declarations
+show an actionable owner location. Leaving a layout cleans its services once.
+Failures in one hook do not skip others. Inspection matches actual ownership.
+Dependencies: RT-01, RT-09, and CLI-04.
+
+Codex ownership-inspection checkpoint (2026-10-05): `cossack inspect routes`
+now keeps the authored service expressions and adds `serviceOwnership`, resolved
+with a static TypeScript source resolver. Static identifiers and property access
+follow aliases, re-exports and inherited layout decorators to a class declaration
+path and line. The resolver parses but never imports or executes project modules.
+Dynamic expressions and unresolved decorators stay explicitly unknown. CLI docs
+and route explanations show the resolved class identity or uncertainty reason.
+Each token reports whether an imported core `@Service()` decorator is declared,
+missing, or unknown; this is static syntax evidence only. All 88 tests across five
+focused route/inspection suites pass, as do the two
+route-related CLI subprocess tests and root `pnpm tsc --noEmit`. They cover
+alias/re-export identity, inherited layout options, dynamic unknown status and a
+throwing static initializer that must not run. This does not prove decorator
+metadata execution or lifecycle behavior, or verify browser navigation ownership;
+RT-12 remains open. The complete CLI package suite has not passed: parallel
+execution triggered subprocess/test timeouts, and the serial retry exceeded an
+existing five-second CLI assertion before it was stopped. Rerun it during REL-03
+and resolve any failures that reproduce without load contention.
+
+Codex navigation-ownership checkpoint (2026-10-05): the first generated browser
+run reached authenticated SSE in both Node and Cloudflare but received HTTP 409.
+The synthetic-user fixture had not supplied the required
+`captureRealtimeIdentity` provider; the transport correctly failed closed. The
+fixture now supplies a test-only identity descriptor. The focused generated
+acceptance passes both runtime cases, including layout/component state ownership,
+cleanup-once behavior, SSE open/closure, WebSocket open/target replacement and
+stale socket cleanup. This fixture does not authenticate a real user. Runtime
+metadata/lifecycle behavior and the full CLI/release gates remain open, so this
+checkpoint does not close RT-12. See the
+[browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
+
+Codex construction-lifecycle checkpoint (2026-10-05): if a later service
+constructor or hydration step throws while a layout scope is being created,
+the partial scope now disposes earlier instances before rethrowing the primary
+failure. A parent scope tracks and awaits any asynchronous cleanup that began
+during rollback. The service guide describes this behavior. The focused core
+cleanup suite passes all 8 tests and root typechecking passes. This does not
+close RT-12; runtime metadata/lifecycle combinations and the full CLI/release
+gates remain open.
+
+
+<a id="codex-rt-27-completed-2026-10-05"></a>
+## Codex: RT-27 completed context (2026-10-05)
+
+This section preserves the initial purpose, approach and prior partial checkpoints.
+Current status is complete; [final evidence](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05) supersedes historical open notes.
+
+<a id="rt-27"></a>
+### RT-27: Localization tooling
+
+Purpose: Missing keys and mismatched placeholders must fail during development,
+not appear as broken text after deployment. Agents need to find untranslated
+content and use the installed catalog correctly.
+
+Baseline: Runtime localization, per-request locale scope, pluralization, and
+language commands exist. Extraction, cross-catalog checks, and generated key
+types need completion.
+
+Approach: Extract statically discoverable translation calls with source locations.
+Report dynamic keys as unresolved instead of inventing them. Compare locale
+catalogs for missing/unused keys and placeholder differences. Generate key and
+parameter types from the selected catalog contract. Preserve intentional string
+keys and existing pluralization behavior.
+
+Start in core `shared/i18n.ts`, framework locale/context modules, CLI
+`commands/lang.js`, and `docs/localization.md`.
+
+Done when: Fixtures cover missing keys, renamed placeholders, plural forms,
+dynamic keys, and fallback locales. Generated types reject an unknown key or
+missing parameter. Parallel SSR/SSG renders retain the correct locale.
+JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.

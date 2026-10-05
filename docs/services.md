@@ -180,6 +180,8 @@ export class SearchService {
 cleanup without waiting; `await scope.disposeAsync()` waits for child scopes
 and Promise-returning hooks, and rejects with an `AggregateError` if any fail.
 It also waits for cleanup already started by `dispose()`.
+If a hook throws, rejects, or fails while its property is read, disposal still
+attempts every other service hook and child scope.
 
 Components have the equivalent `destroy()` and `destroyAsync()` methods.
 Destruction releases renderer-created descendants, subscriptions, and owned
@@ -189,9 +191,12 @@ the caller needs to wait for cleanup.
 
 SSG waits for component and scoped-service cleanup before publishing a render.
 Cleanup failures fail generation; a preceding render failure is retained as
-the error's `cause`. Browser navigation and current SSR/RPC scope disposal do
-not wait for asynchronous hooks. Cleanup required before those operations
-continue must still be synchronous.
+the error's `cause`. SSR and ordinary component/service RPC await cleanup before
+completing their response. Streamed and native-body RPC responses keep services
+until the response body completes, fails, or is cancelled. SSR logs cleanup
+failures with the request ID; it still attempts the remaining cleanup.
+Browser callers using `destroy()` start cleanup without waiting. Use
+`destroyAsync()` when an explicit caller needs to wait for completion.
 
 ## Nested Layouts and Shadowing
 

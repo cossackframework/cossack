@@ -8,10 +8,6 @@ import * as path from 'path';
 import { Cossack, Page, PageOptions, createInstance, createRootServiceScope, createLayoutServiceScope } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 import {
-    setSupportedLocales,
-    setDefaultLocale,
-    __hydrateLocale,
-    registerLocale,
     getLocale,
     getLocaleCatalog,
     getSupportedLocales,
@@ -20,6 +16,7 @@ import {
 } from '@cossackframework/core';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { runWithConfig, prepareConfigStore, type ConfigFactory } from './config.js';
+import { ensureLocaleAlsWired, runWithLocale } from './i18n-context.js';
 import type { MiddlewareHandler } from 'hono';
 import { runPublicSsgRequest } from './ssg-request.js';
 import { resolveSseScopeKey } from './transports/sse.js';
@@ -76,36 +73,12 @@ class SsgFallbackApp extends Cossack {
 export { filePathToRoutePath, getModulePreloads } from './route-ids.js';
 import { filePathToRoutePath, getModulePreloads, resolvePageRouteFiles, resolveLayoutPaths, resolveStaticRoutePath } from './route-ids.js';
 
-/**
- * One-time locale setup for the SSG build. The caller resolves the locale
- * catalogs (from `virtual:cossack-lang` in the Vite SSG plugin path); this
- * function seeds core's i18n runtime so `__()` / `getLocaleCatalog()` resolve
- * the default locale during rendering.
- *
- * The rendered locale is the resolved default (or `'en'`). Per-locale static
- * output is a follow-up; today every page renders once in the default.
- */
-let ssgLocaleInitialized = false;
-function ensureSsgLocaleInitialized(catalogs: Record<string, Record<string, string>>, requestedDefault?: string): void {
-    if (ssgLocaleInitialized) return;
-    ssgLocaleInitialized = true;
+/** Resolve one render's default without changing another request's catalogs. */
+function ssgLocaleStore(catalogs: Record<string, Record<string, string>>, requestedDefault?: string) {
     const locales = Object.keys(catalogs);
-    setSupportedLocales(locales.length > 0 ? locales : [DEFAULT_LOCALE]);
-    // Resolve a default that is guaranteed to have a catalog. Prefer the
-    // passed-in locale (from config('app.locale'), which reads APP_LOCALE);
-    // otherwise the first discovered locale; only fall back to 'en' when there
-    // are no catalogs at all. This ensures the `__()` missing-key fallback
-    // chain always targets a real catalog.
     const requested = requestedDefault || DEFAULT_LOCALE;
-    const resolvedDefault = locales.includes(requested)
-        ? requested
-        : locales[0] || DEFAULT_LOCALE;
-    setDefaultLocale(resolvedDefault);
-    for (const [locale, messages] of Object.entries(catalogs)) {
-        registerLocale(locale, messages);
-    }
-    const initial = locales.length > 0 ? resolvedDefault : DEFAULT_LOCALE;
-    __hydrateLocale(initial, getLocaleCatalog(initial));
+    const locale = locales.includes(requested) ? requested : locales[0] || DEFAULT_LOCALE;
+    return { locale, messages: catalogs[locale] ?? {}, defaultLocale: locale, catalogs };
 }
 
 /**
@@ -189,21 +162,14 @@ export async function renderSsgPage(
   const envBindings: Record<string, unknown> = { APP_URL: baseUrl };
   const configStore = prepareConfigStore(configFactories ?? {}, envBindings, { requirements: configRequirements, context: { runtime: 'ssg' } });
 
-  // Seed the i18n runtime (one-time) so SSG output renders in the default
-  // locale. Done AFTER building the config store so the default locale can be
-  // read from `config('app.locale')` (which in turn reads the `APP_LOCALE` env
-  // var via `src/config/app.ts`). The catalogs are resolved by the caller from
-  // `virtual:cossack-lang`; this runs outside `runWithConfig` because it is a
-  // one-time init — we pass the resolved locale explicitly.
   const configLocale = (configStore.config.app as Record<string, unknown> | undefined)?.locale;
-  ensureSsgLocaleInitialized(
-    localeInput?.catalogs ?? {},
-    typeof configLocale === 'string' ? configLocale : localeInput?.defaultLocale,
-  );
+  const localeStore = ssgLocaleStore(localeInput?.catalogs ?? {},
+    typeof configLocale === 'string' ? configLocale : localeInput?.defaultLocale);
+  ensureLocaleAlsWired();
 
   // Wrap the entire render in the config ALS scope so any `config()` / `env()`
   // calls during bootstrap/render resolve correctly (mirrors the SSR middleware).
-  return runWithConfig(configStore, () => runPublicSsgRequest({
+  return runWithConfig(configStore, () => runWithLocale(localeStore, () => runPublicSsgRequest({
     routePath: resolveStaticRoutePath(routePath, staticParams ?? {}), pageFilePath: sourcePath,
     baseUrl, env: envBindings, middlewares: requestMiddlewares, routeMiddlewares,
   }, async (context) => {
@@ -371,7 +337,7 @@ export async function renderSsgPage(
           renderFailed ? { cause: renderError } : undefined);
       }
     }
-  }));
+  })));
 }
 
 /**

@@ -3,6 +3,7 @@ import { buildEffectiveRouteModel } from './scan-routes.js';
 import { inspectConfigurationRequirements } from './config-inspection.js';
 import { inspectDeployment } from './deployment.js';
 import { inspectProviders } from './providers-inspection.js';
+import { inspectLocalization } from './localization-service.js';
 
 /** Explain one route's effective behavior with reasons and source locations. */
 export function explainRoute(effective, route) {
@@ -124,7 +125,7 @@ export function checkRouteModel(effective) {
 }
 
 /** Inspection performs no project-module execution, build, or remote operation. */
-export async function inspectProject(root, { scope, environment = process.env.CLOUDFLARE_ENV, route, check = false }) {
+export async function inspectProject(root, { scope, environment = process.env.CLOUDFLARE_ENV, route, locale, check = false }) {
   if (scope === 'routes') {
     const effective = await buildEffectiveRouteModel(root, { environment });
     if (check) return checkRouteModel(effective);
@@ -142,6 +143,10 @@ export async function inspectProject(root, { scope, environment = process.env.CL
     const valid = !diagnostics.some(item => item.severity === 'error');
     return { ok: !check || valid, diagnostics, data: { scope, ...summary, configurationRequirements,
       readiness: { configuration: valid ? 'valid' : 'invalid', build: 'not-checked', remote: 'not-checked' } } };
+  }
+  if (scope === 'localization') {
+    const report = await inspectLocalization(root, { locale });
+    return { ok: !check || report.valid, data: { scope, ...report }, diagnostics: report.diagnostics };
   }
   if (scope === 'providers') {
     const { diagnostics, ...data } = await inspectProviders(root, environment);

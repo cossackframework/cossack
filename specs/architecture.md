@@ -75,6 +75,10 @@ breaking key migration and precise resource/operation limits.
 
 The Node-only CLI owns `inspection-service.js` and the `cossack-mcp` stdio
 entrypoint. CLI route explanations/checks and MCP calls use the same static models.
+Localization extraction, catalog checks and generated contracts share the CLI
+localization service; read-only MCP inspection reports the same diagnostics.
+Core owns the portable translation registry and scoped catalog contract. The
+framework supplies separate ALS locale scopes for SSR and each SSG render.
 Each MCP request owns an isolated worker with captured stdout/stderr, a deadline
 and termination on cancellation. No application runtime package imports the MCP
 SDK. Tool arguments cannot change the startup project root. Dependency resolution

@@ -11638,3 +11638,66 @@ Final verification for this batch:
 User-directed strategy change: defer further CF-08 budget expansion unless it
 closes a required criterion. Next batch targets full RT-12 and RT-27 acceptance,
 with exclusive implementation ownership and one combined verification run.
+
+<a id="codex-rt12-rt27-complete-2026-10-05"></a>
+### Codex: RT-12 and RT-27 completed acceptance (2026-10-05)
+
+Author: Codex. Three implementation agents owned separate core lifecycle,
+CLI/localization and generated runtime fixture files. Codex reviewed and integrated
+shared command/MCP schemas, global declaration typing and SSR/SSG locale scopes.
+
+RT-12 acceptance:
+- Concurrent requests retain separate context/user/env facilities across awaits.
+  Decorated inherited layouts, constructor/property injection, nested same-token
+  shadowing and stable service slots match static inspection declarations.
+- Missing injection diagnostics identify the requester, active owner source paths,
+  available declarations and corrective Page service declaration.
+- Layout departure disposes owned services once; SSR and explicit service RPC
+  await asynchronous cleanup. A deliberate failing native hook does not prevent
+  sibling/ancestor hooks. Throwing onDispose getters now also preserve cleanup.
+- Existing navigation/SSE/WebSocket ownership checks pass together with the new
+  concurrent SSR/RPC and runtime metadata assertions in both generated production
+  Node and Cloudflare apps. This uses a synthetic identity provider, not real auth.
+
+RT-27 acceptance:
+- One compiler-based service handles literal/global/imported/aliased/re-exported
+  calls and locations, dynamic-key/parameter uncertainty, missing/unused keys,
+  placeholder mismatches, plural contracts and fallback locale diagnostics.
+  Project modules never execute; JSON omits catalog text.
+- lang extract/check/types use versioned CLI envelopes and exit status; read-only
+  MCP localization inspection shares the same model. Dry-run types writes nothing.
+- Generated augmentation of the published core root rejects unknown keys, missing
+  parameters and wrong plural count types through imported and bare global __.
+  Apps without a generated registry retain intentional string keys.
+- Scoped catalog/default metadata replaces global SSR/SSG seeding. Parallel SSR
+  with different environment defaults and parallel SSG with different catalogs
+  (including the same locale name) retain their own locale, fallback and hydration.
+
+Final verification:
+- Core affected combined suite: 100 tests / 6 files passed.
+- Framework combined config/SSG/localization suite: 87 / 8 passed.
+- CLI localization and static ownership: 45 / 3 passed; MCP: 19 / 1 passed.
+- Generated production ownership: 2 passed (Node, Cloudflare); the other 62 tests
+  in that file were not selected, not reported as passed.
+- Root pnpm tsc --noEmit and core/framework package checks passed. Core build and
+  framework declaration build passed; modified CLI/helper JS syntax passed.
+- Packed changed core/framework/CLI once and installed into the retained fixture.
+  scripts/verify-localization-tooling.mjs passed against actual installed tarballs,
+  including generated published imported/global type acceptance. No unchanged
+  installed budget/documentation gates were rerun.
+- Initial integration tests caught a test syntax error, incorrect config factory
+  fixture shape and minified HTML quoting assertion; these were repaired. Required
+  types caught fixture implicit-any/unknown JSON typings; the corrected checks pass.
+  An initial MCP run overlapped framework dist replacement and failed 8 tests;
+  the stable-build isolated MCP run passed all 19. This was test orchestration,
+  and is not evidence for running consumers during future builds.
+
+Logs: /tmp/cossack-completion-{core-combined,framework-combined,cli-final,mcp,native,installed,root-types,core-types,framework-types}.log.
+Retained fixture: /tmp/cossack-local-pack-gZdSQv/minimal-production.
+Tarballs: /tmp/cossack-completion-tarballs/{core,framework,cli}.tgz.
+
+Limits: no full release/every-package suite, remote deployment or provider startup
+was run in this batch. Those remain REL-03/Cloudflare work; they are not missing
+RT-12/RT-27 acceptance. Desktop checks remain waived by user decision. Localized
+SSG route variants remain RT-22. Runtime transport/auth criteria remain RT-01/RT-11.
+Release count: 32 complete / 26 open; versions remain 0.8.3 until REL-04.

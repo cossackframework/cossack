@@ -1,44 +1,27 @@
 # Cossack 0.9.0 continuation notes
 
-Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
-30 of 58 release tasks are complete. 28 remain open.
-Versions stay at 0.8.3 until REL-04.
-**Codex coordinates implementation, review, acceptance and status for every
-remaining task.** The user has resumed the work directly with Codex; GLM is no
-longer the continuation owner. Preserve user-owned changes, integrate and
-verify all work, and keep task counts consistent.
-Keep this file current as work progresses.
+## Current handoff — Codex (2026-10-05)
 
-Latest Codex batch: [primary receipt runtime identity](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
-Startup reuse now binds Miniflare/workerd and the actual native executable;
-malformed fingerprints/partial size evidence decline reuse. Bounded traversal
-retains empty-directory race checks without invalidating on Wrangler's empty
-temporary directories. Initial native failures were repaired and documented.
-Final framework **1,926 / 102 files**, affected CLI **65 / 6 files**, root/framework
-types, declarations and changed-package installed startup/custom-config acceptance
-pass. This hardening closes no parent task: **30 complete / 28 open**.
+Completed **RT-12 and RT-27**. Release: **32 complete / 26 open**.
+[Full acceptance and verification](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05).
+DI ownership/lifecycle now has generated production Node/Cloudflare and static
+inspection parity evidence. Localization has extraction/check/type commands,
+read-only MCP parity, published imported/global type contracts and scoped parallel
+SSR/SSG catalogs. Core 100/6, framework 87/8, CLI 45/3, MCP 19/1 and both native
+ownership cases pass. Root/core/framework types and installed localization pass.
 
-User-directed execution strategy: finish 2–3 independent release tasks per batch,
-prefer existing feature acceptance over further budget polishing, assign exclusive
-implementation files to subagents, integrate centrally, and run relevant combined
-checks once after targeted tests. Update release records once per verified batch.
-Repeat broad/installed checks only when changes invalidate their evidence.
+Continue with bounded independent existing-feature acceptance tasks, such as
+RT-29 test utilities and RT-21 SSG diagnostics, after checking their dependencies
+and full criteria. Prefer full task closure over additional budget checkpoints.
+Use up to three implementation agents with exclusive ownership; keep shared APIs,
+integration and final checks with Codex. Run targeted tests first, combined checks
+once after stable builds, and update records once per verified batch. Never replace
+dist while consumer tests are running. Do not rerun unchanged installed gates.
 
-Next batch: **RT-12** runtime DI ownership/lifecycle acceptance and **RT-27**
-translation extraction, catalog validation, generated types and SSR/SSG locale
-isolation. Both have working runtime foundations and local acceptance paths.
-Further Cloudflare budget/module-graph/aggregate-receipt expansion is deferred
-unless it directly closes a required criterion. Auxiliary receipts/uploads,
-provider startup, native DEV faults, production maps and remote logs remain open.
-Desktop remains complete with platform checks waived. No local progress is blocked.
-
-Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
-and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
-RawInputOf and typed config subtree repairs are verified; RT-10 browser criteria
-remain open. CLI build/deploy already enforce project limits and keep raw tool
-output private. Provider startup remains unavailable locally and cannot pass a
-hard gate. Deno failure boundaries preserve authenticated compiler results and
-redact public logs. Versions/counts remain unchanged.
+No blocker for this completed batch. Broad release gates, native DEV faults,
+production maps, remote logs and provider startup remain open under their own tasks.
+Versions stay at 0.8.3 until REL-04. Preserve user-owned reports.md and .zcodeignore.
+Desktop remains completed by user decision; remaining platform checks are waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -55,7 +38,7 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 30 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 32 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.

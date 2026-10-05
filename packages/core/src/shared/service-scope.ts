@@ -310,19 +310,20 @@ export class ServiceScope {
         }
         this.subscribers.clear();
         for (const entry of this.owned.values()) {
-            const hook = entry.instance?.onDispose;
-            if (typeof hook === 'function') {
-                const failed = (cause: unknown) => {
-                    errors.push(new Error(`[Cossack] Error disposing service ${entry.serviceClass.name}:`, { cause }));
-                };
-                try {
-                    const result = hook.call(entry.instance);
-                    if (result && typeof result.then === 'function') {
-                        hooks.push(Promise.resolve(result).then(() => {}, failed));
-                    }
-                } catch (error) {
-                    failed(error);
+            const failed = (cause: unknown) => {
+                errors.push(new Error(`[Cossack] Error disposing service ${entry.serviceClass.name}:`, { cause }));
+            };
+            try {
+                // Reading an application-defined hook can itself throw. Treat
+                // that failure like a failed call and continue other services.
+                const hook = entry.instance?.onDispose;
+                if (typeof hook !== 'function') continue;
+                const result = hook.call(entry.instance);
+                if (result && typeof result.then === 'function') {
+                    hooks.push(Promise.resolve(result).then(() => {}, failed));
                 }
+            } catch (error) {
+                failed(error);
             }
         }
         this.owned.clear();
