@@ -105,6 +105,9 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
   `);
   try {await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024});}
   catch(error){throw new Error(`Generated trace types: ${error.stdout}\n${error.stderr}`);}
+  // This fixture rewrites the app's transport and entry graph between runs.
+  // Do not reuse Vite's optimized SSR chunks from the previous generated graph.
+  await fs.rm(path.join(root,'node_modules/.vite'),{recursive:true,force:true});
   let cliOrigin;
   let cliArgs;
   if(launcher){

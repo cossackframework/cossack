@@ -103,6 +103,30 @@ it('reads the authored core guides and omits input guidance when its installed e
   expect(after.guides.some(guide => guide.imports.includes(name + '/input'))).toBe(false);
 });
 
+it('reads the authored database guide only through its published runtime exports', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-database-guidance-'));
+  roots.push(root);
+  const name = '@cossackframework/database';
+  const folder = path.join(root, 'node_modules', '@cossackframework', 'database');
+  await fs.mkdir(folder, { recursive: true });
+  await fs.writeFile(path.join(root, 'package.json'), '{}');
+  const authored = JSON.parse(await fs.readFile(new URL('../../database/agent-docs.json', import.meta.url), 'utf8'));
+  const exports = {};
+  for (const specifier of new Set(authored.guides.flatMap(guide => guide.imports))) {
+    const subpath = '.' + specifier.slice(name.length);
+    const target = './' + (subpath === '.' ? 'index' : subpath.slice(2)) + '.js';
+    exports[subpath] = target;
+    await fs.writeFile(path.join(folder, target), 'throw new Error("DO_NOT_IMPORT_DATABASE_GUIDANCE_MODULES")');
+  }
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version: '0.8.3', exports }));
+  await fs.writeFile(path.join(folder, 'agent-docs.json'), JSON.stringify(authored));
+  const result = await readDocumentation(root, { package: name });
+  expect(result.ok).toBe(true);
+  expect(result.data.packages[0].guidance).toMatchObject({
+    status: 'available', package: name, version: '0.8.3', guides: authored.guides,
+  });
+});
+
 it('discovers legacy TypeScript root guidance without inventing an exports map or running source', async () => {
   const { folder, read } = await fixture();
   const rootGuide = { ...guide, imports: [name] };

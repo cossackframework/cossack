@@ -36,6 +36,10 @@ export async function verifyApplicationGuidance(root, guides, { additionalAllowe
       await promisify(execFile)(process.execPath, [tsc, '--noEmit'], { cwd: root, timeout: 60000, maxBuffer: 4 * 1024 * 1024 });
     } catch (error) { throw new Error(`Application guide types: ${error.stdout}\n${error.stderr}`); }
 
+    // Earlier trace cases rewrite the same temporary project's page graph.
+    // Start with optimizer artifacts for this generated application only.
+    await fs.rm(path.join(root, 'node_modules/.vite'), { recursive: true, force: true });
+
     child = spawn(process.execPath, ['--input-type=module', '-e', `
       import { createServer } from 'vite';
       const server = await createServer({ root: ${JSON.stringify(root)}, logLevel: 'error', server: {

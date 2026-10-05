@@ -10042,3 +10042,44 @@ built-in database store; it does not make signed flash durable or one-use,
 enforce stronger same-key ordering than the database, or resolve in-flight
 request/revocation and transport backpressure limits. Desktop remains complete
 by user decision, with its waived OS acceptance not represented as passed.
+
+<a id="codex-cli08-database-guidance-2026-10-05"></a>
+### Codex: Installed database guidance and cold-start acceptance (2026-10-05)
+
+`@cossackframework/database` now packages `agent-docs.json` with a guide for
+parameterized Node SQLite usage. It documents the runtime-specific package
+entries, bound SQL values, `sql.id` for identifiers, the restricted role of
+`unsafe`, migration practice and the difference between sequential atomic D1
+`batch()` operations and general interactive transactions. The compiled example
+creates an in-memory Node SQLite database from the installed `/node` export,
+creates a table and inserts a hostile SQL-looking value through a bound
+parameter. The package-guidance reader test proves these authored docs are
+accepted only when every referenced package entry is exported, without importing
+the modules.
+
+The first clean generated Cloudflare run exposed stale Vite optimized SSR chunks:
+trace fixtures rewrite transport/page graphs, while API handlers and page
+inspectors are discovered after Vite's initial scan. The scaffold template now
+pre-bundles `@cossackframework/framework/api` and
+`@cossackframework/framework/client/devtools`; trace and packaged-page fixtures
+clear `node_modules/.vite` before starting a new generated graph.
+
+**Verification:**
+
+- `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local`:
+  passes fresh package builds/installation, database build tests (**15 files /
+  92 tests**), eleven standalone examples, four auth examples, four generated
+  action/resource/task/public-form pages, offline CLI/MCP parity, Cloudflare
+  HTTP/SSE/WebSocket traces, installed UI contracts and production JavaScript /
+  source-map stripping. Desktop is deliberately excluded from this focused
+  docs gate, consistent with the user's release decision.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`:
+  **13 tests pass**.
+- `pnpm tsc --noEmit`: passes.
+- `git diff --check -- . ':!reports.md'`: passes.
+
+**Limits:** This adds one Node database example; it does not establish D1 ORM
+runtime behavior or cover every library, UI component or recipe. CLI-08 remains
+open for broader guidance and runtime coverage. REL-02/REL-03 retain their full
+acceptance criteria. No Desktop platform check is claimed as passed; no publish
+or deployment occurred. Release status remains **28 complete / 30 open**.

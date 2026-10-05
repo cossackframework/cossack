@@ -73,6 +73,7 @@ require('node:module').syncBuiltinESMExports();
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
+      ['@cossackframework/database', 'parameterized-node-sqlite'],
       ...['resource', 'mutation', 'scoped-service', 'protected-route'].map(feature => ['@cossackframework/scaffold', feature + '-recipe'])]) {
       const pkg = catalog.data.packages.find(pkg => pkg.name === name);
       assert.equal(pkg.guidance.status, 'available');

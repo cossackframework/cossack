@@ -171,8 +171,21 @@ checks do not establish plain Node imports or production hashing budgets. See th
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
 [installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
 
-Remaining: Complete authored API/component/recipe coverage, executable examples and
-verified runtime guidance. Preserve RT-23 regressions and finish REL-02 acceptance.
+Checkpoint (Codex, 2026-10-05): `@cossackframework/database` now publishes an
+authored parameterized Node SQLite guide. Its installed example compiles and
+executes in the offline acceptance gate. The guide distinguishes package entry
+points by runtime, bound values from quoted identifiers, safe migration practice,
+and D1 sequential `batch()` from the interactive transaction API that this ORM
+does not expose. The acceptance also uncovered stale Vite SSR optimizer chunks
+when generated fixtures rewrite their page/transport graph. Fixture startup now
+clears those artifacts, and the template pre-bundles API/devtools entries that
+Vite discovers after its initial dependency scan.
+
+Remaining: Complete authored API/component/recipe coverage and examples across
+the libraries and UI, and verify runtime guidance beyond the Node database
+example (including a focused D1 example where supported). Preserve RT-23
+regressions and finish REL-02 acceptance. The full installed docs gate passes,
+but CLI-08 and REL-02/REL-03 remain open.
 Discovery never executes examples. Declaration presence does not prove runtime
 imports or native attribute behavior. Platform diagnostics and bounded scans can
 produce partial catalogs. Discovery tests block Node networking, but installation

@@ -40,21 +40,21 @@ async function run(command, args, options = {}) {
   if (result.stderr) process.stderr.write(result.stderr);
 }
 
-async function buildPublishablePackages() {
+async function buildPublishablePackages({ includeDesktop = true } = {}) {
   await run('pnpm', ['--filter', '@cossackframework/renderer', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/core', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/deno-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
-  await run('pnpm', ['--filter', '@cossackframework/desktop', 'build']);
+  if (includeDesktop) await run('pnpm', ['--filter', '@cossackframework/desktop', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
 }
 
-async function packPackages(destination) {
+async function packPackages(destination, { includeDesktop = true } = {}) {
   const tarballs = new Map();
-  for (const directory of packageDirectories) {
+  for (const directory of packageDirectories.filter(name => includeDesktop || name !== 'desktop')) {
     const packageRoot = path.join(repositoryRoot, 'packages', directory);
     const pkg = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'));
     const before = new Set(await fs.readdir(destination));
@@ -92,7 +92,7 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   };
   // Guidance fixtures need directly resolvable packages, without composing
   // their features into the minimal application.
-  if (documentation) for (const name of ['@cossackframework/ui', '@cossackframework/auth']) {
+  if (documentation) for (const name of ['@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database']) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
@@ -606,13 +606,15 @@ const keep = process.env.COSSACK_KEEP_SMOKE === '1';
 const nodeDevelopmentOnly = process.argv.includes('--node-dev-only');
 const denoRuntimeOnly = process.argv.includes('--deno-runtime-only');
 const desktopRuntimeOnly = process.argv.includes('--desktop-runtime-only');
+const agentDocsOnly = process.argv.includes('--agent-docs-only');
+const includeDesktop = desktopRuntimeOnly || !agentDocsOnly;
 
 try {
   if (denoRuntimeOnly) await run(process.env.COSSACK_DENO_BINARY ?? 'deno', ['--version']);
   const tarballDirectory = path.join(temporaryRoot, 'tarballs');
   await fs.mkdir(tarballDirectory);
-  await buildPublishablePackages();
-  const tarballs = await packPackages(tarballDirectory);
+  await buildPublishablePackages({ includeDesktop });
+  const tarballs = await packPackages(tarballDirectory, { includeDesktop });
 
   await run(process.execPath, [
     path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
@@ -650,7 +652,7 @@ try {
   } else {
     await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
   }
-  if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !process.argv.includes('--agent-docs-only')) {
+  if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
     await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
   }
 } finally {

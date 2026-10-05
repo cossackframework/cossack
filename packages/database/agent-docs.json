@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "parameterized-node-sqlite",
+      "title": "Run parameterized SQL with an owned ORM",
+      "summary": "Create a Node SQLite adapter, execute bound SQL through an explicit ORM instance, and close the database you own.",
+      "imports": [
+        "@cossackframework/database",
+        "@cossackframework/database/node"
+      ],
+      "markdown": "Use a runtime-specific entry point for the adapter. This example uses Node 22 or later and the built-in SQLite adapter, so it needs no native driver package. The neutral package root exports ORM APIs; do not import Node adapters from code that must run in Workers. For Cloudflare, use the D1 or Hyperdrive adapter from `@cossackframework/database/cloudflare` and pass the binding explicitly. Generated Cloudflare apps need Workers Node compatibility support for AsyncLocalStorage request scopes. `nodejs_als` enables only that API when the compatibility date does not already provide it. D1's binding offers atomic sequential `batch()` calls, but the ORM does not expose general interactive transactions, savepoints, connection reservation, or query cancellation; check its capability limits before relying on those operations.\n\nWhen you own an ORM instance, `orm.sql` executes directly without a current request scope. Use `orm.run()` around static Active Record calls and the global `sql` tag. Close an ORM only when your code owns its adapter; request middleware owns adapters it creates.\n\nInterpolated values become bound parameters. Use `orm.sql.id()` for table and column names. Never build identifiers from request values, and reserve `sql.unsafe()` for reviewed static SQL. Keep schema changes in migrations rather than synchronizing production schemas at startup.\n\nThe executable example uses an isolated in-memory SQLite database and proves Node package behavior only. It does not establish D1, PostgreSQL, MySQL, or Hyperdrive compatibility for SQLite-specific SQL.",
+      "examples": [
+        {
+          "id": "bound-sql",
+          "language": "typescript",
+          "source": "import { createORM } from '@cossackframework/database';\nimport { nodeSQLite } from '@cossackframework/database/node';\n\nconst orm = createORM({ adapter: await nodeSQLite(), entities: [] });\ntry {\n  const notes = orm.sql.id('notes');\n  const body = orm.sql.id('body');\n  await orm.sql`CREATE TABLE ${notes} (${body} TEXT NOT NULL)`;\n  await orm.sql`INSERT INTO ${notes} (${body}) VALUES (${'hello'})`;\n\n  const hostile = \"' OR 1=1 --\";\n  const result = await orm.sql<{ body: string }>`SELECT ${body} FROM ${notes} WHERE ${body} = ${hostile}`;\n  if (result.rows.length !== 0) throw new Error('Query input must remain a bound value');\n\n  const stored = await orm.sql<{ body: string }>`SELECT ${body} FROM ${notes} WHERE ${body} = ${'hello'}`;\n  if (stored.rows[0]?.body !== 'hello') throw new Error('The safe value was not stored');\n} finally {\n  await orm.close();\n}\n"
+        }
+      ]
+    }
+  ]
+}

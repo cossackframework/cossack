@@ -96,13 +96,17 @@ export default defineConfig(({ mode, command }) => ({
           },
       // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
       // the large shared packages avoids transforming their full dependency
-      // graphs one module at a time on every cold start.
+      // graphs one module at a time on every cold start. Route API handlers and
+      // page inspectors load these entries after the initial scan; include them
+      // here so late discovery does not replace the SSR cache under the worker.
       optimizeDeps: {
         include: [
           '@cossackframework/ui',
           '@cossackframework/auth',
           '@cossackframework/database',
           '@cossackframework/framework/cache',
+          '@cossackframework/framework/api',
+          '@cossackframework/framework/client/devtools',
           'hono/cookie',
         ],
       },
