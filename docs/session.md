@@ -138,10 +138,14 @@ return this.c.redirect('/form');
 ```
 
 On the following page request, read `old('name')`, `old('address.city')` and
-`flashed('success')`. The middleware expires the cookie. A saved cookie can
-still be replayed while the middleware accepts it; browser consumption is not
-durable one-use storage. Valid incoming flash survives background RPC/upload/
-realtime requests. Failed outgoing RPC writes preserve unrelated incoming flash.
+`flashed('success')`. The middleware expires the cookie. On Cloudflare, the
+`COSSACK_SSE` Durable Object binding provides durable one-use consumption, so
+replaying a copied cookie does not repeat its data. Generated Cloudflare
+projects include this binding and its SQLite migration. A Cloudflare app without
+the binding fails closed for flash reads and writes. Node and Deno have no
+durable replay store; a copied cookie can be read again until its signed expiry.
+Valid incoming flash survives background RPC/upload/realtime requests. Failed
+outgoing RPC writes preserve unrelated incoming flash.
 
 `getFormData()` flashes nonempty validation errors by default, with no old input.
 Use `flash: { input: ['name', 'address.city'] }` to retain only those public

@@ -445,8 +445,10 @@ revocation can be in flight. SSE idle checks occur before 15-second heartbeats
 with reader demand, so backpressure and slow storage prevent a wall-clock guarantee.
 Account writes, reset consumption and response delivery are separate steps;
 fixed errors do not establish rollback. Flash now signs and checks its expiry on
-the server; a copied token remains replayable until that expiry, because browser
-clearing is not durable one-use storage. See the [flash expiry checkpoint](./release-0.9.0.md#codex-rt11-flash-expiry-2026-10-05).
+the server. Cloudflare consumes each nonce once through a dedicated
+`COSSACK_SSE` SQLite Durable Object, with alarm cleanup and atomic two-Worker
+coverage. Node/Deno remain stateless, so copied tokens replay until signed
+expiry. See the [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05).
 Audit the remaining concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core

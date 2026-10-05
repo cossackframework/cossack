@@ -17,9 +17,9 @@ ordinary `/crpc` POSTs. Two backends implement the same endpoint contracts:
 
 | Runtime | Backend | Selection |
 | --- | --- | --- |
-| Cloudflare Workers | `SseDurableObject` namespace via the `COSSACK_SSE` binding | Binding present in `env`. |
+| Cloudflare Workers | `SseDurableObject` namespace via the `COSSACK_SSE` binding | Binding present in `env`; also provides durable one-use claims for signed flash cookies. |
 | Node.js / Deno | Process-local in-memory store in `framework/src/transports/sse.ts` | No binding and not running under Workers. |
-| Cloudflare without the binding | None | `COSSACK_SSE_BINDING_MISSING` diagnostic (HTTP 500) for `/crpc`, `/sse`, and SSR. Process-local state must not become the Cloudflare fallback. |
+| Cloudflare without the binding | None | `COSSACK_SSE_BINDING_MISSING` diagnostic (HTTP 500) for `/crpc`, `/sse`, and SSR; valid flash reads fail closed with HTTP 503 and flash writes require the binding. Process-local state must not become the Cloudflare fallback. |
 
 Cloudflare detection uses `navigator.userAgent === 'Cloudflare-Workers'` (the
 documented Workers identity). Binding presence alone selects the coordinator,
@@ -66,6 +66,14 @@ is still open RT-11 work. See the [provider and migration contract](../docs/sse.
 - The scaffold generates the binding with a `new_sqlite_classes` migration in
   `wrangler.jsonc` and the Worker entry export in `src/index.ts`.
 
+The same namespace also owns flash replay claims. The middleware names one
+additional DO per signed nonce as `cossack.flash.v1:<nonce>`, separate from the
+JSON tuple names used by SSE scopes. `claimFlash(nonce, expiresAt)` validates
+the token shape and future expiry, schedules expiry cleanup, and performs a
+unique SQLite insert with `RETURNING` so concurrent page requests have exactly
+one winner. The alarm deletes the expired claim. Generated Cloudflare projects
+already include the required `COSSACK_SSE` binding and SQLite migration.
+
 ## The coordinator Durable Object
 
 One DO instance per scope, named by the collision-safe tuple
@@ -87,6 +95,7 @@ RPC surface:
 | `publish(state, requestId?)` | Appends a correlated `state-update` event and replaces the plain public snapshot. The optional request ID is event metadata only. |
 | `broadcast(event, data)` | Appends an `event`/`client-action` event without changing the snapshot. Reserved `state-update` entries replace the snapshot; the runtime does not send partial state through this method. |
 | `execute(action)` | Serializes actions per scope; see below. |
+| `claimFlash(nonce, expiresAt)` | Atomically inserts a signed flash nonce only in the matching `cossack.flash.v1:<nonce>` object; `RETURNING` selects one winner, and its alarm deletes the claim at expiry. |
 
 `execute` holds an explicit per-scope serialization slot (a promise chain —
 `blockConcurrencyWhile` is used only for table initialization in the
@@ -190,6 +199,9 @@ contracts**:
   event names. It does not yet have the coordinator subscription's demand-driven
   buffering/cancellation guarantees. Broadcasts use process-local `SseRuntime`.
   RT-19/RT-25 follow-ups must verify adapter parity explicitly.
+- Flash cookies are signed and server-expiring, but Node/Deno have no durable
+  replay store. A copied cookie can be consumed repeatedly until its signed
+  expiry. Cloudflare uses the Durable Object claim described above.
 - It is deliberately not a Cloudflare fallback: on Workers without
   `COSSACK_SSE`, requests fail with `COSSACK_SSE_BINDING_MISSING`.
 

@@ -133,10 +133,17 @@ the required non-Desktop release matrix.
    Flash cookies now carry a signed server-checked expiry matching `maxAge`;
    copied values are rejected after expiry instead of relying on browser cookie
    clearing. The framework suite, core flash/crypto tests, root/package types and
-   fresh installed docs acceptance pass. A copied valid token can still be
-   replayed before it expires, so durable one-use consumption and in-flight
-   revocation limits remain open. See the
-   [flash expiry checkpoint](./release-0.9.0.md#codex-rt11-flash-expiry-2026-10-05).
+   fresh installed docs acceptance pass. Cloudflare now consumes flash nonces
+   once in `COSSACK_SSE`, preserves background requests and rejects copied-token
+   page replays. Native two-Worker tests and middleware tests cover concurrent
+   claims, replay, invalid expiry, missing binding and coordinator failure.
+   Node/Deno remain stateless until expiry. Preserve that limit and the
+   [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05).
+   The fresh installed agent-docs gate passes with the clarified core guide.
+   The older, unrelated coordinator RPC stream test still reports
+   `COSSACK_RPC_STREAM_TRUNCATED` in this checkout; it reproduced against the
+   pre-change Durable Object source. Broader in-flight revocation and concurrent
+   request semantics remain open.
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
@@ -153,7 +160,7 @@ the required non-Desktop release matrix.
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 needs native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency acceptance.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
-- RT-11 retains session and stream-response cookie requirements. Native calls require explicit parsing and authorization.
+- RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno copied tokens remain replayable until signed expiry. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.
 - Cancellation and optimistic rollback do not terminate ignored application I/O, undo external effects or replay uncertain mutations.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.

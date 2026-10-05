@@ -1,12 +1,19 @@
 // tests/flash-middleware.test.ts
 import 'reflect-metadata';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
-import type { Context } from 'hono';
 import { flash, flashed, flashedAll, flashInput, old, signValue } from '@cossackframework/core';
 import { createFlashMiddleware } from '../src/middlewares/flash';
+import { isCloudflareRuntime } from '../src/transports/sse';
+
+afterEach(() => vi.unstubAllGlobals());
 
 const SECRET = 'flash-test-secret-16-chars-min';
+
+type FlashCoordinator = {
+    getByName(name: string): { claimFlash(nonce: string, expiresAt: number): Promise<boolean> };
+};
+type TestBindings = { APP_SECRET?: string; COSSACK_SSE?: FlashCoordinator };
 
 /**
  * Build a Hono app with the flash middleware + a couple of test routes that
@@ -14,7 +21,7 @@ const SECRET = 'flash-test-secret-16-chars-min';
  * app.fetch's second argument so the middleware's `c.env.APP_SECRET` resolves.
  */
 function makeApp(name = 'Alice') {
-    const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
+    const app = new Hono<{ Bindings: TestBindings }>();
     app.use('*', createFlashMiddleware());
 
     // POST handler: accumulates flash data, then redirects.
@@ -49,7 +56,7 @@ function makeApp(name = 'Alice') {
 async function dispatch(
     app: ReturnType<typeof makeApp>,
     path: string,
-    init: { method?: string; cookie?: string } = {},
+    init: { method?: string; cookie?: string; coordinator?: FlashCoordinator } = {},
 ) {
     const headers: Record<string, string> = {};
     if (init.cookie) headers['cookie'] = init.cookie;
@@ -57,7 +64,27 @@ async function dispatch(
         method: init.method ?? 'GET',
         headers,
     });
-    return app.fetch(req, { APP_SECRET: SECRET });
+    return app.fetch(req, { APP_SECRET: SECRET, COSSACK_SSE: init.coordinator });
+}
+
+function makeFlashCoordinator() {
+    const claimed = new Set<string>();
+    const names: string[] = [];
+    const errors = new Set<string>();
+    const namespace: FlashCoordinator = {
+        getByName(name) {
+            names.push(name);
+            return {
+                async claimFlash(nonce, expiresAt) {
+                    if (errors.has('all')) throw new Error('coordinator unavailable');
+                    if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() || claimed.has(nonce)) return false;
+                    claimed.add(nonce);
+                    return true;
+                },
+            };
+        },
+    };
+    return { namespace, claimed, names, errors };
 }
 
 /** Extract the Set-Cookie value for a given name from a Response. */
@@ -149,6 +176,70 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
         const getRes2 = await dispatch(app, '/form');
         const body2 = (await getRes2.json()) as any;
         expect(body2).toEqual({ success: null, oldName: null, allFlashed: [] });
+    });
+
+    it('documents expiry-only replay behavior when a process runtime has no durable coordinator', async () => {
+        const app = makeApp();
+        const post = await dispatch(app, '/submit', { method: 'POST' });
+        const token = getSetCookie(post, 'cossack_flash')!;
+        const copiedCookie = `cossack_flash=${token}`;
+        const [first, replay] = await Promise.all([
+            dispatch(app, '/form', { cookie: copiedCookie }),
+            dispatch(app, '/form', { cookie: copiedCookie }),
+        ]);
+        expect((await first.json()).success).toBe('Saved successfully!');
+        expect((await replay.json()).success).toBe('Saved successfully!');
+    });
+
+    it('does not consume a Cloudflare flash token on background RPC and atomically rejects replayed page reads', async () => {
+        const app = makeApp();
+        const coordinator = makeFlashCoordinator();
+        const post = await dispatch(app, '/submit', { method: 'POST', coordinator: coordinator.namespace });
+        const token = getSetCookie(post, 'cossack_flash');
+        expect(token).toBeTruthy();
+
+        const background = await dispatch(app, '/crpc', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace });
+        expect(background.status).toBe(404); // no route; middleware still preserves the redirect cookie
+        expect(coordinator.claimed.size).toBe(0);
+
+        const reads = await Promise.all([
+            dispatch(app, '/form', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace }),
+            dispatch(app, '/form', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace }),
+        ]);
+        const bodies = await Promise.all(reads.map(response => response.json()));
+        expect(bodies.filter(body => body.success === 'Saved successfully!')).toHaveLength(1);
+        expect(bodies.filter(body => body.success === null)).toHaveLength(1);
+        expect(coordinator.claimed.size).toBe(1);
+        expect(coordinator.names).toHaveLength(2);
+        expect(coordinator.names.every(name => name.startsWith('cossack.flash.v1:'))).toBe(true);
+
+        const replay = await dispatch(app, '/form', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace });
+        expect(await replay.json()).toMatchObject({ success: null, oldName: null });
+    });
+
+    it('fails closed with a cleared cookie when Cloudflare cannot use the flash coordinator', async () => {
+        const app = makeApp();
+        const post = await dispatch(app, '/submit', { method: 'POST' });
+        const token = getSetCookie(post, 'cossack_flash');
+        expect(token).toBeTruthy();
+        vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+        expect(isCloudflareRuntime()).toBe(true);
+        const response = await dispatch(app, '/form', { cookie: `cossack_flash=${token}` });
+        expect(response.status).toBe(503);
+        expect(await response.json()).toMatchObject({ code: 'COSSACK_FLASH_REPLAY_UNAVAILABLE' });
+        expect(getSetCookie(response, 'cossack_flash')).toBe('');
+    });
+
+    it('fails closed if a Cloudflare flash claim call fails', async () => {
+        const app = makeApp();
+        const coordinator = makeFlashCoordinator();
+        const post = await dispatch(app, '/submit', { method: 'POST', coordinator: coordinator.namespace });
+        const token = getSetCookie(post, 'cossack_flash')!;
+        coordinator.errors.add('all');
+        const response = await dispatch(app, '/form', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace });
+        expect(response.status).toBe(503);
+        expect(await response.json()).toMatchObject({ code: 'COSSACK_FLASH_REPLAY_UNAVAILABLE' });
+        expect(getSetCookie(response, 'cossack_flash')).toBe('');
     });
 
     it('enforces the signed max-age on the server when a copied cookie is replayed later', async () => {

@@ -24,6 +24,7 @@ import type { MiddlewareHandler } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { assertResponseHeadersMutable, signValue, verifyValue } from '@cossackframework/core';
 import { ensureFlashAlsWired, runWithFlash } from '../flash-context.js';
+import { getSseCoordinator, isCloudflareRuntime } from '../transports/sse.js';
 
 const COOKIE_NAME = 'cossack_flash';
 // Only needs to survive one redirect (POST -> GET). The same duration is
@@ -33,6 +34,7 @@ const DEFAULT_MAX_AGE = 30;
 interface SignedFlashPayload {
     format: 'cossack-flash';
     expiresAt: number;
+    nonce: string;
     data: Record<string, unknown>;
 }
 
@@ -41,6 +43,8 @@ function isSignedFlashPayload(value: unknown): value is SignedFlashPayload {
     const payload = value as Record<string, unknown>;
     return payload.format === 'cossack-flash' &&
         Number.isSafeInteger(payload.expiresAt) && (payload.expiresAt as number) > Date.now() &&
+        typeof payload.nonce === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.nonce) &&
         !!payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data);
 }
 
@@ -84,7 +88,33 @@ export function createFlashMiddleware(
             // secret shouldn't take down unrelated pages.)
             if (secret) {
                 const payload = await verifyValue<unknown>(token, secret);
-                if (isSignedFlashPayload(payload)) incoming = payload.data;
+                if (isSignedFlashPayload(payload)) {
+                    if (transport) {
+                        incoming = payload.data;
+                    } else {
+                        const coordinator = getSseCoordinator(c.env);
+                        if (!coordinator && isCloudflareRuntime()) {
+                            deleteCookie(c, COOKIE_NAME, { path: '/' });
+                            return c.json({ code: 'COSSACK_FLASH_REPLAY_UNAVAILABLE',
+                                error: 'Flash data is temporarily unavailable.' }, 503);
+                        }
+                        if (coordinator) {
+                            try {
+                                const accepted = await coordinator.getByName(`cossack.flash.v1:${payload.nonce}`)
+                                    .claimFlash(payload.nonce, payload.expiresAt);
+                                if (accepted) incoming = payload.data;
+                            } catch {
+                                deleteCookie(c, COOKIE_NAME, { path: '/' });
+                                return c.json({ code: 'COSSACK_FLASH_REPLAY_UNAVAILABLE',
+                                    error: 'Flash data is temporarily unavailable.' }, 503);
+                            }
+                        } else {
+                            // Node/Deno remain stateless without an application
+                            // replay store; the signed expiry still bounds replay.
+                            incoming = payload.data;
+                        }
+                    }
+                }
             }
             // Background RPC/realtime requests must not consume a message meant
             // for the next page. Invalid tokens still get removed immediately.
@@ -94,7 +124,12 @@ export function createFlashMiddleware(
         // 2. Run the whole request inside the flash scope. Writes via flash()
         //    accumulate in `outgoing`; reads via flashed() pull from `incoming`.
         const store = { outgoing: {} as Record<string, unknown>, incoming,
-            assertWritable: () => assertResponseHeadersMutable(c, 'write flash data') };
+            assertWritable: () => {
+                assertResponseHeadersMutable(c, 'write flash data');
+                if (isCloudflareRuntime() && !getSseCoordinator(c.env)) {
+                    throw new Error('[Cossack] Flash data on Cloudflare requires the COSSACK_SSE Durable Object binding.');
+                }
+            } };
         await runWithFlash(store, () => next());
 
         // 3. OUTGOING: if the handler flashed anything, sign + set the cookie
@@ -118,6 +153,7 @@ export function createFlashMiddleware(
             const signed = await signValue<SignedFlashPayload>({
                 format: 'cossack-flash',
                 expiresAt,
+                nonce: crypto.randomUUID(),
                 data: store.outgoing,
             }, secret);
             setCookie(c, COOKIE_NAME, signed, {

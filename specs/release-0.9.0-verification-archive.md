@@ -10194,3 +10194,51 @@ binding-contract fixture, not Miniflare/workerd or a deployed database. Desktop
 remains complete by user decision, with waived platform checks not claimed as
 passing. Release status remains 28 complete / 30 open. No deployment or
 publication occurred.
+
+<a id="codex-rt11-cloudflare-flash-claims-2026-10-05"></a>
+### Codex: Cloudflare one-use flash claims (2026-10-05)
+
+Cloudflare flash cookies now carry a signed random UUID nonce in addition to the
+signed expiry. A page request claims that nonce through a `COSSACK_SSE` Durable
+Object named `cossack.flash.v1:<nonce>`. The DO verifies that its name matches
+the nonce, schedules expiry cleanup, and uses a unique SQLite insert with
+`RETURNING` to make the first read the only winner. Its alarm removes expired
+claims. Each token has a separate object name, so flash reads do not serialize
+unrelated SSE scopes. Background RPC/upload/realtime requests preserve the
+cookie without claiming it. Cloudflare without the binding returns a fixed 503
+on valid page reads and fails flash writes with a setup error. Node/Deno remain
+stateless and copied tokens can be read until their signed expiry.
+
+Middleware tests cover background preservation, simultaneous reads with one
+winner, replay rejection, missing binding and coordinator failure. A native
+two-Worker workerd fixture verifies the unique claim across Workers, replay
+rejection, malformed nonce and expired claim rejection.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/flash-middleware.test.ts tests/sse-coordinator-transport.test.ts`:
+  **2 files / 39 tests pass**.
+- `pnpm --filter cossack exec vitest run tests/sse-coordinator-integration.test.js -t 'atomically consumes signed flash nonces'`:
+  **1 test passes** (two unrelated tests skipped).
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'excludes private old input'`:
+  **2 generated Node/Cloudflare cases pass**, including cookie decode, browser
+  clearing and subsequent SSR old-input behavior.
+- `COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local`: fresh installed-package
+  acceptance passes **16 standalone examples**, four auth examples, four
+  generated pages, Cloudflare HTTP/SSE/WebSocket traces, offline CLI/MCP parity,
+  UI contracts, source-map-enabled production stripping and the database suite
+  (**15 files / 92 tests**). Desktop is excluded from this focused gate.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`:
+  **13 tests pass**.
+- `pnpm build` and `pnpm tsc --noEmit` pass.
+- `git diff --check -- . ':!reports.md'` passes.
+
+**Limits:** RT-11 remains open for process-runtime replay prevention and broader
+concurrent request semantics. In a full run of the existing coordinator test
+file, its unchanged native RPC stream case failed with
+`COSSACK_RPC_STREAM_TRUNCATED`. The same failure reproduced once while the DO
+source was temporarily restored to `HEAD`; the separate new claim test passes.
+Treat the coordinator stream failure as a current baseline issue, not as a green
+full-file result, and investigate it before claiming that broader suite passes.
+Desktop remains complete by user decision; no Desktop platform checks are
+claimed. No deployment or publication occurred.

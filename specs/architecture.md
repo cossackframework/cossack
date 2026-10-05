@@ -857,8 +857,13 @@ list. `getFormData` defaults to nonempty validation errors only; submitted input
 requires an explicit `flash.input` list. Selection leaves parsed data unchanged.
 Generic `flash()` cannot write the reserved old-input namespace.
 Old-input reads also reject credential/prototype paths and inherited properties.
-Signing authenticates cookie bytes; it does not encrypt data or provide durable
-single-use consumption. Generic flash/error messages remain application-owned.
+Signing authenticates cookie bytes; it does not encrypt data. On Cloudflare,
+flash middleware atomically consumes each signed nonce through the
+`COSSACK_SSE` SQLite Durable Object, with one named object per token and expiry
+cleanup by alarm. A Cloudflare app without that binding fails closed for flash
+reads and writes. Node/Deno have no durable replay store, so a copied cookie can
+be read again until its signed expiry. Generic flash/error messages remain
+application-owned.
 
 Core owns the JSON RPC value contract through `snapshotRpcValue` and
 `snapshotRpcFrame`. Transports snapshot data once before encoding. Valid dates

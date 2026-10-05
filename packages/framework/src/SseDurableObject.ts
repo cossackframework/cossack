@@ -43,7 +43,34 @@ export class SseDurableObject extends DurableObject {
                 cursor INTEGER PRIMARY KEY AUTOINCREMENT, event TEXT NOT NULL,
                 data TEXT NOT NULL, bytes INTEGER NOT NULL
             )`);
+            ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS flash_claims (
+                nonce TEXT PRIMARY KEY, expires_at INTEGER NOT NULL
+            )`);
         });
+    }
+
+    /** Atomically allow one page request to consume a signed flash cookie. */
+    async claimFlash(nonce: string, expiresAt: number): Promise<boolean> {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(nonce) ||
+            !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() ||
+            this.ctx.id.name !== `cossack.flash.v1:${nonce}`) return false;
+
+        // Flash names use a prefix outside the JSON tuple namespace used by SSE
+        // scopes. Each token gets its own DO, so this alarm only expires its
+        // one-use claim and never serializes unrelated flash requests.
+        await this.ctx.storage.setAlarm(expiresAt);
+        const inserted = this.ctx.storage.sql.exec<{ nonce: string }>(
+            'INSERT OR IGNORE INTO flash_claims (nonce, expires_at) VALUES (?, ?) RETURNING nonce', nonce, expiresAt);
+        return inserted.toArray().length === 1;
+    }
+
+    /** Remove an expired flash claim and retain an alarm only if one remains. */
+    async alarm(): Promise<void> {
+        this.ctx.storage.sql.exec('DELETE FROM flash_claims WHERE expires_at <= ?', Date.now());
+        const next = this.ctx.storage.sql.exec<{ expires_at: number }>(
+            'SELECT MIN(expires_at) AS expires_at FROM flash_claims').toArray()[0]?.expires_at;
+        if (next !== undefined && next !== null) await this.ctx.storage.setAlarm(next);
+        else await this.ctx.storage.deleteAlarm();
     }
 
     /** First initialization wins. Rendering another tab never resets shared state. */

@@ -203,6 +203,40 @@ it('coordinates native RPC callbacks across Workers and keeps SQLite state after
   expect((await afterCustom).at(-1).type).toBe('done');
 }, 60_000);
 
+it('atomically consumes signed flash nonces across Workers and rejects invalid expiry input', async () => {
+  vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
+  directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-flash-claims-'));
+  const coordinator = fileURLToPath(new URL('../../framework/src/SseDurableObject.ts', import.meta.url));
+  const main = path.join(directory, 'worker.ts');
+  await fs.writeFile(main, `
+    import { SseDurableObject } from ${JSON.stringify(coordinator)};
+    export { SseDurableObject };
+    export default { async fetch(request, env) {
+      const url = new URL(request.url);
+      const nonce = url.searchParams.get('nonce') || '';
+      const expiresAt = Date.now() + Number(url.searchParams.get('expiresInMs'));
+      return Response.json(await env.COSSACK_SSE.getByName('cossack.flash.v1:' + nonce).claimFlash(nonce, expiresAt));
+    } };
+  `);
+  const common = { main, compatibility_date: '2026-06-06', compatibility_flags: ['nodejs_compat'] };
+  server = createTestHarness({ root: directory, workers: [
+    { config: { ...common, name: 'claim-first',
+      durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' }] },
+      migrations: [{ tag: 'v1', new_sqlite_classes: ['SseDurableObject'] }] } },
+    { config: { ...common, name: 'claim-second',
+      durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject', script_name: 'claim-first' }] } } },
+  ] });
+  const { url } = await server.listen();
+  const nonce = crypto.randomUUID();
+  const claimPath = `/claim?nonce=${nonce}&expiresInMs=300000`;
+  const claims = await Promise.all(['claim-first', 'claim-second'].map(worker =>
+    server.getWorker(worker).fetch(new URL(claimPath, url)).then(response => response.json())));
+  expect(claims.sort()).toEqual([false, true]);
+  expect(await (await server.getWorker('claim-first').fetch(new URL(claimPath, url))).json()).toBe(false);
+  expect(await (await server.fetch('/claim?nonce=invalid&expiresInMs=300000')).json()).toBe(false);
+  expect(await (await server.fetch(`/claim?nonce=${crypto.randomUUID()}&expiresInMs=-1`)).json()).toBe(false);
+}, 60_000);
+
 it('cancels native queued callbacks and pending guards without releasing another action’s slot', async () => {
   vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-sse-cancellation-'));
