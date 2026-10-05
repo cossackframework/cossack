@@ -12295,3 +12295,113 @@ Framework schedules syntax is a conservative provider subset; no satisfiable-dat
 proof. Generated recipes require Cloudflare; other runtimes require adapters.
 Desktop checks remain waived, not passed. **45 complete / 13 open**, versions
 0.8.3 until REL-04. No batch blocker.
+
+<a id="codex-rt01-rt11-complete-2026-10-05"></a>
+## Codex: RT-01 and RT-11 full acceptance audit (2026-10-05)
+
+Completed **RT-01 and RT-11**. Release **47 complete / 11 open**, versions
+0.8.3 until REL-04. Original criteria/checkpoints are retained in the
+[RT-01 context](./release-0.9.0-plan-archive.md#codex-rt-01-completed-2026-10-05)
+and [RT-11 context](./release-0.9.0-plan-archive.md#codex-rt-11-completed-2026-10-05).
+No batch blocker. Desktop remains complete by user decision; platform checks
+are waived, not passed.
+
+### Criterion mapping
+
+| Task and criterion | Proven behavior and retained evidence |
+| --- | --- |
+| RT-01 shared HTTP/SSE/WebSocket/service completion, generators, errors, deadlines/cancellation | Existing shared framework conformance matrix, stream handlers and service scopes; relevant combined seven-file suite now 581 passing cases. Preserve [contract matrix](#codex-rpc-conformance-matrix-2026-10-03), [protocol boundaries](#codex-rpc-protocol-boundaries-2026-10-03), [native response timing](#codex-rpc-native-response-2026-10-03) and [per-call deadlines](#codex-rt01-per-call-deadlines-2026-10-05). |
+| RT-01 correlation, serialization and inferred yield/final types | Existing [authored types](#codex-authored-rpc-types-2026-10-03), [value paths](#codex-rpc-json-values-2026-10-03), frame/terminal request IDs and inherited contracts remain; current root/affected typechecks pass. |
+| RT-01 native disconnect and cleanup | New rpc-disconnect-release-acceptance fixture resets real incoming TCP after the action starts and before any response bytes. Node and direct native workerd each prove four HTTP/SSE component/layout-service cases: native/action abort once, settlement once, timeout/mutation zero, original request cleanup once and independent successful recovery. Parser + Node passed in initial run; final Cloudflare-only run passes one case with two unrelated cases filtered. |
+| RT-01 duplicate consumers and lifecycle concurrency | Core 14-case focused file proves one pending restored/fresh owner, saved target rather than forged /state query, no publication/peers before readiness, failure cleanup once/retry, stateless overlapping replacement cleanup, one iterator plus shared completion consumers, duplicate cancel and valid/reserved/throwing socket close. Actual generated Node/Cloudflare Chromium calls dispatch one mutation and clean up once. Actual workerd first joins share init, then closed peers retire; forced eviction and overlapping state reads restore one saved count91 with gets2/inits1. Final installed Core reproduces the full Cloudflare case. |
+| RT-11 native cookie/flash behavior, RPC failures and secret-free old input | Preserve [forms](#codex-rt11-forms-2026-10-05), [input](#codex-rt11-input-2026-10-05), [dashboard](#codex-rt11-dashboard-2026-10-05), [flash expiry](#codex-rt11-flash-expiry-2026-10-05) and native cookie/header timing evidence. Generated validation/login/reset/logout/rotation flows and password/token exclusion already passed; these unchanged fixtures were not rerun or reclassified as newly passing. Current session/flash unit tests pass. |
+| RT-11 documented concurrent requests/rotation and realtime | New source and installed actual SQLite/D1 request barriers preserve different keys, order same-key last-commit writes, prove auth rotation one winner/cookie, old token invalid, one signed flash consumer and no replay. In-flight revoked work can finish, subsequent auth request fails. Two anonymous bindUser upgrades can create two valid replacement bags: documented application serialization requirement, no atomic upgrade claim. Preserve [SSE](#codex-rt11-sse-auth-2026-10-05), [WebSocket](#codex-rt11-websocket-auth-2026-10-05), [database mutations](#codex-rt11-session-concurrency-2026-10-05), [two-Worker flash](#codex-rt11-cloudflare-flash-claims-2026-10-05) and [bounded process replay](#codex-rt11-process-flash-claims-2026-10-05). |
+
+### Implementation and review
+
+Coordinator owns CossackDurableObject shared runtime. A promise latch admits one
+unpublished owner; init and initial persistence finish before component/runtime
+publication. Restoration uses persisted config/state without init; /state no
+longer bootstraps a second query-selected component. Failed bootstrap/render/init/
+persistence disposes once, retry creates a new owner. Idle stateless replacement
+awaits old cleanup; first socket acceptance occurs before latch release. Close
+acknowledges a reciprocal frame, normalizes reserved local codes and still retires
+RPC/delivery state if a terminal socket rejects close.
+
+Three exclusive implementation agents owned disconnect fixtures, concurrency
+fixtures/Core regressions, and session fixtures/concurrency guide respectively.
+Coordinator reviewed/integrated all changes, ran combined verification and
+installed acceptance, and owns architecture/migration/release records. Initial
+user-owned reports.md and .zcodeignore are preserved and excluded from staging.
+
+The native fixture first exposed service-entry proxy cancellation suppression;
+its direct Miniflare application socket uses compiled modules and generated vars,
+DO bindings and flags. Static asset registration is omitted for this pure SSR/RPC
+fixture because it redirects direct sockets through a proxy. No Request signal
+mock or node_modules patch is used. Initial CF close/eviction attempts failed:
+browser sockets remained CLOSING. Official [close-handler documentation](https://developers.cloudflare.com/durable-objects/api/base/)
+confirms reciprocal close is required on older compatibility dates and safe with
+automatic replies. Fixing the actual handler makes real browser close, zero peers,
+eviction and restoration pass; no failing criterion was waived.
+
+### Commands and evidence
+
+- `pnpm --dir packages/core run build`: passes, then repeated once after the
+  close-handshake runtime fix invalidated the first build.
+- `pnpm --dir packages/core exec vitest run`: initial **1673 /105 files**, final
+  runtime **1674 /105 files** pass. Six close regressions were added after that
+  full run started; final `vitest run tests/rpc-lifecycle-concurrency.test.ts`
+  passes **14** (agent terminal output, not the older five-case barriers log).
+  Do not claim a full 1680-case run.
+- Framework `vitest run tests/rpc-conformance-matrix.test.ts tests/rpc-stream.test.ts
+  tests/router-rpc-stream.test.ts tests/session.test.ts tests/flash-middleware.test.ts
+  tests/runtime-websocket-scopes.test.ts tests/runtime-websocket.test.ts`:
+  **581 /7 files** pass. After the close fix, affected two socket files rerun:
+  **6 /2 files** pass. Other contracts were unchanged.
+- `pnpm --dir packages/node-adapter exec vitest run`: **38 /7 files** pass.
+- Root `pnpm tsc --noEmit` and Core/framework/node-adapter package
+  `exec tsc --noEmit`: pass. Root/Core repeat after final runtime fix, pass;
+  agent final Core typecheck with all 14 focused regressions passes.
+- `pnpm --filter cossack exec vitest run tests/rpc-disconnect-release-acceptance.test.js`:
+  initial parser + Node pass, CF proxy fails. Corrected direct native workerd
+  `-t cloudflare`: **1 pass /2 filtered**; Node/parser branches unchanged.
+- `pnpm --filter cossack exec vitest run tests/rpc-concurrency-release-acceptance.test.js`:
+  Node native browser passes. Final `-t cloudflare`: **1 pass /1 filtered**, real
+  close/eviction/concurrent restoration. Prior failed attempts are diagnostic
+  evidence, not acceptance.
+- `pnpm --filter cossack exec vitest run tests/session-concurrency-release-acceptance.test.js`:
+  **2 source native cases** pass. Same command with
+  `COSSACK_SESSION_CONCURRENCY_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production`:
+  **2 installed native cases** pass. This ran before the unrelated CossackDO
+  close fix; sessions/flash use other middleware/DO paths, so proof is retained.
+- Core alone packed with scripts disabled, initially core.tgz then core-final.tgz
+  after the runtime close fix. Other exact verified tarballs were reused.
+  Gate package/workspace overrides use file refs, fresh applications install
+  with scripts disabled and prove package realpaths within their node_modules.
+  `COSSACK_RPC_CONCURRENCY_INSTALLED_ROOT` pointing to the gate, concurrency
+  `-t cloudflare`: **1 installed pass /1 filtered** from final Core payload.
+  No unchanged guide catalog, old installed matrix or unrelated package repack.
+- `git diff --check -- . ':!reports.md'`: pass.
+
+Logs: `/tmp/cossack-rt01-11-{core-tests,framework-tests,node-tests}.log`,
+`/tmp/cossack-rt01-11-core-final-tests.log`,
+`/tmp/cossack-rt01-11-framework-final-sockets.log`,
+`/tmp/cossack-rt01-11-{root,core,framework,node}-types.log`,
+final root/Core types/build logs,
+`/tmp/rt01-native-concurrency-cloudflare.log`,
+`/tmp/cossack-rpc-disconnect-{native,direct-worker}.log`,
+`/tmp/cossack-session-concurrency-native.log`,
+`/tmp/cossack-rt01-11-installed-{sessions,concurrency}.log`.
+
+Limits: local workerd/D1/DO and Node SQLite, not live Cloudflare or production
+restart acceptance. Wrangler/Miniflare service-entry proxy suppresses incoming
+pre-header signal; direct application socket proof does not fix that proxy.
+Cancellation is cooperative and is not write rollback or termination of ignored
+I/O. Revocation does not undo admitted work. Generic bindUser is non-atomic;
+application serialization remains necessary. Signed flash protects integrity,
+not confidentiality; Node/Deno claims are process-local and do not survive restart
+or span processes. Workers require COSSACK_SSE coordination and fail closed when
+unavailable. Scratch session fixture replaces legacy callback migrations with
+literal declarative SQL so static plan/apply is provable; generated callbacks
+are not newly claimed to have complete static plans. No native Deno interruption
+or Desktop execution claim; REL-03 owns the remaining non-Desktop full matrix.

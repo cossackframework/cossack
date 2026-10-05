@@ -1312,3 +1312,14 @@ external sends; uncertain non-idempotent attempts become `unknown` and never
 silently resend. Stable keys and terminal records must survive application
 restarts. The generated Cloudflare recipe stores scoped opt-in preferences and
 composes the jobs Queue instead of creating a second execution engine.
+
+## Durable Object component readiness
+
+Core's Durable Object wrapper keeps one pending initialization/restoration owner.
+It publishes the component/runtime pair only after bootstrap, initial seed and
+persistence (fresh instances), or public-state/tree restoration (stored instances).
+Concurrent joins, messages and state reads await that owner. Failed unpublished
+components are disposed once; retries start with a fresh component. The first
+socket is accepted before releasing fresh ownership so stateless joins cannot
+mistake pending readiness for idle state. Restored state comes from storage;
+state-query metadata cannot create an unused extra component or replace its owner.

@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 45 complete and 13 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 47 complete and 11 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -92,9 +92,6 @@ Add focused tests during each group, and run broader gates after integration.
 
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
-| 1. Finish current runtime work | RT-01 | Distributed SSE works through generated apps and retains request ownership. |
-| 2. Finish remaining runtime diagnostics | RT-01 | Tools and types describe the behavior that the compiler and runtime execute. |
-| 3. Complete application state and actions | RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
 | 4. Complete data and content features | RT-26 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
@@ -110,6 +107,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="rt-01"></a>RT-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05) |
+| <a id="rt-11"></a>RT-11 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-11-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05) |
 | <a id="svc-01"></a>SVC-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05) |
 | <a id="svc-02"></a>SVC-02 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-02-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05) |
 | <a id="svc-03"></a>SVC-03 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-03-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05) |
@@ -315,251 +314,6 @@ same APIs as the tested release. Dependencies: REL-02 and RT-23.
 Runtime tasks continue below. Each status describes the checkpoint only.
 Reinspect the source before extending it. Codex now owns the remaining work and
 follows task dependencies.
-
-<a id="rt-01"></a>
-### RT-01: One RPC contract across transports
-
-Purpose: The same server method must have predictable completion and failure
-behavior over HTTP, SSE, WebSockets, and explicit service calls. Transport choice
-must not change an awaited value into an unobservable fire-and-forget action.
-
-Baseline: HTTP/SSE component calls now share a promise/iterator contract and
-bounded stream frames. WebSocket and service RPC parity, timeouts, and precise
-client typing for generator results remain open.
-
-Approach: Extend the existing call abstraction and error taxonomy. Correlate
-requests, yields, terminal values, failures, and cancellation by request ID.
-Add configurable deadlines and distinguish remote application errors from
-transport failure and uncertain completion. Describe serialization failures by
-component, action, and value path. Define supported value types explicitly.
-Keep cookies and redirects subject to HTTP header timing.
-
-Codex status (2026-10-04): Authored RPC inference, JSON serialization, native
-response completion and multipart ownership have shared transport coverage.
-The 421-case conformance matrix covers correlated results/errors and bounded frames.
-Native Workers fixtures cover shared limits, peer context and durable counters.
-Backend response bounds/deadlines and explicit cross-Worker coordinator cancellation
-also pass. RT-02, RT-14 and RT-18 contracts are now complete.
-See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and the
-[cancellation checkpoint](./release-0.9.0.md#codex-sse-cancellation-2026-10-03).
-
-Remaining: Prove native pre-header disconnect delivery and component
-initialization/restoration concurrency against the original criteria. The
-[per-call deadline checkpoint](#codex-rt01-per-call-deadlines-2026-10-05) closes
-the arbitrary per-call action deadline gap.
-Retain RT-11 session and stream-response cookie requirements. Handshake identity
-does not prove per-message session revalidation. Explicit coordinator cancellation
-does not prove incoming TCP abort delivery or terminate ignored application I/O.
-Native Durable Object fixtures do not prove live Redis/KV guarantees.
-Deno interruption/lifecycle acceptance, actual Electron execution and the full
-release matrix remain separate gates. Basic Deno production execution is recorded
-in the [runtime checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
-RT-01 remains open.
-
-<a id="codex-rt01-timeout-bounds-2026-10-05"></a>
-Codex deadline-boundary review (2026-10-05): `@Server({ timeout })` now accepts
-only integer milliseconds from 1 through 2,147,483,647. Larger JavaScript timer
-delays are clamped by runtimes and could previously become near-immediate
-timeouts; fractional, non-finite, negative and nonnumeric values also silently
-lost their declared deadline. The decorator rejects invalid options, and the
-HTTP/SSE, WebSocket and service proxy paths validate inherited metadata before
-creating a timer. The legacy Node WebSocket adapter now coalesces concurrent
-same-target bootstrap and reserves its instance limit for pending distinct
-targets; failed bootstrap cleans up the component and rejects the socket. Core
-deadline/metadata regressions pass (25 tests), the full core suite passes
-(1,552 tests), and the core package builds. The Node adapter builds and all 24
-of its tests pass, including same-target coalescing and pending-capacity checks;
-root `pnpm tsc --noEmit` passes. This does not prove native disconnect delivery,
-server-side rollback, or arbitrary dynamic/per-call deadlines. Broader component
-initialization/restoration concurrency remains unaudited; RT-01 remains open.
-
-<a id="codex-rt01-per-call-deadlines-2026-10-05"></a>
-Codex per-call RPC deadline and cancellation (2026-10-05): `rpc$` now accepts a
-factory form, `rpc$(() => this.save(), { timeout, signal })`, while retaining the
-existing identity-view form. It validates timeout bounds and AbortSignal shape
-before invoking the factory, so invalid options cannot dispatch a mutation. A
-per-call timeout overrides the decorated default across component HTTP/SSE and
-WebSocket calls and layout-service HTTP calls. An aborted signal settles the
-local call and aborts its transport request; server work already in progress may
-continue, and the mutation outcome remains uncertain, so calls are never retried.
-The installed type fixture checks inference and rejects options on a direct-call
-form. Core build, all 1,558 Core tests and root `pnpm tsc --noEmit` pass. This
-closes the arbitrary per-call deadline implementation/acceptance gap, but not
-native pre-header disconnect delivery, component initialization/restoration
-concurrency, session/cookie requirements, or RT-01 itself.
-
-Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
-`transport-connections.ts`, and framework transport handlers and `router.ts`.
-
-Done when: One conformance suite exercises each transport and service calls.
-Cover ordinary results, generators, errors, timeout, disconnect, cancellation,
-duplicate consumers, and cleanup. Consuming a call twice never dispatches a
-second mutation. Type tests prove yielded and final result inference.
-
-
-<a id="rt-11"></a>
-### RT-11: Session and flash recipes
-
-Purpose: Login, redirects, old form input, and one-time messages must work through
-the framework's actual request lifecycle. A recipe that works only during a
-plain page request is incomplete.
-
-Baseline: Session and flash helpers exist. Integrated recipes and failure coverage
-remain open.
-
-Approach: Document and generate flows for failed validation, successful mutation
-with redirect, authentication change, logout, and session rotation. Specify which
-values persist, which are consumed once, and which must never enter old input.
-Preserve cookie headers when RPC returns a redirect/result. Reject late cookie
-changes after streaming headers are committed with a useful diagnostic.
-
-Codex checkpoint (2026-10-03): verified native cookies/redirects, old-input and
-message consumption, and late session/header writes as described under RT-01.
-Middleware acceptance covers `/crpc`, `/upload`, `/sse`, and `/ws/`: valid incoming
-flash survives background requests, HTTP failures do not replace it with partial
-outgoing writes, and invalid tokens clear. A later stream failure cannot undo
-already-sent headers. These are response lifecycle fixes, not completion of all
-recipes. Next finish password/token exclusion from old input, generated failure/
-login/logout/rotation flows, and documented concurrent request semantics. Verify
-Workers/realtime integration for this behavior before claiming runtime parity.
-
-Codex Workers acceptance (2026-10-03): production workerd/Chromium now verifies
-native/helper/flash redirect cookies and one-time old-input/message consumption
-for component and service actions from HTTP/SSE pages. Multipart early cookies
-and late-cookie diagnostics work through the real artifact. Continue sensitive
-old-input filtering, complete failure/login/logout/rotation recipes and documented
-concurrent request behavior; this runtime slice does not close RT-11.
-
-Codex session-dashboard checkpoint (2026-10-05): RT-13's shared auth primitives
-remain complete. The generated application now exposes independent
-`SessionInfo.reference` UUIDs and a whitelist of display fields. An additive
-migration and conditional legacy backfill preserve token identities; rotation
-preserves the reference. Authenticated-context helpers enforce ownership and
-auth purpose. Single and keep-current bulk revocation protect the current
-reference during rotation. The dashboard layout also guards RPC requests;
-page errors discard raw storage messages. Native Node SQLite/Cloudflare D1
-acceptance covers SSR/RPC disclosure, forged actors, foreign/current/reset/state
-references, real storage failures, concurrent revocation, rotation races and
-bulk cookie clearing. Sessions-only dashboards no longer import absent role
-models in their seeder. See the
-[checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05).
-Auth starters now leave the extra anonymous session bag opt-in, preserving public
-SSG without visitor cookies; standalone SSG also initializes bare translation/
-config helpers. Preserve the session-registration migration and public SSG guards.
-Continue sensitive old-input filtering, complete failure/login/logout/rotation
-recipes and the remaining concurrent/realtime criteria. This checkpoint does
-not close RT-11 or prove connection identity refresh after revocation.
-
-Codex public-input checkpoint (2026-10-05): `getFormData` now defaults to
-nonempty validation errors only. Public old input requires `flash.input` paths
-or `flashInput(data, { fields })`. Selection copies own finite scalar leaves and
-scalar arrays, rebuilds nested containers and leaves server data intact. Whole
-objects/files/accessors are omitted. Credential/prototype paths are excluded;
-custom secrets must stay outside the application-owned field list. Generic
-`flash()` cannot bypass selection through the reserved namespace. No-rules form
-options also have the correct parsed-DTO return type. Forms/docs and the new
-`safe-old-input` package guide use explicit policies. Its source runs verbatim in
-generated Node/Cloudflare production fixtures; decoded cookie bytes, RPC failures
-and following SSR state prove selected restoration and credential exclusion.
-The broader Workers HTTP/SSE redirect/late-write gate still passes. See the
-[evidence and limits](./release-0.9.0.md#codex-rt11-input-2026-10-05).
-
-Codex generated-form checkpoint (2026-10-05): all four auth pages now use
-ClientStore drafts and client-only validation. App-owned `auth-input.ts` contracts
-accept one explicit object; real RPC gates and repeated native parsing reject
-invalid shapes, unknown fields and excess arguments before storage. Passwords
-are not normalized and fit the shared UTF-8 size limit. Fixed messages replace
-caught storage/transport exceptions. The dashboard layout handles failed logout
-without clearing its cookie. Its sessions page rotates and redirects before
-refreshing with a new cookie. Generated Node SQLite/Cloudflare D1 and Chromium
-acceptance checks actual page SSR/RPC state, browser drafts, reset expiry/replay,
-partial registration failure, login/logout/rotation cookies and redirects. Keep
-the real-page tests distinct from the helper fixtures. See the
-[checkpoint](./release-0.9.0.md#codex-rt11-forms-2026-10-05).
-
-The package public-form example also passes installed Cloudflare application
-guidance acceptance for native POST, selected restoration, credential exclusion,
-browser clearing and emitted source-map checks.
-Codex SSE checkpoint (2026-10-05): authenticated subscriptions use the optional
-AuthRealtimeProvider and app-owned storage to capture a bounded, server-only
-reference/fingerprint descriptor. Every delivery revalidates the live session
-through the shared session manager and resolves current user data. Fresh request,
-config and ORM scopes run global/inherited guards and require the original owner
-and computed scope. Params/bindings and the subscription locale remain available;
-credential headers are removed and late header writes reject. Distinct fixed codes
-separate missing/invalid capture configuration from storage capture failures.
-
-Node SQLite/Cloudflare D1 and Chromium verify logout, expiry, rotation across two
-tabs, purpose/scope changes, fresh user metadata for inherited guards, authorized
-peer delivery and idle storage failure. The browser retires the old EventSource,
-ignores late callbacks, stops retries and reconnects on explicit reload with the
-new cookie. Preserve replay/heartbeat/backpressure tests and production JS/map
-stripping. See the [checkpoint](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05).
-
-Codex WebSocket checkpoint (2026-10-05): Cloudflare upgrades now capture a
-bounded, credential-free identity descriptor and attach it with the request,
-route params, locale, user, component owner and computed scope. Each action,
-state/event/client-action delivery replays fresh global and inherited middleware
-inside a new request/config/locale/ORM scope, then checks the current user and
-per-page scope before dispatch or send. Durable Object hibernation restores the
-descriptor from the socket attachment; it does not depend on in-memory peer maps.
-Invalid identity capture and stale target/scope fail closed. The browser receives
-a terminal authorization frame and closes without reconnecting. Node/Deno peers
-also recheck each action and outbound delivery and serialize each peer's queue
-with a bound of 32 pending frames; overflow closes with 1013.
-
-Generated Cloudflare deployment acceptance exercises authenticated sockets and
-the fingerprint provider without putting the bearer session ID in the attachment.
-Framework tests cover restored identity, fresh guards and scope changes; core
-tests cover action/outbound reauthorization and terminal closure; Node/Deno
-adapter and generated peer tests pass. This closes the WebSocket freshness slice,
-not RT-11. Broader concurrent request semantics remain. An action or frame that
-passed its check before revocation may finish, slow storage and queue backpressure
-prevent a wall-clock guarantee, and idle sockets are checked on the next action
-or delivery. Barrier tests now prove generic session and signed-flash request
-scopes remain separate while handlers overlap in one isolate. Auth-managed
-session rotation already uses an atomic store replacement with one winner.
-The process-runtime guard now atomically claims each valid signed nonce in a
-bounded module-local store. It prevents concurrent and later replay within one
-loaded module instance in its JavaScript process or isolate, but does not
-coordinate across processes or isolates and does not survive restart. Capacity
-fails closed rather than evicting a live claim. Continue verifying broader
-concurrent request semantics and documenting these runtime limits before closing
-RT-11. See the
-[process-local flash checkpoint](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05).
-
-Codex database-session checkpoint (2026-10-05): the built-in database
-`SessionStore.set()` and `unset()` now update one JSON key in one SQL statement
-for SQLite, PostgreSQL and MySQL. They no longer read and rewrite the whole
-session bag, which could erase a different key written concurrently. A SQLite
-regression rejects read-before-write behavior and verifies both keys survive;
-SQL compilation checks cover all three dialects, and SQLite covers unusual
-keys. Custom stores must provide the same key-level atomicity. Same-key writes
-remain last-writer-wins, and RT-11 remains open for signed-flash replay,
-in-flight work and the rest of its concurrency contract. See the
-[database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
-
-Already-started HTTP actions can retain resolved identity. A frame checked before
-revocation can be in flight. SSE idle checks occur before 15-second heartbeats
-with reader demand, so backpressure and slow storage prevent a wall-clock guarantee.
-Account writes, reset consumption and response delivery are separate steps;
-fixed errors do not establish rollback. Flash now signs and checks its expiry on
-the server. Cloudflare consumes each nonce once through a dedicated
-`COSSACK_SSE` SQLite Durable Object, with alarm cleanup and atomic two-Worker
-coverage. Node/Deno use a bounded module-local claim store when no coordinator
-is available. See the [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05)
-and [process-local checkpoint](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05).
-Audit the remaining concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
-
-Start in framework `session.ts`, `flash-context.ts`, middleware, core
-`shared/flash.ts`, and `packages/auth/src/session.ts`.
-
-Done when: Native HTTP tests observe cookie changes and flash consumption across
-requests. RPC failures do not consume or lose unrelated state. Passwords and
-tokens never enter serialized old input. Concurrent requests and rotation have
-documented behavior. Dependencies: RT-01, RT-02, and RT-13.
-
-
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
@@ -1192,3 +946,20 @@ resending. Four matching installed guides pass strict compilation and execution.
 Release: **45 complete / 13 open**. SVC-04 and broader runtime, Cloudflare and
 release gates remain open; no batch blocker. Desktop remains waived and versions
 stay 0.8.3 until REL-04.
+
+
+<a id="codex-rt01-rt11-complete-2026-10-05"></a>
+## Codex: RPC and session acceptance completed (2026-10-05)
+
+RT-01 and RT-11 are complete against their archived full criteria. Native Node
+and direct workerd pre-header TCP resets prove component/service abort and cleanup.
+Durable Object readiness, failed-owner cleanup, reciprocal close, real eviction
+and concurrent restoration pass; final installed Core proves the changed runtime.
+Native/installed SQLite and D1 prove documented session write, rotation, flash,
+revocation and anonymous-upgrade semantics. Prior transport/type, generated auth,
+safe old-input, cookie/failure and realtime evidence remains required and linked
+in the [criterion audit](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05).
+**47 complete / 11 open**. Next assess RT-26 and SVC-04 as independent complete
+features; CLI-08 and Cloudflare/release gates remain open. Local runtime proof
+is not live deployment or cross-process replay proof. Desktop stays waived;
+versions remain 0.8.3. No batch blocker.

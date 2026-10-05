@@ -5854,3 +5854,437 @@ opt-in remote smoke coverage and label unrun remote checks accurately.
 Dependencies: RT-15, RT-16, and CF-01.
 
 Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
+
+
+<a id="codex-rt-01-completed-2026-10-05"></a>
+## Codex: RT-01 original criteria and retained checkpoints
+
+Completed against the original criteria; see the [final audit](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05). Historical remaining-work statements below describe earlier checkpoints.
+
+
+### RT-01: One RPC contract across transports
+
+Purpose: The same server method must have predictable completion and failure
+behavior over HTTP, SSE, WebSockets, and explicit service calls. Transport choice
+must not change an awaited value into an unobservable fire-and-forget action.
+
+Baseline: HTTP/SSE component calls now share a promise/iterator contract and
+bounded stream frames. WebSocket and service RPC parity, timeouts, and precise
+client typing for generator results remain open.
+
+Approach: Extend the existing call abstraction and error taxonomy. Correlate
+requests, yields, terminal values, failures, and cancellation by request ID.
+Add configurable deadlines and distinguish remote application errors from
+transport failure and uncertain completion. Describe serialization failures by
+component, action, and value path. Define supported value types explicitly.
+Keep cookies and redirects subject to HTTP header timing.
+
+Codex status (2026-10-04): Authored RPC inference, JSON serialization, native
+response completion and multipart ownership have shared transport coverage.
+The 421-case conformance matrix covers correlated results/errors and bounded frames.
+Native Workers fixtures cover shared limits, peer context and durable counters.
+Backend response bounds/deadlines and explicit cross-Worker coordinator cancellation
+also pass. RT-02, RT-14 and RT-18 contracts are now complete.
+See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and the
+[cancellation checkpoint](./release-0.9.0.md#codex-sse-cancellation-2026-10-03).
+
+Remaining: Prove native pre-header disconnect delivery and component
+initialization/restoration concurrency against the original criteria. The
+[per-call deadline checkpoint](#codex-rt01-per-call-deadlines-2026-10-05) closes
+the arbitrary per-call action deadline gap.
+Retain RT-11 session and stream-response cookie requirements. Handshake identity
+does not prove per-message session revalidation. Explicit coordinator cancellation
+does not prove incoming TCP abort delivery or terminate ignored application I/O.
+Native Durable Object fixtures do not prove live Redis/KV guarantees.
+Deno interruption/lifecycle acceptance, actual Electron execution and the full
+release matrix remain separate gates. Basic Deno production execution is recorded
+in the [runtime checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
+RT-01 remains open.
+
+<a id="codex-rt01-timeout-bounds-2026-10-05"></a>
+Codex deadline-boundary review (2026-10-05): `@Server({ timeout })` now accepts
+only integer milliseconds from 1 through 2,147,483,647. Larger JavaScript timer
+delays are clamped by runtimes and could previously become near-immediate
+timeouts; fractional, non-finite, negative and nonnumeric values also silently
+lost their declared deadline. The decorator rejects invalid options, and the
+HTTP/SSE, WebSocket and service proxy paths validate inherited metadata before
+creating a timer. The legacy Node WebSocket adapter now coalesces concurrent
+same-target bootstrap and reserves its instance limit for pending distinct
+targets; failed bootstrap cleans up the component and rejects the socket. Core
+deadline/metadata regressions pass (25 tests), the full core suite passes
+(1,552 tests), and the core package builds. The Node adapter builds and all 24
+of its tests pass, including same-target coalescing and pending-capacity checks;
+root `pnpm tsc --noEmit` passes. This does not prove native disconnect delivery,
+server-side rollback, or arbitrary dynamic/per-call deadlines. Broader component
+initialization/restoration concurrency remains unaudited; RT-01 remains open.
+
+<a id="codex-rt01-per-call-deadlines-2026-10-05"></a>
+Codex per-call RPC deadline and cancellation (2026-10-05): `rpc$` now accepts a
+factory form, `rpc$(() => this.save(), { timeout, signal })`, while retaining the
+existing identity-view form. It validates timeout bounds and AbortSignal shape
+before invoking the factory, so invalid options cannot dispatch a mutation. A
+per-call timeout overrides the decorated default across component HTTP/SSE and
+WebSocket calls and layout-service HTTP calls. An aborted signal settles the
+local call and aborts its transport request; server work already in progress may
+continue, and the mutation outcome remains uncertain, so calls are never retried.
+The installed type fixture checks inference and rejects options on a direct-call
+form. Core build, all 1,558 Core tests and root `pnpm tsc --noEmit` pass. This
+closes the arbitrary per-call deadline implementation/acceptance gap, but not
+native pre-header disconnect delivery, component initialization/restoration
+concurrency, session/cookie requirements, or RT-01 itself.
+
+Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
+`transport-connections.ts`, and framework transport handlers and `router.ts`.
+
+Done when: One conformance suite exercises each transport and service calls.
+Cover ordinary results, generators, errors, timeout, disconnect, cancellation,
+duplicate consumers, and cleanup. Consuming a call twice never dispatches a
+second mutation. Type tests prove yielded and final result inference.
+
+
+
+<a id="codex-rt-11-completed-2026-10-05"></a>
+## Codex: RT-11 original criteria and retained checkpoints
+
+Completed against the original criteria; see the [final audit](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05). Historical remaining-work statements below describe earlier checkpoints.
+
+
+### RT-11: Session and flash recipes
+
+Purpose: Login, redirects, old form input, and one-time messages must work through
+the framework's actual request lifecycle. A recipe that works only during a
+plain page request is incomplete.
+
+Baseline: Session and flash helpers exist. Integrated recipes and failure coverage
+remain open.
+
+Approach: Document and generate flows for failed validation, successful mutation
+with redirect, authentication change, logout, and session rotation. Specify which
+values persist, which are consumed once, and which must never enter old input.
+Preserve cookie headers when RPC returns a redirect/result. Reject late cookie
+changes after streaming headers are committed with a useful diagnostic.
+
+Codex checkpoint (2026-10-03): verified native cookies/redirects, old-input and
+message consumption, and late session/header writes as described under RT-01.
+Middleware acceptance covers `/crpc`, `/upload`, `/sse`, and `/ws/`: valid incoming
+flash survives background requests, HTTP failures do not replace it with partial
+outgoing writes, and invalid tokens clear. A later stream failure cannot undo
+already-sent headers. These are response lifecycle fixes, not completion of all
+recipes. Next finish password/token exclusion from old input, generated failure/
+login/logout/rotation flows, and documented concurrent request semantics. Verify
+Workers/realtime integration for this behavior before claiming runtime parity.
+
+Codex Workers acceptance (2026-10-03): production workerd/Chromium now verifies
+native/helper/flash redirect cookies and one-time old-input/message consumption
+for component and service actions from HTTP/SSE pages. Multipart early cookies
+and late-cookie diagnostics work through the real artifact. Continue sensitive
+old-input filtering, complete failure/login/logout/rotation recipes and documented
+concurrent request behavior; this runtime slice does not close RT-11.
+
+Codex session-dashboard checkpoint (2026-10-05): RT-13's shared auth primitives
+remain complete. The generated application now exposes independent
+`SessionInfo.reference` UUIDs and a whitelist of display fields. An additive
+migration and conditional legacy backfill preserve token identities; rotation
+preserves the reference. Authenticated-context helpers enforce ownership and
+auth purpose. Single and keep-current bulk revocation protect the current
+reference during rotation. The dashboard layout also guards RPC requests;
+page errors discard raw storage messages. Native Node SQLite/Cloudflare D1
+acceptance covers SSR/RPC disclosure, forged actors, foreign/current/reset/state
+references, real storage failures, concurrent revocation, rotation races and
+bulk cookie clearing. Sessions-only dashboards no longer import absent role
+models in their seeder. See the
+[checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05).
+Auth starters now leave the extra anonymous session bag opt-in, preserving public
+SSG without visitor cookies; standalone SSG also initializes bare translation/
+config helpers. Preserve the session-registration migration and public SSG guards.
+Continue sensitive old-input filtering, complete failure/login/logout/rotation
+recipes and the remaining concurrent/realtime criteria. This checkpoint does
+not close RT-11 or prove connection identity refresh after revocation.
+
+Codex public-input checkpoint (2026-10-05): `getFormData` now defaults to
+nonempty validation errors only. Public old input requires `flash.input` paths
+or `flashInput(data, { fields })`. Selection copies own finite scalar leaves and
+scalar arrays, rebuilds nested containers and leaves server data intact. Whole
+objects/files/accessors are omitted. Credential/prototype paths are excluded;
+custom secrets must stay outside the application-owned field list. Generic
+`flash()` cannot bypass selection through the reserved namespace. No-rules form
+options also have the correct parsed-DTO return type. Forms/docs and the new
+`safe-old-input` package guide use explicit policies. Its source runs verbatim in
+generated Node/Cloudflare production fixtures; decoded cookie bytes, RPC failures
+and following SSR state prove selected restoration and credential exclusion.
+The broader Workers HTTP/SSE redirect/late-write gate still passes. See the
+[evidence and limits](./release-0.9.0.md#codex-rt11-input-2026-10-05).
+
+Codex generated-form checkpoint (2026-10-05): all four auth pages now use
+ClientStore drafts and client-only validation. App-owned `auth-input.ts` contracts
+accept one explicit object; real RPC gates and repeated native parsing reject
+invalid shapes, unknown fields and excess arguments before storage. Passwords
+are not normalized and fit the shared UTF-8 size limit. Fixed messages replace
+caught storage/transport exceptions. The dashboard layout handles failed logout
+without clearing its cookie. Its sessions page rotates and redirects before
+refreshing with a new cookie. Generated Node SQLite/Cloudflare D1 and Chromium
+acceptance checks actual page SSR/RPC state, browser drafts, reset expiry/replay,
+partial registration failure, login/logout/rotation cookies and redirects. Keep
+the real-page tests distinct from the helper fixtures. See the
+[checkpoint](./release-0.9.0.md#codex-rt11-forms-2026-10-05).
+
+The package public-form example also passes installed Cloudflare application
+guidance acceptance for native POST, selected restoration, credential exclusion,
+browser clearing and emitted source-map checks.
+Codex SSE checkpoint (2026-10-05): authenticated subscriptions use the optional
+AuthRealtimeProvider and app-owned storage to capture a bounded, server-only
+reference/fingerprint descriptor. Every delivery revalidates the live session
+through the shared session manager and resolves current user data. Fresh request,
+config and ORM scopes run global/inherited guards and require the original owner
+and computed scope. Params/bindings and the subscription locale remain available;
+credential headers are removed and late header writes reject. Distinct fixed codes
+separate missing/invalid capture configuration from storage capture failures.
+
+Node SQLite/Cloudflare D1 and Chromium verify logout, expiry, rotation across two
+tabs, purpose/scope changes, fresh user metadata for inherited guards, authorized
+peer delivery and idle storage failure. The browser retires the old EventSource,
+ignores late callbacks, stops retries and reconnects on explicit reload with the
+new cookie. Preserve replay/heartbeat/backpressure tests and production JS/map
+stripping. See the [checkpoint](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05).
+
+Codex WebSocket checkpoint (2026-10-05): Cloudflare upgrades now capture a
+bounded, credential-free identity descriptor and attach it with the request,
+route params, locale, user, component owner and computed scope. Each action,
+state/event/client-action delivery replays fresh global and inherited middleware
+inside a new request/config/locale/ORM scope, then checks the current user and
+per-page scope before dispatch or send. Durable Object hibernation restores the
+descriptor from the socket attachment; it does not depend on in-memory peer maps.
+Invalid identity capture and stale target/scope fail closed. The browser receives
+a terminal authorization frame and closes without reconnecting. Node/Deno peers
+also recheck each action and outbound delivery and serialize each peer's queue
+with a bound of 32 pending frames; overflow closes with 1013.
+
+Generated Cloudflare deployment acceptance exercises authenticated sockets and
+the fingerprint provider without putting the bearer session ID in the attachment.
+Framework tests cover restored identity, fresh guards and scope changes; core
+tests cover action/outbound reauthorization and terminal closure; Node/Deno
+adapter and generated peer tests pass. This closes the WebSocket freshness slice,
+not RT-11. Broader concurrent request semantics remain. An action or frame that
+passed its check before revocation may finish, slow storage and queue backpressure
+prevent a wall-clock guarantee, and idle sockets are checked on the next action
+or delivery. Barrier tests now prove generic session and signed-flash request
+scopes remain separate while handlers overlap in one isolate. Auth-managed
+session rotation already uses an atomic store replacement with one winner.
+The process-runtime guard now atomically claims each valid signed nonce in a
+bounded module-local store. It prevents concurrent and later replay within one
+loaded module instance in its JavaScript process or isolate, but does not
+coordinate across processes or isolates and does not survive restart. Capacity
+fails closed rather than evicting a live claim. Continue verifying broader
+concurrent request semantics and documenting these runtime limits before closing
+RT-11. See the
+[process-local flash checkpoint](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05).
+
+Codex database-session checkpoint (2026-10-05): the built-in database
+`SessionStore.set()` and `unset()` now update one JSON key in one SQL statement
+for SQLite, PostgreSQL and MySQL. They no longer read and rewrite the whole
+session bag, which could erase a different key written concurrently. A SQLite
+regression rejects read-before-write behavior and verifies both keys survive;
+SQL compilation checks cover all three dialects, and SQLite covers unusual
+keys. Custom stores must provide the same key-level atomicity. Same-key writes
+remain last-writer-wins, and RT-11 remains open for signed-flash replay,
+in-flight work and the rest of its concurrency contract. See the
+[database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
+
+Already-started HTTP actions can retain resolved identity. A frame checked before
+revocation can be in flight. SSE idle checks occur before 15-second heartbeats
+with reader demand, so backpressure and slow storage prevent a wall-clock guarantee.
+Account writes, reset consumption and response delivery are separate steps;
+fixed errors do not establish rollback. Flash now signs and checks its expiry on
+the server. Cloudflare consumes each nonce once through a dedicated
+`COSSACK_SSE` SQLite Durable Object, with alarm cleanup and atomic two-Worker
+coverage. Node/Deno use a bounded module-local claim store when no coordinator
+is available. See the [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05)
+and [process-local checkpoint](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05).
+Audit the remaining concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
+
+Start in framework `session.ts`, `flash-context.ts`, middleware, core
+`shared/flash.ts`, and `packages/auth/src/session.ts`.
+
+Done when: Native HTTP tests observe cookie changes and flash consumption across
+requests. RPC failures do not consume or lose unrelated state. Passwords and
+tokens never enter serialized old input. Concurrent requests and rotation have
+documented behavior. Dependencies: RT-01, RT-02, and RT-13.
+
+<a id="codex-handoff-before-rt01-rt11-2026-10-05"></a>
+## Codex: Handoff context before RT-01/RT-11 completion
+
+Historical continuation notes; the active handoff and checklist override old status/counts.
+
+## Active implementation plan — Codex owns remaining work (2026-10-05)
+
+1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
+   guidance, executable examples and verified runtime support through the
+   [shared documentation services](../docs/local-agent-tools.md). Generated
+   declarations alone do not prove usage or runtime compatibility.
+   Core guidance now includes typed URL state, standalone schemas and nested forms.
+   Preserve the focused `core/input` export and
+   [ten installed examples](./release-0.9.0.md#codex-cli08-input-2026-10-04).
+   Packaged action/resource/task pages now run verbatim through generated application
+   fixtures. Preserve their input rejection, hydrated resource reuse, recovery,
+   deterministic stale-task overlap, navigation cleanup and client stripping.
+   [Installed Cloudflare and Node acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04)
+   also requires emitted source maps before scanning for server code.
+   Auth now ships session/role, record-policy, OAuth diagnostic and shared
+   credential/session guides.
+   Preserve the separate legacy `implicitEntry`, static TypeScript source indexing
+   and four examples checked with Bundler resolution, bundled from installed
+   packages and run offline.
+   [Auth acceptance evidence](./release-0.9.0.md#codex-rt13-complete-2026-10-05)
+   separates memory examples from real Node SQLite/Cloudflare D1 session checks
+   and the protected-route browser regression. OAuth examples now provide typed
+   state storage, and native fixtures prove one exchange/account/session despite
+   a provider that accepts repeated codes. Bundling does not prove plain
+   Node imports or production hashing limits.
+   The database package publishes parameterized Node SQLite and Cloudflare D1
+   guides. The exact D1 example now runs from a fresh installed tarball inside
+   workerd with local D1 and proves SQL-looking values remain bound. It does not
+   test a deployed Cloudflare database. The runtime test exposed a packaging
+   defect: the root SQL entry pulled in Node adapters, and D1's Cloudflare entry
+   pulled in optional Turso. Root `SQL` now takes an explicit adapter; Node
+   auto-selection remains under `/node`, and remote Workers Turso has a separate
+   `/cloudflare-turso` entry. All thirty-nine UI guides now include executable
+   SSR examples. The latest six cover Menubar, NavigationMenu, Sidebar, Toaster,
+   MessageScroller and AuthForm; the previous six cover date controls,
+   Dropdown/Context menus, both command search guides, Carousel and Resizable.
+   Earlier examples cover native dialogs/disclosures, tabs, toggles, icons,
+   radio/range controls, searchable choice, repeated tag values, semantic
+   lists/actions, named tables/scroll regions and other UI surfaces. The full
+   fresh-tarball docs gate now passes seventy-one standalone
+   examples, four auth
+   examples, four generated pages, Cloudflare
+   HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
+   cold-start Vite cache fix clears optimizer state between
+   rewritten graphs and pre-bundles late-discovered API/devtools entries. See
+   [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
+   and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
+   plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
+   All 73 published-package guides now include examples, and all eighty
+   packaged examples run in the installed gate. Database guidance now includes
+   typed model filters and query-builder projections; see the [latest query
+   acceptance](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
+   Framework guidance now covers runtime
+   capabilities, cache guarantees, typed request-scoped config, environment
+   strings and raw binding requirements; Node and Deno guidance covers adapter
+   lifecycle, binding precedence and development plugins; Studio guidance covers
+   local/remote selection and embedded cleanup; Core guidance covers locale
+   negotiation, explicit `q=0` exclusions and CLDR plural formatting. `test-utils` is an
+   internal workspace package, outside the published tarball acceptance. Continue
+   broader library API and recipe coverage. The UI
+   examples
+   cover SSR only; they do not close browser or assistive-technology acceptance.
+   Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
+   See the [Studio/offline-import checkpoint](./release-0.9.0.md#codex-cli08-studio-guidance-2026-10-05): the public Studio entry now defers the remote-D1 helper, avoiding eager `tsx` IPC when a caller supplies its own connection. The installed gate blocks outbound network APIs and permits only synthetic numeric loopback resolution.
+   The [locale guidance checkpoint](./release-0.9.0.md#codex-cli08-localization-2026-10-05) adds installed examples for Accept-Language fallback (including `q=0` exclusions) and CLDR plural formatting. Core now ignores explicitly unacceptable language ranges. The Core i18n suite passes 74 tests and the fresh installed gate passes. These examples cover pure Core helpers; they do not prove framework middleware or response-cache behavior.
+   The [migration/seeding checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05) adds an installed Node SQLite lifecycle example for migration apply/status/rollback and idempotent seeding. It proves the documented Node API against an in-memory SQLite database, not provider portability or deployment readiness.
+   The [request-config checkpoint](./release-0.9.0.md#codex-cli08-request-config-2026-10-05) adds an installed framework guide for request-time config factories, typed dotted paths, string environment values and raw bindings. Its example compiles and runs from the framework tarball and verifies safe missing-binding errors. Broader library and recipe coverage remains open.
+   The [renderer checkpoint](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds four installed examples, raising the package catalog to 72 guides and the acceptance run to 79 examples including auth at that checkpoint. The [latest transaction checkpoint](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) brings the totals to 73 guides and 80 examples. A recount corrected the previous handoff's one-guide undercount. Continue broader library API/component/recipe coverage and preserve the acceptance distinction between SSR output and browser interaction.
+   Desktop remains closed by user decision. Do not spend work on its waived platform matrix.
+2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
+   recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
+   verifies independent public references, owner/purpose checks, fixed errors and
+   an authenticated dashboard layout guard before RPC. Native SQLite/D1 checks
+   cover disclosure, forged actors/references, real storage failures, conditional
+   legacy backfill, concurrent revocation and keeping the current session during
+   token rotation. Preserve `0008_add_session_public_id`, reference stability,
+   reset/OAuth purpose separation and sessions-only recipe composition.
+   Auth's separate anonymous session bag is now opt-in; preserve public SSG
+   response guards and standalone translation/config initialization.
+   The full installed scaffold gate passes the locally packed Node → Cloudflare
+   → Node flow, migrations/schema checks, Studio and production assets.
+   [Public old-input selection](./release-0.9.0.md#codex-rt11-input-2026-10-05)
+   now passes real Node/Cloudflare multipart POST, RPC failure/redirect and
+   following SSR checks. Preserve explicit field lists, credential exclusions,
+   detached copies, namespace protection and the errors-only form default.
+   The packaged `safe-old-input` example runs verbatim in generated production
+   fixtures and installed Cloudflare guide acceptance, including decoded-cookie,
+   browser clearing and source-map checks.
+   [Generated auth pages](./release-0.9.0.md#codex-rt11-forms-2026-10-05) now keep
+   drafts in ClientStore, use client-only validation and validate one explicit
+   object at RPC and native boundaries. Fixed errors preserve drafts and avoid
+   raw storage text. Actual Node/Cloudflare pages and Chromium verify registration,
+   login, reset expiry/replay, logout and rotation through cookies/redirects and
+   following requests. Preserve the new `auth-input.ts` owned file, object action
+   signatures and real-page regressions. Rotation redirects before a fresh list.
+   Registration and reset failures can follow partial writes; do not infer rollback.
+   [SSE session freshness](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05)
+   now passes generated Node SQLite/Cloudflare D1 and Chromium. Preserve the
+   server-only public-reference/token-fingerprint descriptor, strict shared
+   session validation, fresh request/config/ORM scopes, inherited guards and
+   owner/scope checks before every frame/heartbeat. Credential headers stay out
+   of recheck contexts. Missing/invalid provider configuration and capture/storage
+   failure have distinct fixed codes. Denial closes EventSource, stops retries
+   and requires explicit reload; late old-source callbacks cannot affect a new source.
+   Two tabs verify rotation of their shared cookie, old-stream closure and fresh
+   reload. Native checks cover purpose/expiry/revocation, fresh user metadata for
+   guard/scope changes, authorized peer delivery and an idle storage failure.
+   Preserve replay/heartbeat/backpressure tests, private helper/map exclusion,
+   actual auth-form regressions and the guide's explicit migration contract.
+   The [WebSocket freshness checkpoint](./release-0.9.0.md#codex-rt11-websocket-auth-2026-10-05)
+   now rechecks actions and every outbound frame using a credential-free
+   attachment after hibernation. Fresh middleware validates user and per-page
+   scope; denial sends a terminal frame and closes the stale socket. Node/Deno
+   runtime peers use serialized, bounded per-connection delivery queues. Preserve
+   the generated Cloudflare, Node/Deno and framework regressions. RT-11 remains
+   open for broader concurrent request semantics. A checked in-flight action or
+   frame, slow storage and backpressure prevent a strict wall-clock revocation
+   guarantee; idle sockets are checked on the next action or delivery. Generic
+   session and signed-flash scopes now have barrier tests that overlap requests
+   in one isolate. Auth-session rotation has an atomic one-winner test. Node/Deno
+   now claim flash nonces once in a bounded module-local store; capacity fails
+   closed without evicting live tokens. This does not coordinate across
+   processes or isolates and does not survive restart. See the [process-local
+   flash checkpoint](./release-0.9.0.md#codex-rt11-process-flash-claims-2026-10-05).
+   The built-in database session store now mutates individual JSON keys atomically on
+   SQLite/PostgreSQL/MySQL, with a deterministic lost-update regression and
+   dialect compilation checks; custom stores must preserve the same key-level
+   behavior. Same-key writes remain last-writer-wins. See the
+   [database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
+   Flash cookies now carry a signed server-checked expiry matching `maxAge`;
+   copied values are rejected after expiry instead of relying on browser cookie
+   clearing. The framework suite, core flash/crypto tests, root/package types and
+   fresh installed docs acceptance pass. Cloudflare now consumes flash nonces
+   once in `COSSACK_SSE`, preserves background requests and rejects copied-token
+   page replays. Native two-Worker tests and middleware tests cover concurrent
+   claims, replay, invalid expiry, missing binding and coordinator failure.
+   Node/Deno use a bounded module-local claim store. Preserve that limit and the
+   [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05).
+   The flash middleware and Cloudflare coordinator focused tests and root type
+   check pass. RT-11 remains open for broader request concurrency and replay
+   guarantees across processes/isolates or restart.
+   The fresh installed agent-docs gate passes with the clarified core guide.
+   The older, unrelated coordinator RPC stream test still reports
+   `COSSACK_RPC_STREAM_TRUNCATED` in this checkout; it reproduced against the
+   pre-change Durable Object source. Broader in-flight revocation and concurrent
+   request semantics remain open.
+
+3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against native
+   pre-header disconnect delivery and component initialization/restoration
+   concurrency; retain the limits below. `rpc$(() => action(), opts)` now
+   validates per-call options before dispatch and supports
+   component HTTP/SSE/WebSocket and layout-service HTTP calls. Core build, all
+   1,558 Core tests, authored RPC declaration tests and root TypeScript checking
+   pass. Declared `@Server({ timeout })` values remain bounded to integer
+   milliseconds from 1 through 2,147,483,647. The legacy Node adapter coalesces
+   same-target bootstrap, counts pending instances toward its cap, and closes
+   failed upgrades with a fixed error; its 24 tests pass. See the
+   [per-call deadline checkpoint](./release-0.9.0-plan.md#codex-rt01-per-call-deadlines-2026-10-05)
+   and [earlier timeout-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
+   These changes do not close RT-01.
+4. Follow the detailed plan for all **15 open tasks**. Completed RT-12, RT-20
+   and RT-24 criteria and historical checkpoints are archived. Preserve their
+   regression coverage; do not treat old partial-status text as current work.
+5. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
+   checkpoint](./release-0.9.0.md#codex-server-failures-hydration-2026-10-05). Keep the
+   fixed failure-code and payload-redaction tests. Native/class API, SSR/router
+   cleanup and unhandled config/middleware catches now emit safe metadata.
+   Local workerd verifies a native API event and caller-ID correlation.
+   Next review core lifecycle/WebSocket, adapter, manifest/SSG/access logs and
+   development SSR details, then add whole-request timing, production source-map
+   resolution, configurable budgets and remote Workers Logs acceptance. Do not close CF-08 from the local
+   framework matrix alone.
+6. Assess SVC-02/SVC-03 full acceptance using completed SVC-01. Preserve the SVC-05 widget and verifier regressions.

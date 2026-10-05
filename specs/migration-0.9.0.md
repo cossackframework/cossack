@@ -5,6 +5,23 @@ release migration guide. REL-04 must audit the full release checklist, add every
 remaining break, compile its examples, and verify package installation before
 publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
 
+## Durable Object readiness and session concurrency
+
+Concurrent Durable Object joins now wait for one fully initialized owner. Initial
+persistence completes before publication; restoration applies saved state without
+rerunning `init()`. Failed unpublished owners and idle stateless replacements are
+disposed. WebSocket close handlers acknowledge the handshake and retire pending
+calls, including on runtimes without automatic reciprocal close replies.
+
+Database session bags preserve concurrent writes to different keys; the same key
+uses the last committed write. Auth-managed rotation has one atomic winner.
+Anonymous `session().bindUser()` remains a multi-step copy/delete operation and
+can create two replacement bags when requests overlap. Serialize that upgrade in
+your application; use auth-managed rotation for authentication tokens. Revocation
+does not roll back an already-admitted handler. See the
+[concurrency guide](../docs/session-concurrency.md) for flash replay scope and
+request/commit limits.
+
 ## Authenticated SSE requires live session revalidation
 
 Add `realtime: { key, capture, validate }` to your `createAuth` provider before

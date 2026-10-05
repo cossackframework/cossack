@@ -1,37 +1,34 @@
 # Cossack 0.9.0 continuation notes
 
-## Current handoff — Codex (2026-10-05)
+## Current handoff — Codex (2026-10-06)
 
-Completed **SVC-02 and SVC-03**. Release: **45 complete / 13 open**.
-[Acceptance and limitations](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05).
-Named schedules dispatch shared jobs with UTC occurrence identity; generated and
-installed Cron/Queue/D1, cleanup and static build/CLI/MCP inspection pass. Typed
-notifications compose escaped templates, scoped opt-in preferences, durable fenced
-D1 status and Cloudflare/SMTP providers. Actual loopback SMTP and SQLite reopen
-prove safe rejection retry and no resend after ambiguous acceptance. Four new
-installed guides pass strict compilation and execution (81 guides / 88 examples).
-No batch blocker. Completed contexts are compacted into archives.
+Completed **RT-01 and RT-11**. Release: **47 complete / 11 open**.
+[Criteria, verification and limits](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05).
+Durable Object components now have one unpublished initialization/restoration
+owner, awaited cleanup and reciprocal socket close. Real Node/workerd disconnect,
+browser duplicate-consumer, eviction/restoration and final installed Core pass.
+Source/installed native SQLite/D1 session races are documented and verified.
+Generic anonymous bindUser remains non-atomic; auth rotation has one winner.
+No batch blocker. Completed context is compacted into the plan archive.
 
-Next assess **RT-01, RT-11 and RT-26** for independent full-acceptance gaps.
-SVC-04 remains open: choose it only when its interruption/event/retry criteria
-can be proved through the native Workflows provider. Keep shared APIs/integration
-with Codex; give at most three implementation agents exclusive files. Finish
-parent tasks before polishing working features. Do not revisit Cloudflare budgets
-unless that closes a required criterion. Never replace dist while consumers run.
-Run targeted checks, then combined/types once; repeat only invalidated evidence.
-Record one verified batch and commit only owned files.
+Next choose **RT-26 and SVC-04** only with bounded full acceptance paths; consider
+**CLI-08** alongside them if the coverage inventory can be closed. Keep shared
+APIs/integration with Codex, at most three implementation agents with exclusive
+files. Finish parent tasks; do not polish Cloudflare budgets unless required.
+Run targeted checks, then combined/types once. Repeat only invalidated evidence;
+never replace dist while consumers run. Record one verified batch and commit
+only owned files. Reuse unchanged tarballs and installed acceptance evidence.
 
-Limits: all Workers/D1/Queues are local. Reload retains harness-host storage;
-file SQLite reopen independently proves stored delivery state. SMTP uses only
-127.0.0.1; Cloudflare email responses are injected. No external mail or live
-account mutation, delivery/provisioning claim. Provider acceptance is distinct
-from delivered. Unknown non-idempotent sends need deliberate reconciliation;
-keep terminal keys for deduplication. Distinct schedule occurrences may overlap;
-jobs own execution retries, with no framework catch-up or Cron redelivery promise.
-Generated recipes require Cloudflare; other runtimes need explicit adapters.
-CLI-08, RT-01/11/26, SVC-04, CF-04/08/09/10 and REL-02/03/04/05 remain open
-(13 total). Versions stay 0.8.3 until REL-04. Preserve user reports.md and
-.zcodeignore. Desktop remains complete with remaining checks waived.
+Limits: all Workers/D1/Durable Objects are local. Wrangler's service-entry proxy
+suppresses pre-header cancellation; direct workerd application sockets prove it.
+No live account/resource mutation, rollback of admitted work, cross-process Node
+flash replay guarantee or native Deno interruption claim. REL-03 owns the remaining
+non-Desktop runtime matrix. Session acceptance scratch fixtures translate legacy
+migration callbacks to declarative SQL; this does not claim generated callback
+migration plans are complete. CLI-08, RT-26, SVC-04, CF-04/08/09/10 and
+REL-02/03/04/05 remain open (11 total). Versions remain 0.8.3 until REL-04.
+Preserve user reports.md and .zcodeignore. Desktop remains complete with remaining
+checks waived, not passed.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -48,188 +45,31 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 45 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 47 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
-Latest completed checkpoint: [Schedules and notifications](./release-0.9.0.md#codex-svc02-svc03-complete-2026-10-05).
-It closes SVC-02 and SVC-03. Earlier CF-01/CF-02 acceptance remains archived. No live Cloudflare account or database was contacted.
+Latest completed checkpoint: [RPC and session acceptance](./release-0.9.0.md#codex-rt01-rt11-complete-2026-10-05).
+It closes RT-01 and RT-11. Earlier CF-01/CF-02 acceptance remains archived. No live Cloudflare account or database was contacted.
 Previous CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). The SVC-01/SVC-05 and SVC-02/SVC-03 batches each add four independently strict-compiled/executed installed guides (81 guides / 88 examples now). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
-Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. RT-11 retains its remaining criteria; RT-12 is completed in the archived acceptance.
+Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. RT-11 and RT-12 are now complete; preserve their archived acceptance.
 Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt10-rt15-rt17-complete-2026-10-05).
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
 
-1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
-   guidance, executable examples and verified runtime support through the
-   [shared documentation services](../docs/local-agent-tools.md). Generated
-   declarations alone do not prove usage or runtime compatibility.
-   Core guidance now includes typed URL state, standalone schemas and nested forms.
-   Preserve the focused `core/input` export and
-   [ten installed examples](./release-0.9.0.md#codex-cli08-input-2026-10-04).
-   Packaged action/resource/task pages now run verbatim through generated application
-   fixtures. Preserve their input rejection, hydrated resource reuse, recovery,
-   deterministic stale-task overlap, navigation cleanup and client stripping.
-   [Installed Cloudflare and Node acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04)
-   also requires emitted source maps before scanning for server code.
-   Auth now ships session/role, record-policy, OAuth diagnostic and shared
-   credential/session guides.
-   Preserve the separate legacy `implicitEntry`, static TypeScript source indexing
-   and four examples checked with Bundler resolution, bundled from installed
-   packages and run offline.
-   [Auth acceptance evidence](./release-0.9.0.md#codex-rt13-complete-2026-10-05)
-   separates memory examples from real Node SQLite/Cloudflare D1 session checks
-   and the protected-route browser regression. OAuth examples now provide typed
-   state storage, and native fixtures prove one exchange/account/session despite
-   a provider that accepts repeated codes. Bundling does not prove plain
-   Node imports or production hashing limits.
-   The database package publishes parameterized Node SQLite and Cloudflare D1
-   guides. The exact D1 example now runs from a fresh installed tarball inside
-   workerd with local D1 and proves SQL-looking values remain bound. It does not
-   test a deployed Cloudflare database. The runtime test exposed a packaging
-   defect: the root SQL entry pulled in Node adapters, and D1's Cloudflare entry
-   pulled in optional Turso. Root `SQL` now takes an explicit adapter; Node
-   auto-selection remains under `/node`, and remote Workers Turso has a separate
-   `/cloudflare-turso` entry. All thirty-nine UI guides now include executable
-   SSR examples. The latest six cover Menubar, NavigationMenu, Sidebar, Toaster,
-   MessageScroller and AuthForm; the previous six cover date controls,
-   Dropdown/Context menus, both command search guides, Carousel and Resizable.
-   Earlier examples cover native dialogs/disclosures, tabs, toggles, icons,
-   radio/range controls, searchable choice, repeated tag values, semantic
-   lists/actions, named tables/scroll regions and other UI surfaces. The full
-   fresh-tarball docs gate now passes seventy-one standalone
-   examples, four auth
-   examples, four generated pages, Cloudflare
-   HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
-   cold-start Vite cache fix clears optimizer state between
-   rewritten graphs and pre-bundles late-discovered API/devtools entries. See
-   [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
-   and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
-   plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
-   All 73 published-package guides now include examples, and all eighty
-   packaged examples run in the installed gate. Database guidance now includes
-   typed model filters and query-builder projections; see the [latest query
-   acceptance](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
-   Framework guidance now covers runtime
-   capabilities, cache guarantees, typed request-scoped config, environment
-   strings and raw binding requirements; Node and Deno guidance covers adapter
-   lifecycle, binding precedence and development plugins; Studio guidance covers
-   local/remote selection and embedded cleanup; Core guidance covers locale
-   negotiation, explicit `q=0` exclusions and CLDR plural formatting. `test-utils` is an
-   internal workspace package, outside the published tarball acceptance. Continue
-   broader library API and recipe coverage. The UI
-   examples
-   cover SSR only; they do not close browser or assistive-technology acceptance.
-   Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
-   See the [Studio/offline-import checkpoint](./release-0.9.0.md#codex-cli08-studio-guidance-2026-10-05): the public Studio entry now defers the remote-D1 helper, avoiding eager `tsx` IPC when a caller supplies its own connection. The installed gate blocks outbound network APIs and permits only synthetic numeric loopback resolution.
-   The [locale guidance checkpoint](./release-0.9.0.md#codex-cli08-localization-2026-10-05) adds installed examples for Accept-Language fallback (including `q=0` exclusions) and CLDR plural formatting. Core now ignores explicitly unacceptable language ranges. The Core i18n suite passes 74 tests and the fresh installed gate passes. These examples cover pure Core helpers; they do not prove framework middleware or response-cache behavior.
-   The [migration/seeding checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05) adds an installed Node SQLite lifecycle example for migration apply/status/rollback and idempotent seeding. It proves the documented Node API against an in-memory SQLite database, not provider portability or deployment readiness.
-   The [request-config checkpoint](./release-0.9.0.md#codex-cli08-request-config-2026-10-05) adds an installed framework guide for request-time config factories, typed dotted paths, string environment values and raw bindings. Its example compiles and runs from the framework tarball and verifies safe missing-binding errors. Broader library and recipe coverage remains open.
-   The [renderer checkpoint](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds four installed examples, raising the package catalog to 72 guides and the acceptance run to 79 examples including auth at that checkpoint. The [latest transaction checkpoint](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) brings the totals to 73 guides and 80 examples. A recount corrected the previous handoff's one-guide undercount. Continue broader library API/component/recipe coverage and preserve the acceptance distinction between SSR output and browser interaction.
-   Desktop remains closed by user decision. Do not spend work on its waived platform matrix.
-2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
-   recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
-   verifies independent public references, owner/purpose checks, fixed errors and
-   an authenticated dashboard layout guard before RPC. Native SQLite/D1 checks
-   cover disclosure, forged actors/references, real storage failures, conditional
-   legacy backfill, concurrent revocation and keeping the current session during
-   token rotation. Preserve `0008_add_session_public_id`, reference stability,
-   reset/OAuth purpose separation and sessions-only recipe composition.
-   Auth's separate anonymous session bag is now opt-in; preserve public SSG
-   response guards and standalone translation/config initialization.
-   The full installed scaffold gate passes the locally packed Node → Cloudflare
-   → Node flow, migrations/schema checks, Studio and production assets.
-   [Public old-input selection](./release-0.9.0.md#codex-rt11-input-2026-10-05)
-   now passes real Node/Cloudflare multipart POST, RPC failure/redirect and
-   following SSR checks. Preserve explicit field lists, credential exclusions,
-   detached copies, namespace protection and the errors-only form default.
-   The packaged `safe-old-input` example runs verbatim in generated production
-   fixtures and installed Cloudflare guide acceptance, including decoded-cookie,
-   browser clearing and source-map checks.
-   [Generated auth pages](./release-0.9.0.md#codex-rt11-forms-2026-10-05) now keep
-   drafts in ClientStore, use client-only validation and validate one explicit
-   object at RPC and native boundaries. Fixed errors preserve drafts and avoid
-   raw storage text. Actual Node/Cloudflare pages and Chromium verify registration,
-   login, reset expiry/replay, logout and rotation through cookies/redirects and
-   following requests. Preserve the new `auth-input.ts` owned file, object action
-   signatures and real-page regressions. Rotation redirects before a fresh list.
-   Registration and reset failures can follow partial writes; do not infer rollback.
-   [SSE session freshness](./release-0.9.0.md#codex-rt11-sse-auth-2026-10-05)
-   now passes generated Node SQLite/Cloudflare D1 and Chromium. Preserve the
-   server-only public-reference/token-fingerprint descriptor, strict shared
-   session validation, fresh request/config/ORM scopes, inherited guards and
-   owner/scope checks before every frame/heartbeat. Credential headers stay out
-   of recheck contexts. Missing/invalid provider configuration and capture/storage
-   failure have distinct fixed codes. Denial closes EventSource, stops retries
-   and requires explicit reload; late old-source callbacks cannot affect a new source.
-   Two tabs verify rotation of their shared cookie, old-stream closure and fresh
-   reload. Native checks cover purpose/expiry/revocation, fresh user metadata for
-   guard/scope changes, authorized peer delivery and an idle storage failure.
-   Preserve replay/heartbeat/backpressure tests, private helper/map exclusion,
-   actual auth-form regressions and the guide's explicit migration contract.
-   The [WebSocket freshness checkpoint](./release-0.9.0.md#codex-rt11-websocket-auth-2026-10-05)
-   now rechecks actions and every outbound frame using a credential-free
-   attachment after hibernation. Fresh middleware validates user and per-page
-   scope; denial sends a terminal frame and closes the stale socket. Node/Deno
-   runtime peers use serialized, bounded per-connection delivery queues. Preserve
-   the generated Cloudflare, Node/Deno and framework regressions. RT-11 remains
-   open for broader concurrent request semantics. A checked in-flight action or
-   frame, slow storage and backpressure prevent a strict wall-clock revocation
-   guarantee; idle sockets are checked on the next action or delivery. Generic
-   session and signed-flash scopes now have barrier tests that overlap requests
-   in one isolate. Auth-session rotation has an atomic one-winner test. Node/Deno
-   now claim flash nonces once in a bounded module-local store; capacity fails
-   closed without evicting live tokens. This does not coordinate across
-   processes or isolates and does not survive restart. See the [process-local
-   flash checkpoint](./release-0.9.0.md#codex-rt11-process-flash-claims-2026-10-05).
-   The built-in database session store now mutates individual JSON keys atomically on
-   SQLite/PostgreSQL/MySQL, with a deterministic lost-update regression and
-   dialect compilation checks; custom stores must preserve the same key-level
-   behavior. Same-key writes remain last-writer-wins. See the
-   [database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
-   Flash cookies now carry a signed server-checked expiry matching `maxAge`;
-   copied values are rejected after expiry instead of relying on browser cookie
-   clearing. The framework suite, core flash/crypto tests, root/package types and
-   fresh installed docs acceptance pass. Cloudflare now consumes flash nonces
-   once in `COSSACK_SSE`, preserves background requests and rejects copied-token
-   page replays. Native two-Worker tests and middleware tests cover concurrent
-   claims, replay, invalid expiry, missing binding and coordinator failure.
-   Node/Deno use a bounded module-local claim store. Preserve that limit and the
-   [Cloudflare flash checkpoint](./release-0.9.0.md#codex-rt11-cloudflare-flash-claims-2026-10-05).
-   The flash middleware and Cloudflare coordinator focused tests and root type
-   check pass. RT-11 remains open for broader request concurrency and replay
-   guarantees across processes/isolates or restart.
-   The fresh installed agent-docs gate passes with the clarified core guide.
-   The older, unrelated coordinator RPC stream test still reports
-   `COSSACK_RPC_STREAM_TRUNCATED` in this checkout; it reproduced against the
-   pre-change Durable Object source. Broader in-flight revocation and concurrent
-   request semantics remain open.
+1. Assess RT-26 published storage/provider acceptance and SVC-04 native Workflow
+   interruption/event/retry acceptance. Assign independent implementation only
+   after dependency/file ownership checks; coordinator owns shared APIs.
+2. Finish CLI-08's remaining authored library/component/recipe coverage inventory.
+   Preserve 81 guides / 88 executable examples and prior installed application
+   acceptance. Use the active plan and archived checkpoints rather than rerunning
+   unchanged catalogs. Generated declarations alone do not prove usage/support.
+3. Complete CF-04 real resource selection/provisioning and CF-08/09/10 required
+   observability, preview and deployment automation criteria. Local plans/logs do
+   not prove remote resources/ingestion. Avoid polishing completed budget behavior.
+4. Keep REL-02/03/04/05 open until their full non-Desktop criteria pass. Preserve
+   all completed regressions and trace acceptance back to the original criteria.
 
-3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against native
-   pre-header disconnect delivery and component initialization/restoration
-   concurrency; retain the limits below. `rpc$(() => action(), opts)` now
-   validates per-call options before dispatch and supports
-   component HTTP/SSE/WebSocket and layout-service HTTP calls. Core build, all
-   1,558 Core tests, authored RPC declaration tests and root TypeScript checking
-   pass. Declared `@Server({ timeout })` values remain bounded to integer
-   milliseconds from 1 through 2,147,483,647. The legacy Node adapter coalesces
-   same-target bootstrap, counts pending instances toward its cap, and closes
-   failed upgrades with a fixed error; its 24 tests pass. See the
-   [per-call deadline checkpoint](./release-0.9.0-plan.md#codex-rt01-per-call-deadlines-2026-10-05)
-   and [earlier timeout-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
-   These changes do not close RT-01.
-4. Follow the detailed plan for all **15 open tasks**. Completed RT-12, RT-20
-   and RT-24 criteria and historical checkpoints are archived. Preserve their
-   regression coverage; do not treat old partial-status text as current work.
-5. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
-   checkpoint](./release-0.9.0.md#codex-server-failures-hydration-2026-10-05). Keep the
-   fixed failure-code and payload-redaction tests. Native/class API, SSR/router
-   cleanup and unhandled config/middleware catches now emit safe metadata.
-   Local workerd verifies a native API event and caller-ID correlation.
-   Next review core lifecycle/WebSocket, adapter, manifest/SSG/access logs and
-   development SSR details, then add whole-request timing, production source-map
-   resolution, configurable budgets and remote Workers Logs acceptance. Do not close CF-08 from the local
-   framework matrix alone.
-6. Assess SVC-02/SVC-03 full acceptance using completed SVC-01. Preserve the SVC-05 widget and verifier regressions.
+Earlier detailed continuation notes are [archived](./release-0.9.0-plan-archive.md#codex-handoff-before-rt01-rt11-2026-10-05).
 
 ## Limits to retain
 
@@ -239,14 +79,14 @@ Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt1
   Stored records are not live state.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
-- RT-01 still needs native pre-header disconnect delivery and initialization/restoration concurrency acceptance. Per-call deadlines and cancellation are implemented and covered across component HTTP/SSE/WebSocket and layout-service HTTP calls; this does not prove native disconnect delivery or stop ignored server application I/O.
+- RT-01 native Node/workerd disconnect and component initialization/restoration acceptance is complete. Cancellation remains cooperative and does not stop ignored application I/O.
 - The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
 - Browser ownership acceptance passes its focused generated Node and Cloudflare
   cases, including SSE and WebSocket ownership. The fixture uses a synthetic
   identity provider only; real authentication has separate RT-13 evidence.
   RT-12's metadata/lifecycle acceptance is complete in the verification archive.
-  Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
-- RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno claims are limited to one loaded module instance in its JavaScript process or isolate. They are not distributed or restart durable. Native calls require explicit parsing and authorization.
+  Incoming TCP abort now has separate Node/direct-workerd acceptance.
+- RT-11 session/cookie acceptance is complete. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno claims are limited to one loaded module instance in its JavaScript process or isolate. They are not distributed or restart durable. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.
 - Cancellation and optimistic rollback do not terminate ignored application I/O, undo external effects or replay uncertain mutations.
 - Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
@@ -280,20 +120,3 @@ Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt1
   integration and final verification with Codex. Do not create new chats, send
   messages, publish or deploy without authorization.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.
-
-
-Codex HTTP/SSR and hydration checkpoint (2026-10-05): integrated exclusive API
-implementation/test and installed hydration-helper subagents, with coordinator
-ownership of shared logging and router integration. See the
-[checkpoint](./release-0.9.0.md#codex-server-failures-hydration-2026-10-05).
-No task was closed from this partial acceptance. Desktop remains waived.
-
-Final Codex verification for this checkpoint: **1,696 framework tests / 88 files**,
-root/package types, changed-script syntax and full fresh installed gate pass.
-Private-hydration acceptance includes generated-app typechecking and actual
-Cloudflare browser/RPC plus client source maps; native API workerd events are
-correlated and redacted. The initial cached fixture's sync init failed TS2416;
-it was corrected, recovered in place, and the whole gate rerun successfully.
-Retained final gate: /tmp/cossack-local-pack-mL6TSQ. Logs and scope limitations
-are in the [verification record](./release-0.9.0-verification-archive.md#codex-safe-http-ssr-failures-and-private-hydration-2026-10-05).
-Counts remain **30 complete / 28 open**; no blocked work and no task closure.

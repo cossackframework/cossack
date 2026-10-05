@@ -180,3 +180,7 @@ See the [form recipe](./forms.md#server-side-validation) and installed
 
 Custom stores must add `has()` and reject writes that recreate expired or deleted
 rows. After `destroy()`, the handle rejects further access in the same request.
+
+For verified concurrent key writes, authentication rotation, admitted requests,
+anonymous upgrade limitations and flash replay scope, see
+[concurrent sessions and flash state](./session-concurrency.md).

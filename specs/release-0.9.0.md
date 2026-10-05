@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 45 complete / 13 open.
+  acceptance; the numbered release task count is 47 complete / 11 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -29,7 +29,7 @@ remain archived, and the verification log below retains test evidence.
 
 ## Runtime and application APIs
 
-- [ ] [RT-01](./release-0.9.0-plan.md#rt-01) Consistent HTTP/SSE/WebSocket RPC promises, results, errors, timeouts, and request IDs; precise serialization diagnostics. Authored inference, JSON wire types, native body completion, shared multipart ownership and a 421-case matrix are verified. Known IDs survive malformed frames; HTTP completion validates EOF before final state hydration. Ordinary JSON/error replies now have bounded strict UTF-8 decoding, validated service/redirect envelopes and correlated diagnostic fields before hydration. Child state stays separate from SSE page snapshots; limits apply to HTTP/socket actions with canonical ownership and correlated denials. Production workerd verifies limited D1 writes and shared layout-service budgets. Native Cloudflare peer/IP/header/custom-key and cross-Worker counter acceptance now passes; Node/Deno pass per-connection contexts. DO counter persistence now survives actual native eviction and Worker reload; concurrent two-Worker counts and spent HTTP/socket budgets pass. Invalid configured stores, first-env ownership and runtime options/counter replies now reject before mutation; the shared matrix has 421 cases. Backend reply bounds/deadlines and explicit cross-Worker coordinator cancellation now pass; cancelled queued callbacks never start. Codex bounds `@Server({ timeout })` to integer milliseconds from 1 through 2,147,483,647 and rejects invalid values across component/service proxies; `rpc$(() => action(), { timeout, signal })` now validates per-call options before dispatch and overrides defaults across component and layout-service calls. The legacy Node adapter coalesces same-target initialization and accounts for pending instances. Remaining: actual native pre-header disconnect delivery and broader component initialization/restoration concurrency, plus RT-02/RT-14 resource policies and RT-11 session criteria. RT-18 provider contracts are now complete. See the [per-call deadline checkpoint](#codex-rt01-per-call-deadlines-2026-10-05), [deadline-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05) and [earlier SSE cancellation evidence](#codex-sse-cancellation-2026-10-03).
+- [x] [RT-01](./release-0.9.0-plan.md#rt-01) Shared transport/type contracts, native Node/workerd pre-header disconnect and one-time cleanup; Durable Object readiness, failed-owner retry, close, eviction and concurrent restoration pass, including final installed Core. [Evidence](#codex-rt01-rt11-complete-2026-10-05).
 - [x] [RT-02](./release-0.9.0-plan.md#rt-02) Validated server actions with input schemas, field errors, and shared resource policies.
 - [x] [RT-03](./release-0.9.0-plan.md#rt-03) Public server resource pending/error/retry state and typed refresh/invalidation.
 - [x] [RT-04](./release-0.9.0-plan.md#rt-04) State/store/computed guidance and serialization/shallow mutation diagnostics.
@@ -39,7 +39,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [x] [RT-10](./release-0.9.0-plan.md#rt-10) Typed native/UI form bindings, nested errors and array/file fields, stale/single-flight lifecycle and reset. Node/workerd keyboard/accessibility and multipart RPC pass from source and installed tarballs. [Evidence](#codex-rt10-rt15-rt17-complete-2026-10-05).
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno claim each signed nonce once per loaded module instance in a bounded 10,000-entry store; expired claims are purged and capacity fails closed. This does not coordinate across processes/isolates or survive restart. Remaining: broader concurrent request semantics and cross-process replay guarantees. See [process-local flash claims](#codex-rt11-process-flash-claims-2026-10-05), [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
+- [x] [RT-11](./release-0.9.0-plan.md#rt-11) Native cookies, safe old input, generated auth flows and realtime revalidation; source/installed SQLite and D1 prove documented concurrent writes, rotation, flash replay and revocation limits. [Evidence](#codex-rt01-rt11-complete-2026-10-05).
 - [x] [RT-12](./release-0.9.0-plan.md#rt-12) DI ownership, contextual resolution errors and cleanup. Codex verified inherited/nested runtime metadata, concurrent request facilities, static inspection parity, cleanup once and failure continuation in generated Node/Cloudflare browser and SSR/RPC acceptance; [evidence](#codex-rt12-rt27-complete-2026-10-05).
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -1860,3 +1860,16 @@ schedule inspection and four new installed strict/executable guides pass.
 **45 complete / 13 open**. No batch blocker. Remote email/resource deployment is
 unverified; no exactly-once external delivery or automatic Cron redelivery claim.
 Desktop checks remain waived. Versions stay 0.8.3 until REL-04.
+
+<a id="codex-rt01-rt11-complete-2026-10-05"></a>
+### Codex: RPC and session acceptance complete (2026-10-05)
+
+RT-01 and RT-11 close against their original criteria. Final Core suite: **1,674
+/ 105 files**; added close regressions: **14 focused tests**. Relevant combined
+framework suite: **581 / 7 files**, final affected sockets **6 / 2 files**;
+Node adapter **38 / 7 files**. Root and Core/framework/Node typechecks pass.
+Native pre-header disconnects pass on Node and direct workerd; native browser
+consumption/readiness/eviction/restoration and installed final Core pass.
+Session concurrency passes **2 source + 2 installed native cases** (SQLite/D1).
+[Criterion mapping, exact commands and limitations](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05).
+**47 complete / 11 open**; no batch blocker. Desktop checks remain waived.

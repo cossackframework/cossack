@@ -348,3 +348,36 @@ production builds and navigation.
 | HTTP result followed by data | Rejects before final state hydration; accepted earlier yields remain visible. |
 | Action limit / unavailable counter store | Rejects before mutation with correlation and loading cleanup; private store errors remain private. |
 | Ownership | HTTP request scopes close with the response; WebSocket component ownership lasts until runtime teardown. |
+
+## Native disconnects and shared component initialization
+
+On Node, the HTTP adapter exposes the incoming connection's AbortSignal. Workers
+require the `enable_request_signal` compatibility flag; generated Cossack Workers
+already include it. A cooperative action can watch `getRequestContext().req.raw.signal`
+while awaiting I/O, including before response headers arrive. When it settles,
+request/component/service cleanup runs in the original request scope. A disconnect
+does not roll back writes or stop application I/O that ignores cancellation.
+See [Workers incoming request signals](https://developers.cloudflare.com/workers/runtime-apis/request/).
+
+Local proxies can suppress the incoming disconnect signal. The pinned Wrangler/
+Miniflare service-entry proxy does so before headers; direct native workerd
+application sockets and Node TCP reset tests prove the underlying runtime path.
+Do not infer a server-side abort from a client-side promise rejection, or retry
+an uncertain mutation automatically. Native Deno interruption remains a separate
+release verification gate.
+
+A shared Durable Object component is published only after its bootstrap,
+initialization and initial persistence finish. Concurrent joins and restoration
+share one pending owner. Restoration uses the stored component configuration and
+state, without rerunning its initial seed hook. A failed bootstrap, render,
+initialization or persistence disposes the unpublished component once and allows
+a later attempt to create a fresh owner. Idle stateless replacement also disposes
+the prior component before admitting the new owner. The first socket is accepted
+before initialization ownership is released, so an overlapping join cannot
+mistake newly initialized stateless state for an idle component.
+
+Durable Object close handlers also acknowledge the peer's close frame before
+retiring its pending calls and delivery state. This completes the handshake on
+older runtimes; runtimes that reply automatically safely ignore the extra call.
+Reserved local status codes are replaced with a valid wire status. See
+[Cloudflare's close-handler contract](https://developers.cloudflare.com/durable-objects/api/base/).
