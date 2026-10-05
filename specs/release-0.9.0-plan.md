@@ -784,6 +784,14 @@ type tests. Missing bindings produce a named diagnostic before application use.
 Concurrent environments cannot share configuration state. Diagnostics, hydration,
 and catalogs never expose secret values. Dependencies: CLI-04, RT-25, and CF-03.
 
+Codex checkpoint (2026-10-05): `config()` no longer lets its permissive string
+fallback swallow misspelled paths after an app augments
+`CossackConfigRegistry`; fallback calls remain available to apps that have not
+registered a config tree. Type tests reject a bad dotted path and a default with
+the wrong value type. Root typechecking and the installed documentation gate
+pass. The registry is still manually declared by each app, so automatic
+registry generation and the remaining RT-24 acceptance criteria stay open.
+
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
 

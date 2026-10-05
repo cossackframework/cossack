@@ -4,10 +4,9 @@ Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
 30 of 58 release tasks are complete. 28 remain open.
 Versions stay at 0.8.3 until REL-04.
 **Codex coordinates implementation, review, acceptance and status for every
-remaining task.** For this continuation the user authorized up to three scoped
-subagents when work is independent. Assign exclusive files, keep integration
-and final verification with Codex, and preserve user-owned changes. This
-supersedes the earlier no-delegation instruction.
+remaining task.** The user has resumed the work directly with Codex; GLM is no
+longer the continuation owner. Preserve user-owned changes, integrate and
+verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
@@ -209,6 +208,13 @@ Latest Cloudflare progress: [CF-04 scaffold guidance](./release-0.9.0.md#codex-c
    open. See the [browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
+6. [RT-24 typed config paths](./release-0.9.0.md#codex-rt24-typed-paths-2026-10-05)
+   now rejects misspelled paths and mismatched defaults when the app augments
+   `CossackConfigRegistry`. Root typechecking and the fresh installed agent-docs
+   gate pass. The app still must write the registry augmentation by hand, so
+   RT-24 remains open; see its detailed checkpoint in the plan and verification
+   archive. Continue with registry generation or another open task, preserving
+   the secret-redaction and request-scope limits in RT-24's acceptance criteria.
 
 ## Limits to retain
 

@@ -52,7 +52,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration; remaining: config-path misspelling type tests and registry generation from project configuration.
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Remaining: registry generation from project configuration. See [typed config paths](#codex-rt24-typed-paths-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
@@ -953,12 +953,31 @@ skipped). Navigation, cleanup, SSE and WebSocket ownership assertions now pass.
 RT-12 remains open for runtime metadata/lifecycle behavior and broader release
 gates.
 
+<a id="codex-rt24-typed-paths-2026-10-05"></a>
+### Codex: Reject misspelled typed configuration paths (2026-10-05)
+
+The `config()` string fallback previously accepted an unknown path even when an
+application had registered `CossackConfigRegistry`, so a typo silently returned
+`unknown` and bypassed the typed overload. The fallback now accepts arbitrary
+strings only while the registry is empty. A populated registry restricts paths
+to its dotted leaves and checks defaults against the registered value type.
+
+**Verification:** root `pnpm tsc --noEmit` passes with compile-time tests for
+valid inferred values, a misspelled path and a mismatched default. The installed
+request-config example carries the same negative assertions; the fresh
+`COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` gate passes all 76 standalone
+examples and four auth examples, including the published framework declarations.
+
+RT-24 remains open: the project still has to register its own config shapes
+manually. No registry generator was added. Release status remains **30 complete
+/ 28 open**.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
 remain in the [verification archive](./release-0.9.0-verification-archive.md). Existing checkpoint
 anchors below link to those records. Archiving a checkpoint does not complete its
-parent task. Current status is 28 complete and 30 open.
+parent task. Current status is 30 complete and 28 open.
 
 | Recorded checkpoint and full evidence |
 | --- |
@@ -1141,3 +1160,4 @@ parent task. Current status is 28 complete and 30 open.
 | <a id="codex-cf04-scaffold-guidance-2026-10-05"></a>[Codex: Accurate Cloudflare scaffold resource guidance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf04-scaffold-guidance-2026-10-05) |
 | <a id="codex-rt11-process-flash-claims-2026-10-05"></a>[Codex: Process-local flash replay claims (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05) |
 | <a id="codex-rt12-navigation-fixture-2026-10-05"></a>[Codex: Navigation ownership browser acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-navigation-fixture-2026-10-05) |
+| <a id="codex-rt24-typed-paths-2026-10-05-index"></a>[Codex: Reject misspelled typed configuration paths (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt24-typed-paths-2026-10-05) |

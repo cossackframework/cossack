@@ -111,6 +111,9 @@ export function buildConfig(
  */
 export interface CossackConfigRegistry {}
 
+/** Permit arbitrary paths only until an application declares its config tree. */
+type UntypedConfigKey = keyof CossackConfigRegistry extends never ? string : never;
+
 /**
  * Recursively builds all valid dotted paths through a config tree type.
  * @example
@@ -195,7 +198,7 @@ export function config<Path extends DottedPaths<CossackConfigRegistry>>(
     key: Path,
     defaultValue?: GetByPath<CossackConfigRegistry, Path>,
 ): GetByPath<CossackConfigRegistry, Path>;
-export function config<T = unknown>(key: string, defaultValue?: T): T;
+export function config<T = unknown>(key: UntypedConfigKey, defaultValue?: T): T;
 export function config(key: string, defaultValue?: unknown): unknown {
     const store = requestStore();
     if (!store) return defaultValue;

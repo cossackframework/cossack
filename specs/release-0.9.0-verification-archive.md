@@ -10461,3 +10461,24 @@ WebSocket open/target replacement, and stale-owner disposal. The synthetic
 fixture is not real authentication. RT-12 remains open for runtime
 metadata/lifecycle acceptance and the full CLI/release gates. Release status
 remains **30 complete / 28 open**. No deployment or publication occurred.
+
+### Codex RT-24 typed configuration paths (2026-10-05)
+
+The `config()` overload fallback used to accept any string after an application
+had augmented `CossackConfigRegistry`. That allowed a misspelling to bypass the
+typed dotted-path overload and return `unknown`. The fallback now accepts
+arbitrary strings only while the registry is empty. Once populated, only
+registered dotted paths match, and a provided default must match that path's
+value type.
+
+**Verification:** `pnpm tsc --noEmit` passes with framework compile-time
+regressions for a misspelled path and a mismatched default. The installed
+request-config example includes the same negative type assertions.
+`COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` passes with 76 standalone
+examples and four auth examples, including published framework declaration
+checks.
+
+**Limits:** The app must still declare its own registry augmentation; automatic
+registry generation from `src/config/*.ts` was not added. This checkpoint does
+not complete RT-24. No task count changed: 30 complete / 28 open. The complete
+current summary is in the [release checklist](./release-0.9.0.md#codex-rt24-typed-paths-2026-10-05).

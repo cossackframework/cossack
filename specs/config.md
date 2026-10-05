@@ -150,6 +150,6 @@ Two internal conditional types walk the registry tree:
 `config()` has two overloads:
 
 1. **Typed overload:** `config<Path extends DottedPaths<CossackConfigRegistry>>(key: Path, ...)` : matches when the key is a known path. Infers the return type via `GetByPath`.
-2. **Untyped fallback:** `config<T = unknown>(key: string, ...)` : matches any string. Returns `T` (defaults to `unknown`).
+2. **Untyped fallback:** accepts any string only while `CossackConfigRegistry` is empty. It returns the type of the supplied default, or `unknown` when no default is supplied. Once an app augments the registry, this fallback accepts no keys; a misspelled path cannot bypass the typed overload.
 
-When `CossackConfigRegistry` is empty (no augmentation), `DottedPaths<{}>` is `never`, so overload 1 never matches : all calls fall through to overload 2, returning `unknown`. This makes type registration fully backward-compatible.
+When `CossackConfigRegistry` is empty (no augmentation), `DottedPaths<{}>` is `never`, so overload 1 never matches : calls use the string fallback. Existing apps can add the registry augmentation incrementally; after they do, config paths and defaults are checked against their registered types.

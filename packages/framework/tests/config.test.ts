@@ -150,6 +150,14 @@ describe('config() type inference', () => {
             void _locale;
         });
     });
+
+    it('rejects unknown paths and defaults when the registry is populated', () => {
+        // @ts-expect-error Misspelled registry paths must not fall back to unknown.
+        config('app.dbeug');
+
+        // @ts-expect-error A default must match the registered path's value type.
+        config('app.name', false);
+    });
 });
 
 // ---------------------------------------------------------------------------
