@@ -1,3 +1,5 @@
+import { diagnoseHydrationState, hydrationBoundaryMetadata } from './hydration-diagnostics';
+import type { HydrationDiagnosticMetadata } from '@cossackframework/renderer';
 import { logRuntimeFailure, type RuntimeFailureContext } from './server-diagnostics';
 import type { DevelopmentSocketDispatch } from './development-socket-dispatch';
 import { registerDevelopmentInspector, inspectDevelopmentScopes, developmentName, developmentData, type DevelopmentComponentDetails } from './development-inspection';
@@ -591,7 +593,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public _pendingNavigation: (() => void) | null = null;
 
     // DevTools Metadata (Injected by Vite plugin)
-    public static __source?: { file: string };
+    public declare static __source?: { file: string; line?: number; column?: number };
+
+    public override get hydrationMetadata(): HydrationDiagnosticMetadata | undefined {
+        return import.meta.env?.DEV ? hydrationBoundaryMetadata(this.constructor) : undefined;
+    }
 
     constructor() {
         super();
@@ -2046,6 +2052,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             // Only sync properties that are NOT client-only
             if (!isClientOnly && stateSource && stateSource[key] !== undefined) {
+                if (import.meta.env?.DEV && !this.isServer) {
+                    diagnoseHydrationState(value, stateSource[key], String(key), this.hydrationMetadata);
+                }
                 value = stateSource[key];
             }
 

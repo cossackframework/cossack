@@ -1,3 +1,4 @@
+import { logConfigRequirementFailure } from './config-diagnostics.js';
 import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { createServerFailureContext, logServerFailure } from './server-logging.js';
 import { HTTPException } from 'hono/http-exception';
@@ -381,6 +382,7 @@ export function createApp(options: CreateAppOptions = {}) {
       route: c.req.matchedRoutes.findLast(route => route.path !== '*')?.path ?? 'unknown',
       action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
     });
+    logConfigRequirementFailure(error);
     const denial = getAuthorizationFailure(error);
     if (denial) return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
     logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL');

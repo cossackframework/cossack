@@ -709,7 +709,7 @@ export async function createClientApp({
             code: 'COSSACK_NAVIGATION_RENDER_SKIPPED',
           });
           restoreFocus?.();
-          const sourceFile = (nextPage.constructor as any).__source?.file;
+          const sourceFile = import.meta.env.DEV ? (nextPage.constructor as any).__source?.file : undefined;
           if (import.meta.env.DEV && sourceFile) {
             void import('./devtools.js').then(({ registerDevToolsInstance }) => {
               if (currentPage === nextPage && isCurrent()) registerDevToolsInstance(sourceFile, nextPage);

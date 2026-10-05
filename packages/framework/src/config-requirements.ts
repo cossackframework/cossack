@@ -21,6 +21,10 @@ export interface ConfigRequirementDiagnostic {
   code: string; severity: 'error'; name: string; kind: 'variable' | 'binding' | 'metadata';
   source?: string; message: string; runtime?: ConfigRuntime; environment?: string;
 }
+const requirementErrors = new WeakSet<object>();
+export function isConfigRequirementError(value: unknown): value is ConfigRequirementError {
+  return typeof value === 'object' && value !== null && requirementErrors.has(value);
+}
 export class ConfigRequirementError extends Error {
   readonly code: string;
   readonly requirementName: string;
@@ -28,7 +32,7 @@ export class ConfigRequirementError extends Error {
   readonly runtime?: ConfigRuntime;
   readonly environment?: string;
   constructor(diagnostic: ConfigRequirementDiagnostic) {
-    super(diagnostic.message); this.name = 'ConfigRequirementError';
+    super(diagnostic.message); requirementErrors.add(this); this.name = 'ConfigRequirementError';
     this.code = diagnostic.code; this.requirementName = diagnostic.name; this.kind = diagnostic.kind;
     this.runtime = diagnostic.runtime; this.environment = diagnostic.environment;
   }

@@ -11765,3 +11765,88 @@ criteria. SSG report rendering success does not imply publication after a later
 failure. Node-only server helpers do not emulate Workers; actual workerd/browser
 checks remain required. Desktop platform checks are waived by user decision.
 Release: 34 complete / 24 open. Versions remain 0.8.3 until REL-04.
+
+
+<a id="codex-rt20-rt24-complete-2026-10-05"></a>
+## Codex: RT-20 and RT-24 complete (2026-10-05)
+
+Author: **Codex**. Both tasks meet their original full acceptance criteria.
+Three implementation agents owned renderer/config diagnostics, native config
+fixtures/docs, and native hydration fixtures/docs independently. Codex reviewed
+all changes, owned shared APIs/compiler/router integration and final verification.
+User changes reports.md and .zcodeignore remain untouched and outside this commit.
+
+RT-20 acceptance:
+- Intentional static/dynamic text, structural and hydrated public-state shape
+  mismatches report categories, component ownership, relative source positions,
+  DOM paths and explicit field paths. Values and absolute paths stay out of logs.
+  Tests cover nested asynchronous boundaries and intentional client-only suppression.
+- Native Chromium verifies retained SSR button/nested nodes, no baseline or normal
+  update warnings, one click effect, exactly one consumed server resource load,
+  and retained layout service state/identity through navigation.
+- Production client HTML/JS contains neither diagnostic code, development source
+  metadata nor absolute project paths. Consumer-selected DEV survives the library
+  build; the same checks pass in fresh apps installed from final tarballs.
+- Fixed actual nested SSR/client wrapper disagreement, production source lookup,
+  compiler Unicode offsets and false warnings on ordinary reactive updates.
+  Compiler tests preserve class text in literals/comments and handle aliased bases.
+
+RT-24 acceptance:
+- Actual generated registry rejects misspelled paths/wrong inferred default types.
+- Native Node and Deno reject missing variables/bindings and invalid scalar/binding
+  shapes before factory or page use. Server events name requirements with approved
+  fixed codes; public HTTP errors stay generic. Forged errors and accessors cannot
+  inject arbitrary exception text into the logger.
+- Interleaved alpha/beta SSR and RPC use isolated environment/config scopes;
+  browser hydration and private config reads never publish test secret values.
+- CLI catalogs inspect declarations without running factories or reading arbitrary
+  dotenv/process values. Node/Deno --check explicitly returns
+  COSSACK_CONFIG_CHECK_UNAVAILABLE. Production hosts supply values; development
+  adapters load their documented dotenv sources. Local object-shape validation
+  does not prove remote connectivity. Prior installed Cloudflare/workerd acceptance
+  remains the Cloudflare evidence; unchanged gates were not rerun.
+- Fresh installed Node/Deno builds/types/catalogs/SSR/RPC/browser and production
+  JS/source-map scans prove private values, factory sentinels and private requirement
+  metadata stay excluded. Secret classification is not automatic data tainting:
+  intentional application publication remains the author's responsibility.
+
+Final verification:
+- pnpm --dir packages/renderer exec vitest run: **343/25**.
+- pnpm --dir packages/core exec vitest run: **1,587/100**.
+- Framework config-diagnostics/config-requirements/config/config-inspection/
+  ssg-config/hydration-source-metadata combined: **147/6**.
+- CLI hydration-diagnostics-runtime: **3/3** (parser + Node development/production).
+- CLI config-release-acceptance with actual Deno 2.9.6: **2/2** (Node/Deno).
+- COSSACK_HYDRATION_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production
+  pnpm --dir packages/cossack exec vitest run tests/hydration-diagnostics-runtime.test.js
+  --maxWorkers=1: **3/3**, bound to final renderer/core/framework tarballs.
+- COSSACK_DENO_BINARY=<verified local binary> node scripts/verify-config-release.mjs
+  /tmp/cossack-local-pack-gZdSQv/minimal-production: installed **Node and Deno pass**.
+- pnpm tsc --noEmit and renderer/core/framework package typechecks: pass.
+  Renderer/core builds and framework build:types: pass. JS syntax and owned diff
+  checks: pass. Native suites ran sequentially; dist was stable during consumers.
+
+Earlier failures were fixed, not waived: malformed fixture, unconsumed loader,
+missing production server build and RPC Origin; actual wrapper/source/Unicode/
+normal-update defects described above. The first installed attempt ignored local
+workspace override policy and resolved an old transitive core; corrected install
+uses the app's override file. Test installs disable lifecycle scripts explicitly;
+all required built runtime/browser behavior subsequently executed successfully.
+Only changed final renderer/framework were repacked after fixes; core was unchanged.
+
+Logs: /tmp/cossack-rt20-renderer-verified-suite.log,
+/tmp/cossack-rt20-core-final-suite.log,
+/tmp/cossack-rt20-24-framework-final-suite.log,
+/tmp/cossack-rt20-native-final-acceptance.log,
+/tmp/cossack-rt24-native-final.log,
+/tmp/cossack-rt20-installed-verified.log,
+/tmp/cossack-rt24-installed-verified.log,
+/tmp/cossack-rt20-24-verified-root-types.log.
+Tarballs: /tmp/cossack-rt20-24-tarballs/core.tgz, renderer-final.tgz,
+framework-final.tgz. Installed root: /tmp/cossack-local-pack-gZdSQv/minimal-production.
+
+Limits: state comparison is a bounded development initializer-shape hint, not
+runtime type validation; nullable/custom classes are skipped. No full release
+matrix or remote deployment/log ingestion/resource existence was claimed. Those
+criteria remain under other task IDs. Desktop checks are waived by user decision.
+Release: **36 complete / 22 open**. Versions remain 0.8.3 until REL-04. No blocker.

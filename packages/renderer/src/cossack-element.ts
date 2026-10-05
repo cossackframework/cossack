@@ -1,4 +1,4 @@
-import { TemplateResult, render, hydrate, html, isTemplateResult } from './cossack-html';
+import { TemplateResult, render, hydrate, html, isTemplateResult, type HydrationDiagnosticMetadata } from './cossack-html';
 import { Context } from './context';
 import { getFinalizedStyles } from './css';
 import type { CSSResultGroup, FinalizedStyles } from './css';
@@ -64,6 +64,8 @@ const styleTemplateFor = (componentClass: Function, styles: FinalizedStyles): Te
 const wrapStyledOutput = (styles: TemplateResult, output: unknown): TemplateResult => html`${styles}${output}`;
 
 export class CossackElement implements ReactiveControllerHost {
+  /** Development-only boundary hints; override to mark intentional client differences. */
+  public get hydrationMetadata(): HydrationDiagnosticMetadata | undefined { return undefined; }
   static properties: PropertyDeclarations = {};
   static readonly _isCossackElement = true;
   static components: Record<string, typeof CossackElement> = {};
@@ -278,7 +280,7 @@ export class CossackElement implements ReactiveControllerHost {
           // Hydrate once, then reconcile through the container cache.
           if (firstRender) {
               firstRender = false;
-              hydrate(result, container);
+              hydrate(result, container, (import.meta as any).env?.DEV ? this.hydrationMetadata : undefined);
           } else {
               render(result, container);
           }

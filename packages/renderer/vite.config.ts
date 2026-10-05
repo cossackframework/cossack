@@ -5,6 +5,8 @@ import { defineConfig } from 'vite';
 const sourceRoot = resolve(import.meta.dirname, 'src');
 
 export default defineConfig({
+  // Let the consuming application select diagnostics instead of erasing them in this library build.
+  define: { 'import.meta.env.DEV': 'import.meta.env?.DEV' },
   build: {
     lib: {
       entry: {

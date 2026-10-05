@@ -2,27 +2,29 @@
 
 ## Current handoff — Codex (2026-10-05)
 
-Completed **RT-21 and RT-29**. Release: **34 complete / 24 open**.
-[Acceptance and verification](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05).
-SSG now reports all outcomes, validates compiler setup and prevents partial
-publication. Test utilities exercise actual fetch/RPC contracts, typed browser
-hydration/DI and awaitable cleanup. SSG105/8, test-utils17/3, both generated
-Node/Cloudflare helper cases, installed exports/types and generated Cloudflare
-SSG artifacts pass. Required root/package types and builds pass.
+Completed **RT-20 and RT-24**. Release: **36 complete / 22 open**.
+[Acceptance, commands and limits](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05).
+Hydration now provides safe development source/field diagnostics and preserves
+nested SSR nodes, listeners, resource loads and retained layout services.
+Configuration acceptance covers named pre-factory failures, environment isolation,
+generated types, CLI declaration policy and private SSR/RPC/browser output on
+native and installed Node/Deno apps. Renderer343/25, Core1587/100 and framework147/6
+pass. Installed hydration3/3 and both installed config runtimes pass. Required
+root/package types and builds pass. No blocker for this batch.
 
-Continue with 2–3 bounded independent existing-feature acceptance tasks after
-checking full criteria and dependencies. RT-20 SSR/hydration diagnostics and RT-22
-Markdown/localized output are candidates to inspect. Prefer task closure over
-further Cloudflare budget polishing. Keep shared APIs and integration with Codex,
-use exclusive agent ownership, and wait for source stability before builds.
-Never replace dist while consumers test it; rerun only invalidated evidence.
-Update records once per verified batch. No blocker for this completed batch.
+Continue 2–3 independent full acceptance tasks; inspect RT-22 content/localized
+output and existing service gaps. Keep shared APIs/integration with Codex and give
+agents exclusive implementation files. Prefer closing existing acceptance gaps;
+avoid further Cloudflare budget polishing unless it closes a required criterion.
+Do not replace dist while consumers run; repeat only invalidated checks. Update
+records once per verified batch and commit only verified owned files.
 
-Broader release gates, native DEV faults, production maps, remote logs and provider
-startup remain open under their own tasks. Versions stay 0.8.3 until REL-04.
-Preserve user reports.md and .zcodeignore. Desktop remains completed by user
-decision; remaining platform checks are waived. Prior RT-12/RT-27 evidence is
-[archived](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05).
+Node/Deno config value inspection remains explicitly unavailable until production
+hosts supply values. Classification does not prevent intentional app publication.
+Remote deployment/log ingestion and the broader release matrix retain their own
+open tasks. Versions stay 0.8.3 until REL-04. Preserve user reports.md and
+.zcodeignore. Desktop remains complete; its remaining platform checks are waived.
+Prior RT-12/27 and RT-21/29 completion is archived and must not be reopened.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -39,15 +41,13 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 34 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 36 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
 Latest CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
-Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
-Latest runtime progress: [RT-20 hydration diagnostics](./release-0.9.0.md#codex-rt20-safe-hydration-diagnostics-2026-10-05) now reports typed root and nested component fallback events without logging rendered text. All 333 renderer tests and root typechecking pass. Source/field metadata, state comparison, retained layout/service browser cases and reusable test helpers remain open.
-
+Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. RT-11 retains its remaining criteria; RT-12 is completed in the archived acceptance.
 Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05) adds a schema-backed Core controller with typed field paths, validation, reset, dirty/touched state, server error mapping, duplicate-module validation-error support and stale-result protection. The 9 focused tests, all 1,568 Core tests and root typecheck pass. This is a partial foundation; accessible bindings, UI adapters, keyboard/label/error/focus browser tests and file transport acceptance remain. The `getFormData()` guide example's missing `async` was also fixed.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
@@ -210,50 +210,10 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
    [per-call deadline checkpoint](./release-0.9.0-plan.md#codex-rt01-per-call-deadlines-2026-10-05)
    and [earlier timeout-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
    These changes do not close RT-01.
-4. Continue **[RT-12](./release-0.9.0-plan.md#rt-12)**. Route inspection now
-   resolves static aliases/re-exports to service class declarations and preserves
-   inherited `@Page` options; dynamic expressions and cyclic aliases stay
-   unknown. Five focused inspection suites pass (88 tests), plus two route CLI
-   subprocess tests and root TypeScript checking. A throwing initializer proves
-   service modules are not run. Static `@Service()` identity is classified as
-   declared/missing/unknown. Repeat the full CLI suite during REL-03; runtime
-   metadata/lifecycle behavior remains open.
-   The targeted generated browser acceptance now passes **2 cases** (Node and
-   Cloudflare) for navigation and layout/component ownership, cleanup, SSE and
-   WebSocket lifetime. The earlier HTTP 409 came from synthetic-user middleware
-   missing `captureRealtimeIdentity`; the fixture now supplies a test-only
-   descriptor. Runtime metadata/lifecycle behavior remains open, so RT-12 stays
-   open. Partial service-scope construction now rolls back earlier services if
-   a later constructor or hydration fails; the focused cleanup suite and root
-   typecheck pass. See the [construction rollback checkpoint](./release-0.9.0.md#codex-rt12-construction-rollback-2026-10-05).
-5. Follow the detailed plan for all 28 open tasks. Close each only against its
-   original acceptance criteria; completed portions do not close their parent task.
-6. Continue [RT-24](./release-0.9.0-plan.md#rt-24) from the
-   [direct build checkpoint](./release-0.9.0.md#codex-rt24-direct-vite-preflight-2026-10-05).
-   Generated types, scoped factories, typed scalar coercion, independent metadata
-   and selected Wrangler declaration checks are implemented. SSR/SSG and realtime
-   replay validate before factories; replay preserves runtime/environment and
-   fails closed before authorization. AST catalogs never execute application code;
-   unsupported/dynamic exports remain unknown. Config --check, check cloudflare
-   and deploy use the same portable rules and private declaration facts.
-   Direct Vite preflight now shares the Node-only Wrangler check with CLI and
-   deployment; watch cycles recheck origins and failed builds suppress SSG
-   publication. Node/Deno builds check metadata and compatibility only. Continue
-   Node/Deno declaration-source/native hydration and broader failure-diagnostic
-   acceptance. Installed Cloudflare private-field SSR/browser/RPC and production
-   client source-map secrecy now pass; deliberate app publication is excluded.
-   Secret existence and remote resource
-   readiness remain unverified. Classification cannot stop deliberate application
-   exposure. Async factories remain unsupported; strict installed cache ambient
-   types remain separate. Counts remain 30 complete / 28 open. Preserve the final
-   results linked from the checkpoint. Fresh installed CLI/workerd/browser/docs
-   acceptance and source/CLI/MCP/type checks pass. Retained gate:
-   /tmp/cossack-local-pack-mL6TSQ. Latest verification: 1,696 framework tests,
-   root/package types, script syntax, full installed direct-build/workerd/
-   browser/docs/private-hydration gate pass. The preceding preflight checkpoint
-   also verified 73 CLI/deployment/stdio MCP tests. Desktop stays closed with
-   platform checks waived.
-7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
+4. Follow the detailed plan for all **22 open tasks**. Completed RT-12, RT-20
+   and RT-24 criteria and historical checkpoints are archived. Preserve their
+   regression coverage; do not treat old partial-status text as current work.
+5. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
    checkpoint](./release-0.9.0.md#codex-server-failures-hydration-2026-10-05). Keep the
    fixed failure-code and payload-redaction tests. Native/class API, SSR/router
    cleanup and unhandled config/middleware catches now emit safe metadata.
@@ -262,7 +222,7 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
    development SSR details, then add whole-request timing, production source-map
    resolution, configurable budgets and remote Workers Logs acceptance. Do not close CF-08 from the local
    framework matrix alone.
-8. Continue **[RT-10](./release-0.9.0-plan.md#rt-10)** from the [headless
+6. Continue **[RT-10](./release-0.9.0-plan.md#rt-10)** from the [headless
    controller checkpoint](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05).
    Preserve its 9 Core regression tests and the passing 95-file Core suite.
    Add UI/reactivity integration, accessible field bindings, real keyboard and
@@ -282,8 +242,8 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
 - The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
 - Browser ownership acceptance passes its focused generated Node and Cloudflare
   cases, including SSE and WebSocket ownership. The fixture uses a synthetic
-  identity provider only; this does not establish real authentication or close
-  RT-12's remaining runtime metadata/lifecycle acceptance.
+  identity provider only; real authentication has separate RT-13 evidence.
+  RT-12's metadata/lifecycle acceptance is complete in the verification archive.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
 - RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno claims are limited to one loaded module instance in its JavaScript process or isolate. They are not distributed or restart durable. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.

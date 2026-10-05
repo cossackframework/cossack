@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 34 complete and 24 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 36 complete and 22 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -110,6 +110,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="rt-24"></a>RT-24 | [Inferred configuration and required bindings](./release-0.9.0-plan-archive.md#codex-rt-24-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05) |
+| <a id="rt-20"></a>RT-20 | [SSR and hydration diagnostics](./release-0.9.0-plan-archive.md#codex-rt-20-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05) |
 | <a id="cli-01"></a>CLI-01 | [Lifecycle flags, help, and creation dry runs](./release-0.9.0-plan-archive.md#cli-01) |
 | <a id="cli-02"></a>CLI-02 | [Consistent command validation](./release-0.9.0-plan-archive.md#cli-02) |
 | <a id="cli-03"></a>CLI-03 | [JSON diagnostics and noninteractive execution](./release-0.9.0-plan-archive.md#cli-03) |
@@ -656,37 +658,6 @@ environments never fall back to an unintended top-level binding. Read-only
 inspection does not create bookkeeping tables. Both callers close temporary
 connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
 
-<a id="rt-20"></a>
-### RT-20: SSR and hydration diagnostics
-
-Purpose: A hydration mismatch needs a component and field explanation. A generic
-browser warning makes agents guess whether server data, serialization, or markup
-caused the mismatch.
-
-Baseline: SSR and hydration exist, with new DI/SSG lifecycle coverage. Contextual
-mismatch diagnostics and reusable test helpers remain open.
-
-Approach: Attach development metadata to render/hydration boundaries. Report
-source location, component identity, state path, and mismatch category. Limit
-captured values and redact sensitive data. Define the behavior for expected
-client-only differences. Preserve production bundle size and avoid embedding
-absolute source paths or debugging state in production output.
-
-Start in `packages/renderer/src/`, core `shared/cossack.ts`, framework
-`root.ts` and `client/app.ts`, and RT-29 test helpers.
-
-Done when: Tests intentionally create text, structural, and state mismatches and
-receive actionable diagnostics. Valid SSR hydrates without duplicate listeners
-or duplicate resource loads. Browser tests cover nested components and retained
-layout services. Dependencies: RT-04, RT-12, and RT-29.
-
-Codex checkpoint (2026-10-05): Root and nested component structural fallbacks
-now emit structured diagnostics with a mismatch category, DOM path, expected and
-actual node shape, and nested component name. Text values and comment contents
-stay out of the event. The full renderer suite and root typecheck pass. State
-comparison, source/field metadata, retained layout/service browser tests and
-reusable test helpers remain open. See the [verification checkpoint](./release-0.9.0.md#codex-rt20-safe-hydration-diagnostics-2026-10-05).
-
 <a id="rt-22"></a>
 ### RT-22: Markdown metadata and localized output
 
@@ -709,131 +680,6 @@ Done when: Invalid metadata fails before output. Mixed Markdown/TypeScript route
 collisions are rejected. Locale pages contain the correct language, metadata,
 and links with no cross-render leakage. Type tests cover the author-facing
 frontmatter contract. Dependencies: RT-07, RT-21, and RT-27.
-
-<a id="rt-24"></a>
-### RT-24: Inferred configuration and required bindings
-
-Purpose: Authors must discover missing configuration before a request fails deep
-inside a method. Agents need the type and origin of a value without seeing secrets.
-
-Baseline: Configuration factories, typed registry augmentation, and `binding()`
-exist. Deployment preflight handles some Cloudflare requirements.
-
-Approach: Improve factory inference and generate registry information from project
-configuration. Allow required variables and bindings to declare type/coercion
-and runtime requirements. Report missing names and the selected environment.
-Track secret classification separately from values. Reuse the same metadata for
-build checks, CLI inspection, and runtime errors.
-
-Start in framework `config.ts`, `config-globals.ts`, configuration plugins,
-`specs/config.md`, and CLI deployment inspection.
-
-Done when: Misspelled configuration paths and incorrect inferred types fail
-type tests. Missing bindings produce a named diagnostic before application use.
-Concurrent environments cannot share configuration state. Diagnostics, hydration,
-and catalogs never expose secret values. Dependencies: CLI-04, RT-25, and CF-03.
-
-Codex checkpoint (2026-10-05): `config()` no longer lets its permissive string
-fallback swallow misspelled paths after an app augments
-`CossackConfigRegistry`; fallback calls remain available to apps that have not
-registered a config tree. Type tests reject a bad dotted path and a default with
-the wrong value type. Root typechecking and the installed documentation gate
-pass. The registry is still manually declared by each app, so automatic
-registry generation and the remaining RT-24 acceptance criteria stay open.
-
-Codex checkpoint (2026-10-05, generated types): Vite now generates and watches
-`.cossack/config.d.ts` with type-only factory return references. Authored registry
-entries override generated entries. New scaffold TypeScript includes the output;
-existing apps must add it. Node-only `framework/config-codegen` supports explicit
-generation and write:false. Combined framework suites pass 32/32, scaffold 81/81,
-framework declaration emission and root typecheck pass. Continue with standalone
-CLI generation/inspection, required binding/variable metadata and coercion,
-selected-environment preflight, and full redaction/isolation acceptance. A fresh
-installed/browser gate was not run. RT-24 remains open; see the verification archive.
-
-Codex CLI checkpoint (2026-10-05): cossack config catalogs names/type origins;
---generate emits types and --dry-run preserves files. JSON explicitly leaves
-factory evaluation/validation unperformed. Combined CLI suites pass 34/34,
-framework 50/50, fresh installed documentation/browser gate passes, and installed
-config generation/inference/removal helper passes separately. The helper uses the
-scaffold's skipLibCheck policy; strict source-generator checks remain separate.
-Strict installed cache declarations need Worker ambient types. Required runtime
-metadata/validation remains open; counts stay 30 complete / 28 open.
-
-Codex next implementation findings (2026-10-05): router and SSG currently build
-factories before entering runWithConfig, so imported required helpers inside
-factories cannot see request bindings. Centralize fresh config-store preparation
-and validate requirements before any factory/application side effect. Preserve
-factory syntax; consider separate literal named requirements exports describing
-variable types/coercion, required names, secret classification, binding kinds and
-runtime applicability. AST tooling must mark dynamic metadata unknown rather
-than execute it. Share pure validation between runtime values and CLI declaration
-facts, without claiming remotely deployed secrets exist. Explicitly define SSG
-requirements, since its only supplied binding is APP_URL. Acceptance must include
-interleaved request isolation and sentinel secrecy in errors, metadata and
-hydration, beyond filename catalog/client virtual-module tests.
-
-Codex scoped factory checkpoint (2026-10-05): prepareConfigStore fixes the prior
-scope finding above. SSR and SSG use it; required factory accessors see only their
-supplied environment, nested callers restore after success/failure, and failure
-stops middleware/page lifecycle. Eight focused suites pass 94 tests; framework
-emission/root typecheck and fresh installed documentation/browser/workerd gate
-pass. The Worker fixture checks concurrent values, raw D1 identity and value-free
-errors. Continue with separate requirement declarations/coercion/runtime checks
-and selected-environment preflight before any factory side effect. Helpers still
-validate at invocation. Async factories and full classification/hydration secrecy
-are not covered by this checkpoint. RT-24 stays open; counts stay 30 / 28.
-
-
-Codex declared-requirement checkpoint (2026-10-05): literal named requirements
-exports describe scalar type/coercion, required/secret flags, binding kind and
-runtime filters. The pure checker validates before any factory. SSR/SSG use it;
-realtime authorization replay now also prepares fresh scopes and preserves the
-originating runtime/environment. Typed configVariable/requireConfigVariable
-return coerced scalars; legacy env remains string-based. Metadata normalization
-rejects accessors/custom iterators without invoking them. Static inspection treats
-unsupported exported forms and dynamic/mutated metadata as unknown, and never
-evaluates factories. CLI --check, Cloudflare checks and deployment preflight share
-private selected Wrangler declaration facts. Failures stop before types/build or
-artifact writes. Remote resources and secret values/existence remain unverified.
-Node/Deno runtime validation works; their declaration preflight is unavailable.
-
-Continue with direct Vite build preflight, the remaining declaration-source
-policy for Node/Deno, and full secret-classification/hydration acceptance. Keep
-binding shape checks scoped to structural validation, not remote connectivity.
-Document that classification cannot prevent deliberate public exposure. Retain
-synchronous factory policy and separate strict installed cache ambient types.
-Fresh installed config/workerd/browser/documentation acceptance passes, along
-with combined source/CLI/MCP regressions and root/package type checking. A real
-Vite SSR build checks named metadata collection and failure before factory entry.
-Retained gate: /tmp/cossack-local-pack-5dbkLj.
-RT-24 stays open; counts stay 30 complete / 28 open. Final acceptance evidence is
-in the [declared requirements record](./release-0.9.0-verification-archive.md#codex-declared-configuration-requirements-2026-10-05).
-
-Codex direct-build checkpoint (2026-10-05): direct `cossackConfig()` builds
-now share the Node-only private Wrangler reader and safe inspection facade with
-CLI config checks, capability binding discovery and deployment. Explicit target
-options take precedence; scaffold/package/adapter metadata resolves the runtime.
-Cloudflare checks selected declarations before type generation and build output.
-Node/Deno/unknown targets check metadata, conflicts and runtime compatibility;
-their supplied values remain unverified. Development startup permits incomplete
-configuration. Build/watch cycles reread source and Wrangler facts and watch
-factory files and metadata origins. Failed build/render hooks now prevent SSG
-publication; a new cycle resets that environment's failure state. A separate
-named-environment parser failure is sanitized before deployment diagnostics.
-RT-24 remains open for Node/Deno declaration-source policy and full hydration
-secrecy acceptance. Counts stay 30 complete / 28 open. See the
-[direct-build verification](./release-0.9.0-verification-archive.md#codex-direct-vite-configuration-preflight-2026-10-05).
-
-Codex private-hydration checkpoint (2026-10-05): an installed Cloudflare app
-now reads classified configuration into a private field and publishes only a
-boolean/count. Actual workerd SSR HTML, parsed hydration, browser/RPC traffic,
-delivered scripts, CLI metadata and production client JavaScript/source maps
-omit the private value and factory sentinel. Temporary declarations ensure
-Wrangler supplies the test secret locally. The helper restores original files,
-artifacts and caches. Native Node/Deno hydration and declaration-source policy,
-failure diagnostics and broader secret-classification acceptance remain open;
-intentional app publication is not automatic redaction. Counts stay 30 / 28.
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics

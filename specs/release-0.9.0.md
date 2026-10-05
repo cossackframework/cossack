@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 34 complete / 24 open.
+  acceptance; the numbered release task count is 36 complete / 22 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -48,11 +48,11 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-17](./release-0.9.0-plan.md#rt-17) Shared Studio/CLI database inspection service.
 - [x] [RT-18](./release-0.9.0-plan.md#rt-18) Cache/rate-limit capability checks, consistent TTL units, and transport coverage.
 - [x] [RT-19](./release-0.9.0-plan.md#rt-19) Realtime connection state, reconnect/resync, and pending action handling without blind mutation replay.
-- [ ] [RT-20](./release-0.9.0-plan.md#rt-20) SSR/hydration diagnostics with component/field/source information and test helpers. Codex (2026-10-05): root and nested structural mismatch events now report a category, DOM path, expected/actual node shape, and nested component name without logging rendered text or comment data. All 333 renderer tests and root typechecking pass. State comparison, source/field metadata, retained layout/service browser cases, and reusable test helpers remain open. See [the hydration diagnostics checkpoint](#codex-rt20-safe-hydration-diagnostics-2026-10-05).
+- [x] [RT-20](./release-0.9.0-plan.md#rt-20) Redacted development text/structure/state diagnostics with component, relative source and field paths; valid nested hydration preserves nodes, listeners, resources and layout services. Installed development/production browser acceptance passes. [Evidence](#codex-rt20-rt24-complete-2026-10-05).
 - [x] [RT-21](./release-0.9.0-plan.md#rt-21) SSG compiler compatibility, structured per-route outcomes and safe publication; real Vite and installed generated Cloudflare artifacts passed. [Evidence](#codex-rt21-rt29-complete-2026-10-05).
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight and installed Cloudflare private-hydration acceptance are implemented; Node/Deno declaration-source/native hydration and broader failure-diagnostic/classification acceptance remain. See [direct build checkpoint](#codex-rt24-direct-vite-preflight-2026-10-05) and [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
+- [x] [RT-24](./release-0.9.0-plan.md#rt-24) Generated config inference, required variables/bindings, pre-factory named failures and scoped environments. Installed Node/Deno types, tooling policy, SSR/RPC/browser isolation and secret exclusion pass alongside prior Cloudflare acceptance. [Evidence](#codex-rt20-rt24-complete-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [x] [RT-27](./release-0.9.0-plan.md#rt-27) Translation extraction/catalog checks, generated imported/global key and parameter types, CLI/MCP JSON parity and parallel SSR/SSG locale isolation; [evidence](#codex-rt12-rt27-complete-2026-10-05).
@@ -1792,3 +1792,16 @@ Node/Cloudflare helper cases pass, as do installed helper runtime/type imports
 and installed generated Cloudflare SSG artifacts. Root/framework/test-utils
 typechecks and builds pass. [Full criteria and limits](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05).
 Release: **34 complete / 24 open**; Desktop checks remain waived.
+
+<a id="codex-rt20-rt24-complete-2026-10-05"></a>
+### Codex: RT-20 and RT-24 complete (2026-10-05)
+
+Renderer: 343 tests/25 files; Core: 1,587/100; combined framework config/source
+metadata: 147/6. Generated Node hydration: 3/3; native Node/Deno configuration:
+2/2. Fresh installed Node development/production hydration: 3/3; installed Node
+and Deno configuration type/tooling/SSR/RPC/browser/secrecy acceptance passed.
+Root and renderer/core/framework typechecks and builds passed.
+[Full criteria, commands and limits](./release-0.9.0-verification-archive.md#codex-rt20-rt24-complete-2026-10-05).
+Release: **36 complete / 22 open**. Desktop checks remain waived. Node/Deno
+value inspection remains explicitly unavailable until hosts supply runtime values;
+this is not a claim that secrets or remote resources exist.

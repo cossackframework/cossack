@@ -2,7 +2,7 @@ export { cossackBuildBudgets } from './vite-build-budgets.js';
 import { checkConfigBuildRequirements } from './config-preflight.js';
 import type { ConfigRuntime } from './config-requirements.js';
 import { CONFIG_GLOB, generateConfigTypes, discoverConfigFactories } from './config-codegen.js';
-import type { Plugin } from 'vite';
+import { parseSync, type Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -318,14 +318,30 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             message: `${file}${first.source.line ? `:${first.source.line}` : ''}: ${first.message}` });
         }
       }
-      if (isDev && id.endsWith('.ts') && code.includes('extends Cossack')) {
-        const regex = /(export\s+default\s+|export\s+)?class\s+(\w+)\s+extends\s+Cossack\s*(<[^>]+>)?\s*\{/;
-        const match = code.match(regex);
-        if (match) {
-          const insertionIndex = match.index! + match[0].length;
-          const sourceInfo = JSON.stringify({ file: id });
-          const injection = `\n  static __source = ${sourceInfo};\n`;
-          code = code.slice(0, insertionIndex) + injection + code.slice(insertionIndex);
+      if (isDev && id.endsWith('.ts') && file.startsWith(resolve(projectRoot, 'src').replaceAll('\\', '/') + '/')) {
+        // Parse declarations: text inside comments or string literals is not a class.
+        const parsed = parseSync(id, code);
+        if (!parsed.errors.length) {
+          const edits: { offset: number; text: string }[] = [];
+          const visit = (node: any) => {
+            if (!node || typeof node !== 'object') return;
+            if ((node.type === 'ClassDeclaration' || node.type === 'ClassExpression') && node.superClass
+              && !node.body.body.some((member: any) => member.key?.name === '__source')) {
+              const classStart = node.start;
+              const offset = node.body.start + 1;
+              const beforeClass = code.slice(0, classStart);
+              const sourceInfo = JSON.stringify({ file: relative(projectRoot, id).replaceAll('\\', '/'),
+                line: beforeClass.split('\n').length, column: beforeClass.length - beforeClass.lastIndexOf('\n') });
+              edits.push({ offset, text: `\n  static __source = ${sourceInfo};\n` });
+            }
+            for (const [key, value] of Object.entries(node)) {
+              if (key === 'parent') continue;
+              if (Array.isArray(value)) value.forEach(visit);
+              else if (value && typeof value === 'object') visit(value);
+            }
+          };
+          visit(parsed.program);
+          for (const edit of edits.sort((a, b) => b.offset - a.offset)) code = code.slice(0, edit.offset) + edit.text + code.slice(edit.offset);
         }
       }
 

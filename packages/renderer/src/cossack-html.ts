@@ -181,18 +181,19 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     instance.connectedCallback();
 
     pushCurrentInstance(instance);
-    (instance as any).willUpdate(new Map());
-    const template = instance._finalizeRenderOutput(instance.render());
-    let res = '';
-    if (template) {
-      if (isTemplateResult(template)) {
-        res = renderToString(template, opts);
-      } else {
-        res = renderToString(html`${template}`, opts);
-      }
+    try {
+      (instance as any).willUpdate(new Map());
+      // Framework components own render guards, loading output and development
+      // boundary wrappers. SSR must use the same template as their client render.
+      const wrappedRender = (instance as CossackElement & { _getWrappedTemplate?: () => unknown })._getWrappedTemplate;
+      const template = typeof wrappedRender === 'function'
+        ? wrappedRender.call(instance)
+        : instance._finalizeRenderOutput(instance.render());
+      if (!template) return '';
+      return renderToString(isTemplateResult(template) ? template : html`${template}`, opts);
+    } finally {
+      popCurrentInstance();
     }
-    popCurrentInstance();
-    return res;
   }
   if (isUnsafeHTML(value)) {
     return value.value;
@@ -714,6 +715,24 @@ export const renderToString = (result: TemplateResult, opts: { hydrate?: boolean
 
 // --- Client-Side Implementation ---
 
+/** Development-only context; source files must be project-relative. Values are never captured. */
+export interface HydrationDiagnosticMetadata {
+  component?: string;
+  source?: { file: string; line?: number; column?: number };
+  statePath?: string;
+  fields?: Record<number, string>;
+  /** Suppress expected differences at this boundary while still reconciling DOM. */
+  expectedClientOnly?: boolean;
+}
+const HYDRATION_DEV = !!(import.meta as any).env?.DEV;
+const hydrationMetadata = HYDRATION_DEV ? new WeakMap<object, HydrationDiagnosticMetadata & { boundary?: 'root' | 'component' }>() : undefined;
+const bindHydrationMetadata = (parts: Part[], metadata?: HydrationDiagnosticMetadata) => {
+  if (!HYDRATION_DEV || !metadata) return;
+  for (let i = 0; i < parts.length; i++) if (parts[i]) hydrationMetadata!.set(parts[i], {
+    ...metadata, fields: undefined, statePath: metadata.fields?.[i] ?? metadata.statePath,
+  });
+};
+
 interface Part {
   update(value: unknown): void;
 }
@@ -1099,7 +1118,10 @@ class NodePart implements Part {
       const text = String(value);
       const node = this.startNode.nextSibling;
       if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
-        if (node.nodeValue !== text) node.nodeValue = text;
+        if (node.nodeValue !== text) {
+          if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', domHydrationPath(node), 'text', 'text'), hydrationMetadata!.get(this)?.boundary ?? 'root', undefined, hydrationMetadata!.get(this), 'text-reconcile');
+          node.nodeValue = text;
+        }
       } else {
         this.clear();
         this.startNode.parentNode!.insertBefore(document.createTextNode(text), this.endNode);
@@ -1138,6 +1160,13 @@ class NodePart implements Part {
       if (this.componentInstance.__parent) {
         this.componentInstance._id = `${this.componentInstance.__parent._id}:${(this.componentInstance.__parent as any)._childCounter++}`;
       }
+      if (HYDRATION_DEV) {
+        const ownMetadata = (this.componentInstance as CossackElement & { hydrationMetadata?: HydrationDiagnosticMetadata }).hydrationMetadata;
+        const inherited = hydrationMetadata!.get(this);
+        hydrationMetadata!.set(this, { ...inherited, ...ownMetadata,
+          component: ownMetadata?.component ?? result.clazz.name ?? inherited?.component,
+          statePath: ownMetadata?.statePath, fields: ownMetadata?.fields, boundary: 'component' });
+      }
       let firstRender = true;
       this.renderListener = (template) => {
         if (firstRender) {
@@ -1154,7 +1183,7 @@ class NodePart implements Part {
               this._adoptTemplate(template);
             } catch (e) {
               if (e instanceof HydrateMismatch) {
-                reportHydrationMismatch(e, 'component', result.clazz.name || 'anonymous');
+                if (HYDRATION_DEV) reportHydrationMismatch(e, 'component', result.clazz.name || 'anonymous', hydrationMetadata!.get(this));
                 this.clear();
                 this._clearTemplateCache();
                 this.updateComponentTemplate(template);
@@ -1214,6 +1243,7 @@ class NodePart implements Part {
     for (let i = 0; i < items.length; i++) {
       const [start, end] = pairs[i];
       const part = new NodePart(start, end);
+      if (HYDRATION_DEV) { const metadata = hydrationMetadata!.get(this); if (metadata) hydrationMetadata!.set(part, metadata); }
       part._beginHydration();
       this._childParts.push(part);
       if (keys) this._partKeys.push(keys[i]);
@@ -1231,8 +1261,9 @@ class NodePart implements Part {
     try {
       const existing = this._nodesBetween();
       const map = new Map<Node, Node>();
-      reconcileNodeLists(blueprint.childNodes, existing, map);
+      reconcileNodeLists(blueprint.childNodes, existing, map, 'root', HYDRATION_DEV ? hydrationMetadata!.get(this) : undefined);
       rebindParts(parts, map);
+      bindHydrationMetadata(parts, HYDRATION_DEV ? hydrationMetadata!.get(this) : undefined);
       for (let i = 0; i < value.values.length; i++) {
         if (parts[i]) parts[i]!.update(value.values[i]);
       }
@@ -1645,7 +1676,9 @@ class NodePart implements Part {
       const text = String(value);
       const node = this.startNode.nextSibling;
       if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
-        if (node.nodeValue !== text) node.nodeValue = text;
+        if (node.nodeValue !== text) {
+          node.nodeValue = text;
+        }
       } else {
         this._clearTemplateCache();
         this.clear();
@@ -2569,7 +2602,7 @@ export const render = (result: TemplateResult, container: Node) => {
  * template (structural mismatch). Caught by `hydrate()` which falls back to a
  * full `render()` so correctness is guaranteed even when adoption gives up.
  */
-type HydrateMismatchCategory = 'sequence-length' | 'missing-node' | 'element-tag' | 'element-namespace' | 'node-type'
+type HydrateMismatchCategory = 'text-content' | 'sequence-length' | 'missing-node' | 'element-tag' | 'element-namespace' | 'node-type'
   | 'unexpected-node' | 'missing-part-anchor' | 'missing-part-element';
 
 class HydrateMismatch extends Error {
@@ -2595,17 +2628,27 @@ const reportHydrationMismatch = (
   mismatch: HydrateMismatch,
   boundary: 'root' | 'component',
   component?: string,
+  metadata?: HydrationDiagnosticMetadata,
+  action = 'full-render-fallback',
 ) => {
+  if (!HYDRATION_DEV || metadata?.expectedClientOnly) return;
+  component = component ?? metadata?.component;
+  const safePath = metadata?.statePath && /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*|\[\d+\])*$/.test(metadata.statePath) ? metadata.statePath.slice(0, 160) : undefined;
+  const file = metadata?.source?.file;
+  const source = typeof file === 'string' && file.length <= 240 && !file.startsWith('/') && !file.includes('\\') && !file.split('/').includes('..') && !/^[a-zA-Z]+:/.test(file)
+    ? { file, ...(Number.isSafeInteger(metadata?.source?.line) && metadata!.source!.line! > 0 ? { line: metadata!.source!.line } : {}), ...(Number.isSafeInteger(metadata?.source?.column) && metadata!.source!.column! > 0 ? { column: metadata!.source!.column } : {}) } : undefined;
   const safeComponent = component?.replace(/[^a-zA-Z0-9_$]/g, '_').slice(0, 80);
   console.warn({
     event: 'cossack.hydration.mismatch',
     boundary,
     ...(safeComponent ? { component: safeComponent } : {}),
+    ...(source ? { source } : {}),
+    ...(safePath ? { statePath: safePath } : {}),
     category: mismatch.category,
     path: mismatch.path,
     expected: mismatch.expected,
     actual: mismatch.actual,
-    action: 'full-render-fallback',
+    action,
   });
 };
 
@@ -2666,11 +2709,21 @@ const findSequencePairs = (nodes: Node[]): [Comment, Comment][] => {
  * marker comments. Whitespace-only text nodes are skipped on both sides so
  * that minified SSR output aligns with the unminified client blueprint.
  */
+const domHydrationPath = (node: Node): string => {
+  const parts: string[] = [];
+  for (let current: Node | null = node; current?.parentNode && parts.length < 12; current = current.parentNode) {
+    const index = Array.prototype.indexOf.call(current.parentNode.childNodes, current);
+    parts.unshift(`${current.nodeType === Node.ELEMENT_NODE ? (current as Element).nodeName.toLowerCase() : 'node'}[${index}]`);
+  }
+  return `root/${parts.join('/')}`;
+};
+
 const reconcileNodeLists = (
   bpNodes: NodeListOf<ChildNode> | Node[],
   exNodes: Node[],
   map: Map<Node, Node>,
   path = 'root',
+  metadata?: HydrationDiagnosticMetadata & { boundary?: 'root' | 'component' },
 ) => {
   let ei = 0;
   for (let bi = 0; bi < bpNodes.length; bi++) {
@@ -2703,10 +2756,15 @@ const reconcileNodeLists = (
         Array.from(exNode.childNodes),
         map,
         `${path}/${bpNode.nodeName.toLowerCase()}[${bi}]`,
+        metadata,
       );
     } else {
       if (bpNode.nodeType !== exNode.nodeType) {
         throw new HydrateMismatch('node-type', nodePath, describeNode(bpNode), describeNode(exNode));
+      }
+      if (bpNode.nodeType === Node.TEXT_NODE && bpNode.nodeValue !== exNode.nodeValue) {
+        if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', nodePath, 'text', 'text'), metadata?.boundary ?? 'root', undefined, metadata, 'text-reconcile');
+        exNode.nodeValue = bpNode.nodeValue;
       }
       map.set(bpNode, exNode);
     }
@@ -2775,7 +2833,7 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
  * If the existing DOM cannot be confidently matched to the template, falls
  * back to a full `render()` so behaviour is always correct.
  */
-export const hydrate = (result: TemplateResult, container: Node) => {
+export const hydrate = (result: TemplateResult, container: Node, metadata?: HydrationDiagnosticMetadata) => {
   // Nothing to hydrate (e.g. client-only render) — fall back to render.
   if (!container.hasChildNodes()) {
     return render(result, container);
@@ -2799,8 +2857,9 @@ export const hydrate = (result: TemplateResult, container: Node) => {
     const { fragment: blueprint, parts: compiled } = compileTemplate(result);
     parts = compiled;
     const map = new Map<Node, Node>();
-    reconcileNodeLists(blueprint.childNodes, Array.from(container.childNodes), map);
+    reconcileNodeLists(blueprint.childNodes, Array.from(container.childNodes), map, 'root', HYDRATION_DEV ? metadata : undefined);
     rebindParts(parts, map);
+    bindHydrationMetadata(parts, metadata);
     for (let i = 0; i < result.values.length; i++) {
       if (parts[i]) parts[i]!.update(result.values[i]);
     }
@@ -2811,7 +2870,7 @@ export const hydrate = (result: TemplateResult, container: Node) => {
       // output, manual DOM edits, etc.). Safe fall back to a full render so
       // behaviour is always correct. Warn so the lost hydration is visible —
       // a silent fallback here would hide a real SSR/client divergence.
-      reportHydrationMismatch(e, 'root');
+      if (HYDRATION_DEV) reportHydrationMismatch(e, 'root', undefined, metadata);
       return render(result, container);
     }
     throw e;
