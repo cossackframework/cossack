@@ -201,6 +201,7 @@ REL-03 remains open for the required non-Desktop release matrix.
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 needs native pre-header disconnect delivery, dynamic/per-call action deadline acceptance and initialization/restoration concurrency acceptance. Declared method timeout bounds are enforced, but do not prove arbitrary deadlines.
 - The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
+- Browser ownership acceptance remains open. The existing `di-demo.spec.ts` checks service state retention inside a layout and reset after leaving it, but this session's targeted Playwright command did not start Vite or produce test output within about 75 seconds, so it was stopped without claiming a pass.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
 - RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno copied tokens remain replayable until signed expiry. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.
