@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "node-runtime-lifecycle",
+      "title": "Attach and dispose the Node WebSocket runtime",
+      "summary": "Connect the process-local runtime to the host HTTP server after the framework fetch handler, preserve guarded upgrade checks, and await cleanup before shutdown.",
+      "imports": [
+        "@cossackframework/node-adapter",
+        "@cossackframework/node-adapter/vite"
+      ],
+      "markdown": "# Run the Node adapter with an explicit lifecycle\n\n`createNodeAdapter` handles only the framework's guarded `/ws/` upgrades. Keep ordinary HTTP handling on the framework's fetch handler, then pass that same handler to `runtime.attach(server, fetch)`. This ensures the framework runs middleware, origin checks, authorization and scope selection before the adapter accepts a socket. The adapter does not make WebSocket state durable or shared across Node processes.\n\nCall `await runtime.dispose()` before closing an embedded server. Disposal detaches listeners, closes sockets and waits for active actions and component cleanup. Do not use the legacy `CossackNodeAdapter` when generating new applications; generated apps use `createNodeAdapter`.\n\nFor Vite development, import `cossackNode` from the separate `/vite` entry. It is a development integration, not the production server; production uses the generated Node entry and static asset server.",
+      "examples": [
+        {
+          "id": "attach-and-dispose",
+          "language": "typescript",
+          "source": "import { createServer } from 'node:http';\nimport { createNodeAdapter } from '@cossackframework/node-adapter';\n\nconst server = createServer();\nconst runtime = createNodeAdapter({ maxInstances: 32, idleTimeoutMs: 30_000 });\nruntime.attach(server, async () => new Response('framework response'));\nif (server.listenerCount('upgrade') !== 1) throw new Error('Expected the runtime upgrade listener');\nawait runtime.dispose();\nif (server.listenerCount('upgrade') !== 0) throw new Error('Disposal must detach the host listener');"
+        },
+        {
+          "id": "configure-vite-development",
+          "language": "typescript",
+          "source": "import { cossackNode } from '@cossackframework/node-adapter/vite';\n\nconst plugin = cossackNode({ entry: '/src/index.ts', shutdownTimeoutMs: 2_000 });\nif (plugin.name !== 'cossack-node-development' || plugin.apply !== 'serve') {\n  throw new Error('The Node adapter plugin is a Vite development-only integration');\n}"
+        }
+      ]
+    }
+  ]
+}

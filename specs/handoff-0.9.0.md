@@ -69,7 +69,7 @@ the required non-Desktop release matrix.
    Earlier examples cover native dialogs/disclosures, tabs, toggles, icons,
    radio/range controls, searchable choice, repeated tag values, semantic
    lists/actions, named tables/scroll regions and other UI surfaces. The full
-   fresh-tarball docs gate passes fifty-six standalone
+   fresh-tarball docs gate passes sixty-four standalone
    examples, four auth
    examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
@@ -78,8 +78,12 @@ the required non-Desktop release matrix.
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
    plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-guide-coverage-2026-10-05).
-   All 59 package guides now include examples, and all sixty examples run in the
-   installed gate. Continue broader library API and recipe coverage. The UI
+   All 63 published-package guides now include examples, and all sixty-eight
+   examples run in the installed gate. Framework guidance now covers runtime
+   capabilities and cache guarantees; Node and Deno guidance covers adapter
+   lifecycle, binding precedence and development plugins. `test-utils` is an
+   internal workspace package, outside the published tarball acceptance. Continue
+   broader library API and recipe coverage. The UI
    examples
    cover SSR only; they do not close browser or assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.

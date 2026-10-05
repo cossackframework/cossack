@@ -225,6 +225,12 @@ publishes TypeScript source. The acceptance harness checks these examples with
 Bundler resolution, bundles them with the installed esbuild dependency, then
 executes them under the offline guard. This does not prove plain Node imports, real session storage,
 login/cookie issuance or framework RPC authorization.
+Framework guides now cover runtime-capability planning and cache guarantees,
+including Cloudflare binding names, the process locality of memory cache, and KV's
+eventual consistency. Node and Deno adapter guides cover upgrade/fetch lifecycles,
+binding precedence, cleanup and their separate Vite development plugins. The
+internal `test-utils` workspace package is not part of the published tarball set,
+so it is deliberately excluded from installed package guidance.
 Three more core examples are complete application pages. They cover validated
 component actions, read-only server resources and lifecycle tasks. These pages
 need the framework Vite plugins, generated entry and a browser. An ordinary
@@ -243,6 +249,11 @@ Standalone examples prove Node execution. The application checks cover local
 Cloudflare and Node development and production client stripping. They do not
 prove live deployment or every transport and runtime combination. Other APIs,
 components, recipes and runtime targets still need their own coverage.
+The latest tarball gate typechecks and executes all 64 standalone examples from
+published package exports plus four separately bundled auth examples, for 68
+examples across 63 package guides. The Deno fetch example uses a small Node
+compatibility shim for Hono's Deno static-file import; this checks the installed
+adapter path and binding precedence, not native Deno or Deno Deploy readiness.
 
 
 ## Component prop declarations

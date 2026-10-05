@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "runtime-capability-planning",
+      "title": "Check runtime capabilities before choosing a recipe",
+      "summary": "Use the runtime capability model to distinguish supported transports, required Cloudflare bindings, and process-local behavior before generating or deploying an application.",
+      "imports": [
+        "@cossackframework/framework/runtime-capabilities"
+      ],
+      "markdown": "# Plan against the target runtime\n\nCall `describeRuntimeCapabilities(runtime, env)` to inspect the runtime's supported features and the binding names that are missing. It reads binding presence only; never pass binding values to discovery or print them in diagnostics. A supported transport does not imply durable state: Node and Deno can host process-local WebSockets, while durable page state requires Cloudflare Durable Objects. Cloudflare SSE coordination requires `COSSACK_SSE`; Durable Object transport requires `COSSACK_OBJECT`.\n\nFor a selected feature set, use `checkCapabilityRequirements` and preserve its structured diagnostics. Do not infer deployed readiness from this static model; deployment credentials, remote bindings, and runtime health are separate checks.",
+      "examples": [
+        {
+          "id": "inspect-runtime-bindings",
+          "language": "typescript",
+          "source": "import { describeRuntimeCapabilities } from '@cossackframework/framework/runtime-capabilities';\n\nconst missing = describeRuntimeCapabilities('cloudflare', {});\nif (missing.transports.status !== 'missing-binding' ||\n    !missing.transports.missingBindings.includes('COSSACK_SSE') ||\n    !missing.transports.missingBindings.includes('COSSACK_OBJECT')) {\n  throw new Error('Cloudflare realtime bindings were not reported');\n}\nconst ready = describeRuntimeCapabilities('cloudflare', { COSSACK_SSE: {}, COSSACK_OBJECT: {} });\nif (ready.transports.status !== 'available') throw new Error('Expected realtime bindings to satisfy transport requirements');\nconst node = describeRuntimeCapabilities('node', {});\nif (node.processLocalRealtime.status !== 'available' || node.durableState.status !== 'unsupported') {\n  throw new Error('Node must remain process-local');\n}"
+        },
+        {
+          "id": "check-selected-feature-requirements",
+          "language": "typescript",
+          "source": "import { checkCapabilityRequirements, type CapabilityUse } from '@cossackframework/framework/runtime-capabilities';\n\nconst liveFeed: CapabilityUse = {\n  feature: 'live-feed',\n  source: { file: 'src/pages/live/index.ts' },\n  requires: { transports: ['sse'], realtimeCoordination: true },\n};\nconst missing = checkCapabilityRequirements('cloudflare', [liveFeed]);\nif (!missing.some(item => item.missingBindings.includes('COSSACK_SSE'))) {\n  throw new Error('The plan must identify the missing coordinator binding');\n}\nif (checkCapabilityRequirements('cloudflare', [liveFeed], ['COSSACK_SSE']).length !== 0) {\n  throw new Error('The declared feature should pass once its binding name is present');\n}\nconst processRuntime = checkCapabilityRequirements('node', [{\n  ...liveFeed, requires: { durableState: true },\n}]);\nif (processRuntime[0]?.code !== 'COSSACK_CAPABILITY_UNSUPPORTED') {\n  throw new Error('Durable state must be rejected on Node');\n}"
+        }
+      ]
+    },
+    {
+      "id": "cache-storage-guarantees",
+      "title": "Choose cache storage by its consistency and locality",
+      "summary": "Use the built-in cache facade and inspect provider guarantees so process memory or eventually consistent KV is not used for a cross-instance invariant.",
+      "imports": [
+        "@cossackframework/framework/cache",
+        "@cossackframework/framework/storage-capabilities"
+      ],
+      "markdown": "# Choose the cache backend by the guarantee you need\n\nThe `cache` facade uses milliseconds for TTLs and provides `remember` for cached computations. An in-memory store is local to one process or Worker isolate and is cleared on restart. Cloudflare KV is shared but eventually consistent; it does not provide atomic read-modify-write or bulk prefix deletion. Use a Durable Object or database when correctness needs strong shared consistency, and check declared capabilities before accepting a backend for a required guarantee.\n\nCapability checks describe a configured store. They do not prove that a remote binding is reachable or deployed correctly.",
+      "examples": [
+        {
+          "id": "cache-remember-facade",
+          "language": "typescript",
+          "source": "import { cache, InMemoryCacheStore } from '@cossackframework/framework/cache';\n\ncache.setDefaultStore(new InMemoryCacheStore());\nlet loads = 0;\nconst loadCatalog = async () => { loads++; return ['one', 'two']; };\nconst first = await cache.remember('catalog', 60_000, loadCatalog);\nconst second = await cache.remember('catalog', 60_000, loadCatalog);\nif (first.join(',') !== 'one,two' || second.join(',') !== 'one,two' || loads !== 1) {\n  throw new Error('remember should load once while the cached value is present');\n}"
+        },
+        {
+          "id": "reject-eventual-cache-for-strong-work",
+          "language": "typescript",
+          "source": "import { InMemoryCacheStore, KvCacheStore, type CacheKvNamespace } from '@cossackframework/framework/cache';\nimport { assertStorageRequirements, StorageCapabilityError } from '@cossackframework/framework/storage-capabilities';\n\nconst kv: CacheKvNamespace = {\n  async get() { return null; },\n  async put() {},\n  async delete() {},\n};\nconst eventual = new KvCacheStore(kv);\nif (eventual.capabilities.consistency !== 'eventual' || eventual.capabilities.locality !== 'shared') {\n  throw new Error('KV must be described as shared and eventually consistent');\n}\nlet rejected = false;\ntry { assertStorageRequirements(eventual.capabilities, { strongConsistency: true }); }\ncatch (error) { rejected = error instanceof StorageCapabilityError; }\nif (!rejected) throw new Error('Eventually consistent KV cannot satisfy a strong consistency requirement');\nconst local = new InMemoryCacheStore();\nif (local.capabilities.locality !== 'process' || local.capabilities.persistence !== 'ephemeral') {\n  throw new Error('Memory cache must be scoped to the current process');\n}"
+        }
+      ]
+    }
+  ]
+}

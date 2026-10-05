@@ -92,7 +92,10 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   };
   // Guidance fixtures need directly resolvable packages, without composing
   // their features into the minimal application.
-  if (documentation) for (const name of ['@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database']) {
+  if (documentation) for (const name of [
+    '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
+    '@cossackframework/node-adapter', '@cossackframework/deno-adapter',
+  ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "deno-fetch-and-assets",
+      "title": "Use the Deno fetch adapter and its asset binding",
+      "summary": "Compose the runtime-neutral application with Deno's fetch adapter, understand binding precedence, and dispose process-local WebSocket resources.",
+      "imports": [
+        "@cossackframework/deno-adapter",
+        "@cossackframework/deno-adapter/vite"
+      ],
+      "markdown": "# Use the Deno adapter\n\nCreate one `createDenoAdapter` instance for the process and pass it to `createApp({ runtimeAdapter })`. Export a fetch handler that calls `runtime.fetch(app, request, env)`, or use `runtime.serve(app)` for local `Deno.serve()`. The adapter injects `ASSETS.fetch`; configured `options.env` values are merged first and request bindings override matching names.\n\nDeno WebSocket instances are process-local. `maxInstances` includes pending initializations, and `idleTimeoutMs` is enforced during socket activity rather than by a background timer. This adapter does not provide durable `stateful: true` WebSocket pages; persist application data in a database or deploy with Cloudflare Durable Objects.\n\nAwait `runtime.dispose()` when an embedded host stops using it. `runtime.serve(app)` also disposes on `server.shutdown()` or when `server.finished` settles. Cleanup waits for active actions, so application actions must settle.\n\nThe optional Vite development integration is imported from `/vite`; its supervisor uses local authenticated loopback channels and is not a security sandbox.",
+      "examples": [
+        {
+          "id": "fetch-env-precedence",
+          "language": "typescript",
+          "source": "import { createDenoAdapter, type DenoApplication } from '@cossackframework/deno-adapter';\n\nconst runtime = createDenoAdapter({ env: { REGION: 'configured', MODE: 'default' }, assetsRoot: './missing-assets' });\nconst app: DenoApplication = {\n  async fetch(_request, env = {}) {\n    return Response.json({ region: env.REGION, mode: env.MODE, requestOnly: env.REQUEST_ONLY });\n  },\n};\nconst response = await runtime.fetch(app, new Request('http://localhost/data'), {\n  REGION: 'request', REQUEST_ONLY: 'yes',\n});\nconst result = await response.json() as Record<string, unknown>;\nif (result.region !== 'request' || result.mode !== 'default' || result.requestOnly !== 'yes') {\n  throw new Error('Request bindings should override adapter defaults while retaining other defaults');\n}\nawait runtime.dispose();"
+        },
+        {
+          "id": "configure-vite-development",
+          "language": "typescript",
+          "source": "import { cossackDeno } from '@cossackframework/deno-adapter/vite';\n\nconst plugin = cossackDeno({ entry: '/src/index.ts', startupTimeoutMs: 10_000, shutdownTimeoutMs: 1_500 });\nif (plugin.name !== 'cossack-deno-development' || plugin.apply !== 'serve') {\n  throw new Error('The Deno adapter plugin is a Vite development-only integration');\n}"
+        }
+      ]
+    }
+  ]
+}

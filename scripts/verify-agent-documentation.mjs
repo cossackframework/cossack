@@ -73,7 +73,11 @@ require('node:module').syncBuiltinESMExports();
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
     const uiExamples = [];
+    const denoExamples = [];
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input', 'development-rpc-traces', 'component-actions', 'server-resources', 'lifecycle-tasks', 'safe-old-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
+      ...['runtime-capability-planning', 'cache-storage-guarantees'].map(id => ['@cossackframework/framework', id]),
+      ...['node-runtime-lifecycle'].map(id => ['@cossackframework/node-adapter', id]),
+      ...['deno-fetch-and-assets'].map(id => ['@cossackframework/deno-adapter', id]),
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ['@cossackframework/ui', 'native-controls'],
@@ -128,6 +132,7 @@ require('node:module').syncBuiltinESMExports();
         await fs.writeFile(file, example.source);
         examples.push(file);
         if (name === '@cossackframework/ui') uiExamples.push(file);
+        if (name === '@cossackframework/deno-adapter') denoExamples.push(file);
       }
     }
     const config = path.join(scratch, 'tsconfig.json');
@@ -161,9 +166,18 @@ for (const { entry, outfile } of ${JSON.stringify(bundleEntries)}) esbuild.build
 `);
       await exec(process.execPath, [...nodeArgs, bundleScript], { cwd: projectDir, env, timeout: 30_000 });
     }
+    const denoShim = path.join(scratch, 'deno-node-import-shim.cjs');
+    await fs.writeFile(denoShim, `class NotFound extends Error {}
+globalThis.Deno = {
+  errors: { NotFound },
+  lstatSync() { throw new NotFound(); },
+  async open() { throw new NotFound(); },
+};
+`);
     for (const file of examples) {
       const executable = bundledUiExamples.get(file) ?? path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js');
-      const result = await exec(process.execPath, [...nodeArgs, executable], { cwd: projectDir, env, timeout: 30_000 });
+      const args = denoExamples.includes(file) ? [...nodeArgs, '--require', denoShim, executable] : [...nodeArgs, executable];
+      const result = await exec(process.execPath, args, { cwd: projectDir, env, timeout: 30_000 });
       assert.equal(result.stderr, '');
     }
     const d1Example = await import(pathToFileURL(path.join(scratch, 'compiled', 'cloudflare-d1-bound-query-bound-query.js')).href);
