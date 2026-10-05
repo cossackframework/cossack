@@ -1988,3 +1988,21 @@ Each source/installed batch: **4 pass / 3 files**. Root/all ten non-Desktop
 package type checks pass. Desktop remains waived. SVC-04 stays open for native
 Waiting status; no Running-to-Waiting substitution. Hosted execution and final
 REL gates remain open. Unchanged tarballs reused; no package repack.
+
+
+### Codex — executable migration guide and native development faults (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** All nine unchanged migration
+guide TypeScript examples compile under strict Bundler and NodeNext resolution
+against source and installed public packages. Native Cloudflare Vite/workerd API
+and SSR failures return fixed diagnostics correlated to their own structured log
+events. Private exception/cause/path/request values stay out of public output and
+logs; editing the failed page recovers in the same process.
+[Evidence and limits](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
+
+Source and installed combined checks each pass **2 tests / 2 files**; root/all
+ten non-Desktop package types pass. No repack; Desktop waived. CF-08 remote
+logs/maps/provider startup and the wider receipt criteria remain open. REL-04
+versioning remains gated; type fixtures do not prove application operations.
+The serial non-Desktop CLI gate has started, including the strict older Workflow
+probe; its result is pending, not passed.

@@ -2,31 +2,32 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest Codex batch verifies **native Workflow lifecycle and executable guide**
-([evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06)).
-**51 complete / 7 open**, versions 0.8.3; no numbered task closes. Source and
-installed acceptance prove failed-step retry, external event completion, redacted
-terminal failure and persisted pause/process-kill/restart/resume without repeating
-completed steps. Wrangler's harness disables persistence; restart acceptance
-uses a new native local process against the same persisted directory.
+Latest verified Codex batch: **migration examples and native Cloudflare DEV faults**
+([evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06)).
+**51 complete / 7 open**, versions 0.8.3; no numbered task closes. All nine
+unchanged migration TypeScript fences compile under strict Bundler/NodeNext.
+Real Vite/workerd API and SSR failures correlate each returned request ID with
+its own redacted structured event; editing the page recovers in the same process.
+Source and installed combined checks each pass **2 / 2 files**; root/all ten
+non-Desktop package types pass. Contract stubs do not prove app operations.
+No repack: reused `/tmp/cossack-preview-secret-recovery-installed`.
 
-All four Workflow guide snippets compile unchanged with generated binding
-types. Separate NodeNext imports and negative input/event checks pass. Operations
-and authorization are explicit contract fixtures only. Each source/installed
-batch: **4 pass / 3 files**; root/all ten non-Desktop package types pass. No
-repack: reused `/tmp/cossack-preview-secret-recovery-installed`. Prior preview
-secret/tagged-recovery acceptance remains valid in the archive.
+**Active verification:** serial non-Desktop CLI suite, including the earlier
+strict Workflow probe and enabling the recorded Deno binary. Exec session **48392**;
+log `/tmp/cossack-rel03-current-cli.log`, JSON `/tmp/cossack-rel03-current-cli.json`.
+Poll the live handle; do not restart because an observation times out. The result
+is pending, not passed. Desktop-named checks are waived.
 
-Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. SVC-04's
-remaining lifecycle criterion is actual native Waiting status; pinned Miniflare
-reports Running at the event barrier. Do not replace that assertion or repeat
-ephemeral harness restarts as durability proof. CF-09 needs hosted account/CI
-isolation and retry proof; a preview without a matching tagged deployment remains
-manual-recovery only. API token/account environment remain unconfigured. CF-08
-remote logs/maps/startup, Deno Deploy and final versioned artifact gates remain.
-Preserve earlier proofs and baseline user reports.md/.zcodeignore and two older
-uncommitted Workflow probes. No cloud mutation/deployment/push/publication.
-Desktop remains completed/waived.
+Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Workflow
+retry/event/failure and persisted pause/process-restart acceptance remains verified;
+actual native Waiting is still missing (pinned Miniflare reports Running).
+CF-08 native API/SSR DEV faults are now verified; compiler/remote Logs/maps/provider
+startup and wider graph/aggregate receipts remain. CF-09 requires hosted account/CI
+isolation, cleanup/retry and unchanged-production proof; no-tag creation still
+requires safe ownership evidence. Cloudflare account/token remain unconfigured.
+Deno Deploy, final installed/runtime matrix, gated versioning and final audit
+remain. Preserve baseline reports.md/.zcodeignore and two older uncommitted
+Workflow probes. No cloud mutation/deployment/push/publication. Desktop waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.

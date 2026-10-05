@@ -13482,3 +13482,70 @@ API, deployment, CI run, provisioning, push or publication occurred. CF-08/09
 hosted criteria, Deno Deploy and final REL artifact gates remain open. Versions
 stay 0.8.3. Desktop checks remain waived, not passed. Preserved baseline
 reports.md, .zcodeignore and both older uncommitted Workflow probes.
+
+
+## Codex — migration and native development acceptance (2026-10-06)
+
+<a id="codex-migration-native-development-2026-10-06"></a>
+
+**51 complete / 7 open; no numbered task closes.** Two implementation agents
+owned separate new tests/fixtures; a third performed a read-only open-task
+dependency audit. Codex reviewed the implementation, requested exact per-event
+correlation and bounded child-process cleanup, and ran the integrated batch.
+
+Proven acceptance:
+
+- All nine unchanged TypeScript fences from specs/migration-0.9.0.md compile
+  under strict Bundler and NodeNext against public Core/Renderer/UI exports.
+  Negative checks enforce serialized Date strings, Input vocabulary, native
+  scroll bindings and boolean disabled controls. Explicit application-owned
+  auth/save/transport/data contexts establish types only. The old before-style
+  for-await example compiles against an app-owned RpcCall declaration; this is
+  not runtime endorsement of its old yield behavior.
+- A real generated Cloudflare Vite/workerd development process handles authored
+  API and SSR exceptions with fixed 500 JSON/HTML diagnostics. Each response's
+  distinct UUID matches its own structured failure event with the correct
+  authored route template, action, runtime, stage, code and finite duration.
+  Dummy private exception, cause, storage path, dynamic request path, query,
+  header and body sentinels stay out of client output and captured failure logs.
+  Editing the failed SSR page produces a 200 response in the same process.
+  Group cleanup covers normal close, deadline and output overflow.
+
+Verified commands, all exit 0:
+
+```sh
+pnpm --filter cossack exec vitest run tests/migration-documentation-acceptance.test.js tests/cloudflare-development-faults.test.js
+COSSACK_MIGRATION_INSTALLED_ROOT=/tmp/cossack-preview-secret-recovery-installed COSSACK_DEV_FAULTS_INSTALLED_ROOT=/tmp/cossack-preview-secret-recovery-installed pnpm --filter cossack exec vitest run tests/migration-documentation-acceptance.test.js tests/cloudflare-development-faults.test.js
+pnpm tsc --noEmit
+pnpm run typecheck -- --exclude-desktop
+```
+
+Results: **2 tests / 2 files pass** source, **2 tests / 2 files pass** installed.
+Root/all ten non-Desktop package types pass; Desktop waived, not passed. Logs:
+`/tmp/cossack-release-guide-dev-source.log`,
+`/tmp/cossack-release-guide-dev-installed.log`,
+`/tmp/cossack-release-guide-dev-root-types.log`,
+`/tmp/cossack-release-guide-dev-package-types.log`. Reused existing installed
+artifacts; no package source changes, shared dist rebuilds or repacks. The first
+agent installed setup failed because require.resolve used Scaffold's import-only
+root; its fixture now resolves the actual public import target from package
+metadata. The final source/installed batch verifies the corrected fixture.
+
+Separate broad gate started (result pending, not passed):
+
+```sh
+COSSACK_DENO_BINARY="$(cat /tmp/cossack-deno-binary.txt)" pnpm --filter cossack exec vitest run --maxWorkers=1 --no-file-parallelism --testNamePattern='^(?!.*(?:[Dd]esktop|Electron))' --reporter=default --reporter=json --outputFile=/tmp/cossack-rel03-current-cli.json
+```
+
+Stdout/stderr: `/tmp/cossack-rel03-current-cli.log`. This serial run includes
+the preserved uncommitted strict Workflow probe and enables the recorded Deno
+executable. Desktop-named tests are omitted by the explicit release waiver.
+No missing or waived check is reported passed. The running handle must be polled
+to terminal before recording suite counts or failure conclusions.
+
+Remaining: native Workflow Waiting; CF-08 wider graphs/aggregate receipts and
+provider Logs/maps/startup; hosted CF-09 isolated lifecycle/retry/unchanged
+production plus safe no-tag recovery; Deno Deploy and final package/runtime
+matrix; gated version/release preparation and final requirement audit. No cloud
+mutation, deployment, provisioning, publication or push. Versions 0.8.3. All four
+baseline changes preserved unchanged.

@@ -208,6 +208,14 @@ checks that require authenticated access to real resources.
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets
 
+Latest Codex native DEV acceptance (2026-10-06): generated Cloudflare Vite/workerd
+API and SSR failures have source/installed proof of fixed diagnostics, separate
+response/log request IDs, authored route/action/runtime/stage/code and finite
+durations, private-value redaction, and recovery after editing the failed page
+without restarting the process. This closes that native API/SSR DEV criterion;
+compiler diagnostics and hosted Logs/maps/startup are not covered. Retain the
+wider graph/aggregate receipt requirements below. [Evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
+
 Codex primary receipt identity hardening (2026-10-05): local startup receipts
 must identify the external runtime that produced the profile. The private bounded
 inventory now resolves Miniflare from Wrangler, workerd from Miniflare, and binds
@@ -532,6 +540,14 @@ Desktop work or repeat its gate for unrelated work.
 <a id="rel-04"></a>
 ### REL-04: Versioning and release documents
 
+Codex executable migration examples (2026-10-06): all nine unchanged TypeScript
+fences compile through public Core/Renderer/UI exports under strict Bundler and
+NodeNext in source and installed consumers. Negative cases enforce JSON Date
+serialization and native UI prop contracts. Application-owned method/data stubs
+provide type context only; obsolete before examples are compiled, not endorsed
+at runtime. The draft prose/completeness audit and version bump remain gated.
+[Evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
+
 Purpose: A release must present one consistent version and explain intentional
 API changes. Users need a migration path from 0.8.x.
 
@@ -836,3 +852,15 @@ non-Desktop types pass. Unchanged installed artifacts reused. Desktop waived.
 Native Waiting status, hosted Cloudflare/CI, Deno Deploy and final versioned
 artifact gates remain open. Continue independent final acceptance rather than
 retesting or relabeling Miniflare Running.
+
+
+## Codex — migration examples and native DEV acceptance (2026-10-06)
+
+**51 complete / 7 open.** Two exclusive implementation agents added executable
+migration-guide and native Cloudflare DEV acceptance; Codex reviewed correlation
+and child cleanup, then verified source/installed combined checks (**2 each**)
+and root/all ten non-Desktop package types. Unchanged installed artifacts reused.
+[Evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
+The serial non-Desktop CLI gate is running, including the strict native Waiting
+probe. Do not claim it passed or restart on an observation timeout. No numbered
+row closes; final hosted/artifact/runtime dependencies remain. Desktop waived.
