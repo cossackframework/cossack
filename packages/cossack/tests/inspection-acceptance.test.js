@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { buildEffectiveRouteModel } from '../src/scan-routes.js';
+import { explainRoute } from '../src/inspection-service.js';
 import { transformCossackClass, transformServerResources, isClientSafeMethod } from '@cossackframework/framework/vite-security-plugin';
 let root;
 beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-inspection-acceptance-')); });
@@ -61,4 +62,92 @@ it('keeps layout middleware totals unknown when options cannot be resolved', asy
   const page = (await buildEffectiveRouteModel(root)).pages[0];
   expect(page.middlewareStack.map(entry => entry.count)).toEqual([null, 1]);
   expect(page.layoutAndPageMiddlewareCount).toBeNull();
+});
+
+it('resolves aliased and re-exported layout service tokens to their class declarations', async () => {
+  await write('tsconfig.json', JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', skipLibCheck: true },
+    include: ['src/**/*.ts'],
+  }));
+  await write('src/services/session.ts', "export class SessionService { static { throw new Error('inspection must not execute service modules'); } }");
+  await write('src/services/index.ts', "export { SessionService as SessionAlias } from './session.js';");
+  await write('src/pages/layout.ts', `import { SessionAlias as RootSession } from '../services/index.js';
+    @Page({ services: [RootSession] }) export default class RootLayout {}`);
+  await write('src/pages/(account)/layout.ts', `import { SessionService } from '../../services/session.js';
+    @Page({ services: [SessionService] }) export default class AccountLayout {}`);
+  await write('src/pages/(account)/index.ts', '@Page() export default class Home {}');
+
+  const model = await buildEffectiveRouteModel(root);
+  expect(model.layouts.map(layout => layout.serviceOwnership)).toEqual([
+    { method: 'typescript-source', status: 'resolved', services: [
+      { expression: 'SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+    ] },
+    { method: 'typescript-source', status: 'resolved', services: [
+      { expression: 'RootSession', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+    ] },
+  ]);
+  const explanation = explainRoute(model, '/src/pages/(account)/index.ts');
+  expect(explanation.reasons.join('\n')).toContain(
+    'TypeScript-source-resolved service class tokens: SessionService (/src/services/session.ts:1)',
+  );
+});
+
+it('resolves service tokens through a namespace re-export', async () => {
+  await write('src/services/session.ts', 'export class SessionService {}');
+  await write('src/services/index.ts', "export * as tokens from './session.js';");
+  await write('src/pages/layout.ts', `import { tokens as serviceTokens } from '../services/index.js';
+    @Page({ services: [serviceTokens.SessionService] }) export default class Layout {}`);
+  await write('src/pages/index.ts', '@Page() export default class Home {}');
+
+  const model = await buildEffectiveRouteModel(root);
+  expect(model.layouts[0].serviceOwnership).toMatchObject({
+    method: 'typescript-source', status: 'resolved', services: [
+      { expression: 'serviceTokens.SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+    ],
+  });
+});
+
+it('reports dynamic layout service tokens as unknown instead of guessing an owner', async () => {
+  await write('src/pages/layout.ts', '@Page({ services: [selectService()] }) export default class Layout {}');
+  await write('src/pages/index.ts', '@Page() export default class Home {}');
+
+  const model = await buildEffectiveRouteModel(root);
+  expect(model.layouts[0].serviceOwnership).toMatchObject({
+    method: 'typescript-source', status: 'unknown',
+    reason: expect.stringContaining('is dynamic'),
+  });
+});
+
+it('reports cyclic source aliases as unknown without recursing indefinitely', async () => {
+  await write('src/pages/layout.ts', `const first = second;
+    const second = first;
+    @Page({ services: [first] }) export default class Layout {}`);
+  await write('src/pages/index.ts', '@Page() export default class Home {}');
+
+  const model = await buildEffectiveRouteModel(root);
+  expect(model.layouts[0].serviceOwnership).toMatchObject({
+    method: 'typescript-source', status: 'unknown',
+    reason: expect.stringContaining('does not resolve to one class declaration'),
+  });
+});
+
+it('resolves layout service ownership inherited from an imported base layout', async () => {
+  await write('src/services/session.ts', 'export class SessionService {}');
+  await write('src/shared/base-layout.ts', `import { SessionService } from '../services/session.js';
+    @Page({ services: [SessionService] }) export class BaseLayout {}`);
+  await write('src/pages/layout.ts', `import { BaseLayout } from '../shared/base-layout.js';
+    export default class Layout extends BaseLayout {}`);
+  await write('src/pages/index.ts', '@Page() export default class Home {}');
+
+  const model = await buildEffectiveRouteModel(root);
+  expect(model.layouts[0].serviceOwnership).toMatchObject({
+    method: 'typescript-source', status: 'resolved', services: [
+      { expression: 'SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+    ],
+  });
+  const explanation = explainRoute(model, '/src/pages/index.ts');
+  expect(explanation.reasons.join('\n')).toContain(
+    'TypeScript-source-resolved service class tokens: SessionService (/src/services/session.ts:1)',
+  );
+  expect(explanation.reasons.join('\n')).not.toContain('Service ownership is unknown');
 });

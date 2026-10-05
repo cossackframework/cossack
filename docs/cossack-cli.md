@@ -185,13 +185,17 @@ Checks fail with `COSSACK_ROUTE_DEFAULT_EXPORT_MISSING` or
 `COSSACK_ROUTE_DEFAULT_EXPORT_UNKNOWN`. A resolved class is not proof that its
 constructor or lifecycle succeeds.
 
-Services are reported as source expressions on their declaring layouts. Import
-aliases are not treated as proof of service token identity. Dynamic service
-lookups and unresolved inherited layout options remain unknown. Page-level
-service declarations fail with `COSSACK_PAGE_SERVICES_UNSUPPORTED`: pages use
-layout scopes rather than creating their own. Layout/page middleware counts
-follow outer-to-inner layout order, then the page, and exclude global bootstrap
-middleware. An unknown count makes the combined total unknown.
+Services remain listed as source expressions on their declaring layouts. The
+`serviceOwnership` field also uses a static TypeScript source resolver to resolve
+identifier/member expressions through import aliases, re-exports and inherited
+layout decorators to the class declaration file and line. It does not import or
+execute project modules. Dynamic lookups remain unknown; a
+resolved class declaration does not prove that its service decorator or runtime
+lifecycle succeeds. Page-level service declarations fail with
+`COSSACK_PAGE_SERVICES_UNSUPPORTED`: pages use layout scopes rather than creating
+their own. Layout/page middleware counts follow outer-to-inner layout order,
+then the page, and exclude global bootstrap middleware. An unknown count makes
+the combined total unknown.
 
 Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
 through the scaffold recipe registry, including feature dependencies and provider

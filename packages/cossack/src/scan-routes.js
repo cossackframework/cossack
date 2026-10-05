@@ -2,6 +2,7 @@ import { inspectRuntimeMetadata } from './runtime-metadata.js';
 import { resolveDeclarationDispatch } from './member-dispatch.js';
 import { resolveImportedInheritance } from './inheritance.js';
 import { inspectScaffoldMetadata } from './project-metadata.js';
+import { inspectServiceOwnership } from './service-ownership.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { extractMethodClassificationsFromAst } from './page-options-ast.js';
@@ -213,6 +214,13 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
       extraction: { method, reason },
       source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
     });
+  }
+  const serviceOwnership = await inspectServiceOwnership(projectRoot, layouts.map(layout => layout.filePath));
+  for (const layout of layouts) {
+    layout.serviceOwnership = serviceOwnership.get(layout.filePath) ?? {
+      method: 'typescript-source', status: 'unknown', services: [],
+      reason: 'The TypeScript source resolver did not return ownership facts for this layout.',
+    };
   }
   for (const page of pages) {
     page.middlewareStack = [

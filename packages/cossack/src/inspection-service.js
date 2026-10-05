@@ -44,13 +44,25 @@ export function explainRoute(effective, route) {
   }
   const ownedServices = page.layouts
     .map(filePath => effective.layouts.find(layout => layout.filePath === filePath))
-    .filter(layout => layout && layout.services.length);
+    .filter(layout => layout && (layout.services.length ||
+      layout.serviceOwnership?.status === 'resolved' && layout.serviceOwnership.services.length));
   for (const filePath of page.layouts) {
     const layout = effective.layouts.find(candidate => candidate.filePath === filePath);
-    if (layout?.extraction.method === 'unknown') reasons.push(`Service ownership is unknown at ${filePath}: ${layout.extraction.reason}`);
+    if (layout?.serviceOwnership?.status === 'unknown' &&
+        (layout.services.length || layout.extraction.method === 'unknown')) {
+      reasons.push(`Service ownership is unknown at ${filePath}: ${layout.serviceOwnership.reason}`);
+    }
   }
   if (ownedServices.length) {
-    reasons.push(`Layout service declarations (source expressions, token identity not resolved): ${ownedServices.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
+    const direct = ownedServices.filter(layout => layout.services.length);
+    if (direct.length) reasons.push(`Layout service declarations: ${direct.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
+    for (const layout of ownedServices) {
+      if (layout.serviceOwnership?.status === 'resolved') {
+        reasons.push(`TypeScript-source-resolved service class tokens: ${layout.serviceOwnership.services.map(service => `${service.className} (${service.source}:${service.line})`).join(', ')}; declared by ${layout.filePath}.`);
+      } else {
+        reasons.push(`Service class identity is unknown for ${layout.filePath}: ${layout.serviceOwnership?.reason ?? 'compiler facts are unavailable'}`);
+      }
+    }
   }
   if (page.services.length) {
     reasons.push(`Services declared on the page itself are not owned at runtime: ${page.services.join(', ')}. Move these declarations to an ancestor layout's @Page({ services: [...] }).`);

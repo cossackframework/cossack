@@ -180,7 +180,14 @@ REL-03 remains open for the required non-Desktop release matrix.
    core build and all 1,552 core tests pass, as does root TypeScript checking.
    See the [dated RT-01 review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
    These changes do not close RT-01.
-4. Follow the detailed plan for all 28 open tasks. Close each only against its
+4. Continue **[RT-12](./release-0.9.0-plan.md#rt-12)**. Route inspection now
+   resolves static aliases/re-exports to service class declarations and preserves
+   inherited `@Page` options; dynamic expressions and cyclic aliases stay
+   unknown. Five focused inspection suites pass (87 tests), plus two route CLI
+   subprocess tests and root TypeScript checking. A throwing initializer proves
+   service modules are not run. Repeat the full CLI suite during REL-03. Service
+   decorator/runtime validity and browser navigation ownership remain open.
+5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 
 ## Limits to retain
@@ -192,6 +199,7 @@ REL-03 remains open for the required non-Desktop release matrix.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 needs native pre-header disconnect delivery, dynamic/per-call action deadline acceptance and initialization/restoration concurrency acceptance. Declared method timeout bounds are enforced, but do not prove arbitrary deadlines.
+- The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
 - RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno copied tokens remain replayable until signed expiry. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.

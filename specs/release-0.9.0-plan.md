@@ -531,6 +531,23 @@ show an actionable owner location. Leaving a layout cleans its services once.
 Failures in one hook do not skip others. Inspection matches actual ownership.
 Dependencies: RT-01, RT-09, and CLI-04.
 
+Codex ownership-inspection checkpoint (2026-10-05): `cossack inspect routes`
+now keeps the authored service expressions and adds `serviceOwnership`, resolved
+with a static TypeScript source resolver. Static identifiers and property access
+follow aliases, re-exports and inherited layout decorators to a class declaration
+path and line. The resolver parses but never imports or executes project modules.
+Dynamic expressions and unresolved decorators stay explicitly unknown. CLI docs
+and route explanations show the resolved class identity or uncertainty reason.
+All 87 tests across five focused route/inspection suites pass, as do the two
+route-related CLI subprocess tests and root `pnpm tsc --noEmit`. They cover
+alias/re-export identity, inherited layout options, dynamic unknown status and a
+throwing static initializer that must not run. This does not prove `@Service`
+validity or lifecycle execution, or verify browser navigation ownership;
+RT-12 remains open. The complete CLI package suite has not passed: parallel
+execution triggered subprocess/test timeouts, and the serial retry exceeded an
+existing five-second CLI assertion before it was stopped. Rerun it during REL-03
+and resolve any failures that reproduce without load contention.
+
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
 
