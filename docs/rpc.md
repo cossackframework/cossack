@@ -272,8 +272,10 @@ yields still observes their confirmed state before the error.
 HTTP stream cleanup requests producer cancellation and releases its reader lock
 without waiting for an uncooperative producer's cleanup promise.
 
-Use the error's `code` for application decisions. Internal exception messages
-and stacks stay in server logs, including service RPC in development. Deliberate
+Use the error's `code` for application decisions. HTTP and service RPC failure
+events use fixed codes and request IDs without arbitrary exception messages or
+stacks. Other transport/lifecycle log paths remain under review; see the
+[server logging contract](./server-logging.md). Deliberate
 `ClientVisibleError` messages and validation field errors remain visible.
 Correlated server failures carry `requestId`. HTTP/SSE and service failures retain
 the response's request ID on invalid JSON, mid-stream deadlines, and network

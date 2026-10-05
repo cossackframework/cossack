@@ -1,3 +1,5 @@
+import { createServerFailureContext, logServerFailure } from './server-logging.js';
+import { HTTPException } from 'hono/http-exception';
 import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream, developmentRpcNative } from './transports/development-trace.js';
 import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
@@ -374,6 +376,17 @@ export function createApp(options: CreateAppOptions = {}) {
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
   const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any; 'cossack.configContext'?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } }>({ strict: false });
+  app.onError((error, c) => {
+    if (error instanceof HTTPException) return error.getResponse();
+    const context = createServerFailureContext(c, {
+      route: c.req.matchedRoutes.findLast(route => route.path !== '*')?.path ?? 'unknown',
+      action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
+    });
+    const denial = getAuthorizationFailure(error);
+    if (denial) return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
+    logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL');
+    return c.json({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: context.requestId }, 500);
+  });
   const resolveNotFound = createNotFoundResolver(Object.keys(pages));
   const executedPolicies = Symbol('cossack:executed-route-policies');
   const policy = (source: string, index: number, middleware: Middleware): Middleware => async (c, next) => {
@@ -467,6 +480,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
+      const failureContext = createServerFailureContext(c, { route: filePathToHttpRoute(path),
+        action: 'render', runtime: options.runtimeAdapter?.name ?? 'cloudflare' });
       const inlineCss = await getInlineCss(c.env);
       const runtimeInfo = await resolveRuntimeInfo();
       const requestServiceScope = createRootServiceScope();
@@ -675,6 +690,7 @@ export function createApp(options: CreateAppOptions = {}) {
           runtime: runtimeInfo,
         };
 
+        c.header('X-Cossack-Request-Id', failureContext.requestId);
         c.header('Content-Type', 'text/html');
         const manifest = await getManifest(c.env);
         const modulePreloads = getModulePreloads(manifest, path);
@@ -698,7 +714,8 @@ export function createApp(options: CreateAppOptions = {}) {
           c.header('X-Cossack-Request-Id', requestId);
           return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         }
-        console.error('[Cossack SSR Error]:', err);
+        c.header('X-Cossack-Request-Id', failureContext.requestId);
+        logServerFailure(failureContext, 'ssr', 'render', 'COSSACK_SSR_INTERNAL');
         const errorPage = findNearestSpecialPage(path, 'error');
         if (errorPage && path !== errorPage.path) {
           c.status(500);
@@ -715,10 +732,10 @@ export function createApp(options: CreateAppOptions = {}) {
       } finally {
         for (const instance of requestComponents.reverse()) {
           try { await instance.destroyAsync(); }
-          catch (error) { console.error('[Cossack SSR] component cleanup failed:', error); }
+          catch { logServerFailure(failureContext, 'ssr', 'component-cleanup', 'COSSACK_SSR_CLEANUP_FAILED'); }
         }
         try { await requestServiceScope.disposeAsync(); }
-        catch (error) { console.error('[Cossack SSR] service cleanup failed:', error); }
+        catch { logServerFailure(failureContext, 'ssr', 'service-cleanup', 'COSSACK_SSR_CLEANUP_FAILED'); }
       }
     };
   };

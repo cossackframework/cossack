@@ -10899,3 +10899,96 @@ application exposure. Async factories remain unsupported; strict installed cache
 ambient types remain separate. Desktop remains complete by user decision;
 platform checks were waived, not run. Versions remain 0.8.3 until REL-04.
 No deployment, publication or remote provisioning occurred.
+
+<a id="codex-safe-http-ssr-failures-and-private-hydration-2026-10-05"></a>
+### Codex: Safe HTTP/SSR failures and private hydration (2026-10-05)
+
+Author: **Codex**. Tasks: **CF-08 / RT-24**, verified partial implementation.
+Neither parent task is closed. Counts remain **30 complete / 28 open**.
+
+**Implementation:** A portable framework-internal server logging helper validates
+outgoing UUIDs and bounds static labels. Native API and class API internal
+exceptions emit `cossack.api.failure` with stage/code, template, runtime and
+handler duration; class API failures now return generic code/requestId JSON.
+Failing class methods cannot replace the managed correlation header. Unknown
+HTTP methods become `unknown`. SSR rendering and router cleanup catches emit
+`cossack.ssr.failure`; unhandled request config/middleware failures use a safe
+Hono `onError` event/response instead of its arbitrary exception logger.
+Authorization and controlled HTTP exceptions keep their existing behavior.
+
+An installed Cloudflare helper temporarily declares a test secret in
+Wrangler secrets.required (local injection filters those names), reads it into
+an undecorated private field and publishes only a boolean/count. It verifies
+actual SSR HTML and parsed hydration, browser hydration and real server RPC,
+delivered JavaScript, request/response traffic and CLI config/check/Cloudflare
+catalogs. A real generated-app production build emits client scripts/maps and
+both are scanned. The helper restores exact source/config/types and original
+output, Wrangler and optimizer directories, and removes only its own temporary
+files/new empty directories. It rejects an existing scratch directory.
+
+**Ownership/review:** Existing reports.md and .zcodeignore remain preserved.
+One implementation agent exclusively owned API source and API regression files;
+another exclusively owned the new installed hydration helper. A third read-only
+agent audited Node/Deno declaration-source policy. Codex owned the shared helper,
+router/error handling, full integration, gate invocation, documentation and
+final verification. Review added modified-header and custom-method redaction
+coverage. The full suite found a non-UUID policy fixture; its correlation ID was
+updated to a canonical UUID. Desktop checks were excluded under the existing user waiver; all verification
+listed below was executed. Package builds and dist-consuming tests did not overlap.
+
+**Verified evidence:**
+
+- Final framework source suite: **1,696 tests / 88 files** pass. Four focused
+  integration suites pass **44 tests**, covering native schema/auth/handler/output
+  errors, class handler/gate/output errors, SSR cleanup and config/middleware
+  failures, correlation, authored templates and secret property/value absence.
+- Framework declaration emission and root `pnpm tsc --noEmit` pass. The package
+  emitter compiles sources; the root reference solution alone does not.
+- `node --check` passes for all three changed acceptance scripts.
+- The installed retained helper separately passes generated-app typechecking,
+  actual workerd/browser private-read/RPC acceptance, CLI redaction and production
+  client/source-map scanning. Retained original fixture files are restored.
+- Fresh installed workerd asserts a real native API handler's single structured
+  console event has the same response header/body UUID, authored `/items/:id`,
+  Cloudflare runtime and fixed handler stage/code, without private error/property,
+  path or query sentinels. Capture is test-only and forwarded to console; this
+  proves local runtime emission, not remote Workers Logs ingestion.
+
+- Final fresh `COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` passes (exit 0):
+  76 packaged examples + four auth examples, D1/config/native API workerd checks,
+  reporter and CLI/MCP evidence parity, Cloudflare HTTP/SSE/WebSocket browser
+  traces, application/page browser checks and production stripping, UI contract
+  and offline documentation parity, and the corrected private hydration helper.
+  The helper's installed app typechecking, SSR/browser/RPC and client maps checks
+  all ran against the final tarballs. Desktop is excluded.
+
+Initial full gate failed the new fixture's generated-app typecheck (TS2416):
+its live Node process had cached the earlier synchronous init before the agent
+corrected it to async. The corrected helper passed independently on that same
+fresh installation, then the full gate was rerun from final sources and passed.
+No failing check was waived. Recovery log:
+/tmp/cossack-server-logging-hydration-recovery.log. Final gate log:
+/tmp/cossack-server-logging-installed-final.log. Retained final gate:
+/tmp/cossack-local-pack-mL6TSQ. Earlier recovered installation:
+/tmp/cossack-local-pack-kzOQ0z. Current installed tooling: Wrangler 4.147.0,
+Cloudflare Vite plugin 1.62.5, Vite 8.3.2, TypeScript 7.0.2.
+Logs: /tmp/cossack-server-logging-{focused,combined,framework,installed}.log.
+
+**Limitations/next work:** CF-08 still needs core lifecycle/WebSocket, adapter,
+manifest/SSG/access-log review, development SSR exception-detail policy,
+whole-request timing, remote log ingestion, production source-map resolution and
+measured/configurable budgets. Global fallback duration starts at failure
+handling, so it does not measure middleware elapsed time. These changes do not
+claim every framework log is safe. Detailed development SSR error pages still
+include application exceptions; arbitrary private values in those messages are
+not covered by the successful hydration case.
+
+RT-24 still needs native Node/Deno hydration, declaration-source policy and
+broader failure-diagnostic/classification acceptance. The browser fixture uses
+a development Cloudflare Worker; production client artifacts/maps are scanned,
+not a production Worker browser session. The new helper uses CLI metadata, not
+MCP (existing installed catalog parity remains a separate gate). Remote resources
+and secret existence are unverified. Classification cannot prevent intentional
+public state/HTML/resource/RPC exposure. Versions remain 0.8.3 until REL-04.
+Desktop stays complete with platform checks waived. No deployment, publication
+or remote provisioning occurred.

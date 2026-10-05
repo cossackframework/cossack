@@ -109,14 +109,23 @@ describe('declared native API contracts', () => {
     });
 
     it.each(['input', 'authorize', 'handler', 'output'] as const)('keeps unexpected %s callback failures private', async stage => {
-        vi.spyOn(console, 'error').mockImplementation(() => {});
-        const crash = () => { throw Error('private-contract-key'); };
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const crash = () => { throw Object.assign(Error('private-contract-key'), { config: { token: 'private-error-property' } }); };
         const handler = vi.fn(() => stage === 'handler' ? crash() : { value: 'ok' });
         const endpoint = defineApi({ input: { body: input.object({ value: input.string() }).refine(() => stage === 'input' ? crash() : true) },
             authorize: () => stage === 'authorize' ? crash() : true,
             output: input.object({ value: input.string() }).refine(() => stage === 'output' ? crash() : true), handler });
-        const data = await failure(await app(endpoint).fetch(request({ value: 'ok' })), 500, 'COSSACK_API_INTERNAL');
-        expect(JSON.stringify(data)).not.toContain('private-contract-key'); expect(console.error).toHaveBeenCalled();
+        const application = app(endpoint);
+        const data = await failure(await application.fetch(new Request('http://localhost/items/private-path-key?token=private-query-key', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer private-header-key' }, body: JSON.stringify({ value: 'ok' }),
+        })), 500, 'COSSACK_API_INTERNAL');
+        expect(logged).toHaveBeenCalledOnce();
+        expect(logged.mock.calls[0]).toHaveLength(1);
+        expect(logged.mock.calls[0][0]).toMatchObject({ event: 'cossack.api.failure', requestId: data.requestId,
+            route: '/items/:id', action: 'POST', runtime: 'unknown', stage, code: 'COSSACK_API_INTERNAL', durationMs: expect.any(Number) });
+        expect(logged.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(0);
+        const serialized = JSON.stringify([data, logged.mock.calls]);
+        for (const sentinel of ['private-contract-key', 'private-error-property', 'private-path-key', 'private-query-key', 'private-header-key']) expect(serialized).not.toContain(sentinel);
         if (stage === 'input' || stage === 'authorize') expect(handler).not.toHaveBeenCalled();
     });
 
@@ -214,4 +223,13 @@ describe('declared native API contracts', () => {
         const endpoint = defineApi(definition); definition.input.body = input.number() as any; definition.handler = () => new Response('changed');
         expect(await (await app(endpoint).fetch(request('ok'))).text()).toBe('snapshot');
     });
+});
+
+it('does not retain a caller-selected custom HTTP method as a log label', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const endpoint = defineApi({ handler: () => { throw new Error('private-method-error'); } });
+    const response = await app(endpoint).request('/items/a', { method: 'PRIVATE_METHOD_SENTINEL' });
+    expect(response.status).toBe(500);
+    expect(logged.mock.calls[0][0]).toMatchObject({ action: 'unknown', event: 'cossack.api.failure' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('PRIVATE_METHOD_SENTINEL');
 });

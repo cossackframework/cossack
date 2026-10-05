@@ -1,5 +1,6 @@
 /** Declared native HTTP contracts. This entry uses only portable Web APIs. */
 import type { Context } from 'hono';
+import { createServerFailureContext, logServerFailure } from './server-logging.js';
 import { HTTPException } from 'hono/http-exception';
 import { getAuthorizationFailure, isActionValidationError, isClientVisibleError, isInputSchema,
     snapshotRpcValue, type InputOf, type InputSchema, type RawInputOf, type RpcSerialized } from '@cossackframework/core';
@@ -42,7 +43,9 @@ export function defineApi<const S extends ApiSchemas = {}>(
 export function defineApi(definition: Common<ApiSchemas> & { output?: InputSchema<any, any>; handler: (context: ApiContext<any>) => unknown }): ApiHandler<any, any, any> {
     const config = configuration(definition);
     return (async (c: Context) => {
-        const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+        const action = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(c.req.method) ? c.req.method : 'unknown';
+        const logContext = createServerFailureContext(c, { action });
+        const requestId = logContext.requestId;
         const controller = new AbortController();
         const disconnect = () => controller.abort(new ApiFailure(499, 'COSSACK_API_CANCELLED', 'Request cancelled.'));
         const signal = controller.signal;
@@ -115,7 +118,7 @@ export function defineApi(definition: Common<ApiSchemas> & { output?: InputSchem
                 response.headers.set('X-Cossack-Request-Id', requestId);
                 return response;
             }
-            console.error(`[Cossack API] ${requestId} (${stage})`, error);
+            logServerFailure(logContext, 'api', stage, 'COSSACK_API_INTERNAL');
             c.header('X-Cossack-Request-Id', requestId);
             return c.json({ error: 'Internal Server Error', code: 'COSSACK_API_INTERNAL', requestId }, 500);
         } finally {

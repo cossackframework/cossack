@@ -224,21 +224,28 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
    Direct Vite preflight now shares the Node-only Wrangler check with CLI and
    deployment; watch cycles recheck origins and failed builds suppress SSG
    publication. Node/Deno builds check metadata and compatibility only. Continue
-   Node/Deno declaration-source support and full classification/hydration secrecy. Secret existence and remote resource
+   Node/Deno declaration-source/native hydration and broader failure-diagnostic
+   acceptance. Installed Cloudflare private-field SSR/browser/RPC and production
+   client source-map secrecy now pass; deliberate app publication is excluded.
+   Secret existence and remote resource
    readiness remain unverified. Classification cannot stop deliberate application
    exposure. Async factories remain unsupported; strict installed cache ambient
    types remain separate. Counts remain 30 complete / 28 open. Preserve the final
    results linked from the checkpoint. Fresh installed CLI/workerd/browser/docs
    acceptance and source/CLI/MCP/type checks pass. Retained gate:
-   /tmp/cossack-local-pack-r8P8f3. Latest verification: 1,686 framework tests,
-   73 CLI/deployment/stdio MCP tests, root/package types, full installed
-   direct-build/workerd/browser/docs gate pass. Desktop stays closed with
+   /tmp/cossack-local-pack-mL6TSQ. Latest verification: 1,696 framework tests,
+   root/package types, script syntax, full installed direct-build/workerd/
+   browser/docs/private-hydration gate pass. The preceding preflight checkpoint
+   also verified 73 CLI/deployment/stdio MCP tests. Desktop stays closed with
    platform checks waived.
-7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
-   checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
-   fixed failure-code and payload-redaction tests. Next review the remaining
-   server log paths, prove event visibility in a built Worker test, then add
-   source-map and measured budget checks. Do not close CF-08 from the local
+7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
+   checkpoint](./release-0.9.0.md#codex-server-failures-hydration-2026-10-05). Keep the
+   fixed failure-code and payload-redaction tests. Native/class API, SSR/router
+   cleanup and unhandled config/middleware catches now emit safe metadata.
+   Local workerd verifies a native API event and caller-ID correlation.
+   Next review core lifecycle/WebSocket, adapter, manifest/SSG/access logs and
+   development SSR details, then add whole-request timing, production source-map
+   resolution, configurable budgets and remote Workers Logs acceptance. Do not close CF-08 from the local
    framework matrix alone.
 8. Continue **[RT-10](./release-0.9.0-plan.md#rt-10)** from the [headless
    controller checkpoint](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05).
@@ -303,3 +310,19 @@ form-controller declaration error; validated data now retains InputOf<S>. Core
 build/declaration emission and 9 focused tests pass. This does not close RT-10's
 accessible binding/browser acceptance. Both build and CLI-generation evidence
 are recorded in the RT-24 CLI checkpoint above.
+
+Codex HTTP/SSR and hydration checkpoint (2026-10-05): integrated exclusive API
+implementation/test and installed hydration-helper subagents, with coordinator
+ownership of shared logging and router integration. See the
+[checkpoint](./release-0.9.0.md#codex-server-failures-hydration-2026-10-05).
+No task was closed from this partial acceptance. Desktop remains waived.
+
+Final Codex verification for this checkpoint: **1,696 framework tests / 88 files**,
+root/package types, changed-script syntax and full fresh installed gate pass.
+Private-hydration acceptance includes generated-app typechecking and actual
+Cloudflare browser/RPC plus client source maps; native API workerd events are
+correlated and redacted. The initial cached fixture's sync init failed TS2416;
+it was corrected, recovered in place, and the whole gate rerun successfully.
+Retained final gate: /tmp/cossack-local-pack-mL6TSQ. Logs and scope limitations
+are in the [verification record](./release-0.9.0-verification-archive.md#codex-safe-http-ssr-failures-and-private-hydration-2026-10-05).
+Counts remain **30 complete / 28 open**; no blocked work and no task closure.

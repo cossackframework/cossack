@@ -217,12 +217,30 @@ globalThis.Deno = {
     await fs.mkdir(d1WorkerRoot);
     await fs.writeFile(path.join(d1WorkerRoot, 'worker.mjs'), `
 import { findNote } from '../compiled/cloudflare-d1-bound-query-bound-query.js';
+import { Hono } from 'hono';
+import { defineApi } from '@cossackframework/framework/api';
 import { prepareConfigStore, runWithConfig, config, requireEnv, requireBinding, requireConfigVariable } from '@cossackframework/framework/config';
 
 
 export default {
   async fetch(request, env) {
     const pathname = new URL(request.url).pathname;
+    if (pathname === '/logging') {
+      const events = [];
+      const original = console.error;
+      // Test-only capture. Requests to this fixture are serial; restore before return.
+      console.error = (...args) => { events.push(args); original(...args); };
+      try {
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('cossack.configContext', { runtime: 'cloudflare' }); await next(); });
+        app.get('/items/:id', defineApi({ handler: () => {
+          throw Object.assign(new Error('WORKER_LOG_PRIVATE_SENTINEL'), { secret: 'WORKER_LOG_PRIVATE_SENTINEL' });
+        } }));
+        const response = await app.request('/items/WORKER_PATH_PRIVATE_SENTINEL?token=WORKER_QUERY_PRIVATE_SENTINEL');
+        return Response.json({ status: response.status, requestId: response.headers.get('X-Cossack-Request-Id'),
+          body: await response.json(), events });
+      } finally { console.error = original; }
+    }
     if (pathname === '/config') {
       const store = prepareConfigStore({ app: () => ({
         name: requireEnv('APP_NAME'), database: requireBinding('DB'), port: requireConfigVariable('PORT', 'number'),
@@ -272,6 +290,20 @@ export default {
       });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { known: 'trusted note', hostile: null });
+      const logging = await d1Worker.fetch('/logging');
+      assert.equal(logging.status, 200);
+      const loggedFailure = await logging.json();
+      assert.equal(loggedFailure.status, 500);
+      assert.equal(loggedFailure.body.code, 'COSSACK_API_INTERNAL');
+      assert.equal(loggedFailure.body.requestId, loggedFailure.requestId);
+      assert.equal(loggedFailure.events.length, 1);
+      assert.equal(loggedFailure.events[0].length, 1);
+      assert.equal(loggedFailure.events[0][0].event, 'cossack.api.failure');
+      assert.equal(loggedFailure.events[0][0].requestId, loggedFailure.requestId);
+      assert.equal(loggedFailure.events[0][0].route, '/items/:id');
+      assert.equal(loggedFailure.events[0][0].runtime, 'cloudflare');
+      assert.equal(loggedFailure.events[0][0].stage, 'handler');
+      assert.ok(!JSON.stringify(loggedFailure).includes('PRIVATE_SENTINEL'));
       const configResponses = await Promise.all(['first', 'second'].map(name => d1Worker.fetch('/config', { headers: { 'x-config-name': name } })));
       for (const [index, result] of configResponses.entries()) {
         assert.equal(result.status, 200);

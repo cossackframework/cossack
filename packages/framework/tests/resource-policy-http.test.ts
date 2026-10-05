@@ -7,7 +7,7 @@ import { createResourcePolicy } from '../../auth/src/index';
 const { registry } = vi.hoisted(()=>({registry:{pages:{} as Record<string,unknown>,layouts:{},loadings:{}}}));
 vi.mock('virtual:cossack-pages',()=>({default:registry}));
 vi.mock('virtual:cossack-middlewares',()=>({default:[async(c:any,next:()=>Promise<void>)=>{
-    c.set('user',c.env?.TEST_ACTOR); c.header('X-Cossack-Request-Id','policy-request'); await next();
+    c.set('user',c.env?.TEST_ACTOR); c.header('X-Cossack-Request-Id','00000000-0000-4000-8000-000000000001'); await next();
 }]}));
 vi.mock('virtual:cossack-config',()=>({requirements:{},environment:null,default:{}}));
 
@@ -57,16 +57,16 @@ it.each([
     }
     for(const response of [mutation,api,page]){
         if(response.status<400)continue;
-        expect(response.headers.get('X-Cossack-Request-Id')).toBe('policy-request');
+        expect(response.headers.get('X-Cossack-Request-Id')).toBe('00000000-0000-4000-8000-000000000001');
         expect(await response.json()).toEqual({error:actor?'Forbidden':'Authentication required',
-            code:actor?'COSSACK_AUTH_FORBIDDEN':'COSSACK_AUTH_UNAUTHENTICATED',requestId:'policy-request'});
+            code:actor?'COSSACK_AUTH_FORBIDDEN':'COSSACK_AUTH_UNAUTHENTICATED',requestId:'00000000-0000-4000-8000-000000000001'});
     }
 });
 it('denies missing resources without running API writes or disclosing resource state',async()=>{
     const app=createApp(),env={TEST_ACTOR:{id:'u1',tenant:'t1'}};
     for(const [path,method] of [['/api/posts/9','POST'],['/api/posts/9','GET'],['/posts/9','GET']]){
         const response=await app.request(path,{method},env);expect(response.status).toBe(403);
-        expect(await response.json()).toEqual({error:'Forbidden',code:'COSSACK_AUTH_FORBIDDEN',requestId:'policy-request'});
+        expect(await response.json()).toEqual({error:'Forbidden',code:'COSSACK_AUTH_FORBIDDEN',requestId:'00000000-0000-4000-8000-000000000001'});
     }
     expect(writes).not.toHaveBeenCalled();
 });

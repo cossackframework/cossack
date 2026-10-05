@@ -910,6 +910,16 @@ RT-24 remains open for Node/Deno declaration-source policy and full hydration
 secrecy acceptance. Counts stay 30 complete / 28 open. See the
 [direct-build verification](./release-0.9.0-verification-archive.md#codex-direct-vite-configuration-preflight-2026-10-05).
 
+Codex private-hydration checkpoint (2026-10-05): an installed Cloudflare app
+now reads classified configuration into a private field and publishes only a
+boolean/count. Actual workerd SSR HTML, parsed hydration, browser/RPC traffic,
+delivered scripts, CLI metadata and production client JavaScript/source maps
+omit the private value and factory sentinel. Temporary declarations ensure
+Wrangler supplies the test secret locally. The helper restores original files,
+artifacts and caches. Native Node/Deno hydration and declaration-source policy,
+failure diagnostics and broader secret-classification acceptance remain open;
+intentional app publication is not automatic redaction. Counts stay 30 / 28.
+
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
 
@@ -1256,6 +1266,19 @@ The local harness does not prove Cloudflare Workers Logs ingestion. Production
 source-map resolution, configurable artifact/startup budgets, full framework log
 review and native Worker log acceptance remain open. See the [verification
 checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05).
+
+Codex HTTP/SSR checkpoint (2026-10-05): native/class API, SSR rendering and
+router cleanup catches now emit fixed metadata without arbitrary exceptions.
+Unhandled configuration/middleware failures use a safe Hono error handler.
+Caller-visible UUIDs correlate with logs; authored templates omit concrete paths
+and query values, and unknown methods are not retained as labels. The shared
+scope helper validates IDs and API failures restore a modified response header.
+Global fallback duration covers failure handling only, not the original request.
+Source regressions and installed workerd check emission/redaction. Remaining:
+core lifecycle/WebSocket and adapter logs, manifest/SSG/access logger review,
+development SSR detail policy, whole-request timing, remote Workers Logs
+acceptance, source-map resolution and configurable budgets. CF-08 stays open.
+See [server logging contract](../docs/server-logging.md).
 
 <a id="cf-09"></a>
 ### CF-09: Preview and CI resource lifecycle

@@ -1228,3 +1228,19 @@ only the selected environment and an initially empty config tree. The completed
 store is then used by downstream request work. This temporary scope restores its
 caller on success or failure; async descendants retain their request's store.
 SSG supplies APP_URL only, so required live bindings fail before rendering.
+
+## HTTP failure metadata
+
+Framework-internal portable server logging supplies fixed API/SSR/request events.
+Native/class API and SSR router catches do not serialize exception data into
+logs. Correlation uses validated outgoing UUIDs and authored route templates;
+internal API/request JSON responses expose the same ID and fixed code. Unknown
+HTTP methods are not retained as labels. Controlled public errors keep their
+existing contract. The global Hono error handler also covers config/middleware
+failures. This does not cover every core/adapter/SSG log, full-request timing or
+remote log ingestion; see [the scoped contract](../docs/server-logging.md).
+
+Installed private-config acceptance exercises real Cloudflare SSR, browser
+hydration/RPC and production client maps. The server ALS configuration store is
+not a hydration field. Classification is metadata, not automatic value tainting;
+application-public state/HTML/results still require deliberate selection.

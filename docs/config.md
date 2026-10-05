@@ -386,3 +386,16 @@ metadata and Wrangler configuration. Node and Deno builds validate metadata,
 conflicting declarations and runtime compatibility, but do not read `.env` or
 process values. Their runtime values remain unchecked until request preparation.
 Development startup allows incomplete values so configuration can be completed.
+
+### Keep private configuration out of hydration
+
+Configuration stores, raw bindings and normalized scalars stay in the server
+request scope. Hydration includes selected public component/service/resource
+state, not the configuration store. A private field can retain a secret for
+server work; expose only the public result that the page needs.
+
+`secret: true` records classification. It does not prevent application code from
+putting the value into public state, HTML, head tags, RPC results or responses.
+The installed Cloudflare acceptance checks a private read across SSR, browser
+hydration and a real RPC, then scans client JavaScript and source maps. This does
+not prove remote secret availability or the same native Node/Deno lifecycle.

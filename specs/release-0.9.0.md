@@ -52,7 +52,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight is implemented; Node/Deno declaration-source support and full classification/hydration secrecy acceptance remain. See [direct build checkpoint](#codex-rt24-direct-vite-preflight-2026-10-05) and [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; CLI discovery/generation and installed configuration inference now pass. Factories now evaluate in fresh scoped bindings, with SSR/SSG and real workerd acceptance. Declared requirements, strict coercion, runtime applicability and selected-environment CLI/deployment preflight are implemented. Direct Vite preflight and installed Cloudflare private-hydration acceptance are implemented; Node/Deno declaration-source/native hydration and broader failure-diagnostic/classification acceptance remain. See [direct build checkpoint](#codex-rt24-direct-vite-preflight-2026-10-05) and [declared requirements checkpoint](#codex-rt24-declared-requirements-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Source-map resolution, build/startup budgets, full framework log review and native Workers Logs ingestion remain open. See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Source-map resolution, build/startup budgets, remaining core/adapter/framework log review and remote Workers Logs ingestion remain open. See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -1457,3 +1457,32 @@ Exact evidence and limits:
 classification/hydration secrecy acceptance. Secret existence and resource
 readiness remain unverified. Counts remain **30 complete / 28 open**. Desktop
 platform checks remain waived. Versions remain 0.8.3 until REL-04.
+
+<a id="codex-server-failures-hydration-2026-10-05"></a>
+### Codex: Safe HTTP/SSR failures and private hydration (2026-10-05)
+
+Author: **Codex**. Unexpected native/class API failures, SSR rendering/router
+cleanup and unhandled config/middleware failures now log safe structured events.
+Returned UUIDs correlate with fixed stage/code, authored route and runtime.
+Exception data, concrete paths and query values stay out of these events.
+Internal class API/request failures return generic JSON with code/requestId.
+
+The installed Cloudflare fixture reads a classified secret into a private field,
+then verifies SSR/browser hydration, real RPC, CLI catalogs, delivered JavaScript
+and production client source maps contain no private value or factory sentinel.
+Explicit public state contains only the safe result. Original fixtures/artifacts
+are restored. Classification cannot stop intentional application publication.
+
+**Verification:** 1,696 framework tests, root/package types and script syntax
+checks pass. Final fresh installed gate passes all 80 usage/auth examples,
+workerd API/config/D1, browser traces, application stripping, CLI/MCP parity,
+and private hydration/type/client-map acceptance. Retained:
+/tmp/cossack-local-pack-mL6TSQ. The archive records the corrected initial fixture
+failure and final rerun.
+
+**Status:** CF-08 and RT-24 remain open; **30 complete / 28 open**. Remaining
+log paths, development SSR details, whole-request timing, remote log ingestion,
+production source-map resolution and budgets still need work. Native Node/Deno
+hydration and declaration-source policy remain unverified. Desktop checks stay
+waived; versions stay 0.8.3. See the [verification record](./release-0.9.0-verification-archive.md#codex-safe-http-ssr-failures-and-private-hydration-2026-10-05)
+and [logging contract](../docs/server-logging.md).

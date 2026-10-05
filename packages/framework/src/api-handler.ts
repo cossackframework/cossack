@@ -1,5 +1,6 @@
 // src/api-handler.ts
 import type { Context } from 'hono';
+import { createServerFailureContext, logServerFailure, type ServerFailureStage } from './server-logging.js';
 import { HTTPException } from 'hono/http-exception';
 import { Cossack, enforceMethodRateLimit, createCossackContext, getAuthorizationFailure } from '@cossackframework/core';
 
@@ -29,6 +30,8 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
         // The candidate method actually invoked on this request (first defined
         // on the prototype). Hoisted out of `try` so the catch block can log it.
         let methodName: string | undefined;
+        const logContext = createServerFailureContext(c);
+        let stage: ServerFailureStage = 'handler';
         try {
             // Prefer authored get() over init(), including inherited handlers.
             // Stop before the framework's default methods and do not invoke getters.
@@ -42,6 +45,8 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 return c.json({ error: 'Method Not Allowed' }, 405);
             }
 
+            logContext.action = methodName;
+            stage = 'authorize';
             // Rate-limit gate: enforce any @RateLimit declared on the handler method.
             const rateLimited = await enforceMethodRateLimit(
                 c,
@@ -51,6 +56,7 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
             );
             if (rateLimited) return rateLimited;
 
+            stage = 'handler';
             const instance = new ComponentClass();
             // Wrap the raw Hono context with the Cossack proxy so API handlers
             // get the same augmented context as pages (e.g. `getFormData<T>()`).
@@ -64,6 +70,7 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 return result;
             }
 
+            stage = 'output';
             // Otherwise, automatically serialize the public state and return as JSON
             const state = instance.getPublicState();
             return c.json(state);
@@ -71,7 +78,7 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
         } catch (error) {
             const denial = getAuthorizationFailure(error);
             if (denial) {
-                const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+                const requestId = logContext.requestId;
                 c.header('X-Cossack-Request-Id', requestId);
                 return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
             }
@@ -80,8 +87,9 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 throw error;
             }
             // For all other errors, return a generic 500.
-            console.error(`Error in API handler for ${ComponentClass.name}.${methodName ?? names.join('/')}:`, error);
-            return c.json({ error: 'Internal Server Error' }, 500);
+            logServerFailure(logContext, 'api', stage, 'COSSACK_API_INTERNAL');
+            c.header('X-Cossack-Request-Id', logContext.requestId);
+            return c.json({ error: 'Internal Server Error', code: 'COSSACK_API_INTERNAL', requestId: logContext.requestId }, 500);
         }
     };
 }
