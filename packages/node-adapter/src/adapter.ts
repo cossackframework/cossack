@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -99,7 +100,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
       let completion: Promise<void> | undefined;
       try {
         const entry: Entry = {
-          runtime: new InMemoryWebSocketRuntime<WebSocket>(component),
+          runtime: new InMemoryWebSocketRuntime<WebSocket>(component, { onError: () => logRuntimeFailure({ runtime: 'node' }, 'dispatch') }),
           clients: new Set(), actions: new Set(), lastActive: Date.now(),
           dispose: () => completion ??= (async () => {
             for (const client of entry.clients) {
@@ -121,7 +122,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
     return creation;
   };
   const connect = async (ws: WebSocket, upgrade: NodeWebSocketUpgrade) => {
-    ws.on('error', error => console.error('[Cossack] Node WebSocket error:', error));
+    ws.on('error', error => logRuntimeFailure({ runtime: 'node' }, 'socket'));
     if (upgrade.rejectAuthorization) {
       closeUnauthorizedSocket(ws);
       return;
@@ -138,7 +139,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
         entry.clients.delete(ws);
         entry.runtime.removeClient(ws);
         entry.lastActive = Date.now();
-        void prune().catch(error => console.error('[Cossack] Node runtime cleanup failed:', error));
+        void prune().catch(error => logRuntimeFailure({ runtime: 'node' }, 'runtime-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED'));
       });
       ws.on('message', data => {
         if (stopped || ws.readyState !== WebSocket.OPEN) return;
@@ -146,13 +147,13 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
         const action = entry.runtime.onClientMessage(ws, data.toString());
         entry.actions.add(action);
         void action.catch(error => {
-          console.error('[Cossack] Node WebSocket action failed:', error);
+          logRuntimeFailure({ runtime: 'node' }, 'dispatch');
           ws.close(1013, 'Runtime unavailable');
         }).finally(() => entry.actions.delete(action));
       });
       await entry.runtime.sendInitialState(ws);
     } catch (error) {
-      console.error('[Cossack] Node WebSocket initialization failed:', error);
+      logRuntimeFailure({ runtime: 'node' }, 'initialization');
       ws.close(1013, 'Runtime unavailable');
     }
   };
@@ -212,11 +213,11 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
           try { wss.handleUpgrade(request, socket, head, ws => { void connect(ws, state.upgrade!); }); }
           finally { handshakeHeaders.delete(request); }
         })().catch(error => {
-          console.error('[Cossack] Node WebSocket upgrade failed:', error);
+          logRuntimeFailure({ runtime: 'node' }, 'upgrade');
           socket.destroy();
         });
       };
-      const onClose = () => { void dispose().catch(error => console.error('[Cossack] Node runtime cleanup failed:', error)); };
+      const onClose = () => { void dispose().catch(error => logRuntimeFailure({ runtime: 'node' }, 'runtime-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED')); };
       server.on('upgrade', onUpgrade);
       server.once('close', onClose);
       const remove = () => { server.off('upgrade', onUpgrade); server.off('close', onClose); detach.delete(remove); };

@@ -18,6 +18,7 @@ export default defineConfig({
         index: path.resolve(__dirname, 'src/index.ts'),
         input: path.resolve(__dirname, 'src/input.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),
+        'shared/server-diagnostics': path.resolve(__dirname, 'src/shared/server-diagnostics.ts'),
         // These contracts are type-only, but Deno resolves the `.js`
         // specifier in emitted declarations before loading the matching `.d.ts`.
         // Keep an empty runtime module beside the declaration for strict ESM

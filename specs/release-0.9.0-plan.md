@@ -1280,6 +1280,14 @@ development SSR detail policy, whole-request timing, remote Workers Logs
 acceptance, source-map resolution and configurable budgets. CF-08 stays open.
 See [server logging contract](../docs/server-logging.md).
 
+Codex core/Node checkpoint (2026-10-05): core action/task/cleanup, service
+rollback/disposal, Durable Object parse/delivery and Node transport catches now
+omit raw exceptions. Shared dispatch omits incoming target/action labels.
+Synthetic or hostile request metadata cannot change teardown behavior. This
+completes the bounded redaction slice, not CF-08: component update, Deno and
+framework loader/SSG/access logs, DEV SSR detail policy, timing, remote ingestion,
+source maps and budgets remain. See the [verification checkpoint](./release-0.9.0-verification-archive.md#codex-core-node-redaction-2026-10-05).
+
 <a id="cf-09"></a>
 ### CF-09: Preview and CI resource lifecycle
 

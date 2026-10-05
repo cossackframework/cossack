@@ -191,7 +191,7 @@ describe('CossackNodeAdapter WebSockets', () => {
             });
             expect(closed).toEqual({ code: 1013, reason: 'Runtime instance limit reached' });
             expect(bootstraps).toBe(1);
-            expect(failed).toHaveBeenCalledWith('[Cossack] Node WebSocket initialization failed:', expect.any(Error));
+            expect(failed).toHaveBeenCalledWith(expect.objectContaining({ event: 'cossack.runtime.failure', runtime: 'node', stage: 'initialization', code: 'COSSACK_RUNTIME_FAILED' }));
             releaseBootstrap();
             await expect(firstState).resolves.toEqual({ type: 'state-update', state: { count: 0 } });
         } finally {

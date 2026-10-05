@@ -135,3 +135,31 @@ describe('DurableObjectRuntime.onClientMessage robustness', () => {
         warnSpy.mockRestore();
     });
 });
+
+it('reports malformed frames with value-free authored diagnostics and leaves the connection available', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+        const { runtime, component } = makeRuntime();
+        const socket: any = { close: vi.fn(), deserializeAttachment: () => ({ request }) };
+        await runtime.onClientMessage(socket, 'PRIVATE_FRAME_SENTINEL{"token":"PRIVATE_TOKEN_SENTINEL"');
+        expect(spy).toHaveBeenCalledWith(expect.objectContaining({ event: 'cossack.runtime.failure', runtime: 'cloudflare', stage: 'parse', code: 'COSSACK_WEBSOCKET_MESSAGE_INVALID' }));
+        expect(JSON.stringify(spy.mock.calls)).not.toMatch(/PRIVATE_FRAME_SENTINEL|PRIVATE_TOKEN_SENTINEL/);
+        expect(socket.close).not.toHaveBeenCalled();
+        await runtime.onClientMessage(socket, JSON.stringify({ type: 'action', action: 'valid', payload: [] }));
+        expect(component.executeAction).toHaveBeenCalledWith('valid', [], undefined, socket, undefined, expect.anything());
+    } finally { spy.mockRestore(); }
+});
+
+it('redacts delivery authorization exceptions and keeps the static authorization close contract', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+        const component: any = { _id: 'root' };
+        const runtime = new DurableObjectRuntime(component, {} as any, false, { token: 'PRIVATE_ENV_SENTINEL' },
+            async () => { throw new Error('PRIVATE_DELIVERY_SENTINEL'); });
+        const socket: any = { readyState: 1, send: vi.fn(), close: vi.fn(), deserializeAttachment: () => ({ user: { id: 'PRIVATE_USER_SENTINEL' } }) };
+        await runtime.sendToClient(socket, { type: 'state-update', state: {} });
+        expect(socket.close).toHaveBeenCalledWith(1008, 'Realtime authorization changed');
+        expect(spy).toHaveBeenCalledWith(expect.objectContaining({ runtime: 'cloudflare', stage: 'delivery', code: 'COSSACK_RUNTIME_FAILED' }));
+        expect(JSON.stringify(spy.mock.calls)).not.toMatch(/PRIVATE_DELIVERY_SENTINEL|PRIVATE_USER_SENTINEL|PRIVATE_ENV_SENTINEL/);
+    } finally { spy.mockRestore(); }
+});

@@ -1,4 +1,5 @@
 import { beginDevelopmentSocketDispatch } from './development-socket-dispatch';
+import { logRuntimeFailure } from './server-diagnostics';
 import { rpcCancellations, sendRpcFrame, type RpcStreamFrame } from './rpc-stream';
 import { closeUnauthorizedSocket, SocketDeliveryQueue, type SocketOperationAuthorizer } from './socket-delivery';
 import type { Context } from 'hono';
@@ -49,7 +50,7 @@ export async function dispatchSocketRpcMessage(
     if (typeof target === 'string' && target !== targetInstance._id) {
         targetInstance = root.activeComponents?.get?.(target);
         if (!targetInstance) {
-            console.warn(`[Cossack] Target component '${target}' not found. Action '${message.action}' dropped.`);
+            logRuntimeFailure({ requestId }, 'dispatch');
             if (requestId !== undefined) send({ v: 1, type: 'error', requestId,
                 code: 'COSSACK_RPC_NOT_FOUND', message: `Target component '${target}' not found.` });
             return;
@@ -75,7 +76,7 @@ export async function dispatchSocketRpcMessage(
         });
     } catch (error) {
         if (actionFailed) throw error;
-        console.error('[Cossack] WebSocket authorization check failed.');
+        logRuntimeFailure({ requestId }, 'authentication');
     }
     if (allowed && operationRan) return;
     const authChanged = 'Realtime authorization changed. Reload the page to reconnect.';

@@ -1,3 +1,4 @@
+import { logRuntimeFailure, type RuntimeFailureContext } from './server-diagnostics';
 import { beginDevelopmentServiceRpcTrace } from './development-trace';
 import { registerDevelopmentScope, developmentName } from './development-inspection';
 import { collectReactiveMetadata } from './reactive-metadata';
@@ -134,9 +135,10 @@ export class ServiceScope {
             // resources. Roll back this partially initialized scope, while
             // keeping async cleanup observable to a parent that is also torn
             // down. The construction error remains the primary failure.
+            const failureContext = this.failureContext();
             void this.beginDisposal().then(errors => {
                 for (const cleanupError of errors) {
-                    console.error('[Cossack] Service scope setup cleanup failed:', cleanupError);
+                    logRuntimeFailure(failureContext, 'service-setup-cleanup', 'COSSACK_SERVICE_CLEANUP_FAILED');
                 }
             });
             throw error;
@@ -262,10 +264,23 @@ export class ServiceScope {
         hydrateServiceState(entry.instance, state);
     }
 
+    private failureContext(): RuntimeFailureContext {
+        let requestId: string | undefined;
+        let runtime: string | undefined;
+        try {
+            const context = this.getRequestContext().context;
+            requestId = context?.res?.headers?.get('X-Cossack-Request-Id') ?? undefined;
+            runtime = typeof context?.get === 'function' ? context.get('cossack.configContext')?.runtime : undefined;
+        } catch { /* Logging must not prevent teardown of partial contexts. */ }
+        return { requestId, route: this.ownerRoutePath ?? this.ownerRouteId,
+            runtime: runtime ?? 'unknown', startedAt: performance.now() };
+    }
+
     dispose(): void {
         if (this.disposed) return;
+        const failureContext = this.failureContext();
         void this.beginDisposal().then(errors => {
-            for (const error of errors) console.error('[Cossack] Service disposal failed:', error);
+            for (const error of errors) logRuntimeFailure(failureContext, 'service-cleanup', 'COSSACK_SERVICE_CLEANUP_FAILED');
         });
     }
 

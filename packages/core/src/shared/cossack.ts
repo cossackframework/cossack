@@ -1,3 +1,4 @@
+import { logRuntimeFailure, type RuntimeFailureContext } from './server-diagnostics';
 import type { DevelopmentSocketDispatch } from './development-socket-dispatch';
 import { registerDevelopmentInspector, inspectDevelopmentScopes, developmentName, developmentData, type DevelopmentComponentDetails } from './development-inspection';
 import { enforceActionInput } from './action-input';
@@ -1422,6 +1423,24 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * action at a time per instance — eliminates the race. It also bounds
      * re-entrancy on shared component state.
      */
+    private _failureContext(action?: string, requestId?: string, context?: Context): RuntimeFailureContext {
+        let header: string | undefined;
+        let runtime: string | undefined;
+        // Logging must not turn a partial/synthetic context into a lifecycle failure.
+        if (this.isServer) {
+            try {
+                const request = context ?? this.c;
+                header = request?.res?.headers?.get('X-Cossack-Request-Id') ?? undefined;
+                runtime = typeof request?.get === 'function' ? request.get('cossack.configContext')?.runtime : undefined;
+            } catch { /* Unavailable metadata is represented by the fixed fallback. */ }
+        }
+        return { requestId: requestId ?? header,
+            route: this.__cossack_rpcOwner ?? this.__cossack_componentRouteId,
+            action, component: this.constructor.name,
+            runtime: runtime ?? this._runtimeInfo?.adapter ?? 'unknown',
+            startedAt: performance.now() };
+    }
+
     private _actionQueue: Promise<void> = Promise.resolve();
 
     public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string,
@@ -1482,6 +1501,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 },
             }),
         };
+        const failureContext = this._failureContext(action, requestId, requestContext);
         let iterator: AsyncIterator<unknown> | undefined;
         try {
             const actionClass = getForwardedServerMethodClass(this, action) ?? this.constructor;
@@ -1566,11 +1586,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,
                     message: denial?.message ?? (isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error') });
             }
-            console.error(`[Cossack] Error executing action '${action}':`, e);
+            logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
         } finally {
             if (iterator) {
                 try { await iterator.return?.(undefined); }
-                catch (error) { console.error(`[Cossack] Error closing action '${action}':`, error); }
+                catch { logRuntimeFailure(failureContext, 'action-cleanup', 'COSSACK_RPC_CLEANUP_FAILED'); }
             }
             this._actionIdentity = undefined;
             this._cossack_ws_context = undefined;
@@ -1694,7 +1714,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             }
                         } catch (e: any) {
                             if (controller.signal.aborted) return; // cancelled work stops quietly
-                            console.error(
+                            if (this.isServer) logRuntimeFailure(this._failureContext(String(task)), 'task-setup', 'COSSACK_TASK_FAILED');
+                            else console.error(
                                 `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (${e instanceof TaskCommitError ? 'commit' : 'setup'}):`, e);
                         }
                         // Keep this identity until rerun/disposal: completed setup
@@ -1756,15 +1777,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const cleanup = lateCleanup ?? this._taskCleanups.get(task);
         if (!cleanup) return previous;
         if (!lateCleanup) this._taskCleanups.delete(task);
+        const failureContext = this._failureContext(String(task));
+        const report = (error: unknown) => {
+            if (this.isServer) logRuntimeFailure(failureContext, 'task-cleanup', 'COSSACK_TASK_CLEANUP_FAILED');
+            else console.error(`[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (cleanup):`, error);
+        };
         const invoke = () => {
             try {
                 const result = cleanup();
                 if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-                    return Promise.resolve(result).then(() => {}, e =>
-                        console.error(`[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (cleanup):`, e));
+                    return Promise.resolve(result).then(() => {}, report);
                 }
             } catch (e) {
-                console.error(`[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (cleanup):`, e);
+                report(e);
             }
         };
         const pending = previous ? previous.then(invoke) : invoke();
@@ -2972,6 +2997,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public destroy() {
         if (this._phase === LifecyclePhase.Destroyed) return;
+        const failureContext = this._failureContext();
         // Transition to Destroyed phase from any phase except already Destroyed
         this._transitionToPhase(LifecyclePhase.Destroyed, [
             LifecyclePhase.Creating,
@@ -3049,7 +3075,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Synchronous callers cannot await hooks; observe rejected hooks here.
         void this._cleanupCompletion.then(allErrors => {
             for (const error of allErrors.slice(syncErrors.length)) {
-                console.error(`[Cossack] Error cleaning up ${this.constructor.name}:`, error);
+                if (this.isServer) logRuntimeFailure(failureContext, 'component-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED');
+                else console.error(`[Cossack] Error cleaning up ${this.constructor.name}:`, error);
             }
         });
         if (syncErrors.length) throw new AggregateError(syncErrors, `[Cossack] Failed to clean up ${this.constructor.name}.`);

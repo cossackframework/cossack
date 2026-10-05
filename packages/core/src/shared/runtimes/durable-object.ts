@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '../server-diagnostics';
 import type { CossackServerRuntime } from '../runtime';
 import { dispatchSocketRpcMessage } from '../runtime';
 import type { Cossack } from '../cossack';
@@ -36,7 +37,7 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         } catch (e) {
             // A single malformed frame must not crash the runtime / close the
             // shared Durable Object connection for all clients.
-            console.error('[Cossack] Ignoring malformed WebSocket message:', e);
+            logRuntimeFailure({ runtime: 'cloudflare' }, 'parse', 'COSSACK_WEBSOCKET_MESSAGE_INVALID');
             return;
         }
         // The attachment deserializes lazily so non-action frames (broadcasts,
@@ -86,7 +87,7 @@ export class DurableObjectRuntime implements CossackServerRuntime {
             ? (socket, operation) => this.authorizePeer!(socket, socket.deserializeAttachment?.() ?? {}, operation)
             : undefined;
         await this.delivery.send(client, JSON.stringify(message), socket => socket.readyState === 1, authorize,
-            () => console.error('[Cossack] WebSocket delivery authorization failed.'));
+            () => logRuntimeFailure({ runtime: 'cloudflare' }, 'delivery'));
     }
 
     get stateful(): boolean {

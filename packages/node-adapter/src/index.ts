@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage, Server } from 'http';
 import { NodeWebSocketRuntime } from './runtime';
@@ -161,7 +162,7 @@ export class CossackNodeAdapter {
             try {
                 user = this.authenticate ? await this.authenticate(request) : this.defaultUser;
             } catch (e) {
-                console.error('[Cossack] Authentication failed, rejecting upgrade:', e);
+                logRuntimeFailure({ runtime: 'node' }, 'authentication');
                 ws.close(1008, 'Authentication failed');
                 return;
             }
@@ -199,7 +200,7 @@ export class CossackNodeAdapter {
                     ? await pageOptions.scope(context)
                     : `user:${(user as { id?: unknown } | undefined)?.id || 'anonymous'}`;
             } catch (error) {
-                console.error('[Cossack] Failed to resolve Node WebSocket scope:', error);
+                logRuntimeFailure({ runtime: 'node' }, 'scope');
                 ws.close(1008, 'Invalid WebSocket scope');
                 return;
             }
@@ -215,7 +216,7 @@ export class CossackNodeAdapter {
                     context, user, pathname, provider,
                 });
             } catch (error) {
-                console.error('[Cossack] Node WebSocket initialization failed:', error);
+                logRuntimeFailure({ runtime: 'node' }, 'initialization');
                 ws.close(1013, error instanceof NodeRuntimeLimitError
                     ? 'Runtime instance limit reached' : 'Runtime unavailable');
                 return;
@@ -229,7 +230,7 @@ export class CossackNodeAdapter {
             try {
                 await runtime.sendInitialState(ws);
             } catch (error) {
-                console.error('[Cossack] Node WebSocket initial state failed:', error);
+                logRuntimeFailure({ runtime: 'node' }, 'initial-state');
                 ws.close(1011, 'Runtime unavailable');
             }
         });
@@ -264,7 +265,7 @@ export class CossackNodeAdapter {
                     });
                 } catch (error) {
                     await componentInstance.destroyAsync().catch(cleanupError => {
-                        console.error('[Cossack] Node WebSocket failed component cleanup:', cleanupError);
+                        logRuntimeFailure({ runtime: 'node' }, 'component-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED');
                     });
                     throw error;
                 }

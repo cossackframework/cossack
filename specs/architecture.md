@@ -22,6 +22,11 @@ The framework is built on a strict separation between the **library** (`core`, `
 
 This separation makes sure that the framework's core is reusable, maintainable, and decoupled from any single implementation.
 
+Portable failure metadata lives at `@cossackframework/core/server-diagnostics`.
+Core and runtime adapters share fixed events without importing framework,
+exceptions, environment values or actual request URLs. Callers supply authored
+identifiers; missing correlation metadata uses fixed fallback labels.
+
 The pure runtime capability model lives at
 `@cossackframework/core/runtime-capabilities`. It has no filesystem, Node, or
 framework imports. The framework's existing `runtime-capabilities` entry re-exports

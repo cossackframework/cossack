@@ -10992,3 +10992,41 @@ and secret existence are unverified. Classification cannot prevent intentional
 public state/HTML/resource/RPC exposure. Versions remain 0.8.3 until REL-04.
 Desktop stays complete with platform checks waived. No deployment, publication
 or remote provisioning occurred.
+
+<a id="codex-core-node-redaction-2026-10-05"></a>
+### Codex: Core and Node runtime failure redaction (2026-10-05)
+
+Portable core diagnostics replace raw exceptions in component actions, iterator
+cleanup, server task setup/cleanup, asynchronous component cleanup and service
+rollback/disposal. Metadata is captured before teardown; missing or throwing
+request context metadata cannot break cleanup. Durable Object malformed frames
+and delivery failures, shared socket missing-target/authentication diagnostics,
+and Node authentication/scope/bootstrap/state/upgrade/socket/cleanup paths use
+fixed structured events. Incoming socket target/action labels are not logged.
+Browser task diagnostics and controlled socket-close behavior are preserved.
+
+CF-08 remains open. Adapter events may have unavailable IDs and unknown authored
+labels; Node in-memory callbacks use generic dispatch stages. Task setup duration
+starts at failure capture. Component update catches, Deno, development SSR error
+pages, manifest/SSG/access logs, whole-request timing, remote Workers Logs,
+production source-map resolution and budgets remain open. No live deployment or
+fresh installed-tarball gate is claimed for this checkpoint. Release status stays
+**30 complete / 28 open**. Desktop remains complete with platform checks waived.
+
+Verification: Node adapter **33/33**, framework RPC/stream/logging **501/501**,
+root `pnpm tsc --noEmit`, Node package no-emit check, core build/declaration emit,
+Node build/declaration emit and framework `build:types` pass. Full core results
+are recorded below after the final serial run. Core package-wide no-emit remains
+failing in untouched `form-controller.test.ts` (two diagnostics) and
+`rpc-conformance.test.ts` (two missing `loading` members); framework package-wide
+no-emit also reports unowned source/test diagnostics. These are not claimed as
+passed; its production declaration build succeeds. The introduced fixture Hono
+context typing error was corrected.
+
+Earlier full core runs exposed and corrected three partial-context lifecycle
+regressions and a socket test fixture missing `readyState`. Another run overlapped
+core dist rebuilding and failed seven published-declaration fixtures; the final
+run uses completed builds and no concurrent dist writers. Logs:
+`/tmp/cossack-runtime-redaction-{core-serial,node-final,framework-final,types-final,core-types-final,node-types,framework-types,build-final,node-build,framework-emit}.log`.
+
+Final serial full core suite: **1580/1580 tests across 97 files pass**. Final owned-file whitespace check passes. No fresh installed tarball or remote Cloudflare check ran.

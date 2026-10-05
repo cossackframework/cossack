@@ -44,6 +44,10 @@
     "./devtools": {
       "types": "./dist/devtools.d.ts",
       "import": "./dist/devtools.js"
+    },
+    "./server-diagnostics": {
+      "types": "./dist/shared/server-diagnostics.d.ts",
+      "import": "./dist/shared/server-diagnostics.js"
     }
   },
   "files": [

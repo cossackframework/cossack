@@ -9,6 +9,14 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
+Latest Codex progress: [core/Node runtime redaction](./release-0.9.0-verification-archive.md#codex-core-node-redaction-2026-10-05).
+Next bounded logging work: component update catch, DEV SSR response details,
+framework loader/SSG/access logging, then Deno runtime catches. Keep compiler
+errors in an explicit trusted compiler channel; do not trust arbitrary caught
+application error messages or user-supplied failure codes. Adapter correlation,
+whole-request/task timing, native Worker/remote ingestion, source maps and budgets
+remain acceptance work. No parent release task closes in this checkpoint.
+
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
 The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
