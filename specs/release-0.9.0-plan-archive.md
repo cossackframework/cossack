@@ -5299,3 +5299,63 @@ Done when: Fixtures cover missing keys, renamed placeholders, plural forms,
 dynamic keys, and fallback locales. Generated types reject an unknown key or
 missing parameter. Parallel SSR/SSG renders retain the correct locale.
 JSON diagnostics support CLI-03 and CLI-07. Related task: RT-22.
+
+<a id="codex-rt-21-completed-2026-10-05"></a>
+## Codex: RT-21 completed context (2026-10-05)
+
+Original purpose, approach and criteria are retained below. [Final acceptance](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05) proves completion.
+
+<a id="rt-21"></a>
+### RT-21: SSG diagnostics and compatibility
+
+Purpose: A static build must explain which routes were rendered, skipped, or
+rejected. Missing compiler plugins or an incompatible runtime must fail clearly.
+
+Baseline: Public-only SSG, route validation before writes, real middleware,
+environment resolution, and scoped service cleanup exist. Full reporting and
+compatibility coverage remain open.
+
+Approach: Add structured per-route results with route parameters, output path,
+duration, status, and diagnostic cause. Detect missing or misordered required
+plugins early. Test the supported Vite/Wrangler/plugin baseline through generated
+applications. Retain the rule that validation failure prevents publishing partial
+HTML or a misleading sitemap.
+
+Start in framework `ssg-entry.ts`, `ssg-renderer.ts`, `ssg-config.ts`,
+`vite-ssg-plugin.ts`, and their existing tests.
+
+Done when: A mixed route fixture reports accurate render/skip/failure results.
+Bad static parameters, duplicate outputs, protected output, and missing plugins
+fail with source context. Production artifact tests confirm successful public
+pages and sitemap URLs. Dependencies: RT-07, RT-12, and CF-01.
+
+
+<a id="codex-rt-29-completed-2026-10-05"></a>
+## Codex: RT-29 completed context (2026-10-05)
+
+Original purpose, approach and criteria are retained below. [Final acceptance](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05) proves completion.
+
+<a id="rt-29"></a>
+### RT-29: Framework-faithful test utilities
+
+Purpose: Tests must exercise the lifecycle that production uses. Helpers that
+construct simplified components can pass while auth, DI, hydration, or RPC is broken.
+
+Baseline: `packages/test-utils/src/index.ts` has basic browser rendering helpers.
+The root unit command currently excludes this package. It needs its own meaningful
+suite and broader published helpers.
+
+Approach: Build separate browser and server entry points with typed state/props,
+request context, auth fixtures, DI scope setup, hydration, and RPC dispatch.
+Use framework adapters or injected contracts without making core depend on framework.
+Make cleanup awaitable. Add utilities for controlled async results and cancellation.
+Test the helpers themselves and include their suite in the root test workflow.
+
+Start in `packages/test-utils/src/index.ts`, its package exports, and the root
+test scripts. Use existing framework integration fixtures as behavior references.
+
+Done when: A helper-created app behaves like a generated app for the same fixture.
+Tests prove request isolation, real policy enforcement, server-code stripping,
+hydration, and cleanup. Published tarball imports work without repository aliases.
+Document what browser simulation cannot prove and retain real workerd/browser tests.
+Dependencies: RT-01, RT-12, RT-20, and REL-02.

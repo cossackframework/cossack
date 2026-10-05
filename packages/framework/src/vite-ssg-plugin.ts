@@ -93,6 +93,7 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
   // parent build's mode (e.g. `vite build --mode staging`) instead of
   // hardcoding 'production'. Defaults to 'production' for safety.
   let buildMode = 'production';
+  let projectRoot = process.cwd();
   const failedEnvironments = new Set<string>();
 
   return {
@@ -100,6 +101,18 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
 
     configResolved(config) {
       buildMode = config.mode;
+      projectRoot = config.root || projectRoot;
+      if (!enabled || config.command !== 'build') return;
+      const owner = config.configFile || projectRoot;
+      const ownIndex = config.plugins.findIndex(plugin => plugin.name === 'cossack-ssg');
+      for (const name of ['cossack-security', 'cossack-pages', 'cossack-lang', 'cossack-middlewares', 'cossack-config']) {
+        const index = config.plugins.findIndex(plugin => plugin.name === name);
+        if (index < 0 || index > ownIndex) {
+          throw new Error(`[cossack/ssg] COSSACK_SSG_PLUGIN_COMPATIBILITY: ${owner}: ` +
+            `${index < 0 ? 'Missing required plugin' : 'Required plugin must run before cossack-ssg'} ${name}. ` +
+            'Register the Cossack compiler plugins before cossackSsg() in your Vite configuration.');
+        }
+      }
     },
 
     buildStart() { failedEnvironments.delete(this.environment?.name ?? 'client'); },
@@ -116,7 +129,6 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       const fs: typeof import('node:fs') = requireRealFs();
       const path = await import('node:path');
 
-      const projectRoot = process.cwd();
       const outDir = path.resolve(projectRoot, options.outDir || 'dist/client');
 
       console.log('[cossack/ssg] Starting static rendering...');
@@ -124,11 +136,8 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       // --- Read the routes manifest (single source of truth for cmp_N IDs) ---
       const manifestPath = path.join(outDir, 'cossack-routes.json');
       if (!fs.existsSync(manifestPath)) {
-        console.warn(
-          `[cossack/ssg] Routes manifest not found at ${manifestPath}. ` +
-            'This is expected for projects without SSG pages; skipping SSG.',
-        );
-        return;
+        throw new Error(`[cossack/ssg] COSSACK_SSG_MANIFEST_MISSING: ${manifestPath}. ` +
+          'The cossack-pages compiler must emit its routes manifest before SSG runs.');
       }
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
@@ -143,6 +152,10 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       // which resolves virtual:cossack-* and the SSR renderer via Vite). ---
       const entry = await loadEntry(projectRoot, buildMode, options.plugins ?? []);
       const result = await entry.runSsg({ manifest, outDir, baseUrl });
+      if (result.outcomes) {
+        fs.writeFileSync(path.join(outDir, 'cossack-ssg-report.json'),
+          JSON.stringify({ version: 1, outcomes: result.outcomes }, null, 2) + '\n', 'utf-8');
+      }
 
       // --- Drain rendered HTML and write files (the entry defers writes here). ---
       const renderedPages = entry.drainRenderedHtml();
@@ -152,7 +165,10 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
         // from a partially successful SSG build.
         throw new Error(
           `[cossack/ssg] ${result.failed.length} route(s) failed:\n` +
-            result.failed.map((r) => `  - ${r.routePath}: ${r.error}`).join('\n'),
+            result.failed.map((r) => {
+              const outcome = result.outcomes?.find(candidate => candidate.status === 'failed' && candidate.routePath === r.routePath);
+              return `  - ${outcome?.sourceFile ? `${outcome.sourceFile} (${r.routePath})` : r.routePath}: ${r.error}`;
+            }).join('\n'),
         );
       }
       const plannedPages = renderedPages.map(page => ({ ...page,
@@ -211,7 +227,8 @@ interface SsgEntryModule {
     manifest: unknown;
     outDir: string;
     baseUrl?: string;
-  }) => Promise<{ rendered: string[]; failed: { routePath: string; error: string }[] }>;
+  }) => Promise<{ rendered: string[]; failed: { routePath: string; error: string }[];
+    outcomes?: { routePath: string; sourceFile: string; status: string; [key: string]: unknown }[] }>;
   drainRenderedHtml: () => { routePath: string; html: string }[];
 }
 
@@ -259,6 +276,7 @@ async function loadEntry(
   const inlineConfig: InlineConfig = {
     root: projectRoot,
     mode,
+    define: { 'import.meta.env.COSSACK_SSG_ROOT': JSON.stringify(projectRoot) },
     environments: {
       inline: {
         resolve: {

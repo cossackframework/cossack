@@ -212,3 +212,23 @@ See `src/pages/ssg-demo/` in the framework package for a complete example demons
 - Static page generation
 - Dynamic route generation with `generateStaticParams`
 - Integration with the Layout component
+
+## Build reports and compiler setup
+
+An enabled production SSG build requires the Cossack security, pages, language,
+middleware and configuration plugins before `cossackSsg()`. Missing or misordered
+plugins fail with the Vite configuration location. A missing route manifest is
+an error, so a successful build cannot silently omit static pages.
+
+The build writes `dist/client/cossack-ssg-report.json` with `version: 1` and an
+`outcomes` array. Each entry includes `routePath`, `sourceFile`, `durationMs` and
+`status` (`rendered`, `skipped` or `failed`). Selected parameterized routes also
+include `params` and `outputPath`. Skipped and failed entries have a fixed
+`diagnostic.code` and explanation. Application exception values remain private.
+The output directory follows the plugin's `outDir` option.
+
+All static parameter records and output collisions are checked before rendering.
+A validation or render failure prevents publication of the HTML batch and sitemap.
+The report retains individual outcomes so an agent can locate the source and
+understand why publication stopped. A rendered outcome records successful rendering;
+it does not claim publication when another route fails the build.

@@ -1,3 +1,4 @@
+import { writeTestUtilitiesAcceptance, checkTestUtilitiesAcceptance } from './fixtures/test-utils-acceptance.js';
 import { verifyDesktopTraceReaders } from './fixtures/desktop-trace-readers.js';
 import { writeAuthPrimitivesAcceptance, checkAuthPrimitives } from './fixtures/auth-primitives-acceptance.js';
 import { writeSessionDashboardAcceptance, checkSessionDashboard } from './fixtures/session-dashboard-acceptance.js';
@@ -45,7 +46,7 @@ async function project(adapter, features = [], options = {}) {
     await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
   }
   await fs.mkdir(path.join(modules, '@cossackframework'));
-  for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'node-adapter', 'deno-adapter', 'desktop']) {
+  for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'test-utils', 'node-adapter', 'deno-adapter', 'desktop']) {
     await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
   }
   if (features.includes('dashboard')) {
@@ -2002,3 +2003,15 @@ it.each(['cloudflare', 'node'])('executes packaged application guidance on %s', 
   const guides = JSON.parse(await fs.readFile(path.join(repository, 'packages/core/agent-docs.json'), 'utf8')).guides;
   await verifyApplicationGuidance(root, guides, { additionalAllowedPaths: [repository] });
 }, 180000);
+
+it.each(['node','cloudflare'])('matches production lifecycle through test utilities in generated %s app',async adapter=>{
+  const root=await project(adapter);await writeTestUtilitiesAcceptance(root);await vite(root,[]);
+  if(adapter==='node')await vite(root,['--ssr','src/index.ts','--outDir','dist/server']);
+  const browser=await chromium.launch({headless:true});
+  try {if(adapter==='node'){
+    const runtime=await productionServer(root);try{await checkTestUtilitiesAcceptance(browser,runtime.origin,root);}finally{await runtime.close();}
+  }else{
+    const harness=createTestHarness({root,workers:[{configPath:path.join(root,'dist/ssr/wrangler.json')}]});
+    try{const {url}=await harness.listen();await checkTestUtilitiesAcceptance(browser,new URL(url).origin,root);}finally{await harness.close();}
+  }}finally{await browser.close();}
+},120000);

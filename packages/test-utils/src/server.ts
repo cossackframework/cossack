@@ -85,6 +85,9 @@ export interface ControlledAsync<T> {
 }
 
 export function controlledAsync<T>(options: { timeoutMs?: number } = {}): ControlledAsync<T> {
+    if (options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs < 0)) {
+        throw new TypeError('controlledAsync timeoutMs must be a finite nonnegative number.');
+    }
     let resolveFn!: (value: T | PromiseLike<T>) => void;
     let rejectFn!: (reason?: unknown) => void;
     const promise = new Promise<T>((resolve, reject) => {
@@ -126,4 +129,72 @@ export function controlledAsync<T>(options: { timeoutMs?: number } = {}): Contro
             rejectFn(new Error('controlledAsync was cancelled'));
         },
     };
+}
+
+export interface ServerAppOptions<Env> {
+    /** Inject the real framework app.fetch or generated Worker.fetch. */
+    fetch: (request: Request, env: Env) => Response | Promise<Response>;
+    env: Env;
+    baseUrl?: string;
+}
+
+export interface ComponentRpcRequest {
+    componentRouteId: string;
+    action: string;
+    payload?: unknown[];
+    state?: Record<string, unknown>;
+    scopeKey?: string;
+    target?: string;
+    pageParams?: Record<string, string>;
+}
+
+export interface ServiceRpcRequest {
+    ownerRouteId: string;
+    slot: string;
+    action: string;
+    payload?: unknown[];
+    state?: Record<string, unknown>;
+    scopeKey?: string;
+}
+
+/** Real request dispatch: no alternate router, policy, DI, or cleanup implementation. */
+export function createServerApp<Env>(options: ServerAppOptions<Env>) {
+    const base = new URL(options.baseUrl ?? 'http://localhost');
+    if (!['http:', 'https:'].includes(base.protocol)) throw new TypeError('Server app baseUrl must use HTTP or HTTPS.');
+    const request = async (input: string | Request, init?: RequestInit): Promise<Response> => {
+        const req = input instanceof Request ? new Request(input, init) : new Request(new URL(input, base), init);
+        return options.fetch(req, options.env);
+    };
+    const rpc = (body: Record<string, unknown>, init?: RequestInit) => {
+        const headers = new Headers(init?.headers);
+        if (!headers.has('Origin')) headers.set('Origin', base.origin);
+        headers.set('Content-Type', 'application/json');
+        return request('/crpc', { ...init, method: 'POST', headers, body: JSON.stringify(body) });
+    };
+    return {
+        request,
+        componentRpc: (body: ComponentRpcRequest, init?: RequestInit) => rpc({ payload: [], state: {}, ...body }, init),
+        serviceRpc: ({ ownerRouteId, slot, ...body }: ServiceRpcRequest, init?: RequestInit) =>
+            rpc({ payload: [], state: {}, ...body, service: { ownerRouteId, slot } }, init),
+    };
+}
+
+/** Credentials only: the production application's authentication and policies still decide access. */
+export function authFixture(options: { headers?: HeadersInit; cookies?: Record<string, string> } = {}): { headers: Headers } {
+    const headers = new Headers(options.headers);
+    const cookies = Object.entries(options.cookies ?? {}).map(([name, value]) => {
+        if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) throw new TypeError('Invalid fixture cookie name.');
+        return `${name}=${encodeURIComponent(value)}`;
+    });
+    if (cookies.length) headers.set('Cookie', [headers.get('Cookie'), cookies.join('; ')].filter(Boolean).join('; '));
+    return { headers };
+}
+
+/** Parse the production JSON hydration assignment. Never evaluate application JavaScript. */
+export function readHydrationState<T = Record<string, unknown>>(html: string): T | undefined {
+    const matches = [...html.matchAll(/<script\b[^>]*>\s*window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script\s*>/gi)];
+    if (!matches.length) return undefined;
+    if (matches.length !== 1) throw new Error('Ambiguous hydration state: multiple assignments.');
+    const serialized = matches[0][1].trim().replace(/;\s*$/, '');
+    return JSON.parse(serialized) as T;
 }

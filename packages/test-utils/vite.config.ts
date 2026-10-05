@@ -17,7 +17,9 @@ export default defineConfig({
       external: [
         '@cossackframework/core',
         '@cossackframework/renderer',
-        'vitest'
+        'vitest',
+        'node:async_hooks',
+        'hono'
       ],
     },
   },

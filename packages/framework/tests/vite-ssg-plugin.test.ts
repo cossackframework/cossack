@@ -14,6 +14,36 @@ const OUT = path.resolve(PROJECT_ROOT, 'dist', 'client');
 // ---------------------------------------------------------------------------
 
 describe('cossackSsg() plugin', () => {
+  const required = ['cossack-security', 'cossack-pages', 'cossack-lang', 'cossack-middlewares', 'cossack-config'];
+  it.each(required)('rejects missing %s before compiling with configuration context', name => {
+    const plugin = cossackSsg();
+    const config = { command: 'build', root: PROJECT_ROOT, mode: 'production', configFile: '/app/vite.config.ts',
+      plugins: [...required.filter(candidate => candidate !== name).map(name => ({ name })), plugin] };
+    expect(() => (plugin.configResolved as Function)(config)).toThrow(`Missing required plugin ${name}`);
+    expect(() => (plugin.configResolved as Function)(config)).toThrow('/app/vite.config.ts');
+  });
+  it('rejects required plugins that execute after SSG', () => {
+    const plugin = cossackSsg();
+    expect(() => (plugin.configResolved as Function)({ command: 'build', root: PROJECT_ROOT, mode: 'production',
+      plugins: [plugin, ...required.map(name => ({ name }))] })).toThrow('must run before cossack-ssg');
+  });
+  it('accepts the supported compiler order and does not require it when disabled or serving', () => {
+    const plugin = cossackSsg();
+    expect(() => (plugin.configResolved as Function)({ command: 'build', root: PROJECT_ROOT, mode: 'production',
+      plugins: [...required.map(name => ({ name })), plugin] })).not.toThrow();
+    expect(() => (cossackSsg({ enabled: false }).configResolved as Function)({ command: 'build', mode: 'production', plugins: [] })).not.toThrow();
+    expect(() => (plugin.configResolved as Function)({ command: 'serve', mode: 'development', plugins: [] })).not.toThrow();
+  });
+  it('fails clearly when the required compiler did not emit its manifest', async () => {
+    const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-missing-manifest-'));
+    try {
+      vi.stubEnv('VITEST', '');
+      const plugin = cossackSsg({ outDir: fixture, baseUrl: 'https://site.example.test' });
+      await expect((plugin.closeBundle as Function).call({ environment: { name: 'client' } }))
+        .rejects.toThrow(`COSSACK_SSG_MANIFEST_MISSING: ${path.join(fixture, 'cossack-routes.json')}`);
+      expect(existsSync(path.join(fixture, 'sitemap.xml'))).toBe(false);
+    } finally { vi.unstubAllEnvs(); rmSync(fixture, { recursive: true, force: true }); }
+  });
   it.each(['failed render', 'path traversal', 'duplicate output'])('publishes no SSG files after %s', async failure => {
     const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-publication-'));
     const outDir = path.join(fixture, 'dist');

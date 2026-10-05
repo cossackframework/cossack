@@ -22,7 +22,7 @@ it.each(['error', 'arbitrary object', 'proxy', 'public route'])('redacts %s fail
     : { toString() { throw new Error('PRIVATE_SSG_TOSTRING_SENTINEL'); }, secret: 'PRIVATE_SSG_EXCEPTION_SENTINEL' };
   fixture.render.mockRejectedValue(failure);
   const result = await runSsg(args);
-  expect(result).toEqual({ rendered: [], failed: [{ routePath: '/authored', error: kind === 'public route'
+  expect(result).toMatchObject({ rendered: [], failed: [{ routePath: '/authored', error: kind === 'public route'
     ? 'COSSACK_SSG_NOT_PUBLIC: Static HTML requires a public request-independent route.'
     : 'COSSACK_RUNTIME_FAILED: Static HTML rendering failed.' }] });
   expect(spy).toHaveBeenCalledWith(expect.objectContaining({ event: 'cossack.runtime.failure', runtime: 'node', stage: 'dispatch' }));

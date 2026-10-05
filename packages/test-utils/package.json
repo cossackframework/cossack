@@ -11,12 +11,15 @@
     "@cossackframework/core": "workspace:*"
   },
   "peerDependencies": {
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "hono": "^4.13.7"
   },
   "devDependencies": {
     "vite": "^8.1.4",
     "vitest": "^4.1.11",
-    "@types/node": "^22.20.1"
+    "@types/node": "^22.20.1",
+    "jsdom": "^29.1.1",
+    "@cossackframework/renderer": "workspace:*"
   },
   "exports": {
     ".": {
@@ -26,9 +29,14 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.mjs"
+    },
+    "./browser": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs"
     }
   },
   "files": [
     "dist"
-  ]
+  ],
+  "type": "module"
 }

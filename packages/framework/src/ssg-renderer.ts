@@ -346,7 +346,9 @@ export async function renderSsgPage(
  */
 function readManifestFile(): Record<string, any> {
   try {
-    const manifestPath = path.join(process.cwd(), 'dist/client/.vite/manifest.json');
+    const configuredRoot = import.meta.env.COSSACK_SSG_ROOT;
+    const root = typeof configuredRoot === 'string' ? configuredRoot : process.cwd();
+    const manifestPath = path.join(root, 'dist/client/.vite/manifest.json');
     const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
     return JSON.parse(manifestContent);
   } catch (e) {

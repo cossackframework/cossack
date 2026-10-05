@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 32 complete and 26 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 34 complete and 24 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -93,9 +93,9 @@ Add focused tests during each group, and run broader gates after integration.
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
 | 1. Finish current runtime work | RT-01 | Distributed SSE works through generated apps and retains request ownership. |
-| 2. Establish shared metadata and diagnostics | RT-24, RT-29 | Tools and types describe the behavior that the compiler and runtime execute. |
+| 2. Establish shared metadata and diagnostics | RT-24 | Tools and types describe the behavior that the compiler and runtime execute. |
 | 3. Complete application state and actions | RT-10, RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
-| 4. Complete data and content features | RT-15 through RT-17, RT-20 through RT-22, RT-26 | Existing features have clear provider contracts and complete failure behavior. |
+| 4. Complete data and content features | RT-15 through RT-17, RT-20, RT-22, RT-26 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
@@ -119,6 +119,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="cli-07"></a>CLI-07 | [Shared local MCP tools and installed acceptance](./release-0.9.0-plan-archive.md#codex-cli07-final-plan-2026-10-04) |
 | <a id="rt-12"></a>RT-12 | [DI errors, ownership, and cleanup](./release-0.9.0-plan-archive.md#codex-rt-12-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05) |
 | <a id="rt-27"></a>RT-27 | [Localization tooling](./release-0.9.0-plan-archive.md#codex-rt-27-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05) |
+| <a id="rt-21"></a>RT-21 | [SSG diagnostics and compatibility](./release-0.9.0-plan-archive.md#codex-rt-21-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05) |
+| <a id="rt-29"></a>RT-29 | [Framework-faithful test utilities](./release-0.9.0-plan-archive.md#codex-rt-29-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05) |
 | <a id="rt-02"></a>RT-02 | [Validated server actions](./release-0.9.0-plan-archive.md#rt-02) |
 | <a id="rt-03"></a>RT-03 | [Observable server resources](./release-0.9.0-plan-archive.md#rt-03) |
 | <a id="rt-04"></a>RT-04 | [State, store, and computed diagnostics](./release-0.9.0-plan-archive.md#rt-04) |
@@ -685,30 +687,6 @@ stay out of the event. The full renderer suite and root typecheck pass. State
 comparison, source/field metadata, retained layout/service browser tests and
 reusable test helpers remain open. See the [verification checkpoint](./release-0.9.0.md#codex-rt20-safe-hydration-diagnostics-2026-10-05).
 
-<a id="rt-21"></a>
-### RT-21: SSG diagnostics and compatibility
-
-Purpose: A static build must explain which routes were rendered, skipped, or
-rejected. Missing compiler plugins or an incompatible runtime must fail clearly.
-
-Baseline: Public-only SSG, route validation before writes, real middleware,
-environment resolution, and scoped service cleanup exist. Full reporting and
-compatibility coverage remain open.
-
-Approach: Add structured per-route results with route parameters, output path,
-duration, status, and diagnostic cause. Detect missing or misordered required
-plugins early. Test the supported Vite/Wrangler/plugin baseline through generated
-applications. Retain the rule that validation failure prevents publishing partial
-HTML or a misleading sitemap.
-
-Start in framework `ssg-entry.ts`, `ssg-renderer.ts`, `ssg-config.ts`,
-`vite-ssg-plugin.ts`, and their existing tests.
-
-Done when: A mixed route fixture reports accurate render/skip/failure results.
-Bad static parameters, duplicate outputs, protected output, and missing plugins
-fail with source context. Production artifact tests confirm successful public
-pages and sitemap URLs. Dependencies: RT-07, RT-12, and CF-01.
-
 <a id="rt-22"></a>
 ### RT-22: Markdown metadata and localized output
 
@@ -880,31 +858,6 @@ Done when: Provider tests exercise authorized CRUD, denied cross-user access,
 expired access, cancellation, and metadata. Large transfers stay streamed.
 Published imports replace demo-relative documentation imports. Dependencies:
 RT-14, RT-24, RT-25, and CF-04.
-
-<a id="rt-29"></a>
-### RT-29: Framework-faithful test utilities
-
-Purpose: Tests must exercise the lifecycle that production uses. Helpers that
-construct simplified components can pass while auth, DI, hydration, or RPC is broken.
-
-Baseline: `packages/test-utils/src/index.ts` has basic browser rendering helpers.
-The root unit command currently excludes this package. It needs its own meaningful
-suite and broader published helpers.
-
-Approach: Build separate browser and server entry points with typed state/props,
-request context, auth fixtures, DI scope setup, hydration, and RPC dispatch.
-Use framework adapters or injected contracts without making core depend on framework.
-Make cleanup awaitable. Add utilities for controlled async results and cancellation.
-Test the helpers themselves and include their suite in the root test workflow.
-
-Start in `packages/test-utils/src/index.ts`, its package exports, and the root
-test scripts. Use existing framework integration fixtures as behavior references.
-
-Done when: A helper-created app behaves like a generated app for the same fixture.
-Tests prove request isolation, real policy enforcement, server-code stripping,
-hydration, and cleanup. Published tarball imports work without repository aliases.
-Document what browser simulation cannot prove and retain real workerd/browser tests.
-Dependencies: RT-01, RT-12, RT-20, and REL-02.
 
 ## New application services
 

@@ -2,26 +2,27 @@
 
 ## Current handoff — Codex (2026-10-05)
 
-Completed **RT-12 and RT-27**. Release: **32 complete / 26 open**.
-[Full acceptance and verification](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05).
-DI ownership/lifecycle now has generated production Node/Cloudflare and static
-inspection parity evidence. Localization has extraction/check/type commands,
-read-only MCP parity, published imported/global type contracts and scoped parallel
-SSR/SSG catalogs. Core 100/6, framework 87/8, CLI 45/3, MCP 19/1 and both native
-ownership cases pass. Root/core/framework types and installed localization pass.
+Completed **RT-21 and RT-29**. Release: **34 complete / 24 open**.
+[Acceptance and verification](./release-0.9.0-verification-archive.md#codex-rt21-rt29-complete-2026-10-05).
+SSG now reports all outcomes, validates compiler setup and prevents partial
+publication. Test utilities exercise actual fetch/RPC contracts, typed browser
+hydration/DI and awaitable cleanup. SSG105/8, test-utils17/3, both generated
+Node/Cloudflare helper cases, installed exports/types and generated Cloudflare
+SSG artifacts pass. Required root/package types and builds pass.
 
-Continue with bounded independent existing-feature acceptance tasks, such as
-RT-29 test utilities and RT-21 SSG diagnostics, after checking their dependencies
-and full criteria. Prefer full task closure over additional budget checkpoints.
-Use up to three implementation agents with exclusive ownership; keep shared APIs,
-integration and final checks with Codex. Run targeted tests first, combined checks
-once after stable builds, and update records once per verified batch. Never replace
-dist while consumer tests are running. Do not rerun unchanged installed gates.
+Continue with 2–3 bounded independent existing-feature acceptance tasks after
+checking full criteria and dependencies. RT-20 SSR/hydration diagnostics and RT-22
+Markdown/localized output are candidates to inspect. Prefer task closure over
+further Cloudflare budget polishing. Keep shared APIs and integration with Codex,
+use exclusive agent ownership, and wait for source stability before builds.
+Never replace dist while consumers test it; rerun only invalidated evidence.
+Update records once per verified batch. No blocker for this completed batch.
 
-No blocker for this completed batch. Broad release gates, native DEV faults,
-production maps, remote logs and provider startup remain open under their own tasks.
-Versions stay at 0.8.3 until REL-04. Preserve user-owned reports.md and .zcodeignore.
-Desktop remains completed by user decision; remaining platform checks are waived.
+Broader release gates, native DEV faults, production maps, remote logs and provider
+startup remain open under their own tasks. Versions stay 0.8.3 until REL-04.
+Preserve user reports.md and .zcodeignore. Desktop remains completed by user
+decision; remaining platform checks are waived. Prior RT-12/RT-27 evidence is
+[archived](./release-0.9.0-verification-archive.md#codex-rt12-rt27-complete-2026-10-05).
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -38,7 +39,7 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 32 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 34 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.

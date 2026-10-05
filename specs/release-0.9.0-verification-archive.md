@@ -11701,3 +11701,67 @@ was run in this batch. Those remain REL-03/Cloudflare work; they are not missing
 RT-12/RT-27 acceptance. Desktop checks remain waived by user decision. Localized
 SSG route variants remain RT-22. Runtime transport/auth criteria remain RT-01/RT-11.
 Release count: 32 complete / 26 open; versions remain 0.8.3 until REL-04.
+
+<a id="codex-rt21-rt29-complete-2026-10-05"></a>
+### Codex: RT-21 and RT-29 completed acceptance (2026-10-05)
+
+Author: Codex. Two agents owned separate SSG entry and plugin files; a third
+owned test-utils and its docs. Codex integrated renderer root lookup, native
+helper fixtures, lockfile changes and installed verification scripts.
+
+RT-21 criteria proven:
+- Structured mixed-route outcomes include source, parameters, output, duration,
+  render/skip/failure status and fixed diagnostic cause. All parameter records
+  and output collisions are validated before any renderer call. Render failures
+  clear the publication batch; protected output fails with source context.
+- Enabled production config rejects missing/misordered required compiler plugins
+  early and fails on missing route manifests. Disabled/development setup is allowed.
+- Real Vite production fixtures prove public HTML, referenced hashed client assets,
+  sitemap/routes and reports; invalid params, duplicate outputs and protected
+  output prevent partial HTML/sitemap. Fixtures use a Vite root different from cwd.
+- Installed generated Cloudflare application builds through its actual Vite,
+  Cloudflare plugin and Wrangler baseline, publishing static HTML, hydration,
+  existing client scripts, correct public sitemap URL, report and Worker config.
+
+RT-29 criteria proven:
+- createServerApp injects the actual fetch contract and uses real Request and
+  production component/service RPC envelopes. authFixture attaches credentials;
+  it grants no access or alternate policy. Helpers keep runtime packages independent.
+- Browser helpers use createInstance/bootstrap with typed state/props and DI scope;
+  hydration/actions match core rendering. Awaitable, idempotent unmount cleans
+  component/service hooks and DOM even on bootstrap/constructor/cleanup failure.
+- Generated production Node and workerd fixtures use helpers against the same
+  real application tested by Chromium. Policies deny Bob and allow Alice; parallel
+  service RPC retains user/request facilities and awaits cleanup once; production
+  hydration and subsequent browser RPC mutation agree. Client JS/maps omit the
+  server-only sentinel. Test identities are synthetic, not real authentication.
+- Published browser/server exports import without source aliases, deferred and
+  hydration/credential helpers execute, and strict installed declaration consumers
+  accept valid requests and reject missing route identity/wrong deferred values.
+  The package has its own 17-test suite in the existing root unit workflow.
+  Docs explicitly state what DOM simulation cannot prove and preserve native tests.
+
+Final checks: framework SSG combined **105 tests/8 files**, test-utils **17/3**;
+generated production helper **2 passed** (Node/Cloudflare), 64 unselected tests
+not claimed passed. Root pnpm tsc --noEmit, framework/test-utils package checks,
+framework declaration and test-utils builds passed. JS syntax and owned diff checks
+passed. Installed verify-test-utilities.mjs and verify-ssg-release.mjs passed.
+
+Initial native helper run failed because the verifier used CommonJS resolution
+for import-only exports. Corrected to Node ESM resolution; both final cases pass.
+The agent added a constructor-failure cleanup fix after the first test-utils build;
+only that package was rebuilt/repacked to bind installed evidence to final code.
+No unchanged installed gates or broad release suite were rerun.
+
+Logs: /tmp/cossack-rt21-combined.log, /tmp/cossack-rt29-combined.log,
+/tmp/cossack-rt29-native-final.log, /tmp/cossack-rt29-installed.log,
+/tmp/cossack-rt21-installed.log, /tmp/cossack-rt21-29-root-types-final.log,
+/tmp/cossack-rt21-29-framework-types.log, /tmp/cossack-rt29-types-final.log.
+Tarballs: /tmp/cossack-rt21-29-tarballs/framework.tgz and test-utils-final.tgz.
+Installed root: /tmp/cossack-local-pack-gZdSQv/minimal-production.
+
+Limits: no remote deployment or complete release suite; other tasks retain those
+criteria. SSG report rendering success does not imply publication after a later
+failure. Node-only server helpers do not emulate Workers; actual workerd/browser
+checks remain required. Desktop platform checks are waived by user decision.
+Release: 34 complete / 24 open. Versions remain 0.8.3 until REL-04.

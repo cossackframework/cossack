@@ -497,10 +497,19 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.11
     devDependencies:
+      '@cossackframework/renderer':
+        specifier: workspace:*
+        version: link:../renderer
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1
       vite:
         specifier: ^8.1.4
         version: 8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)

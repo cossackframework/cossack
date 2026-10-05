@@ -86,6 +86,12 @@ describe('withRequestScope (RT-29)', () => {
 });
 
 describe('controlledAsync (RT-29)', () => {
+    it('rejects invalid timeout bounds instead of silently scheduling an immediate timer', () => {
+        for (const timeoutMs of [-1, NaN, Infinity]) {
+            expect(() => controlledAsync({ timeoutMs })).toThrow('finite nonnegative');
+        }
+    });
+
     it('resolves once and reports settlement', async () => {
         const deferred = controlledAsync<string>();
         expect(deferred.settled).toBe(false);
