@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { snapshotRpcFrame, RPC_NATIVE_RESPONSE_HEADER, isActionValidationError, isClientVisibleError, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES, RpcError, type RpcStreamFrame } from '@cossackframework/core';
+import { logRpcFailure, type RpcFailureContext } from './rpc-logging.js';
 
 interface RpcStreamOptions {
     result: AsyncIterable<unknown>;
@@ -11,6 +12,7 @@ interface RpcStreamOptions {
     onState?: (state: Record<string, unknown>) => void | Promise<void>;
     cleanup: () => Promise<void>;
     developmentTrace?: (outcome: 'succeeded' | 'failed', cleanup: 'completed' | 'failed') => string;
+    logContext?: RpcFailureContext;
 }
 
 export function isRpcStream(result: unknown): result is AsyncIterable<unknown> {
@@ -22,6 +24,7 @@ export function isRpcStream(result: unknown): result is AsyncIterable<unknown> {
 export async function retainRpcResponseBody(
     response: Response, signal: AbortSignal, dispose: () => Promise<void>,
     onCompletion?: (outcome: 'succeeded' | 'failed' | 'cancelled', cleanup: 'completed' | 'failed') => void | Promise<void>,
+    logContext?: RpcFailureContext,
 ): Promise<Response> {
     const inRequest = AsyncLocalStorage.snapshot();
     let outcome: 'succeeded' | 'failed' | 'cancelled' = 'succeeded';
@@ -57,7 +60,7 @@ export async function retainRpcResponseBody(
         if (closed) return;
         closed = true; if (import.meta.env.DEV) outcome = 'cancelled';
         controller.error(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
-        void cleanup().catch(error => console.error('[Cossack RPC] response cleanup failed:', error));
+        void cleanup().catch(() => logRpcFailure(logContext, 'response-cleanup', 'COSSACK_RPC_CLEANUP_FAILED'));
     };
     const body = new ReadableStream<Uint8Array>({
         start(streamController) {
@@ -77,6 +80,10 @@ export async function retainRpcResponseBody(
                 } catch (error) {
                     if (closed) return;
                     closed = true; if (import.meta.env.DEV) outcome = 'failed';
+                    if (!isActionValidationError(error) && !isClientVisibleError(error) &&
+                        !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
+                        logRpcFailure(logContext, 'response-stream');
+                    }
                     try { await cleanup(); }
                     finally { streamController.error(error); }
                 }
@@ -133,7 +140,7 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
         if (closed) return;
         closed = true;
         streamController.error(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId: options.requestId }));
-        void cleanup().catch(error => console.error('[Cossack RPC] cancellation cleanup failed:', error));
+        void cleanup().catch(() => logRpcFailure(options.logContext, 'cleanup', 'COSSACK_RPC_CLEANUP_FAILED'));
     };
     const stream = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -165,10 +172,13 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                     if (finished) { closed = true; controller.close(); }
                 } catch (error) {
                     if (closed) return;
-                    console.error('[Cossack RPC] stream failed:', { requestId: options.requestId, error });
+                    if (!isActionValidationError(error) && !isClientVisibleError(error) &&
+                        !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
+                        logRpcFailure(options.logContext, 'stream');
+                    }
                     let cleanupFailed = false;
                     try { await cleanup(); }
-                    catch (cleanupError) { cleanupFailed = true; console.error('[Cossack RPC] cleanup failed:', { requestId: options.requestId, error: cleanupError }); }
+                    catch { cleanupFailed = true; logRpcFailure(options.logContext, 'cleanup', 'COSSACK_RPC_CLEANUP_FAILED'); }
                     if (closed) return;
                     closed = true;
                     controller.enqueue(encode(snapshot({ v: 1, type: 'error', requestId: options.requestId,

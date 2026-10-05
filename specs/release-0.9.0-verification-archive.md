@@ -10441,6 +10441,34 @@ Cloudflare atomic claim path. They do not prove cross-process, cross-isolate or
 restart durability. RT-11 remains open for the broader concurrency contract.
 Release status remains **30 complete / 28 open**.
 
+<a id="codex-cf08-rpc-logging-2026-10-05"></a>
+### Codex: Correlated RPC failure logs (2026-10-05)
+
+HTTP component and layout-service failures now emit structured RPC events.
+Each event carries a validated request ID, bounded route/action/runtime labels,
+duration, stage and a fixed failure code. The logger never receives an exception
+object or request payload. The same safe event format covers action, request,
+stream, native-response cleanup and SSE coordinator failures. Expected client
+validation, authorization and cancellation failures do not create internal-error
+events.
+
+The framework tests match action and stream log events to the request ID returned
+to the caller. They also check the route, action, runtime, duration, stage and
+failure code fields. A private error marker must not appear in the captured logs.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts`: **1 file / 478 tests pass** across HTTP, SSE, WebSocket and layout-service cases.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-stream.test.ts tests/native-response-evidence.test.ts`: **2 files / 24 tests pass**.
+- `pnpm tsc --noEmit`: passes.
+- `git diff --check` for the changed source and test files: passes.
+
+Limits: These are local framework tests. They do not prove Cloudflare Workers
+Logs ingestion, production source-map resolution or build/startup budget checks.
+The change does not audit all framework logs. SSR, API, SSG and other log paths
+remain separate review work. CF-08 stays open. Release status remains **30
+complete / 28 open**. No deployment or publication occurred.
+
 <a id="codex-rt12-navigation-fixture-2026-10-05"></a>
 ### Codex: Navigation ownership browser acceptance (2026-10-05)
 

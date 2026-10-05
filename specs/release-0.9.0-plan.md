@@ -1119,6 +1119,16 @@ exclude credentials and full sensitive payloads. A deliberate budget regression
 fails with the measured value and limit. Source maps resolve a production fixture
 stack to authored code. Dependencies: RT-01, RT-24, and CF-06.
 
+Codex checkpoint (2026-10-05): HTTP component and layout-service RPC failures
+now emit structured events with request ID, bounded route/action/runtime labels,
+elapsed time, stage and a fixed failure code. Stream and cleanup failures use the
+same redacted shape. The shared framework matrix checks action and stream events
+against caller-visible IDs and confirms that exception text stays out of logs.
+The local harness does not prove Cloudflare Workers Logs ingestion. Production
+source-map resolution, configurable artifact/startup budgets, full framework log
+review and native Worker log acceptance remain open. See the [verification
+checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05).
+
 <a id="cf-09"></a>
 ### CF-09: Preview and CI resource lifecycle
 

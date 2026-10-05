@@ -128,6 +128,7 @@ function actions<T extends abstract new (...args: any[]) => object>(Base: T) {
         }
         @Server() async visible() { this.effectOwner.runs++; throw new ClientVisibleError('Prompt required'); }
         @Server() async internal() { this.effectOwner.runs++; throw new Error('PRIVATE_TOKEN must never reach the caller'); }
+        @Server() async *internalStream() { this.effectOwner.runs++; throw new Error('PRIVATE_TOKEN stream failure'); }
         @Server({ input: input.object({ title: input.string({required:true}) }) })
         async validated(input: { title: string }) { this.effectOwner.runs++; return input.title; }
         @Server({input:normalizedInput})
@@ -666,6 +667,38 @@ describe.each(['http', 'sse', 'websocket', 'service'] as const)('%s shared RPC c
         await expect(Promise.resolve(wire.target[action]())).rejects.toMatchObject({ code, message, requestId: expect.any(String) });
         expect(wire.requests).toHaveLength(1); expect(effects.current.runs).toBe(1); settled();
     });
+    if (transport !== 'websocket') {
+        const expectedRoute = transport === 'service' ? layoutPath : transport === 'sse' ? ssePath : httpPath;
+        const loggedEvents = () => vi.mocked(console.error).mock.calls.map(([value]) => value)
+            .filter((value): value is Record<string, unknown> => typeof value === 'object' && value !== null &&
+                (value as Record<string, unknown>).event === 'cossack.rpc.failure');
+        it('logs internal action failures with searchable, redacted correlation fields', async () => {
+            const failure = await Promise.resolve(wire.target.internal()).catch(error => error);
+            expect(failure).toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR', requestId: expect.any(String) });
+            const events = loggedEvents();
+            const event = events.find(candidate => candidate.requestId === failure.requestId);
+            expect(event).toMatchObject({ event: 'cossack.rpc.failure', requestId: failure.requestId,
+                route: expectedRoute, action: 'internal', runtime: expect.any(String), stage: 'action',
+                code: 'COSSACK_RPC_INTERNAL_ERROR', durationMs: expect.any(Number) });
+            expect(Number.isFinite(event?.durationMs)).toBe(true);
+            expect(JSON.stringify(events)).not.toContain('PRIVATE_TOKEN');
+            expect(wire.requests).toHaveLength(1); expect(effects.current.runs).toBe(1); settled();
+        });
+        it('keeps stream failure logs correlated and free of thrown error details', async () => {
+            const call = rpc$(wire.target.internalStream());
+            const iterator = call[Symbol.asyncIterator]();
+            const failure = await iterator.next().catch(error => error);
+            expect(failure).toMatchObject({ code: 'COSSACK_RPC_INTERNAL_ERROR', requestId: expect.any(String) });
+            await expect(call).rejects.toBeDefined();
+            const events = loggedEvents();
+            expect(events.find(candidate => candidate.requestId === failure.requestId)).toMatchObject({
+                requestId: failure.requestId, route: expectedRoute, action: 'internalStream',
+                stage: 'stream', code: 'COSSACK_RPC_INTERNAL_ERROR', durationMs: expect.any(Number),
+            });
+            expect(JSON.stringify(events)).not.toContain('PRIVATE_TOKEN');
+            expect(wire.requests).toHaveLength(1); expect(effects.current.runs).toBe(1); settled();
+        });
+    }
     it('validates before application mutation with correlated field errors', async () => {
         await expect(Promise.resolve(wire.target.validated({}))).rejects.toMatchObject({ code: 'COSSACK_VALIDATION_FAILED', requestId: expect.any(String), fieldErrors: { title: expect.any(String) } });
         expect(effects.current.runs).toBe(0); settled();

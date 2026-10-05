@@ -117,6 +117,7 @@ import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './run
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 import { createAssetsMiddleware } from './assets.js';
 import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './transports/rpc-stream.js';
+import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
 import { retainResponseLifetime } from './response-lifetime.js';
 import { captureRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from './realtime-context.js';
 
@@ -833,6 +834,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // JSON and multipart differ only at decoding. Ownership, validation,
   // streaming, cookies and cleanup use the same action pipeline.
   const handleRpc: Handler = async (c) => {
+    const startedAt = performance.now();
     const body = await readRpcRequest(c);
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
@@ -843,6 +845,8 @@ export function createApp(options: CreateAppOptions = {}) {
     c.res.headers.set('X-Cossack-Request-Id', requestId);
     const user = c.get('user');
     const runtimeInfo = await resolveRuntimeInfo();
+    const runtime = runtimeInfo.adapter ?? (isCloudflareRuntime() ? 'cloudflare-workers' : runtimeInfo.platform);
+    const logContextFor = (route: string): RpcFailureContext => ({ requestId, route, action, runtime, startedAt });
 
     // Explicit layout-service RPC. The client addresses the owning layout and
     // stable service slot; no service fields or methods are projected onto a
@@ -855,6 +859,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       const ownerPath = routeIdMap.get(ownerRouteId);
       if (!ownerPath || !layouts[ownerPath]) return c.json({ error: 'Invalid service owner' }, 400);
+      const logContext = logContextFor(ownerPath);
 
       const requestScope = createRootServiceScope();
       requestScope.bindRequest({ context: c, user, env: c.env });
@@ -908,7 +913,7 @@ export function createApp(options: CreateAppOptions = {}) {
           if (isClientVisibleError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
-          console.error('[/crpc service] internal error:', { requestId, error: e });
+          logRpcFailure(logContext, 'action');
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         // Generator results stream through the same response-local protocol as
@@ -917,7 +922,7 @@ export function createApp(options: CreateAppOptions = {}) {
           const finishResponseLifetime = retainResponseLifetime(c);
           const response = createRpcStreamResponse({
             ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
-            result: actionResult, requestId, signal: c.req.raw.signal,
+            result: actionResult, requestId, signal: c.req.raw.signal, logContext,
             getState: () => getServiceState(owned.instance),
             cleanup: async () => {
               try { await requestScope.disposeAsync(); }
@@ -936,7 +941,7 @@ export function createApp(options: CreateAppOptions = {}) {
           return await retainRpcResponseBody(actionResult, c.req.raw.signal, async () => {
             try { await requestScope.disposeAsync(); }
             finally { await finishResponseLifetime?.(); }
-          }, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined);
+          }, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined, logContext);
         }
         const serviceState = getServiceState(owned.instance);
         const serialized = serializeRpcResult(actionResult, serviceState);
@@ -945,9 +950,12 @@ export function createApp(options: CreateAppOptions = {}) {
           ...(serialized.value !== undefined ? { _cossack_return: serialized.value } : {}),
         });
       } catch (error) {
-        console.error('[/crpc service] request failed:', { requestId, error });
         const denial = getAuthorizationFailure(error);
         if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+        if (!isActionValidationError(error) && !isClientVisibleError(error) &&
+            !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
+          logRpcFailure(logContext, 'request');
+        }
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {
@@ -959,6 +967,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
     const componentPath = routeIdMap.get(componentRouteId);
     if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+    const logContext = logContextFor(componentPath);
 
     let ComponentClass: new (...args: any[]) => Cossack;
     if (componentPath === '/src/App') {
@@ -1132,7 +1141,7 @@ export function createApp(options: CreateAppOptions = {}) {
           if (isClientVisibleError(e)) {
             return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
           }
-          console.error('[/crpc] internal error:', { requestId, error: e });
+          logRpcFailure(logContext, 'action');
           return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
         }
         if (componentContext.req.raw.signal.aborted) {
@@ -1144,7 +1153,7 @@ export function createApp(options: CreateAppOptions = {}) {
           let localSseCursor: number | undefined;
           const response = createRpcStreamResponse({
             ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
-            result: actionResult, requestId, signal: componentContext.req.raw.signal,
+            result: actionResult, requestId, signal: componentContext.req.raw.signal, logContext,
             getState: () => targetInstance.getPublicState(),
             getScopeState: sseStub && targetInstance !== componentInstance
               ? () => componentInstance!.getPublicState() : undefined,
@@ -1188,7 +1197,8 @@ export function createApp(options: CreateAppOptions = {}) {
           await publishScopeState();
           finishResponseLifetime = retainResponseLifetime(c);
           responseOwnsCleanup = true;
-          return await retainRpcResponseBody(actionResult, componentContext.req.raw.signal, cleanup, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined);
+          return await retainRpcResponseBody(actionResult, componentContext.req.raw.signal, cleanup,
+            import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined, logContext);
         }
 
         // Get the state of the component that was actually modified
@@ -1205,9 +1215,12 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch (error) {
         // Unexpected framework failures (construction, DI, serialization) still
         // produce one JSON RPC error on both backends.
-        console.error('[/crpc] request failed:', { requestId, error });
         const denial = getAuthorizationFailure(error);
         if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+        if (!isActionValidationError(error) && !isClientVisibleError(error) &&
+            !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
+          logRpcFailure(logContext, 'request');
+        }
         return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
           code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {
@@ -1228,7 +1241,7 @@ export function createApp(options: CreateAppOptions = {}) {
         if (cancelSent) { stopBody?.(); return; }
         cancelSent = true;
         const pending = sseStub.cancel(operationId).catch(error => {
-          console.error('[/crpc sse coordinator] cancellation failed:', { requestId, error });
+          logRpcFailure(logContext, 'coordinator-cancellation', 'COSSACK_RPC_CLEANUP_FAILED');
         });
         // Incoming disconnect cleanup must survive the cancelled invocation.
         try { c.executionCtx.waitUntil(pending); } catch { /* process-local test adapter */ }
@@ -1277,6 +1290,7 @@ export function createApp(options: CreateAppOptions = {}) {
               else controller.enqueue(next.value);
             } catch (error) {
               if (closed) return;
+              logRpcFailure(logContext, 'coordinator-stream');
               finishBody(); controller.error(error);
             }
           },
@@ -1287,7 +1301,7 @@ export function createApp(options: CreateAppOptions = {}) {
         return new Response(ownedBody, { status: response.status, statusText: response.statusText, headers: response.headers });
       } catch (error) {
         await cleanup();
-        console.error('[/crpc sse coordinator] action failed:', { requestId, error });
+        logRpcFailure(logContext, 'coordinator-action');
         return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {
         if (!bodyOwnsCancellation) signal.removeEventListener('abort', cancel);

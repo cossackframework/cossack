@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets.
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Source-map resolution, build/startup budgets, full framework log review and native Workers Logs ingestion remain open. See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -988,6 +988,22 @@ RT-12 remains open: this covers failed scope setup only. It does not prove all
 runtime metadata/lifecycle combinations or the complete CLI/release gates. Task
 status remains **30 complete / 28 open**.
 
+<a id="codex-cf08-rpc-logging-2026-10-05"></a>
+### Codex: Correlated RPC failure logs (2026-10-05)
+
+HTTP component and layout-service RPC failures now produce structured events.
+Each event includes a validated request ID, bounded route/action/runtime labels,
+elapsed time, a failure stage and a fixed failure code. The logger never receives
+an exception object or request payload. Stream and cleanup failures use the same
+safe event shape.
+
+**Verification:** `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-conformance-matrix.test.ts` passes **478 tests**. The new action and stream checks find each event by the request ID returned to the caller and confirm that a private error marker is absent. `pnpm --filter @cossackframework/framework exec vitest run tests/rpc-stream.test.ts tests/native-response-evidence.test.ts` passes **24 tests**. Root `pnpm tsc --noEmit` and `git diff --check` for the changed source/test files pass.
+
+CF-08 remains open. These tests run through the local framework harness, not a
+deployed Worker Logs account. Source-map stack resolution, configurable bundle
+and startup budgets, and a review of non-RPC logs remain unverified. Task status
+remains **30 complete / 28 open**.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
@@ -1178,3 +1194,4 @@ parent task. Current status is 30 complete and 28 open.
 | <a id="codex-rt12-navigation-fixture-2026-10-05"></a>[Codex: Navigation ownership browser acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-navigation-fixture-2026-10-05) |
 | <a id="codex-rt24-typed-paths-2026-10-05-index"></a>[Codex: Reject misspelled typed configuration paths (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt24-typed-paths-2026-10-05) |
 | <a id="codex-rt12-construction-rollback-2026-10-05-index"></a>[Codex: Roll back partial service-scope construction (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-service-scope-construction-rollback-2026-10-05) |
+| <a id="codex-cf08-rpc-logging-2026-10-05-index"></a>[Codex: Correlated RPC failure logs (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf08-rpc-logging-2026-10-05) |

@@ -30,7 +30,7 @@ Latest completed checkpoint: [Cloudflare environment and database targets](./rel
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
 Latest CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
-Latest Cloudflare progress: [CF-04 scaffold guidance](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05) now describes the named D1 and Hyperdrive setup correctly; its 100 focused scaffold tests pass, but resource selection/provisioning remains open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
+Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and build/startup budgets remain open. The [CF-04 scaffold checkpoint](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05) still leaves resource selection/provisioning open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
 
@@ -217,6 +217,12 @@ Latest Cloudflare progress: [CF-04 scaffold guidance](./release-0.9.0.md#codex-c
    RT-24 remains open; see its detailed checkpoint in the plan and verification
    archive. Continue with registry generation or another open task, preserving
    the secret-redaction and request-scope limits in RT-24's acceptance criteria.
+7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
+   checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
+   fixed failure-code and payload-redaction tests. Next review the remaining
+   server log paths, prove event visibility in a built Worker test, then add
+   source-map and measured budget checks. Do not close CF-08 from the local
+   framework matrix alone.
 
 ## Limits to retain
 
