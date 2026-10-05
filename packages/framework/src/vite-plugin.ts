@@ -1,3 +1,4 @@
+export { cossackBuildBudgets } from './vite-build-budgets.js';
 import { checkConfigBuildRequirements } from './config-preflight.js';
 import type { ConfigRuntime } from './config-requirements.js';
 import { CONFIG_GLOB, generateConfigTypes, discoverConfigFactories } from './config-codegen.js';

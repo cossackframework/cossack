@@ -64,7 +64,7 @@ export async function deployCommand(args, ctx) {
     }
     const started = performance.now();
     const exitCode = await runProjectTool(root, 'wrangler', ['deploy', '--config', data.artifact,
-      ...(ctx.dryRun ? ['--dry-run'] : [])], options);
+      ...(ctx.dryRun ? ['--dry-run'] : [])], { ...options, env: { ...options.env, CLOUDFLARE_ENV: '' } });
     data.steps.push({ name: 'deploy', exitCode, durationMs: Math.round(performance.now() - started) });
     return report(exitCode === 0, exitCode === 0 ? budgetDiagnostics : [...budgetDiagnostics, { code: 'COSSACK_DEPLOY_UPLOAD_FAILED',
       severity: 'error', message: 'Wrangler deployment failed. Run without --json for tool diagnostics.' }]);

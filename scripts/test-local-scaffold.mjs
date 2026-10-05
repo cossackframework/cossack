@@ -1,3 +1,4 @@
+import { verifyBuildBudgets } from './verify-build-budgets.mjs';
 import { verifyConfigHydration } from './verify-config-hydration.mjs';
 import { verifyDesktopTraceReaders } from '../packages/cossack/tests/fixtures/desktop-trace-readers.js';
 import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication, verifyDesktopDevelopmentApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
@@ -658,7 +659,10 @@ try {
   } else {
     await verifyConfigTypes(minimalProjectDir);
     await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
-    if (!nodeDevelopmentOnly) await verifyConfigHydration(minimalProjectDir);
+    if (!nodeDevelopmentOnly) {
+      await verifyConfigHydration(minimalProjectDir);
+      await verifyBuildBudgets(minimalProjectDir);
+    }
   }
   if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
     await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);

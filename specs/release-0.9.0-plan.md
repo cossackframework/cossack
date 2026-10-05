@@ -1182,6 +1182,16 @@ Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-comp
 <a id="cf-04"></a>
 ### CF-04: Resource selection and setup
 
+Codex built-target correction (2026-10-05): explicit --config artifact deployment
+must clear CLOUDFLARE_ENV after type generation and Vite selection. Wrangler treats
+that explicit path as ordinary config and otherwise applies the source environment
+again. Source stages retain selection; final artifact stages now disable it. Unit
+and published CLI selected-target dry-run evidence are in the
+[direct-budget checkpoint](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
+This fixes local target selection, not remote account/resource discovery or
+provisioning; CF-04 remains open.
+
+
 Purpose: A generated binding must point to a real resource or use supported
 provisioning. A fake Hyperdrive ID postpones an inevitable failure until deployment.
 
@@ -1246,8 +1256,32 @@ verification. Avoid duplicate measurements with a receipt bound to settings,
 environment and artifact fingerprint; clear stale receipts before building.
 Define primary versus auxiliary Worker scope. Custom builders that leave outputs
 unfinished must fail closed. This audit changed no runtime code and ran no tests;
-direct Vite enforcement remains open for coordinator-owned integration.
+the implementation checkpoint below supersedes its audit-only status. CLI receipt
+and default scaffold integration remain coordinator-owned work.
 
+
+Codex opt-in direct Vite implementation (2026-10-05): `cossackBuildBudgets()`
+now runs after Cloudflare's application build, validates completed Worker
+environments and fresh primary-target artifacts, then measures the installed
+Wrangler dry-run summary privately. Node-only budget and artifact modules are
+shared by framework and CLI; framework never depends on CLI. Real staging builds
+exposed and fixed ambient environment selection being applied twice to built
+configs. Explicit empty environment now means inspect/measure the already-built
+target. Primary Worker scope is documented; auxiliary Workers need separate
+future policies. See the [verification checkpoint](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
+
+Remaining integration: keep the plugin opt-in until CLI can reuse its result
+without weakening validation. Write a private receipt after measurement, bound to
+current settings, selected environment, a fresh CLI invocation token and a digest
+of all measured artifact modules/config. Delete stale receipts before builds and
+reject mismatched fingerprints. Never add a budget-skip environment bypass. A
+failed measurement may yield structured CLI budget diagnostics only when the
+receipt proves that failure; unrelated build failures must remain build failures.
+Then add the plugin to default Cloudflare scaffold composition and verify one
+measurement per build/deploy path, selected environments and stale/failure cases.
+Also cover custom Cloudflare config paths and define watch-build semantics.
+Local/provider startup costs, native development fault acceptance, remote logs
+and deployed source-map resolution retain their full original criteria.
 
 Purpose: An operator needs to connect a production error to a route and action.
 Builds also need to reveal oversized bundles or startup regressions before upload.

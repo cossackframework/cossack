@@ -22,7 +22,33 @@ An exceeded error limit stops before upload. Warning limits report diagnostics
 and allow continuation. `deploy --dry-run` reuses this validation without a
 second deployment invocation. Without budgets, normal commands retain their
 existing measurement behavior. These settings currently require Cloudflare
-artifacts; they do not govern Node/Deno or direct `vite build` commands.
+artifacts; they do not govern Node/Deno builds.
+
+For direct Cloudflare `vite build`, add the opt-in plugin after `cloudflare()`:
+
+```ts
+import { cloudflare } from '@cloudflare/vite-plugin';
+import { cossackBuildBudgets } from '@cossackframework/framework/vite-plugin';
+
+export default {
+  plugins: [cloudflare(), cossackBuildBudgets()],
+};
+```
+
+The plugin measures the primary deployment Worker after Cloudflare's application
+build completes. It validates the selected source target against the fresh built
+artifact and rejects unfinished Worker environments. Auxiliary Workers do not
+receive separate budget measurements. Choose the environment through
+`CLOUDFLARE_ENV` or `cossackBuildBudgets({ environment: 'staging' })`, matching the
+Cloudflare plugin's target selection. Built configs are already environment-specific;
+verification and measurement do not apply that environment a second time.
+
+Use the installed Vite CLI or `createBuilder().buildApp()` for this gate. The
+single-environment `vite.build()` API does not invoke application build hooks.
+The scaffold does not add this plugin automatically yet. A project that opts in
+and also runs the Cossack CLI currently measures again after a successful build;
+a plugin failure is reported by CLI as a build failure. Structured CLI result
+reuse and default scaffold composition remain release work.
 
 JSON results contain `data.buildBudgets.measurements`, `diagnostics` and `valid`.
 Only selected metrics enter the result. Tool stdout/stderr stays private because

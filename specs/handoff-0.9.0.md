@@ -9,26 +9,32 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05).
-RawInputOf now preserves noncoercing field types, and config() accepts typed
-whole objects/subtrees. Framework test fixture types are repaired; package checks
-pass alongside root/core/framework/Node checks and declaration builds. Final
-core tests: 1,581/97 files; framework: 1,707/91 files. No fresh tarball/browser or
-remote gate ran. RT-10 and REL-03 remain open. Direct Vite budget
-integration was audited without edits; follow the ordering, artifact-verification
-and shared-module constraints in CF-08's plan before implementing it.
+Latest Codex progress: [opt-in direct Vite budgets](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
+The `cossackBuildBudgets()` post plugin checks completed Cloudflare application
+builds, fresh primary-target artifacts and private local Wrangler measurements.
+Framework owns Node-only budget/artifact APIs consumed by CLI. Built target reads
+and measurements clear ambient environment selection to prevent a second suffix
+or inherited configuration reset. Final CLI deployment clears selection too. The plugin is opt-in, not scaffold-default.
+Next: implement validated CLI result receipts and default Cloudflare composition
+as described in CF-08's detailed plan; then startup profiling/provider metrics,
+native development faults, production source-map resolution and remote logs.
+Single-environment `vite.build()` bypasses application hooks; use installed CLI
+or `createBuilder().buildApp()`. Do not claim auxiliary Workers are measured.
+Verified: 1,716 framework tests / 94 files, affected CLI units, root/package
+checks and declaration emission. Fresh non-Desktop tarball gate passed at
+/tmp/cossack-local-pack-G0M6gm; after the last CLI fix, updated CLI tarball and
+expanded direct-budget/CLI dry-run helper passed in that retained fixture.
+CLI JSON matrix: 54/54 pass after three cases adopt the existing 30-second
+integration allowance; initial five-second timeouts remain recorded.
+No release task closes in this checkpoint. No blocked work.
 
-Previous Codex progress: [size budgets and Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
-CLI Cloudflare build/deploy enforce configured warning/error upload/gzip size
-budgets after fresh artifact validation. Reports state .01 KiB precision and
-omit arbitrary tool output. Provider startup is unavailable locally and cannot
-pass a hard gate. Deno Vite errors use safe event/body boundaries; authenticated
-compiler results stay private. Native Deno socket failure redaction now passes.
-Next CF-08 work: direct Vite integration, local startup profiling vs provider
-metrics, native development startup/cleanup faults, production source-map
-resolution and remote log acceptance. Cloudflare's September2026 size-limit
-change makes uncompressed size the provider limit; project budgets do not
-hardcode provider limits. No parent task closes in this checkpoint.
+Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
+and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
+RawInputOf and typed config subtree repairs are verified; RT-10 browser criteria
+remain open. CLI build/deploy already enforce project limits and keep raw tool
+output private. Provider startup remains unavailable locally and cannot pass a
+hard gate. Deno failure boundaries preserve authenticated compiler results and
+redact public logs. Versions/counts remain unchanged.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.

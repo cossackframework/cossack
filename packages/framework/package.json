@@ -138,6 +138,14 @@
     "./config-preflight": {
       "types": "./dist/esm/config-preflight.d.ts",
       "import": "./dist/esm/config-preflight.js"
+    },
+    "./build-budgets": {
+      "types": "./dist/esm/build-budgets.d.ts",
+      "import": "./dist/esm/build-budgets.js"
+    },
+    "./deployment-artifact": {
+      "types": "./dist/esm/deployment-artifact.d.ts",
+      "import": "./dist/esm/deployment-artifact.js"
     }
   },
   "files": [

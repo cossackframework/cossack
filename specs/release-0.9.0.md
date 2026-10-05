@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets are implemented; direct Vite budgets, native development faults, startup measurement, source-map resolution and remote Workers Logs ingestion remain open. See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets and an opt-in direct Vite primary-Worker gate are implemented; validated CLI receipt/default scaffold integration, native development faults, startup measurement, source-map resolution and remote Workers Logs ingestion remain open. See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -1641,3 +1641,18 @@ tests/files pass, as do root/core/framework/Node types and declaration builds.
 No parent acceptance row closes: RT-10, CF-08 and
 REL-03 retain their remaining criteria. Counts stay **30 complete / 28 open**.
 Desktop remains complete by user decision; platform checks remain waived.
+
+<a id="codex-direct-vite-budgets-2026-10-05"></a>
+### Codex opt-in direct Vite budgets (2026-10-05)
+
+Added the primary-Worker application build gate and shared Node-only budget/artifact
+APIs. Real staging builds exposed double environment selection; built reads,
+measurement and final CLI deployment now clear ambient selection. Framework
+**1,716/94** tests/files and relevant CLI suites pass; root/package types,
+declarations and fresh non-Desktop installed acceptance pass. The corrected CLI
+was subsequently repacked/reinstalled and its native selected-target dry run
+verified. The final CLI JSON matrix passes **54/54** after three multi-process
+cases adopt the existing 30-second integration allowance; the initial timeout
+failures are recorded. See the [full evidence and limits](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
+CLI receipts/default scaffold integration and other CF-08 criteria remain open.
+Counts remain **30 complete / 28 open**; Desktop checks remain waived.

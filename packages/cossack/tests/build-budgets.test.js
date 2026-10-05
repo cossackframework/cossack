@@ -38,7 +38,7 @@ it.each([{ secret: { error: 2 } }, { uploadKiB: { error: -1 } }, { uploadKiB: { 
 it('measures only the verified artifact using a local dry run', async () => {
   runProjectToolCaptured.mockResolvedValue({ code: 0, stdout: 'Total Upload: 10.00 KiB / gzip: 1.00 KiB', stderr: 'SECRET' });
   expect((await checkBuildBudgets('/project', '/verified/wrangler.json', { uploadKiB: { error: 20 } })).valid).toBe(true);
-  expect(runProjectToolCaptured).toHaveBeenCalledExactlyOnceWith('/project', 'wrangler', ['deploy', '--dry-run', '--config', '/verified/wrangler.json'], { maxOutputBytes: 1024 * 1024 });
+  expect(runProjectToolCaptured).toHaveBeenCalledExactlyOnceWith('/project', 'wrangler', ['deploy', '--dry-run', '--config', '/verified/wrangler.json'], { env: { CLOUDFLARE_ENV: '' }, maxOutputBytes: 1024 * 1024 });
 });
 it('fails measurement without returning arbitrary stderr', async () => {
   runProjectToolCaptured.mockResolvedValue({ code: 2, stdout: 'PRIVATE', stderr: 'SECRET' });

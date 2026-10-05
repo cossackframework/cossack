@@ -3,7 +3,8 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isDeepStrictEqual } from 'node:util';
+import { DeploymentError } from '@cossackframework/framework/deployment-artifact';
+export { DeploymentError, inspectBuiltDeployment } from '@cossackframework/framework/deployment-artifact';
 import { exists } from './fs-utils.js';
 
 const RESOURCE_GROUPS = {
@@ -15,28 +16,8 @@ const RESOURCE_GROUPS = {
   services: { binding: 'binding', reference: 'service', referenceKind: 'service', kind: 'Worker service' },
   workflows: { binding: 'binding', reference: 'name', referenceKind: 'name', kind: 'Workflow' },
 };
-const TARGET_FIELDS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'secrets', ...Object.keys(RESOURCE_GROUPS),
-  'durable_objects', 'queues'];
 const SECRET_NAME = /(?:SECRET|TOKEN|PASSWORD|PRIVATE_KEY|ACCESS_KEY)/i;
 const PLACEHOLDER = /^(?:0{8}-0{4}-0{4}-0{4}-0{12}|0{32}|PLEASE_CHANGE.*|YOUR[_ -].*|<.*>|xxx)$/i;
-
-function deploymentTarget(config, field, root) {
-  if (field !== 'd1_databases') return config[field];
-  const directory = path.dirname(config.configPath ?? path.join(root, 'wrangler.jsonc'));
-  return (config.d1_databases ?? []).map(binding => ({
-    ...binding,
-    // Vite rewrites this source-relative tooling path in its generated config.
-    // Compare resolved directories, preserving every other binding setting.
-    migrations_dir: path.resolve(directory, binding.migrations_dir ?? 'migrations'),
-  }));
-}
-
-export class DeploymentError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.code = code;
-  }
-}
 
 function setupAction(type, referenceKind, configured, reference) {
   const target = type === 'queues' ? 'Queue' : RESOURCE_GROUPS[type].kind;
@@ -210,32 +191,4 @@ export async function inspectDeployment(root, environment) {
       remoteSecrets: 'not-checked' },
     diagnostics,
   };
-}
-
-/** Require the built artifact to match the selected source configuration. */
-export async function inspectBuiltDeployment(root, expected) {
-  const redirectPath = path.join(root, '.wrangler/deploy/config.json');
-  let artifact;
-  try {
-    const redirect = JSON.parse(await fs.readFile(redirectPath, 'utf8'));
-    if (typeof redirect.configPath !== 'string') throw new Error();
-    artifact = path.resolve(path.dirname(redirectPath), redirect.configPath);
-  } catch {
-    throw new DeploymentError('COSSACK_DEPLOY_ARTIFACT_MISSING',
-      'The build did not produce Cloudflare deployment metadata. Enable the Cloudflare Vite plugin.');
-  }
-  const built = await readDeploymentConfig(root, artifact);
-  for (const field of TARGET_FIELDS) {
-    if (!isDeepStrictEqual(deploymentTarget(built, field, root), deploymentTarget(expected, field, root))) {
-      throw new DeploymentError('COSSACK_DEPLOY_TARGET_MISMATCH',
-        `Built ${field} differs from the selected Cloudflare environment. Check the Vite configuration.`);
-    }
-  }
-  for (const field of ['binding', 'run_worker_first', 'html_handling', 'not_found_handling']) {
-    if (!isDeepStrictEqual(built.assets?.[field], expected.assets?.[field])) {
-      throw new DeploymentError('COSSACK_DEPLOY_TARGET_MISMATCH',
-        `Built assets.${field} differs from the selected Cloudflare environment.`);
-    }
-  }
-  return artifact;
 }

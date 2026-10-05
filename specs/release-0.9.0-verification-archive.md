@@ -11181,3 +11181,84 @@ acceptance. REL-03 remains open for its complete non-Desktop final-version gate.
 Direct Vite ordering/shared-module/artifact/receipt constraints are preserved in
 CF-08's detailed plan. No task closed; **30 complete / 28 open**. Desktop is
 complete by user decision, remaining platform checks waived. No blocked work.
+
+<a id="codex-direct-vite-budgets-2026-10-05"></a>
+## Codex: opt-in direct Vite budgets and built-target environment safety (2026-10-05)
+
+Coordinator owns the shared implementation. One read-only agent located actual
+generated/installed Vite fixtures; another reviewed ordering, target verification,
+privacy and final CLI deployment. Neither edited files or ran tests/builds.
+The initial scope review found no defects; its final-deployment follow-up found
+and confirmed the ambient-environment bug described below. Reports/tool settings
+remain user-owned and were excluded from edits/staging.
+
+Behavior: `cossackBuildBudgets()` is an opt-in post application-build plugin after
+Cloudflare. It rejects unfinished Worker environments, deletes stale redirect
+metadata before building, validates the fresh primary artifact against selected
+source config, measures private bounded Wrangler output and enforces warning/error
+limits. Primary Worker scope and the installed CLI/createBuilder().buildApp()
+requirement are documented. The single-environment Vite build() API bypasses these
+hooks; no claim is made for that API. Framework owns Node-only budget/artifact
+modules, exported for CLI reuse, with no framework-to-CLI dependency.
+
+The actual staging fixture initially failed target comparison: Wrangler reads
+CLOUDFLARE_ENV even with explicit generated config, treating it as an ordinary
+config and applying the environment again. Built-artifact reads now pass explicit
+empty env; measurement clears ambient selection. Review caught the same issue in
+final CLI deployment, which now clears selection only after types and Vite build.
+Source selection stays intact. Unit and published CLI tests verify this boundary.
+No remote upload was performed.
+
+Verified source/build evidence:
+- Framework declaration emitter passes; root pnpm tsc --noEmit and framework
+  package --noEmit pass. Root is references-only; package checks provide source
+  and test checking. Final logs are recorded below.
+- Full framework: **1,716 tests / 94 files**, all pass. Includes 6 plugin cases,
+  real Wrangler ambient-target verification and 2 native private-capture cases.
+- CLI budget/artifact/generated suite: **35 tests / 4 files**, all pass, including
+  actual staging Vite warning, hard-error and generous-limit builds and deliberately
+  stale initial metadata. After final deployment correction, affected CLI unit
+  suites pass **43 tests / 4 files** (including 10 deploy tests). The overlapping
+  runs are not added together as distinct coverage.
+- Modified JS/MJS syntax and owned-file whitespace checks pass.
+
+Installed evidence: the fresh non-Desktop command
+COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --agent-docs-only
+passes, retained at /tmp/cossack-local-pack-G0M6gm. It uses real tarballs,
+Vite 8.3.2 and Wrangler 4.147.0, versus workspace Vite 8.1.4/Wrangler 4.114.0.
+It verifies configuration inference/preflight, 76 usage examples, 4 auth examples,
+D1/workerd behavior, CLI/MCP parity, HTTP/SSE/WebSocket browser traces, private
+SSR hydration/RPC/client source-map secrecy, plus installed direct budget warning,
+hard rejection, selected target and private measurement. Its database package
+build also passes 93 tests / 15 files and the neutral Workers bundle audit.
+This full gate completed before the final CLI deployment correction. The CLI
+was then repacked into /tmp/cossack-final-cli-pack/cossack-0.8.3.tgz, reinstalled in
+the retained project, and the expanded published helper rerun successfully:
+installed direct Vite warnings/rejection/target/privacy plus actual corrected
+CLI selected-target types/build/artifact dry run. That targeted run verifies the
+last CLI change; do not call it another complete tarball gate.
+
+CLI JSON timing evidence: the initial 54-case run passed 51 cases; 3 real
+multi-command cases hit their default five-second test timeout. An isolated retry
+also timed out all 3. Those cases now use the existing neighboring 30-second
+integration allowance, retaining every behavior/output/snapshot assertion.
+Final `pnpm --dir packages/cossack exec vitest run tests/cli-json-matrix.test.js
+--maxWorkers=1` passes **54/54** with those per-case timeouts. Duration: 144.78s.
+The ordinary full run failed its three original timeout budgets, not behavior
+assertions; no passing result is claimed for that earlier run.
+This adjusts test harness timing; it does not prove CLI latency improved.
+
+Logs: /tmp/cossack-direct-budget-{build-final,root-verified,
+framework-types-verified,framework-final,cli-final,cli-verified,
+cli-matrix-final,installed,published-final}.log. Initial mismatch and timeouts
+remain in cli-tests, cli-matrix and cli-matrix-retry logs.
+
+Limits/next work: CLI result receipts and default Cloudflare scaffold composition
+remain open. Opted-in CLI builds currently measure twice when successful and
+report plugin rejection as a build failure. Keep receipt validation bound to a
+fresh invocation, settings, environment and artifact modules/config; no bypass.
+Custom config paths/watch semantics, auxiliary Worker policies, local/provider
+startup metrics, native development faults, deployed source maps and remote logs
+remain as specified in the detailed plan. Desktop stays complete by user decision,
+platform checks waived. No parent acceptance row closed; **30 complete / 28 open**.
+Versions stay 0.8.3 until REL-04. No blocked work.

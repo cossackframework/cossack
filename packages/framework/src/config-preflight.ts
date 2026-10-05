@@ -47,7 +47,7 @@ export async function readCloudflareDeclarationConfig(root: string, configPath: 
     if (environment && !Object.hasOwn(rawConfig.env ?? {}, environment)) {
       throw new ConfigPreflightError('COSSACK_ENVIRONMENT_UNKNOWN', `Cloudflare environment "${environment}" is not defined in the Wrangler configuration.`);
     }
-    return wrangler.unstable_readConfig({ config: configPath, ...(environment ? { env: environment } : {}) }, { hideWarnings: true });
+    return wrangler.unstable_readConfig({ config: configPath, ...(environment !== undefined ? { env: environment } : {}) }, { hideWarnings: true });
   } catch (error) {
     if (error instanceof ConfigPreflightError) throw error;
     throw new ConfigPreflightError('COSSACK_WRANGLER_CONFIG_INVALID', 'Wrangler could not validate the configuration. Check its syntax and binding declarations.');

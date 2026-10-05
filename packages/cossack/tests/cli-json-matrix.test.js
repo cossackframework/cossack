@@ -175,7 +175,7 @@ describe('finite command success / failure / dry-run matrix', () => {
     envelope(await execute(['delete', 'component', 'Badge', '--json'], { cwd }), 'delete');
     expect(await snapshot(cwd)).toEqual(before);
     envelope(await execute(['delete', 'component', 'Badge', '--json'], { cwd }), 'delete', false);
-  });
+  }, 30_000); // Several real CLI subprocesses; match neighboring integration cases.
 
   it('lang publishes and adds catalogs, and formats the default-locale failure', async () => {
     const cwd = await application();
@@ -187,7 +187,7 @@ describe('finite command success / failure / dry-run matrix', () => {
     expect(JSON.parse(await fs.readFile(path.join(cwd, 'src/lang/es.json'), 'utf8'))).toHaveProperty('welcome');
     const failed = envelope(await execute(['lang', 'add', 'en', '--json'], { cwd }), 'lang', false);
     expect(failed.diagnostics[0].code).toBe('COSSACK_LOCALE_DEFAULT');
-  });
+  }, 30_000); // Several real CLI subprocesses; match neighboring integration cases.
 
   it.each(['build', 'ssg'])('%s isolates successful project output', async command => {
     const tools = path.join(root, 'tools');
@@ -305,7 +305,7 @@ describe('finite command success / failure / dry-run matrix', () => {
     envelope(await execute(['--version', '--typo', '--json']), 'version', false);
     expect(envelope(await execute(['unknown:action', '--json']), 'unknown:action', false)
       .diagnostics[0].code).toBe('COSSACK_COMMAND_UNKNOWN');
-  });
+  }, 30_000); // Several real CLI subprocesses; match neighboring integration cases.
 
   it('info excludes noisy package-manager version output', async () => {
     const tools = path.join(root, 'tools'); await fs.mkdir(tools);

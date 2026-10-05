@@ -3,12 +3,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
 import { deployCommand } from '../src/commands/deploy.js';
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 let parent;
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); if (parent) await fs.rm(parent, { recursive: true, force: true }); });
-it('rejects an actual generated Worker artifact against a deliberate size regression without upload', async () => {
+async function fixture(budgets = { uploadKiB: { error: 0.001 } }) {
   vi.stubEnv('VITEST', ''); vi.stubEnv('NODE_ENV', 'production'); vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-budget-integration-'));
   const { projectDir } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', interactive: false });
@@ -22,12 +25,16 @@ it('rejects an actual generated Worker artifact against a deliberate size regres
     await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
   const manifestPath = path.join(projectDir, 'package.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-  manifest.cossack = { buildBudgets: { uploadKiB: { error: 0.001 } } };
+  manifest.cossack = { buildBudgets: budgets };
   await fs.writeFile(manifestPath, JSON.stringify(manifest));
   const configPath = path.join(projectDir, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   config.vars.APP_URL = 'https://budget.example.test';
   await fs.writeFile(configPath, JSON.stringify(config));
+  return { projectDir, manifestPath, manifest, configPath, config };
+}
+it('rejects an actual generated Worker artifact against a deliberate size regression without upload', async () => {
+  const { projectDir } = await fixture();
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
   expect(await deployCommand([], { cwd: projectDir, flags: { json: true, 'dry-run': true }, dryRun: true })).toBe(1);
   const result = JSON.parse(log.mock.calls.at(-1)[0]);
@@ -37,3 +44,38 @@ it('rejects an actual generated Worker artifact against a deliberate size regres
   expect(result.data.buildBudgets.measurements[0].value).toBeGreaterThan(0.001);
   expect(result.diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_EXCEEDED');
 }, 120000);
+
+it('enforces direct installed Vite budgets for a completed selected-environment Worker', async () => {
+  const { projectDir, manifestPath, manifest, configPath, config } = await fixture({ uploadKiB: { warning: 0.001 } });
+  const viteConfig = path.join(projectDir, 'vite.config.ts');
+  let source = await fs.readFile(viteConfig, 'utf8');
+  source = source.replace('cossackMiddlewares, cossackConfig }', 'cossackMiddlewares, cossackConfig, cossackBuildBudgets }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackBuildBudgets(),');
+  await fs.writeFile(viteConfig, source);
+  config.env = { staging: { name: config.name + '-staging', vars: { ...config.vars, APP_URL: 'https://staging-budget.example.test', BUDGET_MARKER: 'PRIVATE_BUDGET_VALUE_SENTINEL' }, secrets: config.secrets, durable_objects: config.durable_objects } };
+  await fs.writeFile(configPath, JSON.stringify(config));
+  await fs.mkdir(path.join(projectDir, '.wrangler/deploy'), { recursive: true });
+  await fs.writeFile(path.join(projectDir, '.wrangler/deploy/config.json'), JSON.stringify({ configPath: '../../stale.json' }));
+  const require = createRequire(path.join(projectDir, 'package.json'));
+  const vite = path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js');
+  const build = async () => {
+    try { const result = await promisify(execFile)(process.execPath, [vite, 'build'], { cwd: projectDir, env: { ...process.env, CLOUDFLARE_ENV: 'staging' }, maxBuffer: 16 * 1024 * 1024, timeout: 120000 }); return { code: 0, output: result.stdout + result.stderr }; }
+    catch (error) { return { code: error.code, output: error.stdout + error.stderr }; }
+  };
+  const warned = await build();
+  expect(warned.code, warned.output).toBe(0);
+  expect(warned.output).toContain('COSSACK_BUILD_BUDGET_EXCEEDED');
+  expect(warned.output).not.toContain('PRIVATE_BUDGET_VALUE_SENTINEL');
+  const redirect = JSON.parse(await fs.readFile(path.join(projectDir, '.wrangler/deploy/config.json'), 'utf8'));
+  const artifact = JSON.parse(await fs.readFile(path.resolve(projectDir, '.wrangler/deploy', redirect.configPath), 'utf8'));
+  expect(artifact.name).toBe(config.env.staging.name);
+  expect(artifact.vars.APP_URL).toBe('https://staging-budget.example.test');
+  manifest.cossack.buildBudgets = { uploadKiB: { error: 0.001 } };
+  await fs.writeFile(manifestPath, JSON.stringify(manifest));
+  const rejected = await build();
+  expect(rejected.code).not.toBe(0); expect(rejected.output).toContain('COSSACK_BUILD_BUDGET_EXCEEDED');
+  expect(rejected.output).not.toContain('PRIVATE_BUDGET_VALUE_SENTINEL');
+  manifest.cossack.buildBudgets = { uploadKiB: { error: 100000 } };
+  await fs.writeFile(manifestPath, JSON.stringify(manifest));
+  const accepted = await build(); expect(accepted.code, accepted.output).toBe(0);
+  expect(accepted.output).not.toContain('COSSACK_BUILD_BUDGET_EXCEEDED');
+}, 240000);

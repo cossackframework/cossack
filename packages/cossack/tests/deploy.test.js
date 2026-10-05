@@ -56,7 +56,8 @@ describe('deploy command', () => {
     const calls = runProjectTool.mock.calls;
     expect(calls[0][2]).toEqual(['types', '--config', path.join(ctx.cwd, 'wrangler.jsonc'), '--env-interface', 'CloudflareBindings', '--env', 'staging']);
     expect(calls[1].slice(0, 3)).toEqual([ctx.cwd, 'vite', ['build', '--mode', 'test']]);
-    for (const call of calls) expect(call[3].env.CLOUDFLARE_ENV).toBe('staging');
+    for (const call of calls.slice(0, 2)) expect(call[3].env.CLOUDFLARE_ENV).toBe('staging');
+    expect(calls[2][3].env.CLOUDFLARE_ENV).toBe('');
     expect(calls[2][2]).toEqual(['deploy', '--config', path.join(ctx.cwd, 'dist/wrangler.json'), '--dry-run']);
     expect(ctx.log).toHaveBeenCalledTimes(1);
     expect(JSON.parse(ctx.log.mock.calls[0][0])).toMatchObject({ schemaVersion: 1, command: 'deploy', ok: true, data: { dryRun: true, steps: [{ name: 'types' }, { name: 'build' }, { name: 'deploy' }] } });
