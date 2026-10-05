@@ -134,6 +134,9 @@ declare it.
 Every declaration creates one instance for that layout scope, regardless of
 how many descendants inject it. All consumers rerender when one of the
 service's `@State` fields or nested `@Store` values changes.
+If a later declared service fails during construction or hydration, the
+partially built scope disposes services that were already created; async
+cleanup remains tracked by its parent scope.
 
 - Each SSR request gets a fresh root scope, so requests cannot share service
  state or user data.

@@ -10482,3 +10482,18 @@ checks.
 registry generation from `src/config/*.ts` was not added. This checkpoint does
 not complete RT-24. No task count changed: 30 complete / 28 open. The complete
 current summary is in the [release checklist](./release-0.9.0.md#codex-rt24-typed-paths-2026-10-05).
+
+### Codex RT-12 service-scope construction rollback (2026-10-05)
+
+If a declared service constructor or hydration step fails after earlier
+services have initialized, the framework now begins disposal of the partial
+scope before rethrowing the construction error. Existing instances receive
+`onDispose()` once, and pending asynchronous cleanup remains attached to the
+parent so an awaitable parent disposal observes it. The public services guide
+describes the behavior.
+
+**Verification:** `pnpm --filter @cossackframework/core exec vitest run tests/cleanup.test.ts` passes **8 tests**. The added regression blocks an earlier service's async `onDispose()`, forces a later constructor to throw, and confirms parent `disposeAsync()` waits until cleanup finishes. Root `pnpm tsc --noEmit` passes. `git diff --check` passes for the implementation and test files.
+
+**Limits:** This covers partially initialized service scopes. It does not
+complete RT-12 runtime metadata/lifecycle acceptance or the CLI/release gates.
+No task count changed: 30 complete / 28 open.

@@ -94,39 +94,52 @@ export class ServiceScope {
                 subscribers: this.subscribers.size, services, truncated: this.owned.size > 64 };
         });
 
-        const seen = new Set<ServiceClass>();
-        declarations.forEach((serviceClass, index) => {
-            if (seen.has(serviceClass)) {
-                throw new Error(
-                    `[Cossack] Duplicate service ${serviceClass.name || '<anonymous>'} in services for ` +
-                    `${this.ownerRoutePath || this.ownerRouteId || 'layout'}.`,
-                );
-            }
-            seen.add(serviceClass);
-            if (!isService(serviceClass)) {
-                throw new Error(
-                    `[Cossack] ${serviceClass.name || '<anonymous>'} in services for ` +
-                    `${this.ownerRoutePath || this.ownerRouteId || 'layout'} is not decorated with @Service().`,
-                );
-            }
-            // Declaration index is stable across separately minified server
-            // and client bundles; class names are not.
-            const slot = String(index);
-            // Reserve the declaration before instantiation so constructor
-            // cycles produce a useful scope-level error.
-            this.owned.set(serviceClass, { serviceClass, slot, instance: undefined });
-        });
+        try {
+            const seen = new Set<ServiceClass>();
+            declarations.forEach((serviceClass, index) => {
+                if (seen.has(serviceClass)) {
+                    throw new Error(
+                        `[Cossack] Duplicate service ${serviceClass.name || '<anonymous>'} in services for ` +
+                        `${this.ownerRoutePath || this.ownerRouteId || 'layout'}.`,
+                    );
+                }
+                seen.add(serviceClass);
+                if (!isService(serviceClass)) {
+                    throw new Error(
+                        `[Cossack] ${serviceClass.name || '<anonymous>'} in services for ` +
+                        `${this.ownerRoutePath || this.ownerRouteId || 'layout'} is not decorated with @Service().`,
+                    );
+                }
+                // Declaration index is stable across separately minified server
+                // and client bundles; class names are not.
+                const slot = String(index);
+                // Reserve the declaration before instantiation so constructor
+                // cycles produce a useful scope-level error.
+                this.owned.set(serviceClass, { serviceClass, slot, instance: undefined });
+            });
 
-        for (const serviceClass of declarations) {
-            const entry = this.owned.get(serviceClass)!;
-            if (entry.instance === undefined) {
-                entry.instance = this.instantiateOwned(serviceClass);
-                bootstrapService(entry.instance);
+            for (const serviceClass of declarations) {
+                const entry = this.owned.get(serviceClass)!;
+                if (entry.instance === undefined) {
+                    entry.instance = this.instantiateOwned(serviceClass);
+                    bootstrapService(entry.instance);
+                }
+                const hydrated = options.initialState?.[entry.slot];
+                if (hydrated) hydrateServiceState(entry.instance, hydrated);
+                this.ownedBySlot.set(entry.slot, entry);
+                this.installClientProxy(entry);
             }
-            const hydrated = options.initialState?.[entry.slot];
-            if (hydrated) hydrateServiceState(entry.instance, hydrated);
-            this.ownedBySlot.set(entry.slot, entry);
-            this.installClientProxy(entry);
+        } catch (error) {
+            // Construction can fail after earlier services have acquired
+            // resources. Roll back this partially initialized scope, while
+            // keeping async cleanup observable to a parent that is also torn
+            // down. The construction error remains the primary failure.
+            void this.beginDisposal().then(errors => {
+                for (const cleanupError of errors) {
+                    console.error('[Cossack] Service scope setup cleanup failed:', cleanupError);
+                }
+            });
+            throw error;
         }
     }
 

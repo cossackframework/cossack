@@ -619,6 +619,15 @@ metadata/lifecycle behavior and the full CLI/release gates remain open, so this
 checkpoint does not close RT-12. See the
 [browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
 
+Codex construction-lifecycle checkpoint (2026-10-05): if a later service
+constructor or hydration step throws while a layout scope is being created,
+the partial scope now disposes earlier instances before rethrowing the primary
+failure. A parent scope tracks and awaits any asynchronous cleanup that began
+during rollback. The service guide describes this behavior. The focused core
+cleanup suite passes all 8 tests and root typechecking passes. This does not
+close RT-12; runtime metadata/lifecycle combinations and the full CLI/release
+gates remain open.
+
 <a id="rt-15"></a>
 ### RT-15: Database DX and provider capabilities
 

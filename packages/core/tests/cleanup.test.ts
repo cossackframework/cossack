@@ -54,6 +54,34 @@ describe('awaitable cleanup', () => {
     expect(finished).toHaveBeenCalledTimes(1);
   });
 
+  it('cleans already-created services when a later service constructor throws', async () => {
+    const released = gate();
+    const calls: string[] = [];
+    const constructionFailure = new Error('service construction failed');
+    @Service()
+    class First {
+      async onDispose() {
+        calls.push('dispose:start');
+        await released.promise;
+        calls.push('dispose:end');
+      }
+    }
+    @Service()
+    class Broken {
+      constructor() { throw constructionFailure; }
+    }
+
+    const root = new ServiceScope();
+    expect(() => new ServiceScope(root, [First, Broken], { ownerRoutePath: '/src/pages/layout.ts' }))
+      .toThrow(constructionFailure);
+    const rootDisposal = root.disposeAsync();
+    await Promise.resolve();
+    expect(calls).toEqual(['dispose:start']);
+    released.open();
+    await rootDisposal;
+    expect(calls).toEqual(['dispose:start', 'dispose:end']);
+  });
+
   it('destroys descendants and awaits their hooks when synchronous destroy ran first', async () => {
     const released = gate();
     const childCleanup = vi.fn();

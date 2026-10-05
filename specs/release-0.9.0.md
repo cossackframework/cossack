@@ -40,7 +40,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno claim each signed nonce once per loaded module instance in a bounded 10,000-entry store; expired claims are purged and capacity fails closed. This does not coordinate across processes/isolates or survive restart. Remaining: broader concurrent request semantics and cross-process replay guarantees. See [process-local flash claims](#codex-rt11-process-flash-claims-2026-10-05), [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
-- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures and scoped disposal. Codex adds static TypeScript-source `serviceOwnership` for imported/re-exported tokens and inherited layout decorators, and classifies imported core `@Service()` syntax as declared, missing or unknown without running project code. Generated Node/Cloudflare browser acceptance now passes navigation, SSE and WebSocket ownership checks after the synthetic auth fixture supplies its required identity provider. Remaining: runtime metadata/lifecycle behavior and broader release acceptance. See the [ownership-inspection checkpoint](./release-0.9.0-plan.md#rt-12) and [browser checkpoint](#codex-rt12-navigation-fixture-2026-10-05).
+- [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures and scoped disposal. Codex adds static TypeScript-source `serviceOwnership` for imported/re-exported tokens and inherited layout decorators, and classifies imported core `@Service()` syntax as declared, missing or unknown without running project code. Generated Node/Cloudflare browser acceptance now passes navigation, SSE and WebSocket ownership checks after the synthetic auth fixture supplies its required identity provider. A later service-constructor failure now disposes earlier instances in the partial scope; focused cleanup tests and root typechecking pass. Remaining: runtime metadata/lifecycle behavior and broader release acceptance. See the [ownership-inspection checkpoint](./release-0.9.0-plan.md#rt-12), [browser checkpoint](#codex-rt12-navigation-fixture-2026-10-05), and [construction rollback checkpoint](#codex-rt12-construction-rollback-2026-10-05).
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
 - [ ] [RT-15](./release-0.9.0-plan.md#rt-15) Database metadata, relationships, provider capabilities, query diagnostics, pagination, and transactions.
@@ -972,6 +972,22 @@ RT-24 remains open: the project still has to register its own config shapes
 manually. No registry generator was added. Release status remains **30 complete
 / 28 open**.
 
+<a id="codex-rt12-construction-rollback-2026-10-05"></a>
+### Codex: Roll back partial service-scope construction (2026-10-05)
+
+If a declared service constructor or hydration step failed after an earlier
+service had initialized, `ServiceScope` previously threw without disposing the
+partial scope. Construction now starts normal scope disposal before rethrowing
+the original failure. Existing services run `onDispose()` once, and the parent
+tracks pending async cleanup so its own `disposeAsync()` waits for it. The user
+guide now documents this behavior.
+
+**Verification:** `pnpm --filter @cossackframework/core exec vitest run tests/cleanup.test.ts` passes **8 tests**, including a regression where a later constructor throws while an earlier service's async cleanup is held behind a gate. Root `pnpm tsc --noEmit` passes. `git diff --check` passes for the implementation and test files.
+
+RT-12 remains open: this covers failed scope setup only. It does not prove all
+runtime metadata/lifecycle combinations or the complete CLI/release gates. Task
+status remains **30 complete / 28 open**.
+
 ### Archived checkpoints
 
 Codex compacted the recorded checkpoints on 2026-10-04. Full evidence and limits
@@ -1161,3 +1177,4 @@ parent task. Current status is 30 complete and 28 open.
 | <a id="codex-rt11-process-flash-claims-2026-10-05"></a>[Codex: Process-local flash replay claims (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05) |
 | <a id="codex-rt12-navigation-fixture-2026-10-05"></a>[Codex: Navigation ownership browser acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-navigation-fixture-2026-10-05) |
 | <a id="codex-rt24-typed-paths-2026-10-05-index"></a>[Codex: Reject misspelled typed configuration paths (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt24-typed-paths-2026-10-05) |
+| <a id="codex-rt12-construction-rollback-2026-10-05-index"></a>[Codex: Roll back partial service-scope construction (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-service-scope-construction-rollback-2026-10-05) |

@@ -205,7 +205,9 @@ Latest Cloudflare progress: [CF-04 scaffold guidance](./release-0.9.0.md#codex-c
    WebSocket lifetime. The earlier HTTP 409 came from synthetic-user middleware
    missing `captureRealtimeIdentity`; the fixture now supplies a test-only
    descriptor. Runtime metadata/lifecycle behavior remains open, so RT-12 stays
-   open. See the [browser checkpoint](./release-0.9.0.md#codex-rt12-navigation-fixture-2026-10-05).
+   open. Partial service-scope construction now rolls back earlier services if
+   a later constructor or hydration fails; the focused cleanup suite and root
+   typecheck pass. See the [construction rollback checkpoint](./release-0.9.0.md#codex-rt12-construction-rollback-2026-10-05).
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 6. [RT-24 typed config paths](./release-0.9.0.md#codex-rt24-typed-paths-2026-10-05)
