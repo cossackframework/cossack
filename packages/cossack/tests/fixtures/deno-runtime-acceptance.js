@@ -112,23 +112,38 @@ export async function verifyDenoRuntimeApplication(root, binary = process.env.CO
         headers: { origin: requestOrigin },
       });
       socket.on('error', () => {});
-      const status = await new Promise((resolve, reject) => {
+      const outcome = await new Promise((resolve, reject) => {
+        const frames = [];
+        const rejectOrigin = requestOrigin !== origin;
         const timer = setTimeout(() => {
           socket.terminate();
           reject(new Error('Forbidden upgrade timed out'));
         }, 5000);
-        socket.once('close', () => clearTimeout(timer));
+        socket.once('close', code => {
+          clearTimeout(timer);
+          if (!rejectOrigin) resolve({ code, frames });
+        });
+        socket.on('message', data => {
+          try { frames.push(JSON.parse(String(data))); }
+          catch (error) { socket.terminate(); reject(error); }
+        });
         socket.once('open', () => {
-          socket.terminate();
-          reject(new Error('Forbidden upgrade accepted'));
+          if (rejectOrigin) {
+            socket.terminate();
+            reject(new Error('Forbidden origin upgrade accepted'));
+          }
         });
         socket.once('unexpected-response', (_request, response) => {
           response.resume();
           socket.terminate();
-          resolve(response.statusCode);
+          resolve({ status: response.statusCode });
         });
       });
-      expect(status).toBe(403);
+      if (requestOrigin !== origin) expect(outcome).toEqual({ status: 403 });
+      else expect(outcome).toEqual({ code: 1008, frames: [{
+        type: 'authorization-error', code: 'COSSACK_REALTIME_AUTH_CHANGED',
+        message: 'Realtime authorization changed. Reload the page to reconnect.',
+      }] });
     }
   } catch (error) {
     failure = new Error(`${error.stack}\nDeno output:\n${output}`);

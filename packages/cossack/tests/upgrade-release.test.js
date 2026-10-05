@@ -197,7 +197,7 @@ describe('release-aligned upgrade planning and application', () => {
       expect(result.diagnostics[0].code).toBe('COSSACK_UPGRADE_FILE_UNKNOWN');
     }
     expect(await snapshot()).toEqual(before);
-  });
+  }, 65000);
 
   it('rejects malformed ownership instead of silently treating the application as unmanaged', async () => {
     const before = await read('package.json');

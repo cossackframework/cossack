@@ -16,22 +16,27 @@ Cossack applications deploy to Cloudflare Workers using Wrangler.
 
 ### Configure
 
-Your project includes a `wrangler.jsonc` with the required bindings:
+The minimal Cloudflare preset writes `wrangler.jsonc` with `src/index.ts`,
+the `COSSACK_SSE` binding, and a SQLite Durable Object migration:
 
 ```jsonc
 {
   "name": "my-app",
   "main": "./src/index.ts",
+  "compatibility_date": "2026-06-06",
+  "compatibility_flags": ["nodejs_als", "enable_request_signal"],
   "durable_objects": {
-    "bindings": [
-      { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" }
-    ]
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
   },
-  "migrations": [
-    { "tag": "v1", "new_classes": ["AppDurableObject"] }
-  ]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]
 }
 ```
+
+This excerpt shows the entry and coordinator configuration; keep the generated
+assets, variables, and required-secret declarations too. Set `vars.APP_URL` to
+your application's URL before running deployment checks. The default `https://example.com`
+URL deliberately fails preflight. Feature presets may add bindings that require
+explicit resource selection before deployment.
 
 ### Static assets and authentication
 
@@ -119,7 +124,9 @@ environments, secrets in `vars`, placeholder resources, and a placeholder
 `--dry-run` writes generated types and build artifacts and runs Wrangler's
 local deployment validation. It does not upload or provision resources.
 It does not prove that remote secrets, permissions, or resources are ready.
-Wrangler validates required remote secrets during a real deployment.
+Wrangler validates required remote secrets during a real deployment. A dry-run
+can succeed without `.dev.vars` or remotely stored secrets; its generated
+artifact retains the required secret names, and remote readiness remains unchecked.
 
 ### Environments and CI
 
@@ -133,6 +140,23 @@ pnpm exec cossack deploy --env staging
 
 Define `env.staging` in Wrangler first. Declare its variables and bindings
 explicitly because these settings do not inherit from the top-level config.
+For the minimal preset, a staging environment can use this configuration inside
+its generated Wrangler file. Keep the top-level SQLite migration; provide a
+separate Worker name and repeat the coordinator binding:
+
+```jsonc
+"env": {
+  "staging": {
+    "name": "my-app-staging",
+    "vars": { "APP_URL": "https://staging.example.net", "APP_LOCALE": "en" },
+    "secrets": { "required": ["APP_SECRET"] },
+    "durable_objects": {
+      "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+    }
+  }
+}
+```
+
 Cossack sets `CLOUDFLARE_ENV` before Vite loads the project configuration, so
 local development, regular builds, SSG, and deployment use the selected
 environment for configuration, bindings, and static URLs. `--mode` optionally
@@ -170,9 +194,9 @@ combination's development HTTP asset bridge. Cossack excludes those handshakes
 before asset lookup; global request and transport policies still run.
 
 The focused navigation, guard, and view-transition suites pass with this fix.
-This checkpoint does not yet certify other dependency combinations or the
-complete deployment guide. Keep the release checklist open until generated
-projects and all release gates pass.
+This browser checkpoint does not certify other dependency combinations. The
+generated deployment baseline below separately covers the executable guide;
+the remaining release gates retain their own acceptance requirements.
 
 ### Environment Variables and Secrets
 
@@ -255,6 +279,21 @@ Add a custom domain to your Worker in the Cloudflare dashboard under **Workers &
 }
 ```
 
+A [Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
+uses the Worker as the origin for the whole hostname. A
+[route](https://developers.cloudflare.com/workers/configuration/routing/routes/)
+intercepts matching requests in an existing Cloudflare zone, for example:
+
+```jsonc
+"routes": [
+  { "pattern": "www.example.net/api/*", "zone_name": "example.net" }
+]
+```
+
+Put staging domains and routes inside `env.staging`; check that the built artifact
+contains those selected values. A local dry-run validates configuration and output;
+activating DNS, certificates, and routes needs a real deployment in your account.
+
 ---
 
 ## Node.js
@@ -269,7 +308,16 @@ pnpm build
 node dist/server/index.js
 ```
 
-State is memory-only in Node.js mode : use an external database for persistence.
+Component, WebSocket, and SSE coordinator state is local to each Node process.
+Use database or storage providers for persisted application data. Multiple server
+processes need a shared coordinator for cross-process state and broadcasts.
+
+The generated production entry handles `SIGTERM` and `SIGINT` by stopping new
+HTTP admissions, finishing accepted responses, and disposing the runtime. Repeated
+signals share the same shutdown operation. The default deadline is 10 seconds;
+forced shutdown or failed cleanup exits with status 1. Disposal can cancel framework
+work, but external I/O that ignores cancellation may still complete. Shutdown does
+not roll back database writes or other side effects.
 
 ---
 
@@ -282,3 +330,57 @@ For fully static pages, use the SSG feature to pre-render pages at build time. S
 Optional `package.json` `cossack.buildBudgets` limits gate fresh Cloudflare
 artifacts before upload. Warning/error diagnostics report measured upload/gzip
 KiB and their rounding resolution. See [Build budgets](./build-budgets.md).
+
+### Generated deployment baseline
+
+The local generated-guide verifier passed on 2026-10-06 with this installed
+combination. Package versions remain 0.8.3 until the release version task.
+
+| Tool or setting | Verified value |
+| --- | --- |
+| Node.js | 24.19.0 |
+| Cossack CLI and Framework | 0.8.3 release worktree tarballs |
+| Vite | 8.3.2 |
+| `@cloudflare/vite-plugin` | 1.62.5 |
+| Wrangler | 4.147.0 |
+| Generated compatibility date | 2026-06-06 |
+| Generated flags | `nodejs_als`, `enable_request_signal` |
+
+This proves local build and deployment dry-run for the minimal preset, including
+explicit staging configuration and SSG output. The
+browser-development checkpoint above is separate evidence. A project Wrangler
+without the required configuration parser APIs fails with
+`COSSACK_WRANGLER_API_UNSUPPORTED`; install a compatible project Wrangler.
+
+### Repeatable local guide acceptance
+
+Repository maintainers can run `node scripts/verify-deployment-guide.mjs <installed-project>`
+against a generated project with installed package tarballs. The verifier creates
+a disposable minimal app using the installed CLI, checks the generated placeholder
+rejection, sets the documented application URL, runs inspection, check, build, and
+Wrangler dry-run, and checks an unavailable Wrangler parser. It also exercises
+named-environment development HTTP and shutdown, builds, explicit Vite mode
+selection, SSG HTML and sitemap
+output, required-secret declarations without local secrets, and custom-domain
+and route configuration preserved in built artifacts. It reports the exact
+installed tool versions. It does not certify remote provisioning, preview isolation,
+CI promotion, rollback, or unpublished dependency combinations.
+
+The generated-app CI gate runs this verifier through `pnpm test:scaffold:local`.
+For a focused run, use `node scripts/test-local-scaffold.mjs --deployment-guide-only`;
+`--reuse-artifacts=<directory>` reuses an existing release tarball set. The verifier
+disables optional Cloudflare metadata fetching and telemetry, and rejects any
+non-loopback network attempt. Local dry-run success does not prove remote readiness.
+
+The generated Node production entry has a separate repeatable signal check:
+
+```sh
+COSSACK_NODE_SHUTDOWN_INSTALLED_ROOT=/absolute/path/to/installed-project \
+pnpm --filter cossack exec vitest run tests/generated-node-shutdown.test.js
+```
+
+This repository acceptance command uses the installed CLI to generate a disposable
+Node project and exercises the built `dist/server/index.js` with real signals.
+It checks an accepted response draining under `SIGTERM`, and uncooperative work
+reaching the deadline under `SIGINT` with a repeated signal. Omit the environment
+variable to use the workspace development packages instead of installed tarballs.

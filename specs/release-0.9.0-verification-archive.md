@@ -12694,3 +12694,252 @@ REL-03 retains complete non-Desktop unit/build/runtime gates. CLI-08's focused
 installed documentation criteria are proven independently of those broader gates.
 Versions remain **0.8.3** until REL-04. No publication, push, deployment or
 credential rotation occurred.
+
+<a id="codex-cf10-release-batch-2026-10-06"></a>
+## Codex: CF-10 complete; installed/native release acceptance (2026-10-06)
+
+**Author: Codex. CF-10 complete; 51 complete / 7 open.** REL-02/REL-03 remain
+open for their full criteria. This batch chose executable guide acceptance,
+installed/generated package acceptance, and the complete CLI suite because they
+exercise existing features and expose release gaps. Three implementation agents
+owned separate guide, package-matrix and CLI-fixture files. Codex integrated and
+reviewed them, owned the shared Node lifecycle API and stream fix, and ran the
+final type checks. No user changes or previous Workflow probes were staged.
+
+### CF-10 criterion mapping
+
+| Original criterion | Verified evidence |
+| --- | --- |
+| New user follows the public guide without repository imports or private configuration patches | Installed CLI creates a disposable minimal app with pnpm. The only configuration changes are the documented application URL, authored staging environment/routes/secrets, and public SSG page. Generated entry/date/flags/coordinator/migration declarations match the guide. |
+| Supported combinations build and dry-run | Default and staging inspect/check/build/deploy dry-run succeed. Staging Vite mode selection, SSG HTML/sitemap URL, local dev HTTP 200 and bounded shutdown succeed. Built configuration preserves selected Worker, custom-domain and zone routes, required secret names, date and flags. Final dry-run succeeds after deleting local secret files. |
+| Unsupported combinations fail clearly | Generated placeholder URL and undeclared environment reject. A project Wrangler without configuration parser APIs returns `COSSACK_WRANGLER_API_UNSUPPORTED`. |
+| CI executes guide commands | `scripts/test-local-scaffold.mjs` runs the verifier in the normal generated-app gate and exposes `--deployment-guide-only`. Workflow triggers cover affected packages, verifiers and public guides. Hosted GitHub CI was not run locally. |
+
+Final installed guide command:
+
+```sh
+node scripts/verify-deployment-guide.mjs /tmp/cossack-local-pack-H0KNkO/minimal-production
+```
+
+Exit 0: `/tmp/cossack-cf10-fresh-gate-guide.log`. Installed combination: Node
+24.19.0, CLI/Framework 0.8.3 worktree tarballs, Vite 8.3.2, Cloudflare Vite plugin
+1.62.5, Wrangler 4.147.0, generated date 2026-06-06 and flags `nodejs_als` /
+`enable_request_signal`. Required-secret and D1 creation commands were checked
+with real Wrangler **help only**, never mutation. The verifier's strict network
+guard records **zero non-loopback attempts** in the final run.
+
+The first cold-cache CI entry-point run failed its guard because Miniflare fetched
+optional `Request.cf` metadata from `workers.cloudflare.com`. The request was
+blocked. Supported `CLOUDFLARE_CF_FETCH_ENABLED=false` disables that fetch;
+telemetry/error reporting/update banners are disabled too. The final fresh-gate
+verifier passes without relaxing the guard. Diagnostic logs:
+`/tmp/cossack-guide-ci-integration.log` and `/tmp/cossack-cf10-remote-diagnostic.log`.
+No claim that the first CI-wrapper command passed, or that remote DNS, secrets,
+permissions, previews or deployment readiness were verified. CF-09 and REL-02
+retain their original dependency gates independently of CF-10's proven criteria.
+
+### Installed/generated package acceptance and fixes
+
+`scripts/verify-published-release.mjs` checks all twelve maintained non-Desktop
+package families using the installed CLI export scanner. Actual installed
+coverage: **200 concrete conditional targets**, **90 strict Bundler / 88 strict
+NodeNext declaration imports**, **74 executed Node imports**. Auth intentionally
+publishes bundler-consumed TypeScript; it is not a native Node ESM claim.
+**94 deferred imports** have explicit browser/generated/native/CLI reasons;
+target presence is not runtime execution. Actual installed local storage persists
+across provider instances; structural R2/S3/Workflow adapters and request test
+helpers execute. Structural Workflow state is not native lifecycle proof.
+
+```sh
+node scripts/verify-published-release.mjs /tmp/cossack-local-pack-Kkq9IK/minimal-production
+COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --scaffold-only --reuse-artifacts=/tmp/cossack-release-batch-artifacts
+node scripts/test-local-scaffold.mjs --resume-node-acceptance=/tmp/cossack-local-pack-Kkq9IK/app
+```
+
+Installed import/provider verification exits 0:
+`/tmp/cossack-rel02-published-final-payload.log`. The representative matrix's
+initial command **failed** its final Node typecheck; its completed earlier
+segments cover Cloudflare minimal build, portable resource/mutation/service
+composition, Markdown/SSG, Deno types/build/stripping, Node auth/dashboard/Studio/UI
+composition, bidirectional local D1/SQLite adapter migration, seed/schema/cache/
+session checks, and server-code stripping. Deno build is not native execution.
+Initial log: `/tmp/cossack-rel02-generated-matrix.log`.
+
+That matrix exposed numeric Button `disabled`, invalid NativeSelect `onchange`,
+and the Node shutdown server union type. The repaired templates use a Boolean
+loading comparison and typed `@change` event; the Node lifecycle accepts Hono's
+HTTP/HTTPS/HTTP2 server shape. Only changed Scaffold/Node payloads were rebuilt or
+packed. Installed CLI upgrade plan/apply reconciled the two form templates while
+preserving local artifact pins, without manual generated-source edits. The
+bounded resumed Node command exits 0 for strict types, production build, stripping
+and real JS/CSS/logo HTTP content/cache checks:
+`/tmp/cossack-rel02-generated-matrix-resumed.log`. This composite evidence does
+not mean the initial whole matrix command was green.
+
+Generated migration plans exposed another real gap: all seven templates had only
+callbacks, which the read-only planner deliberately does not execute. Templates
+now declare authoritative up/down operations. Three SQLite regressions prove
+complete read-only plans, exact schema equivalence to callbacks, full rollback,
+conditional template coverage, and rejection of changed historical checksums.
+No migration history was rewritten; existing applied callback histories require
+explicit reconciliation guidance under REL-04.
+
+```sh
+pnpm --filter @cossackframework/scaffold exec vitest run tests/generated-migration-plan.test.js
+node scripts/verify-generated-migration-plans.mjs /tmp/cossack-local-pack-Kkq9IK/minimal-production
+```
+
+Source **3/3 pass**, `/tmp/cossack-rel02-generated-migration-plan.log`.
+Final installed/native exit 0, `/tmp/cossack-rel02-generated-native-migrations-final.log`:
+**7 complete migration plans / 9 zero-parameter DDL statements**; planning leaves
+application/history tables absent. Actual generated config, Wrangler types,
+strict tsc and Vite build pass. A separate empty native D1 applies **only planned
+SQL**; real HTTP requests prove generated User/Session inserts, finds, counts and
+public session IDs. The build database is separately migrated through the public
+CLI. The verifier is wired after the full-stack Cloudflare switch in the normal
+scaffold gate; the entire matrix was not rerun after this new hook.
+
+Initial installed-native harness attempts lacked direct `reflect-metadata` in the
+borrowed minimal gate. The verifier resolves that already installed transitive
+package, never a workspace alias. Isolated Cloudflare gate dependencies include
+its generated full-stack Solar icons. One coordinator install incorrectly ignored
+that gate's pnpm workspace overrides and failed offline; restoring the overrides
+and normal workspace install succeeds. These are failed setup attempts, not
+passing migration/provider evidence. Unchanged packages were reused.
+
+### Node standalone shutdown and stream integration
+
+Public `installNodeShutdown` installs process handlers only with explicit host
+ownership. SIGTERM/SIGINT share one drain: close admission, drain HTTP and HTTP2
+sessions, dispose runtime, and bound everything by a 10-second default deadline.
+Remaining HTTP/upgraded sockets are destroyed at the deadline. Generated direct
+entries exit 0 for clean draining or 1 for forced/failed cleanup. Embedded imports
+install no handlers; ignored external I/O is not claimed complete or rolled back.
+
+A real installed generated `dist/server/index.js` drains an accepted response on
+SIGTERM, rejects new admission, tolerates repeated signals, and bounds stuck work
+on SIGINT with exit 1. Strict public NodeNext negative tests preserve actual API
+types. They initially exposed extensionless declarations silently resolving
+re-exports to `any`; Node's build now uses the existing declaration rewriter.
+Canonical Node build subsequently verifies the exact package pipeline.
+
+```sh
+pnpm --filter @cossackframework/node-adapter exec vitest run tests/shutdown.test.ts tests/guarded-websocket.test.ts tests/vite.test.ts
+COSSACK_NODE_SHUTDOWN_INSTALLED_ROOT=/tmp/cossack-node-drain-installed pnpm --filter cossack exec vitest run tests/generated-node-shutdown.test.js
+pnpm --filter @cossackframework/node-adapter build
+```
+
+Combined Node **17/17 pass**, `/tmp/cossack-node-release-combined.log`; installed
+signals and negative declarations **1/1 pass**,
+`/tmp/cossack-generated-node-drain-typed-final.log`; canonical build exit 0,
+`/tmp/cossack-node-release-canonical-build.log`. Native tests include actual
+HTTP2 GOAWAY/accepted-stream draining, upgraded sockets and cleanup failure.
+Initial keepalive draining and public type tests failed before their fixes.
+
+Native SSE also reproduced stream truncation when source modules were bundled
+by Wrangler: missing Vite `import.meta.env` caused both normal and error-frame
+encoding to throw. Optional environment guards preserve production behavior and
+allow those native graphs to run. No stream assertions were relaxed.
+
+```sh
+pnpm --filter cossack exec vitest run tests/sse-coordinator-integration.test.js
+pnpm --filter @cossackframework/framework build
+pnpm --filter @cossackframework/framework exec vitest run tests/rpc-stream.test.ts tests/native-response-evidence.test.ts tests/navigation-trace-build.test.ts
+```
+
+Native SSE **3/3 pass**, `/tmp/cossack-sse-native-truncation-fixed.log`, after
+strict reproduction failed at `/tmp/cossack-sse-native-truncation-repro.log`.
+Canonical Framework build exit 0, `/tmp/cossack-release-framework-native-build.log`;
+stream/native-body/trace integration **29/29 pass**,
+`/tmp/cossack-release-rpc-env-combined.log`. Shared builds occurred only after
+previous CLI consumers terminated.
+
+The final changed Framework tarball was packed once from that canonical build
+and installed into the isolated Cloudflare gate. Its native stream regression
+also passes **1/1** (two unrelated cases filtered), without repository module
+imports:
+
+```sh
+COSSACK_SSE_INSTALLED_FRAMEWORK_ROOT=/tmp/cossack-local-pack-Kkq9IK/minimal-production pnpm --filter cossack exec vitest run tests/sse-coordinator-integration.test.js -t 'coordinates native RPC callbacks'
+```
+
+Log: `/tmp/cossack-release-installed-sse-encoder.log`. The coordinator target is
+selected from the installed public export; the encoder is intentionally tested
+through its private installed module path. This is a private regression claim,
+not a new public encoder API or full artifact-matrix claim. Final changed
+Framework/Scaffold/Node tarballs are in `/tmp/cossack-release-batch-final`.
+
+### Complete CLI run and resolved follow-ups
+
+```sh
+pnpm --filter cossack exec vitest run --maxWorkers=1 --no-file-parallelism --exclude tests/workflows-release-acceptance.test.js
+```
+
+The original process was allowed to finish: **120 files (114 pass / 6 fail),
+1,032 tests (1,007 pass / 19 fail / 6 skip)**, 1,989.23 seconds, exit 1.
+`/tmp/cossack-rel03-cli-suite.log`. The earlier uncommitted failed Workflow probe
+was excluded and remains preserved/unverified. This broad run included four
+existing thin Desktop command/build cases incidentally; no new Desktop platform
+acceptance is claimed. Three Desktop native skips are waived, not passed.
+
+Every original failure now has targeted passing evidence:
+
+- Full fixture files `cli-subprocess`, `upgrade-release`, `package-guidance`:
+  **62/62 pass**, `/tmp/cossack-rel03-cli-fixture-fixes.log`. Per-child deadlines
+  and aggregate test budgets cover their multiple bounded commands; privacy,
+  no-write, process cleanup and error assertions remain. The Vite failure stub
+  now resolves through the project's package/bin. Expanded authored input-guide
+  omission assertions retain every missing-export guide, including the original
+  three explicit identities.
+- Selected real Node/Deno/auth-SSE/config cases with the verified Deno 2.9.6
+  binary: **12 pass / 1 fail** initially,
+  `/tmp/cossack-rel03-native-followup.log`. The failed Deno production fixture
+  used the obsolete handshake expectation; the subsequent run passes it.
+- Final three cases: **Deno production and Cloudflare auth forms pass**, OAuth
+  initially fails through `harness.fetch` with an already consumed 400 body.
+  `/tmp/cossack-rel03-native-final-cases.log`. Node/Deno wrong-origin remains
+  HTTP 403; scope rejection now requires the current exact terminal
+  authorization frame, close 1008, and zero state delivery. This aligns RT-13's
+  existing contract without changing production authorization.
+- Cloudflare OAuth through real native HTTP: **1/1 pass**,
+  `/tmp/cossack-rel03-cf-oauth-native-http.log`. Original OAuth assertions remain:
+  concurrent atomic state take, exact diagnostics/redaction/cookie expiry, one
+  exchange/profile mapping, and one account/session. No production OAuth change.
+- Native SSE's remaining original failure passes its **3/3** coordinator run.
+
+All three initially skipped Deno production/development cases execute and pass;
+six Deno HTTP/HTTPS trace cases also pass. The invalid `context.skip()` in the
+parameterized trace fixture was removed: required native execution now uses the
+configured binary or Deno on PATH and reports an unavailable launcher honestly.
+Filtered-out cases in targeted runs are not acceptance skips or passing tests.
+No second broad CLI run was performed; this is composite final evidence.
+
+Other integrated regressions: generated form events **2/2**, native textarea and
+Boolean-button type contracts **2/2**, guide/generated configuration **1/1**.
+Logs: `/tmp/cossack-batch-scaffold-final.log`, `/tmp/cossack-batch-ui-final.log`,
+`/tmp/cossack-batch-guide-contract-final.log`. No UI production code or package
+rebuild was needed.
+
+### Final verification and remaining criteria
+
+```sh
+pnpm tsc --noEmit
+pnpm run typecheck -- --exclude-desktop
+```
+
+Both exit 0 after the final shared TypeScript change. All **10 non-Desktop
+package configs** are checked; Desktop explicitly prints waived/not passed.
+Logs: `/tmp/cossack-release-batch-final-root-types.log` and
+`/tmp/cossack-release-batch-final-package-types.log`. Root solution tsc alone is
+not package proof. Owned whitespace, integrated JavaScript syntax, metadata and
+workflow parse checks pass; the known user `reports.md` whitespace is excluded.
+
+**Open: SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7).** Native
+Workflow interruption/waiting/resume/event/failure and installed lifecycle remain
+unproven. CF-08 retains remote log/source-map and original remaining criteria;
+CF-09 needs actual preview lifecycle/isolation/cleanup/promotion evidence.
+REL-02 retains final native/provider/artifact coverage; REL-03 retains the whole
+final non-Desktop release matrix, Deno Deploy and generated Deno shutdown/draining.
+No requirement was weakened to improve task counts. Versioning/migration/release
+preparation remain gated; versions stay 0.8.3. No cloud mutation, deployment,
+publication, push or credential rotation occurred.

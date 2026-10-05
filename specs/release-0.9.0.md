@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 50 complete / 8 open.
+  acceptance; the numbered release task count is 51 complete / 7 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -78,7 +78,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets, signed per-invocation result reuse and the default scaffold direct Vite primary-Worker gate are implemented; explicit auxiliary Worker policies and local startup profiling are implemented and natively verified. Wider module graphs/authenticated multi-Worker receipts, provider startup, native development faults, source-map resolution and remote Workers Logs ingestion remain open. See [auxiliary validation](#codex-auxiliary-budgets-2026-10-05). See [local startup](#codex-local-startup-2026-10-05). See [receipt integration](#codex-budget-receipts-2026-10-05). See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
-- [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
+- [x] [CF-10](./release-0.9.0-plan.md#cf-10) Executable public installation/deployment guide, custom domains, named environments, SSG and tested compatibility. [Codex installed acceptance and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06); remote preview/resource readiness remains separate.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
 
 ## Release gates
@@ -1912,3 +1912,25 @@ defects found during installed acceptance are fixed.
 [Full criteria, exact commands, failed attempts and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06).
 Remaining: SVC-04, CF-08/09/10, REL-02/03/04/05. Complete CLI/full release matrices
 have not passed this batch. Desktop platform checks remain waived, not passed.
+
+<a id="codex-cf10-release-batch-2026-10-06"></a>
+### Codex: CF-10 complete; release acceptance batch (2026-10-06)
+
+**51 complete / 7 open.** [Full criterion mapping, commands and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
+The installed guide passes default/staging build, SSG, dry runs, local dev and
+unsupported-parser diagnostics with zero remote attempts. Generated-app CI
+executes the guide; hosted CI was not run here.
+
+Installed imports/types and representative generated apps pass their recorded
+checks. Seven generated migrations now have complete read-only plans; actual
+native D1 model requests pass. Node shutdown passes real signals and HTTP/2.
+Initial full CLI: 1,007 passed / 19 failed / 6 skipped; every failure has passing
+targeted evidence, and the three skipped Deno cases subsequently execute and
+pass. Three Desktop skips are waived. This is composite evidence, not a rerun
+claim. Final root plus ten non-Desktop package typechecks pass.
+
+Open: SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05. Native Workflow
+lifecycle, remote logs/source maps/previews, Deno Deploy/draining and remaining
+final release gates retain their full criteria. Versions remain 0.8.3. Applied
+legacy callback migration histories reject changed checksums; no history was
+rewritten. No cloud mutation, deployment, publication or push occurred.

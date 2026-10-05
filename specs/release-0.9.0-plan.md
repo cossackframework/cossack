@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 50 complete and 8 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 51 complete and 7 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -93,7 +93,7 @@ Add focused tests during each group, and run broader gates after integration.
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
 | 5. Add background application services | SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
-| 7. Finish operations | CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
+| 7. Finish operations | CF-08 and CF-09 | Complete observability and previews using the verified deployment guide and resource plans. |
 | 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
 
 Preserve regression coverage for completed prerequisites while closing the open criteria.
@@ -105,6 +105,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="cf-10"></a>CF-10 | [Full original context](./release-0.9.0-plan-archive.md#codex-cf10-completed-2026-10-06); [installed executable guide, compatibility and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06) |
 | <a id="cli-08"></a>CLI-08 | [Full context](./release-0.9.0-plan-archive.md#codex-cli08-completed-2026-10-06); [109 guides / 116 examples, acceptance and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06) |
 | <a id="cf-04"></a>CF-04 | [Full criteria](./release-0.9.0-plan-archive.md#codex-cf04-completed-2026-10-06); [verified selection and unresolved actions](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06) |
 | <a id="rt-26"></a>RT-26 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-26-completed-2026-10-06); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06) |
@@ -420,35 +421,6 @@ without changing production. Failures leave inspectable state and cleanup can
 be retried. Code rollback does not claim to restore database or object data.
 Dependencies: CF-01, CF-02, CF-04, CF-06, and CF-10.
 
-<a id="cf-10"></a>
-### CF-10: Deployment documentation and compatibility baseline
-
-Purpose: A correct framework still fails users if its deployment guide names
-the wrong entry file, bypasses its build, or assumes incompatible tooling.
-
-Baseline: Deployment documentation now covers custom domains, environment
-selection, dry-run effects, Node entry paths, and code/state rollback differences.
-The tested matrix and complete executable guide coverage remain open.
-
-Approach: Maintain a tested combination of framework, Vite, Cloudflare Vite plugin,
-Wrangler, runtime flags, and compatibility date. Explain custom domains versus
-routes and build output versus source configuration. Make CI execute guide
-commands in disposable generated projects. Detect unavailable Wrangler parser
-APIs with an actionable diagnostic because the current CLI uses version-sensitive APIs.
-
-Start in `docs/deployment.md`, `docs/installation.md`, scaffold package scripts,
-CLI `deployment.js`, and published/generated-app fixtures.
-
-Done when: A new user can follow the guide without importing repository internals
-or manually patching generated configuration. Supported combinations pass build
-and dry-run tests. Unsupported combinations fail clearly. Dependencies: CF-01,
-CF-06, CF-09, and REL-02.
-
-Codex RT-04 acceptance (2026-10-03) found a plain Vite Node 404. The Node adapter
-plugin now serves this path, and the diagnostic fixture uses the generated
-configuration without a private bridge. Remaining development acceptance is
-tracked under REL-03.
-
 ## Release gates
 
 These tasks establish release readiness after implementation. A passing narrow
@@ -464,6 +436,14 @@ not the repository source tree.
 
 Baseline: Several package-contract and generated-app tests exist. The full
 tarball/runtime/recipe matrix and executable documentation coverage remain open.
+
+**Codex verified batch (2026-10-06).** Installed coverage now proves 200 concrete
+export targets, 74 Node imports, strict Bundler/NodeNext declaration imports,
+representative generated compositions, and fresh native D1 migration/model
+acceptance. Templates now declare authoritative operations; existing applied
+callback migration histories still reject changed checksums. Native Workflow
+lifecycle and the remaining final artifact/runtime matrix keep REL-02 open.
+[Evidence and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
 
 Approach: Pack packages into a temporary local artifact set. Install them into
 fresh generated applications without workspace path aliases. Compile documented
@@ -492,7 +472,7 @@ Locale uses inferred config access; optional CORS reads remain internal without
 loosening application config overloads. Test fixture types are repaired without
 removing runtime assertions. Acceptance evidence and limits are in the
 [verification checkpoint](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05).
-RT-10's browser/accessible bindings and the full REL-03 gate remain open.
+RT-10's completed acceptance is archived; the full REL-03 gate remains open.
 
 
 Purpose: Integration changes need a reproducible release gate. A historical
@@ -522,8 +502,11 @@ CLI lifecycle and trace checks. See the [runtime evidence index](./release-0.9.0
 and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
 `pnpm test:deno` owns the repeatable native Deno gate.
 
-Remaining: graceful generated-server draining, Deno Deploy and the required
-non-Desktop final release matrix. Desktop development and native Linux checks
+Remaining: generated Deno server shutdown/draining, Deno Deploy and the required
+non-Desktop final release matrix. Node standalone draining is verified in the
+[Codex batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). The initial full CLI run failed; all 19 failures
+now have passing targeted evidence, and initially skipped Deno cases executed.
+This composite evidence is not a second green full-suite run. Desktop development and native Linux checks
 pass the [RT-28 audit](./release-0.9.0.md#codex-rt28-complete-2026-10-04).
 The user has marked Desktop complete for this release. Remaining installed OS
 integration, Windows/macOS and signing acceptance is waived, not claimed as tested.
@@ -746,6 +729,16 @@ non-Desktop skills, every new installed example and authenticated resource
 selection meet their criteria. Unsupported discovery/creation remains explicit;
 no remote readiness or automatic provisioning is inferred.
 [Commands, failures, fixes and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06).
-Keep SVC-04, CF-08/09/10 and REL-02/03/04/05 open. Next prioritize a full
-deployment-guide/compatibility path or final non-Desktop release gates; avoid
-repeating unchanged installed guide matrices or polishing budgets without closure.
+This historical batch precedes the current CF-10 completion below. Its
+remaining-task list is superseded by the current handoff. Reuse unchanged evidence.
+
+
+### Codex: Current verified release batch (2026-10-06)
+
+**CF-10 complete; 51 complete / 7 open.** REL-02/REL-03 retain their full criteria.
+Root and all ten non-Desktop package typechecks pass after the final stream fix.
+Node standalone draining, generated native D1 migration plans and the original
+CLI failure follow-ups are verified. [Commands, counts and limitations](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
+Open: SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05. Preserve Workflow
+waiting probes and checksum rejection; finish independent gates before versioning.
+Desktop remains complete by user decision, with platform checks waived.

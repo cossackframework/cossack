@@ -2,36 +2,37 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Completed **CLI-08 and CF-04**. Release: **50 complete / 8 open**.
-[Full criterion mapping, commands and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06).
-Offline usage inventory covers 109 guides / 116 examples; all 28 new examples
-compile and execute from installed tarballs. Non-Desktop skills align with tested
-APIs. Resource plans pin explicit account/default-or-named environment; verified
-D1/KV/R2/Hyperdrive selection applies locally and converges. Unsupported remote
-discovery/creation has precise actions, never automatic provisioning claims.
-Codex reviewed all three agents' work and fixed Markdown runtime dependencies,
-UI metadata, CLI Vite fixtures, DOM harness and inherited environment redirection.
+Completed **CF-10**. Release: **51 complete / 7 open**, versions still 0.8.3.
+[Verified batch, exact commands and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). Public installed guide
+acceptance passes default/staging builds, SSG, dry runs and local dev with zero
+remote attempts. Generated-app CI now runs it; hosted CI was not executed here.
 
-Final installed CLI account/environment isolation and convergent apply pass.
-Relevant integration **197 tests pass**; final account-isolation **18 pass**.
-Affected matrix **5 pass** after three initial failures. Root plus seven package typechecks exit 0. Full CLI and
-non-Desktop release matrices remain required. Reuse unchanged guide evidence.
-Retained gate: `/tmp/cossack-local-pack-gZdSQv/minimal-production`; new payloads:
-`/tmp/cossack-cli08-cf04-tarballs`, corrected Framework:
-`/tmp/cossack-cli08-cf04-final/cossackframework-framework-0.8.3.tgz`, final CLI:
-`/tmp/cossack-cli08-cf04-owned-final/cossack-0.8.3.tgz`.
+Installed package imports/types and representative generated apps pass their
+recorded checks. Fresh native D1 proves all seven authoritative migration plans
+and User/Session model requests. Node standalone SIGTERM/SIGINT draining,
+deadlines and HTTP/2 are verified. All 19 failures from the initial full CLI run
+have passing targeted follow-ups; the three skipped Deno cases also execute and
+pass. Three Desktop skips remain waived. Do not describe the initial full run
+as green. Final root and all ten non-Desktop package typechecks pass.
 
-**SVC-04 stays open.** Native creation/steps/retries work, but pinned Miniflare
-never assigns Waiting at the event barrier. Interruption/resume/event completion,
-native failure and installed acceptance remain unproven. Preserve its two prior
-uncommitted failed fixtures and strict assertion; do not relabel running as waiting.
-Its provider limitation blocks that task, not independent release work.
+Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. SVC-04's
+native Waiting/event-resume/failure/installed lifecycle remains unproven; preserve
+its two earlier uncommitted failed probes and strict assertion. Continue other
+gates independently. CF-08 requires remote logs/source maps and remaining original
+acceptance; CF-09 requires actual preview lifecycle/isolation/cleanup. REL-02/03
+retain full final non-Desktop matrices, native Workflow, Deno Deploy and generated
+Deno shutdown/draining. Do not polish budgets without closing a requirement.
 
-Open: SVC-04, CF-08/09/10, REL-02/03/04/05 (**8 total**). Next choose full CF-10
-compatibility/guide acceptance or final independent non-Desktop gates. Do not
-polish budgets without a required closure. Versions stay 0.8.3 until REL-04.
-Preserve user reports.md/.zcodeignore. Desktop remains complete with remaining
-platform checks waived. No live cloud mutation, deployment, publication or push.
+Migration templates now declare authoritative operations. Fresh schemas match
+legacy callbacks, but applied callback migration histories reject changed
+checksums. Do not rewrite history or claim automatic upgrade reconciliation;
+REL-04's migration guide must explain this boundary. Reuse unchanged guide/import
+proofs. Latest Framework/Scaffold/Node tarballs: `/tmp/cossack-release-batch-final`; corrected
+installed CF gate: `/tmp/cossack-local-pack-Kkq9IK/minimal-production`.
+
+Preserve user reports.md/.zcodeignore and prior Workflow probes. Desktop remains
+complete with remaining platform checks waived. No live cloud mutation,
+deployment, publication or push. Commit only this batch's owned verified files.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -50,7 +51,7 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-06)
 
-1. Finish CF-08/09/10 observability, isolated previews and deployment compatibility.
+1. Finish CF-08/09 observability and isolated previews; reuse completed CF-10 acceptance.
    Local logs/static plans do not prove remote readiness or log ingestion.
 2. Revisit SVC-04 only with a real path to waiting/lifecycle proof; preserve its probe.
 3. Complete REL-02/03 non-Desktop published/generated/build/unit/runtime gates,
@@ -67,7 +68,7 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 native Node/workerd disconnect and component initialization/restoration acceptance is complete. Cancellation remains cooperative and does not stop ignored application I/O.
-- The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
+- Initial serial CLI run completed with 1,007 passed, 19 failed and 6 skipped. Every failure now has targeted passing evidence; three skipped Deno cases executed and three Desktop cases remain waived. Final broad release gates still belong to REL-03; do not claim a second green full CLI run.
 - Browser ownership acceptance passes its focused generated Node and Cloudflare
   cases, including SSE and WebSocket ownership. The fixture uses a synthetic
   identity provider only; real authentication has separate RT-13 evidence.
@@ -81,8 +82,8 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
 - Desktop installed OS integration, Windows/macOS packaging and conditional
   signing checks were waived when the user closed Desktop for this release.
-  Deno Deploy, graceful generated-server draining and the required non-Desktop
-  release matrix remain separate acceptance gaps.
+  Deno Deploy, generated Deno server shutdown/draining and the required non-Desktop
+  release matrix remain separate acceptance gaps. Node standalone draining is verified.
 - Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 

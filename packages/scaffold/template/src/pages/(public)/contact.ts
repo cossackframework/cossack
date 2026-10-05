@@ -75,7 +75,7 @@ export default class ContactPage extends Cossack {
                         control: attributes => component(Input, { ...attributes, name: 'email', type: 'email', '.value': this.form.email, '@input': (event: Event) => this.handleInput('email', event), '@blur': () => this.handleBlur('email'), variant: this.hasError(field('email')) ? 'error' : 'default' }) })}
                     ${component(Field, { label: __('Message'), for: 'message', required: true, error: this.getError(field('message')),
                         control: attributes => component(Textarea, { ...attributes, name: 'message', rows: 6, '.value': this.form.message, '@input': (event: Event) => this.handleInput('message', event), '@blur': () => this.handleBlur('message'), variant: this.hasError(field('message')) ? 'error' : 'default' }) })}
-                    ${component(Button, { type: 'submit', disabled: this.loading.submitContact }, this.loading.submitContact ? __('Sending…') : __('Send message'))}
+                    ${component(Button, { type: 'submit', disabled: this.loading.submitContact > 0 }, this.loading.submitContact ? __('Sending…') : __('Send message'))}
                 </form>
             </section>
         `;

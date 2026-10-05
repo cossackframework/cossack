@@ -29,7 +29,7 @@ export async function retainRpcResponseBody(
     const inRequest = AsyncLocalStorage.snapshot();
     let outcome: 'succeeded' | 'failed' | 'cancelled' = 'succeeded';
     const report = async (cleanup: 'completed' | 'failed') => {
-        if (import.meta.env.DEV) {
+        if (import.meta.env?.DEV) {
             try { await onCompletion?.(outcome === 'succeeded' && cleanup === 'failed' ? 'failed' : outcome, cleanup); }
             catch { /* Observability cannot alter application body or cleanup behavior. */ }
         }
@@ -40,8 +40,8 @@ export async function retainRpcResponseBody(
     headers.set(RPC_NATIVE_RESPONSE_HEADER, 'native');
     response = new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     if (!response.body) {
-        try { await inRequest(dispose); if (import.meta.env.DEV) await report('completed'); }
-        catch (error) { if (import.meta.env.DEV) await report('failed'); throw error; }
+        try { await inRequest(dispose); if (import.meta.env?.DEV) await report('completed'); }
+        catch (error) { if (import.meta.env?.DEV) await report('failed'); throw error; }
         return response;
     }
     const reader = response.body.getReader();
@@ -53,12 +53,12 @@ export async function retainRpcResponseBody(
         try {
             try { await reader.cancel(); }
             finally { reader.releaseLock(); await dispose(); }
-            if (import.meta.env.DEV) await report('completed');
-        } catch (error) { if (import.meta.env.DEV) await report('failed'); throw error; }
+            if (import.meta.env?.DEV) await report('completed');
+        } catch (error) { if (import.meta.env?.DEV) await report('failed'); throw error; }
     });
     const abort = () => {
         if (closed) return;
-        closed = true; if (import.meta.env.DEV) outcome = 'cancelled';
+        closed = true; if (import.meta.env?.DEV) outcome = 'cancelled';
         controller.error(new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.'));
         void cleanup().catch(() => logRpcFailure(logContext, 'response-cleanup', 'COSSACK_RPC_CLEANUP_FAILED'));
     };
@@ -79,7 +79,7 @@ export async function retainRpcResponseBody(
                     if (!closed) { closed = true; streamController.close(); }
                 } catch (error) {
                     if (closed) return;
-                    closed = true; if (import.meta.env.DEV) outcome = 'failed';
+                    closed = true; if (import.meta.env?.DEV) outcome = 'failed';
                     if (!isActionValidationError(error) && !isClientVisibleError(error) &&
                         !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
                         logRpcFailure(logContext, 'response-stream');
@@ -89,7 +89,7 @@ export async function retainRpcResponseBody(
                 }
             });
         },
-        async cancel() { closed = true; if (import.meta.env.DEV) outcome = 'cancelled'; await cleanup(); },
+        async cancel() { closed = true; if (import.meta.env?.DEV) outcome = 'cancelled'; await cleanup(); },
     }, { highWaterMark: 0 });
     return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
 }
@@ -122,7 +122,7 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
         if (bytes.length - 1 > RPC_STREAM_MAX_FRAME_BYTES) {
             throw new RpcError('COSSACK_RPC_STREAM_TOO_LARGE', 'RPC stream frame exceeds the byte limit.');
         }
-        if (import.meta.env.DEV && development) {
+        if (import.meta.env?.DEV && development) {
             const candidate = encoder.encode(`${JSON.stringify({ ...(frame as Record<string, unknown>), developmentTrace: development })}\n`);
             // Observability must not turn an otherwise valid frame into a size failure.
             // Leave room for the SSE coordinator to add its numeric state cursor.
@@ -165,7 +165,7 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                     let bytes = encode(frame);
                     if (finished) await cleanup();
                     if (closed) return;
-                    if (import.meta.env.DEV && finished && options.developmentTrace) {
+                    if (import.meta.env?.DEV && finished && options.developmentTrace) {
                         bytes = encode(frame, options.developmentTrace('succeeded', 'completed'));
                     }
                     controller.enqueue(bytes);
@@ -186,7 +186,7 @@ export function createRpcStreamResponse(options: RpcStreamOptions): Response {
                             : error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR',
                         fieldErrors: isActionValidationError(error) || error instanceof RpcError ? error.fieldErrors : undefined,
                         message: isClientVisibleError(error) || error instanceof RpcError
-                            ? error.message : 'Internal Server Error' }), import.meta.env.DEV ? options.developmentTrace?.('failed', cleanupFailed ? 'failed' : 'completed') : undefined));
+                            ? error.message : 'Internal Server Error' }), import.meta.env?.DEV ? options.developmentTrace?.('failed', cleanupFailed ? 'failed' : 'completed') : undefined));
                     controller.close();
                 }
             });

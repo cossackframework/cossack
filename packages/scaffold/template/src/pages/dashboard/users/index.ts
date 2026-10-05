@@ -180,7 +180,7 @@ export default class UsersPage extends Cossack {
                                     name: 'role',
                                     size: 'sm',
                                     'aria-label': __('Filter by role'),
-                                    onchange: 'this.form.submit()',
+                                    '@change': (event: Event) => (event.currentTarget as HTMLSelectElement).form?.requestSubmit(),
                                 }, html`
                                     <option value="" ?selected=${!selectedRoleName}>${__('All roles')}</option>
                                     ${this.allRoles.map((r) => html`<option value=${r.name} ?selected=${selectedRoleName === r.name}>${r.name}</option>`)}

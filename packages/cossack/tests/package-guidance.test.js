@@ -94,11 +94,14 @@ it('reads the authored core guides and omits input guidance when its installed e
   delete exports['./input'];
   await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name, version: '0.9.1', exports }));
   const after = (await read()).data.packages[0].guidance;
-  expect(after).toMatchObject({ status: 'partial', version: '0.9.1', omitted: [
-    { id: 'validated-input', reason: 'imports-unavailable' },
-    { id: 'nested-form-input', reason: 'imports-unavailable' },
-    { id: 'component-actions', reason: 'imports-unavailable' },
-  ] });
+  const inputGuides = authored.guides.filter(guide => guide.imports.includes(name + '/input'));
+  expect(after).toMatchObject({ status: 'partial', version: '0.9.1' });
+  expect(after.omitted).toEqual(inputGuides.map(guide => ({ id: guide.id, reason: 'imports-unavailable', imports: [name + '/input'] })));
+  expect(after.omitted).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'validated-input', reason: 'imports-unavailable' }),
+    expect.objectContaining({ id: 'nested-form-input', reason: 'imports-unavailable' }),
+    expect.objectContaining({ id: 'component-actions', reason: 'imports-unavailable' }),
+  ]));
   expect(after.guides.map(guide => guide.id)).toContain('typed-url-state');
   expect(after.guides.some(guide => guide.imports.includes(name + '/input'))).toBe(false);
 });

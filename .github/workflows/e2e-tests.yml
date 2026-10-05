@@ -39,11 +39,23 @@ jobs:
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
               packages/core \
               packages/renderer \
+              packages/framework \
+              packages/node-adapter \
+              packages/deno-adapter \
+              packages/auth \
+              packages/database \
+              packages/test-utils \
               packages/ui \
               packages/scaffold \
               packages/cossack \
               scripts/test-local-scaffold.mjs \
-              scripts/verify-agent-documentation.mjs || generated_app=true
+              scripts/verify-agent-documentation.mjs \
+              scripts/verify-agent-guide-batch.mjs \
+              scripts/verify-published-release.mjs \
+              scripts/verify-deployment-guide.mjs \
+              scripts/verify-generated-migration-plans.mjs \
+              docs/deployment.md \
+              docs/installation.md || generated_app=true
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
               packages/studio || studio=true
           fi

@@ -1,7 +1,24 @@
-import type { Migration } from '@cossackframework/database';
+import { sql, type Migration } from '@cossackframework/database';
 
 export default {
   name: '0006_create_cache_table',
+  // Operations are authoritative for read-only plans and migration execution.
+  operations: {
+    up: [
+      sql.unsafe(`
+        CREATE TABLE cache_items (
+          key VARCHAR(191) PRIMARY KEY,
+          value TEXT NOT NULL,
+          expires_at BIGINT,
+          updated_at BIGINT NOT NULL
+        )
+      `),
+      sql.unsafe('CREATE INDEX cache_items_expires_at_index ON cache_items (expires_at)'),
+    ],
+    down: [
+      { kind: 'drop-table', tableName: 'cache_items' },
+    ],
+  },
   up({ orm, schema }) {
     schema
       .raw(orm.sql.unsafe(`

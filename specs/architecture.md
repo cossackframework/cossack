@@ -1236,6 +1236,17 @@ child after parent failure. This is trusted local development, not a sandbox.
 Reload resets process-local state and does not undo external effects. Desktop
 web configurations exclude this plugin; embedded Vite middleware mode is rejected.
 
+Generated standalone Node entries explicitly install the Node adapter's process
+shutdown owner. SIGTERM/SIGINT share one operation: stop listening, drain accepted
+HTTP responses and HTTP/2 sessions, and dispose the WebSocket runtime. One
+10-second deadline bounds HTTP draining and runtime cleanup together. At the
+deadline remaining sockets are destroyed; ignored application I/O is not claimed
+complete or rolled back. Generated entries exit 1 for forced or failed cleanup.
+Importing the adapter or an embedded application installs no process handlers.
+Hosts may explicitly install/uninstall this owner and choose the completion hook.
+Node declarations use explicit runtime extensions so strict NodeNext consumers
+retain real public types instead of silently resolving re-exports to `any`.
+
 ## Configuration generation boundary
 
 The Node-only `framework/config-codegen` entry owns filename discovery and

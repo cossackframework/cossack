@@ -17,8 +17,16 @@ afterEach(async () => {
 it('coordinates native RPC callbacks across Workers and keeps SQLite state after reload', async () => {
   vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-sse-coordinator-'));
-  const coordinator = fileURLToPath(new URL('../../framework/src/SseDurableObject.ts', import.meta.url));
-  const rpcStream = fileURLToPath(new URL('../../framework/src/transports/rpc-stream.ts', import.meta.url));
+  const installedRoot = process.env.COSSACK_SSE_INSTALLED_FRAMEWORK_ROOT;
+  const installedFramework = installedRoot && await fs.realpath(path.join(installedRoot, 'node_modules/@cossackframework/framework'));
+  const installedManifest = installedFramework && JSON.parse(await fs.readFile(path.join(installedFramework, 'package.json'), 'utf8'));
+  const coordinator = installedFramework
+    ? path.join(installedFramework, installedManifest.exports['./SseDurableObject'].import)
+    : fileURLToPath(new URL('../../framework/src/SseDurableObject.ts', import.meta.url));
+  // The encoder is intentionally a private-module regression, not a public API import claim.
+  const rpcStream = installedFramework
+    ? path.join(path.dirname(coordinator), 'transports/rpc-stream.js')
+    : fileURLToPath(new URL('../../framework/src/transports/rpc-stream.ts', import.meta.url));
   const main = path.join(directory, 'worker.ts');
   await fs.writeFile(main, `
     import { AsyncLocalStorage } from 'node:async_hooks';

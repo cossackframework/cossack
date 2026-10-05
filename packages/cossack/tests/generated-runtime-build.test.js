@@ -392,7 +392,18 @@ it.each(['node', 'deno'])('builds a generated %s app through its real Vite confi
       });
       try {
         await rejectUpgrade(url, 'https://untrusted.example');
-        await rejectUpgrade(url.replace('user:anonymous', 'user:other'), origin);
+        await new Promise((resolve, reject) => {
+          const denied = new WebSocket(url.replace('user:anonymous', 'user:other'), { headers: { origin } });
+          const frames = [];
+          denied.on('message', data => frames.push(JSON.parse(String(data))));
+          denied.once('error', reject);
+          denied.once('close', code => {
+            if (code !== 1008 || frames.length !== 1 || frames[0].type !== 'authorization-error'
+              || frames[0].code !== 'COSSACK_REALTIME_AUTH_CHANGED') {
+              reject(new Error('Incorrect scope rejection: ' + JSON.stringify({ code, frames })));
+            } else resolve();
+          });
+        });
         const socket = new WebSocket(url, { headers: { origin } });
         const state = await new Promise((resolve, reject) => {
           socket.once('message', data => resolve(JSON.parse(String(data))));
@@ -979,6 +990,10 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
 it.each(['node', 'cloudflare'])('revalidates generated authenticated SSE sessions on %s before delivery', async adapter => {
   const root = await project(adapter, ['dashboard'], { dashboardModules: ['sessions'] });
   await writeAuthSseAcceptance(root);
+  const generatedConfig = await promisify(execFile)(process.execPath,
+    [path.join(repository, 'packages/cossack/bin/cossack.js'), 'config', '--generate', '--json'],
+    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+  expect(JSON.parse(generatedConfig.stdout)).toMatchObject({ ok: true, command: 'config' });
   if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
     { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
   try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
@@ -1133,9 +1148,10 @@ it.each(['node', 'cloudflare'])('serves generated authentication primitives and 
       const configPath = path.join(root, 'dist/ssr/wrangler.json');
       const harness = createTestHarness({ root, workers: [{ configPath, secrets: environment }] });
       close = () => harness.close();
-      request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
       try {
-        await harness.listen();
+        const { url } = await harness.listen();
+        const origin = new URL(url).origin;
+        request = (url, options = {}) => fetch(origin + url, { redirect: 'manual', ...options });
         // The harness deliberately uses fresh in-memory bindings, separate from
         // the CLI's persistent database. Apply the generated CLI SQL plan here.
         const bindings = await harness.getWorker().getEnv();
@@ -1881,8 +1897,7 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
 const traceRuntimeCases = ['cloudflare', 'node', 'deno'].flatMap(runtime =>
   (runtime === 'deno' ? [false, true] : [false]).flatMap(https =>
     ['http', 'sse', 'durable-object'].map(transport => [runtime, transport, https])));
-it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP (HTTPS: %s)', async (runtime, transport, https, context) => {
-  if(runtime==='deno'&&!process.env.COSSACK_DENO_BINARY)context.skip();
+it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP (HTTPS: %s)', async (runtime, transport, https) => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project(runtime);

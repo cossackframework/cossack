@@ -307,3 +307,5 @@ export class CossackNodeAdapter {
 }
 
 export { createNodeAdapter, type NodeAdapterOptions, type NodeWebSocketUpgrade, type NodeUpgradeServer } from "./adapter";
+
+export { installNodeShutdown, type NodeShutdownServer, type NodeShutdownOptions, type NodeShutdownResult } from './shutdown';

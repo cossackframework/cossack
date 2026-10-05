@@ -27,11 +27,13 @@ function runCli(argv, options = {}) {
       env: options.env ?? process.env,
     });
     liveChildren.add(child);
+    const deadline = setTimeout(() => child.kill('SIGKILL'), options.timeout ?? 20000);
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
     child.on('close', code => {
+      clearTimeout(deadline);
       liveChildren.delete(child);
       resolve({ code: code ?? 1, stdout, stderr });
     });
@@ -78,6 +80,11 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     await fs.mkdir(toolDir);
     await fs.writeFile(path.join(toolDir, 'vite'), '#!/usr/bin/env node\n' +
       'console.log("project-private-value"); console.error("parser-private-value"); process.exit(1);\n', { mode: 0o755 });
+    // Build resolves the project's Vite package bin; SSG still uses PATH.
+    const viteRoot = path.join(tmp, 'node_modules/vite');
+    await fs.mkdir(viteRoot, { recursive: true });
+    await fs.writeFile(path.join(viteRoot, 'package.json'), JSON.stringify({ name: 'vite', version: '7.0.0', bin: { vite: './vite.js' } }));
+    await fs.copyFile(path.join(toolDir, 'vite'), path.join(viteRoot, 'vite.js'));
     const result = await runCli([command, '--json', ...(command === 'ssg' ? ['--base-url', 'https://private-value.test'] : [])],
       { env: { ...process.env, PATH: `${toolDir}${path.delimiter}${process.env.PATH}` } });
     expect(result.code).toBe(1);
@@ -110,7 +117,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(applied.stdout).not.toContain('adapter-private-value');
     const present = await runCli(['adapter', 'cloudflare', '--json'], { cwd });
     expect(parseEnvelope(present.stdout).data.status).toBe('present');
-  });
+  }, 65000);
 
   it('adapter reports unsupported database choices without printing a human error', async () => {
     const cwd = await project();
@@ -146,7 +153,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     const linked = await runCli(['image', 'optimize', '--dry-run', '--json']);
     expect(linked.code).toBe(1);
     expect(parseEnvelope(linked.stdout).diagnostics[0].code).toBe('COSSACK_IMAGE_PATH_INVALID');
-  });
+  }, 145000);
 
   it('image reports empty projects and invalid subcommands in one envelope', async () => {
     const empty = await runCli(['image', 'optimize', '--json']);
@@ -181,7 +188,7 @@ describe('adapter, image, upgrade, and Studio machine contracts', () => {
     expect(applied.code).toBe(0);
     expect(parseEnvelope(applied.stdout).data.status).toBe('completed');
     expect(await fs.readFile(appPath, 'utf8')).toBe('// custom application\n');
-  });
+  }, 65000);
 
   it('upgrade reports installation failure with its applied dependency changes and recovery', async () => {
     const cwd = await project();

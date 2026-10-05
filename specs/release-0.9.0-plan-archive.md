@@ -6594,3 +6594,46 @@ This does not add resource selection, authenticated existence/access checks,
 provisioning, ownership tracking, or wrong-account/repeated-application tests;
 CF-04 remains open. See
 the [static-plan checkpoint](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05).
+
+
+<a id="codex-cf10-completed-2026-10-06"></a>
+## Codex: Completed CF-10 context (2026-10-06)
+
+CF-10's own local guide/compatibility criteria are complete. The original
+criteria and dependencies below are preserved. CF-09 remote preview lifecycle
+and REL-02's wider artifact/runtime gates remain separate open requirements;
+local dry runs do not establish their readiness.
+
+<a id="cf-10"></a>
+### CF-10: Deployment documentation and compatibility baseline
+
+Purpose: A correct framework still fails users if its deployment guide names
+the wrong entry file, bypasses its build, or assumes incompatible tooling.
+
+Baseline: Deployment documentation now covers custom domains, environment
+selection, dry-run effects, Node entry paths, and code/state rollback differences.
+The tested matrix and complete executable guide coverage remain open.
+
+Approach: Maintain a tested combination of framework, Vite, Cloudflare Vite plugin,
+Wrangler, runtime flags, and compatibility date. Explain custom domains versus
+routes and build output versus source configuration. Make CI execute guide
+commands in disposable generated projects. Detect unavailable Wrangler parser
+APIs with an actionable diagnostic because the current CLI uses version-sensitive APIs.
+
+Start in `docs/deployment.md`, `docs/installation.md`, scaffold package scripts,
+CLI `deployment.js`, and published/generated-app fixtures.
+
+Done when: A new user can follow the guide without importing repository internals
+or manually patching generated configuration. Supported combinations pass build
+and dry-run tests. Unsupported combinations fail clearly. Dependencies: CF-01,
+CF-06, CF-09, and REL-02.
+
+Codex RT-04 acceptance (2026-10-03) found a plain Vite Node 404. The Node adapter
+plugin now serves this path, and the diagnostic fixture uses the generated
+configuration without a private bridge. Remaining development acceptance is
+tracked under REL-03.
+
+[Criterion mapping and verified commands](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). The public guide is
+executed by the generated-app CI harness; the hosted CI run itself was not run
+locally. No account provisioning, deployment, DNS activation or publication was
+performed. Desktop checks remain waived by user decision.
