@@ -1631,3 +1631,36 @@ Update completion boxes only when the complete row meets its acceptance criteria
 Keep prototype status visible until the published application path uses the feature.
 Preserve unrelated user files, including the uncommitted reports and tool settings.
 Use the final review to audit implementation commits against this plan and its checkpoints.
+
+<a id="codex-local-startup-plan-2026-10-05"></a>
+### Codex: local startup budgets and auxiliary Worker follow-up (2026-10-05)
+
+CF-08 local startup slice: add explicit `localStartupProfileMs` and
+`localStartupActiveMs` project thresholds. The first measures the local CPU
+profile window; the second sums non-idle samples, including GC. These names must
+stay distinct from provider startup. Use the verified fresh primary artifact,
+private Wrangler multipart/profile files, bounded subprocesses and fixed errors.
+Only numeric results enter JSON and signed invocation receipts. Acceptance covers
+native profiling, deliberate threshold failure, receipt reuse, privacy, cleanup,
+malformed/oversized files and hung tools. Remote provider evidence stays open.
+
+The independent auxiliary Worker audit found that current deployment selects
+and uploads only the primary Worker. Do not claim auxiliary deployment support.
+A future bounded phase should define literal per-source policies, independently
+inspect each authored source/environment, match exactly one fresh auxiliary
+redirect artifact, and validate all selected artifacts before measurement and
+again before primary upload. Reject duplicate or ambiguous matches and unsupported
+inline overrides. Prerender/dev-only Workers are excluded. Auxiliary-only budgets
+must activate validation. Keep receipt reuse disabled for auxiliary redirects
+until every target, graph and policy is authenticated. Actual auxiliary upload
+orchestration is a separate feature; the existing primary deploy command cannot
+prove that those Workers are deployed. No auxiliary API is implemented here.
+
+Counts remain 30 complete / 28 open. CF-08, remote startup/source-map/log
+acceptance and REL-03 remain open. Desktop checks remain waived.
+
+Codex acceptance for this slice: full framework 1,808 / 98 files, final combined
+affected CLI 63 / 6 files, root/framework types, declarations, native profiling
+and repacked installed acceptance pass. Initial framework timeout failures and
+unrun platform/remote/full-matrix checks are preserved in the
+[verification record](./release-0.9.0-verification-archive.md#codex-local-startup-2026-10-05).

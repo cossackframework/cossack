@@ -67,7 +67,7 @@ including custom builders; it adds no restriction when budgets are absent.
 JSON results contain `data.buildBudgets.measurements`, `diagnostics` and `valid`.
 Only selected metrics enter the result. Tool stdout/stderr stays private because
 Wrangler may print binding values. Capture is bounded to one MiB; overflow or a
-failed tool fails measurement. Local validation writes build/tool artifacts but
+failed tool fails measurement. Each measurement subprocess has a 30-second deadline; timeout also fails measurement. Local validation writes build/tool artifacts but
 does not upload or provision remote resources.
 
 Sizes come from Wrangler's combined module upload summary, not a sum of gzipped
@@ -78,8 +78,26 @@ pass an error budget. Missing metrics are warnings for warning-only settings.
 
 `providerStartupMs` is recognized but unavailable from local dry runs. An error
 limit for it stops the command; a warning limit reports that it was not verified.
-Vite duration is not Worker startup time. Native local profiles and remote
-startup acceptance remain separate work. See [Wrangler startup profiling](https://developers.cloudflare.com/workers/wrangler/commands/workers/#startup).
+Vite duration is not Worker startup time.
+
+For opt-in local profiling, configure `localStartupProfileMs` (the CPU profile's
+elapsed window) or `localStartupActiveMs` (sampled time excluding idle samples,
+including garbage collection). Both use milliseconds and report source
+`wrangler-local-startup-profile`. They measure local initialization with profiler
+overhead and depend on the machine, Wrangler version and sampling. They do not
+establish Cloudflare's provider startup time or production CPU limits. Empty
+samples leave active time unavailable.
+
+When either metric is configured, Wrangler writes a private multipart bundle
+with `deploy --dry-run --outfile`, then runs `check startup --worker --outfile`.
+These files can contain application code, binding values and source paths.
+Cossack uses an OS temporary directory with mode 0700, bounds each file to
+64 MiB, rejects symlinks, and removes the directory after success or failure.
+Only derived numeric timings enter JSON results and signed receipts. Missing,
+invalid, oversized or failed profiles fail measurement; they do not pass a gate.
+The profiler executes application initialization locally and may fail on
+unsupported bindings or modules. Size-only budgets do not invoke it.
+Remote startup acceptance remains separate work. See [Wrangler startup profiling](https://developers.cloudflare.com/workers/wrangler/commands/workers/#startup).
 
 Cloudflare changed its platform limit to uncompressed Worker size in September
 2026; gzip is informational. The framework does not hardcode a provider limit.

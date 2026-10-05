@@ -38,7 +38,7 @@ it.each([{ secret: { error: 2 } }, { uploadKiB: { error: -1 } }, { uploadKiB: { 
 it('measures only the verified artifact using a local dry run', async () => {
   runProjectToolCaptured.mockResolvedValue({ code: 0, stdout: 'Total Upload: 10.00 KiB / gzip: 1.00 KiB', stderr: 'SECRET' });
   expect((await checkBuildBudgets('/project', '/verified/wrangler.json', { uploadKiB: { error: 20 } })).valid).toBe(true);
-  expect(runProjectToolCaptured).toHaveBeenCalledExactlyOnceWith('/project', 'wrangler', ['deploy', '--dry-run', '--config', '/verified/wrangler.json'], { env: { CLOUDFLARE_ENV: '' }, maxOutputBytes: 1024 * 1024 });
+  expect(runProjectToolCaptured).toHaveBeenCalledExactlyOnceWith('/project', 'wrangler', ['deploy', '--dry-run', '--config', '/verified/wrangler.json'], { env: { CLOUDFLARE_ENV: '' }, maxOutputBytes: 1024 * 1024, timeoutMs: 30000 });
 });
 it('fails measurement without returning arbitrary stderr', async () => {
   runProjectToolCaptured.mockResolvedValue({ code: 2, stdout: 'PRIVATE', stderr: 'SECRET' });
@@ -53,4 +53,25 @@ it('sanitizes tool resolution and invocation rejections', async () => {
 
 it.each(['Total Upload: 1 KiB / gzip: 1 KiB', 'Total Upload: 1.0 KiB / gzip: 1.0 KiB'])('rejects unsupported summary precision: %s', output => {
   expect(evaluateBuildBudgets({ uploadKiB: { error: 1.01 } }, output).valid).toBe(false);
+});
+it('terminates a timed-out process and its inherited pipe-holding child', async () => {
+  const started = Date.now();
+  const result = await runCaptured(process.execPath, ['-e', "require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'inherit'});setInterval(()=>{},1000)"], { shell: false, timeoutMs: 300 });
+  expect(result.code).toBe(1); expect(result.timedOut).toBe(true);
+  expect(Date.now() - started).toBeLessThan(3000);
+});
+it('forwards profiling arguments and deadlines to the project-installed tool', async () => {
+  const bundleDirs = [];
+  runProjectToolCaptured.mockImplementation(async (_root, _tool, args) => {
+    const output = args[args.indexOf('--outfile') + 1];
+    bundleDirs.push(path.dirname(output));
+    await fs.writeFile(output, args[0] === 'deploy' ? 'PRIVATE_BUNDLE' : JSON.stringify({ startTime: 0, endTime: 1000, nodes: [{ id: 1, callFrame: { functionName: 'PRIVATE_FN' } }], samples: [1], timeDeltas: [500] }));
+    return { code: 0, stdout: 'Total Upload: 1.00 KiB / gzip: 1.00 KiB' };
+  });
+  const result = await checkBuildBudgets('/project', '/verified/wrangler.json', { localStartupActiveMs: { error: 2 } }, { timeoutMs: 1500 });
+  expect(result.valid).toBe(true);
+  expect(runProjectToolCaptured.mock.calls[1][2].slice(0, 2)).toEqual(['check', 'startup']);
+  expect(runProjectToolCaptured.mock.calls[1][3].timeoutMs).toBe(1500);
+  expect(JSON.stringify(result)).not.toContain('PRIVATE');
+  for (const dir of bundleDirs) await expect(fs.stat(dir)).rejects.toThrow();
 });

@@ -30,3 +30,10 @@ it('fails closed on bounded combined stdout/stderr overflow', async () => {
   expect(result.valid).toBe(false); expect(result.diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_MEASUREMENT_FAILED');
   expect(JSON.stringify(result)).not.toContain('PRIVATE_SENTINEL');
 });
+it('bounds a hung native tool including inherited pipe-holding descendants', async () => {
+  const root = await fixture("require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'inherit'});console.error('PRIVATE_TIMEOUT');setInterval(()=>{},1000)");
+  const start = Date.now();
+  const result = await checkBuildBudgets(root, join(root, 'verified.json'), { uploadKiB: { error: 2 } }, { timeoutMs: 300 });
+  expect(result.valid).toBe(false); expect(result.diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_MEASUREMENT_FAILED');
+  expect(JSON.stringify(result)).not.toContain('PRIVATE_TIMEOUT'); expect(Date.now() - start).toBeLessThan(3000);
+});

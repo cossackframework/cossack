@@ -11397,3 +11397,71 @@ agent-docs tarball gate. This is focused final-package acceptance in the retaine
 fixture, not another full gate or full non-Desktop release matrix. The preceding
 full Cloudflare gate is recorded in the signed-receipt checkpoint.
 No blocked work; task counts remain 30 complete / 28 open.
+
+<a id="codex-local-startup-2026-10-05"></a>
+### Codex: local startup budget validation (2026-10-05)
+
+Author: Codex. Continued after `2872880e`. This completes CF-08's opt-in local
+profiling slice, not its provider startup/source-map/log/development acceptance.
+Counts remain **30 complete / 28 open**. Versions remain 0.8.3. Desktop remains
+complete by user decision; its unrun platform checks remain waived.
+
+Two independent read-only audits established native profiler semantics and the
+primary-only deployment boundary. An implementation agent exclusively owned
+`startup-profile.ts` and its 33 parser tests. Another exclusively owned the 15
+startup measurement integration tests. Codex reviewed all code and owned shared
+budget APIs, CLI capture, receipt integration, native acceptance and final checks.
+
+The configured local profile window uses `(endTime - startTime) / 1000` ms.
+Active time sums non-idle sampled deltas, including GC; empty samples leave active
+time unavailable. Malformed node/sample graphs and unsafe numeric ranges reject.
+The two metrics retain separate names from unavailable `providerStartupMs`.
+Wrangler writes a private multipart bundle, then a CPU profile, in a mode-0700 OS
+temporary directory. Each file is limited to 64 MiB and must be a regular file;
+raw code, binding values, URLs, function names and tool output do not enter JSON
+results or receipts. Success and failure both remove the directory; cleanup
+failure returns a fixed measurement error. Each tool call has a 30-second deadline
+and 1 MiB combined capture. Unix termination kills its process group, including
+pipe-holding descendants. Windows uses taskkill, but native Windows/macOS CLI
+termination was not tested here. This is separate from Desktop's waiver.
+
+Signed receipts authenticate the local numeric timings with existing invocation,
+settings, environment, artifact/tool identity checks. Local-only values cannot
+invent available upload sizes. Size-only budgets make no profile files or calls.
+Missing/invalid profiles, oversized or symlink files, failed tools and timeouts
+fail closed. Warning-only provider settings explicitly remain unverified.
+
+Verification:
+
+- Framework focused parser/budget/receipt checks: **57 passed / 3 files**.
+- Complete framework rerun: **1,808 passed / 98 files**, using `--maxWorkers=2`;
+  `/tmp/cossack-startup-framework-final.log`. First unrestricted run had 1,803
+  passes and four failures across SSG globals/view transitions, beginning with
+  five-second timeouts under competing load. No changes to those features were
+  needed; complete rerun passed. Initial log: `/tmp/cossack-startup-framework.log`.
+- Initial affected CLI run: **62 passed / 6 files**;
+  `/tmp/cossack-startup-cli.log`. Additional native generated Worker profile/
+  signed receipt acceptance: **1 passed, 5 filtered skips**,
+  `/tmp/cossack-startup-generated.log`. Filtered skips are not passes. Final
+  combined affected CLI run: **63 passed / 6 files**, including all six native
+  cases; `/tmp/cossack-startup-cli-final.log`, terminal status 0.
+- Root `pnpm tsc --noEmit`, framework package `tsc --noEmit`, declaration emission,
+  CLI/helper JavaScript syntax and owned diff whitespace checks pass. Logs:
+  `/tmp/cossack-startup-build.log`, `/tmp/cossack-startup-types-final.log`.
+- Native Wrangler **4.114.0** simple Worker profiling passes for local window and
+  active time, explicitly leaves provider startup unavailable, and rejects an
+  intentionally tiny active-time error threshold. Private binding sentinel is
+  absent from results. `/tmp/cossack-startup-native.log`.
+- Repacked installed framework/CLI pass the expanded custom-config acceptance
+  helper, including build/deploy startup receipts, explicit Vite options, SSG
+  URL discovery and prompt watch rejection. Retained fixture:
+  `/tmp/cossack-local-pack-gZdSQv/minimal-production`; Vite 8.3.2 / Wrangler
+  4.147.0. `/tmp/cossack-startup-installed.log`, terminal status 0. Tarballs:
+  `/tmp/cossack-startup-tarballs/{framework,cli}-startup-0.8.3.tgz`.
+
+Limitations: local timings include profiler overhead and depend on machine/tool
+versions and sampling. Unsupported application modules/bindings may fail native
+profiling. No remote upload, provisioning, publication or push occurred. No
+fresh full agent-docs gate, full CLI suite or non-Desktop release matrix was run
+at this checkpoint. Auxiliary Worker budgets/receipts/uploads remain future work;
+current deploy uploads only the primary Worker. CF-08 and REL-03 remain open.

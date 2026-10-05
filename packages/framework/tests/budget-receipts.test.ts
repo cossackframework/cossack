@@ -78,3 +78,14 @@ it.each(['limit', 'unavailable', 'failed'])('reconstructs fixed %s failure diagn
   expect(read?.valid).toBe(false); expect(read?.diagnostics[0].code).toBe(result.diagnostics[0].code);
   expect(JSON.stringify(read)).not.toContain('PRIVATE');
 });
+it.each(['', 'Total Upload: 3.00 KiB / gzip: 1.00 KiB'])('reuses local startup measurements without inventing unavailable sizes (%s)', async output => {
+  const f = await fixture();
+  const budgets = { ...f.budgets, localStartupProfileMs: { error: 100 }, localStartupActiveMs: { warning: 20 } };
+  await writeFile(join(f.root, 'package.json'), JSON.stringify({ cossack: { buildBudgets: budgets } }));
+  const before = await fingerprintBudgetArtifact(f.root, f.artifact, budgets, 'staging');
+  const result = evaluateBuildBudgets(budgets, output, { localStartupProfileMs: 50.125, localStartupActiveMs: 25.375 });
+  expect(await writeBudgetReceipt(f.root, f.artifact, budgets, 'staging', f.key, before, result)).toBe(true);
+  expect(await readBudgetReceipt(f.root, f.artifact, budgets, 'staging', f.key)).toEqual(result);
+  const receipt = await readFile(f.receipt, 'utf8');
+  expect(receipt).not.toMatch(/PRIVATE|cpuprofile|functionName|startTime/);
+});

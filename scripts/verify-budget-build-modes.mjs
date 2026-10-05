@@ -14,7 +14,7 @@ export async function verifyBudgetBuildModes(projectDir) {
   const custom = `.cossack/budget-source-${randomUUID()}.jsonc`;
   try {
     const manifest = JSON.parse(saved[0]);
-    manifest.cossack = { ...manifest.cossack, buildBudgets: { uploadKiB: { error: 100000 } } };
+    manifest.cossack = { ...manifest.cossack, buildBudgets: { uploadKiB: { error: 100000 }, localStartupProfileMs: { error: 100000 }, localStartupActiveMs: { error: 100000 }, providerStartupMs: { warning: 1000 } } };
     await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify(manifest));
     const config = JSON.parse(saved[1]);
     config.main = path.resolve(projectDir, config.main);
@@ -40,6 +40,12 @@ export async function verifyBudgetBuildModes(projectDir) {
       assert.equal(report.ok, true);
       assert.equal(report.data.buildBudgets.valid, true);
       assert.ok(report.data.buildBudgets.measurements[0].value > 0);
+      for (const metric of ['localStartupProfileMs', 'localStartupActiveMs']) {
+        const value = report.data.buildBudgets.measurements.find(item => item.metric === metric);
+        assert.equal(value.status, 'measured');
+        assert.equal(value.source, 'wrangler-local-startup-profile');
+      }
+      assert.equal(report.data.buildBudgets.measurements.find(item => item.metric === 'providerStartupMs').status, 'unavailable');
       assert.ok(!result.stdout.includes('PRIVATE_CUSTOM_BUDGET_SENTINEL'));
       assert.match(JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8')).signature, /^[a-f\d]{64}$/);
     }
@@ -64,7 +70,7 @@ export async function verifyBudgetBuildModes(projectDir) {
       assert.ok(!output.includes('PRIVATE_CUSTOM_BUDGET_SENTINEL'));
     }
     await assert.rejects(fs.access(path.join(projectDir, '.cossack/build-budget-receipt.json')));
-    console.log('Installed custom source config, CLI build/deploy receipts, explicit Vite options, public SSG URL discovery and prompt watch rejection verified.');
+    console.log('Installed custom source config, CLI build/deploy startup receipts, explicit Vite options, public SSG URL discovery and prompt watch rejection verified.');
   } finally {
     await fs.rm(path.join(projectDir, custom), { force: true });
     await Promise.all(files.map((file, index) => fs.writeFile(path.join(projectDir, file), saved[index])));

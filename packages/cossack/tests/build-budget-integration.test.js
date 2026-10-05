@@ -138,3 +138,18 @@ it('rejects actual Vite watch mode promptly when budgets require a completed art
   await expect(fs.access(path.join(projectDir, '.cossack/build-budget-receipt.json'))).rejects.toThrow();
   await expect(fs.access(path.join(projectDir, '.wrangler/deploy/config.json'))).rejects.toThrow();
 }, 30000);
+it('profiles a generated Worker once and reuses its signed local timings without a second CLI measurement', async () => {
+  const { projectDir } = await fixture({ localStartupProfileMs: { error: 100000 }, localStartupActiveMs: { error: 100000 }, providerStartupMs: { warning: 1000 } });
+  const captured = vi.spyOn(projectTools, 'runProjectToolCaptured');
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await buildCommand([], { cwd: projectDir, flags: { json: true } })).toBe(0);
+  const report = JSON.parse(log.mock.calls.at(-1)[0]);
+  expect(report.data.buildBudgets.measurements).toEqual(expect.arrayContaining([
+    expect.objectContaining({ metric: 'localStartupProfileMs', status: 'measured', source: 'wrangler-local-startup-profile' }),
+    expect.objectContaining({ metric: 'localStartupActiveMs', status: 'measured', source: 'wrangler-local-startup-profile' }),
+    expect.objectContaining({ metric: 'providerStartupMs', status: 'unavailable' }),
+  ]));
+  expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
+  const receipt = await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8');
+  expect(receipt).not.toMatch(/functionName|cpuprofile|startTime|PRIVATE/);
+}, 120000);

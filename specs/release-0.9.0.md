@@ -1717,3 +1717,23 @@ Final focused installed-package acceptance passes with updated framework/CLI
 tarballs in `/tmp/cossack-local-pack-gZdSQv/minimal-production` (Vite 8.3.2 /
 Wrangler 4.147.0), including published SSG URL discovery. This is a retained
 fixture update, not a fresh full release matrix; details are in the archive.
+
+<a id="codex-local-startup-2026-10-05"></a>
+### Codex local Worker startup budgets (2026-10-05)
+
+Implemented opt-in `localStartupProfileMs` and `localStartupActiveMs` with
+private native Wrangler profiling, numeric-only signed receipt reuse, bounded
+subprocess deadlines and failure/cleanup validation. Active samples exclude idle
+and include GC. Provider startup remains unavailable locally; these metrics do
+not prove production CPU limits. Full framework 1,808 tests / 98 files,
+affected CLI 63 tests / 6 files, root/framework types and declarations, native
+workspace profiling, deliberate threshold rejection and repacked installed
+acceptance pass. See the
+[verification record](./release-0.9.0-verification-archive.md#codex-local-startup-2026-10-05)
+for CLI results, the initial timeout failures and platform/scope limits.
+
+Independent auxiliary auditing confirms the command currently deploys only the
+primary Worker. Its explicit policy/target follow-up is recorded in the
+[detailed plan](./release-0.9.0-plan.md#codex-local-startup-plan-2026-10-05).
+No parent task closes. CF-08 remains open; counts remain **30 complete / 28 open**.
+Desktop remains complete by user decision, with remaining platform checks waived.

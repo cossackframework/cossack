@@ -116,9 +116,9 @@ export async function readBudgetReceipt(root: string, artifact: string, budgets:
     if (body.fingerprint !== await fingerprintBudgetArtifact(root, artifact, budgets, environment)) return;
     if (body.outcome === 'failed') return { valid: false, measurements: [], diagnostics: [{ code: 'COSSACK_BUILD_BUDGET_MEASUREMENT_FAILED', severity: 'error', message: 'Local Wrangler artifact measurement failed; no configured budget was verified.' }] };
     if (body.outcome !== 'measured' || !body.values || typeof body.values !== 'object' || Array.isArray(body.values)) return;
-    for (const [metric, value] of Object.entries(body.values)) if (!Object.hasOwn(budgets, metric) || !['uploadKiB', 'gzipUploadKiB'].includes(metric) || typeof value !== 'number' || !Number.isFinite(value) || value < 0) return;
+    for (const [metric, value] of Object.entries(body.values)) if (!Object.hasOwn(budgets, metric) || !['uploadKiB', 'gzipUploadKiB', 'localStartupProfileMs', 'localStartupActiveMs'].includes(metric) || typeof value !== 'number' || !Number.isFinite(value) || value < 0) return;
     const values = body.values;
     // An unconfigured counterpart is immaterial to evaluation; never expose it as a measurement.
-    return evaluateBuildBudgets(budgets, Object.keys(values).length ? `Total Upload: ${(values.uploadKiB ?? 0).toFixed(2)} KiB / gzip: ${(values.gzipUploadKiB ?? 0).toFixed(2)} KiB` : '');
+    return evaluateBuildBudgets(budgets, (values.uploadKiB !== undefined || values.gzipUploadKiB !== undefined) ? `Total Upload: ${(values.uploadKiB ?? 0).toFixed(2)} KiB / gzip: ${(values.gzipUploadKiB ?? 0).toFixed(2)} KiB` : '', { localStartupProfileMs: values.localStartupProfileMs, localStartupActiveMs: values.localStartupActiveMs });
   } catch { return undefined; }
 }

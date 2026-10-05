@@ -9,33 +9,35 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [custom config paths and watch policy](./release-0.9.0-verification-archive.md#codex-custom-config-watch-2026-10-05).
-Primary Worker budget/config/page-binding checks accept explicit `configPath`.
-SSG URL discovery shares the same source-path rules and accepts explicit options.
-CLI source selection uses `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`, shared with
-Vite and type generation; missing selected paths fail without root fallback.
-The default Cloudflare budget plugin and signed invocation receipts remain
-verified. Budgeted watch builds reject with a fixed code before measurement;
-application hooks do not verify each watch generation. No watch support is claimed.
-Framework owns shared Node-only tooling; CLI consumes it. Built artifact reads
-and measurements still clear ambient environment selection. Use installed CLI
-or `createBuilder().buildApp()`; `vite.build()` bypasses application hooks.
-Verified: framework 1,757 tests / 96 files, affected CLI 60 / 6 files, native
-nested/environment and explicit-path builds, prompt native watch rejection,
-root/framework typechecks, declarations and helper syntax. Final repacked
-framework/CLI acceptance passes in the retained fixture at
-`/tmp/cossack-local-pack-gZdSQv/minimal-production`, including published SSG URL
-discovery with Vite 8.3.2 / Wrangler 4.147.0. This is a focused package update,
-not a full release matrix. First explicit-path
-acceptance found the page binding reader gap; it was repaired and checks rerun.
-CLI build also resolves the project-installed Vite for captured and human output;
-installed acceptance exposed the previous reliance on the parent PATH.
-Agents contributed an independent watch audit and seven exclusive selector tests;
-Codex integrated/reviewed their work and owns shared implementation.
-Next: define auxiliary Worker policies and wider module graphs, then
-startup/provider metrics, native DEV faults, production source maps and remote
-logs. CF-08 remains open; no task closes. Counts stay 30 complete / 28 open.
-No blocked work. Desktop is complete and platform checks remain waived.
+Latest Codex progress: [local startup budgets](./release-0.9.0-verification-archive.md#codex-local-startup-2026-10-05).
+Primary Worker budgets now accept `localStartupProfileMs` (profile window) and
+`localStartupActiveMs` (non-idle sampled time, including GC). Profiling is opt-in,
+uses the fresh verified artifact and private temporary files, and persists only
+numeric timings in signed receipts. Each tool invocation has a 30-second deadline
+and bounded capture; invalid profiles, overflow and tool failures fail closed.
+Size-only budgets do not profile. `providerStartupMs` remains unavailable locally.
+These machine-dependent timings include profiler overhead and do not establish
+Cloudflare provider startup or production CPU limits.
+
+Codex reviewed/integrated independent startup/auxiliary audits, the exclusive
+profile parser and the exclusive integration test file. Native workspace Wrangler
+4.114.0 and installed Wrangler 4.147.0 profile acceptance pass. Full framework:
+1,808 tests / 98 files; final combined affected CLI: 63 tests / 6 files.
+Root/framework types and declaration emission pass.
+The first unrestricted framework run had four SSG/view-transition failures,
+starting with timeouts; the complete rerun with two workers passed without code
+changes to those features. Repacked framework/CLI acceptance passes in retained
+`/tmp/cossack-local-pack-gZdSQv/minimal-production`. This is focused installed
+acceptance, not a fresh full agent-docs gate or release matrix. The linked verification record retains logs and scope limitations.
+
+Next: implement explicit auxiliary Worker budget policies and wider module-graph
+acceptance using the [bounded follow-up plan](./release-0.9.0-plan.md#codex-local-startup-plan-2026-10-05).
+Current Cossack deployment uploads only the primary Worker; auxiliary deployment
+is not implemented. Keep auxiliary receipt reuse disabled until every target and
+policy is authenticated. Provider startup, native DEV faults, production source
+maps and remote logs remain open. CF-08 stays open; counts stay 30 complete /
+28 open. No external credentials currently block local progress. Desktop is
+complete by user decision and platform checks remain waived.
 
 Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
 and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
