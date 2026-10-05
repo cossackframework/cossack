@@ -13264,3 +13264,81 @@ release-note alignment after gates. REL-05: final requirement audit. No requirem
 was relaxed to improve counts. No cloud mutation, deployment, publication, push or
 credential rotation occurred. Preserve user reports.md/.zcodeignore and the two
 prior uncommitted Workflow probes; they are not included in this commit.
+
+
+<a id="codex-native-preview-cli-ci-2026-10-06"></a>
+## Codex: connected native preview CLI/CI — 2026-10-06
+
+**No completed task IDs. 51 complete / 7 open.** This batch implements the
+remaining CF-09 execution path; it does not close its remote acceptance criteria.
+Two agents exclusively implemented the native provider/tests and CI template/tests;
+a third wrote the operator guide. Codex reviewed and integrated CLI parsing,
+scaffold ownership/rendering, prepared artifacts, journals, smoke and cleanup.
+
+- Public `preview create|inspect|cleanup` uses actual project Wrangler, singular
+  `preview`, `--ignore-defaults`, explicit selected account and fixed official
+  account-scoped REST reads. Tool/version/help/account contracts are checked.
+- Explicit staging D1/KV/R2 references must differ from production and are
+  retained. Local DO classes use native preview ownership. Shared/unsupported
+  service/Workflow/Queue bindings and required Worker secrets fail closed.
+- The existing deploy dry-run gate performs configuration checks, binding types,
+  Vite build, artifact verification and configured budgets before upload. The
+  native-build fixture runs real Vite and Wrangler; the remote provider and
+  smoke response are fixture inputs, not remote execution.
+- Journals precede mutation; receipts precede smoke. Cleanup checks provider
+  ID/name/creation time and deployment scope/tag, deletes by immutable ID, then
+  confirms absence. Lost deletion responses can converge; absent previews are
+  idempotent. Replaced identities/tags/accounts, arbitrary journal fields,
+  symlinks/traversal, active locks and uncertain reads block deletion. Dead
+  same-host locks can be reclaimed; foreign/live locks fail closed.
+- Manual CI installs without the deployment token, limits credentials to the
+  lifecycle steps, uploads intent/final journals and restores explicit same-
+  repository prior artifacts for retry. Actual YAML/shell behavior is tested
+  locally; hosted Actions and cloud effects are not exercised. Promotion and
+  backward-compatible migration ordering remain separate and reviewed. Code
+  rollback does not restore storage/state.
+
+Verified checks (all exit 0):
+
+```sh
+pnpm --filter cossack exec vitest run tests/preview-service.test.js tests/cloudflare-preview-provider.test.js tests/command-contracts.test.js tests/mcp.test.js
+pnpm --filter @cossackframework/scaffold exec vitest run tests/preview-workflow.test.js tests/preview-rendering.test.js tests/scaffold.test.js
+pnpm --filter cossack exec vitest run tests/preview-build-acceptance.test.js
+pnpm --filter cossack exec vitest run tests/preview-service.test.js
+pnpm --filter @cossackframework/scaffold exec vitest run tests/preview-rendering.test.js
+COSSACK_PREVIEW_INSTALLED_ROOT=/tmp/cossack-preview-installed-final pnpm --filter cossack exec vitest run tests/preview-service.test.js tests/preview-build-acceptance.test.js tests/preview-installed-acceptance.test.js
+pnpm tsc --noEmit
+pnpm run typecheck -- --exclude-desktop
+```
+
+Results: combined CLI **184 pass / 4 files** (32 native-provider contract cases);
+scaffold **88 pass / 3 files**; source native-build **1 pass**. Final journal
+hardening adds one case: final service **23 pass**, render **3 pass** and final
+installed **25 pass / 3 files**. These final checks supersede the earlier service
+run. Actual provider subprocess tests prove bounded output/deadlines and process
+tree reclamation using local Node children; their payloads are fixtures. Initial
+real-parser fixture failed because it linked CLI dependencies without Wrangler;
+corrected to the project tool graph and final public-CLI parser acceptance passes.
+No production requirement was removed to make a generated app pass: the installed
+default-secret app explicitly rejects unsupported preview creation.
+
+Only changed CLI/Scaffold were packed into `/tmp/cossack-preview-final-artifacts`,
+installed into a fresh `/tmp/cossack-preview-installed-final` with unchanged
+dependency tarballs. Packing was repeated only after final journal hardening
+changed CLI behavior/source. Logs: `/tmp/cossack-preview-combined-cli.log`,
+`/tmp/cossack-preview-combined-scaffold.log`, `/tmp/cossack-preview-source-build.log`,
+`/tmp/cossack-preview-final-service.log`, `/tmp/cossack-preview-final-render.log`,
+`/tmp/cossack-preview-installed-acceptance.log`, `/tmp/cossack-preview-root-types.log`,
+`/tmp/cossack-preview-package-types.log`. Root and all ten non-Desktop package
+checks pass; Desktop remains explicitly waived, never reported as passed.
+
+**Missing CF-09 criteria:** no configured explicit account/API token in this
+session and no hosted CI run, so real isolation/production-unchanged/create/smoke/
+cleanup/retry proof remains absent. Required-secret setup is unsupported; generated
+apps requiring APP_SECRET fail closed. Lost creation before tagged receipt cannot
+authorize automatic removal and requires manual provider recovery. Existing
+staging storage is not provisioned per branch. CI cancellation may prevent upload.
+These limits are documented, not waived. Strict SVC-04 native Waiting/lifecycle
+acceptance remains open; CF-08 remote and final REL gates remain as previously
+recorded. Versions remain 0.8.3. No cloud mutation/deployment/push/publication.
+Preserved baseline changes: reports.md, .zcodeignore and two Workflow probe files.

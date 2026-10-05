@@ -1,0 +1,125 @@
+# Manual trusted invocation only. Do not add pull_request_target or check out untrusted PR code with secrets.
+# A native preview URL does not isolate every binding. The CLI rejects unsupported/shared production bindings.
+# Production promotion is separate: review migrations, deploy production explicitly, then smoke it.
+# Code rollback does not restore database or object data.
+name: Isolated Cloudflare preview
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Create, smoke and clean a preview, or retry cleanup from a saved journal
+        required: true
+        type: choice
+        options: [create, cleanup]
+      preview_name:
+        description: Explicit preview name, for example pr-42 (create only)
+        required: false
+        type: string
+      source_run_id:
+        description: Prior run ID in this repository containing the ownership journal (cleanup only)
+        required: false
+        type: string
+      journal_artifact:
+        description: Prior journal artifact; use intent if the final upload did not finish
+        required: true
+        type: choice
+        default: cossack-preview-journal
+        options: [cossack-preview-journal, cossack-preview-intent]
+permissions:
+  contents: read
+concurrency:
+  group: cossack-preview-${{ github.repository }}-${{ inputs.preview_name || inputs.source_run_id }}
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CI: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install locked dependencies without a deployment token
+        run: pnpm install --frozen-lockfile
+      - name: Validate selected inputs
+        id: inputs
+        env:
+          OPERATION: ${{ inputs.operation }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[a-fA-F0-9]{32}$ ]] || { echo 'Set CLOUDFLARE_ACCOUNT_ID repository variable'; exit 1; }
+          if [[ "$OPERATION" == create ]]; then
+            [[ "$PREVIEW_NAME" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || { echo 'Invalid preview name'; exit 1; }
+          elif [[ "$OPERATION" == cleanup ]]; then
+            [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Provide the prior numeric workflow run ID'; exit 1; }
+          else
+            exit 1
+          fi
+      - name: Restore prior ownership journal for cleanup
+        if: inputs.operation == 'cleanup'
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.journal_artifact }}
+          path: .cossack
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: Create and smoke preview
+        id: create
+        if: inputs.operation == 'create'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_NAME: ${{ inputs.preview_name }}
+        run: pnpm exec cossack preview create --account "$CLOUDFLARE_ACCOUNT_ID" --name "$PREVIEW_NAME" --state .cossack/preview.json --smoke / --json
+      # The CLI atomically writes intent before the first remote mutation. Save it before teardown too.
+      - name: Preserve pre-cleanup ownership journal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cossack-preview-intent
+          path: .cossack/preview.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Verify server ownership and clean preview resources
+        if: always() && steps.inputs.outcome == 'success' && (inputs.operation == 'cleanup' || steps.create.outcome != 'skipped')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f .cossack/preview.json ]]; then
+            pnpm exec cossack preview inspect --account "$CLOUDFLARE_ACCOUNT_ID" --state .cossack/preview.json --json
+            pnpm exec cossack preview cleanup --account "$CLOUDFLARE_ACCOUNT_ID" --state .cossack/preview.json --json
+          else
+            echo 'Ownership journal unavailable; no deletion attempted'
+            exit 1
+          fi
+      - name: Preserve final ownership journal even on failure or cancellation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cossack-preview-journal
+          path: .cossack/preview.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+# Cancellation can terminate the runner before upload. A create that loses its response before
+# returning a tagged deployment requires manual provider recovery; intent alone never authorizes
+# deletion. The CLI fails closed when server ownership cannot be proven.

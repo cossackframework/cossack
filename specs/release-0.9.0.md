@@ -77,7 +77,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite error boundaries now preserve private compiler results and omit caught exceptions. CLI Cloudflare size budgets, signed per-invocation result reuse and the default scaffold direct Vite primary-Worker gate are implemented; explicit auxiliary Worker policies and local startup profiling are implemented and natively verified. Wider module graphs/authenticated multi-Worker receipts, provider startup, native development faults and remote Workers Logs ingestion remain open. Codex (2026-10-06): native production stack resolution and actual prepared source-map upload parts pass in source and installed minimal/Workflows apps; remote remapping remains unproven. [Batch evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06). See [auxiliary validation](#codex-auxiliary-budgets-2026-10-05). See [local startup](#codex-local-startup-2026-10-05). See [receipt integration](#codex-budget-receipts-2026-10-05). See [direct Vite checkpoint](#codex-direct-vite-budgets-2026-10-05). See [budget/transport checkpoint](#codex-cf08-budgets-deno-transport-2026-10-05). See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
-- [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
+- [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance. Codex: connected native preview CLI/provider, trusted manual CI, smoke and ownership-verified cleanup now pass source/installed local acceptance. Required secrets, lost creation recovery and hosted account/CI isolation remain unproven. [Evidence](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
 - [x] [CF-10](./release-0.9.0-plan.md#cf-10) Executable public installation/deployment guide, custom domains, named environments, SSG and tested compatibility. [Codex installed acceptance and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06); remote preview/resource readiness remains separate.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
 
@@ -1953,3 +1953,13 @@ filtered non-Desktop guidance have passing follow-ups. Full browser: 278 passed 
 These are composite results, not single full green invocations or remote proof.
 Desktop remains waived; versions stay 0.8.3. Open: SVC-04, CF-08, CF-09,
 REL-02, REL-03, REL-04, REL-05. No cloud mutation/deployment/publication/push.
+
+
+## Codex: native preview CLI and CI batch — 2026-10-06
+
+**51 complete / 7 open; no numbered task closes.** CF-09 now has connected
+native execution, account-scoped inspection, immutable-ID cleanup, explicit
+staging resources, saved failure state and a rendered CI template. Local tests
+and changed-package installed acceptance pass; hosted isolation/cleanup and
+required-secret setup remain open. [Exact checks and missing criteria](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
+Desktop stays completed with platform checks waived; versions remain 0.8.3.

@@ -402,13 +402,20 @@ Purpose: Branch tests need production-like behavior without modifying production
 data. A preview URL identifies code but does not establish resource isolation.
 
 Baseline: Deployment docs explain separate resources and rollback limits.
-Automated preview creation, smoke checks, cleanup, and promotion remain open.
+Codex now implements native preview creation, same-origin smoke, saved journals,
+account/provider ownership inspection and immutable-ID cleanup through the public
+CLI, with a trusted manual scaffold CI workflow. These are locally verified, not
+hosted acceptance. Required Worker secrets and lost creation receipts are explicit
+unsupported/recovery boundaries. [Evidence](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
+Promotion remains a separate reviewed production deployment with migration order
+and code/state rollback limits documented in [the guide](../docs/cloudflare-previews.md).
 
 Approach: Plan code and bound resources together. Identify which D1, KV, R2,
 Durable Object, Queue, Workflow, and service bindings are isolated or shared.
 Use native Worker Previews only after upgrading and testing the pinned tooling.
-The checkpoint resolves Wrangler 4.114.0. The documented native preview minimum
-is 4.135.0. Retrieve current limitations before implementation.
+The native provider requires compatible Wrangler 4.x >=4.135.0 and checks actual
+preview/create/delete flags and account access; this batch verifies installed
+Wrangler 4.147.0 locally. Recheck provider contracts before changing this boundary.
 Track resource ownership so cleanup deletes only preview-owned resources.
 Define an explicit production build/promotion process and migration order.
 
@@ -779,3 +786,17 @@ Next finish native Workflow lifecycle and actual preview provider/CI ownership,
 then remote operational/runtime acceptance and final versioned artifact gates.
 Do not reopen Desktop or expand working budgets to fill these gaps. No cloud
 mutation or package publication occurred; preserve the earlier failed probes.
+
+
+## Codex: native preview batch — 2026-10-06
+
+**No numbered task closes: 51 complete / 7 open.** Native preview CLI/provider,
+rendered manual CI, journals, smoke and verified cleanup are connected and pass
+source plus installed local checks. [Evidence](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
+To close CF-09, prove hosted creation/smoke/cleanup against an explicit account
+without production changes, support required secrets without shared defaults,
+and resolve lost-create recovery. Existing D1/KV/R2 staging bindings are retained;
+per-branch provisioning is not implemented. Do not treat transport fixtures or
+CI shell tests as provider execution. Preserve strict SVC-04 waiting/lifecycle
+criteria and earlier failed probes. Other remote/runtime/final release gates
+remain unchanged; Desktop is waived and versions stay 0.8.3.

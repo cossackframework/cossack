@@ -2,38 +2,36 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest Codex batch verifies **production maps, migration-history guidance and
-local release gates**. **51 complete / 7 open**, versions 0.8.3; no numbered task
-closes. [Exact evidence and remaining criteria](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06). Generated private maps
-resolve actual workerd stack coordinates and accompany the matching module in
-Wrangler's real prepared upload body. Source/installed minimal and Workflows
-compositions pass; native Workflow loading is fixed, lifecycle remains unproven.
+Latest Codex batch adds **connected native preview CLI/provider and trusted CI**,
+with [source/installed local evidence](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
+**51 complete / 7 open**, versions 0.8.3; no numbered task closes. Native
+account verification and scoped GETs precede ownership-verified cleanup by
+immutable preview ID. Intent precedes create; receipt precedes smoke. Existing
+staging D1/KV/R2 resources are retained; local DOs use native preview ownership.
 
-Non-Desktop dependency/Framework/SSG builds and bundle audit pass. Units: 5,525
-passed / two external database skips, plus eight new config/two Sidebar cases.
-Final root/all ten package typechecks pass. Full CLI: 1,028 passed / one failed /
-eight filtered; Studio and required non-Desktop guidance pass follow-ups. Full
-browser: 278 passed / 19 failed; all failures covered by final **87 passed** batch.
-SSG six pass; Sidebar source/installed native acceptance passes. These are
-composite results, not one immutable full green run. Do not repeat unchanged gates.
+Checks: CLI/contracts/MCP/provider combined **184 pass**, final service **23 pass**,
+scaffold **88 pass**, source native build gate **1 pass**, final installed **25 pass**;
+root and all ten non-Desktop package types pass. Later journal hardening is in
+the final source/installed checks. Hosted CI/cloud mutation is **not run**.
+Changed CLI/Scaffold tarballs: `/tmp/cossack-preview-final-artifacts`; fresh
+installed gate: `/tmp/cossack-preview-installed-final`. Unchanged packages reused.
 
-Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Preserve strict
-native Waiting/event-resume/failure probes. CF-08 remote logs/remapping/provider
-acceptance remains; CF-09 needs a real ownership-verifying preview provider/CI
-lifecycle, isolated smoke, cleanup and promotion. Current provider is read-only.
-Deno Deploy and final versioned non-Desktop/published/native matrices remain.
-Preserve applied migration definitions: the guide's SQLite upgrade/rejection
-proof does not reconcile remote or mixed histories. Version/release work is gated.
+Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. CF-09 needs
+hosted account/CI isolation and retry proof, required-secret support (default
+generated apps currently fail closed), and lost-create receipt recovery. A
+still-present preview without a tagged receipt requires manual provider recovery;
+intent/name alone cannot authorize deletion. API token/account environment are
+not configured in this session. Strict native Workflow Waiting/event-resume/
+failure acceptance remains unproven; pinned local status reports Running.
+CF-08 remote logs/maps/provider startup, Deno Deploy and final versioned artifact
+gates remain. Avoid polishing working budgets or rechecking unchanged gates.
 
-Changed Framework/Scaffold tarballs: /tmp/cossack-source-map-linked-artifacts;
-fresh map gate: /tmp/cossack-source-map-linked-installed. Changed UI tarball:
-/tmp/cossack-sidebar-release-artifacts; fresh Sidebar gate:
-/tmp/cossack-sidebar-release-installed. Reuse unchanged dependency tarballs.
-[Prior Deno draining proof](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06)
-and [completed CF-10 proof](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06)
-remain valid. Owned dev/preview servers are stopped. Preserve user reports.md,
-.zcodeignore and earlier Workflow probes; no cloud mutation/deployment/push/publication.
-Desktop remains completed with remaining platform checks waived.
+[Earlier maps/release checks](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06),
+[Deno draining](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06)
+and [CF-10](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06)
+evidence remain valid with their recorded limits. Preserve user `reports.md`,
+`.zcodeignore`, and earlier uncommitted Workflow probes. No cloud provisioning,
+deployment, push or publication occurred. Desktop stays completed/waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.

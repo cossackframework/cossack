@@ -1,3 +1,4 @@
+import { previewCommand, previewHelp } from './commands/preview.js';
 import { tracesCommand, tracesHelp } from './commands/traces.js';
 import { testResultsCommand, testResultsHelp } from './commands/test-results.js';
 import { docsCommand, docsHelp } from './commands/docs.js';
@@ -43,6 +44,7 @@ const COMMANDS = {
   build: { run: buildCommand, help: buildHelp },
   start: { run: startCommand, help: startHelp },
   deploy: { run: deployCommand, help: deployHelp },
+  preview: { run: previewCommand, help: previewHelp },
   resources: { run: resourcesCommand, help: resourcesHelp },
   // scaffolding
   create: { run: createCommand, help: createHelp },
@@ -196,6 +198,7 @@ Commands:
   build                        Production build, including SSG (vite build).
   start                        Start the production server.
   deploy                       Build and deploy to Cloudflare (--env, --dry-run, --json).
+  preview <create|inspect|cleanup> Native isolated previews and verified cleanup.
   resources <plan|apply>        Select account-owned bindings (--account, --env, --select, --verify).
   inspect cloudflare           Show resolved Cloudflare configuration (--env, --json).
   check cloudflare             Validate local Cloudflare configuration without writes.

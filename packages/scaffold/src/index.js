@@ -70,6 +70,7 @@ const PNPM_MANAGED_BUILDS = new Set([
   'workerd',
 ]);
 const ADAPTER_PATHS = new Set([
+  '.github/workflows/preview.yml',
   '.env.example',
   '.dev.vars.example',
   'deno.json',
@@ -326,6 +327,7 @@ const DESKTOP_PATHS = new Set([
 ]);
 
 function capabilityFor(rel, recipe) {
+  if (rel === '.github/workflows/preview.yml') return recipe.adapter === 'cloudflare' ? 'base' : null;
   if (rel === 'src/pages/resource/index.ts') return recipe.resolvedFeatures.includes('resource') ? 'resource' : null;
   if (rel === 'src/pages/mutation/index.ts') return recipe.resolvedFeatures.includes('mutation') ? 'mutation' : null;
   if (rel.startsWith('src/pages/scoped-service/') || rel === 'src/services/scoped-counter.ts') {
@@ -1778,7 +1780,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n'),
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/**/*.lock\n'),
     capability: 'base',
   });
 
