@@ -10623,3 +10623,54 @@ execution/source-value copying and an empty client virtual module, but a fresh
 installed app/browser bundle gate was not run for this checkpoint. Config types
 require generation before standalone typechecking; Vite performs it on startup.
 Task counts remain **30 complete / 28 open**; Desktop platform checks stay waived.
+
+<a id="codex-rt24-config-cli-2026-10-05"></a>
+### Codex: Configuration CLI and installed acceptance (2026-10-05)
+
+`cossack config` catalogs filename-based factory keys and type origins without
+reading source or executing modules. JSON explicitly reports evaluation and
+validation as not performed. `--generate` emits configuration declarations;
+`--generate --dry-run` preserves existing output and creates no missing output.
+Read-only discovery remains available when generation would conflict with an
+authored file. Shared command validation rejects unknown options before writes.
+The generator exports discovery separately; Vite and CLI retain one file scope.
+Agent documentation, CLI help/README and config/architecture specs explain the
+workflow and its limits. A real client build proves the virtual configuration
+module excludes factory code and private-value sentinels.
+
+Codex integrated an exclusive-file CLI implementation subagent and a read-only
+requirements/review subagent. Review corrected documentation about factory scope
+and clarified that filename discovery does not validate default exports.
+
+**Verification:** combined CLI config/command-spec/documentation suites pass
+**34/34**; combined framework codegen/config/routes/publication suites pass
+**50/50**; core form-controller tests pass **9/9**. Core build, framework declaration
+emission, root `pnpm tsc --noEmit`, and task-owned diff checks pass. Fresh
+`COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local` passes 76 packaged examples,
+four auth examples, offline CLI/MCP checks and installed Cloudflare browser
+trace/guidance/source-map stripping checks. The new installed configuration
+acceptance helper passes separately against that retained tarball app: packaged
+CLI generation, typed paths/default errors, stable regeneration and removal.
+The local smoke script now invokes this helper before documentation acceptance.
+
+The first installed gate found a real pre-existing RT-10 declaration error:
+`FormController<S>` parsing resolves through its object constraint. The validated
+result now retains the correlated `InputOf<S>` type, with typed parsed-value
+assertions and successful core declaration emission. RT-10 remains open.
+
+**Limits:** installed configuration checking follows the scaffold's
+`skipLibCheck: true` policy; the focused generator compiler test separately uses
+`skipLibCheck: false`. Published cache declarations still require Worker ambient
+types for strict declaration checking, which this installed fixture does not
+supply. The initial strict installed attempt failed for missing
+`DurableObjectState`, not generated registry inference. No global compatibility
+claim follows from the installed gate.
+
+RT-24 remains open: SSR and SSG build factories before entering the request
+config scope, so imported required helpers inside factories cannot read that
+pending environment. Required variable/binding metadata, coercion, runtime
+applicability, selected-environment preflight and full isolation/hydration
+redaction acceptance remain. The virtual-module sentinel test does not prove all
+direct-import or hydration secrecy. Counts remain **30 complete / 28 open**;
+Desktop-only platform acceptance remains waived. No external deployment or
+remote resource provisioning occurred.

@@ -214,14 +214,17 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 6. Continue [RT-24](./release-0.9.0-plan.md#rt-24) from the
-   [generated config checkpoint](./release-0.9.0.md#codex-rt24-generated-config-2026-10-05).
-   Vite now infers registry types without executing factories; explicit authored
-   registry entries override generated entries. Framework tests pass 32/32,
-   scaffold 81/81, framework declaration emission and root typecheck pass.
-   Next add standalone CLI generation/inspection and required variable/binding
-   metadata/coercion, then prove selected-environment preflight and full secret
-   redaction/request isolation. Fresh installed/browser acceptance was not run.
-   RT-24 stays open; counts remain 30 complete / 28 open.
+   [CLI/installed checkpoint](./release-0.9.0.md#codex-rt24-config-cli-2026-10-05).
+   CLI discovery/generation now shares Vite's scanner and never evaluates
+   factories. Combined CLI suites pass 34/34, framework 50/50, fresh installed
+   documentation/browser acceptance and separate installed config inference pass.
+   Next centralize request configuration preparation: current SSR/SSG factories
+   run before runWithConfig, so imported required helpers cannot see bindings.
+   Add separate requirement metadata/coercion/runtime applicability and selected
+   environment validation; prove interleaved isolation and full secret redaction.
+   Strict installed cache declarations need Worker ambient types; the installed
+   config fixture follows scaffold skipLibCheck while source-generator strict
+   checks pass. RT-24 stays open; counts remain 30 complete / 28 open.
 7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
    checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
    fixed failure-code and payload-redaction tests. Next review the remaining
@@ -285,3 +288,9 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
   integration and final verification with Codex. Do not create new chats, send
   messages, publish or deploy without authorization.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.
+
+Codex build repair (2026-10-05): the installed gate exposed RT-10's generic
+form-controller declaration error; validated data now retains InputOf<S>. Core
+build/declaration emission and 9 focused tests pass. This does not close RT-10's
+accessible binding/browser acceptance. Both build and CLI-generation evidence
+are recorded in the RT-24 CLI checkpoint above.

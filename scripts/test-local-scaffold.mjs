@@ -3,6 +3,7 @@ import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication, verifyD
 import { verifyDesktopPackage } from './verify-desktop-package.mjs';
 import { writeDenoRuntimeAcceptance, verifyDenoRuntimeApplication, verifyDenoCliStartup, verifyDenoDevelopmentApplication } from '../packages/cossack/tests/fixtures/deno-runtime-acceptance.js';
 import { verifyAgentDocumentation } from './verify-agent-documentation.mjs';
+import { verifyConfigTypes } from './verify-config-types.mjs';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
@@ -654,6 +655,7 @@ try {
     await verifyAgentDocumentation(minimalProjectDir, { runtime: 'deno' });
     console.log('Installed Deno production, CLI startup, development recovery and trace acceptance passed.');
   } else {
+    await verifyConfigTypes(minimalProjectDir);
     await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
   }
   if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {

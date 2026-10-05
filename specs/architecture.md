@@ -1211,3 +1211,13 @@ its Vite listeners. Parent and child bound shutdown; stdin EOF ends an orphaned
 child after parent failure. This is trusted local development, not a sandbox.
 Reload resets process-local state and does not undo external effects. Desktop
 web configurations exclude this plugin; embedded Vite middleware mode is rejected.
+
+## Configuration generation boundary
+
+The Node-only `framework/config-codegen` entry owns filename discovery and
+`.cossack/config.d.ts` emission. Vite and `cossack config --generate` share it.
+The runtime config accessor imports no generator or filesystem API. Generated
+module references are type-only; factories are evaluated during request
+or SSG configuration preparation. CLI discovery emits source/type origins without
+executing modules or publishing values. Explicit authored registry entries take
+precedence over inferred entries for the same key.

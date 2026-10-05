@@ -10,6 +10,7 @@ import { commandSpecs } from './command-specs.js';
  * holds shared flags. Returns a process exit code.
  */
 import { versionCommand, versionHelp } from './commands/version.js';
+import { configCommand, configHelp } from './commands/config.js';
 import { routesCommand, routesHelp } from './commands/routes.js';
 import { generateCommand, generateHelp } from './commands/generate.js';
 import { renderBanner } from './banner.js';
@@ -60,6 +61,7 @@ const COMMANDS = {
   inspect: { run: inspectCommand, help: inspectHelp },
   check: { run: checkCommand, help: checkHelp },
   routes: { run: routesCommand, help: routesHelp },
+  config: { run: configCommand, help: configHelp },
   info: { run: infoCommand, help: infoHelp },
   version: { run: versionCommand, help: versionHelp },
   // engine / maintenance
@@ -209,6 +211,7 @@ Commands:
   seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
+  config                       List configuration factory type origins; --generate emits types.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.

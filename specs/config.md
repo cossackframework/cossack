@@ -178,6 +178,27 @@ generateConfigTypes(process.cwd());
 ```
 
 Generation is deterministic and does not replace authored files or symlinked
-output destinations. This tooling is not a runtime API. Standalone CLI
-integration and required variable/binding metadata remain RT-24 work; generated
+output destinations. This tooling is not a runtime API. Required variable/binding metadata remain RT-24 work; generated
 types do not prove a selected environment supplies the declared values.
+
+### CLI discovery and generation
+
+`cossack config` lists the discovered factory keys, source files, and return-type
+origins without evaluating modules. `--json` uses the versioned CLI envelope;
+it exposes names and origins rather than computed values or source text.
+
+Run `cossack config --generate` before a standalone `pnpm tsc --noEmit` check.
+Use `--generate --dry-run --json` to preview the generated file status without
+writing. Repeated generation writes only when content changes. An authored
+`.cossack/config.d.ts` prevents generation with
+`COSSACK_CONFIG_GENERATION_CONFLICT`; read-only discovery still works.
+
+The catalog reports filename-based type origins, not expanded inferred types,
+verified factory exports, or verified runtime requirements. Existing apps must include `.cossack/config.d.ts` in
+TypeScript before its augmentation is visible.
+
+Current RT-24 limitation: SSR and SSG evaluate factories before entering
+`runWithConfig`. Use the passed `env` reader inside factories today; imported
+`requireEnv`/`requireBinding` helpers do not yet see that pending scope. The
+remaining runtime-preparation work must validate declared requirements and
+enter a fresh scope before factory evaluation, with explicit SSG applicability.

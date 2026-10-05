@@ -59,6 +59,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
+| `config` | List configuration factory type origins; use `--generate` before standalone typechecking. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |
 | `upgrade [dir]` | Upgrade Cossack deps and report template drift. |

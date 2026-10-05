@@ -413,6 +413,12 @@ root typecheck, and owned-file whitespace check pass. This is not RT-10
 completion: accessible bindings, reactive adapters, keyboard/label/error/focus
 browser tests, nested array-item paths and real file transport acceptance remain.
 
+Codex declaration repair (2026-10-05): the fresh installed documentation gate
+exposed object-to-InputOf<S> typing in FormController.validate. The parsed result
+now retains its concrete schema output type. Core build/declaration emission and
+9 form-controller tests pass, and the fresh installed gate passes after repair.
+Accessible bindings and RT-10 browser acceptance remain open.
+
 <a id="rt-11"></a>
 ### RT-11: Session and flash recipes
 
@@ -829,6 +835,28 @@ framework declaration emission and root typecheck pass. Continue with standalone
 CLI generation/inspection, required binding/variable metadata and coercion,
 selected-environment preflight, and full redaction/isolation acceptance. A fresh
 installed/browser gate was not run. RT-24 remains open; see the verification archive.
+
+Codex CLI checkpoint (2026-10-05): cossack config catalogs names/type origins;
+--generate emits types and --dry-run preserves files. JSON explicitly leaves
+factory evaluation/validation unperformed. Combined CLI suites pass 34/34,
+framework 50/50, fresh installed documentation/browser gate passes, and installed
+config generation/inference/removal helper passes separately. The helper uses the
+scaffold's skipLibCheck policy; strict source-generator checks remain separate.
+Strict installed cache declarations need Worker ambient types. Required runtime
+metadata/validation remains open; counts stay 30 complete / 28 open.
+
+Codex next implementation findings (2026-10-05): router and SSG currently build
+factories before entering runWithConfig, so imported required helpers inside
+factories cannot see request bindings. Centralize fresh config-store preparation
+and validate requirements before any factory/application side effect. Preserve
+factory syntax; consider separate literal named requirements exports describing
+variable types/coercion, required names, secret classification, binding kinds and
+runtime applicability. AST tooling must mark dynamic metadata unknown rather
+than execute it. Share pure validation between runtime values and CLI declaration
+facts, without claiming remotely deployed secrets exist. Explicitly define SSG
+requirements, since its only supplied binding is APP_URL. Acceptance must include
+interleaved request isolation and sentinel secrecy in errors, metadata and
+hydration, beyond filename catalog/client virtual-module tests.
 
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics

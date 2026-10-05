@@ -31,6 +31,10 @@ describe('createFormController', () => {
     }
 
     const result = await controller.validate();
+    if (result.valid) {
+      expectTypeOf(result.data.profile.age).toEqualTypeOf<number>();
+      expectTypeOf(result.data.enabled).toEqualTypeOf<boolean>();
+    }
     expect(result).toEqual({ valid: true, stale: false,
       data: { name: 'Ada', profile: { age: 21 }, enabled: true, tags: ['typescript'] } });
     expect(controller.getFieldValue('profile.age')).toBe('21');

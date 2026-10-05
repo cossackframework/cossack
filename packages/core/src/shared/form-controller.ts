@@ -238,7 +238,9 @@ export class FormController<S extends InputSchema<object, object>> {
       const data = await this.schema.parse(cloneValue(this.current), { signal: controller.signal });
       if (revision !== this.revision) return { valid: false, stale: true };
       this.errorState = Object.create(null);
-      return { valid: true, stale: false, data };
+      // S retains the concrete parse result, but TypeScript resolves the method
+      // through its object constraint inside this generic class.
+      return { valid: true, stale: false, data: data as InputOf<S> };
     } catch (error) {
       if (revision !== this.revision || controller.signal.aborted) return { valid: false, stale: true };
       const flattened = flattenServerErrors(fieldErrorsFrom(error));

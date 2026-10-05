@@ -145,6 +145,10 @@ export const commandSpecs = {
     markdown: bool('Include Markdown routes. The Vite plugin must configure markdownProcessor.'),
   }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
     ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for routes.' }] : [] }),
+  config: new CommandSpec({ name: 'config', globals: ['json', 'help', 'dry-run'], flags: {
+    generate: bool('Generate .cossack/config.d.ts without evaluating configuration factories.'),
+  }, check: (_args, flags) => flags['dry-run'] === true && flags.generate !== true
+    ? [{ code: 'COSSACK_OPTION_CONFLICT', severity: 'error', message: '--dry-run requires --generate for config.' }] : [] }),
   docs: new CommandSpec({ name: 'docs', globals: readonly, flags: {
     package: choices('Installed package to inspect.', COSSACK_PACKAGES), symbols: bool('Index declarations for the selected package.'),
     symbol: str('Return one exact public symbol; requires --package and --symbols.'),

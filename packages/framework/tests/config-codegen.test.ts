@@ -75,3 +75,19 @@ it('generates empty registries and refreshes development additions and removals'
   httpServer.emit('close'); expect(watcher.listenerCount('add')).toBe(0);
   expect(plugin.load.call({ environment: { name: 'client' } }, '\0virtual:cossack-config')).toBe('const configs = {};\nexport default configs;\n');
 });
+it('keeps factory source and values out of a built client bundle', async () => {
+  const { build } = await import('vite');
+  const root = project();
+  writeFileSync(join(root, 'src/config/private.ts'), `throw new Error('COSSACK_FACTORY_EXECUTION_SENTINEL'); export default () => ({ token: 'COSSACK_PRIVATE_VALUE_SENTINEL' });`);
+  writeFileSync(join(root, 'entry.ts'), `import configs from 'virtual:cossack-config'; console.log(configs);`);
+  const built = await build({ root, configFile: false, logLevel: 'silent', plugins: [cossackConfig()],
+    build: { write: false, lib: { entry: join(root, 'entry.ts'), formats: ['es'], fileName: 'client' } } });
+  const bundles = Array.isArray(built) ? built : [built];
+  const output = bundles.flatMap(bundle => 'output' in bundle ? bundle.output : [])
+    .map(chunk => chunk.type === 'chunk' ? chunk.code : String(chunk.source)).join('\n');
+  expect(output).toContain('console.log');
+  expect(output).not.toContain('COSSACK_FACTORY_EXECUTION_SENTINEL');
+  expect(output).not.toContain('COSSACK_PRIVATE_VALUE_SENTINEL');
+  expect(output).not.toContain('src/config/private');
+  expect(readFileSync(join(root, '.cossack/config.d.ts'), 'utf8')).toContain('private.ts');
+});
