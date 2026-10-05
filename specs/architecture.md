@@ -62,6 +62,21 @@ declarations are their implementer's assertions, not remote verification.
 The database cache adapter declares structural metadata without importing core
 or framework; its deployment/read guarantees remain unknown.
 
+Object storage uses the portable `@cossackframework/core/storage` contract and
+authorization facade. It counts streamed bytes, validates upload metadata and
+signs application URLs without importing a cloud SDK or filesystem code. Local
+files belong to `node-adapter/storage`; R2 and S3 adapters belong to framework's
+explicit storage subpaths. Multipart publication and bounded cleanup are provider
+operations. Cancellation does not promise rollback of a completed object.
+
+Typed Workflow definitions, clients and the process-only test adapter live in
+`core/workflows`. Native Cloudflare step persistence, retries and waits remain
+provider-owned. `framework/workflows` supplies the native Worker entry factory;
+`framework/workflows/provider` supplies the pure binding client for server APIs
+and Node-based static generation. Generated applications keep these module graphs
+separate. Workflow inspection reads authored declarations and selected bindings;
+it does not execute application code or establish remote resource readiness.
+
 Cache facades/config declarations and limiter guards check requirements before
 operations. Cache factories may still construct resources during resolution.
 CLI provider inspection uses the compiler parser and selected Wrangler settings,

@@ -1,3 +1,4 @@
+import { workflowsRecipeFiles } from './workflow-recipes.js';
 import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -449,6 +450,7 @@ function wranglerConfig(recipe, projectName) {
     if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') database = database.replace(/]$/, `,${jobDatabase}]`);
     else database += `,\n  "d1_databases": [${jobDatabase}]`;
   }
+  const workflows = recipe.resolvedFeatures.includes('workflows') ? `,\n  \"workflows\": [{ \"name\": \"${projectName}-approval\", \"binding\": \"WORKFLOWS\", \"class_name\": \"ApprovalWorkflow\" }]` : '';
   const schedules = recipe.resolvedFeatures.includes('schedules') ? ',\n  "triggers": { "crons": ["0 * * * *"] }' : '';
   const notifications = recipe.resolvedFeatures.includes('notifications') ? ',\n    "MAIL_FROM": "no-reply@example.com"' : '';
   const turnstile = recipe.resolvedFeatures.includes('turnstile') ? ',\n    "TURNSTILE_SITE_KEY": "your-site-key",\n    "TURNSTILE_HOSTNAME": "localhost"' : '';
@@ -463,7 +465,7 @@ function wranglerConfig(recipe, projectName) {
   "vars": {
     "APP_URL": "https://example.com",
     "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": "${projectName}-jobs-default"` : ''}${turnstile}${notifications}
-  }${database}${email}${sse}${jobs}${schedules}
+  }${database}${email}${sse}${jobs}${schedules}${workflows}
 }
 `;
 }
@@ -1859,9 +1861,18 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
-  for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles], ['schedules', schedulesRecipeFiles], ['notifications', notificationsRecipeFiles]]) {
+  for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles], ['schedules', schedulesRecipeFiles], ['notifications', notificationsRecipeFiles], ['workflows', workflowsRecipeFiles]]) {
     if (!recipe.resolvedFeatures.includes(feature)) continue;
     for (const [file, source] of Object.entries(generated({ notifications: recipe.resolvedFeatures.includes('notifications') }))) files.set(file, { content: text(source), capability: feature });
+  }
+  if (recipe.resolvedFeatures.includes('workflows')) {
+    const entry = files.get('src/index.ts');
+    files.set('src/index.ts', { ...entry, content: text(entry.content.toString('utf8') + "\nexport { ApprovalWorkflow } from './workflows/entry';\n") });
+  }
+  if (recipe.resolvedFeatures.includes('workflows')) {
+    const vite = files.get('vite.config.ts');
+    const source = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackWorkflows }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackWorkflows(),');
+    files.set('vite.config.ts', { ...vite, content: text(source) });
   }
   if (recipe.resolvedFeatures.includes('jobs')) {
     const entry = files.get('src/index.ts');

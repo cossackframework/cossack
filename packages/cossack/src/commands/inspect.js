@@ -116,6 +116,7 @@ async function inspectProviderDeclarations(ctx, command) {
 export function inspectCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.inspect, args, ctx, inspectHelp)) return 0;
   if (!validateCommand(commandSpecs.inspect, args, ctx)) return 1;
+  if (args[0] === 'workflows') return inspectWorkflowDeclarations(ctx, 'inspect');
   if (args[0] === 'schedules') return inspectScheduleDeclarations(ctx, 'inspect');
   if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'inspect');
   if (args[0] === 'routes') {
@@ -126,6 +127,7 @@ export function inspectCommand(args, ctx) {
 export function checkCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.check, args, ctx, checkHelp)) return 0;
   if (!validateCommand(commandSpecs.check, args, ctx)) return 1;
+  if (args[0] === 'workflows') return inspectWorkflowDeclarations(ctx, 'check');
   if (args[0] === 'schedules') return inspectScheduleDeclarations(ctx, 'check');
   if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'check');
   if (args[0] === 'routes') return checkRoutes(ctx);
@@ -133,7 +135,7 @@ export function checkCommand(args, ctx) {
 }
 
 export function inspectHelp() {
-  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes|providers|schedules> [route]
+  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes|providers|schedules|workflows> [route]
 
 Read the project's resolved Worker, environment, bindings, required secret
 names, and configuration diagnostics. Inspection succeeds when configuration
@@ -150,7 +152,7 @@ Dynamic configuration/overrides remain unknown; modules are never executed.`);
 }
 
 export function checkHelp() {
-  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers|schedules> [--json]
+  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers|schedules|workflows> [--json]
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
@@ -181,4 +183,18 @@ async function inspectScheduleDeclarations(ctx, command) {
     }
     return result.ok ? 0 : 1;
   } catch { return commandFailure(ctx, command, 'COSSACK_SCHEDULES_INVALID', 'Schedule inspection failed. Check src/schedules.json and scheduler declarations.'); }
+}
+
+async function inspectWorkflowDeclarations(ctx, command) {
+  try {
+    const root = await findProjectRoot(ctx.cwd);
+    const result = await inspectProject(root, { scope: 'workflows', environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV, check: command === 'check' });
+    if (ctx.flags.json === true) writeResult(command, result);
+    else {
+      for (const item of result.data.workflows) console.log(`${item.name} v${item.version}: ${item.binding} -> ${item.className}`);
+      for (const item of result.diagnostics) console.error(`${item.code}: ${item.message}`);
+      console.log('Static workflow declarations only; entry execution and remote readiness were not checked.');
+    }
+    return result.ok ? 0 : 1;
+  } catch { return commandFailure(ctx, command, 'COSSACK_WORKFLOWS_INVALID', 'Workflow inspection failed. Check src/workflows.json and selected bindings.'); }
 }

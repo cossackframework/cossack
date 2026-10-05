@@ -261,6 +261,9 @@ importers:
 
   packages/framework:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1075.0
+        version: 3.1075.0
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
@@ -268,9 +271,6 @@ importers:
         specifier: workspace:*
         version: link:../renderer
     devDependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1075.0
-        version: 3.1075.0
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1075.0
         version: 3.1075.0

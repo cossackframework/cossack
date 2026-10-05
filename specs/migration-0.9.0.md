@@ -2047,3 +2047,33 @@ remain `unknown`, including after restart, to avoid automatic duplicate sends.
 Retain terminal identity records and reconcile uncertain results deliberately.
 See [schedules](../docs/schedules.md), [notifications](../docs/notifications.md)
 and [provider setup](../docs/notification-providers.md).
+
+## Storage, images and Workflows
+
+Replace demo-relative S3 helpers with the public `core/storage` facade and
+`node-adapter/storage`, `framework/storage/r2` or `framework/storage/s3` provider
+imports (all under `@cossackframework/`). Configure authorization for every
+operation, derive keys from trusted server identity, and stream bodies with a
+declared byte count. The default maximum upload is 64 MiB. Signed URLs target an
+application endpoint that rechecks the current caller; they are not direct bucket
+URLs. Multipart cleanup is bounded and best effort. Reconcile uncertain completed
+uploads before retrying; cancellation does not undo publication. See
+[storage](../docs/storage.md) for provider limits and local filesystem ownership.
+
+Image `fit` accepts `cover`, `contain`, `scale-down`, `crop` or `pad`;
+replace `none`, `contain-fit` and `cover-fit`. Image format accepts `webp` or
+`avif`; JSON metadata is not an image format. Invalid parameters now produce fixed
+diagnostics. Configure a transform provider for fit/quality/format requests;
+local Cloudflare development serves the original image. See
+[images](../docs/images.md).
+
+Use `cossack add workflows` for native Cloudflare bindings, the entry class and
+static `src/workflows.json` declarations. Keep the native entry module separate
+from server API helpers, which import `framework/workflows/provider`. The latter
+can load during Node static builds. `cossack inspect workflows` and `check
+workflows` validate declarations and selected bindings without invoking workflows
+or verifying remote resources. Derive invocation scope from authenticated server
+context and authorize inspection, events and administrative operations too.
+Completed steps are provider-owned; protect side effects with receipts or
+idempotency keys. The local test adapter is process-only. See
+[Workflows](../docs/workflows.md).

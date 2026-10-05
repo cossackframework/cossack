@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 47 complete and 11 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 48 complete and 10 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -92,7 +92,6 @@ Add focused tests during each group, and run broader gates after integration.
 
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
-| 4. Complete data and content features | RT-26 | Existing features have clear provider contracts and complete failure behavior. |
 | 5. Add background application services | SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
@@ -107,6 +106,7 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="rt-26"></a>RT-26 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-26-completed-2026-10-06); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06) |
 | <a id="rt-01"></a>RT-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05) |
 | <a id="rt-11"></a>RT-11 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-11-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05) |
 | <a id="svc-01"></a>SVC-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05) |
@@ -309,35 +309,6 @@ Every documented import resolves from its published package. Removed exports
 cannot remain in the catalog. Skill examples and generated templates use the
 same APIs as the tested release. Dependencies: REL-02 and RT-23.
 
-## Runtime and application APIs
-
-Runtime tasks continue below. Each status describes the checkpoint only.
-Reinspect the source before extending it. Codex now owns the remaining work and
-follows task dependencies.
-
-<a id="rt-26"></a>
-### RT-26: Storage providers and image diagnostics
-
-Purpose: Uploads, downloads, and deletion need authorization and one discoverable
-storage contract. Copying a demo S3 helper is insufficient for a reusable feature.
-
-Baseline: RPC file uploads, image helpers, and a demo S3/R2 signing implementation
-exist. That demo helper is not a published storage API.
-
-Approach: Define provider contracts for local storage, R2, and S3. Include object
-metadata, streamed transfer, deletion, signed access, progress, and cancellation.
-Keep filesystem access in local adapters and credentials on the server. Apply
-authorization before granting upload/download capabilities. Define key validation,
-size/type limits, expiration, and incomplete-upload cleanup. Image diagnostics
-must explain unsupported transforms or missing provider setup.
-
-Start in framework `storage/s3.ts` as reference, upload transport handlers, core
-`shared/image.ts`, and `docs/storage.md` and `docs/images.md`.
-
-Done when: Provider tests exercise authorized CRUD, denied cross-user access,
-expired access, cancellation, and metadata. Large transfers stay streamed.
-Published imports replace demo-relative documentation imports. Dependencies:
-RT-14, RT-24, RT-25, and CF-04.
 
 ## New application services
 
@@ -347,6 +318,15 @@ test adapter must not be described as durable production infrastructure.
 
 <a id="svc-04"></a>
 ### SVC-04: Durable multi-step workflows
+
+Codex status (2026-10-06): partial implementation is source-verified. Native
+creation and completed/retried steps work; the strict waiting-status assertion
+fails because pinned Miniflare reports running at its event barrier and never
+assigns Waiting. Interruption/resume/event completion, native failure and installed
+Workflow acceptance remain unproven. Do not replace waiting with running to close
+the task. Preserve the two batch-owned uncommitted acceptance fixtures. Continue
+independent open tasks until native provider waiting-state support or equivalent
+real provider evidence is available. [Evidence](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
 
 Purpose: Some processes must pause, resume, and retry individual steps across
 requests or restarts. A long async function inside an RPC response cannot provide
@@ -963,3 +943,14 @@ in the [criterion audit](./release-0.9.0-verification-archive.md#codex-rt01-rt11
 features; CLI-08 and Cloudflare/release gates remain open. Local runtime proof
 is not live deployment or cross-process replay proof. Desktop stays waived;
 versions remain 0.8.3. No batch blocker.
+
+<a id="codex-rt26-complete-svc04-open-2026-10-06"></a>
+## Codex: Storage completed; Workflow acceptance held open (2026-10-06)
+
+RT-26 meets its full archived criteria through source/native/installed provider
+acceptance and image diagnostics. SVC-04 has verified contracts, bridge, recipe
+and inspection, but its strict native waiting-status probe fails; no native
+restart/resume/event completion or installed Workflow claim is made. Preserve
+that requirement and the uncommitted failed fixtures. [Commands and limits](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
+**48 complete / 10 open**. Next finish independent CLI-08/Cloudflare acceptance;
+avoid additional budget polish. Desktop remains waived; versions stay 0.8.3.

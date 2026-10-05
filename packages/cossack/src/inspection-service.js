@@ -1,3 +1,4 @@
+import { inspectWorkflows } from '@cossackframework/framework/workflows-inspection';
 import { inspectSchedules } from '@cossackframework/framework/schedules-inspection';
 /** Shared, output-free inspection used by CLI commands and local agent tools. */
 import { buildEffectiveRouteModel } from './scan-routes.js';
@@ -148,6 +149,10 @@ export async function inspectProject(root, { scope, environment = process.env.CL
   if (scope === 'localization') {
     const report = await inspectLocalization(root, { locale });
     return { ok: !check || report.valid, data: { scope, ...report }, diagnostics: report.diagnostics };
+  }
+  if (scope === 'workflows') {
+    const { diagnostics, ...data } = await inspectWorkflows(root, environment);
+    return { ok: diagnostics.length === 0, data, diagnostics };
   }
   if (scope === 'schedules') {
     const { diagnostics, ...data } = await inspectSchedules(root, environment);

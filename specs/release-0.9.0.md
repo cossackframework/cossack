@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 47 complete / 11 open.
+  acceptance; the numbered release task count is 48 complete / 10 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -54,7 +54,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
 - [x] [RT-24](./release-0.9.0-plan.md#rt-24) Generated config inference, required variables/bindings, pre-factory named failures and scoped environments. Installed Node/Deno types, tooling policy, SSR/RPC/browser isolation and secret exclusion pass alongside prior Cloudflare acceptance. [Evidence](#codex-rt20-rt24-complete-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
-- [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
+- [x] [RT-26](./release-0.9.0-plan.md#rt-26) Published local/R2/S3 providers, authorized streamed CRUD, metadata, progress, cancellation and signed application access; image diagnostics. Source/native/installed acceptance passes. [Evidence](#codex-rt26-complete-svc04-open-2026-10-06).
 - [x] [RT-27](./release-0.9.0-plan.md#rt-27) Translation extraction/catalog checks, generated imported/global key and parameter types, CLI/MCP JSON parity and parallel SSR/SSG locale isolation; [evidence](#codex-rt12-rt27-complete-2026-10-05).
 - [x] [RT-28](./release-0.9.0-plan.md#rt-28) Bounded devtools snapshots and correlated timelines across supported runtimes, shared CLI/MCP records and production exclusion; [completion audit](#codex-rt28-complete-2026-10-04).
 - [x] [RT-29](./release-0.9.0-plan.md#rt-29) Production-fetch/RPC test helpers, credential fixtures, typed browser hydration/DI and awaitable cleanup. Generated Node/Cloudflare policy/isolation/hydration/stripping and published imports pass. [Evidence](#codex-rt21-rt29-complete-2026-10-05).
@@ -64,7 +64,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 - [x] [SVC-02](./release-0.9.0-plan.md#svc-02) Named UTC schedules share jobs validation, occurrence deduplication, retries and cleanup; generated/installed Cron, local one-shot, build and CLI/MCP inspection pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
 - [x] [SVC-03](./release-0.9.0-plan.md#svc-03) Typed escaped notifications, scoped preferences/inboxes, durable delivery status and explicit Cloudflare/SMTP providers. Source/installed Queue/D1 and loopback SMTP retry, uncertainty and restart acceptance pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
-- [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration.
+- [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: typed contracts, native bridge, recipe and read-only inspection are implemented and source-verified. Native waiting-status acceptance fails: pinned Miniflare reports running at the event barrier. Interruption/resume/event completion and installed Workflow acceptance remain unproven. [Exact gap](#codex-rt26-complete-svc04-open-2026-10-06).
 - [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
 ## Cloudflare deployment
@@ -1873,3 +1873,28 @@ consumption/readiness/eviction/restoration and installed final Core pass.
 Session concurrency passes **2 source + 2 installed native cases** (SQLite/D1).
 [Criterion mapping, exact commands and limitations](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05).
 **47 complete / 11 open**; no batch blocker. Desktop checks remain waived.
+
+<a id="codex-rt26-complete-svc04-open-2026-10-06"></a>
+### Codex: Storage complete; Workflow native acceptance open (2026-10-06)
+
+**RT-26 is complete.** Portable authorization/signing and streamed local/R2/S3
+providers pass CRUD, cross-user denial, expiration, cancellation, metadata and
+bounded transfer acceptance. Native R2 transfers 20 MiB. Final installed public
+imports/types, S3 SDK protocol tests and local filesystem tests pass. Image
+configuration/transform diagnostics and public-import documentation are verified.
+Installed checks caught and fixed the S3 SDK's missing runtime dependency.
+
+**SVC-04 remains open.** Contracts, local tests, native bridge, generated bindings
+and CLI/MCP inspection are verified. Native invocation and completed/retried steps
+work after fixing RPC-safe JSON records and direct RPC method invocation. The
+strict native waiting-status assertion still fails: Miniflare reports `running`
+after step outputs `[1,2]`, with first effect once and retry effect twice. Its
+implementation never assigns Waiting. Restart/resume/event completion and native
+failure/installed Workflow acceptance are not proven. The two failed acceptance
+fixture files remain batch-owned and uncommitted; the assertion is preserved.
+
+Source verification: Core **1716/107 files**; relevant framework **529/6**, then
+final Workflow bridge **3/1**; Node **47/8**; scaffold **164/11**; CLI contracts/MCP
+**141/3** plus Workflow inspection **2/1**. Root and affected package typechecks
+pass. [Criterion mapping, commands and limits](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
+**48 complete / 10 open**. Desktop checks stay waived; versions stay 0.8.3.

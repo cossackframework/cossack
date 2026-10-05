@@ -1,7 +1,7 @@
 import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
 
 export const ADAPTERS = ['cloudflare', 'node', 'deno'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications', 'workflows'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -24,6 +24,7 @@ export const FEATURE_REGISTRY = {
   turnstile: { requires: ['ui'] },
   schedules: { requires: ['jobs'] },
   notifications: { requires: ['jobs'] },
+  workflows: { requires: [] },
 };
 
 export const PRESET_REGISTRY = {
@@ -185,6 +186,7 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
   const add = (feature, requires) => requirements.push({
     feature, source: { file: '.cossack/scaffold.json' }, requires,
   });
+  if (recipe.resolvedFeatures.includes('workflows')) add('workflows/cloudflare', { cloudflareBindings: ['WORKFLOWS'] });
   if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });

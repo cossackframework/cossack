@@ -15,6 +15,12 @@
     "rootDir": "src"
   },
   "include": [
+    "src/workflows-inspection.ts",
+    "src/vite-workflows.ts",
+    "src/storage/r2.ts",
+    "src/storage/s3-provider.ts",
+    "src/workflows/index.ts",
+    "src/workflows/provider.ts",
     "src/jobs/d1-store.ts",
     "src/notifications/index.ts",
     "src/schedules-inspection.ts",
@@ -65,6 +71,6 @@
     "src/models/**",
     "src/pages/**",
     "src/services/**",
-    "src/storage/**"
+    "src/storage/s3.ts"
   ]
 }

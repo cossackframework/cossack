@@ -178,6 +178,26 @@
     "./schedules-inspection": {
       "types": "./dist/esm/schedules-inspection.d.ts",
       "import": "./dist/esm/schedules-inspection.js"
+    },
+    "./workflows": {
+      "types": "./dist/esm/workflows/index.d.ts",
+      "import": "./dist/esm/workflows/index.js"
+    },
+    "./storage/r2": {
+      "types": "./dist/esm/storage/r2.d.ts",
+      "import": "./dist/esm/storage/r2.js"
+    },
+    "./storage/s3": {
+      "types": "./dist/esm/storage/s3-provider.d.ts",
+      "import": "./dist/esm/storage/s3-provider.js"
+    },
+    "./workflows-inspection": {
+      "types": "./dist/esm/workflows-inspection.d.ts",
+      "import": "./dist/esm/workflows-inspection.js"
+    },
+    "./workflows/provider": {
+      "types": "./dist/esm/workflows/provider.d.ts",
+      "import": "./dist/esm/workflows/provider.js"
     }
   },
   "files": [
@@ -206,10 +226,10 @@
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/renderer": "workspace:*"
+    "@cossackframework/renderer": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1075.0"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1075.0",
     "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@cossackframework/solar-icons": "^0.7.1",
     "@cossackframework/ui": "workspace:*",

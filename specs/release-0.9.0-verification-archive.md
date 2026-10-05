@@ -12405,3 +12405,155 @@ unavailable. Scratch session fixture replaces legacy callback migrations with
 literal declarative SQL so static plan/apply is provable; generated callbacks
 are not newly claimed to have complete static plans. No native Deno interruption
 or Desktop execution claim; REL-03 owns the remaining non-Desktop full matrix.
+
+<a id="codex-rt26-complete-svc04-open-2026-10-06"></a>
+## Codex: RT-26 completed; SVC-04 native acceptance remains open (2026-10-06)
+
+**Author: Codex.** Continued from `be6a2a52` after checking git status, AGENTS,
+architecture, checklist, plan and handoff. Only user `reports.md` and
+`.zcodeignore` existed before this batch; they were preserved. Selected independent
+RT-26 and SVC-04 implementations, using three agents with exclusive ownership:
+local filesystem provider; R2/S3 providers and storage acceptance; Workflow
+contracts/native bridge and tests/docs. Coordinator owned Core storage,
+exports/builds, image diagnostics, scaffold, inspection, integration and records.
+No Desktop work. Versions remain 0.8.3.
+
+### RT-26 criterion mapping — complete
+
+- Portable `core/storage` defines provider contracts and a server authorization
+  facade. Every CRUD operation and signed redemption authorizes before provider
+  access. Tests deny cross-user reads/writes/deletion and expired/tampered access
+  without backend operations. Exact byte counts, size/type/key limits, plain
+  metadata and fixed failure messages are enforced. Signing credentials/provider
+  closures are not serialized. Signed URLs target an authenticated application
+  endpoint; they are not direct bucket presigned URLs.
+- Local Node storage uses immutable generations and atomic manifest publication.
+  Actual filesystem tests prove reopen persistence, metadata, replacement with
+  readers retaining the old generation, concurrent writers, traversal/symlink
+  rejection, queued/blocked cancellation and unpublished-file cleanup. Actual
+  provider/facade composition proves authorization and signed expiry.
+- R2/S3 publish multipart objects only after complete streamed data, with bounded
+  5 MiB parts and exact count checks. Tests prove cancellation/mismatch preserving
+  old data, metadata and bounded cleanup, including uncooperative stream cancel.
+  S3 uses the actual AWS SDK against a loopback HTTP multipart protocol endpoint.
+  Native workerd R2 proves authorized CRUD, signed GET/PUT and expiry, denial,
+  cancellation preserving the old object, metadata/progress and a 20 MiB streamed
+  upload/download. It uses supported compatibility date 2026-07-29; an initial
+  newer-date runtime rejection was fixed only in the fixture.
+- Public installed imports and strict positive/negative contracts resolve for
+  Core Storage, Node LocalStorageProvider and framework R2/S3 factories.
+  Installed checks exposed missing `@aws-sdk/client-s3`: it was only a development
+  dependency. Promoted it to framework runtime dependencies; lockfile only moves
+  its existing 3.1075.0 importer entry. Final imports/types and installed provider
+  protocol tests pass. Storage documentation now uses published imports.
+- Image diagnostics reject unsupported provider/source/dimensions/quality/fit/
+  format with fixed actions, and explain missing transforms and local Cloudflare
+  originals. JSON metadata is no longer an image format; invalid fit aliases were
+  removed. Migration and architecture notes document these boundaries.
+
+CF-04 remains open for broader real resource selection/provisioning. These tests
+use explicitly configured local R2/Workflow bindings and server-owned S3 clients;
+they do not claim the unfinished parent resource or observability tasks passed.
+
+### SVC-04 criterion mapping — partial, not complete
+
+Source-verified: typed input/event/identity clients, authorization hooks,
+data-only JSON, local retry/backoff/deadline/event/termination tests, native entry
+and pure provider module separation, fixed status/error inspection, generated
+binding/class/declarations and read-only CLI/MCP/Vite preflight. Generate/add are
+idempotent and reject unsupported runtimes before writes. Definitions stay outside
+routes; pure server helpers avoid importing `cloudflare:workers` during Node SSG.
+
+Native failures found and fixed without relaxing the criterion:
+
+1. Missing emitted storage modules: broad declaration exclusion overrode includes;
+   narrowed it to the legacy demo. Workflow schema uses actual `input` export,
+   and explicit `workflows/index` avoids JSON/directory import ambiguity.
+2. Native Workflow entry in the server API graph broke Node static generation;
+   split pure binding provider from native entry imports. Generated ambient types,
+   strict public input/event/inspection proof and actual Vite builds then pass.
+3. Cloudflare RPC rejects null-prototype JSON records. Core clones now use ordinary
+   records with safe defineProperty, retaining getter/prototype-pollution guards.
+4. Native RPC methods reject Function.call/apply/bind access. The bridge now invokes
+   `.do()` directly on its receiver; a Proxy regression proves the old path fails.
+
+The strict native waiting-status assertion **still fails**. Actual native status
+is running with completed step outputs `[1,2]`; D1 effects show first=1,
+retry-attempt=2, and no last effect. Pinned Miniflare defines Waiting but never
+assigns it in its implementation. This is event-barrier evidence, not a passing
+native waiting-status check. Preserve the strict assertion. No pause/process
+interruption/resume/event completion, native permanent failure or installed
+Workflow acceptance is claimed: that run stops before those checks. Local tests
+and mocked status mapping do not substitute for them. SVC-04 remains unchecked.
+
+The two new failed acceptance files are batch-owned but **not committed**:
+`packages/cossack/tests/workflows-release-acceptance.test.js` and
+`packages/cossack/tests/fixtures/workflows-acceptance.js`. Preserve them for the
+remaining native gate. Verified contracts/bridge/recipe/inspection and source
+regressions are included in the batch commit. No upstream module patch or fake
+waiting status was introduced. Continue independent release work instead of
+repeating this unchanged failing provider barrier.
+
+### Commands, counts and evidence
+
+- Core final build and `pnpm --dir packages/core exec vitest run`:
+  **1716 tests /107 files**, terminal 0.
+  `/tmp/cossack-rt26-svc04-core-{final-build,combined}.log`.
+- Framework relevant combined command (`storage-providers`, `workflows`,
+  `workflows-inspection`, `rpc-conformance-matrix`, `ssg-config`,
+  `config-build-preflight`): **529 /6**, terminal 0. After the native RPC bridge
+  fix, only its affected Workflow file reruns: **3 /1**, terminal 0. Do not claim
+  a full 530-case combined run. Logs: framework-combined and
+  `/tmp/svc04-framework-workflows.log`. Final framework build: terminal 0.
+- Node full suite: **47 /8**, terminal 0. Scaffold full suite: **164 /11**,
+  terminal 0. Logs `/tmp/cossack-rt26-svc04-{node,scaffold}-combined.log`.
+- CLI `command-spec`, `command-contracts`, `mcp`: **141 /3**, terminal 0;
+  new `workflows-inspection`: **2 /1**, terminal 0. Logs cli-contracts and
+  cli-combined. No full CLI suite or REL-03 matrix claim.
+- Root `pnpm tsc --noEmit`: final terminal 0. Explicit Core/framework/Node
+  `exec tsc --noEmit`: terminal 0. Initial Core/Node checks overlapped declaration
+  removal during a build and failed missing declarations; reran only those after
+  terminal build. Final logs: root-types-final, core-types-final,
+  framework-types, node-types-final under `/tmp/cossack-rt26-svc04-*`.
+- Source R2 `tests/storage-release-acceptance.test.js`: **1 passed** before adding
+  the separate public-import case; `/tmp/cossack-storage-native.log`, terminal 0.
+- First installed storage two-case run: native R2 **passed**, public imports
+  **failed** missing SDK. `/tmp/cossack-storage-installed-native.log`, exit 1;
+  do not summarize the whole file as passing.
+- After metadata repair, `COSSACK_STORAGE_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production
+  pnpm exec vitest run --root packages/cossack --config packages/cossack/vitest.config.ts
+  tests/storage-release-acceptance.test.js -t 'resolves published storage exports'`:
+  **1 passed /1 filtered**, terminal 0. The unchanged native R2 case was retained,
+  not waived or repeated. `/tmp/cossack-storage-installed-public.log`.
+- `pnpm exec vitest run --config /tmp/cossack-storage-installed-vitest.config.mts`:
+  **9 installed provider tests**, terminal 0; matched aliases use the installed
+  public provider exports/Core identity. Real SDK protocol endpoint is local.
+  `/tmp/cossack-storage-installed-providers.log`.
+- `pnpm --dir packages/node-adapter exec vitest run --config
+  /tmp/cossack-local-storage-installed-vitest.config.mjs`: **9 unchanged installed
+  local tests**, terminal 0. Public ESM exports resolve inside the gate pnpm store.
+  `/tmp/cossack-local-storage-installed-{tests,resolution}.log`.
+- Workflow native strict probe ran repeatedly after actual fixes; latest
+  `/tmp/svc04-workflows-native.log` is **exit 1**, not passing. Installed Workflow
+  acceptance was **not run**. No requirement was waived to close SVC-04.
+
+Final changed payloads: `/tmp/cossack-rt26-svc04-tarballs/{core,node-adapter,
+scaffold,cli}.tgz` and `framework-final.tgz`. Framework was repacked only after
+its installed SDK dependency failure invalidated initial metadata. Other payloads
+were packed once; unchanged old installed matrices/guides were not rerun. Gate:
+`/tmp/cossack-local-pack-gZdSQv/minimal-production`, exact file dependencies and
+both manifest/workspace overrides, scripts disabled. Installed all-provider import
+proof is native ESM, not private dist traversal; aliased backend tests reuse the
+same tested public artifacts.
+
+Limits: local workerd/R2, local filesystem and S3 SDK protocol endpoint, not live
+Cloudflare/AWS ownership, deployment, storage service availability or remote logs.
+Multipart cleanup is bounded/best effort; completion races can leave a committed
+object, never promised rollback. Local storage needs one process and trusted OS
+root/parents; no distributed locking, hostile parent replacement or power-loss
+claim. Local Workflow adapter is process-only and cannot recover a restart or
+forcibly stop authored callbacks. Native durable lifecycle remains the unfinished
+SVC-04 criterion. Desktop's remaining platform checks stay waived, not passed.
+
+Completed **RT-26 only**. Release: **48 complete /10 open**. Native Workflow
+waiting support/proof is a genuine task blocker; independent work remains.

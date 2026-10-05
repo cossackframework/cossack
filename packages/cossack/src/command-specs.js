@@ -138,11 +138,12 @@ export const commandSpecs = {
     minPositionals: 1, subcommands: {
       cloudflare: { flags: { env } },
       providers: { flags: { env } },
+      workflows: { flags: { env } },
       schedules: { flags: { env } },
       routes: { positionals: ['route'], flags: { env, verbose: bool('Include route details.') } },
     } }),
   check: new CommandSpec({ name: 'check', globals: readonly, positionals: ['scope'],
-    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: { flags: { env } }, providers: { flags: { env } }, schedules: { flags: { env } } } }),
+    minPositionals: 1, subcommands: { cloudflare: { flags: { env } }, routes: { flags: { env } }, providers: { flags: { env } }, workflows: { flags: { env } }, schedules: { flags: { env } } } }),
   routes: new CommandSpec({ name: 'routes', globals: ['json', 'help', 'dry-run'], flags: {
     env, verbose: bool('Include route details.'), generate: bool('Generate .cossack/routes.ts for typed URL imports.'),
     markdown: bool('Include Markdown routes. The Vite plugin must configure markdownProcessor.'),

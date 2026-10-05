@@ -16,6 +16,8 @@ export default defineConfig({
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
+        'storage/index': path.resolve(__dirname, 'src/storage/index.ts'),
+        'workflows/index': path.resolve(__dirname, 'src/workflows/index.ts'),
         'jobs/index': path.resolve(__dirname, 'src/jobs/index.ts'),
         'schedules/index': path.resolve(__dirname, 'src/schedules/index.ts'),
         'notifications/index': path.resolve(__dirname, 'src/notifications/index.ts'),
