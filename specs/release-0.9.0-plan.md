@@ -150,20 +150,21 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Thirty-nine standalone examples compile and execute from installed tarballs,
-including twenty-seven UI SSR examples for native controls, one-time codes,
+Forty-five standalone examples compile and execute from installed tarballs,
+including thirty-three UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
 controls, searchable choice, repeated tag values, semantic lists/actions and
 keyboard-scrollable table regions, native dialogs/disclosures, tabs, toggles and
-SVG icons, native popovers, alert confirmation, hover content, attachments and
-chat display. Four packaged pages exercise component actions,
+SVG icons, native popovers, alert confirmation, hover content, attachments,
+chat display, date controls, action menus, command search, carousels and resizable
+panels. Six of 39 UI guides still lack executable examples. Four packaged pages exercise component actions,
 resources and lifecycle tasks in generated applications. The harness uses the exact
 catalog source, owns the browser/server lifecycle and requires emitted client source
 maps before checking server stripping. Installed Cloudflare and Node acceptance
 passes. Discovery never invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04),
 the [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04)
-and the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-5-2026-10-05).
+and the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-6-2026-10-05).
 The RT-23 UI catalog audit is complete.
 Auth now contributes session/role, record-policy, OAuth diagnostic and shared
 credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map
@@ -194,20 +195,21 @@ This exercises workerd and the published adapter path, but does not contact a
 Cloudflare account or prove a deployed database. The runtime test also exposed
 and fixed the D1 import graph: root SQL now requires an explicit adapter, Node
 URL selection stays in the Node entry, and remote Workers Turso uses its own
-optional `cloudflare-turso` entry. Twelve of 39 UI guides have executable SSR examples:
+optional `cloudflare-turso` entry. Thirty-three of 39 UI guides have executable SSR examples:
 native controls, normalized one-time codes, named breadcrumbs, URL-backed
 pagination, polite status and zero-valued progress, linked fields and empty
 states, loading/display surfaces, native layout, named avatars, a server-controlled
 DataTable, DashboardStat metrics, and a controlled SettingsPanel inside an
-application-owned form. All twelve compile and run against the installed UI and
-renderer tarballs. The test bundles selected UI examples for Node, matching Vite's
+application-owned form, plus date controls, action menus, command launchers,
+carousels and adjustable split panels. All compile and run against the installed
+UI and renderer tarballs. The test bundles selected UI examples for Node, matching Vite's
 handling of the UI barrel's Solar icon TypeScript dependency. They verify
 server-rendered markup and callback ownership; they do not establish browser
 interaction or assistive technology.
 
 Remaining: Complete authored API/component/recipe coverage and examples across
-the libraries and UI. Twenty-seven of 39 UI guides still have
-no executable example. Preserve RT-23 regressions and finish REL-02 acceptance. The full
+the libraries and UI. Six of 39 UI guides still have no executable example.
+Preserve RT-23 regressions and finish REL-02 acceptance. The full
 installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
 Discovery never executes examples. Declaration presence does not prove runtime
 imports or native attribute behavior. Platform diagnostics and bounded scans can

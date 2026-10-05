@@ -62,12 +62,14 @@ the required non-Desktop release matrix.
    defect: the root SQL entry pulled in Node adapters, and D1's Cloudflare entry
    pulled in optional Turso. Root `SQL` now takes an explicit adapter; Node
    auto-selection remains under `/node`, and remote Workers Turso has a separate
-   `/cloudflare-turso` entry. Twenty-seven UI guides now include executable
-   SSR examples. The latest five cover Popover, AlertDialog, Tooltip/HoverCard,
+   `/cloudflare-turso` entry. Thirty-three UI guides now include executable
+   SSR examples. The latest six cover date controls, Dropdown/Context menus,
+   command search, Carousel and Resizable; the previous five cover Popover,
+   AlertDialog, Tooltip/HoverCard,
    attachments and chat display; previous examples cover native dialogs,
    disclosures, tabs, toggle groups, icons, radio/range controls, searchable
    choice, repeated tag values, semantic lists/actions, and named tables/scroll
-   regions. The full fresh-tarball docs gate passes thirty-nine standalone
+   regions. The full fresh-tarball docs gate passes forty-five standalone
    examples, four auth
    examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
@@ -75,8 +77,8 @@ the required non-Desktop release matrix.
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
-   plus the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-5-2026-10-05).
-   Continue library, component and recipe coverage; 12 of 39 UI guides still lack
+   plus the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-6-2026-10-05).
+   Continue library, component and recipe coverage; 6 of 39 UI guides still lack
    executable examples. These UI examples
    cover SSR only; they do not close browser or assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
