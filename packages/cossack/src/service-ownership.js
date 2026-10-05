@@ -184,6 +184,48 @@ function recognizedPageDecorator(ts, record, declaration) {
   });
 }
 
+function recognizedServiceDecorator(ts, record, declaration) {
+  const aliases = new Set();
+  const namespaces = new Set();
+  for (const statement of record.source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) ||
+        statement.moduleSpecifier.text !== '@cossackframework/core' || statement.importClause?.isTypeOnly) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const item of bindings.elements) {
+        if ((item.propertyName?.text ?? item.name.text) === 'Service' && !item.isTypeOnly) aliases.add(item.name.text);
+      }
+    } else if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+  }
+  const decorators = ts.canHaveDecorators(declaration) ? ts.getDecorators(declaration) ?? [] : [];
+  return decorators.find(decorator => {
+    const expression = decorator.expression;
+    if (!ts.isCallExpression(expression)) return false;
+    if (ts.isIdentifier(expression.expression)) return aliases.has(expression.expression.text);
+    return ts.isPropertyAccessExpression(expression.expression) &&
+      ts.isIdentifier(expression.expression.expression) &&
+      namespaces.has(expression.expression.expression.text) && expression.expression.name.text === 'Service';
+  });
+}
+
+function serviceRegistration(ts, resolver, token) {
+  const visited = new Set();
+  while (token?.declaration) {
+    const key = `${token.file}#${token.name}`;
+    if (visited.has(key)) return 'unknown';
+    visited.add(key);
+    const record = resolver.read(token.file);
+    const decorators = ts.canHaveDecorators(token.declaration) ? ts.getDecorators(token.declaration) ?? [] : [];
+    if (recognizedServiceDecorator(ts, record, token.declaration)) return 'declared';
+    if (decorators.length) return 'unknown';
+    const base = token.declaration.heritageClauses
+      ?.find(clause => clause.token === ts.SyntaxKind.ExtendsKeyword)?.types[0];
+    if (!base) return 'missing';
+    token = resolver.resolveExpression(record, base.expression);
+  }
+  return 'unknown';
+}
+
 function serviceOptions(ts, record, declaration, resolver) {
   const decorator = recognizedPageDecorator(ts, record, declaration);
   if (!decorator) {
@@ -217,7 +259,10 @@ function serviceOptions(ts, record, declaration, resolver) {
     const line = serviceSource.source.getLineAndCharacterOfPosition(position).line + 1;
     const relative = path.relative(resolver.root, token.file).split(path.sep).join('/');
     const source = relative === '..' || relative.startsWith('../') ? `external:${relative}` : `/${relative}`;
-    tokens.push({ expression: expression.getText(record.source), className: token.name, source, line });
+    tokens.push({
+      expression: expression.getText(record.source), className: token.name, source, line,
+      serviceDecorator: serviceRegistration(ts, resolver, token),
+    });
   }
   return { value: tokens };
 }

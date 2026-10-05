@@ -538,11 +538,13 @@ follow aliases, re-exports and inherited layout decorators to a class declaratio
 path and line. The resolver parses but never imports or executes project modules.
 Dynamic expressions and unresolved decorators stay explicitly unknown. CLI docs
 and route explanations show the resolved class identity or uncertainty reason.
-All 87 tests across five focused route/inspection suites pass, as do the two
+Each token reports whether an imported core `@Service()` decorator is declared,
+missing, or unknown; this is static syntax evidence only. All 88 tests across five
+focused route/inspection suites pass, as do the two
 route-related CLI subprocess tests and root `pnpm tsc --noEmit`. They cover
 alias/re-export identity, inherited layout options, dynamic unknown status and a
-throwing static initializer that must not run. This does not prove `@Service`
-validity or lifecycle execution, or verify browser navigation ownership;
+throwing static initializer that must not run. This does not prove decorator
+metadata execution or lifecycle behavior, or verify browser navigation ownership;
 RT-12 remains open. The complete CLI package suite has not passed: parallel
 execution triggered subprocess/test timeouts, and the serial retry exceeded an
 existing five-second CLI assertion before it was stopped. Rerun it during REL-03

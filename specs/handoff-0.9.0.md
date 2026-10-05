@@ -183,10 +183,11 @@ REL-03 remains open for the required non-Desktop release matrix.
 4. Continue **[RT-12](./release-0.9.0-plan.md#rt-12)**. Route inspection now
    resolves static aliases/re-exports to service class declarations and preserves
    inherited `@Page` options; dynamic expressions and cyclic aliases stay
-   unknown. Five focused inspection suites pass (87 tests), plus two route CLI
+   unknown. Five focused inspection suites pass (88 tests), plus two route CLI
    subprocess tests and root TypeScript checking. A throwing initializer proves
-   service modules are not run. Repeat the full CLI suite during REL-03. Service
-   decorator/runtime validity and browser navigation ownership remain open.
+   service modules are not run. Static `@Service()` identity is classified as
+   declared/missing/unknown. Repeat the full CLI suite during REL-03; runtime
+   metadata/lifecycle behavior and browser navigation ownership remain open.
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 

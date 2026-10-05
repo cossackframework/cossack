@@ -58,7 +58,7 @@ export function explainRoute(effective, route) {
     if (direct.length) reasons.push(`Layout service declarations: ${direct.map(layout => `${layout.services.join(', ')} (${layout.filePath})`).join('; ')}`);
     for (const layout of ownedServices) {
       if (layout.serviceOwnership?.status === 'resolved') {
-        reasons.push(`TypeScript-source-resolved service class tokens: ${layout.serviceOwnership.services.map(service => `${service.className} (${service.source}:${service.line})`).join(', ')}; declared by ${layout.filePath}.`);
+        reasons.push(`TypeScript-source-resolved service class tokens: ${layout.serviceOwnership.services.map(service => `${service.className} (${service.source}:${service.line}; service decorator: ${service.serviceDecorator})`).join(', ')}; declared by ${layout.filePath}.`);
       } else {
         reasons.push(`Service class identity is unknown for ${layout.filePath}: ${layout.serviceOwnership?.reason ?? 'compiler facts are unavailable'}`);
       }

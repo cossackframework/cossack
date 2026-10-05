@@ -189,9 +189,10 @@ Services remain listed as source expressions on their declaring layouts. The
 `serviceOwnership` field also uses a static TypeScript source resolver to resolve
 identifier/member expressions through import aliases, re-exports and inherited
 layout decorators to the class declaration file and line. It does not import or
-execute project modules. Dynamic lookups remain unknown; a
-resolved class declaration does not prove that its service decorator or runtime
-lifecycle succeeds. Page-level service declarations fail with
+execute project modules. Each token reports whether an imported core `@Service()`
+decorator is declared, missing, or unknown; static syntax does not prove that
+decorator execution or the runtime lifecycle succeeds. Dynamic lookups remain
+unknown. Page-level service declarations fail with
 `COSSACK_PAGE_SERVICES_UNSUPPORTED`: pages use layout scopes rather than creating
 their own. Layout/page middleware counts follow outer-to-inner layout order,
 then the page, and exclude global bootstrap middleware. An unknown count makes

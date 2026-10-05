@@ -69,7 +69,8 @@ it('resolves aliased and re-exported layout service tokens to their class declar
     compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', skipLibCheck: true },
     include: ['src/**/*.ts'],
   }));
-  await write('src/services/session.ts', "export class SessionService { static { throw new Error('inspection must not execute service modules'); } }");
+  await write('src/services/session.ts', `import { Service as RegisterService } from '@cossackframework/core';
+    @RegisterService() export class SessionService { static { throw new Error('inspection must not execute service modules'); } }`);
   await write('src/services/index.ts', "export { SessionService as SessionAlias } from './session.js';");
   await write('src/pages/layout.ts', `import { SessionAlias as RootSession } from '../services/index.js';
     @Page({ services: [RootSession] }) export default class RootLayout {}`);
@@ -80,20 +81,20 @@ it('resolves aliased and re-exported layout service tokens to their class declar
   const model = await buildEffectiveRouteModel(root);
   expect(model.layouts.map(layout => layout.serviceOwnership)).toEqual([
     { method: 'typescript-source', status: 'resolved', services: [
-      { expression: 'SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+      { expression: 'SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 2, serviceDecorator: 'declared' },
     ] },
     { method: 'typescript-source', status: 'resolved', services: [
-      { expression: 'RootSession', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+      { expression: 'RootSession', className: 'SessionService', source: '/src/services/session.ts', line: 2, serviceDecorator: 'declared' },
     ] },
   ]);
   const explanation = explainRoute(model, '/src/pages/(account)/index.ts');
   expect(explanation.reasons.join('\n')).toContain(
-    'TypeScript-source-resolved service class tokens: SessionService (/src/services/session.ts:1)',
+    'TypeScript-source-resolved service class tokens: SessionService (/src/services/session.ts:2; service decorator: declared)',
   );
 });
 
 it('resolves service tokens through a namespace re-export', async () => {
-  await write('src/services/session.ts', 'export class SessionService {}');
+  await write('src/services/session.ts', "import { Service } from '@cossackframework/core'; @Service() export class SessionService {}");
   await write('src/services/index.ts', "export * as tokens from './session.js';");
   await write('src/pages/layout.ts', `import { tokens as serviceTokens } from '../services/index.js';
     @Page({ services: [serviceTokens.SessionService] }) export default class Layout {}`);
@@ -102,9 +103,21 @@ it('resolves service tokens through a namespace re-export', async () => {
   const model = await buildEffectiveRouteModel(root);
   expect(model.layouts[0].serviceOwnership).toMatchObject({
     method: 'typescript-source', status: 'resolved', services: [
-      { expression: 'serviceTokens.SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+      { expression: 'serviceTokens.SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1, serviceDecorator: 'declared' },
     ],
   });
+});
+
+it('identifies a resolved class that lacks the required service decorator', async () => {
+  await write('src/services/session.ts', 'export class SessionService {}');
+  await write('src/pages/layout.ts', `import { SessionService } from '../services/session.js';
+    @Page({ services: [SessionService] }) export default class Layout {}`);
+  await write('src/pages/index.ts', '@Page() export default class Home {}');
+
+  const model = await buildEffectiveRouteModel(root);
+  expect(model.layouts[0].serviceOwnership.services[0].serviceDecorator).toBe('missing');
+  const explanation = explainRoute(model, '/src/pages/index.ts');
+  expect(explanation.reasons.join('\n')).toContain('service decorator: missing');
 });
 
 it('reports dynamic layout service tokens as unknown instead of guessing an owner', async () => {
@@ -132,7 +145,7 @@ it('reports cyclic source aliases as unknown without recursing indefinitely', as
 });
 
 it('resolves layout service ownership inherited from an imported base layout', async () => {
-  await write('src/services/session.ts', 'export class SessionService {}');
+  await write('src/services/session.ts', "import { Service } from '@cossackframework/core'; @Service() export class SessionService {}");
   await write('src/shared/base-layout.ts', `import { SessionService } from '../services/session.js';
     @Page({ services: [SessionService] }) export class BaseLayout {}`);
   await write('src/pages/layout.ts', `import { BaseLayout } from '../shared/base-layout.js';
@@ -142,12 +155,12 @@ it('resolves layout service ownership inherited from an imported base layout', a
   const model = await buildEffectiveRouteModel(root);
   expect(model.layouts[0].serviceOwnership).toMatchObject({
     method: 'typescript-source', status: 'resolved', services: [
-      { expression: 'SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1 },
+      { expression: 'SessionService', className: 'SessionService', source: '/src/services/session.ts', line: 1, serviceDecorator: 'declared' },
     ],
   });
   const explanation = explainRoute(model, '/src/pages/index.ts');
   expect(explanation.reasons.join('\n')).toContain(
-    'TypeScript-source-resolved service class tokens: SessionService (/src/services/session.ts:1)',
+    'TypeScript-source-resolved service class tokens: SessionService (/src/services/session.ts:1; service decorator: declared)',
   );
   expect(explanation.reasons.join('\n')).not.toContain('Service ownership is unknown');
 });
