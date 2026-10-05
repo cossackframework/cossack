@@ -171,11 +171,12 @@ external event completion, failed-step retry, redacted terminal failure and
 persisted pause/process-kill/restart/resume without repeating completed steps.
 The harness disables persistence; the restart proof uses a new native Wrangler
 process with the same explicit persisted directory. The strict waiting-status
-assertion remains unsatisfied: pinned Miniflare reports running at its event
-barrier and never assigns Waiting. Do not substitute running, paused or inferred
-private step state for Waiting. Preserve the two earlier uncommitted probes.
+assertion remains unsatisfied: workspace tooling and actual installed Wrangler
+4.147.0 / Miniflare 5.20261001.0-alpha report running throughout a 30-second
+event-barrier poll. A simple tooling upgrade has no supporting proof. Do not
+substitute running, paused or inferred private step state for Waiting. Preserve the two earlier uncommitted probes.
 Only the Waiting criterion remains missing from this lifecycle batch; hosted
-durability is not claimed. [Evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
+durability is not claimed. [Actual installed probe](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
 
 Purpose: Some processes must pause, resume, and retry individual steps across
 requests or restarts. A long async function inside an RPC response cannot provide
@@ -238,8 +239,10 @@ Default Wrangler environment metadata (empty/omitted) is normalized without
 weakening selected-environment binding. Native source and actual installed public
 CLI prove two auxiliaries, primary startup and no repeat measurements. Mutation,
 malformed, partial, private-value and startup runtime tests pass. Auxiliary upload
-remains separate; wider external/rebundled graphs still need their required
-acceptance. [Full evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06).
+remains separate. Native dynamic/source-map, rebundled and external graphs now
+pass upload/gzip warning/hard-limit and conservative receipt fallback acceptance
+in source and installed consumers. Wider-graph startup profiles remain unproven.
+[Current graph/unit evidence](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Full evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06).
 
 Codex completed active compiler HTTP fault acceptance (2026-10-06): malformed
 server-only code returns fixed JSON/UUID/no-store, matching structured dispatch
@@ -247,7 +250,7 @@ metadata and finite entry duration. Trusted terminal retains compiler diagnostic
 repair works in the same process. Source and installed native checks pass. This
 does not prove browser overlay/HMR privacy or initially malformed startup; do not
 claim them passed. CF-08 hosted Logs ingestion, remote remapping/provider startup
-and wider graphs remain open.
+and wider-graph startup profiles remain open.
 
 
 Codex direct-Vite dependency audit (2026-10-05), read-only: retain cossackConfig's
@@ -526,6 +529,13 @@ Studio runs its full Vite build. Auth publishes source and has no build script;
 its typecheck is required. Native build, bundle audit and ten package types pass.
 This completes the current non-Desktop build criterion, not final versioned or
 full unit/browser gates. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06).
+
+Codex (2026-10-06): all eleven non-Desktop, non-CLI complete unit suites pass
+5,575 tests across 380 files, with two external PostgreSQL/MySQL cases skipped
+for absent connection URLs. Root/all ten non-Desktop types pass. Full CLI and
+final versioned gates remain open. Core's optional JSON reporter failed; the
+standard reporter passed its complete suite without repository changes.
+[Commands and exact limits](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06).
 
 Start in root scripts and package test/build scripts. Fix meaningful failures
 instead of changing assertions only to preserve a green gate.

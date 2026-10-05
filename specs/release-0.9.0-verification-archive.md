@@ -13824,3 +13824,99 @@ proof. SVC-04 actual native Waiting, CF-08 wider graphs and remote Logs/remappin
 provider startup, Deno Deploy and final versioned runtime/unit/browser matrices
 remain unproven. REL-04 versioning and REL-05 audit remain gated. No broad unit
 rerun, remote resource write, publication or push; Desktop remains waived.
+
+
+<a id="codex-module-graphs-unit-gates-2026-10-06"></a>
+## Codex — native module graphs and non-CLI unit gates (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** Coordinator integrated two
+exclusive-file implementation agents (native graph acceptance and strict actual
+installed Workflow probe); a third agent diagnosed the Core reporter failure
+without changing or filtering its tests. Product code and dependencies are unchanged.
+
+CF-08's wider upload/gzip graph slice now passes real Cloudflare Vite builds,
+native Wrangler measurements and the public CLI for dynamic chunks/source maps,
+rebundled `no_bundle: false` output, and a local import outside the output tree.
+Configured warnings and hard upload limits are exercised; the rebundled hard
+limit exercises gzip. Dynamic graphs reuse the authenticated receipt without a
+second CLI measurement. Unsupported rebundled/external identities require fresh
+CLI measurements on success; their failed builds retain COSSACK_BUILD_FAILED.
+Separate direct Vite failures prove actual hard-budget enforcement for those
+unsupported identities, rather than treating a generic failure as budget proof.
+Malformed dynamic source remains a redacted compiler failure, never a budget
+failure. The wrapper counts actual native invocations; measurements are not mocked.
+Wider-graph startup profiles and remote/provider startup, Logs ingestion and
+remote remapping remain unproven. No new feature or budget policy was added.
+
+### Terminal checks
+
+| Scope / command | Result | Evidence |
+| --- | --- | --- |
+| `pnpm --filter cossack exec vitest run tests/budget-module-graphs-native.test.js` | Initial source 3 passed; final gzip-only delta 1 passed / 2 name-filtered | `/tmp/cossack-module-graphs-source.log`, `/tmp/cossack-module-graphs-source-gzip.log` |
+| `COSSACK_BUDGET_GRAPH_INSTALLED_ROOT=/tmp/cossack-preview-empty-release-installed pnpm --filter cossack exec vitest run tests/budget-module-graphs-native.test.js` | Final installed 3 passed | `/tmp/cossack-module-graphs-installed.log` |
+| `pnpm tsc --noEmit` | Passed | `/tmp/cossack-module-graphs-final-root-types.log` |
+| `node scripts/typecheck.mjs --exclude-desktop` | Ten packages passed; Desktop waived | `/tmp/cossack-module-graphs-final-package-types.log` |
+| `node --check` for both new graph files | Passed | Coordinator terminal |
+
+Source uses Wrangler 4.114.0 / Vite 8.1.4; installed uses Wrangler 4.147.0 /
+Vite 8.3.2 and the existing verified overridden tarballs. No repack, rebuild or
+unchanged installed-matrix rerun was needed for these test-only changes.
+The final source gzip delta did not invalidate unchanged dynamic/external proof;
+the final installed run covers all three modes.
+
+All unit commands used `pnpm --filter <package> exec vitest run --maxWorkers=1`
+with the standard reporter, serial heavy jobs and no name filters. Framework's
+pretest rebuild was avoided because current declarations were already built.
+These are current implementation gates, not final 0.9.0 artifact acceptance.
+
+| Package | Files passed | Tests passed | Skipped | Native log under `/tmp/` |
+| --- | --- | --- | --- | --- |
+| Core | 107 | 1,716 | 0 | `cossack-release-core-unit-default.log` |
+| Renderer | 25 | 343 | 0 | `cossack-release-renderer-unit.log` |
+| Framework | 119 | 2,085 | 0 | `cossack-release-framework-unit.log` |
+| Auth | 12 | 298 | 0 | `cossack-release-auth-unit.log` |
+| Database | 20 | 121 | 2 | `cossack-release-database-unit.log` |
+| Node adapter | 9 | 52 | 0 | `cossack-release-node-adapter-unit.log` |
+| Deno adapter | 8 | 42 | 0 | `cossack-release-deno-adapter-unit.log` |
+| test-utils | 3 | 17 | 0 | `cossack-release-test-utils-unit.log` |
+| UI | 49 | 653 | 0 | `cossack-release-ui-unit.log` |
+| Studio | 12 | 69 | 0 | `cossack-release-studio-unit.log` |
+| Scaffold | 16 | 179 | 0 | `cossack-release-scaffold-unit.log` |
+| Total (non-Desktop, non-CLI) | 380 | 5,575 | 2 | All terminal exits 0 |
+
+Database's PostgreSQL/MySQL integration cases were skipped because
+COSSACK_TEST_POSTGRES_URL/COSSACK_TEST_MYSQL_URL were absent. They are unrun,
+not passes. Desktop is waived, not passed. The full CLI gate was not rerun:
+its prior terminal failures and subsequent targeted fixes remain separately
+recorded, including unresolved strict Waiting.
+
+**Failed diagnostics:** Core's optional JSON reporter threw RangeError: Invalid
+string length from JsonReporter.onTestRunEnd/JSON.stringify and produced no JSON
+artifact (`/tmp/cossack-release-core-unit.log`). Its subsequent complete standard
+reporter run passed 1,716 tests; no repository/config change was justified.
+
+The new strict Workflow probe resolves createTestHarness and Miniflare from the
+actual installed project, not a workspace import. Wrangler 4.147.0 with
+Miniflare 5.20261001.0-alpha still reports `running` throughout a 30-second event
+barrier poll. Retry effects (two attempts, one completed first step) passed before
+the direct native Waiting assertion failed; public Waiting and later event/failure
+assertions were not reached. Terminal: 1 failed, 41.12s,
+`/tmp/cossack-workflow-waiting-native.log`. An initial package-export resolution
+setup error was corrected before this native probe; it is not acceptance proof.
+No dependency upgrade, Running-to-Waiting mapping or inferred state was introduced.
+The two newly created failing probe files were copied to
+`/tmp/cossack-workflow-waiting-current-toolchain/` and removed from this batch's
+checkout; the two original uncommitted strict probes remain untouched. Only the
+passing graph files are committed. A private `/tmp/` archive is local diagnostic
+evidence, not a durable checked-in acceptance test.
+
+**Exact remaining criteria:** SVC-04 needs literal native Waiting at the event
+barrier. CF-08 needs wider startup profiles and hosted Logs/remapping/provider
+startup; initial-malformed-startup and browser overlay/HMR privacy remain unproven.
+CF-09 needs hosted CI creation/smoke/ownership cleanup, retry, resource isolation
+and unchanged production. REL-02/03 need the remaining final artifact/runtime
+matrix, Deno Deploy and a green complete CLI gate. REL-04/05 remain dependent on
+those gates. Hosted approval/CI configuration remain pending; authenticated OAuth
+alone does not authorize or prove hosted readiness. No cloud writes, push,
+publication or version bump occurred. Baseline reports.md, .zcodeignore and both
+original Workflow probes were preserved and excluded from staging.
