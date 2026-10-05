@@ -2,31 +2,33 @@
 
 ## Current handoff — Codex (2026-10-05)
 
-Completed **RT-10, RT-15 and RT-17**. Release: **41 complete / 17 open**.
-[Acceptance, commands, retries and limits](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05).
-Accessible typed native/UI forms pass actual Node/workerd keyboard, focus, error,
-file RPC and stale/reset behavior, including installed tarballs. Database metadata,
-redacted diagnostics and stable paging have actual SQLite/Turso/PostgreSQL/MySQL
-transaction proof. Shared Studio/CLI inspection passes parity, target selection,
-no-write checks and temporary disposal. No batch blocker.
+Completed **SVC-01 and SVC-05**. Release: **43 complete / 15 open**.
+[Acceptance, commands, retries and limits](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05).
+Jobs have typed JSON payloads/scope, delays, persisted attempt/backoff state,
+fenced D1 claims, redacted inspection and deterministic local adapters. Actual
+Queues execute the generated consumer and retain completion across a Worker
+reload. Turnstile has authoritative bounded verification, typed widget lifecycle,
+validated form composition and server-secret stripping on Node/Cloudflare.
+Fresh installed acceptance and four new strict/executable guides pass. No batch
+blocker. Completed contexts are compacted into the plan/verification archives.
 
-Continue 2–3 independent full acceptance tasks with exclusive implementation
-ownership. RT-10 now unblocks SVC-05; assess it and other bounded service tasks
-against their full criteria before assigning files. Keep shared APIs/integration
-with Codex. Prefer existing gaps; avoid Cloudflare budget polishing unless it
-closes a required criterion. Never replace dist while consumers are running.
-Run targeted checks, then combined/type checks once; repeat only invalidated
-checks. Update records once per verified batch and commit verified owned files.
+Next assess **SVC-02 and SVC-03** for a bounded full-acceptance batch; SVC-01 now
+provides their shared jobs prerequisite. Keep shared APIs/integration with Codex
+and assign exclusive implementation files to up to three agents. Preserve RT-01,
+RT-11, RT-26, CF-04/08/09/10 and remaining release gates. Avoid Cloudflare budget
+polishing unless it closes a required criterion. Never replace dist while
+consumers run. Run targeted checks, then combined/type checks once; repeat only
+invalidated checks. Update records once per verified batch and commit owned files.
 
-Provider proof uses isolated local PostgreSQL 18/MySQL 8 servers (now stopped),
-SQLite and embedded Turso; no remote Cloudflare/Turso or production-provider claim.
-MySQL DDL is not rollback-safe. Offset pages can shift under concurrent writes;
-projected/joined/grouped pages need authored unique ordering. Inspection factories
-must honor read-only selection; unknown adapter target metadata stays unspecified.
-Shared inspection omits default values. See [migration notes](./migration-0.9.0.md).
-Versions stay 0.8.3 until REL-04. Preserve user reports.md and .zcodeignore.
-Desktop remains complete with remaining checks waived. Preserve all archived
-completed tasks; do not reopen them.
+Limits: Queues/workerd/D1 acceptance is local; Worker reload retains the harness
+host's storage, while file SQLite close/reopen separately proves ledger persistence.
+No remote account/resource or live challenge-provider claim. Injected Siteverify
+and browser SDK fixtures prove rejection/lifecycle deterministically. Lease fencing
+does not guarantee exactly-once external effects; deleting terminal keys removes
+deduplication protection. Generated jobs require Cloudflare; the local adapter is
+a test clock, not durable production execution. Full CLI-08 and REL-02/03 matrices
+remain open. Versions stay 0.8.3 until REL-04. Preserve user reports.md and
+.zcodeignore. Desktop remains complete with remaining checks waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -43,11 +45,11 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 41 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 43 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
-Latest CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). CLI-08 stays open for broader library API, component and recipe coverage.
+Previous CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). The SVC-01/SVC-05 batch adds four independently strict-compiled/executed installed guides (77 guides / 84 examples now). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
 Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. RT-11 retains its remaining criteria; RT-12 is completed in the archived acceptance.
 Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt10-rt15-rt17-complete-2026-10-05).
@@ -212,7 +214,7 @@ Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt1
    [per-call deadline checkpoint](./release-0.9.0-plan.md#codex-rt01-per-call-deadlines-2026-10-05)
    and [earlier timeout-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
    These changes do not close RT-01.
-4. Follow the detailed plan for all **17 open tasks**. Completed RT-12, RT-20
+4. Follow the detailed plan for all **15 open tasks**. Completed RT-12, RT-20
    and RT-24 criteria and historical checkpoints are archived. Preserve their
    regression coverage; do not treat old partial-status text as current work.
 5. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [HTTP/SSR
@@ -224,7 +226,7 @@ Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt1
    development SSR details, then add whole-request timing, production source-map
    resolution, configurable budgets and remote Workers Logs acceptance. Do not close CF-08 from the local
    framework matrix alone.
-6. Assess bounded service tasks, now that RT-10 closes the SVC-05 prerequisite.
+6. Assess SVC-02/SVC-03 full acceptance using completed SVC-01. Preserve the SVC-05 widget and verifier regressions.
 
 ## Limits to retain
 

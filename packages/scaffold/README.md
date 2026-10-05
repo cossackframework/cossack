@@ -204,3 +204,24 @@ The guard requires a session; application-specific permissions still belong in
 server authorization policies. Repeat composition preserves both pages, the layout,
 and middleware. Generated production acceptance uses real database migrations,
 sessions, login UI, nested navigation, forged client state, and session expiry.
+
+## Background jobs and Turnstile
+
+`cossack add jobs` composes a Cloudflare Queue consumer and producer with an
+independent D1 job ledger and receipt migration. Apply the local `JOB_STATE`
+migration before consuming jobs; select real remote resource IDs before
+deploying. Keep `JOB_NAMESPACE` distinct for environments sharing a ledger.
+Dispatch from authorized server code with explicit tenant/actor scope and a
+stable logical idempotency key. The portable local adapter is deterministic test
+infrastructure, not durable background execution. See [jobs guidance](../../docs/jobs.md).
+
+`cossack add turnstile` adds UI and the focused auth verifier without adding
+full authentication or the ORM. Set the public `TURNSTILE_SITE_KEY` and expected
+`TURNSTILE_HOSTNAME`, then provide `TURNSTILE_SECRET_KEY` privately through
+`.dev.vars` on Cloudflare or `.env` on Node/Deno. Use Cloudflare test keys for
+local development. The generated contact page publishes only the site key in
+hydrated state and validates the token on the server before the protected
+operation. Replace its acceptance placeholder with your authorized mutation.
+Reset the widget after each verification attempt; expired and reused tokens
+require a fresh challenge. See the [server guide](../auth/docs/turnstile.md) and
+[widget guide](../ui/docs/turnstile.md).

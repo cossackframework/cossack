@@ -166,6 +166,10 @@
     "./markdown-frontmatter": {
       "types": "./dist/esm/markdown-frontmatter.d.ts",
       "import": "./dist/esm/markdown-frontmatter.js"
+    },
+    "./jobs": {
+      "types": "./dist/esm/jobs/d1-store.d.ts",
+      "import": "./dist/esm/jobs/d1-store.js"
     }
   },
   "files": [

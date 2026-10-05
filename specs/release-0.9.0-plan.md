@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 41 complete and 17 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 43 complete and 15 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -96,7 +96,7 @@ Add focused tests during each group, and run broader gates after integration.
 | 2. Establish shared metadata and diagnostics | RT-24 | Tools and types describe the behavior that the compiler and runtime execute. |
 | 3. Complete application state and actions | RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
 | 4. Complete data and content features | RT-26 | Existing features have clear provider contracts and complete failure behavior. |
-| 5. Add background application services | SVC-01 through SVC-05 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
+| 5. Add background application services | SVC-02 through SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
 | 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
 | 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
@@ -110,6 +110,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="svc-01"></a>SVC-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05) |
+| <a id="svc-05"></a>SVC-05 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-05-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05) |
 | <a id="rt-10"></a>RT-10 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-10-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
 | <a id="rt-15"></a>RT-15 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-15-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
 | <a id="rt-17"></a>RT-17 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-17-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
@@ -161,7 +163,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Seventy-six standalone examples compile and execute from installed tarballs,
+The earlier gate compiled and executed seventy-six standalone examples from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -170,10 +172,12 @@ keyboard-scrollable table regions, native dialogs/disclosures, tabs, toggles and
 SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
-AuthForm and the development RPC trace guard. All 39 UI guides now have executable
-examples; all 73 published-package guides have at least one example. The installed gate
-executes all eighty package examples, including four separately bundled auth
-examples. Database guidance exercises typed model filters and query-builder
+AuthForm and the development RPC trace guard. All 40 UI guides now have executable
+examples; all 77 published-package guides have at least one example. The previous installed gate
+executed eighty package examples, including four separately bundled auth
+examples. The SVC-01/SVC-05 batch independently compiles and executes four new
+installed examples, for 84 catalog examples total; it does not rerun the unchanged
+eighty. Broader CLI-08 coverage remains open. Database guidance exercises typed model filters and query-builder
 projections as well as a reversible Node SQLite migration and repeatable seeder
 lifecycle. Framework guidance covers runtime capability planning and cache
 guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
@@ -583,31 +587,6 @@ These are application features, not replacements for component lifecycle tasks.
 Each feature needs a portable contract and explicit provider support. A local
 test adapter must not be described as durable production infrastructure.
 
-<a id="svc-01"></a>
-### SVC-01: Background jobs
-
-Purpose: Applications need to process work after the HTTP response, survive
-transient failure, and inspect failed jobs. Component `@Task` methods do not
-provide durable background execution.
-
-Baseline: Open as a shared framework feature.
-
-Approach: Define typed job payloads, handler registration, dispatch, delays,
-attempt limits, retry classification, and failure inspection. Add a Cloudflare
-Queues adapter and a deterministic local test adapter. Give jobs explicit
-tenant/actor context in serializable payloads instead of retaining a request.
-Support idempotency keys, which prevent repeated effects for one logical job.
-State the storage and provider limits of that guarantee. Do not promise exactly-once
-external side effects merely because the queue acknowledges once.
-
-Start with new portable contracts, runtime entry generation in scaffold, and
-capability metadata from RT-25. Reuse CLI-03 diagnostics and CF-08 tracing.
-
-Done when: Tests cover duplicate delivery, delay, transient/permanent errors,
-exhausted retries, cleanup, and worker restart. A generated Cloudflare app executes
-a real queue handler. Failed jobs expose redacted actionable state. Dependencies:
-RT-24, RT-25, and CF-04.
-
 <a id="svc-02"></a>
 ### SVC-02: Schedules and Cron
 
@@ -678,28 +657,6 @@ Done when: A workflow survives interruption between steps, resumes without
 repeating completed work incorrectly, and reports failures and waiting state.
 Tests cover an external event and a failed retried step. Dependencies: SVC-01,
 RT-24, RT-25, CF-04, and CF-08.
-
-<a id="svc-05"></a>
-### SVC-05: Turnstile integration
-
-Purpose: Public forms need an optional bot-protection component and server-side
-token verification that fit the existing validation flow.
-
-Baseline: Open as a packaged component and server helper.
-
-Approach: Add a browser component with typed success, expiry, and error events.
-Add a server helper that verifies tokens with the configured secret and expected
-request context. Keep the secret server-only. Compose verification with RT-02
-so that rejection prevents the protected mutation. Provide documented local test
-configuration and an injectable verifier for deterministic tests.
-
-Start in the UI component package, auth or another suitable server utility
-boundary, configuration metadata, and the validated form recipe.
-
-Done when: Expired, reused, invalid, and missing tokens follow the documented
-provider behavior. Server tests prove no mutation after rejection. Browser tests
-cover widget reset, script failure, disposal, and form resubmission. A spoofed
-client success event grants nothing. Dependencies: RT-02, RT-10, and RT-24.
 
 ## Cloudflare development and deployment
 

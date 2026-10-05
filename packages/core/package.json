@@ -48,6 +48,10 @@
     "./server-diagnostics": {
       "types": "./dist/shared/server-diagnostics.d.ts",
       "import": "./dist/shared/server-diagnostics.js"
+    },
+    "./jobs": {
+      "types": "./dist/jobs/index.d.ts",
+      "import": "./dist/jobs/index.js"
     }
   },
   "files": [

@@ -171,6 +171,23 @@
           "source": "import { replacePlaceholders, selectPluralForm } from '@cossackframework/core';\n\nconst template = 'У вас :count яблоко|У вас :count яблока|У вас :count яблок';\nconst selected = selectPluralForm(template, 2, 'ru');\nconst message = replacePlaceholders(selected, { count: 2 });\nif (message !== 'У вас 2 яблока') throw new Error('Russian plural category or placeholder was incorrect');\n"
         }
       ]
+    },
+    {
+      "id": "background-jobs-runtime",
+      "title": "Dispatch validated jobs with explicit retry and duplicate behavior",
+      "summary": "Dispatch validated jobs with explicit retry and duplicate behavior.",
+      "imports": [
+        "@cossackframework/core/input",
+        "@cossackframework/core/jobs"
+      ],
+      "markdown": "Use defineJob schemas and createJobRuntime to validate bounded JSON at dispatch and again at consumption. Jobs are independent of component Task lifecycles. Serialize only required tenantId/actorId context, then independently authorize it against trusted application data in the handler. Resolve facilities per attempt and register onCleanup for owned resources; do not retain requests or credentials in payloads.\n\nLocalJobAdapter and MemoryJobStore are process-only deterministic test facilities. Advance the explicit clock to deliver delayed work; their snapshots do not provide durable infrastructure. Cloudflare adapters require an explicitly durable JobStore. Stable logical keys include namespace, job, tenant, actor and authored idempotencyKey. Store-owned attempts, fenced leases and persisted retry deadlines prevent duplicate deliveries from bypassing backoff; terminal records suppress repeats only while retained. Transient errors retry within maxAttempts; PermanentJobError terminates. Cleanup failure never automatically repeats successful effects. Inspect emits bounded structural diagnostics without payloads/raw errors.\n\nAt-least-once delivery is not exactly-once effects: crashes and expired leases can overlap work. Use a provider idempotency key or a transactionally persisted receipt keyed by context.key for effects. Await queue(batch) from the Worker handler; configure provider retry/dead-letter limits. See repository docs/jobs.md.",
+      "examples": [
+        {
+          "id": "jobs-duplicate-backoff",
+          "language": "typescript",
+          "source": "import { input } from '@cossackframework/core/input';\nimport { createJobRuntime, defineJob, LocalJobAdapter, MemoryJobStore, TransientJobError } from '@cossackframework/core/jobs';\nconst adapter = new LocalJobAdapter();\nlet attempts = 0;\nconst runtime = createJobRuntime({ namespace: 'guide', adapter, store: new MemoryJobStore(), now: adapter.now,\n  jobs: { receipt: defineJob({ schema: input.object({ value: input.string({ required: true }) }), retryDelaySeconds: 10,\n    handle() { if (++attempts === 1) throw new TransientJobError(); },\n  }) },\n});\nawait runtime.dispatch('receipt', { value: 'test' }, { scope: { tenantId: 'tenant', actorId: 'actor' }, idempotencyKey: 'receipt-1' });\nconst envelope = adapter.snapshot()[0]!.envelope;\nif ((await adapter.drain(runtime))[0]?.status !== 'retry') throw Error('Transient failures must retry');\nif ((await runtime.consume(envelope)).status !== 'retry' || attempts !== 1) throw Error('A duplicate cannot bypass backoff');\nadapter.advance(10);\nif ((await adapter.drain(runtime))[0]?.status !== 'completed') throw Error('Retry should complete after backoff');\nif ((await runtime.consume(envelope)).status !== 'duplicate' || Number(attempts) !== 2) throw Error('Completed keys must not repeat');\n// This adapter and store are process-only fixtures, not durable production storage.\n"
+        }
+      ]
     }
   ]
 }

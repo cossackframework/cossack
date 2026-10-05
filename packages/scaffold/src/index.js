@@ -1,3 +1,4 @@
+import { jobsRecipeFiles, turnstileRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
@@ -440,6 +441,15 @@ function wranglerConfig(recipe, projectName) {
   const compatibilityFlag = recipe.config.database.startsWith('hyperdrive-')
     ? 'nodejs_compat'
     : 'nodejs_als';
+  const jobDatabase = `{ "binding": "JOB_STATE", "database_name": "${projectName}-job-state", "preview_database_id": "${projectName}-job-state-local", "migrations_dir": "src/jobs/migrations" }`;
+  const hasJobs = recipe.resolvedFeatures.includes('jobs');
+  const jobs = hasJobs ? `,
+  "queues": { "producers": [{ "binding": "JOBS", "queue": "${projectName}-jobs" }], "consumers": [{ "queue": "${projectName}-jobs", "max_batch_size": 10, "max_retries": 5 }] }` : '';
+  if (hasJobs) {
+    if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') database = database.replace(/]$/, `,${jobDatabase}]`);
+    else database += `,\n  "d1_databases": [${jobDatabase}]`;
+  }
+  const turnstile = recipe.resolvedFeatures.includes('turnstile') ? ',\n    "TURNSTILE_SITE_KEY": "your-site-key",\n    "TURNSTILE_HOSTNAME": "localhost"' : '';
   return `{
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "${projectName}",
@@ -450,8 +460,8 @@ function wranglerConfig(recipe, projectName) {
   "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",
-    "APP_LOCALE": "en"
-  }${database}${email}${sse}
+    "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": "${projectName}-jobs-default"` : ''}${turnstile}
+  }${database}${email}${sse}${jobs}
 }
 `;
 }
@@ -488,7 +498,7 @@ function packageJson(recipe, projectName) {
       dependencies.mysql2 = dependencyVersion('mysql2');
     }
   }
-  if (recipe.resolvedFeatures.includes('auth')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
+  if (recipe.resolvedFeatures.includes('auth') || recipe.resolvedFeatures.includes('turnstile')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
   if (recipe.adapter === 'node') {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
     dependencies['@hono/node-server'] = dependencyVersion('@hono/node-server');
@@ -1541,6 +1551,7 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
       }
     }
   }
+  if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SITE_KEY', 'your-site-key'], ['TURNSTILE_SECRET_KEY', 'your-secret-key'], ['TURNSTILE_HOSTNAME', 'localhost']);
   return values;
 }
 
@@ -1558,6 +1569,7 @@ function cloudflareEnvironmentValues(recipe, example = false) {
       recipe.config.authMethods.includes('oauth')) {
     values.push(...oauthEnvironmentValues(recipe, example));
   }
+  if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SECRET_KEY', 'your-secret-key']);
   return values;
 }
 
@@ -1844,6 +1856,16 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(wranglerConfig(recipe, options.projectName ?? 'my-cossack-app')),
       capability: 'base',
     });
+  }
+  for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles]]) {
+    if (!recipe.resolvedFeatures.includes(feature)) continue;
+    for (const [file, source] of Object.entries(generated())) files.set(file, { content: text(source), capability: feature });
+  }
+  if (recipe.resolvedFeatures.includes('jobs')) {
+    const entry = files.get('src/index.ts');
+    const source = entry.content.toString('utf8').replace("import { template } from './root';", "import { template } from './root';\nimport { createJobs } from './jobs';")
+      .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async queue(batch: MessageBatch, env: CloudflareBindings) { await createJobs(env).queue(batch); },");
+    files.set('src/index.ts', { ...entry, content: text(source) });
   }
   if (recipe.adapter === 'deno') {
     files.set('deno.json', {

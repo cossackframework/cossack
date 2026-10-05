@@ -16,6 +16,7 @@ export default defineConfig({
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
+        'jobs/index': path.resolve(__dirname, 'src/jobs/index.ts'),
         input: path.resolve(__dirname, 'src/input.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),
         'shared/server-diagnostics': path.resolve(__dirname, 'src/shared/server-diagnostics.ts'),

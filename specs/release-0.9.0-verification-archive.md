@@ -12048,3 +12048,125 @@ API was added. Shared inspection intentionally omits default values; Studio's ri
 row-editor indexes/views/locators are separate extensions. Desktop platform checks
 are waived by user decision, not passed. REL-02/03 and CLI-08 remain open for broader
 release/doc coverage. **41 complete / 17 open**, versions 0.8.3 until REL-04. No batch blocker.
+
+<a id="codex-svc01-svc05-complete-2026-10-05"></a>
+## Codex: SVC-01 and SVC-05 complete (2026-10-05)
+
+Coordinator inspected status, AGENTS, architecture, checklist, plan and handoff.
+User reports.md/.zcodeignore were preserved. Three implementation agents owned
+separate core jobs, auth verifier and UI widget files; subsequent fixture/guidance
+assignments remained exclusive. Codex reviewed/integrated public exports, scaffold,
+D1 storage and native Queue acceptance. Desktop was not reopened.
+
+SVC-01 criterion proof:
+
+- `core/jobs` defines inferred payload registries, dispatch and consumer validation,
+  explicit bounded JSON tenant/actor context, deterministic local queue/clock and
+  Cloudflare producer adapter. No request retention or implicit in-memory durable
+  fallback. Tests prove duplicate/concurrent delivery, scope/environment identity,
+  delayed dispatch, transient/permanent classification, exhaustion, all cleanup
+  hooks, fixed failure inspection, observer/store failure and ownership fencing.
+- D1 ledger uses atomic conditional claims, persisted logical attempt counts,
+  retry deadlines, token-fenced completion/failure and retained terminal keys.
+  Actual SQLite SQL tests close/reopen connections for completion and backoff,
+  fence expired owners, and prove inspection never creates schema. Duplicate
+  delivery during backoff neither runs handlers nor increments attempts.
+- The generated Cloudflare recipe declares producer/consumer, separate JOB_STATE
+  migration and JOB_NAMESPACE, without requiring the ORM. A real native workerd
+  Queue producer invokes its generated consumer; actual local D1 receipts prove
+  deduplication, delayed delivery, explicit actor/tenant and completion across a
+  Worker reload, including a fresh module boot identifier. Installed public
+  positive/negative payload types compile and the generated Vite app builds.
+- Recipe acceptance proves create/add convergence, repeat safety, edited file
+  preservation and pre-write unsupported Node rejection. Installed scaffold
+  additionally composes jobs, Turnstile and an existing D1 ORM database with
+  independent DB/JOB_STATE bindings and private challenge configuration.
+
+SVC-05 criterion proof:
+
+- `auth/turnstile` verifies every submitted token at Siteverify with server-owned
+  secret, hostname/action and overall timeout/response/retry bounds. Missing,
+  malformed, expired/reused, forged and context-invalid tokens fail closed with
+  fixed codes. Unit tests compose validation and prove rejection prevents mutation;
+  retries share a server-generated provider idempotency key, not mutation authority.
+- UI root publishes typed success/expiry/error callbacks, reset and test-loader
+  contracts. SSR is inert; hidden transport fields clear on reset/expiry/failure
+  and disposal. Shared official script loading handles failure/retry and independent
+  widget cancellation. Generation guards discard stale callbacks.
+- Actual Chromium against generated and installed Node/Cloudflare servers verifies
+  script failure and keyboard retry, reset, expiry/error, disposal/late callbacks,
+  hide/show remount and form resubmission. Missing/forged/expired/reused submissions
+  leave the protected counter unchanged; two fresh tokens mutate, and client success
+  cannot substitute for server verification. Public type positives/negatives compile.
+  Client JS/maps omit secret/provider sentinels, Siteverify and private config paths.
+- Scaffold publishes only the site key through server initialization, keeps the
+  secret private, composes the validated contact form and declares requirements.
+  Auth helper use adds no full-auth/ORM dependency. Local test keys and injectable
+  verification are documented. Four package agent guides ship executable examples.
+
+Confirmed terminal checks after integration:
+
+- `pnpm --dir packages/core exec vitest run`: **1,612 / 102 files**.
+- `pnpm --dir packages/ui exec vitest run`: **649 / 48 files**.
+- `pnpm --dir packages/auth exec vitest run`: **298 / 12 files**.
+- `pnpm --dir packages/scaffold exec vitest run`: **153 / 9 files**.
+- Framework jobs-d1-store/config-declared-requirements/config-requirements/runtime-capabilities:
+  **85 / 4 files**, including five SQL ledger cases.
+- CLI command-spec/command-contracts/inspect/config-requirements-inspection:
+  **141 / 4 files**.
+- Root `pnpm tsc --noEmit` and core/UI/auth/framework package
+  `pnpm --dir packages/<name> exec tsc --noEmit`: all pass.
+- Core/UI full runtime/declaration builds and framework `build:types`: terminal 0.
+  Builds completed before consumers; no full framework deployment/build claim.
+- `pnpm --dir packages/cossack exec vitest run tests/jobs-release-acceptance.test.js --maxWorkers=1`:
+  **1/1**, final namespace/backoff code; **1/1** again with
+  `COSSACK_JOBS_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production`.
+- `tests/turnstile-release-acceptance.test.js --maxWorkers=1`: **3/3**
+  (parser + Node + Cloudflare), and **3/3** with `COSSACK_TURNSTILE_INSTALLED_ROOT`
+  pointing at that gate. Chromium uses injected SDK/Siteverify fixtures.
+- Core/UI/auth/framework/scaffold packed once with scripts disabled into
+  `/tmp/cossack-svc01-05-tarballs`. Exact tarball overrides were retained in gate
+  package.json and pnpm-workspace.yaml; install used `--ignore-scripts` and
+  `--config.strict-dep-builds=false`, never `--ignore-workspace`. The unchanged CLI,
+  renderer, adapters and other package payloads were reused.
+- Four examples extracted from matching installed metadata independently pass
+  strict no-path TypeScript compilation and execution: turnstile-server-rejection,
+  turnstile-inert-ssr, jobs-duplicate-backoff, jobs-sqlite-ledger-restart. Runner:
+  `/tmp/cossack-local-pack-gZdSQv/minimal-production/.svc-guide-acceptance`.
+  All 77 catalog guides have examples, 84 examples total. Prior unchanged 80
+  examples were not rerun. CLI-08 remains open for broader coverage.
+
+Failures fixed, with evidence kept separate from passing checks: initial queue
+fixture passed multiline schema to D1.exec; replaced with the actual migration
+API. Closing/recreating a TestHarness loses its nonpersistent local host storage;
+Worker reload with fresh boot marker now tests Worker restart, while file SQLite
+separately tests connection persistence. Browser fixture initially used ambiguous
+status queries and duplicated a private secret as a public binding; corrected
+fixture selectors/private .dev.vars. Native remount exposed renderer document
+adoption timing; component now resolves the document after synchronous adoption
+and its new regression passes. Review found retrying jobs could bypass delay on
+redelivery; both ledgers persist the deadline and new backoff/restart regressions
+pass. An initial package typecheck invocation was invalid; the corrected explicit
+`exec tsc` chain passed. Strict installed guide compilation found closure counter
+narrowing; its assertion uses a fresh numeric read. Only changed Core guide metadata
+was repacked to `core-guides-final.tgz` and reinstalled; runtime payloads are unchanged,
+so native installed checks were not repeated. First smoke runner used require.resolve
+for an ESM-only export; corrected to public import, then composition passed.
+
+Logs: `/tmp/cossack-svc-final-{core,ui,auth,scaffold,framework,cli,types}.log`,
+`/tmp/cossack-svc01-native-final.log`, `/tmp/svc05-turnstile-native-final.log`,
+`/tmp/cossack-svc01-installed.log`, `/tmp/cossack-svc05-installed.log`,
+`/tmp/cossack-svc-installed-guides-final.log` and
+`/tmp/cossack-svc-installed-scaffold.log`.
+
+Limits: providers are local workerd/Queues/D1 plus file SQLite, not remote account,
+resource provisioning or production restart acceptance. Worker reload preserves
+host storage; no whole-harness/OS process persistence claim. Challenge provider
+responses and SDK are deterministic injected fixtures, not real challenges.
+External effects require persisted receipts/provider idempotency; lease expiry
+can overlap external calls, and deleting terminal keys removes deduplication.
+Generated jobs require Cloudflare; process-local adapters are test infrastructure.
+Auth root remains TypeScript-source packaging; no plain-Node root-auth claim.
+CF-04/08, CLI-08 and REL-02/03 remain open for broader criteria. Desktop checks
+remain waived, not passed. **43 complete / 15 open**, versions 0.8.3 until REL-04.
+No batch blocker.

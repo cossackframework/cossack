@@ -5679,3 +5679,61 @@ inspection does not create bookkeeping tables. Both callers close temporary
 connections after success or failure. Dependencies: RT-15, RT-16, and CLI-03.
 
 Codex completion: Shared read-only Studio/CLI inspection of schema/models/relationships, capabilities, selected targets and migration history. Parity, unchanged bytes/no bookkeeping, environment rejection and temporary disposal pass. See the [verified batch](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05). Historical partial notes above are superseded.
+
+<a id="codex-svc-01-completed-2026-10-05"></a>
+## Codex: Completed SVC-01 context (2026-10-05)
+
+Original plan and acceptance criteria, now verified against [batch evidence](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05). Historical baseline wording below is preserved.
+
+<a id="svc-01"></a>
+### SVC-01: Background jobs
+
+Purpose: Applications need to process work after the HTTP response, survive
+transient failure, and inspect failed jobs. Component `@Task` methods do not
+provide durable background execution.
+
+Baseline: Open as a shared framework feature.
+
+Approach: Define typed job payloads, handler registration, dispatch, delays,
+attempt limits, retry classification, and failure inspection. Add a Cloudflare
+Queues adapter and a deterministic local test adapter. Give jobs explicit
+tenant/actor context in serializable payloads instead of retaining a request.
+Support idempotency keys, which prevent repeated effects for one logical job.
+State the storage and provider limits of that guarantee. Do not promise exactly-once
+external side effects merely because the queue acknowledges once.
+
+Start with new portable contracts, runtime entry generation in scaffold, and
+capability metadata from RT-25. Reuse CLI-03 diagnostics and CF-08 tracing.
+
+Done when: Tests cover duplicate delivery, delay, transient/permanent errors,
+exhausted retries, cleanup, and worker restart. A generated Cloudflare app executes
+a real queue handler. Failed jobs expose redacted actionable state. Dependencies:
+RT-24, RT-25, and CF-04.
+
+
+<a id="codex-svc-05-completed-2026-10-05"></a>
+## Codex: Completed SVC-05 context (2026-10-05)
+
+Original plan and acceptance criteria, now verified against [batch evidence](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05). Historical baseline wording below is preserved.
+
+<a id="svc-05"></a>
+### SVC-05: Turnstile integration
+
+Purpose: Public forms need an optional bot-protection component and server-side
+token verification that fit the existing validation flow.
+
+Baseline: Open as a packaged component and server helper.
+
+Approach: Add a browser component with typed success, expiry, and error events.
+Add a server helper that verifies tokens with the configured secret and expected
+request context. Keep the secret server-only. Compose verification with RT-02
+so that rejection prevents the protected mutation. Provide documented local test
+configuration and an injectable verifier for deterministic tests.
+
+Start in the UI component package, auth or another suitable server utility
+boundary, configuration metadata, and the validated form recipe.
+
+Done when: Expired, reused, invalid, and missing tokens follow the documented
+provider behavior. Server tests prove no mutation after rejection. Browser tests
+cover widget reset, script failure, disposal, and form resubmission. A spoofed
+client success event grants nothing. Dependencies: RT-02, RT-10, and RT-24.

@@ -1275,3 +1275,19 @@ and 8,192 entries. Tool/runtime files have a separate 256 MiB cap. Unsupported
 runtime fallbacks decline reuse rather than accepting incomplete identity.
 This does not authenticate every transitive tool dependency or expand the
 supported compiled module graph.
+
+## Jobs and challenge verification
+
+Portable typed job registries, JSON actor/tenant scope, delivery ownership and
+local/Cloudflare queue adapters live in `core/jobs`. Durable storage remains an
+explicit contract; a Cloudflare producer cannot silently select process memory.
+The focused `framework/jobs` entry owns the structural D1 ledger without importing
+the ORM. Scaffold composes its separate migration and native Queue entry. Persisted
+attempt counts and retry deadlines survive duplicate delivery; fenced ledger
+ownership does not guarantee exactly-once external effects.
+
+The Web API Turnstile verifier lives in `auth/turnstile`, independent of framework
+configuration and UI. It checks server-owned hostname/action with a private secret.
+UI owns browser loading, typed widget events and disposal. Scaffold composes both
+through validated forms and server configuration, hydrating only the public site
+key. Client success events never authorize protected operations.

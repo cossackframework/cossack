@@ -1981,3 +1981,24 @@ Temporary inspection connections always close; borrowed connections keep their
 owner. Adapter factories must honor target/environment and read-only context.
 Remote Studio inspection now requires the application's orm.config.ts remote
 factory; an explicit requested binding must match the inspected target.
+
+## Background jobs and Turnstile
+
+Use the focused `@cossackframework/core/jobs` and
+`@cossackframework/framework/jobs` entries for portable job execution and the
+D1 ledger. Jobs have explicit JSON actor/tenant context, persisted attempt
+counts, retry deadlines and fenced delivery ownership. Queue acknowledgements
+do not guarantee exactly-once external effects. Retention that deletes terminal
+ledger keys also deletes deduplication protection. Generated jobs require
+Cloudflare bindings and an explicit migration; use custom durable adapters on
+other runtimes. See [jobs](../docs/jobs.md).
+
+Turnstile verification lives at `@cossackframework/auth/turnstile`; the widget
+is exported by `@cossackframework/ui`. Auth now declares its root, Turnstile and
+package metadata exports explicitly. Replace undeclared internal deep imports
+with public entries. Its root still ships TypeScript source and needs the
+existing framework loader/build pipeline. Keep challenge secrets in server
+configuration and check server-owned hostname/action before mutation. Browser
+success grants no access. Tokens are single-use; reset after every attempt.
+See the [verifier](../packages/auth/docs/turnstile.md) and
+[widget](../packages/ui/docs/turnstile.md) contracts.

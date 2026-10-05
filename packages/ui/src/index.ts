@@ -115,3 +115,5 @@ export type { MenuItem, MenuPanelProps } from './internal/menu';
 export type { DisclosureProps, DisclosureTriggerProps, DisclosurePanelProps } from './internal/disclosure';
 
 export { createUiFormBindings, type UiFormBindings, type UiFormFieldBinding } from './form-bindings';
+
+export { Turnstile, type TurnstileProps, type TurnstileError, type TurnstileClient, type TurnstileLoader, type TurnstileRenderOptions } from './components/Turnstile';

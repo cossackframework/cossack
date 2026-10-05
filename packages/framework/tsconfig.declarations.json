@@ -15,6 +15,7 @@
     "rootDir": "src"
   },
   "include": [
+    "src/jobs/d1-store.ts",
     "src/markdown-processor.ts",
     "src/api-handler.ts",
     "src/api.ts",

@@ -624,6 +624,23 @@
           "source": "import { component, html, renderToString } from '@cossackframework/renderer';\nimport { Button } from '@cossackframework/ui';\nimport { SettingsPanel, type SettingsSection, type SettingsValues } from '@cossackframework/ui/blocks';\n\nconst sections = [{ id: \"profile\", title: \"Profile\", rows: [\n  { key: \"displayName\", type: \"text\", label: \"Display name\", hint: \"Shown to your team\", required: true },\n  { key: \"weeklySummary\", type: \"switch\", label: \"Weekly summary\", hint: \"Receive one email each week\" },\n] }] satisfies readonly SettingsSection[];\nconst values = { displayName: \"Ada\", weeklySummary: true } satisfies SettingsValues;\n\nconst markup = renderToString(html`\n  <form aria-label=\"Account settings\">\n    ${component(SettingsPanel, { id: \"account-settings\", sections, values, onChange: (_next: SettingsValues) => {} })}\n    ${component(Button, { type: \"submit\" }, \"Save settings\")}\n  </form>\n`);\n\nfor (const part of [\"<form aria-label=\\\"Account settings\\\">\", \"for=\\\"account-settings-field-displayName\\\"\", \"name=\\\"displayName\\\"\", \"value=\\\"Ada\\\"\", \"aria-checked=\\\"true\\\"\", \"Receive one email each week\", \"Save settings\"]) {\n  if (!markup.includes(part)) throw new Error(`Missing settings markup: ${part}`);\n}"
         }
       ]
+    },
+    {
+      "id": "turnstile-widget-lifecycle",
+      "title": "Compose an accessible Turnstile widget",
+      "summary": "Compose an accessible Turnstile widget.",
+      "imports": [
+        "@cossackframework/ui",
+        "@cossackframework/renderer"
+      ],
+      "markdown": "Use component(Turnstile,{id,siteKey,action,onTokenChange}) in a form and store only the public sitekey in browser state. Hydrate that public field in a server init method; never call private config from render. TurnstileProps exposes typed success, expiry and error callbacks, resetKey, responseFieldName and a test loader. onTokenChange receives an empty token on reset, expiry and failure. A client success callback is a notification, never authorization. The server must verify the submitted token before protected mutation.\n\nThe widget is inert during SSR; browser host adoption loads the shared explicit Turnstile script. Accessible status describes loading, readiness, success and failure, with retry controls. Change resetKey after submission, refresh expired tokens and clear the form token on errors. Disposal removes the widget, cancels pending work and ignores late callbacks. Keep action identical to the server-owned expectedAction. Script/network failure blocks submission until new verification. Do not put server secrets in widget props, HTML or callbacks.",
+      "examples": [
+        {
+          "id": "turnstile-inert-ssr",
+          "language": "typescript",
+          "source": "import { Turnstile } from '@cossackframework/ui';\nimport { renderToString } from '@cossackframework/renderer';\nlet loads = 0;\nconst widget = new Turnstile();\nwidget.props = { id: 'contact-verification', siteKey: 'public-test-sitekey', action: 'contact',\n  loadClient: async () => { loads++; throw Error('SSR must not load the browser API'); },\n};\nconst markup = renderToString(widget.render());\nif (loads !== 0 || markup.includes('<script') || !markup.includes('cf-turnstile-response') || !markup.includes('role=\"status\"')) {\n  throw Error('SSR must expose an inert, accessible verification field');\n}\nwidget.onDispose();\n"
+        }
+      ]
     }
   ]
 }

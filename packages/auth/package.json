@@ -26,5 +26,10 @@
   },
   "peerDependencies": {
     "hono": "^4.13.7"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./turnstile": "./src/turnstile.ts",
+    "./package.json": "./package.json"
   }
 }

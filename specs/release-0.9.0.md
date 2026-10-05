@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 41 complete / 17 open.
+  acceptance; the numbered release task count is 43 complete / 15 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -61,11 +61,11 @@ remain archived, and the verification log below retains test evidence.
 
 ## New services
 
-- [ ] [SVC-01](./release-0.9.0-plan.md#svc-01) Background jobs with delays, retries, idempotency, failure inspection, and local test adapters.
+- [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 - [ ] [SVC-02](./release-0.9.0-plan.md#svc-02) Schedules/Cron integration.
 - [ ] [SVC-03](./release-0.9.0-plan.md#svc-03) Email/in-app notification templates, preferences, and delivery status using existing SMTP support where applicable.
 - [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration.
-- [ ] [SVC-05](./release-0.9.0-plan.md#svc-05) Turnstile component and server token verification.
+- [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
 ## Cloudflare deployment
 
@@ -1833,3 +1833,16 @@ builds, bundle audit and required root typecheck pass. Installed browser3/3 and
 SQLite/Studio/CLI acceptance pass. Release: **41 complete / 17 open**.
 No batch blocker; remote Cloudflare and remote Turso were not verified. Desktop
 checks remain waived. Versions remain 0.8.3 until REL-04.
+
+<a id="codex-svc01-svc05-complete-2026-10-05"></a>
+## Codex: SVC-01 and SVC-05 complete (2026-10-05)
+
+Closed both full acceptance rows: typed jobs execute through an actual generated
+Queue consumer with durable D1 state; Turnstile verification protects mutations
+and the widget handles reset, failures, expiry, disposal and resubmission on Node
+and Cloudflare. Coordinator integration fixed duplicate retry-delay bypass and
+widget document adoption. Source and fresh installed acceptance, public types and
+four executable guides pass. [Commands, criterion proof and limitations](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05).
+Release: **43 complete / 15 open**. CF-04/08 and REL-02/03 remain open; this batch
+uses local providers and does not prove account deployment or real Turnstile
+challenge service operation. Desktop checks remain waived. Versions stay 0.8.3.
