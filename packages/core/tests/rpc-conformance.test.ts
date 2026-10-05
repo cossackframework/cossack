@@ -426,6 +426,24 @@ describe('realtime (WebSocket) RPC conformance', () => {
         expect(client.loading.neverResponds).toBeUndefined();
     });
 
+    it('lets rpc$ override the method deadline for one realtime call', async () => {
+        vi.useFakeTimers();
+        try {
+            Reflect.defineMetadata('cossack:server-methods', { neverResponds: { timeout: 1 } }, client.constructor);
+            proxyServerMethods(client, [{ name: 'neverResponds', channel: 'global', provider: 'page' }]);
+            const call = rpc$(() => client.neverResponds(), { timeout: 50 });
+            const observed = Promise.resolve(call).catch(error => error);
+            await vi.advanceTimersByTimeAsync(2);
+            expect(client.loading.neverResponds).toBeTruthy();
+            await vi.advanceTimersByTimeAsync(48);
+            await expect(observed).resolves.toMatchObject({
+                code: 'COSSACK_RPC_TIMEOUT', message: expect.stringContaining('50ms deadline'),
+            });
+            expect(sockets.clientSocket.sent.some((raw: string) => JSON.parse(raw).type === 'cancel')).toBe(true);
+            expect(client.loading.neverResponds).toBeUndefined();
+        } finally { vi.useRealTimers(); }
+    });
+
     it('cancels locally without waiting for an unresponsive server', async () => {
         const call = client.neverResponds();
         const observer = Promise.resolve(call).catch(error => error);
@@ -596,6 +614,59 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
         expect(instance.count).toBe(2);
     });
 
+    it('applies one-call timeout options to service RPC and clears request loading', async () => {
+        vi.useFakeTimers();
+        const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        Reflect.defineMetadata('cossack:server-methods', { cancelable: { timeout: 1 } }, CounterService);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        try {
+            const call = rpc$(() => (instance as any).cancelable(), { timeout: 30 });
+            const observed = Promise.resolve(call).catch(error => error);
+            await vi.advanceTimersByTimeAsync(2);
+            expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(28);
+            await expect(observed).resolves.toMatchObject({ code: 'COSSACK_RPC_TIMEOUT' });
+            expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(true);
+            expect(instance.loading).toBeUndefined();
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('does not invoke a call factory when its signal is already aborted', async () => {
+        const fetchMock = vi.fn(async () => new Response('{}'));
+        vi.stubGlobal('fetch', fetchMock);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        const controller = new AbortController(); controller.abort();
+        const factory = vi.fn(() => (instance as any).cancelable());
+        const call = rpc$(factory, { signal: controller.signal });
+        expect(factory).not.toHaveBeenCalled();
+        expect(fetchMock).not.toHaveBeenCalled();
+        await expect(Promise.resolve(call)).rejects.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+    });
+
+    it('rejects a malformed per-call signal before invoking the call factory', () => {
+        const factory = vi.fn(() => (instance as any).cancelable());
+        expect(() => rpc$(factory, { signal: {} as AbortSignal })).toThrow(/must be an AbortSignal/);
+        expect(factory).not.toHaveBeenCalled();
+    });
+
+    it('aborts an active service call when its per-call signal fires', async () => {
+        const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        (scope as any).installClientProxy({ serviceClass: CounterService, slot: '0', instance });
+        const controller = new AbortController();
+        const call = rpc$(() => (instance as any).cancelable(), { signal: controller.signal });
+        const observed = Promise.resolve(call).catch(error => error);
+        controller.abort();
+        await expect(observed).resolves.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
+        expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(true);
+        expect(instance.loading).toBeUndefined();
+    });
+
     it('maps HTTP failures to RpcError codes and clears loading', async () => {
         const fetchMock = vi.fn(async () => new Response(
             JSON.stringify({ error: 'Prompt is required', code: 'COSSACK_RPC_CLIENT_ERROR' }),
@@ -686,6 +757,36 @@ describe('serialization diagnostics by value path (RT-01)', () => {
         expect(fetchMock).not.toHaveBeenCalled();
         delete (globalThis as any).window;
         vi.unstubAllGlobals();
+    });
+
+    it('validates a per-call HTTP deadline before dispatch and overrides the method deadline', async () => {
+        vi.useFakeTimers();
+        (globalThis as any).window = { location: { search: '' } };
+        const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        }));
+        vi.stubGlobal('fetch', fetchMock);
+        const component = makeClientComponent();
+        Reflect.defineMetadata('cossack:server-methods', { save: { timeout: 1 } }, component.constructor);
+        Reflect.defineMetadata('page:options', { transport: 'http' }, component.constructor);
+        component.getInitialStateFromWindow = () => ({ componentRouteId: 'cmp_x', scopeKey: 'user:anonymous' });
+        proxyHttpMethods(component, [{ name: 'save' }]);
+        try {
+            expect(() => rpc$(() => component.save(), { timeout: 0 })).toThrow(RangeError);
+            expect(fetchMock).not.toHaveBeenCalled();
+            const call = rpc$(() => component.save(), { timeout: 30 });
+            const observed = Promise.resolve(call).catch(error => error);
+            await vi.advanceTimersByTimeAsync(2);
+            expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(false);
+            await vi.advanceTimersByTimeAsync(28);
+            await expect(observed).resolves.toMatchObject({ code: 'COSSACK_RPC_TIMEOUT' });
+            expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(true);
+            expect(component.loading.save).toBeUndefined();
+        } finally {
+            vi.useRealTimers();
+            delete (globalThis as any).window;
+            vi.unstubAllGlobals();
+        }
     });
 });
 

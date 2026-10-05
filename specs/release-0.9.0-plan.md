@@ -290,8 +290,10 @@ also pass. RT-02, RT-14 and RT-18 contracts are now complete.
 See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and the
 [cancellation checkpoint](./release-0.9.0.md#codex-sse-cancellation-2026-10-03).
 
-Remaining: Prove native pre-header disconnect delivery, arbitrary action deadlines,
-and component initialization/restoration concurrency against the original criteria.
+Remaining: Prove native pre-header disconnect delivery and component
+initialization/restoration concurrency against the original criteria. The
+[per-call deadline checkpoint](#codex-rt01-per-call-deadlines-2026-10-05) closes
+the arbitrary per-call action deadline gap.
 Retain RT-11 session and stream-response cookie requirements. Handshake identity
 does not prove per-message session revalidation. Explicit coordinator cancellation
 does not prove incoming TCP abort delivery or terminate ignored application I/O.
@@ -317,6 +319,21 @@ of its tests pass, including same-target coalescing and pending-capacity checks;
 root `pnpm tsc --noEmit` passes. This does not prove native disconnect delivery,
 server-side rollback, or arbitrary dynamic/per-call deadlines. Broader component
 initialization/restoration concurrency remains unaudited; RT-01 remains open.
+
+<a id="codex-rt01-per-call-deadlines-2026-10-05"></a>
+Codex per-call RPC deadline and cancellation (2026-10-05): `rpc$` now accepts a
+factory form, `rpc$(() => this.save(), { timeout, signal })`, while retaining the
+existing identity-view form. It validates timeout bounds and AbortSignal shape
+before invoking the factory, so invalid options cannot dispatch a mutation. A
+per-call timeout overrides the decorated default across component HTTP/SSE and
+WebSocket calls and layout-service HTTP calls. An aborted signal settles the
+local call and aborts its transport request; server work already in progress may
+continue, and the mutation outcome remains uncertain, so calls are never retried.
+The installed type fixture checks inference and rejects options on a direct-call
+form. Core build, all 1,558 Core tests and root `pnpm tsc --noEmit` pass. This
+closes the arbitrary per-call deadline implementation/acceptance gap, but not
+native pre-header disconnect delivery, component initialization/restoration
+concurrency, session/cookie requirements, or RT-01 itself.
 
 Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.

@@ -1,4 +1,6 @@
 /** Versioned, response-local RPC stream protocol. Each UTF-8 line is one frame. */
+import { validateRpcTimeout } from './server-method-metadata';
+
 export const RPC_STREAM_CONTENT_TYPE = 'application/x-cossack-rpc+ndjson';
 export const RPC_STREAM_MAX_FRAME_BYTES = 1024 * 1024;
 /** Identifies an action-owned HTTP response rather than an RPC state envelope. */
@@ -240,18 +242,61 @@ export type RpcYield<T> = T extends RpcCall<any, infer Yield> ? RpcSerialized<Yi
     : never;
 
 const rpcCalls = new WeakSet<object>();
+type RpcCallControl = { setTimeout?: (timeoutMs: number) => void; addSignal: (signal: AbortSignal) => void };
+const rpcCallControls = new WeakMap<object, RpcCallControl>();
+
+export interface RpcCallOptions {
+    /** Override the method's default client deadline for this one call. */
+    timeout?: number;
+    /** Cancel this call when the owning client operation is aborted. */
+    signal?: AbortSignal;
+}
+
+function validateRpcSignal(value: unknown): asserts value is AbortSignal | undefined {
+    if (value === undefined) return;
+    if (!value || typeof value !== 'object' || typeof (value as AbortSignal).aborted !== 'boolean' ||
+        typeof (value as AbortSignal).addEventListener !== 'function' ||
+        typeof (value as AbortSignal).removeEventListener !== 'function') {
+        throw new TypeError('[Cossack] RPC signal must be an AbortSignal.');
+    }
+}
 
 /**
  * View a browser server-method call with its inferred RPC result/yield types.
  * TypeScript decorators cannot change the authored method signature. This
- * helper exposes the proxy contract to the editor without invoking another
- * operation, wrapping its consumers, or relying on Vite's signature rewrite.
- * Use synchronously around the call in client code, before awaiting/iterating.
+ * helper exposes the proxy contract to the editor without wrapping the call or
+ * relying on Vite's signature rewrite. Pass a factory with options to validate
+ * call deadlines before dispatch: `rpc$(() => this.save(), { timeout: 500 })`.
+ * Use synchronously in client code, before awaiting or iterating.
  */
-export function rpc$<ServerReturn>(call: ServerReturn): RpcCall<RpcResult<ServerReturn>, RpcYield<ServerReturn>> {
+export function rpc$<ServerReturn>(call: ServerReturn): RpcCall<RpcResult<ServerReturn>, RpcYield<ServerReturn>>;
+export function rpc$<Factory extends () => unknown>(
+    factory: Factory,
+    options: RpcCallOptions,
+): RpcCall<RpcResult<ReturnType<Factory>>, RpcYield<ReturnType<Factory>>>;
+export function rpc$<ServerReturn>(
+    callOrFactory: ServerReturn | (() => ServerReturn),
+    options?: RpcCallOptions,
+): RpcCall<RpcResult<ServerReturn>, RpcYield<ServerReturn>> {
+    const timeout = options ? validateRpcTimeout(options.timeout) : undefined;
+    validateRpcSignal(options?.signal);
+    if (options && typeof callOrFactory !== 'function') {
+        throw new RpcError('COSSACK_RPC_CALL_REQUIRED',
+            'RPC call options require a factory, for example rpc$(() => this.save(), { timeout: 500 }).');
+    }
+    if (options?.signal?.aborted) {
+        const error = new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+        return createRpcCall((async function* () { throw error; })(), () => {}, cause => console.error('RPC call failed:', cause)) as any;
+    }
+    const call = options ? (callOrFactory as () => ServerReturn)() : callOrFactory;
     if (!call || typeof call !== 'object' || !rpcCalls.has(call)) {
         throw new RpcError('COSSACK_RPC_CALL_REQUIRED',
             'rpc$ requires a browser server-method proxy call. Use it in @Client code before awaiting or iterating the call.');
+    }
+    if (options) {
+        const controls = rpcCallControls.get(call);
+        if (timeout !== undefined) controls?.setTimeout?.(timeout);
+        if (options.signal) controls?.addSignal(options.signal);
     }
     return call as unknown as RpcCall<RpcResult<ServerReturn>, RpcYield<ServerReturn>>;
 }
@@ -458,7 +503,7 @@ export function createRpcCall<Result, Yield>(
     abort: () => void,
     onUnobservedError?: (error: unknown) => void,
     getRequestId?: () => string | undefined,
-    cancellation?: { signal: AbortSignal; error: () => RpcError },
+    cancellation?: { signal: AbortSignal; error: () => RpcError; setTimeout?: (timeoutMs: number) => void },
 ): RpcCall<Result, Yield> {
     let resolve!: (value: Result) => void;
     let reject!: (error: unknown) => void;
@@ -472,7 +517,18 @@ export function createRpcCall<Result, Yield>(
     let interruption: RpcError | undefined;
     let interruptionDelivered = false;
     let closing: Promise<void> | undefined;
-    const detach = () => cancellation?.signal.removeEventListener('abort', onAbort);
+    const externalSignals = new Map<AbortSignal, () => void>();
+    const detach = () => {
+        cancellation?.signal.removeEventListener('abort', onAbort);
+        for (const [signal, abort] of externalSignals) signal.removeEventListener('abort', abort);
+        externalSignals.clear();
+    };
+    const addSignal = (signal: AbortSignal) => {
+        if (settled || externalSignals.has(signal)) return;
+        const abort = () => { void cancel().catch(error => { if (!observed) onUnobservedError?.(error); }); };
+        externalSignals.set(signal, abort);
+        if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+    };
     const next = (): Promise<IteratorResult<Yield, Result>> => {
         const pending = queue.then(async () => {
             if (settled) {
@@ -543,6 +599,12 @@ export function createRpcCall<Result, Yield>(
         },
     };
     rpcCalls.add(call);
+    rpcCallControls.set(call, {
+        addSignal,
+        setTimeout: cancellation?.setTimeout ? timeoutMs => {
+            if (!settled) cancellation.setTimeout!(timeoutMs);
+        } : undefined,
+    });
     cancellation?.signal.addEventListener('abort', onAbort, { once: true });
     if (cancellation?.signal.aborted) onAbort();
     queueMicrotask(drive);

@@ -227,7 +227,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
     const stateKeys = getAllReactiveStateKeys(component.constructor);
     for (const { name } of serverMethods) {
         if (isSharedMethod(component.constructor, name)) continue;
-        const timeoutMs = serverMethodTimeout(component.constructor, name);
+        const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
             const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
@@ -236,12 +236,19 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
             optimisticCall.requestId = requestId;
             const controller = new AbortController();
             let timedOut = false;
+            let timeoutMs = defaultTimeoutMs;
+            let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+            const setDeadline = (timeout: number) => {
+                if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                timeoutMs = timeout;
+                deadlineTimer = setTimeout(() => {
+                    timedOut = true;
+                    controller.abort();
+                }, timeout);
+            };
             // A deadline aborts the call but never retries it: the mutation may
             // have completed server-side, so its outcome stays unknown.
-            const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
-                timedOut = true;
-                controller.abort();
-            }, timeoutMs);
+            if (timeoutMs !== undefined) setDeadline(timeoutMs);
             const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'http', requestId) : undefined;
             const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
             const cleanup = () => {
@@ -381,6 +388,7 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
                 signal: controller.signal,
                 error: () => new RpcError(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED',
                     timedOut ? `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.` : 'RPC call was cancelled.', { requestId }),
+                setTimeout: setDeadline,
             });
         };
         component.__cossack_proxies.set(name, proxy);
@@ -401,7 +409,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
         if (isSharedMethod(component.constructor, name)) continue;
-        const timeoutMs = serverMethodTimeout(component.constructor, name);
+        const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
             const requestId = crypto.randomUUID();
             const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
@@ -426,6 +434,16 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             const controller = new AbortController();
             let interruptionError: RpcError | undefined;
             let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+            let timeoutMs = defaultTimeoutMs;
+            const setDeadline = (timeout: number) => {
+                if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                timeoutMs = timeout;
+                deadlineTimer = setTimeout(() => {
+                    interruptionError = new RpcError('COSSACK_RPC_TIMEOUT',
+                        `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
+                    controller.abort();
+                }, timeout);
+            };
             const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
             const cleanup = () => { if (deadlineTimer !== undefined) clearTimeout(deadlineTimer); finish(); };
             // Keep serializable args (primitives, plain objects, arrays), drop
@@ -477,11 +495,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             }
             invalidateClientPageCache();
 
-            if (timeoutMs !== undefined) deadlineTimer = setTimeout(() => {
-                interruptionError = new RpcError('COSSACK_RPC_TIMEOUT',
-                    `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
-                controller.abort();
-            }, timeoutMs);
+            if (timeoutMs !== undefined) setDeadline(timeoutMs);
             const operation = async function* (): AsyncGenerator<unknown, unknown> {
                 try {
                     while (true) {
@@ -518,6 +532,7 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             }, error => console.error(`Error calling server action '${name}':`, error), () => requestId, {
                 signal: controller.signal,
                 error: () => interruptionError ?? new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId }),
+                setTimeout: setDeadline,
             });
         };
 

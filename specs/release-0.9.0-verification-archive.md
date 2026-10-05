@@ -10298,3 +10298,33 @@ coverage. Twenty-seven UI guides remain without executable examples. Desktop is
 complete by user decision; waived platform checks are not claimed as passed.
 REL-02/REL-03 retain non-Desktop acceptance. Release status remains **28
 complete / 30 open**. No deployment or publication occurred.
+
+<a id="codex-rt01-per-call-deadlines-2026-10-05"></a>
+### Codex: Per-call RPC deadlines and cancellation (2026-10-05)
+
+`rpc$` now has a factory overload for one-call settings:
+`rpc$(() => this.save(), { timeout, signal })`. The previous direct-call form
+remains a typed identity view. The helper checks bounded integer timeout values
+and AbortSignal structure before the factory runs, so invalid options do not
+dispatch an action. A pre-aborted signal also prevents dispatch. Per-call timeout
+overrides a method's declared default for component HTTP/SSE and WebSocket calls
+and layout-service HTTP calls. An active signal aborts the local request and
+settles its RPC call; server application work may have started or may ignore
+cancellation, so the result is still treated as uncertain and never retried.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/core build`: passes, including Vite output,
+  declaration generation and ESM declaration import rewriting.
+- `pnpm --filter @cossackframework/core exec vitest run tests/rpc-conformance.test.ts tests/rpc-client-types.test.ts tests/server-method-timeout.test.ts`:
+  **3 files / 63 tests pass**.
+- `pnpm --filter @cossackframework/core exec vitest run`: **94 files / 1,558
+  tests pass**.
+- `pnpm tsc --noEmit`: passes.
+
+**Limits:** The new checks prove client deadline override, local abort, factory
+prevalidation, type inference and cleanup. They do not prove native incoming
+TCP disconnect delivery, terminate application I/O that ignores an aborted
+signal, rollback an already-applied mutation, or prove component
+initialization/restoration concurrency. RT-01 remains open. Desktop is complete
+by user decision; its waived platform checks remain unclaimed.

@@ -82,6 +82,10 @@ class ClientPage extends BasePage {
     (await json).secret;
     const call = rpc$(this.inferred(3));
     const typed: RpcCall<{ total: number }, { step: number; nested: { label: string }[] }> = call;
+    const perCall = rpc$(() => this.inferred(4), { timeout: 100, signal: new AbortController().signal });
+    const typedPerCall: RpcCall<{ total: number }, { step: number; nested: { label: string }[] }> = perCall;
+    // @ts-expect-error Per-call options require a factory so invalid settings are checked before dispatch.
+    rpc$(this.inferred(4), { timeout: 100 });
     type Result = Assert<Equal<Awaited<typeof call>, { total: number }>>;
     type Yield = Assert<Equal<RpcYield<typeof call>, { step: number; nested: { label: string }[] }>>;
     for await (const value of typed) {
@@ -127,7 +131,7 @@ class ClientPage extends BasePage {
     const recovered: Promise<{ total: number } | { error: string }> = call.catch(() => ({ error: 'failed' }));
     const finalized: Promise<{ total: number }> = call.finally(() => {});
     const cancelled: Promise<void> = call.cancel();
-    void [total, inherited, field, sync, generic, noReturn, unknownReturn, response, viewedAgain, recovered, finalized, cancelled];
+    void [total, perCall, typedPerCall, inherited, field, sync, generic, noReturn, unknownReturn, response, viewedAgain, recovered, finalized, cancelled];
   }
 }
 

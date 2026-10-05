@@ -42,9 +42,34 @@ This infers `RpcCall<{ total: number }, { step: number }>` from the original
 method. Arguments retain their authored types. The helper also handles inherited
 methods, generic methods, function fields, and injected scoped service calls:
 `rpc$(this.reportService.generate(3))`. It works with HTTP, SSE, and WebSocket
-proxies. It returns the exact call it receives and does not dispatch or wrap a
-second operation. No Vite transform, editor plugin, or user cast is needed to
-check the client handler's types.
+proxies. The direct-call form returns the exact call it receives; the factory
+form configures that same call without creating a second operation. No Vite
+transform, editor plugin, or user cast is needed to check the client handler's
+types.
+
+Pass a call factory and options to set a one-call deadline or cancellation
+signal. The factory form validates the timeout before it dispatches the action.
+Its timeout overrides `@Server({ timeout })` for this call:
+
+```typescript
+@Client()
+async startWithDeadline() {
+  const controller = new AbortController();
+  const call = rpc$(() => this.generate(3), {
+    timeout: 5_000,
+    signal: controller.signal,
+  });
+  for await (const progress of call) console.log(progress.step);
+  return await call;
+}
+```
+
+`timeout` is an integer number of milliseconds from 1 through 2,147,483,647.
+An already-aborted signal prevents the factory from running. Aborting later
+cancels this RPC request and settles the local call; the server may already have
+committed a mutation or may continue ignored application I/O. Cossack does not
+retry the call because its outcome can be unknown. This option works for
+component HTTP/SSE/WebSocket calls and layout-service HTTP calls.
 
 Use the helper synchronously around the invocation in client code. Calling it
 after `await` passes the resolved value instead of the call. Passing a native

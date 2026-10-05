@@ -170,15 +170,18 @@ REL-03 remains open for the required non-Desktop release matrix.
    pre-change Durable Object source. Broader in-flight revocation and concurrent
    request semantics remain open.
 
-3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
-   disconnect, dynamic/per-call deadline and initialization/restoration
-   concurrency criteria; retain the limits below. Codex bounded declared
-   `@Server({ timeout })` values to integer milliseconds from 1 to 2,147,483,647
-   and validated metadata before component and service timers. The legacy Node
-   adapter coalesces same-target bootstrap, counts pending instances toward its
-   cap, and closes failed upgrades with a fixed error; 24 Node tests pass. The
-   core build and all 1,552 core tests pass, as does root TypeScript checking.
-   See the [dated RT-01 review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
+3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against native
+   pre-header disconnect delivery and component initialization/restoration
+   concurrency; retain the limits below. `rpc$(() => action(), opts)` now
+   validates per-call options before dispatch and supports
+   component HTTP/SSE/WebSocket and layout-service HTTP calls. Core build, all
+   1,558 Core tests, authored RPC declaration tests and root TypeScript checking
+   pass. Declared `@Server({ timeout })` values remain bounded to integer
+   milliseconds from 1 through 2,147,483,647. The legacy Node adapter coalesces
+   same-target bootstrap, counts pending instances toward its cap, and closes
+   failed upgrades with a fixed error; its 24 tests pass. See the
+   [per-call deadline checkpoint](./release-0.9.0-plan.md#codex-rt01-per-call-deadlines-2026-10-05)
+   and [earlier timeout-boundary review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
    These changes do not close RT-01.
 4. Continue **[RT-12](./release-0.9.0-plan.md#rt-12)**. Route inspection now
    resolves static aliases/re-exports to service class declarations and preserves
@@ -199,7 +202,7 @@ REL-03 remains open for the required non-Desktop release matrix.
   Stored records are not live state.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
-- RT-01 needs native pre-header disconnect delivery, dynamic/per-call action deadline acceptance and initialization/restoration concurrency acceptance. Declared method timeout bounds are enforced, but do not prove arbitrary deadlines.
+- RT-01 still needs native pre-header disconnect delivery and initialization/restoration concurrency acceptance. Per-call deadlines and cancellation are implemented and covered across component HTTP/SSE/WebSocket and layout-service HTTP calls; this does not prove native disconnect delivery or stop ignored server application I/O.
 - The full `cossack` package suite has not passed. Parallel execution exceeded existing subprocess/test timeouts; a serial retry also exceeded a five-second CLI assertion and was stopped. Focused route/inspection checks pass, but REL-03 must rerun the complete suite and resolve any reproducible failures.
 - Browser ownership acceptance remains open. The existing `di-demo.spec.ts` checks service state retention inside a layout and reset after leaving it, but this session's targeted Playwright command did not start Vite or produce test output within about 75 seconds, so it was stopped without claiming a pass.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.

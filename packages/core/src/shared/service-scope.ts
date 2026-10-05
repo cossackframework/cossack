@@ -352,7 +352,7 @@ export class ServiceScope {
         const clientMethods = Reflect.getMetadata('cossack:client-methods', entry.serviceClass) || {};
         for (const action of Object.keys(serverMethods)) {
             if (clientMethods[action] || isSharedMethod(entry.serviceClass, action)) continue;
-            const timeoutMs = validateServerMethodTimeout(serverMethods[action]?.timeout);
+            const defaultTimeoutMs = validateServerMethodTimeout(serverMethods[action]?.timeout);
             // One request-scoped RPC with the same contract as component calls:
             // promise or iterator consumption, stream frames, cancellation,
             // deadlines, and correlated RpcError failures.
@@ -365,10 +365,17 @@ export class ServiceScope {
                 const trace = import.meta.env?.DEV ? beginDevelopmentServiceRpcTrace(entry.instance, requestId) : undefined;
                 const controller = new AbortController();
                 let timedOut = false;
-                const deadlineTimer = timeoutMs === undefined ? undefined : setTimeout(() => {
-                    timedOut = true;
-                    controller.abort();
-                }, timeoutMs);
+                let timeoutMs = defaultTimeoutMs;
+                let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+                const setDeadline = (timeout: number) => {
+                    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                    timeoutMs = timeout;
+                    deadlineTimer = setTimeout(() => {
+                        timedOut = true;
+                        controller.abort();
+                    }, timeout);
+                };
+                if (timeoutMs !== undefined) setDeadline(timeoutMs);
                 let request: Promise<Response>;
                 let requestState: Record<string, unknown> = {};
                 let success = false;
@@ -457,6 +464,7 @@ export class ServiceScope {
                         signal: controller.signal,
                         error: () => new RpcError(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED',
                             timedOut ? `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.` : 'RPC call was cancelled.', { requestId }),
+                        setTimeout: setDeadline,
                     });
             };
         }
