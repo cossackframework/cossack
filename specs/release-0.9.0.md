@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twenty standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Eight UI guides now include executable SSR examples for native controls, one-time codes, breadcrumbs, URL pagination, status/progress, a typed server data table, localized metrics and controlled settings. Thirty-one of 39 UI guides still have no executable example. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [UI guide acceptance](#codex-cli08-ui-coverage-2026-10-05), [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twenty-four standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Twelve UI guides now include executable SSR examples for native controls, one-time codes, breadcrumbs, URL pagination, status/progress, linked fields/empty states, display/layout surfaces, avatars, a typed server data table, localized metrics and controlled settings. Twenty-seven of 39 UI guides still have no executable example. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [UI guide acceptance](#codex-cli08-ui-coverage-2-2026-10-05), [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -543,6 +543,34 @@ D1 example. Desktop is complete by user decision, with remaining platform checks
 waived and not claimed as passed. REL-02/REL-03 remain open for non-Desktop
 acceptance; task status remains 28 complete / 30 open. No deployment or
 publication occurred.
+
+<a id="codex-cli08-ui-coverage-2-2026-10-05"></a>
+### Codex: Four additional executable UI guides (2026-10-05)
+
+The installed UI catalog now has executable SSR examples for twelve of 39
+guides. Four new examples cover `Field` passing label, hint, error and required
+attributes to a native input alongside an actionable `Empty` state; `Card` slots,
+status text and a decorative `Skeleton`; named `ButtonGroup`, static separators
+and an image inside `AspectRatio`; and informative/decorative `Avatar` semantics
+with a localized `AvatarGroup` overflow count. The examples check public types,
+rendered markup and native ownership without invoking browser-only callbacks.
+
+The installed verifier compiles, bundles and executes all twelve selected UI
+examples from the fresh CLI catalog. This is server-rendered output coverage;
+browser behavior and assistive-technology results remain separate.
+
+**Verification:** the fresh-tarball `pnpm test:agent-docs:local` gate passes,
+including 24 packaged usage examples, four auth examples, four generated
+application pages, installed Cloudflare HTTP/SSE/WebSocket traces, CLI/MCP
+offline parity, UI prop/index contracts and production source-map stripping. The
+D1 bound-value fixture passes. `pnpm --filter cossack exec vitest run
+tests/package-guidance.test.js` passes 13 tests.
+
+Twenty-seven UI guides remain without examples. CLI-08 stays open for broader
+library/component/recipe coverage and real Worker execution of the D1 guide.
+Desktop remains complete by user decision; waived platform checks are not passed.
+REL-02/REL-03 remain open for non-Desktop criteria. Release status remains
+**28 complete / 30 open**. No deployment or publication occurred.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)

@@ -10271,3 +10271,30 @@ without executable examples. Desktop is complete by user decision; waived
 platform checks are not claimed as passed. REL-02/REL-03 remain open for
 non-Desktop criteria. Release status remains **28 complete / 30 open**. No
 deployment or publication occurred.
+
+<a id="codex-cli08-ui-coverage-2-2026-10-05"></a>
+### Codex: Four additional executable UI guides (2026-10-05)
+
+Twelve of the 39 installed UI guides now have executable SSR examples. The four
+new examples demonstrate Field-provided accessibility attributes on an actual
+input and a usable empty-state action; Card slots, status content and decorative
+Skeleton dimensions; native action-group, separator and aspect-ratio semantics;
+and informative/decorative avatar naming with localized group overflow text.
+Their markup checks avoid treating visual styling as behavior or treating SSR as
+proof of browser or screen-reader behavior.
+
+The installed verifier typechecks these sources against the packed declarations,
+bundles UI imports for Node, and executes them. Its selected example list now
+covers twelve UI guides while preserving the offline CLI/MCP catalog parity
+checks.
+
+**Verification:**
+
+- `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local`: passes fresh package builds and installs, **24 packaged usage examples**, four auth examples, four generated application pages, installed Cloudflare HTTP/SSE/WebSocket traces, offline CLI/MCP parity, UI prop/index contracts and production source-map stripping. D1 bound-value acceptance passes.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`: **1 file / 13 tests pass**.
+
+CLI-08 remains open for broader authored guidance and D1 Worker runtime
+coverage. Twenty-seven UI guides remain without executable examples. Desktop is
+complete by user decision; waived platform checks are not claimed as passed.
+REL-02/REL-03 retain non-Desktop acceptance. Release status remains **28
+complete / 30 open**. No deployment or publication occurred.
