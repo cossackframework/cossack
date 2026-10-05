@@ -1085,10 +1085,12 @@ Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-comp
 Purpose: A generated binding must point to a real resource or use supported
 provisioning. A fake Hyperdrive ID postpones an inevitable failure until deployment.
 
-Baseline: D1 scaffolds set `database_name` without a `database_id`; under the
-pinned Wrangler version, the named remote database must already exist.
-Hyperdrive still uses an all-zero placeholder ID. Full resource selection/setup
-flows remain open.
+Baseline: D1 scaffolds set `database_name` without a `database_id`. The pinned
+Wrangler parser accepts incomplete D1 references for local inspection, but
+Cloudflare's [configuration docs](https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases)
+require both `database_name` and `database_id` for a remote binding; parser
+acceptance is not deployment readiness. Hyperdrive still uses an all-zero
+placeholder ID. Full resource selection/setup flows remain open.
 
 Approach: Add a resource plan that distinguishes existing, create, provider-managed,
 and unresolved resources. Support D1, R2, KV, Hyperdrive, and bindings needed by
@@ -1113,6 +1115,23 @@ keeps database credentials in Cloudflare configuration. The offline scaffold
 tests verify generated configuration comments and rendered instructions. No
 account discovery, resource selection or provisioning was added, so CF-04
 remains open. See the [checkpoint](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05).
+
+Codex static-plan checkpoint (2026-10-05): local `inspect/check cloudflare`
+output now identifies each configured resource reference by name or ID, marks
+unresolved placeholders with a next action, and explicitly records remote
+existence/access as `not-checked`. It no longer describes configured values as
+`existing` or missing values as `automatic`. A Wrangler environment is not an
+account identity, so this pass does not guess the target account. Inspection
+and check remain local/read-only. D1 bindings missing either `database_name` or
+`database_id` are unresolved for remote deployment, even though the local parser
+permits incomplete entries. The action guides users to
+`wrangler d1 list` or an explicit `wrangler d1 create --update-config` command.
+Focused CLI tests (30), scaffold tests (81), a generated deployment dry-run,
+and root typechecking pass. The dry-run did not upload or create resources.
+This does not add resource selection, authenticated existence/access checks,
+provisioning, ownership tracking, or wrong-account/repeated-application tests;
+CF-04 remains open. See
+the [static-plan checkpoint](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05).
 
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets

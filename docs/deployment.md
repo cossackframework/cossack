@@ -90,7 +90,10 @@ Both commands report the resolved Worker, environment, bindings, required
 secret names, and diagnostics. Inspection succeeds when configuration can be
 read; `check` fails if it contains deployment errors. Their results explicitly
 mark build and remote readiness as `not-checked`. They do not provision
-resources, fetch secrets, or verify permissions.
+resources, fetch secrets, or verify permissions. Each binding identifies its
+configured resource reference or the setup action needed when that reference is
+missing. A configured name or ID does not prove that the resource exists in the
+selected Cloudflare account.
 
 ### Deploy
 
@@ -214,9 +217,23 @@ Add bindings to `wrangler.jsonc`:
 }
 ```
 
-Wrangler can provision D1 when `database_id` is omitted. Set the real ID when
-binding an existing database. Hyperdrive requires an existing configuration
-ID; replace its scaffold placeholder before deployment.
+Wrangler's [D1 configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases)
+requires both `database_name` and `database_id` for a remote binding. The
+scaffold leaves the ID unset for local development, so
+`cossack check cloudflare` reports an unresolved D1 binding until you select an
+existing database ID or create one. Use `pnpm exec wrangler d1 list` to find an
+existing ID, or run the [Wrangler D1 create command](https://developers.cloudflare.com/workers/wrangler/commands/d1/)
+to create a remote database and update Wrangler config:
+
+```sh
+pnpm exec wrangler d1 create <NAME> --update-config --binding <BINDING>
+```
+
+That command changes Cloudflare and the local config; Cossack does not run it
+automatically. Add `--env <ENV>` when creating a database for a named Wrangler
+environment. Hyperdrive requires a real configuration ID; replace the scaffold
+placeholder before deployment. Keep its origin credentials in Cloudflare-managed
+Hyperdrive settings.
 
 ### Custom Domains
 

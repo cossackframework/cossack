@@ -10570,3 +10570,27 @@ passes.
 bindings, reactive UI adapters, keyboard submission, labels/error associations,
 focus recovery, nested array-item paths, and file transport have no acceptance
 yet. RT-10 remains open. Release count stays **30 complete / 28 open**.
+
+### Codex CF-04 static Cloudflare resource plan (2026-10-05)
+
+Local Cloudflare inspection now classifies each resource reference as configured
+or unresolved, records whether the reference is a name or ID, includes a setup
+action, and states that remote existence/access was not checked. It removes the
+previous `provisioning: existing|automatic` labels. D1 bindings missing either
+required field pass the pinned Wrangler local parser but are unresolved for remote deployment,
+because Cloudflare's [current configuration reference](https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases)
+requires `database_name` and `database_id`.
+Scaffold docs point to `wrangler d1 list` for an existing ID and the explicit
+`d1 create --update-config --binding` command for creating a database and
+updating config. Hyperdrive's all-zero placeholder remains an error and now has
+a direct remediation. Static inspection does not infer a Cloudflare account
+from `--env` or contact Cloudflare. A generated staging app also passed a local
+`cossack deploy --dry-run` integration without upload or resource creation.
+
+**Verification:** Cossack's focused deployment/inspect tests pass **30/30**; scaffold's `tests/scaffold.test.js` passes **81/81**; `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js -t 'builds a generated staging app and validates deployment without uploading'` passes **1/1**. Root `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'` pass.
+
+**Limits:** This is local static planning only. It does not select resources,
+check account ownership or live resource existence/access, provision resources,
+or establish wrong-account/repeated-application behavior. CF-04 remains open;
+task counts stay **30 complete / 28 open**. The dry-run did not upload or create
+resources; remote account/resource readiness remains unverified.

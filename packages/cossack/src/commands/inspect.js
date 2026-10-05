@@ -74,7 +74,12 @@ async function inspectCloudflare(args, ctx, command) {
     else {
       console.log(`Worker: ${summary.worker ?? '(unnamed)'}\nEnvironment: ${summary.environment ?? '(default)'}\nConfig: ${summary.configPath}`);
       for (const binding of summary.bindings) {
-        console.log(`${binding.name}: ${binding.type} (${binding.resource ?? binding.className ?? binding.provisioning ?? 'configured'})`);
+        const reference = binding.resource ?? binding.className;
+        const target = reference ? `${binding.referenceKind ?? 'class'} ${reference}` : 'no resource reference';
+        const status = binding.configuration === 'unresolved'
+          ? `needs setup: ${binding.nextAction}; remote existence/access not checked`
+          : `${target}; remote existence/access not checked`;
+        console.log(`${binding.name}: ${binding.type} (${status})`);
       }
       console.log(`Required secrets: ${summary.requiredSecrets.join(', ') || '(none declared)'}`);
       for (const diagnostic of diagnostics) console.error(`${diagnostic.code}: ${diagnostic.message}`);
@@ -134,6 +139,8 @@ Read the project's resolved Worker, environment, bindings, required secret
 names, and configuration diagnostics. Inspection succeeds when configuration
 can be read, even if diagnostics identify deployment errors.
 No builds, generated files, resource provisioning, or cloud requests.
+Binding summaries distinguish configured references from unresolved setup and
+mark remote existence/access as not checked.
 Use cossack check cloudflare for a failing exit code on invalid configuration.
 Use cossack inspect routes to list effective routes, or supply a route to
 explain its options, layout ancestry, methods, and source locations.
@@ -155,6 +162,9 @@ and runtime execution are not yet checked.
 Returns a nonzero exit code for configuration errors. Build artifacts,
 remote resources, permissions, and secret availability are not checked.
 --json emits one versioned result with resource names and diagnostics.
+Binding entries distinguish configured references from unresolved setup and mark
+remote existence/access as not checked. A configured name or ID does not prove
+that the resource exists or is available in the selected account.
 Provider checks validate declared cache requirements, binding names and limiter
 selection. They do not verify process/secret overrides or remote readiness.`);
 }

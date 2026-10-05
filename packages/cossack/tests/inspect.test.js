@@ -41,10 +41,18 @@ describe('Cloudflare configuration inspection', () => {
     expect(errors).not.toHaveBeenCalled();
     expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ schemaVersion: 1, command: 'inspect', ok: true,
       data: { scope: 'cloudflare', environment: 'staging', worker: 'fixture-staging', requiredSecrets: ['APP_SECRET'],
-        readiness: { configuration: 'valid', build: 'not-checked', remote: 'not-checked' } }, diagnostics: [] });
+        bindings: [expect.objectContaining({ type: 'd1_databases', name: 'DB', resource: 'staging-db',
+          referenceKind: 'name', configuration: 'unresolved', remote: 'not-checked',
+          nextAction: expect.stringContaining('Set database_id for this D1 database') })],
+        readiness: { configuration: 'invalid', build: 'not-checked', remote: 'not-checked' } },
+      diagnostics: [expect.objectContaining({ code: 'COSSACK_D1_DATABASE_ID_REQUIRED' })] });
     expect(output.mock.calls[0][0]).not.toContain('do-not-include-var-values');
     expect(await fs.readdir(ctx.cwd)).toEqual(files);
     expect(await fs.readFile(path.join(ctx.cwd, 'wrangler.jsonc'), 'utf8')).toBe(source);
+
+    expect(await checkCommand(['cloudflare'], ctx)).toBe(1);
+    expect(JSON.parse(output.mock.calls[1][0])).toMatchObject({ command: 'check', ok: false,
+      diagnostics: [expect.objectContaining({ code: 'COSSACK_D1_DATABASE_ID_REQUIRED' })] });
   });
 
   it('lets inspection describe invalid configuration while checks fail with the same diagnostics', async () => {
@@ -57,6 +65,17 @@ describe('Cloudflare configuration inspection', () => {
     const check = JSON.parse(output.mock.calls[1][0]);
     expect(check).toMatchObject({ command: 'check', ok: false, diagnostics: inspection.diagnostics });
     expect(JSON.stringify(output.mock.calls)).not.toContain('private-fixture-value');
+  });
+
+  it('prints the unresolved setup action and does not claim remote readiness', async () => {
+    const ctx = await fixture({ hyperdrive: [{ binding: 'HYPERDRIVE', id: '00000000000000000000000000000000' }] });
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await inspectCommand(['cloudflare'], { ...ctx, flags: {} })).toBe(0);
+    const text = output.mock.calls.map(([line]) => line).join('\n');
+    expect(text).toContain('HYPERDRIVE: hyperdrive (needs setup: Create or select a Hyperdrive configuration');
+    expect(text).toContain('remote existence/access not checked');
+    expect(text).not.toContain('automatic');
+    expect(text).not.toContain('existing');
   });
 
   it.each([{ env: ['staging', 'production'] }, { env: true }, { typo: true }])('rejects ambiguous/unknown flags: %j', async flags => {

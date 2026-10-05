@@ -16,20 +16,24 @@ want to apply them without starting the server.
 ## Cloudflare database setup
 
 For a D1-backed project, the generated `wrangler.jsonc` sets `database_name`
-to the project name followed by `-db` and does not include a remote database
-ID. Create a remote D1 database with that exact name before deploying. For the
-default project name, run:
+to the project name followed by `-db`. It leaves `database_id` unset so local
+development can use Wrangler's local D1 database. Cloudflare's Wrangler
+configuration requires both `database_name` and `database_id` for a remote
+binding; `cossack check cloudflare` reports the missing ID before deployment.
+
+For a new remote database, run this from the project directory. It creates a
+Cloudflare resource and updates `wrangler.jsonc` with its ID:
 
 ```sh
-pnpm exec wrangler d1 create my-cossack-app-db
+pnpm exec wrangler d1 create my-cossack-app-db --update-config --binding DB
 ```
 
-Replace `my-cossack-app` with your project name. If the database already
-exists, keep its name matched to `database_name` in `wrangler.jsonc`. Wrangler
-4.114.0 resolves this configured name to a database in your account and fails
-deployment if that database does not exist. Do not add a placeholder
-`database_id`. Local development uses Wrangler's local D1 database; run
-`pnpm migrate` to apply migrations locally.
+Replace `my-cossack-app` with your project name. This command acts on remote
+D1 and creates a new database. To use an existing database instead, run
+`pnpm exec wrangler d1 list`, copy its ID into `database_id`, and keep
+`database_name` matched. Add `--env <ENV>` to the create command when targeting
+a named Wrangler environment. Do not add a placeholder `database_id`. Run
+`pnpm migrate` to apply migrations to the local D1 database during development.
 
 For a Hyperdrive-backed project, create a Hyperdrive configuration for your
 existing PostgreSQL or MySQL database, then replace the all-zero `id` in

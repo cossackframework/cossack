@@ -15,8 +15,9 @@
       "name": "EMAIL"
     }
   ],
-  // Create this named D1 database in your Cloudflare account before deploying.
-  // Local development uses a separate local database; apply migrations explicitly.
+  // Remote D1 deployment requires database_id. Use the ID of an existing database, or run:
+  // pnpm exec wrangler d1 create app-db --update-config --binding DB
+  // This command creates a Cloudflare resource. Local development uses a separate local database.
   "d1_databases": [
     {
       "binding": "DB",

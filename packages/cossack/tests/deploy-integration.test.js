@@ -301,7 +301,10 @@ it('builds a generated staging app and validates deployment without uploading', 
   const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
   config.env = { staging: {
     vars: { APP_URL: 'https://staging.example.test', APP_LOCALE: 'en' }, secrets: config.secrets,
-    d1_databases: [{ binding: 'DB', database_name: 'stream-test-database' }],
+    // Synthetic ID for local dry-run validation only; no remote resource exists
+    // and this test does not upload or check account access.
+    d1_databases: [{ binding: 'DB', database_name: 'stream-test-database',
+      database_id: '12345678-1234-1234-1234-123456789012' }],
     // Cloudflare environments do not inherit bindings; the coordinator must
     // be re-declared for staging or the built Worker loses COSSACK_SSE.
     durable_objects: { bindings: [{ name: 'COSSACK_SSE', class_name: 'SseDurableObject' },

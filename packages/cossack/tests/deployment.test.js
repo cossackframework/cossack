@@ -42,12 +42,49 @@ describe('deployment inspection with project Wrangler', () => {
         secrets: { required: ['APP_SECRET'] },
         d1_databases: [{ binding: 'DB', database_name: 'staging-db' }] } } });
     const inspection = await inspectDeployment(root, 'staging');
-    expect(inspection.diagnostics).toEqual([]);
+    expect(inspection.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'COSSACK_D1_DATABASE_ID_REQUIRED', severity: 'error',
+    }));
     expect(inspection.config.vars.APP_URL).toBe('https://staging.test');
     expect(inspection.summary.worker).toBe('fixture-staging');
     expect(inspection.summary.requiredSecrets).toEqual(['APP_SECRET']);
-    expect(inspection.summary.bindings).toContainEqual({ type: 'd1_databases', name: 'DB', resource: null, provisioning: 'automatic' });
+    expect(inspection.summary.bindings).toContainEqual(expect.objectContaining({ type: 'd1_databases',
+      name: 'DB', resource: 'staging-db', referenceKind: 'name', configuration: 'unresolved', remote: 'not-checked' }));
     expect(inspection.summary).not.toHaveProperty('vars');
+  });
+
+  it('plans binding setup without claiming resources exist or will be provisioned', async () => {
+    const root = await project({
+      d1_databases: [{ binding: 'DB', database_name: 'app-db' },
+        { binding: 'DB_EXISTING', database_name: 'existing-db', database_id: '12345678-1234-1234-1234-123456789012' },
+        { binding: 'DB_NO_NAME', database_id: 'abcdefab-cdef-abcd-efab-cdefabcdefab' }],
+      kv_namespaces: [{ binding: 'CACHE', id: '1234567890abcdef1234567890abcdef' }],
+      r2_buckets: [{ binding: 'FILES', bucket_name: 'app-files' }],
+      hyperdrive: [{ binding: 'HYPERDRIVE', id: '00000000000000000000000000000000' }],
+      queues: { producers: [{ binding: 'EVENTS', queue: 'app-events' }] },
+    });
+    const { summary, diagnostics } = await inspectDeployment(root);
+    const byName = Object.fromEntries(summary.bindings.map(binding => [binding.name, binding]));
+    expect(byName.DB).toMatchObject({ resource: 'app-db', referenceKind: 'name',
+      configuration: 'unresolved', remote: 'not-checked',
+      nextAction: expect.stringContaining('Set database_id for this D1 database') });
+    expect(byName.DB_EXISTING).toMatchObject({ resource: '12345678-1234-1234-1234-123456789012', referenceKind: 'id',
+      configuration: 'configured', remote: 'not-checked' });
+    expect(byName.DB_NO_NAME).toMatchObject({ resource: 'abcdefab-cdef-abcd-efab-cdefabcdefab', referenceKind: 'id',
+      configuration: 'unresolved', remote: 'not-checked',
+      nextAction: expect.stringContaining('Set database_name to the name associated') });
+    expect(byName.CACHE).toMatchObject({ resource: '1234567890abcdef1234567890abcdef', referenceKind: 'id',
+      configuration: 'configured', remote: 'not-checked' });
+    expect(byName.FILES).toMatchObject({ resource: 'app-files', referenceKind: 'name',
+      configuration: 'configured', remote: 'not-checked' });
+    expect(byName.HYPERDRIVE).toMatchObject({ configuration: 'unresolved', remote: 'not-checked',
+      nextAction: expect.stringContaining('replace its placeholder ID') });
+    expect(byName.EVENTS).toMatchObject({ resource: 'app-events', referenceKind: 'name',
+      configuration: 'configured', remote: 'not-checked' });
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: 'COSSACK_BINDING_PLACEHOLDER' }));
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: 'COSSACK_D1_DATABASE_NAME_REQUIRED' }));
+    expect(summary.bindings.every(binding => !Object.hasOwn(binding, 'provisioning'))).toBe(true);
+    expect(JSON.stringify(summary.bindings)).not.toMatch(/"provisioning":"(?:existing|automatic)"/);
   });
 
   it('rejects unknown environments instead of silently using defaults', async () => {

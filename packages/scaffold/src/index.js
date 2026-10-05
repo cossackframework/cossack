@@ -421,7 +421,7 @@ function middlewareRegistry(recipe) {
 function wranglerConfig(recipe, projectName) {
   let database = '';
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    database = `,\n  // Create the remote D1 database named ${projectName}-db before deploying.\n  // Wrangler resolves it by name and fails deployment if it does not exist.\n  // Local development uses a separate local database; apply migrations explicitly.\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "preview_database_id": "${projectName}-local"\n  }]`;
+    database = `,\n  // Remote D1 deployments require database_id. Use the returned ID for an existing database,\n  // or create a remote database and update this config with:\n  // pnpm exec wrangler d1 create ${projectName}-db --update-config --binding DB\n  // This command creates a Cloudflare resource. Local development keeps its separate local DB.\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "preview_database_id": "${projectName}-local"\n  }]`;
   } else if (recipe.resolvedFeatures.includes('database') &&
       recipe.config.database.startsWith('hyperdrive-')) {
     database = `,\n  // Replace this placeholder with a real Hyperdrive configuration ID before deploying.\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;

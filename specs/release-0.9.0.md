@@ -72,7 +72,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-01](./release-0.9.0-plan.md#cf-01) Select environment before Vite build and share it across SSG, bindings, migrations, and deployment; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation.
-- [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs. Codex (2026-10-05): scaffold guidance now names the D1 database that must exist before deploy and explains how to replace the Hyperdrive placeholder ID without exposing origin credentials. Focused scaffold tests pass. Resource selection/provisioning is not implemented; see [checkpoint](#codex-cf04-scaffold-guidance-2026-10-05).
+- [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs. Codex (2026-10-05): local Cloudflare inspection now reports name/ID references, unresolved setup actions and `remote: not-checked`, without claiming resources exist or will be provisioned. D1 bindings missing either required field are unresolved for remote deployment; scaffold docs explain how to find or create an ID. CLI tests, scaffold tests, a generated deploy dry-run and root typecheck pass. Account discovery, remote existence checks and provisioning remain open; see [static resource plan checkpoint](#codex-cf04-static-resource-plan-2026-10-05).
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
@@ -947,6 +947,31 @@ This is accurate setup guidance, not resource selection, authenticated account
 inspection, provisioning or full Cloudflare resource management. CF-04 remains
 open.
 
+<a id="codex-cf04-static-resource-plan-2026-10-05"></a>
+### Codex: Static Cloudflare resource plan (2026-10-05)
+
+`cossack inspect cloudflare` and `check cloudflare` now describe each binding's
+configured name/ID reference, unresolved setup action, and `remote: not-checked`
+status. The old `provisioning: existing|automatic` claim is removed. D1
+bindings missing either required field are unresolved for remote deployment;
+name-only entries are explicitly unresolved because
+Cloudflare's [Wrangler configuration reference](https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases)
+requires `database_name` and `database_id`; the local parser accepting an
+incomplete config does not prove it is deployable. Scaffold docs and comments
+explain the existing-ID and explicit Wrangler create/update-config paths.
+Placeholder Hyperdrive IDs remain errors and now have direct remediation in
+inspection output. No account identity is inferred from `--env`; inspection
+and check remain local/read-only. A generated staging app also passed a local
+`cossack deploy --dry-run` integration without upload or resource creation.
+
+**Verification:** Cossack's focused deployment/inspect tests pass **30/30**; scaffold's `tests/scaffold.test.js` passes **81/81**; the generated staging deploy-dry-run integration passes **1/1**. Root `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'` pass.
+
+**Remaining:** This is static configuration planning only. It does not select
+resources, verify account ownership/existence/access, provision resources, or
+test wrong-account and repeated-application behavior. CF-04 remains open; release
+counts remain **30 complete / 28 open**. The dry-run did not upload or create
+resources, and remote account/resource readiness remains unverified.
+
 <a id="codex-rt11-process-flash-claims-2026-10-05"></a>
 ### Codex: Process-local flash replay claims (2026-10-05)
 
@@ -1234,6 +1259,7 @@ parent task. Current status is 30 complete and 28 open.
 | <a id="codex-cli08-renderer-guides-2026-10-05"></a>[Codex: Installed renderer API guides (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-renderer-guides-2026-10-05) |
 | <a id="codex-cli08-transactions-2026-10-05"></a>[Codex: Installed transaction and rollback example (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-transactions-2026-10-05) |
 | <a id="codex-cf04-scaffold-guidance-2026-10-05"></a>[Codex: Accurate Cloudflare scaffold resource guidance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf04-scaffold-guidance-2026-10-05) |
+| <a id="codex-cf04-static-resource-plan-2026-10-05-index"></a>[Codex: Static Cloudflare resource plan (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf04-static-resource-plan-2026-10-05) |
 | <a id="codex-rt11-process-flash-claims-2026-10-05"></a>[Codex: Process-local flash replay claims (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-process-flash-claims-2026-10-05) |
 | <a id="codex-rt12-navigation-fixture-2026-10-05"></a>[Codex: Navigation ownership browser acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-navigation-fixture-2026-10-05) |
 | <a id="codex-rt24-typed-paths-2026-10-05-index"></a>[Codex: Reject misspelled typed configuration paths (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt24-typed-paths-2026-10-05) |

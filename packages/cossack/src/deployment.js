@@ -6,12 +6,13 @@ import { isDeepStrictEqual } from 'node:util';
 import { exists } from './fs-utils.js';
 
 const RESOURCE_GROUPS = {
-  d1_databases: ['binding', 'database_id'],
-  kv_namespaces: ['binding', 'id'],
-  r2_buckets: ['binding', 'bucket_name'],
-  hyperdrive: ['binding', 'id'],
-  services: ['binding', 'service'],
-  workflows: ['binding', 'name'],
+  d1_databases: { binding: 'binding', reference: 'database_id', referenceKind: 'id',
+    named: 'database_name', kind: 'D1 database' },
+  kv_namespaces: { binding: 'binding', reference: 'id', referenceKind: 'id', kind: 'KV namespace' },
+  r2_buckets: { binding: 'binding', reference: 'bucket_name', referenceKind: 'name', kind: 'R2 bucket' },
+  hyperdrive: { binding: 'binding', reference: 'id', referenceKind: 'id', kind: 'Hyperdrive configuration' },
+  services: { binding: 'binding', reference: 'service', referenceKind: 'service', kind: 'Worker service' },
+  workflows: { binding: 'binding', reference: 'name', referenceKind: 'name', kind: 'Workflow' },
 };
 const TARGET_FIELDS = ['name', 'compatibility_date', 'compatibility_flags', 'vars', 'secrets', ...Object.keys(RESOURCE_GROUPS),
   'durable_objects', 'queues'];
@@ -34,6 +35,58 @@ export class DeploymentError extends Error {
     super(message);
     this.code = code;
   }
+}
+
+function setupAction(type, referenceKind, configured, reference) {
+  const target = type === 'queues' ? 'Queue' : RESOURCE_GROUPS[type].kind;
+  if (configured) {
+    return `Verify that this ${target.toLowerCase()} exists and is accessible in the intended Cloudflare account.`;
+  }
+  if (type === 'd1_databases') {
+    if (referenceKind === 'name') {
+      return 'Set database_id for this D1 database before deployment. Use `pnpm exec wrangler d1 list` to find an existing ID, or `pnpm exec wrangler d1 create <NAME> --update-config --binding <BINDING>` to create a remote database and write its ID into Wrangler config. Add `--env <ENV>` when targeting a named Wrangler environment.';
+    }
+    if (!reference) {
+      return 'Choose a remote D1 database and configure both database_name and database_id before deployment.';
+    }
+    if (typeof reference === 'string' && PLACEHOLDER.test(reference)) {
+      return 'Replace the D1 database_id placeholder with the intended remote database ID before deployment.';
+    }
+    return 'Set a valid, non-placeholder D1 database_id before deployment.';
+  }
+  if (type === 'hyperdrive') {
+    return 'Create or select a Hyperdrive configuration and replace its placeholder ID before deployment.';
+  }
+  if (type === 'kv_namespaces') {
+    return 'Create or select a KV namespace and configure its id before deployment.';
+  }
+  if (type === 'r2_buckets') {
+    return 'Create or select an R2 bucket and configure bucket_name before deployment.';
+  }
+  if (type === 'services') {
+    return 'Deploy or select the target Worker service and configure its service name before deployment.';
+  }
+  if (type === 'workflows') {
+    return 'Configure the target Workflow name before deployment.';
+  }
+  if (type === 'queues') {
+    return 'Create or select a Queue and configure queues.producers[].queue before deployment.';
+  }
+  return `Configure a ${referenceKind} reference for this ${target.toLowerCase()} before deployment.`;
+}
+
+function planBinding(type, name, reference, referenceKind, complete = true, nextAction) {
+  const configured = typeof reference === 'string' && reference.trim().length > 0 && !PLACEHOLDER.test(reference) &&
+    (type !== 'd1_databases' || referenceKind === 'id') && complete;
+  return {
+    type,
+    name,
+    resource: reference ?? null,
+    referenceKind,
+    configuration: configured ? 'configured' : 'unresolved',
+    remote: 'not-checked',
+    nextAction: nextAction ?? setupAction(type, referenceKind, configured, reference),
+  };
 }
 
 async function projectWrangler(root) {
@@ -122,21 +175,45 @@ export async function inspectDeployment(root, environment) {
       if (!['http:', 'https:'].includes(url.protocol) || url.hostname === 'example.com') throw new Error();
     } catch { error('COSSACK_APP_URL_INVALID', 'Set APP_URL to the application URL for this environment.'); }
   }
-  for (const [type, [nameField, resourceField]] of Object.entries(RESOURCE_GROUPS)) {
+  for (const [type, fields] of Object.entries(RESOURCE_GROUPS)) {
     for (const binding of config[type] ?? []) {
-      const resource = binding[resourceField];
-      bindings.push({ type, name: binding[nameField], resource: resource ?? null,
-        provisioning: resource ? 'existing' : 'automatic' });
-      if (typeof resource === 'string' && PLACEHOLDER.test(resource)) {
-        error('COSSACK_BINDING_PLACEHOLDER', `Replace the placeholder resource for ${binding[nameField]}.`);
+      const id = binding[fields.reference];
+      const named = fields.named ? binding[fields.named] : undefined;
+      const idPresent = typeof id === 'string' && id.trim().length > 0;
+      const reference = idPresent ? id : named;
+      const referenceKind = idPresent ? fields.referenceKind : named ? 'name' : fields.referenceKind;
+      const databaseNameConfigured = typeof named === 'string' && named.trim().length > 0 && !PLACEHOLDER.test(named);
+      const databaseIdConfigured = typeof id === 'string' && id.trim().length > 0 && !PLACEHOLDER.test(id);
+      const d1Complete = type !== 'd1_databases' || (databaseNameConfigured && databaseIdConfigured);
+      let nextAction;
+      if (type === 'd1_databases' && !databaseNameConfigured) {
+        nextAction = databaseIdConfigured
+          ? 'Set database_name to the name associated with this D1 database before deployment.'
+          : 'Choose a remote D1 database and configure both database_name and database_id before deployment.';
+      } else if (type === 'd1_databases' && !databaseIdConfigured) {
+        nextAction = setupAction(type, referenceKind, false, reference);
+      }
+      const plan = planBinding(type, binding[fields.binding], reference, referenceKind, d1Complete, nextAction);
+      bindings.push(plan);
+      if (typeof reference === 'string' && PLACEHOLDER.test(reference)) {
+        error('COSSACK_BINDING_PLACEHOLDER', `Replace the placeholder resource for ${binding[fields.binding]}.`);
+      }
+      if (type === 'd1_databases' && !databaseIdConfigured) {
+        error('COSSACK_D1_DATABASE_ID_REQUIRED',
+          `Set database_id for D1 binding ${binding[fields.binding]} before remote deployment. Local development can continue to use local D1.`);
+      }
+      if (type === 'd1_databases' && !databaseNameConfigured) {
+        error('COSSACK_D1_DATABASE_NAME_REQUIRED',
+          `Set a non-placeholder database_name for D1 binding ${binding[fields.binding]} before remote deployment.`);
       }
     }
   }
   for (const binding of config.durable_objects?.bindings ?? []) {
-    bindings.push({ type: 'durable_objects', name: binding.name, className: binding.class_name });
+    bindings.push({ type: 'durable_objects', name: binding.name, className: binding.class_name,
+      configuration: binding.class_name ? 'configured' : 'unresolved', remote: 'not-checked' });
   }
   for (const binding of config.queues?.producers ?? []) {
-    bindings.push({ type: 'queues', name: binding.binding, resource: binding.queue ?? null });
+    bindings.push(planBinding('queues', binding.binding, binding.queue, 'name'));
   }
   if (!config.main || !await exists(config.main)) error('COSSACK_WORKER_ENTRY_MISSING',
     'The configured Worker entry file does not exist.');

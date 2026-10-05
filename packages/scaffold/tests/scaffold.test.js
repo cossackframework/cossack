@@ -717,16 +717,16 @@ describe('composition', () => {
     const wrangler = files.get('wrangler.jsonc').content.toString();
     expect(wrangler).not.toContain('database_id": "00000000');
     expect(wrangler).toContain('"preview_database_id": "d1-app-local"');
-    expect(wrangler).toContain('Create the remote D1 database named d1-app-db before deploying.');
-    expect(wrangler).toContain('Wrangler resolves it by name and fails deployment if it does not exist.');
+    expect(wrangler).toContain('Remote D1 deployments require database_id.');
+    expect(wrangler).toContain('pnpm exec wrangler d1 create d1-app-db --update-config --binding DB');
     expect(wrangler).not.toContain('provisions D1 on deployment');
 
     const readme = files.get('README.md').content.toString();
     const compactReadme = readme.replace(/\s+/g, ' ');
     expect(compactReadme).toContain('`database_name`');
-    expect(compactReadme).toContain('pnpm exec wrangler d1 create my-cossack-app-db');
-    expect(compactReadme).toContain('Wrangler 4.114.0 resolves this configured name');
-    expect(compactReadme).toContain('fails deployment if that database does not exist');
+    expect(compactReadme).toContain('pnpm exec wrangler d1 create my-cossack-app-db --update-config --binding DB');
+    expect(compactReadme).toContain('requires both `database_name` and `database_id` for a remote binding');
+    expect(compactReadme).toContain('pnpm exec wrangler d1 list');
     expect(compactReadme).not.toContain('replace the placeholder `database_id`');
     expect(compactReadme).toContain('replace the all-zero `id` in');
     expect(compactReadme).toContain('only needs the opaque configuration ID');
@@ -735,7 +735,7 @@ describe('composition', () => {
     const configTemplate = await fs.readFile(
       new URL('../template/wrangler.jsonc', import.meta.url), 'utf8',
     );
-    expect(configTemplate).toContain('Create this named D1 database in your Cloudflare account before deploying.');
+    expect(configTemplate).toContain('Remote D1 deployment requires database_id.');
     expect(configTemplate).not.toContain('provisions D1 on deployment');
   });
 
