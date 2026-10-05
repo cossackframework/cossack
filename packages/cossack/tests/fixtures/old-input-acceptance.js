@@ -66,9 +66,11 @@ export async function checkOldInputAcceptance(request, routeId) {
     expect(header).toBeTruthy();
     expect(header).toMatch(/HttpOnly/i); expect(header).toMatch(/SameSite=Lax/i);
     const cookie = header.split(';')[0];
-    const payload = JSON.parse(Buffer.from(cookie.slice('cossack_flash='.length).split('.')[0], 'base64url').toString('utf8'));
-    assertPrivate(JSON.stringify(payload));
-    return { cookie, payload };
+    const envelope = JSON.parse(Buffer.from(cookie.slice('cossack_flash='.length).split('.')[0], 'base64url').toString('utf8'));
+    expect(envelope.format).toBe('cossack-flash');
+    expect(envelope.expiresAt).toBeGreaterThan(Date.now());
+    assertPrivate(JSON.stringify(envelope));
+    return { cookie, payload: envelope.data };
   };
   const restored = async cookie => {
     const response = await request('/guidance-old-input', { headers: { cookie } });

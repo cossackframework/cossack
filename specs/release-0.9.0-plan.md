@@ -436,9 +436,10 @@ Already-started HTTP actions can retain resolved identity. A frame checked befor
 revocation can be in flight. SSE idle checks occur before 15-second heartbeats
 with reader demand, so backpressure and slow storage prevent a wall-clock guarantee.
 Account writes, reset consumption and response delivery are separate steps;
-fixed errors do not establish rollback. Signed flash cookies remain replayable
-until expiry; browser clearing is not durable one-use storage. Audit the remaining
-concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
+fixed errors do not establish rollback. Flash now signs and checks its expiry on
+the server; a copied token remains replayable until that expiry, because browser
+clearing is not durable one-use storage. See the [flash expiry checkpoint](./release-0.9.0.md#codex-rt11-flash-expiry-2026-10-05).
+Audit the remaining concurrency criteria before closing RT-11. CLI-08 retains broader guidance coverage.
 
 Start in framework `session.ts`, `flash-context.ts`, middleware, core
 `shared/flash.ts`, and `packages/auth/src/session.ts`.

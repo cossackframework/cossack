@@ -126,6 +126,13 @@ the required non-Desktop release matrix.
    dialect compilation checks; custom stores must preserve the same key-level
    behavior. Same-key writes remain last-writer-wins. See the
    [database session checkpoint](./release-0.9.0.md#codex-rt11-session-concurrency-2026-10-05).
+   Flash cookies now carry a signed server-checked expiry matching `maxAge`;
+   copied values are rejected after expiry instead of relying on browser cookie
+   clearing. The framework suite, core flash/crypto tests, root/package types and
+   fresh installed docs acceptance pass. A copied valid token can still be
+   replayed before it expires, so durable one-use consumption and in-flight
+   revocation limits remain open. See the
+   [flash expiry checkpoint](./release-0.9.0.md#codex-rt11-flash-expiry-2026-10-05).
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.

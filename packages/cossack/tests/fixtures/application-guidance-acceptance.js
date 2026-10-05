@@ -166,7 +166,10 @@ export async function verifyApplicationGuidance(root, guides, { additionalAllowe
     assert.match(cookieHeader, /HttpOnly;.*SameSite=Lax/);
     const cookie = cookieHeader.split(';')[0];
     const payload = JSON.parse(Buffer.from(cookie.slice('cossack_flash='.length).split('.')[0], 'base64url').toString('utf8'));
-    assert.deepEqual(payload, { __input: { name: 'Guide reader', email: 'invalid', profile: { city: 'Tokyo' } }, errors: { email: 'Enter a valid email.' } });
+    assert.equal(payload.format, 'cossack-flash');
+    assert.ok(payload.expiresAt > Date.now());
+    assert.ok(payload.expiresAt <= Date.now() + 31_000);
+    assert.deepEqual(payload.data, { __input: { name: 'Guide reader', email: 'invalid', profile: { city: 'Tokyo' } }, errors: { email: 'Enter a valid email.' } });
     assert.ok(!JSON.stringify(payload).includes(formSecret));
     const restored = await fetch(origin + '/guidance-old-input', { headers: { cookie } });
     assert.equal(restored.status, 200);

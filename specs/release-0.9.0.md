@@ -39,7 +39,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
 - [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
-- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Remaining: broader concurrent request semantics. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05) and [database session acceptance](#codex-rt11-session-concurrency-2026-10-05).
+- [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads now enforce a signed server-side expiry, but a copied token remains replayable within that window. Remaining: durable one-use replay prevention and broader concurrent request semantics. See [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05) and [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05).
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures, scoped disposal, and layout declaration inspection. Codex reviews retain this task open: the AST scanner does not prove runtime/compiler ownership for inheritance and dynamic declarations. Finish compiler-backed ownership inspection and browser navigation lifetime verification.
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
 - [x] [RT-14](./release-0.9.0-plan.md#rt-14) Typed resource authorization policies and client visibility helpers.
@@ -163,6 +163,33 @@ do not make signed flash cookies durably one-use or resolve in-flight request,
 storage-latency and stream-backpressure limits. Desktop remains completed by
 user decision; waived platform checks are not claimed as passed. The release
 count remains **28 complete / 30 open**.
+
+<a id="codex-rt11-flash-expiry-2026-10-05"></a>
+### Codex: Server-enforced flash cookie expiry (2026-10-05)
+
+Flash cookies now sign an envelope containing the data, a format marker and exact
+expiry timestamp. The middleware checks that signed expiry after HMAC
+verification, so a copied token cannot outlive its configured `maxAge` just by
+bypassing the browser's cookie jar. `maxAge` must be a positive whole number of
+seconds. Invalid, expired and older raw-data tokens provide no flash and are
+cleared. The 30-second default still allows a copied valid token to be replayed
+within its signed window; durable one-winner consumption remains open.
+
+- Framework suite: **1,544 tests / 79 files pass**.
+- Core flash and crypto suites: **39 tests / 2 files pass**.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: pass.
+- Fresh installed docs acceptance passes twelve standalone examples, four auth
+  examples, the four packaged Cloudflare pages, HTTP/SSE/WebSocket traces,
+  offline CLI/MCP parity, UI contracts and production stripping. This run uses
+  the fresh tarballs from `test:agent-docs:local`, followed by
+  `verifyAgentDocumentation(..., { runtime: 'cloudflare' })` against that
+  installed fixture.
+
+RT-11 remains open: no durable replay store rejects two uses of the same token
+inside its valid window, and already-started application work cannot be rolled
+back on session revocation. Desktop remains complete by user decision; waived
+platform acceptance is not claimed as passed. Release status stays **28
+complete / 30 open**.
 
 <a id="codex-cli08-database-guidance-2026-10-05"></a>
 ### Codex: Installed database guidance and cold-start acceptance (2026-10-05)
@@ -615,3 +642,4 @@ parent task. Current status is 28 complete and 30 open.
 | <a id="codex-popover-2026-10-04"></a>[Codex: native Popover contract (2026-10-04)](./release-0.9.0-verification-archive.md#codex-popover-2026-10-04) |
 | <a id="codex-action-menus-2026-10-04"></a>[Codex: DropdownMenu and ContextMenu contracts (2026-10-04)](./release-0.9.0-verification-archive.md#codex-action-menus-2026-10-04) |
 | <a id="codex-cli08-database-guidance-2026-10-05"></a>[Codex: Installed database guidance and cold-start acceptance (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cli08-database-guidance-2026-10-05) |
+| <a id="codex-rt11-flash-expiry-2026-10-05"></a>[Codex: Server-enforced flash cookie expiry (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt11-flash-expiry-2026-10-05) |

@@ -1,9 +1,9 @@
 // tests/flash-middleware.test.ts
 import 'reflect-metadata';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { flash, flashed, flashedAll, flashInput, old } from '@cossackframework/core';
+import { flash, flashed, flashedAll, flashInput, old, signValue } from '@cossackframework/core';
 import { createFlashMiddleware } from '../src/middlewares/flash';
 
 const SECRET = 'flash-test-secret-16-chars-min';
@@ -151,6 +151,31 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
         expect(body2).toEqual({ success: null, oldName: null, allFlashed: [] });
     });
 
+    it('enforces the signed max-age on the server when a copied cookie is replayed later', async () => {
+        let now = 1_750_000_000_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => now);
+        try {
+            const app = new Hono<{ Bindings: { APP_SECRET?: string } }>();
+            app.use('*', createFlashMiddleware({ maxAge: 1 }));
+            app.post('/write', c => { flash('notice', 'short-lived'); return c.redirect('/read'); });
+            app.get('/read', c => c.json({ notice: flashed<string>('notice') ?? null }));
+
+            const write = await app.fetch(new Request('https://test/write', { method: 'POST' }), { APP_SECRET: SECRET });
+            const token = getSetCookie(write, 'cossack_flash');
+            expect(token).toBeTruthy();
+            expect(write.headers.getSetCookie().find(value => value.startsWith('cossack_flash='))).toContain('Max-Age=1');
+
+            now += 1_001;
+            const expired = await app.fetch(new Request('https://test/read', {
+                headers: { cookie: `cossack_flash=${token}` },
+            }), { APP_SECRET: SECRET });
+            expect(await expired.json()).toEqual({ notice: null });
+            expect(getSetCookie(expired, 'cossack_flash')).toBe('');
+        } finally {
+            vi.restoreAllMocks();
+        }
+    });
+
     it('preserves Unicode form input across the signed-cookie redirect', async () => {
         const name = 'Nguyễn — สวัสดี 東京 👋';
         const app = makeApp(name);
@@ -203,6 +228,11 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
 });
 
 describe('flash middleware — secret enforcement', () => {
+    it('requires maxAge to be a positive whole number of seconds', () => {
+        expect(() => createFlashMiddleware({ maxAge: 0 })).toThrow(RangeError);
+        expect(() => createFlashMiddleware({ maxAge: 1.5 })).toThrow(RangeError);
+    });
+
     it('throws only when flash is written and no secret is configured', async () => {
         const app = new Hono<{ Bindings: {} }>();
         app.use('*', createFlashMiddleware());
@@ -231,5 +261,13 @@ describe('flash middleware — secret enforcement', () => {
         expect(res.status).toBe(200);
         const body = (await res.json()) as any;
         expect(body.success).toBeNull();
+    });
+
+    it('rejects older signed flash data that has no server-enforced expiry', async () => {
+        const app = makeApp();
+        const token = await signValue({ success: 'legacy-without-expiry' }, SECRET);
+        const res = await dispatch(app, '/form', { cookie: `cossack_flash=${token}` });
+        expect(await res.json()).toMatchObject({ success: null, oldName: null });
+        expect(getSetCookie(res, 'cossack_flash')).toBe('');
     });
 });

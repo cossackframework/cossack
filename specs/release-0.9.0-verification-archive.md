@@ -10085,3 +10085,42 @@ runtime behavior or cover every library, UI component or recipe. CLI-08 remains
 open for broader guidance and runtime coverage. REL-02/REL-03 retain their full
 acceptance criteria. No Desktop platform check is claimed as passed; no publish
 or deployment occurred. Release status remains **28 complete / 30 open**.
+
+<a id="codex-rt11-flash-expiry-2026-10-05"></a>
+### Codex RT-11 server-enforced flash expiry (2026-10-05)
+
+The signed flash cookie now contains an envelope with the outgoing data, a
+format marker and exact expiry timestamp. The middleware validates the expiry only after
+signature verification and clears invalid, expired or legacy raw-data payloads.
+The default expiry matches the cookie's 30-second `Max-Age`. Configured `maxAge`
+must be a positive whole number of seconds. This closes the gap where a copied
+token could be replayed after the browser would have discarded it. A valid
+copied token remains replayable before its signed expiry because the framework
+does not yet have a durable atomic replay store.
+
+The generated public-form page and independent Node/Cloudflare old-input fixtures
+now read the envelope's `data` field, assert the signed expiry, and continue to
+verify cookie clearing, selected field restoration and credential exclusion.
+Tests also reject a legacy signed raw-data token and simulate a copied token
+after the exact expiry without sleeping.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/framework exec vitest run`: **79 files / 1,544 tests pass**.
+- `pnpm --filter @cossackframework/core exec vitest run tests/flash.test.ts tests/crypto.test.ts`:
+  **2 files / 39 tests pass**.
+- `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js -t 'excludes private old input'`:
+  **2 generated cases pass** (Node and Cloudflare; 62 unrelated cases skipped).
+- `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local`:
+  passes fresh builds/installation, twelve standalone examples, four auth
+  examples, four generated Cloudflare pages, Cloudflare HTTP/SSE/WebSocket
+  traces, CLI/MCP parity, UI contracts and production source-map stripping.
+- `pnpm tsc --noEmit` and `pnpm typecheck`: pass.
+- `git diff --check -- . ':!reports.md'`: pass.
+
+**Limits:** RT-11 remains open for durable one-use flash consumption and other
+concurrency guarantees. Replaying a copied cookie during its configured expiry
+still repeats its data. Already-started actions/frames can finish after session
+revocation; response delivery and application storage effects are not rolled
+back. Desktop remains complete by user decision; waived platform checks are not
+claimed as passed. No deployment or publication occurred.

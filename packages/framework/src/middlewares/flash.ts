@@ -26,9 +26,23 @@ import { assertResponseHeadersMutable, signValue, verifyValue } from '@cossackfr
 import { ensureFlashAlsWired, runWithFlash } from '../flash-context.js';
 
 const COOKIE_NAME = 'cossack_flash';
-// Only needs to survive one redirect (POST -> GET). 30s is generous for the
-// round-trip while keeping the window for replay tiny.
+// Only needs to survive one redirect (POST -> GET). The same duration is
+// signed into the payload and checked by the server, not only by the browser.
 const DEFAULT_MAX_AGE = 30;
+
+interface SignedFlashPayload {
+    format: 'cossack-flash';
+    expiresAt: number;
+    data: Record<string, unknown>;
+}
+
+function isSignedFlashPayload(value: unknown): value is SignedFlashPayload {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const payload = value as Record<string, unknown>;
+    return payload.format === 'cossack-flash' &&
+        Number.isSafeInteger(payload.expiresAt) && (payload.expiresAt as number) > Date.now() &&
+        !!payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data);
+}
 
 export interface FlashMiddlewareOptions {
     /** Env var name to read the signing secret from. Defaults to APP_SECRET. */
@@ -51,6 +65,9 @@ export function createFlashMiddleware(
 ): MiddlewareHandler {
     const secretEnvName = options.secretEnvName ?? 'APP_SECRET';
     const maxAge = options.maxAge ?? DEFAULT_MAX_AGE;
+    if (!Number.isSafeInteger(maxAge) || maxAge <= 0) {
+        throw new RangeError('[Cossack] Flash maxAge must be a positive whole number of seconds.');
+    }
 
     return async (c, next) => {
         ensureFlashAlsWired();
@@ -66,7 +83,8 @@ export function createFlashMiddleware(
             // silently rather than crash the whole request. (A misconfigured
             // secret shouldn't take down unrelated pages.)
             if (secret) {
-                incoming = (await verifyValue<Record<string, unknown>>(token, secret)) ?? {};
+                const payload = await verifyValue<unknown>(token, secret);
+                if (isSignedFlashPayload(payload)) incoming = payload.data;
             }
             // Background RPC/realtime requests must not consume a message meant
             // for the next page. Invalid tokens still get removed immediately.
@@ -93,7 +111,15 @@ export function createFlashMiddleware(
                         '(min 16 chars) in your wrangler env to use flash().',
                 );
             }
-            const signed = await signValue(store.outgoing, secret);
+            const expiresAt = Date.now() + maxAge * 1000;
+            if (!Number.isSafeInteger(expiresAt)) {
+                throw new RangeError('[Cossack] Flash maxAge exceeds the supported expiry range.');
+            }
+            const signed = await signValue<SignedFlashPayload>({
+                format: 'cossack-flash',
+                expiresAt,
+                data: store.outgoing,
+            }, secret);
             setCookie(c, COOKIE_NAME, signed, {
                 httpOnly: true,
                 secure: c.req.url.startsWith('https://'),
