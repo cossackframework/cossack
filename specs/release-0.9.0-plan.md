@@ -150,19 +150,20 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Thirty-four standalone examples compile and execute from installed tarballs,
-including twenty-two UI SSR examples for native controls, one-time codes,
+Thirty-nine standalone examples compile and execute from installed tarballs,
+including twenty-seven UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
 controls, searchable choice, repeated tag values, semantic lists/actions and
 keyboard-scrollable table regions, native dialogs/disclosures, tabs, toggles and
-SVG icons. Four packaged pages exercise component actions,
+SVG icons, native popovers, alert confirmation, hover content, attachments and
+chat display. Four packaged pages exercise component actions,
 resources and lifecycle tasks in generated applications. The harness uses the exact
 catalog source, owns the browser/server lifecycle and requires emitted client source
 maps before checking server stripping. Installed Cloudflare and Node acceptance
 passes. Discovery never invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04),
 the [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04)
-and the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-4-2026-10-05).
+and the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-5-2026-10-05).
 The RT-23 UI catalog audit is complete.
 Auth now contributes session/role, record-policy, OAuth diagnostic and shared
 credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map

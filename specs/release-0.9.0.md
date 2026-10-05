@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include thirty-four standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Twenty-two UI guides have executable SSR examples; seventeen of 39 still have no example. Broader library/component/recipe coverage remains open. See [latest UI guide acceptance](#codex-cli08-ui-coverage-4-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include thirty-nine standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Twenty-seven UI guides have executable SSR examples; twelve of 39 still have no example. Broader library/component/recipe coverage remains open. See [latest UI guide acceptance](#codex-cli08-ui-coverage-5-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -635,14 +635,14 @@ passed. REL-02/REL-03 remain open for non-Desktop acceptance. Release status is
 <a id="codex-cli08-ui-coverage-4-2026-10-05"></a>
 ### Codex: Five more executable UI guides (2026-10-05)
 
-The installed UI catalog now has executable SSR examples for twenty-two of 39
+The installed UI catalog now has executable SSR examples for twenty-seven of 39
 guides. Five new examples cover native Modal, Sheet and Drawer naming and
 closed-server behavior; linked Accordion and Collapsible panels; vertical
 manually activated tabs; Toggle and ToggleGroup pressed states; and informative
 versus decorative SVG icons with an authored trusted artwork fixture.
 
 **Verification:** the installed agent-documentation gate compiles, bundles and
-executes all thirty-four packaged usage examples. It also checks four auth
+executes all thirty-nine packaged usage examples. It also checks four auth
 examples, four generated application pages, workerd D1 binding, Cloudflare
 HTTP/SSE/WebSocket traces, offline CLI/MCP parity, UI prop/index contracts and
 source-map-enabled production stripping. The new UI examples prove SSR output
@@ -650,10 +650,33 @@ and initial accessibility relationships; they do not replace browser or
 assistive-technology acceptance.
 
 CLI-08 remains open for broader library, component and recipe coverage.
-Seventeen UI guides still lack executable examples. Desktop remains complete
+Twelve UI guides still lack executable examples. Desktop remains complete
 by user decision, with waived platform checks not claimed as passed.
 REL-02/REL-03 remain open for non-Desktop acceptance; release status remains
 **28 complete / 30 open**. No deployment or publication occurred.
+
+<a id="codex-cli08-ui-coverage-5-2026-10-05"></a>
+### Codex: Five more native UI guide examples (2026-10-05)
+
+The UI catalog now includes examples for twenty-seven of 39 guides. This batch
+covers a natively targeted nonmodal Popover; a named, destructive AlertDialog
+whose actions remain application-owned; Tooltip and HoverCard identities;
+localized attachment removal with decorative previews; and a semantic chat
+transcript built from Message, Bubble and Marker.
+
+**Verification:** the fresh-tarball `pnpm test:agent-docs:local` gate passes
+all thirty-nine packaged usage examples, four auth examples and four generated
+application pages. It also exercises local workerd D1 binding, installed
+Cloudflare browser traces, offline CLI/MCP parity, UI prop/index contracts and
+production source stripping. All new UI examples assert server-rendered
+structure; this does not establish their browser hover, popover, focus or
+assistive-technology behavior.
+
+CLI-08 stays open for the remaining twelve UI guides and broader library and
+recipe coverage. Desktop remains complete by user decision; its waived platform
+checks are not claimed as passed. REL-02/REL-03 remain open for non-Desktop
+acceptance. Release status is **28 complete / 30 open**. No deployment or
+publication occurred.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)
