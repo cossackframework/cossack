@@ -73,7 +73,7 @@ require('node:module').syncBuiltinESMExports();
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
     const uiExamples = [];
-    for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
+    for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input', 'development-rpc-traces', 'component-actions', 'server-resources', 'lifecycle-tasks', 'safe-old-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ['@cossackframework/ui', 'native-controls'],
@@ -133,6 +133,7 @@ require('node:module').syncBuiltinESMExports();
     const config = path.join(scratch, 'tsconfig.json');
     await fs.writeFile(config, JSON.stringify({ compilerOptions: {
       target: 'ES2022', module: 'NodeNext', strict: true, noEmitOnError: true,
+      experimentalDecorators: true, emitDecoratorMetadata: true,
       rootDir: scratch, outDir: path.join(scratch, 'compiled'),
       // Match the workspace's declaration-checking policy. Published Cloudflare
       // declarations can refer to generated Worker globals absent in this

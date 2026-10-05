@@ -69,7 +69,7 @@ the required non-Desktop release matrix.
    Earlier examples cover native dialogs/disclosures, tabs, toggles, icons,
    radio/range controls, searchable choice, repeated tag values, semantic
    lists/actions, named tables/scroll regions and other UI surfaces. The full
-   fresh-tarball docs gate passes fifty-one standalone
+   fresh-tarball docs gate passes fifty-six standalone
    examples, four auth
    examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
@@ -77,9 +77,10 @@ the required non-Desktop release matrix.
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
-   plus the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-7-2026-10-05).
-   Continue broader library, component and recipe coverage. All 39 UI guides
-   have executable SSR examples. These UI examples
+   plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-guide-coverage-2026-10-05).
+   All 59 package guides now include examples, and all sixty examples run in the
+   installed gate. Continue broader library API and recipe coverage. The UI
+   examples
    cover SSR only; they do not close browser or assistive-technology acceptance.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash

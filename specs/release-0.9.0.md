@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include fifty-one standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. All 39 UI guides have executable SSR examples. Broader library/component/recipe coverage remains open. See [latest UI guide acceptance](#codex-cli08-ui-coverage-7-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include fifty-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 59 package guides have at least one example; every one of the 60 packaged examples is typechecked and executed by installed acceptance. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database publishes Node SQLite and Cloudflare D1 guides; the D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound. Broader library/API/component/recipe coverage remains open. See [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -720,6 +720,27 @@ ownership; they do not establish browser interactions or assistive-technology
 behavior for these UI components.
 
 CLI-08 remains open for broader library, API, and recipe coverage. Desktop remains
+complete by user decision; its waived platform checks are not claimed as passed.
+REL-02/REL-03 remain open for non-Desktop acceptance. Release status is
+**28 complete / 30 open**. No deployment or publication occurred.
+
+<a id="codex-cli08-guide-coverage-2026-10-05"></a>
+### Codex: Execute every published package guide example (2026-10-05)
+
+The offline catalog now contains examples across all 59 package guides and 60
+examples in total. This includes the final missing Core guide for development
+RPC traces. The verifier now selects every existing Core, renderer, database,
+scaffold, UI and auth example for installed-package execution; its TypeScript
+harness uses the same decorator metadata settings as Core's package config.
+
+**Verification:** the fresh-tarball `pnpm test:agent-docs:local` gate typechecks
+and executes all fifty-six standalone usage examples plus four auth examples.
+It also passes generated Cloudflare browser traces and source stripping, local
+workerd D1, offline CLI/MCP parity, and UI catalog contract checks. The trace
+example exercises the documented non-Vite fail-closed branch in the installed
+Node environment; actual trace transport acceptance remains under RT-28.
+
+CLI-08 remains open for broader package API and recipe coverage. Desktop remains
 complete by user decision; its waived platform checks are not claimed as passed.
 REL-02/REL-03 remain open for non-Desktop acceptance. Release status is
 **28 complete / 30 open**. No deployment or publication occurred.

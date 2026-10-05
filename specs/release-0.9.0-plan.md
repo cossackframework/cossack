@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Fifty-one standalone examples compile and execute from installed tarballs,
+Fifty-six standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -158,14 +158,16 @@ controls, searchable choice, repeated tag values, semantic lists/actions and
 keyboard-scrollable table regions, native dialogs/disclosures, tabs, toggles and
 SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
-panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller
-and AuthForm. All 39 UI guides now have executable examples. Four packaged pages exercise component actions,
+panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
+AuthForm and the development RPC trace guard. All 39 UI guides now have executable
+examples; all 59 package guides have at least one example. The installed gate
+executes all sixty package examples. Four packaged pages exercise component actions,
 resources and lifecycle tasks in generated applications. The harness uses the exact
 catalog source, owns the browser/server lifecycle and requires emitted client source
 maps before checking server stripping. Installed Cloudflare and Node acceptance
 passes. Discovery never invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04),
 the [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04)
-and the [latest UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-coverage-7-2026-10-05).
+and the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-guide-coverage-2026-10-05).
 The RT-23 UI catalog audit is complete.
 Auth now contributes session/role, record-policy, OAuth diagnostic and shared
 credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map
@@ -213,10 +215,11 @@ Remaining: Complete broader authored API/component/recipe coverage across
 the libraries, beyond the now-executable UI guides. Preserve RT-23 regressions
 and finish REL-02 acceptance. The full
 installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
-Discovery never executes examples. Declaration presence does not prove runtime
-imports or native attribute behavior. Platform diagnostics and bounded scans can
+Discovery never executes examples, but the separate installed acceptance runs
+every packaged example. Declaration presence does not prove runtime imports or
+native attribute behavior. Platform diagnostics and bounded scans can
 produce partial catalogs. Discovery tests block Node networking, but installation
-can use the registry. UI guides are not all executable examples.
+can use the registry. Broader library API and recipe guidance remains open.
 The catalog uses a pinned TypeScript 6.0.3 compiler API independently of the
 workspace TypeScript 7 compiler. CLI-08 remains open.
 
