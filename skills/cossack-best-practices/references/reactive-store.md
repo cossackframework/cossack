@@ -19,7 +19,7 @@ import { createStore, connectStore, type ReactiveStore } from '@cossackframework
 
 Creates a reactive store with an initial value. Returns a `ReactiveStore<T>`
 with `get()`, `set()`, `update()`, and `subscribe()`. Create it at **module
-level** so any code in the app can import it.
+level** only for browser-owned theme/toast state. Server module instances are shared across requests: create request/user stores under an explicit owner, never at module scope. Dispose subscriptions when that owner ends.
 
 ```typescript
 import { createStore } from '@cossackframework/core';

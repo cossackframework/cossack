@@ -12557,3 +12557,140 @@ SVC-04 criterion. Desktop's remaining platform checks stay waived, not passed.
 
 Completed **RT-26 only**. Release: **48 complete /10 open**. Native Workflow
 waiting support/proof is a genuine task blocker; independent work remains.
+
+<a id="codex-cli08-cf04-complete-2026-10-06"></a>
+## Codex: CLI-08 and CF-04 completed (2026-10-06)
+
+Release: **50 complete / 8 open**. This batch closes two full acceptance paths,
+not another budget or Workflow checkpoint. Three implementation agents owned
+separate Core/skills, Framework/adapters/scaffold/test-helper guidance, and
+Wrangler provider/tests/docs files. Codex integrated command APIs, resource
+application, family inventory, installed acceptance and final fixes. Desktop
+remains complete by user decision; remaining platform checks are waived, not passed.
+
+### CLI-08 acceptance
+
+- Offline generated-project discovery returns current installed versions,
+  exports, commands, signatures and authored usage. The new `guidanceCoverage`
+  inventory lists maintained API families and missing guides separately from
+  runtime proof. All 11 maintained package catalogs validate, with **109 guides /
+  116 examples**. CLI/MCP catalog results agree with outbound Node networking
+  blocked. Discovery does not execute examples.
+- **28 new guides/examples** cover Core state, scopes/DI, optimistic uncertainty,
+  transport, forms, storage/images, local Workflows, diagnostics, requirements,
+  request context/navigation; Framework storage, pure/native Workflow graph
+  separation, sessions, HTTP APIs, locale/static plans and private inspection;
+  Node storage; complete recipe registries/conflict-safe composition; and test
+  helpers. Every new example strictly compiles and executes against public
+  installed tarball entries. Browser helper invocation uses jsdom; production
+  fetch helper invocation proves its contract with an injected fixture, not a
+  substitute for production auth/router acceptance.
+- The family inventory checks every literal Cossack import in guide prose and
+  source against current public targets. Existing removal/refresh tests remain
+  passing. Fixed two UI metadata defects: cross-package `imports` invalidated
+  the catalog, and the settings guide omitted its owning root import. Example
+  source was unchanged. Native-only imports retain explicit graph requirements;
+  available metadata never claims runtime support.
+- Non-Desktop skills now use the same tested APIs. Fixed stale inbound Shared
+  RPC, implicit undecorated RPC, injected user arguments, computed memoization,
+  default old-input retention, missing SSE binding, global user state and typed
+  optimistic guidance. Named snippet imports typecheck; two portable examples
+  execute. Existing generated compiler/browser/stripping and recipe evidence is
+  retained. The full installed CI harness now enumerates additional families and
+  all auth examples instead of silently excluding new guide IDs.
+
+### CF-04 acceptance
+
+- `cossack resources plan|apply --account <ID> [--env <NAME>] [--select <JSON>]`
+  distinguishes existing selections, unsupported create requests, provider-managed
+  Durable Objects and unresolved setup. IDs/names are explicit, bounded and
+  cannot be zero placeholders. Default and named environments are pinned;
+  inherited `CLOUDFLARE_ENV` cannot redirect either configuration or discovery.
+- Authenticated read-only project Wrangler verification checks account membership
+  before D1/KV/R2/Hyperdrive identity. Temporary account-only configuration keeps
+  app settings and inherited account values from redirecting requests. Raw tool
+  output/credentials are discarded, with deadlines/cancellation/output bounds.
+  Actual Wrangler **4.114.0** account/D1 JSON runs against an isolated loopback
+  Cloudflare protocol fixture; wrong account makes no resource request.
+- Queue, Workflow, service and Durable Object remote discovery has precise
+  unsupported/manual actions rather than table scraping or guessed readiness.
+  Automatic cloud provisioning is explicitly unsupported. This closes the
+  selection-or-precise-unresolved-action criterion; it does not claim provisioning.
+- Apply requires verified account and every selected resource. It changes only
+  local JSON/JSONC references and selected-environment account ownership, preserves comments,
+  variables and other environments, rejects stale/serialized plans, and repeats
+  unchanged without another write. TOML application requires manual edits.
+  Tests cover all eight kinds, wrong accounts, unavailable resources, unsupported
+  provisioning, repeated apply and conflicting inherited environments.
+- Final installed CLI plan, top-level help and documented public provider import
+  pass using the retained generated project and Wrangler **4.147.0** parser. Its
+  default environment ignores an unconfigured inherited environment. No real
+  Cloudflare/AWS account or resource was contacted or mutated.
+
+### Commands, failures and retained evidence
+
+- Targeted provider **22/22**, plan **13/13**, native-parser/CLI command **5/5**;
+  Core/skills **4/4**, other-family **4/4**, family inventory **2/2**.
+- Combined CLI integration command selected 17 files: **369 passed / 3 failed**
+  of 372. The failures were one five-second creation timeout under contention
+  and two obsolete PATH-only Vite fixtures. Fixtures now provide a local Vite
+  package/bin, preserve output/environment assertions, and keep each subprocess
+  bounded to 20 seconds (three-call creation test allows 65 seconds total).
+  **5 affected cases pass**, 49 unchanged matrix cases were filtered. This is
+  not a claim that the complete CLI suite passed.
+- After the final environment fence/top-level help change:
+  `pnpm --filter cossack exec vitest run tests/resource-plan.test.js tests/cloudflare-resource-provider.test.js tests/resource-command-acceptance.test.js tests/command-contracts.test.js tests/dispatch.test.js`:
+  **197 passed / 5 files**, `/tmp/cossack-cli08-cf04-final-resource-tests.log`.
+  Final account-isolation review then found named apply could overwrite inherited
+  root account ownership. Pinning the selected environment fixes it; the actual
+  Wrangler-parser regression proves root/production accounts stay unchanged and
+  named apply converges. **18 tests / 2 files pass**,
+  `/tmp/cossack-cli08-cf04-account-isolation-tests.log`. The unaffected provider/
+  contract/dispatch evidence remains valid.
+- `pnpm tsc --noEmit`: **exit 0** after final code changes,
+  `/tmp/cossack-cli08-cf04-account-isolation-types.log` (final); preceding root
+  `/tmp/cossack-cli08-cf04-final-root-types.log` also passed. Core, Framework, Node adapter,
+  Scaffold, Test-utils, UI and CLI package typechecks each exited **0**, logs
+  `/tmp/cossack-cli08-cf04-<package>-types.log`. No TypeScript source changed
+  after those package checks. Lockfile-only offline validation exited **0**.
+- Installed guide batch initially found Markdown runtime dependencies wrongly
+  listed as development-only. Moved 11 runtime libraries plus public mdast types
+  to Framework dependencies; importer-only lock changes preserve all versions.
+  No rebuild was needed. The first installed attempt strictly compiled all 28
+  and executed the 15 new Core examples before the Markdown import failed.
+  The affected 13-guide retry executed 10 before the DOM wrapper's missing
+  `NodeFilter`; fixing the wrapper and rerunning only that browser guide plus the two previously
+  unrun Scaffold guides passes.
+  Thus all **28 new installed examples** execute, with both failures retained
+  rather than reporting either failed whole run as passing. Existing 88 examples
+  were not rerun. Logs: `/tmp/cossack-cli08-cf04-installed-guides.log`,
+  `/tmp/cossack-cli08-cf04-installed-final.log`, and
+  `/tmp/cossack-cli08-cf04-installed-browser.log` and
+  `/tmp/cossack-cli08-cf04-installed-scaffold.log` (final offline CLI/MCP parity).
+- Final published resource acceptance:
+  `/tmp/cossack-cli08-cf04-owned-installed-resources.log`, **exit 0**.
+  Final installed CLI proves default-environment isolation, public provider/help
+  contracts and named-account local apply preserving root/production accounts,
+  with repeated apply unchanged. Actual Wrangler parsing and an injected verified
+  provider were used; no live cloud calls.
+  Fresh payloads: `/tmp/cossack-cli08-cf04-tarballs`; corrected Framework:
+  `/tmp/cossack-cli08-cf04-final/cossackframework-framework-0.8.3.tgz`; final CLI:
+  `/tmp/cossack-cli08-cf04-owned-final/cossack-0.8.3.tgz`. Retained installation:
+  `/tmp/cossack-local-pack-gZdSQv/minimal-production`. Unchanged tarballs remain
+  reused. Install initially rejected placeholder build-policy values; explicit
+  false values acknowledged skipped scripts, and subsequent installs exit 0.
+  Native dependency build scripts were not run in this metadata-only install.
+- Owned diff whitespace validation passes. Preserve unrelated `reports.md`,
+  `.zcodeignore`, and the two prior uncommitted failed Workflow acceptance files.
+
+### Remaining limits
+
+**Open: SVC-04, CF-08/09/10, REL-02/03/04/05 (8).** Native Workflow waiting,
+interruption/resume/events/failure and installed acceptance remain unproven;
+its strict failing probe was preserved and not rerun. Native/source-map/remote
+log ingestion, real isolated preview lifecycle and deployment-guide compatibility
+acceptance remain required. REL-02 retains full final published/generated matrices;
+REL-03 retains complete non-Desktop unit/build/runtime gates. CLI-08's focused
+installed documentation criteria are proven independently of those broader gates.
+Versions remain **0.8.3** until REL-04. No publication, push, deployment or
+credential rotation occurred.

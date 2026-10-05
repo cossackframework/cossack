@@ -15,11 +15,23 @@ paths:
 
 Cossack ships built-in features for most common web-app needs. Before writing custom logic, check the table below — the framework almost already has it. Using the built-in keeps SSR, hydration, state sync, and code stripping correct.
 
+## Read installed API guidance first
+
+Run `cossack docs --package @cossackframework/core --json` and
+`cossack docs --package @cossackframework/framework --json` in the application.
+These commands read the installed package catalog offline; they do not fetch a
+registry or prove runtime availability. Select its `guidance.guides` record by ID in the JSON response.
+Use `--symbols` / `--symbol <name>` for installed declaration signatures.
+Use installed export/declaration evidence before copying repository examples.
+See `references/services-storage-workflows.md` for locality, ownership and native
+Workflow acceptance limits. Browser/component snippets require the framework
+compiler and native acceptance; plain Node execution is not equivalent.
+
 ## The #1 rule: methods are server-only by default
 
 A method with **no decorator** is treated as server-only and its body is **stripped from the client bundle**. This is secure-by-default but a common source of bugs.
 
-- Call it on the client → it silently becomes a server RPC proxy.
+- Undecorated methods are stripped but are not registered inbound RPC actions. Mark client-callable actions `@Server()` explicitly.
 - Want the code to actually run in the browser? Mark it `@Client()`, `@Optimistic()`, `@Shared()`, or make it a built-in lifecycle method (`render`, `onMount`, `head`, …).
 - When you reference a method as an event handler in `render()`, it must be client-safe.
 
@@ -72,7 +84,7 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 | Run a task only when **specific fields** change | `@Task({ track: ['user', 'posts'] })` | useEffect-style dep array; supports dot-paths like `'form.email'`; see `references/tasks.md` |
 | Tear down side effects automatically | return a cleanup fn from a `@Task`/`@ServerTask`/`@ClientTask` | Runs before next re-run + on destroy (React `useEffect` style) |
 | Listen to window/doc events | `@OnWindow('resize', { debounce })` / `@OnDocument('keydown')` | Auto-bound + auto-cleaned; supports throttle/debounce |
-| Derive a value from state | `@Computed()` getter | Memoized; don't recompute inline in `render()` |
+| Derive a value from state | `@Computed()` getter | Derived getter; reads current state, without a serialized state field |
 | Mutate nested objects/arrays reactively | `@Store()` / `@ClientStore()` (deep Proxy) | No manual reassign for `obj.field = x` / `arr.push()`; see `references/decorators.md` |
 | Share reactive global state across components | `createStore()` + `connectStore()` | For toasts/theme/palette — re-renders on change; see `references/reactive-store.md` |
 | Use a Button / Input / Modal / Toast | `@cossackframework/ui` via `component(Button, {...})` | shadcn-style components + Solar icons; see `references/ui.md` |
@@ -80,17 +92,17 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 | Coerce form values (number/boolean/date) | `coerce` rule in `@Validate` / `getFormData<T>()` | Transforms before validation, writes back to `data`; see `references/validation.md` |
 | Bind a method as a handler | nothing — methods are auto-bound | No arrow-function class fields, no `.bind(this)` |
 | Redirect | `this.redirect(url)` | Client-intercepted as soft SPA navigation |
-| Set `<head>` metadata / SEO / OG | `head(context)` returning `HeadContext` | `description`/`image` auto-expand to OG/Twitter |
+| Set `<head>` metadata / SEO / OG | `head(context)` returning `HeadValue` | `description`/`image` auto-expand to OG/Twitter |
 | Handle errors / 404 | `error/index.ts` and `404/index.ts` near the route | Hierarchical boundaries; see `references/errors.md` |
 | Add auth | `cossack add auth` (scaffolds it all) → `createAuth()` + `auth.middleware` from `@cossackframework/auth` | No hand-rolled session checks; see `references/auth.md` |
 | Add a native desktop target | `cossack add desktop` with any web adapter | Keep routes shared; normal server methods run in the Electron main process through local RPC; see `references/desktop.md` |
 | Real-time state sync | `@Page({ transport: 'sse' \| 'durable-object' })` + `channels`/`scope` | Default to `sse`; see `references/realtime.md` |
 | Broadcast a stateless event | `@Server() broadcastEvent(name)` + `@OnEvent(name)` | |
 | Register server middleware | `defineServerMiddleware()` + `@Page({ middlewares })` | No route-wrapper hacks |
-| Share logic/state across components | `@Service({ scope })` (DI) | No module-level singletons |
+| Share logic/state across components | `@Page({ services: [...] })` + `@Service()` / `@Inject()` | Layout/request-owned services; global DI is only for stateless services |
 | Prevent leaving the page | `@PreventNavigation()` | No `beforeunload` |
 | Static-render a page | `@Page({ ssg: true })` | No custom pre-render scripts |
-| Optimistic UI | `@Optimistic('serverMethod')` + a `@ClientState` shadow + `@Computed` display getter | See `references/validation.md` sibling patterns / optimistic docs |
+| Optimistic UI | `@Optimistic('serverMethod')` + typed `optimistic(this)` edits | See `references/validation.md` sibling patterns / optimistic docs |
 | Render a list (keyed, reorderable) | `repeat(items, keyFn, template)` | Per-item state preserved across reorder; see `references/directives.md` |
 | Render a list (any iterable) | `map(iterable, fn)` / `join(iterable, fn, sep)` / `range(...)` | Unkeyed; see `references/directives.md` |
 | Conditional render (2+ branches) | `when(cond, a, b?)` / `choose(value, cases, default?)` | Only the taken branch evaluates; see `references/directives.md` |
@@ -100,6 +112,9 @@ mutations, redirects, session/flash writes, broadcasts, and client actions. See
 | Memoize an expensive subtree | `guard(deps, factory)` | Skips re-render until deps change; see `references/directives.md` |
 | Preserve state across template swaps | `cache(value)` | Keeps switched-away subtrees alive; see `references/directives.md` |
 | Force a subtree remount | `key(value, template)` | Re-triggers animations / remounts; see `references/directives.md` |
+| Stream authorized objects | `Storage` from `@cossackframework/core/storage` + explicit provider | Server-only authorization, bounded bytes, signed bearer tickets; see `references/services-storage-workflows.md` |
+| Wait across requests | Native Cloudflare Workflows entry + pure server client | Local adapter is process-only; native release acceptance remains open |
+| Keep typed form UX state | `createFormController` + `createFormBindings` | Labels/error IDs, stale results, single-flight submit; server parses again |
 
 ## Three essentials most often reinvented
 
@@ -163,7 +178,7 @@ import { Image } from '@cossackframework/core';
 ${Image({ src: '/banner.jpg', width: 800, height: 400, alt: 'Banner', loading: 'lazy' })}
 ```
 
-In dev it renders a plain `<img>`; on Cloudflare (set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`) it rewrites to `/cdn-cgi/image/...` for automatic resizing/format conversion.
+In dev it renders a plain `<img>`; in production with `VITE_COSSACK_IMAGE_PROVIDER=cloudflare` and an enabled Cloudflare resizing zone it rewrites to `/cdn-cgi/image/...` for automatic resizing/format conversion.
 
 ## Framework context available on every component
 

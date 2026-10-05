@@ -33,9 +33,10 @@ export default class ContactForm extends Cossack {
     @State({ old: true }) email = '';
 
     async post() {
-        // getFormData() auto-flashes the submitted input (for old()) and the
-        // errors (when invalid) — no manual flashInput()/flash('errors') needed.
+        // Persist only explicitly selected public old-input fields; errors
+        // flash by default when invalid. Never retain passwords or tokens.
         const { data, valid } = await this.c.getFormData<ContactFields>({
+            flash: { input: ['name', 'email'] },
             rules: {
                 name: { required: true, message: 'Name is required' },
                 email: { required: true, email: true, message: 'Enter a valid email' },
@@ -68,11 +69,15 @@ export default class ContactForm extends Cossack {
 
 ### Auto-flash in `getFormData()`
 
-When `rules` are provided, `getFormData()` **auto-flashes** the submitted input and any validation errors to the next request by default — so the common POST→redirect→GET form flow needs no manual `flashInput()`/`flash('errors', …)`. Control it with the `flash` option:
+When `rules` are provided, `getFormData()` flashes nonempty validation errors by default. Old input is off until you select public fields explicitly:
 
-- `true` (default) — flash both input (for `old()`) and errors (only when non-empty).
-- `false` — flash nothing (do it yourself with the helpers below).
-- `{ input: false }` / `{ errors: false }` — toggle each category; unspecified keys default to `true`.
+- `true` (default) — flash errors only; no submitted input.
+- `false` — flash nothing.
+- `{ input: ['name', 'email'], errors: true }` — allowlist safe old-input paths.
+- `{ input: false }` / `{ errors: false }` — disable that category. Input defaults off; errors default on.
+
+Do not allowlist passwords, credentials, tokens, File values or private fields.
+`flashInput(data, { fields: [...] })` also requires an explicit public selection.
 
 Errors are only flashed when there actually are any, so truthy checks like `${this.errors ? …}` never render an error banner on a valid submit.
 
@@ -110,7 +115,7 @@ All imported from `@cossackframework/core`. **Writers** go in `post()`; **reader
 |---|---|---|---|
 | `flash(key, value)` | write | `(key: string, value: unknown) => void` | Stash a value for the *next* request. Also accepts a record: `flash({ errors, success })`. |
 | `flashed<T>(key)` | read | `(key: string) => T \| undefined` | Read a value flashed by the *previous* request. |
-| `flashInput(data)` | write | `(data: Record<string, unknown>) => void` | Stash submitted input for repopulation. |
+| `flashInput(data, { fields })` | write | `(data: Record<string, unknown>, options: { fields: readonly string[] }) => void` | Stash only selected public old-input paths. |
 | `old<T>(key)` | read | `(key: string) => T \| undefined` | Read a previously flashed input field. Supports dot-paths (`old('address.city')`). |
 
 > **Common mistake:** `flash()` is **write-only** and `flashInput()` is **write-only**. To *read*, use `flashed(key)` and `old(key)` respectively. Calling `flash('success')` with one argument writes `undefined` — it does not read.
@@ -123,7 +128,7 @@ Server-only (throws on the client). Parses `application/x-www-form-urlencoded` /
 // Parse only:
 const data = await this.c.getFormData<ContactFields>();
 
-// Parse + validate (auto-flashes input + errors by default):
+// Parse + validate (errors flash by default; old input requires an allowlist):
 const { data, valid } = await this.c.getFormData<ContactFields>({
     rules: { /* StoreRuleMap<ContactFields> */ },
     flash: false,   // opt out of auto-flash if you need manual control
@@ -211,3 +216,16 @@ Key points:
 ### When to pick reactive over progressive
 
 Use **reactive** when you need inline async validation (e.g. "username available?"), live-computed fields, multi-step wizards, or you're already in a dashboard that never does full reloads. Use **progressive** when the form should be crawlable, bookmarkable, or usable without JS — public contact forms, auth pages, SEO landing pages.
+
+## Typed native and UI bindings (0.9.0)
+
+Prefer `createFormController(schema, initial)` with `createFormBindings(form,{id})`
+for typed raw values, errors/touched/dirty, stale-result rejection and single-flight
+submit. Spread each field's input/label/error/ref attributes into templates;
+associate labels and description/error IDs, register refs, and use focusInvalid.
+Dispose bindings and controller subscriptions with the component. Choose the
+matching checkbox/file/files/select-multiple kind. Files use multipart RPC;
+reset clears owned file controls. UI has `createUiFormBindings` for its controls.
+Server parsing and ownership checks remain mandatory. Read installed Core guide
+`accessible-form-controller`; browser focus/keyboard/file guarantees need native
+browser acceptance, not a Node example.

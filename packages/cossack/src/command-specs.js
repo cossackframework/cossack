@@ -69,6 +69,13 @@ function localeDiagnostics(args, flags) {
 }
 
 export const commandSpecs = {
+  resources: new CommandSpec({ name: 'resources', globals: readonly,
+    positionals: ['subcommand'], minPositionals: 1,
+    flags: { account: str('Explicit Cloudflare account ID; never inferred.'), env,
+      select: str('Bounded resource selection JSON file.'), verify: bool('Explicit authenticated, read-only Wrangler verification.') },
+    subcommands: { plan: {}, apply: {} },
+    check: (_args, flags) => /^[a-f0-9]{32}$/i.test(flags.account ?? '') && !/^0+$/.test(flags.account)
+      ? [] : [{ code: 'COSSACK_RESOURCE_ACCOUNT_REQUIRED', severity: 'error', message: 'Supply the intended 32-character Cloudflare account ID using --account.' }] }),
   create: new CommandSpec({ name: 'create', positionals: ['project-name'], minPositionals: 1,
     globals: mutations, flags: createFlags, check: providerDiagnostics }),
   deploy: new CommandSpec({ name: 'deploy', globals: ['json', 'help'], flags: {

@@ -1,6 +1,7 @@
 import { tracesCommand, tracesHelp } from './commands/traces.js';
 import { testResultsCommand, testResultsHelp } from './commands/test-results.js';
 import { docsCommand, docsHelp } from './commands/docs.js';
+import { resourcesCommand, resourcesHelp } from './commands/resources.js';
 import { commandSpecs } from './command-specs.js';
 /**
  * Command resolution + top-level dispatch.
@@ -42,6 +43,7 @@ const COMMANDS = {
   build: { run: buildCommand, help: buildHelp },
   start: { run: startCommand, help: startHelp },
   deploy: { run: deployCommand, help: deployHelp },
+  resources: { run: resourcesCommand, help: resourcesHelp },
   // scaffolding
   create: { run: createCommand, help: createHelp },
   generate: { run: generateCommand, help: generateHelp },
@@ -194,6 +196,7 @@ Commands:
   build                        Production build, including SSG (vite build).
   start                        Start the production server.
   deploy                       Build and deploy to Cloudflare (--env, --dry-run, --json).
+  resources <plan|apply>        Select account-owned bindings (--account, --env, --select, --verify).
   inspect cloudflare           Show resolved Cloudflare configuration (--env, --json).
   check cloudflare             Validate local Cloudflare configuration without writes.
   generate <type> <name> (g)   Generate page/component/layout/middleware/service/model/migration/seeder.

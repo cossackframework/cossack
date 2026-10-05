@@ -219,7 +219,7 @@ formatCurrency(amount: number): string {
 
 ### `@Computed()`
 
-Marks a getter as a computed property. Memoized — recomputed only when dependent state changes.
+Marks a getter as a derived property. It reads current state on access and is not serialized as another state field; it is not a dependency-tracking memoization cache.
 
 ```typescript
 @Computed()
@@ -230,7 +230,7 @@ get fullName() {
 
 ### `@Optimistic(actionName)`
 
-Links a client-side handler to a `@Server()` method for instant UI feedback. Runs immediately on the client before the server responds.
+Links a synchronous client handler to a `@Server()` action. Import `optimistic` from `@cossackframework/core`; inside a `Counter extends Cossack` with `@State() count = 0`, record typed edits for rebasing. Do not perform I/O or await inside the handler. Uncertain failures require authoritative reconciliation, not blind retry.
 
 ```typescript
 @Server()
@@ -241,10 +241,7 @@ async increment() {
 
 @Optimistic('increment')
 applyOptimisticIncrement() {
-    if (!this.loading['increment']) {
-        this.optimisticCount = this.count;
-    }
-    this.optimisticCount++;
+    optimistic<Counter>(this).increment('count', 1);
 }
 ```
 

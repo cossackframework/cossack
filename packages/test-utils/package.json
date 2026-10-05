@@ -36,7 +36,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "agent-docs.json"
   ],
   "type": "module"
 }

@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 48 complete and 10 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 50 complete and 8 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -93,8 +93,7 @@ Add focused tests during each group, and run broader gates after integration.
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
 | 5. Add background application services | SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
-| 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
-| 7. Finish operations | CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
+| 7. Finish operations | CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
 | 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
 
 Preserve regression coverage for completed prerequisites while closing the open criteria.
@@ -106,6 +105,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 
 | Task | Completed work and archived context |
 | --- | --- |
+| <a id="cli-08"></a>CLI-08 | [Full context](./release-0.9.0-plan-archive.md#codex-cli08-completed-2026-10-06); [109 guides / 116 examples, acceptance and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06) |
+| <a id="cf-04"></a>CF-04 | [Full criteria](./release-0.9.0-plan-archive.md#codex-cf04-completed-2026-10-06); [verified selection and unresolved actions](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06) |
 | <a id="rt-26"></a>RT-26 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-26-completed-2026-10-06); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06) |
 | <a id="rt-01"></a>RT-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05) |
 | <a id="rt-11"></a>RT-11 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-11-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt01-rt11-complete-2026-10-05) |
@@ -155,161 +156,6 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="cf-11"></a>CF-11 | [Tracked credential removal](./release-0.9.0-plan-archive.md#cf-11) |
 | <a id="rel-01"></a>REL-01 | [Reported regressions](./release-0.9.0-plan-archive.md#rel-01) |
 
-## CLI and agent tooling
-
-<a id="cli-08"></a>
-### CLI-08: Installed-version agent documentation
-
-Codex status (2026-10-05): CLI and MCP share fresh installed-package catalogs,
-command schemas, declaration signatures, exact-symbol queries and packaged guidance.
-Wildcard discovery preserves export precedence and exclusions. Prop catalogs retain
-member documentation and explicit partial results. The examples cover route URLs,
-query state, schemas, nested forms, renderer output and recipes. The portable
-`core/input` entry keeps schema/form helpers independent of component runtimes.
-The earlier gate compiled and executed seventy-six standalone examples from installed tarballs,
-including thirty-nine UI SSR examples for native controls, one-time codes,
-breadcrumbs, URL pagination, status/progress, linked fields/empty states,
-display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
-controls, searchable choice, repeated tag values, semantic lists/actions and
-keyboard-scrollable table regions, native dialogs/disclosures, tabs, toggles and
-SVG icons, native popovers, alert confirmation, hover content, attachments,
-chat display, date controls, action menus, command search, carousels, resizable
-panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
-AuthForm and the development RPC trace guard. All 40 UI guides now have executable
-examples; all 81 published-package guides have at least one example. The previous installed gate
-executed eighty package examples, including four separately bundled auth
-examples. The SVC-01/SVC-05 batch independently compiles and executes four new
-installed examples, for 84 catalog examples total. SVC-02/SVC-03 add four more installed strict/executable
-examples (88 total); the unchanged earlier examples were not rerun. Broader CLI-08 coverage remains open. Database guidance exercises typed model filters and query-builder
-projections as well as a reversible Node SQLite migration and repeatable seeder
-lifecycle. Framework guidance covers runtime capability planning and cache
-guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
-cleanup and the separate Vite development integrations; Studio guidance covers
-local/remote data selection and embedded lifecycle; Core guidance covers locale
-negotiation, explicit `q=0` exclusions and CLDR plural formatting. Framework
-configuration guidance covers typed per-request config, string environment
-values, raw Worker bindings and safe required-binding errors. Four packaged
-pages exercise component actions, resources and lifecycle tasks in generated
-applications. The harness uses the exact
-catalog source, owns the browser/server lifecycle and requires emitted client source
-maps before checking server stripping. Installed Cloudflare and Node acceptance
-passes. Discovery never invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04),
-the [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04)
-and the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
-The RT-23 UI catalog audit is complete.
-The latest database guide, `node-sqlite-transaction-rollback`, proves a
-two-row transaction commits both writes and rolls back a rejected callback from
-the installed Node SQLite adapter. The fresh offline gate compiles and executes
-76 standalone examples plus four bundled auth examples. The guide states that
-D1 uses sequential `batch()` operations rather than interactive ORM transactions;
-it does not claim D1 transaction support. CLI-08 remains open for broader
-library, component and recipe guidance.
-Auth now contributes session/role, record-policy, OAuth diagnostic and shared
-credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map
-and statically indexes published TypeScript with explicit source-kind markers.
-The auth examples use Bundler type resolution and installed esbuild bundling.
-They use local Hono fixtures and memory storage. Separate generated Node SQLite
-and Cloudflare D1 tests now verify real credential login, cookie issuance,
-persistent expiry, conditional rotation and revocation. The protected-route
-browser regression verifies native route/RPC rejection after expiry. These
-checks do not establish plain Node imports or production hashing budgets. See the
-[RT-13 completion audit](./release-0.9.0.md#codex-rt13-complete-2026-10-05).
-See [archived checkpoint history](./release-0.9.0-plan-archive.md#codex-checkpoint-compaction-2026-10-04) and
-[installed acceptance](./release-0.9.0.md#codex-installed-docs-acceptance-2026-10-04).
-
-Checkpoint (Codex, 2026-10-05): `@cossackframework/database` now publishes an
-authored parameterized Node SQLite guide. Its installed example compiles and
-executes in the offline acceptance gate. The guide distinguishes package entry
-points by runtime, bound values from quoted identifiers, safe migration practice,
-and D1 sequential `batch()` from the interactive transaction API that this ORM
-does not expose. The acceptance also uncovered stale Vite SSR optimizer chunks
-when generated fixtures rewrite their page/transport graph. Fixture startup now
-clears those artifacts, and the template pre-bundles API/devtools entries that
-Vite discovers after its initial dependency scan.
-
-The Cloudflare D1 guide now runs from installed package exports inside a local
-Wrangler test Worker with local D1 and proves SQL values stay parameterized.
-This exercises workerd and the published adapter path, but does not contact a
-Cloudflare account or prove a deployed database. The runtime test also exposed
-and fixed the D1 import graph: root SQL now requires an explicit adapter, Node
-URL selection stays in the Node entry, and remote Workers Turso uses its own
-optional `cloudflare-turso` entry. All 39 UI guides have executable SSR examples:
-native controls, normalized one-time codes, named breadcrumbs, URL-backed
-pagination, polite status and zero-valued progress, linked fields and empty
-states, loading/display surfaces, native layout, named avatars, a server-controlled
-DataTable, DashboardStat metrics, and a controlled SettingsPanel inside an
-application-owned form, plus date controls, action menus, command launchers,
-carousels, adjustable split panels, Menubar, native navigation disclosures,
-Sidebar, Toaster, MessageScroller and AuthForm. All compile and run against the installed
-UI and renderer tarballs. The test bundles selected UI examples for Node, matching Vite's
-handling of the UI barrel's Solar icon TypeScript dependency. They verify
-server-rendered markup and callback ownership; they do not establish browser
-interaction or assistive technology.
-
-Checkpoint (Codex, 2026-10-05): the renderer catalog now has four more
-version-owned guides and executable examples for conditional templates and
-optional attributes, keyed list output and separators, server-rendered form
-values, and safe CSS composition. Their examples import the published root and
-`/server` entrypoints. The list guide explicitly limits its evidence to initial
-server markup; it does not use SSR to claim browser node reuse. The CSS guide
-shows that `css` rejects raw strings and `unsafeCSS` is an explicit trust
-boundary. The installed verifier now compiles and executes these guides along
-with the existing escaped-HTML guide. The fresh tarball gate passes with 75
-non-auth examples and four separately bundled auth examples (79 total),
-generated Cloudflare page examples, CLI/MCP parity, UI catalog checks and
-production stripping. This adds renderer library guidance but does not close
-broader API/component/recipe coverage or CLI-08. See the
-[renderer guide acceptance](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05).
-
-Checkpoint (Codex, 2026-10-05): the database catalog adds an installed Node
-SQLite example for `ORM.transaction()`. It verifies both writes commit together
-and that a thrown callback rolls back its partial write. Its guidance states
-that D1 does not support interactive ORM transactions and that independent
-connections do not form a distributed transaction. The fresh offline gate now
-executes 76 non-auth examples plus four separately bundled auth examples (80
-total), across 73 published-package guides. This corrects the prior handoff's
-one-guide undercount. It proves the Node SQLite path,
-not D1 interactive transactions or cross-provider behavior. CLI-08 remains open
-for wider API, component and recipe coverage. See the
-[transaction example acceptance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05).
-
-Remaining: Complete broader authored API/component/recipe coverage across
-the libraries, beyond the now-executable UI guides. Preserve RT-23 regressions
-and finish REL-02 acceptance. The full
-installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open. The latest
-typed-query acceptance is recorded in the [release checklist](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
-Discovery never executes examples, but the separate installed acceptance runs
-every packaged example. Declaration presence does not prove runtime imports or
-native attribute behavior. Platform diagnostics and bounded scans can
-produce partial catalogs. Installed acceptance blocks outbound Node networking
-while allowing a synthetic `127.0.0.1` DNS answer for loopback-only listeners.
-Package installation can use the registry. Broader library API and recipe
-guidance remains open.
-The catalog uses a pinned TypeScript 6.0.3 compiler API independently of the
-workspace TypeScript 7 compiler. CLI-08 remains open.
-
-Purpose: An agent must use the APIs installed in the project. A generic guide
-can recommend symbols, command flags, or components from a different release.
-
-Baseline: Repository docs and scaffold agent instructions exist. A generated,
-versioned offline catalog and executable example coverage remain open.
-
-Approach: Package a concise AGENTS guide, API/component catalog, command schemas,
-and recipe examples with the release. Generate discoverable facts from exports
-and metadata. Write explanations where metadata cannot explain usage. Link each
-entry to its version and runtime support. Compile examples and execute behavior
-examples in CI. Make the same content available to CLI-07.
-
-Start in `docs/`, `packages/scaffold/template/AGENTS.md`, public package exports,
-and the metadata service from CLI-04. Keep installed guidance separate from
-instructions for contributing to the framework repository.
-
-Done when: An offline generated project can discover the correct APIs and usage.
-Every documented import resolves from its published package. Removed exports
-cannot remain in the catalog. Skill examples and generated templates use the
-same APIs as the tested release. Dependencies: REL-02 and RT-23.
-
-
 ## New application services
 
 These are application features, not replacements for component lifecycle tasks.
@@ -355,70 +201,6 @@ The Cloudflare goal is one coherent development-to-deployment path. Environment
 selection must remain consistent through types, build, static rendering,
 database tooling, and deployment. Local validation must distinguish itself from
 checks that require authenticated access to real resources.
-
-<a id="cf-04"></a>
-### CF-04: Resource selection and setup
-
-Codex built-target correction (2026-10-05): explicit --config artifact deployment
-must clear CLOUDFLARE_ENV after type generation and Vite selection. Wrangler treats
-that explicit path as ordinary config and otherwise applies the source environment
-again. Source stages retain selection; final artifact stages now disable it. Unit
-and published CLI selected-target dry-run evidence are in the
-[direct-budget checkpoint](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
-This fixes local target selection, not remote account/resource discovery or
-provisioning; CF-04 remains open.
-
-
-Purpose: A generated binding must point to a real resource or use supported
-provisioning. A fake Hyperdrive ID postpones an inevitable failure until deployment.
-
-Baseline: D1 scaffolds set `database_name` without a `database_id`. The pinned
-Wrangler parser accepts incomplete D1 references for local inspection, but
-Cloudflare's [configuration docs](https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases)
-require both `database_name` and `database_id` for a remote binding; parser
-acceptance is not deployment readiness. Hyperdrive still uses an all-zero
-placeholder ID. Full resource selection/setup flows remain open.
-
-Approach: Add a resource plan that distinguishes existing, create, provider-managed,
-and unresolved resources. Support D1, R2, KV, Hyperdrive, and bindings needed by
-selected Durable Object, Queue, and Workflow features. Record account/environment
-ownership and whether the command can create that resource. Accept explicit IDs
-in noninteractive mode. Never label every absent ID as automatically provisioned.
-Use current project Wrangler capabilities rather than guessed REST operations.
-
-Start in scaffold `index.js` and `registry.js`, CLI `deployment.js`, and shared
-Cloudflare inspection services. Extend diagnostics with optional authenticated
-resource existence/access checks while retaining a read-only local mode.
-
-Done when: A generated app contains valid bindings or a precise unresolved action.
-Plan-only runs create nothing. Tests cover wrong accounts, unavailable resources,
-unsupported provisioning, and repeated application of the plan. Dependencies:
-CLI-03, RT-24, RT-25, and CF-01.
-
-Codex scaffold-guidance checkpoint (2026-10-05): generated D1 configuration and
-README now consistently require the named remote database to exist before
-deployment. Hyperdrive guidance calls out the all-zero configuration ID and
-keeps database credentials in Cloudflare configuration. The offline scaffold
-tests verify generated configuration comments and rendered instructions. No
-account discovery, resource selection or provisioning was added, so CF-04
-remains open. See the [checkpoint](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05).
-
-Codex static-plan checkpoint (2026-10-05): local `inspect/check cloudflare`
-output now identifies each configured resource reference by name or ID, marks
-unresolved placeholders with a next action, and explicitly records remote
-existence/access as `not-checked`. It no longer describes configured values as
-`existing` or missing values as `automatic`. A Wrangler environment is not an
-account identity, so this pass does not guess the target account. Inspection
-and check remain local/read-only. D1 bindings missing either `database_name` or
-`database_id` are unresolved for remote deployment, even though the local parser
-permits incomplete entries. The action guides users to
-`wrangler d1 list` or an explicit `wrangler d1 create --update-config` command.
-Focused CLI tests (30), scaffold tests (81), a generated deployment dry-run,
-and root typechecking pass. The dry-run did not upload or create resources.
-This does not add resource selection, authenticated existence/access checks,
-provisioning, ownership tracking, or wrong-account/repeated-application tests;
-CF-04 remains open. See
-the [static-plan checkpoint](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05).
 
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets
@@ -736,7 +518,7 @@ published application test. Dependencies: REL-02 and completed feature work.
 
 **Completed runtime checkpoints — Codex (2026-10-04).** Generated and installed
 Node development and Deno production/development pass their recorded browser,
-CLI lifecycle and trace checks. See the [runtime evidence index](./handoff-0.9.0.md#completed-work-reference-only)
+CLI lifecycle and trace checks. See the [runtime evidence index](./release-0.9.0-plan-archive.md#codex-handoff-references-2026-10-06)
 and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
 `pnpm test:deno` owns the repeatable native Deno gate.
 
@@ -954,3 +736,16 @@ restart/resume/event completion or installed Workflow claim is made. Preserve
 that requirement and the uncommitted failed fixtures. [Commands and limits](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
 **48 complete / 10 open**. Next finish independent CLI-08/Cloudflare acceptance;
 avoid additional budget polish. Desktop remains waived; versions stay 0.8.3.
+
+<a id="codex-cli08-cf04-complete-2026-10-06"></a>
+## Codex: Agent documentation and resource selection completed (2026-10-06)
+
+**CLI-08 and CF-04 complete; release 50 complete / 8 open.**
+The full original contexts moved to the completed index. Versioned family usage,
+non-Desktop skills, every new installed example and authenticated resource
+selection meet their criteria. Unsupported discovery/creation remains explicit;
+no remote readiness or automatic provisioning is inferred.
+[Commands, failures, fixes and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06).
+Keep SVC-04, CF-08/09/10 and REL-02/03/04/05 open. Next prioritize a full
+deployment-guide/compatibility path or final non-Desktop release gates; avoid
+repeating unchanged installed guide matrices or polishing budgets without closure.

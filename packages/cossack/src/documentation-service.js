@@ -57,7 +57,7 @@ export async function readDocumentation(root, { package: selected, symbols = fal
       code: 'COSSACK_DOCS_GUIDANCE_INCOMPLETE', severity: 'warning', package: name,
       message: 'Installed usage guidance is invalid or references unavailable imports.',
     });
-    packages.push({ guidance, name, version: manifest.version, installed: true,
+    packages.push({ guidance, guidanceCoverage: describeGuidanceCoverage(name, guidance), name, version: manifest.version, installed: true,
       manifestHash: createHash('sha256').update(source).digest('hex'),
       exports: discovered.entries, exportDiscovery: discovered.discovery,
       implicitEntry,
@@ -90,3 +90,4 @@ export async function readDocumentation(root, { package: selected, symbols = fal
     coverage: { exportTargets: 'installed-manifests', symbols: symbols ? 'installed-declarations-and-typescript-source' : 'not-requested', runtimeSupport: 'not-verified', examples: 'package-owned-when-available', guidance: 'installed-package-files' },
   } };
 }
+import { describeGuidanceCoverage } from './guidance-coverage.js';

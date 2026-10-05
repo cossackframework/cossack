@@ -111,3 +111,16 @@ project-relative source path in Cloudflare's `auxiliaryWorkers`. Read JSON
 `data.auxiliaryBuildBudgets.workers` for per-Worker measurements. Auxiliary
 validation does not upload those Workers. Watch builds are unsupported when
 budgets are configured. Raw tool output and profile files must remain private.
+Each installed package reports `guidanceCoverage`: authored API families and
+missing guide IDs. `available` describes usage coverage; runtime behavior remains
+`not-performed` until a separate acceptance test runs. Package guide imports are
+filtered against current public exports. Core, adapters, services, storage,
+Workflow limits, test helpers and recipe registries have versioned examples.
+
+For Cloudflare setup use `pnpm exec cossack resources plan --account <ID> --json`.
+Add `--env <NAME>` explicitly for a named environment and `--select <JSON>` for
+existing resource choices. `--verify` opts into authenticated read-only checks;
+`resources apply` requires verification and edits only local JSON/JSONC.
+Unsupported provisioning/discovery returns an unresolved action. These commands
+never create, delete or deploy cloud resources. Local inspection and MCP remain
+offline; an environment name alone is never account identity.

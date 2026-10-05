@@ -17,10 +17,10 @@ Cossack's defining feature: **a single component class runs on both server and c
                   connected client.
 
 @Shared()    →  method body is retained in BOTH bundles. Runs locally
-                  wherever it is called. Also RPC-callable.
+                  wherever it is called. Not an inbound RPC action.
 ```
 
-A method with **no decorator** is treated as server-only (same as `@Server()`): its body is stripped from the client bundle. See the "#1 rule" in `SKILL.md`.
+A method with **no decorator** is stripped as server-only, but not registered as an inbound action: its body is stripped from the client bundle. See the "#1 rule" in `SKILL.md`.
 
 ## Calling a server method from the client
 
@@ -103,7 +103,7 @@ The transport is set on `@Page({ transport })`. The developer-facing API is iden
 
 | Transport | Client→Server wire | Server→Client wire | Notes |
 |---|---|---|---|
-| `http` (default) | `POST /crpc` with JSON body | (none — state synced via re-render) | File uploads go through a separate `XMLHttpRequest` to `/upload` with progress. |
+| `http` (default) | `POST /crpc` with JSON body | (none — state synced via re-render) | File arguments use multipart `/upload`; normal calls remain JSON. |
 | `sse` | `POST /crpc` | SSE stream (server push) | Server methods can be `async *` generators — each `yield` is pushed to the client. The proxy is both thenable and async-iterable. |
 | `durable-object` | WebSocket message | WebSocket message | Bidirectional. Genuine WebSocket — no fetch at all. |
 
@@ -111,14 +111,14 @@ You do not need to know this to use `@Server()`. It's here so you understand wha
 
 ### Transportable arguments
 
-Arguments are serialized before crossing the wire. **Plain objects and arrays** pass through cleanly. The following are **stripped** (not transportable) on the WebSocket / SSE path:
+Arguments are serialized before crossing the wire. **Plain objects and arrays** pass through cleanly. Unsupported values are rejected, not silently stripped, on the JSON/WebSocket path:
 
 - DOM nodes
 - `Event` objects (pass `event.target.value`, not the event)
-- `File` / `Blob` (use the upload mechanism instead)
+- `File` / `Blob` use the supported multipart action path; do not encode them as JSON
 - Functions / class instances with non-serializable internal state
 
-For file uploads, the HTTP transport uses a dedicated `XMLHttpRequest` to `/upload` so progress can be reported.
+Use the framework multipart action path for files, including form bindings. Progress support depends on the selected transport; never infer completed server writes from upload progress.
 
 ## `@Server` vs `@Client` vs `@Shared` — at a glance
 
@@ -126,18 +126,18 @@ For file uploads, the HTTP transport uses a dedicated `XMLHttpRequest` to `/uplo
 |---|---|---|---|---|
 | `@Server()` | Yes | No (proxy) | No (stripped) | Yes |
 | `@Client()` | No (no-op) | Yes | Yes | No |
-| `@Shared()` | Yes | Yes | Yes (retained) | Yes |
-| *(none)* | Yes | No (proxy) | No (stripped) | No* |
+| `@Shared()` | Yes | Yes | Yes (retained) | No |
+| *(none)* | Yes | No (stripped stub) | No (stripped) | No* |
 
-\* Undecorated methods are server-only by default for code-stripping, but are **not** registered as RPC-callable actions. Mark a method `@Server()` explicitly if the client needs to call it. Only `@Server()` and `@Shared()` methods are exposed as RPC actions.
+\* Undecorated methods are server-only by default for code-stripping, but are **not** registered as RPC-callable actions. Mark a method `@Server()` explicitly if the client needs to call it. Only explicit `@Server()` methods are exposed as inbound RPC actions.
 
 Use `@Shared()` for pure logic that must run identically on both sides (e.g. a shared validator, a currency formatter) and that the client may also call directly without a round-trip.
 
 ## Security
 
-- **Only `@Server()` and `@Shared()` methods are RPC-callable.** The framework checks `cossack:server-methods` metadata on the prototype chain; a method without that metadata is rejected. Internal framework hooks decorated with `@Server()` purely for stripping (e.g. `initializeProviders`) are on a blocklist and cannot be invoked via RPC.
+- **Only explicit `@Server()` methods are inbound RPC-callable.** The framework checks `cossack:server-methods` metadata on the prototype chain; a method without that metadata is rejected. Internal framework hooks decorated with `@Server()` purely for stripping (e.g. `initializeProviders`) are on a blocklist and cannot be invoked via RPC.
 - **Never put secrets in a `@Client()` or `@Shared()` method** — the body is shipped to the browser. Secrets, DB credentials, and API keys belong in `@Server()` methods or `this.env`.
-- **The `user` argument is server-injected.** When a `@Server()` method accepts a `user` parameter, the framework injects the authenticated user from the request context — the client cannot forge it. You do not pass `user` from the client.
+- **Read trusted user context on the server.** Ordinary action arguments remain caller input; naming a parameter `user` does not inject authentication. Use `this.user` or trusted context, parse `@Server({ input })`, and check ownership with its `authorize` hook. Client State and scope strings are not authority.
 
 ## `this.loading` is auto-tracked
 

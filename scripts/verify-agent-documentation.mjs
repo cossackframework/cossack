@@ -1,6 +1,7 @@
 import { verifyNodeDevelopmentApplication } from '../packages/cossack/tests/fixtures/node-development-acceptance.js';
 import { verifyDevelopmentTraceApplication } from '../packages/cossack/tests/fixtures/development-trace-acceptance.js';
 import { verifyApplicationGuidance } from '../packages/cossack/tests/fixtures/application-guidance-acceptance.js';
+import { verifyAgentGuideBatch } from './verify-agent-guide-batch.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -82,6 +83,7 @@ require('node:module').syncBuiltinESMExports();
     const examples = [];
     const uiExamples = [];
     const denoExamples = [];
+    const testedGuides = new Set();
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input', 'development-rpc-traces', 'component-actions', 'server-resources', 'lifecycle-tasks', 'safe-old-input', 'localization-and-worker-isolation'].map(id => ['@cossackframework/core', id]), ...['server-html', 'conditional-templates', 'keyed-lists', 'server-form-values', 'safe-component-css'].map(id => ['@cossackframework/renderer', id]),
       ...['runtime-capability-planning', 'cache-storage-guarantees', 'request-scoped-configuration'].map(id => ['@cossackframework/framework', id]),
       ...['node-runtime-lifecycle'].map(id => ['@cossackframework/node-adapter', id]),
@@ -137,6 +139,7 @@ require('node:module').syncBuiltinESMExports();
       assert.equal(pkg.guidance.version, pkg.version);
       assert.equal(pkg.guidance.exampleExecution, 'not-performed');
       const guide = pkg.guidance.guides.find(guide => guide.id === id);
+      testedGuides.add(name + ':' + id);
       assert.ok(guide, `Missing packaged guide ${name}/${id}`);
       assert.ok(guide.examples.length, 'Guide must include an executable example');
       for (const example of guide.examples) {
@@ -325,6 +328,13 @@ export default {
       await d1Worker.close();
     }
     console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports; D1 and prepared configuration passed real workerd acceptance.`);
+    // Enumerate remaining package-owned guides so new families cannot silently
+    // fall outside the installed CI gate's original curated runtime fixtures.
+    const additional = Object.fromEntries(catalog.data.packages.filter(pkg => pkg.installed &&
+      !['cossack', '@cossackframework/desktop', '@cossackframework/solar-icons', '@cossackframework/auth'].includes(pkg.name))
+      .map(pkg => [pkg.name, pkg.guidance.guides.filter(guide => !testedGuides.has(pkg.name + ':' + guide.id)).map(guide => guide.id)])
+      .filter(([, ids]) => ids.length));
+    if (Object.keys(additional).length) await verifyAgentGuideBatch(projectDir, additional);
 
     // Auth publishes TypeScript source. Check its examples with bundler
     // resolution, then bundle and execute under the guard. The tsx loader
@@ -338,10 +348,8 @@ export default {
     assert.deepEqual(auth.exports, []);
     assert.equal(auth.implicitEntry.origin, 'legacy-manifest');
     const authExamples = [];
-    for (const [id, exampleId] of [['session-and-role-guards', 'session-role-decisions'], ['resource-policies', 'owned-record-decisions'], ['oauth-failure-stages', 'safe-callback-diagnostics'], ['credential-and-session-primitives', 'typed-credential-session-lifecycle']]) {
-      const example = auth.guidance.guides.find(guide => guide.id === id)?.examples.find(example => example.id === exampleId);
-      assert.ok(example, `Missing packaged auth example ${id}/${exampleId}`);
-      const file = path.join(scratch, `${id}-${exampleId}.ts`);
+    for (const guide of auth.guidance.guides) for (const example of guide.examples) {
+      const file = path.join(scratch, `${guide.id}-${example.id}.ts`);
       await fs.writeFile(file, example.source);
       authExamples.push(file);
     }

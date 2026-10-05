@@ -95,6 +95,14 @@ configured resource reference or the setup action needed when that reference is
 missing. A configured name or ID does not prove that the resource exists in the
 selected Cloudflare account.
 
+Use `pnpm exec cossack resources plan --account <ACCOUNT_ID> --env staging --json`
+to record explicit account ownership and unresolved resource actions. Add
+`--select resources.json --verify` to check existing D1, KV, R2 and Hyperdrive
+references through project Wrangler. `resources apply` verifies before updating
+local JSON/JSONC, preserves comments, and converges without repeated writes.
+Unsupported discovery/provisioning stays unresolved; these commands never create
+or delete cloud resources. See [selection schema and limits](./cloudflare-resources.md).
+
 ### Deploy
 
 ```sh

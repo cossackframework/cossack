@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 48 complete / 10 open.
+  acceptance; the numbered release task count is 50 complete / 8 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include seventy-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. The earlier installed gate verified 73 guides and 80 examples; the two completed service batches each add four independently strict-compiled/executed installed examples (81 guides / 88 examples now). Renderer guides now cover escaped server HTML, conditional templates, keyed lists, initial form values and safe CSS interpolation. Core guidance covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guidance covers runtime capability, cache guarantees and request-scoped typed configuration/raw bindings; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Database guidance covers bound Node SQLite and Cloudflare D1 queries, typed model filters and projections, reversible migration and idempotent seeding lifecycle, and atomic Node SQLite transactions with rollback. The D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound; D1 does not support interactive ORM transactions. Broader library/API/component/recipe coverage remains open. See [transaction guidance](#codex-cli08-transactions-2026-10-05), [renderer API guides](#codex-cli08-renderer-guides-2026-10-05), [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [typed database queries](#codex-cli08-database-queries-2026-10-05), [request-scoped configuration](#codex-cli08-request-config-2026-10-05), [migration/seeding guidance](#codex-cli08-migration-guidance-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [x] [CLI-08](./release-0.9.0-plan.md#cli-08) Versioned offline API/usage family inventory, aligned non-Desktop skills, published imports and 109 guides / 116 examples. All 28 new examples pass installed compilation/execution; retained earlier evidence covers unchanged examples. [Verification and limits](#codex-cli08-cf04-complete-2026-10-06).
 
 ## Runtime and application APIs
 
@@ -72,7 +72,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-01](./release-0.9.0-plan.md#cf-01) Select environment before Vite build and share it across SSG, bindings, migrations, and deployment; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation.
-- [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs. Codex (2026-10-05): local Cloudflare inspection now reports name/ID references, unresolved setup actions and `remote: not-checked`, without claiming resources exist or will be provisioned. D1 bindings missing either required field are unresolved for remote deployment; scaffold docs explain how to find or create an ID. CLI tests, scaffold tests, a generated deploy dry-run and root typecheck pass. Account discovery, remote existence checks and provisioning remain open; see [static resource plan checkpoint](#codex-cf04-static-resource-plan-2026-10-05).
+- [x] [CF-04](./release-0.9.0-plan.md#cf-04) Explicit account/environment resource plans, authenticated D1/KV/R2/Hyperdrive selection, repeatable local JSONC apply and precise unsupported/provisioning actions. Native Wrangler loopback and installed command acceptance pass; no live cloud mutation. [Verification and limits](#codex-cli08-cf04-complete-2026-10-06).
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
@@ -1898,3 +1898,17 @@ final Workflow bridge **3/1**; Node **47/8**; scaffold **164/11**; CLI contracts
 **141/3** plus Workflow inspection **2/1**. Root and affected package typechecks
 pass. [Criterion mapping, commands and limits](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
 **48 complete / 10 open**. Desktop checks stay waived; versions stay 0.8.3.
+
+<a id="codex-cli08-cf04-complete-2026-10-06"></a>
+### Codex: CLI-08 and CF-04 completed (2026-10-06)
+
+**50 complete / 8 open.** Resource/command integration: **197 tests pass**;
+final account-isolation checks: **18 pass**.
+The earlier combined run had 369 passes / 3 failures; five affected fixture cases
+pass after correction. All 28 new guides compile and execute from tarballs;
+offline CLI/MCP agrees across 109 guides / 116 catalog examples. Root and seven
+affected package typechecks exit 0. Markdown runtime dependency and UI catalog
+defects found during installed acceptance are fixed.
+[Full criteria, exact commands, failed attempts and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06).
+Remaining: SVC-04, CF-08/09/10, REL-02/03/04/05. Complete CLI/full release matrices
+have not passed this batch. Desktop platform checks remain waived, not passed.

@@ -2,37 +2,36 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Completed **RT-26**. Release: **48 complete / 10 open**.
-[Criteria, verification and limits](./release-0.9.0-verification-archive.md#codex-rt26-complete-svc04-open-2026-10-06).
-Published authorized storage, local/R2/S3 streaming, signed access, cleanup and
-image diagnostics pass source/native/installed acceptance. Installed S3 required
-moving its SDK to runtime dependencies; the lockfile changes no SDK version.
-Completed RT-26 context is archived. Prior RPC/session closures remain intact.
+Completed **CLI-08 and CF-04**. Release: **50 complete / 8 open**.
+[Full criterion mapping, commands and limits](./release-0.9.0-verification-archive.md#codex-cli08-cf04-complete-2026-10-06).
+Offline usage inventory covers 109 guides / 116 examples; all 28 new examples
+compile and execute from installed tarballs. Non-Desktop skills align with tested
+APIs. Resource plans pin explicit account/default-or-named environment; verified
+D1/KV/R2/Hyperdrive selection applies locally and converges. Unsupported remote
+discovery/creation has precise actions, never automatic provisioning claims.
+Codex reviewed all three agents' work and fixed Markdown runtime dependencies,
+UI metadata, CLI Vite fixtures, DOM harness and inherited environment redirection.
 
-**SVC-04 stays open.** Typed contracts, local tests, native bridge, generated
-bindings and CLI/MCP inspection are source-verified. Native creation, completed
-steps and retries work, but the strict waiting-status assertion fails: pinned
-Miniflare stays running at the event barrier and never assigns Waiting. Native
-interruption/resume/event completion and failure plus installed Workflow acceptance
-remain unproven. Do not weaken the assertion or relabel running as waiting.
-`packages/cossack/tests/workflows-release-acceptance.test.js` and
-`packages/cossack/tests/fixtures/workflows-acceptance.js` remain batch-owned,
-uncommitted failed acceptance work. Preserve them. The latest native log is
-`/tmp/svc04-workflows-native.log` (exit 1); no consumer remains live.
+Final installed CLI account/environment isolation and convergent apply pass.
+Relevant integration **197 tests pass**; final account-isolation **18 pass**.
+Affected matrix **5 pass** after three initial failures. Root plus seven package typechecks exit 0. Full CLI and
+non-Desktop release matrices remain required. Reuse unchanged guide evidence.
+Retained gate: `/tmp/cossack-local-pack-gZdSQv/minimal-production`; new payloads:
+`/tmp/cossack-cli08-cf04-tarballs`, corrected Framework:
+`/tmp/cossack-cli08-cf04-final/cossackframework-framework-0.8.3.tgz`, final CLI:
+`/tmp/cossack-cli08-cf04-owned-final/cossack-0.8.3.tgz`.
 
-Next choose independent full acceptance paths in **CLI-08** and
-**CF-04/08/09/10**. Keep shared APIs/integration with Codex and at most three
-implementation agents with exclusive files. Do not polish budgets unless needed
-for a missing criterion. Run targeted checks then relevant combined/types once;
-repeat only invalidated evidence. Final storage payloads are in
-`/tmp/cossack-rt26-svc04-tarballs` (framework-final.tgz); installed gate:
-`/tmp/cossack-local-pack-gZdSQv/minimal-production`. Reuse unchanged evidence.
+**SVC-04 stays open.** Native creation/steps/retries work, but pinned Miniflare
+never assigns Waiting at the event barrier. Interruption/resume/event completion,
+native failure and installed acceptance remain unproven. Preserve its two prior
+uncommitted failed fixtures and strict assertion; do not relabel running as waiting.
+Its provider limitation blocks that task, not independent release work.
 
-Open: CLI-08, SVC-04, CF-04/08/09/10, REL-02/03/04/05 (**10 total**).
-Versions stay 0.8.3 until REL-04. Preserve user reports.md and .zcodeignore.
-Desktop remains complete with remaining checks waived, not passed. No live
-Cloudflare/AWS account or resource mutation occurred. The Workflow provider
-limitation blocks that task's current native acceptance, not independent work.
+Open: SVC-04, CF-08/09/10, REL-02/03/04/05 (**8 total**). Next choose full CF-10
+compatibility/guide acceptance or final independent non-Desktop gates. Do not
+polish budgets without a required closure. Versions stay 0.8.3 until REL-04.
+Preserve user reports.md/.zcodeignore. Desktop remains complete with remaining
+platform checks waived. No live cloud mutation, deployment, publication or push.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -51,16 +50,13 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-06)
 
-1. Finish CLI-08's authored API/component/recipe coverage inventory. Its 81 guides
-   and 88 executable examples are unchanged; new storage/Workflow guidance still
-   belongs in the inventory. Do not rerun unchanged catalog matrices.
-2. Complete CF-04 and CF-08/09/10's resource, observability, preview and deployment
-   criteria. Static plans/local logs do not prove remote readiness or ingestion.
-3. Revisit SVC-04 only with a path to actual waiting-state and lifecycle proof.
-   Preserve its strict uncommitted native probe and original full criteria.
-4. Keep REL-02/03/04/05 open until full non-Desktop gates pass.
-
-Earlier detailed continuation notes are [archived](./release-0.9.0-plan-archive.md#codex-handoff-before-rt01-rt11-2026-10-05).
+1. Finish CF-08/09/10 observability, isolated previews and deployment compatibility.
+   Local logs/static plans do not prove remote readiness or log ingestion.
+2. Revisit SVC-04 only with a real path to waiting/lifecycle proof; preserve its probe.
+3. Complete REL-02/03 non-Desktop published/generated/build/unit/runtime gates,
+   then versioning and the requirement audit (REL-04/05).
+4. Use at most three implementation agents with exclusive ownership, targeted
+   checks, coordinator integration, one verified-batch record and explicit staging.
 
 ## Limits to retain
 

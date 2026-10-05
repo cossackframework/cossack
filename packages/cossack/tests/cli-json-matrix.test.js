@@ -50,13 +50,19 @@ function execute(argv, options = {}) {
 }
 function envelope(result, command, ok = true) {
   expect(result.stderr).toBe('');
-  expect(result.code).toBe(ok ? 0 : 1);
+  expect(result.code, result.stdout).toBe(ok ? 0 : 1);
   const lines = result.stdout.trim().split('\n');
   expect(lines, result.stdout).toHaveLength(1);
   const data = JSON.parse(lines[0]);
   expect(data).toMatchObject({ schemaVersion: 1, command, ok, diagnostics: expect.any(Array) });
   expect(result.stdout).not.toContain('private-value');
   return data;
+}
+async function installedVite(source) {
+  const directory = path.join(root, 'node_modules/vite');
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: 'vite', bin: './bin.cjs' }));
+  await fs.writeFile(path.join(directory, 'bin.cjs'), source);
 }
 async function application(features = []) {
   const project = await createApp('app', { cwd: root, adapter: 'node', features,
@@ -135,7 +141,7 @@ describe('finite command success / failure / dry-run matrix', () => {
     envelope(await execute(['create', 'app', '--adapter=node', '--preset=minimal', '--json']), 'create');
     expect(await fs.readFile(path.join(root, 'app/package.json'), 'utf8')).toContain('"name": "app"');
     envelope(await execute(['create', 'app', '--adapter=node', '--preset=minimal', '--json']), 'create', false);
-  });
+  }, 65000); // Three independently bounded 20-second CLI processes plus setup.
 
   it('add/remove plan identical files and apply without prompts or secret values', async () => {
     const cwd = await application();
@@ -190,9 +196,12 @@ describe('finite command success / failure / dry-run matrix', () => {
   }, 30_000); // Several real CLI subprocesses; match neighboring integration cases.
 
   it.each(['build', 'ssg'])('%s isolates successful project output', async command => {
+    // These lifecycle fixtures exercise Node tooling, without Cloudflare artifact budgets.
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ dependencies: { '@cossackframework/node-adapter': '^0.9.0' } }));
     const tools = path.join(root, 'tools');
     await fs.mkdir(tools);
     await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\nconsole.log("build-private-value"); console.error("build-private-value");', { mode: 0o755 });
+    await installedVite('console.log("build-private-value"); console.error("build-private-value");');
     const result = envelope(await execute([command, '--json'], { env: { PATH: tools + path.delimiter + process.env.PATH } }), command);
     expect(result.data.exitCode).toBe(0);
   });
@@ -440,8 +449,11 @@ describe('lifecycle process event contract', () => {
   });
 
   it.each(['build', 'ssg'])('%s --env reaches Vite and reports the resolved target', async command => {
+    // These lifecycle fixtures exercise Node tooling, without Cloudflare artifact budgets.
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ dependencies: { '@cossackframework/node-adapter': '^0.9.0' } }));
     const tools = path.join(root, 'tools'); await fs.mkdir(tools);
     await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\nrequire("node:fs").writeFileSync("selected-env.txt", process.env.CLOUDFLARE_ENV || "");', { mode: 0o755 });
+    await installedVite('require("node:fs").writeFileSync("selected-env.txt", process.env.CLOUDFLARE_ENV || "");');
     const result = await execute([command, '--env', 'staging', '--json'], {
       env: { PATH: tools + path.delimiter + process.env.PATH, CLOUDFLARE_ENV: 'production' },
     });
