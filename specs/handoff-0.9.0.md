@@ -174,10 +174,12 @@ REL-03 remains open for the required non-Desktop release matrix.
    disconnect, dynamic/per-call deadline and initialization/restoration
    concurrency criteria; retain the limits below. Codex bounded declared
    `@Server({ timeout })` values to integer milliseconds from 1 to 2,147,483,647
-   and validated metadata before component and service timers. The core build,
-   all 1,552 core tests and root TypeScript check pass. See the [dated RT-01
-   review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
-   This does not close RT-01.
+   and validated metadata before component and service timers. The legacy Node
+   adapter coalesces same-target bootstrap, counts pending instances toward its
+   cap, and closes failed upgrades with a fixed error; 24 Node tests pass. The
+   core build and all 1,552 core tests pass, as does root TypeScript checking.
+   See the [dated RT-01 review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
+   These changes do not close RT-01.
 4. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 

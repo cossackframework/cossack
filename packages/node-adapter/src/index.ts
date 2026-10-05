@@ -56,6 +56,12 @@ interface NodeRuntimeEntry {
     lastActive: number;
 }
 
+class NodeRuntimeLimitError extends Error {
+    constructor() {
+        super('Node runtime instance limit reached');
+    }
+}
+
 function decodeRouteParams(encoded: string | null): Record<string, string> {
     if (encoded === null) return {};
     const parsed: unknown = JSON.parse(encoded);
@@ -76,6 +82,7 @@ export class CossackNodeAdapter {
     private wss: WebSocketServer;
     // Map of target ID -> Runtime instance
     private instances: Map<string, NodeRuntimeEntry> = new Map();
+    private pendingInstances: Map<string, Promise<NodeRuntimeEntry>> = new Map();
     private componentRegistry: Map<string, new () => Cossack>;
     private allowedOrigins?: string[];
     private authenticate?: (request: IncomingMessage) => Promise<unknown> | unknown;
@@ -93,6 +100,10 @@ export class CossackNodeAdapter {
         this.env = options.env;
         this.maxInstances = options.maxInstances ?? 512;
         this.idleTimeoutMs = options.idleTimeoutMs ?? 15 * 60_000;
+        if (!Number.isInteger(this.maxInstances) || this.maxInstances < 1 ||
+            !Number.isFinite(this.idleTimeoutMs) || this.idleTimeoutMs < 0) {
+            throw new TypeError('Node runtime requires positive integer maxInstances and nonnegative finite idleTimeoutMs');
+        }
 
         options.server.on('upgrade', (request: IncomingMessage, socket: any, head: any) => {
              const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -198,44 +209,81 @@ export class CossackNodeAdapter {
             }
 
             const instanceKey = `${componentId}:${provider ?? 'page'}:${target}`;
-            this.pruneInstances(true);
-            let entry = this.instances.get(instanceKey);
-            let runtime = entry?.runtime;
-            if (!runtime) {
-                if (this.instances.size >= this.maxInstances) {
-                    ws.close(1013, 'Runtime instance limit reached');
-                    return;
-                }
-
-                // Use the DI container so @Service-injected dependencies are
-                // resolved (new ComponentClass() bypassed the container).
-                const componentInstance = createInstance(ComponentClass) as Cossack;
-                
-                // We need to bootstrap the component.
-                // Thread the configured `env` (bindings such as EMAIL polyfills)
-                // so `this.env` works identically to Cloudflare's runtime.
-                await componentInstance.bootstrap({
-                    context,
-                    user: user as any,
-                    env: this.env,
-                    runtime: { platform: 'web', adapter: 'node' },
-                    page: pathname,
-                    providerName: provider
+            let entry: NodeRuntimeEntry;
+            try {
+                entry = await this.getOrCreateRuntime(instanceKey, ComponentClass, {
+                    context, user, pathname, provider,
                 });
-                
-                // init() and get() are now automatically called during bootstrap
-
-                runtime = new NodeWebSocketRuntime(componentInstance);
-                entry = { runtime, lastActive: Date.now() };
-                this.instances.set(instanceKey, entry);
+            } catch (error) {
+                console.error('[Cossack] Node WebSocket initialization failed:', error);
+                ws.close(1013, error instanceof NodeRuntimeLimitError
+                    ? 'Runtime instance limit reached' : 'Runtime unavailable');
+                return;
             }
-            entry!.lastActive = Date.now();
+            const runtime = entry.runtime;
+            entry.lastActive = Date.now();
 
             runtime.addClient(ws, user, context);
             
             // Send initial state to the connecting client
-            await runtime.sendInitialState(ws);
+            try {
+                await runtime.sendInitialState(ws);
+            } catch (error) {
+                console.error('[Cossack] Node WebSocket initial state failed:', error);
+                ws.close(1011, 'Runtime unavailable');
+            }
         });
+    }
+
+    private async getOrCreateRuntime(
+        instanceKey: string,
+        ComponentClass: new () => Cossack,
+        options: { context: any; user: unknown; pathname: string; provider?: string },
+    ): Promise<NodeRuntimeEntry> {
+        const cached = this.instances.get(instanceKey);
+        if (cached) return cached;
+
+        let creation = this.pendingInstances.get(instanceKey);
+        if (!creation) {
+            this.pruneInstances(true);
+            if (this.instances.size + this.pendingInstances.size >= this.maxInstances) {
+                throw new NodeRuntimeLimitError();
+            }
+            creation = (async () => {
+                // Use the DI container so @Service-injected dependencies are
+                // resolved (new ComponentClass() bypasses the container).
+                const componentInstance = createInstance(ComponentClass) as Cossack;
+                try {
+                    await componentInstance.bootstrap({
+                        context: options.context,
+                        user: options.user as any,
+                        env: this.env,
+                        runtime: { platform: 'web', adapter: 'node' },
+                        page: options.pathname,
+                        providerName: options.provider,
+                    });
+                } catch (error) {
+                    await componentInstance.destroyAsync().catch(cleanupError => {
+                        console.error('[Cossack] Node WebSocket failed component cleanup:', cleanupError);
+                    });
+                    throw error;
+                }
+
+                const entry: NodeRuntimeEntry = {
+                    runtime: new NodeWebSocketRuntime(componentInstance),
+                    lastActive: Date.now(),
+                };
+                this.instances.set(instanceKey, entry);
+                return entry;
+            })();
+            this.pendingInstances.set(instanceKey, creation);
+        }
+
+        try {
+            return await creation;
+        } finally {
+            if (this.pendingInstances.get(instanceKey) === creation) this.pendingInstances.delete(instanceKey);
+        }
     }
 
     private pruneInstances(reserveSlot = false): void {
@@ -245,7 +293,7 @@ export class CossackNodeAdapter {
                 this.instances.delete(key);
             }
         }
-        const targetSize = Math.max(0, this.maxInstances - (reserveSlot ? 1 : 0));
+        const targetSize = Math.max(0, this.maxInstances - (reserveSlot ? 1 : 0) - this.pendingInstances.size);
         if (this.instances.size <= targetSize) return;
         const idle = [...this.instances.entries()]
             .filter(([, entry]) => entry.runtime.clientCount === 0)

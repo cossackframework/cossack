@@ -308,12 +308,15 @@ delays are clamped by runtimes and could previously become near-immediate
 timeouts; fractional, non-finite, negative and nonnumeric values also silently
 lost their declared deadline. The decorator rejects invalid options, and the
 HTTP/SSE, WebSocket and service proxy paths validate inherited metadata before
-creating a timer. Core deadline and metadata regressions pass (25 tests), the
-full core suite passes (1,552 tests), the core package builds, and root
-`pnpm tsc --noEmit` passes. This tightens the existing per-method deadline
-contract but does not prove native disconnect delivery, server-side rollback,
-or arbitrary dynamic/per-call deadlines. Component initialization/restoration
-concurrency is still unaudited; RT-01 remains open.
+creating a timer. The legacy Node WebSocket adapter now coalesces concurrent
+same-target bootstrap and reserves its instance limit for pending distinct
+targets; failed bootstrap cleans up the component and rejects the socket. Core
+deadline/metadata regressions pass (25 tests), the full core suite passes
+(1,552 tests), and the core package builds. The Node adapter builds and all 24
+of its tests pass, including same-target coalescing and pending-capacity checks;
+root `pnpm tsc --noEmit` passes. This does not prove native disconnect delivery,
+server-side rollback, or arbitrary dynamic/per-call deadlines. Broader component
+initialization/restoration concurrency remains unaudited; RT-01 remains open.
 
 Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.
