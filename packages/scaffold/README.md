@@ -225,3 +225,25 @@ operation. Replace its acceptance placeholder with your authorized mutation.
 Reset the widget after each verification attempt; expired and reused tokens
 require a fresh challenge. See the [server guide](../auth/docs/turnstile.md) and
 [widget guide](../ui/docs/turnstile.md).
+
+## Schedules and notifications
+
+`cossack add schedules` composes jobs, `src/schedules.json`, a native Cloudflare
+scheduled handler, Cron configuration and static Vite validation. Update JSON and
+selected environment Cron declarations together. `cossack inspect schedules`
+lists names without exposing payloads. `runOnce` uses the same jobs validation
+and cleanup as provider events. Repeated occurrence keys deduplicate; separate
+occurrences may overlap. No framework catch-up or autonomous local scheduler is
+provided. See [schedule policy](../../docs/schedules.md).
+
+`cossack add notifications` composes jobs, typed escaped templates, a D1 delivery
+ledger, scoped opt-in preferences and the EMAIL binding. Apply both generated job
+and notification migrations to JOB_STATE. Preferences default to disabled; grant
+an exact tenant/user/template/channel before enqueue. Resolve recipients from
+trusted server context. Configure MAIL_FROM and onboard the email domain before
+sending. Previews never call the email provider. Provider acceptance and actual
+delivery remain separate; uncertain sends require deliberate reconciliation.
+Repeated additions preserve authored templates and migrations. These generated
+recipes require Cloudflare; portable contracts and an explicit SMTP adapter are
+available for other runtimes. See [notifications](../../docs/notifications.md)
+and [provider setup](../../docs/notification-providers.md).

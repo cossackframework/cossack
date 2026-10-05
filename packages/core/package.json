@@ -52,6 +52,14 @@
     "./jobs": {
       "types": "./dist/jobs/index.d.ts",
       "import": "./dist/jobs/index.js"
+    },
+    "./schedules": {
+      "types": "./dist/schedules/index.d.ts",
+      "import": "./dist/schedules/index.js"
+    },
+    "./notifications": {
+      "types": "./dist/notifications/index.d.ts",
+      "import": "./dist/notifications/index.js"
     }
   },
   "files": [

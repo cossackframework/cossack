@@ -22,6 +22,23 @@
           "source": "import { cossackNode } from '@cossackframework/node-adapter/vite';\n\nconst plugin = cossackNode({ entry: '/src/index.ts', shutdownTimeoutMs: 2_000 });\nif (plugin.name !== 'cossack-node-development' || plugin.apply !== 'serve') {\n  throw new Error('The Node adapter plugin is a Vite development-only integration');\n}"
         }
       ]
+    },
+    {
+      "id": "notification-smtp-adapter",
+      "title": "Adapt SMTP with explicit delivery uncertainty",
+      "summary": "Adapt SMTP with explicit delivery uncertainty.",
+      "imports": [
+        "@cossackframework/node-adapter/notifications",
+        "@cossackframework/core/notifications"
+      ],
+      "markdown": "Wrap the existing createNodeEmailSender with createSmtpNotificationEmailProvider and pass private SMTP host/port/credentials through server configuration. The provider accepts the structural NodeEmailSender contract, copies declared message fields, and does not send during construction. Neither SMTP response acceptance nor a messageId proves final delivery. Provider idempotency is none: the runtime key is not sent as a fabricated SMTP guarantee.\n\nNumeric SMTP 400-599 responseCode is an explicit rejection; 400-499 permits a safe runtime retry. Other thrown errors or malformed acceptance mean unknown. The adapter sends once and returns fixed redacted NotificationDeliveryError fields without transport messages/credentials. It rejects header injection and messages above its 256 KiB UTF-8 bound before I/O. Unknown outcomes must be reconciled, not blindly retried. Use a durable notification store for restart safety.\n\nThe executable example injects a structural sender and sends no mail. The separate real loopback SMTP acceptance covers preview without network, preaccept450 rejection/retry, exactly one DATA for the accepted operation, duplicate suppression and ambiguous post-DATA socket failure with SQLite restart/no resend. It uses no external account or email. See docs/notification-providers.md.",
+      "examples": [
+        {
+          "id": "notification-smtp-rejection",
+          "language": "typescript",
+          "source": "import { createSmtpNotificationEmailProvider } from '@cossackframework/node-adapter/notifications';\nimport { isNotificationDeliveryError } from '@cossackframework/core/notifications';\nlet sends = 0;\nconst provider = createSmtpNotificationEmailProvider({ async send() {\n  sends++; throw Object.assign(Error('PRIVATE_SMTP_RESPONSE'), { responseCode: 450 });\n} });\nconst message = { to: 'recipient@example.test', from: 'sender@example.test', subject: 'Receipt', text: 'fixture', html: '<p>fixture</p>' };\nlet rejection: unknown;\ntry { await provider.send(message, { idempotencyKey: 'fixture-key' }); } catch (error) { rejection = error; }\nif (!isNotificationDeliveryError(rejection) || rejection.outcome !== 'rejected' || !rejection.retryable) throw Error('Explicit preaccept rejection should permit a safe runtime retry');\nif (provider.idempotency !== 'none' || Number(sends) !== 1 || rejection.message.includes('PRIVATE_')) throw Error('SMTP adapter must not retry or leak transport errors');\nconst uncertain = createSmtpNotificationEmailProvider({ async send() { throw Error('Unknown transport failure'); } });\nlet ambiguity: unknown;\ntry { await uncertain.send(message, { idempotencyKey: 'fixture-key' }); } catch (error) { ambiguity = error; }\nif (!isNotificationDeliveryError(ambiguity) || ambiguity.outcome !== 'unknown') throw Error('Ambiguous failures must stop non-idempotent retries');\n// Injected structural sender: no network. In applications wrap createNodeEmailSender().\n"
+        }
+      ]
     }
   ]
 }

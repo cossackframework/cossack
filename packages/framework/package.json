@@ -170,6 +170,14 @@
     "./jobs": {
       "types": "./dist/esm/jobs/d1-store.d.ts",
       "import": "./dist/esm/jobs/d1-store.js"
+    },
+    "./notifications": {
+      "types": "./dist/esm/notifications/index.d.ts",
+      "import": "./dist/esm/notifications/index.js"
+    },
+    "./schedules-inspection": {
+      "types": "./dist/esm/schedules-inspection.d.ts",
+      "import": "./dist/esm/schedules-inspection.js"
     }
   },
   "files": [

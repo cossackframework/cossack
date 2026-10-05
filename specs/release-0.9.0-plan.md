@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 43 complete and 15 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 45 complete and 13 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -93,12 +93,12 @@ Add focused tests during each group, and run broader gates after integration.
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
 | 1. Finish current runtime work | RT-01 | Distributed SSE works through generated apps and retains request ownership. |
-| 2. Establish shared metadata and diagnostics | RT-24 | Tools and types describe the behavior that the compiler and runtime execute. |
+| 2. Finish remaining runtime diagnostics | RT-01 | Tools and types describe the behavior that the compiler and runtime execute. |
 | 3. Complete application state and actions | RT-11 | Forms, data loading, mutations, cancellation, and authorization compose. |
 | 4. Complete data and content features | RT-26 | Existing features have clear provider contracts and complete failure behavior. |
-| 5. Add background application services | SVC-02 through SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
+| 5. Add background application services | SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
 | 6. Expose the complete agent workflow | CLI-08 | Recipes, upgrades, offline help, and MCP use the shared services. |
-| 7. Finish operations | CF-01, CF-02, CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
+| 7. Finish operations | CF-04, CF-08 through CF-10 | Environment targeting, resources, logs, previews, and CI form one tested workflow. |
 | 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
 
 Preserve regression coverage for completed prerequisites while closing the open criteria.
@@ -111,6 +111,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 | Task | Completed work and archived context |
 | --- | --- |
 | <a id="svc-01"></a>SVC-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-01-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05) |
+| <a id="svc-02"></a>SVC-02 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-02-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05) |
+| <a id="svc-03"></a>SVC-03 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-03-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05) |
 | <a id="svc-05"></a>SVC-05 | [Full criteria](./release-0.9.0-plan-archive.md#codex-svc-05-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05) |
 | <a id="rt-10"></a>RT-10 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-10-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
 | <a id="rt-15"></a>RT-15 | [Full criteria](./release-0.9.0-plan-archive.md#codex-rt-15-completed-2026-10-05); [verified acceptance](./release-0.9.0-verification-archive.md#codex-rt10-rt15-rt17-complete-2026-10-05) |
@@ -145,6 +147,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="rt-23"></a>RT-23 | [DataTable, native UI contracts and installed accessibility guidance](./release-0.9.0-plan-archive.md#codex-rt23-final-plan-2026-10-04) |
 | <a id="rt-25"></a>RT-25 | [Runtime capability checks](./release-0.9.0-plan-archive.md#rt-25) |
 | <a id="rt-28"></a>RT-28 | [Devtools snapshots, correlated traces and native runtime acceptance](./release-0.9.0-plan-archive.md#codex-rt28-final-plan-2026-10-04) |
+| <a id="cf-01"></a>CF-01 | [Full criteria](./release-0.9.0-plan-archive.md#codex-cf-01-compacted-2026-10-05); [verified acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05) |
+| <a id="cf-02"></a>CF-02 | [Full criteria](./release-0.9.0-plan-archive.md#codex-cf-02-compacted-2026-10-05); [verified acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05) |
 | <a id="cf-03"></a>CF-03 | [Secrets, placeholders, and binding types](./release-0.9.0-plan-archive.md#cf-03) |
 | <a id="cf-05"></a>CF-05 | [Distributed SSE coordination](./release-0.9.0-plan-archive.md#cf-05) |
 | <a id="cf-06"></a>CF-06 | [Built-artifact runtime tests](./release-0.9.0-plan-archive.md#cf-06) |
@@ -173,11 +177,11 @@ SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 40 UI guides now have executable
-examples; all 77 published-package guides have at least one example. The previous installed gate
+examples; all 81 published-package guides have at least one example. The previous installed gate
 executed eighty package examples, including four separately bundled auth
 examples. The SVC-01/SVC-05 batch independently compiles and executes four new
-installed examples, for 84 catalog examples total; it does not rerun the unchanged
-eighty. Broader CLI-08 coverage remains open. Database guidance exercises typed model filters and query-builder
+installed examples, for 84 catalog examples total. SVC-02/SVC-03 add four more installed strict/executable
+examples (88 total); the unchanged earlier examples were not rerun. Broader CLI-08 coverage remains open. Database guidance exercises typed model filters and query-builder
 projections as well as a reversible Node SQLite migration and repeatable seeder
 lifecycle. Framework guidance covers runtime capability planning and cache
 guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
@@ -587,53 +591,6 @@ These are application features, not replacements for component lifecycle tasks.
 Each feature needs a portable contract and explicit provider support. A local
 test adapter must not be described as durable production infrastructure.
 
-<a id="svc-02"></a>
-### SVC-02: Schedules and Cron
-
-Purpose: Applications need recurring maintenance and report jobs without a
-handwritten Worker entry for every project.
-
-Baseline: Open as framework integration.
-
-Approach: Declare named schedules that invoke shared job handlers. Generate the
-Cloudflare scheduled handler and Cron configuration. Specify the schedule's time
-basis, overlap behavior, retry ownership, and missed-run behavior according to
-the selected provider. Provide local listing and one-shot execution for tests.
-Keep scheduling separate from the business logic in SVC-01.
-
-Start in scaffold Worker entry/configuration generation and the job registry.
-Retrieve the current provider documentation before defining supported expressions.
-
-Done when: A generated app registers and runs the expected handler. Local
-one-shot execution uses the same payload validation and cleanup as provider events.
-Duplicate or overlapping triggers follow the documented policy. Invalid schedule
-definitions fail during build/inspection. Nodes without a scheduler get an explicit
-adapter requirement. Dependencies: SVC-01, RT-25, and CF-01.
-
-<a id="svc-03"></a>
-### SVC-03: Notifications
-
-Purpose: Applications need reusable email and in-app notifications with delivery
-state and user preferences. Direct calls scattered through page methods cannot
-reliably track retries or duplicate sends.
-
-Baseline: Scaffold development tooling already supports SMTP configuration.
-Templates, preferences, persistence, and a notification service remain open.
-
-Approach: Define typed notification templates and channels. Separate rendering,
-recipient preferences, enqueueing, provider delivery, and delivery-status recording.
-Reuse SMTP where applicable and use an explicit Cloudflare email adapter when
-selected. Keep database persistence supplied through an optional adapter.
-Distinguish queued, sent to provider, failed, and delivered only when the provider
-actually supplies delivery evidence. Define in-app read/unread behavior.
-
-Start with `packages/scaffold/template/scripts/dev.js` and existing email recipes
-as references, then shared service contracts and SVC-01 jobs.
-
-Done when: Tests cover preference changes, template escaping, retry without an
-unwanted duplicate send, provider rejection, and per-user in-app isolation.
-Local previews do not send real mail. Dependencies: SVC-01, RT-14, and RT-24.
-
 <a id="svc-04"></a>
 ### SVC-04: Durable multi-step workflows
 
@@ -664,60 +621,6 @@ The Cloudflare goal is one coherent development-to-deployment path. Environment
 selection must remain consistent through types, build, static rendering,
 database tooling, and deployment. Local validation must distinguish itself from
 checks that require authenticated access to real resources.
-
-<a id="cf-01"></a>
-### CF-01: One selected environment throughout the build
-
-Purpose: Building with production variables and deploying with a staging name
-can publish incorrect HTML or bind the wrong resources. Environment selection
-must happen before any environment-dependent build step.
-
-Baseline: `cossack deploy --env` sets the build environment, generates binding
-types, builds with Vite, and compares the resulting artifact with the selected
-source configuration. SSG understands named environments and dotenv precedence.
-
-Approach: Finish one resolved target contract shared by dev/build/deploy,
-migrations, and scaffold output. Preserve Wrangler's inheritance rules through
-its parser. Treat Vite mode and Cloudflare environment as separate choices.
-Deploy the exact flattened artifact without selecting the environment again.
-Report the selected target in JSON results and fail on stale build metadata.
-
-Start in CLI `deployment.js`, `commands/deploy.js`, framework `ssg-config.ts`,
-and database tooling context.
-
-Done when: Generated default/staging fixtures use the expected values, bindings,
-types, database target, and static URLs. Missing named bindings never inherit
-accidentally. Tests include custom D1 migration paths rewritten by Vite.
-Dependencies: CLI-03, RT-16, and RT-24.
-
-Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
-
-<a id="cf-02"></a>
-### CF-02: Explicit database targets
-
-Purpose: A migration command must make it clear whether it affects local state
-or a remote database. An environment name alone must not silently imply remote mutation.
-
-Baseline: Tooling context and D1 local/remote selection exist. Real local D1 tests
-cover schema and migration behavior. Live remote verification remains unperformed.
-
-Approach: Complete target semantics for each provider. Require an explicit remote
-choice for operations that otherwise use local development storage. Show account,
-environment, binding/resource identity, and operation mode without credentials.
-Reject conflicting flags before adapter construction. Keep migrations in the
-existing database migration system instead of adding a second Wrangler SQL history.
-
-Start in database `tooling/cloudflare.ts`, `config.ts`, runtime adapters,
-and CLI `commands/db-run.js` and database command wrappers.
-
-Done when: Tests prove the selected adapter receives the intended target and
-read-only intent. Local commands share the app's local D1 state. Remote selection
-cannot fall back to local or another environment after failure. Add documented
-opt-in remote smoke coverage and label unrun remote checks accurately.
-
-Dependencies: RT-15, RT-16, and CF-01.
-
-Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 
 <a id="cf-04"></a>
 ### CF-04: Resource selection and setup
@@ -1275,3 +1178,17 @@ primary startup/custom-config installed checks pass. Failed Cron attempts and th
 final dry-run repair are preserved in the
 [verification record](./release-0.9.0-verification-archive.md#codex-auxiliary-budgets-2026-10-05).
 The full CLI suite and non-Desktop release matrix remain REL-03 work.
+
+<a id="codex-svc02-svc03-complete-2026-10-05"></a>
+## Codex: Schedules and notifications completed (2026-10-05)
+
+SVC-02 and SVC-03 meet their full archived criteria. Generated and installed
+Cron/Queue/D1 execution, duplicate identity, cleanup and invalid-definition
+rejection pass. Typed escaped notifications compose preferences, durable fenced
+state, jobs, Cloudflare email and existing Node SMTP. Tests prove isolation,
+preference changes, rejection retry and uncertain-send restart without blind
+resending. Four matching installed guides pass strict compilation and execution.
+[Commands and limits](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05).
+Release: **45 complete / 13 open**. SVC-04 and broader runtime, Cloudflare and
+release gates remain open; no batch blocker. Desktop remains waived and versions
+stay 0.8.3 until REL-04.

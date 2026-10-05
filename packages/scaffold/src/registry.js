@@ -1,7 +1,7 @@
 import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
 
 export const ADAPTERS = ['cloudflare', 'node', 'deno'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -22,6 +22,8 @@ export const FEATURE_REGISTRY = {
   'protected-route': { requires: ['auth'] },
   jobs: { requires: [] },
   turnstile: { requires: ['ui'] },
+  schedules: { requires: ['jobs'] },
+  notifications: { requires: ['jobs'] },
 };
 
 export const PRESET_REGISTRY = {
@@ -184,6 +186,8 @@ export function recipeCapabilityRequirements(recipe, target = 'web') {
     feature, source: { file: '.cossack/scaffold.json' }, requires,
   });
   if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
+  if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
+  if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });
   if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
   if (recipe.resolvedFeatures.includes('scoped-service')) add('scoped-service', { transports: ['http'] });

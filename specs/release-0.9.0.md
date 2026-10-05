@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 43 complete / 15 open.
+  acceptance; the numbered release task count is 45 complete / 13 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include seventy-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. All 73 published-package guides have at least one example; all 80 packaged examples are typechecked and executed by installed acceptance. Renderer guides now cover escaped server HTML, conditional templates, keyed lists, initial form values and safe CSS interpolation. Core guidance covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guidance covers runtime capability, cache guarantees and request-scoped typed configuration/raw bindings; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Database guidance covers bound Node SQLite and Cloudflare D1 queries, typed model filters and projections, reversible migration and idempotent seeding lifecycle, and atomic Node SQLite transactions with rollback. The D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound; D1 does not support interactive ORM transactions. Broader library/API/component/recipe coverage remains open. See [transaction guidance](#codex-cli08-transactions-2026-10-05), [renderer API guides](#codex-cli08-renderer-guides-2026-10-05), [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [typed database queries](#codex-cli08-database-queries-2026-10-05), [request-scoped configuration](#codex-cli08-request-config-2026-10-05), [migration/seeding guidance](#codex-cli08-migration-guidance-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include seventy-six standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. The earlier installed gate verified 73 guides and 80 examples; the two completed service batches each add four independently strict-compiled/executed installed examples (81 guides / 88 examples now). Renderer guides now cover escaped server HTML, conditional templates, keyed lists, initial form values and safe CSS interpolation. Core guidance covers locale negotiation, explicit q=0 exclusions and CLDR plural formatting; framework guidance covers runtime capability, cache guarantees and request-scoped typed configuration/raw bindings; Node/Deno guides cover adapter lifecycle, binding precedence and Vite development integrations; Studio guidance covers local/remote data selection and embedded lifecycle. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. Database guidance covers bound Node SQLite and Cloudflare D1 queries, typed model filters and projections, reversible migration and idempotent seeding lifecycle, and atomic Node SQLite transactions with rollback. The D1 example runs from an installed tarball in workerd with local D1 and proves values stay bound; D1 does not support interactive ORM transactions. Broader library/API/component/recipe coverage remains open. See [transaction guidance](#codex-cli08-transactions-2026-10-05), [renderer API guides](#codex-cli08-renderer-guides-2026-10-05), [all package guide acceptance](#codex-cli08-guide-coverage-2026-10-05), [typed database queries](#codex-cli08-database-queries-2026-10-05), [request-scoped configuration](#codex-cli08-request-config-2026-10-05), [migration/seeding guidance](#codex-cli08-migration-guidance-2026-10-05), [D1 runtime acceptance](#codex-cli08-d1-workerd-2026-10-05), [database guidance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -62,8 +62,8 @@ remain archived, and the verification log below retains test evidence.
 ## New services
 
 - [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
-- [ ] [SVC-02](./release-0.9.0-plan.md#svc-02) Schedules/Cron integration.
-- [ ] [SVC-03](./release-0.9.0-plan.md#svc-03) Email/in-app notification templates, preferences, and delivery status using existing SMTP support where applicable.
+- [x] [SVC-02](./release-0.9.0-plan.md#svc-02) Named UTC schedules share jobs validation, occurrence deduplication, retries and cleanup; generated/installed Cron, local one-shot, build and CLI/MCP inspection pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
+- [x] [SVC-03](./release-0.9.0-plan.md#svc-03) Typed escaped notifications, scoped preferences/inboxes, durable delivery status and explicit Cloudflare/SMTP providers. Source/installed Queue/D1 and loopback SMTP retry, uncertainty and restart acceptance pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
 - [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration.
 - [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
@@ -1846,3 +1846,17 @@ four executable guides pass. [Commands, criterion proof and limitations](./relea
 Release: **43 complete / 15 open**. CF-04/08 and REL-02/03 remain open; this batch
 uses local providers and does not prove account deployment or real Turnstile
 challenge service operation. Desktop checks remain waived. Versions stay 0.8.3.
+
+<a id="codex-svc02-svc03-complete-2026-10-05"></a>
+## Codex: SVC-02 and SVC-03 complete (2026-10-05)
+
+Both full criteria are closed: named schedules execute shared jobs through actual
+generated Cron/Queue/D1; notifications compose typed escaping, scoped preferences,
+durable fenced state, read/unread isolation and explicit Cloudflare/SMTP adapters.
+Source and fresh installed acceptance prove duplicate suppression, cleanup, safe
+rejection retry and uncertain-send persistence without resending. CLI/MCP static
+schedule inspection and four new installed strict/executable guides pass.
+[Full criteria, commands, fixes and limits](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05).
+**45 complete / 13 open**. No batch blocker. Remote email/resource deployment is
+unverified; no exactly-once external delivery or automatic Cron redelivery claim.
+Desktop checks remain waived. Versions stay 0.8.3 until REL-04.

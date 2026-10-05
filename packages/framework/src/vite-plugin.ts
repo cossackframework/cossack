@@ -1,3 +1,4 @@
+export { cossackSchedules } from './vite-schedules.js';
 export { cossackBuildBudgets } from './vite-build-budgets.js';
 import { checkConfigBuildRequirements } from './config-preflight.js';
 import type { ConfigRuntime } from './config-requirements.js';

@@ -116,6 +116,7 @@ async function inspectProviderDeclarations(ctx, command) {
 export function inspectCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.inspect, args, ctx, inspectHelp)) return 0;
   if (!validateCommand(commandSpecs.inspect, args, ctx)) return 1;
+  if (args[0] === 'schedules') return inspectScheduleDeclarations(ctx, 'inspect');
   if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'inspect');
   if (args[0] === 'routes') {
     return runWithSpec(routesSpec, args.slice(1), ctx, () => inspectRoutes(args.slice(1), ctx, 'inspect'));
@@ -125,13 +126,14 @@ export function inspectCommand(args, ctx) {
 export function checkCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.check, args, ctx, checkHelp)) return 0;
   if (!validateCommand(commandSpecs.check, args, ctx)) return 1;
+  if (args[0] === 'schedules') return inspectScheduleDeclarations(ctx, 'check');
   if (args[0] === 'providers') return inspectProviderDeclarations(ctx, 'check');
   if (args[0] === 'routes') return checkRoutes(ctx);
   return inspectCloudflare(args, ctx, 'check');
 }
 
 export function inspectHelp() {
-  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes|providers> [route]
+  return commandSpecs.inspect.help(`cossack inspect <cloudflare|routes|providers|schedules> [route]
 
 Read the project's resolved Worker, environment, bindings, required secret
 names, and configuration diagnostics. Inspection succeeds when configuration
@@ -148,7 +150,7 @@ Dynamic configuration/overrides remain unknown; modules are never executed.`);
 }
 
 export function checkHelp() {
-  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers> [--json]
+  return commandSpecs.check.help(`cossack check <cloudflare|routes|providers|schedules> [--json]
 
 Validate local Cloudflare deployment configuration (--env <name>) or static
 route metadata without writing files. --env selects Cloudflare configuration
@@ -165,4 +167,18 @@ remote existence/access as not checked. A configured name or ID does not prove
 that the resource exists or is available in the selected account.
 Provider checks validate declared cache requirements, binding names and limiter
 selection. They do not verify process/secret overrides or remote readiness.`);
+}
+
+async function inspectScheduleDeclarations(ctx, command) {
+  try {
+    const root = await findProjectRoot(ctx.cwd);
+    const result = await inspectProject(root, { scope: 'schedules', environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV, check: command === 'check' });
+    if (ctx.flags.json === true) writeResult(command, result);
+    else {
+      for (const item of result.data.schedules) console.log(`${item.name}: ${item.cron} (UTC) -> ${item.job}`);
+      for (const item of result.diagnostics) console.error(`${item.code}: ${item.message}`);
+      console.log('Static schedule declarations only; handlers and remote execution were not checked.');
+    }
+    return result.ok ? 0 : 1;
+  } catch { return commandFailure(ctx, command, 'COSSACK_SCHEDULES_INVALID', 'Schedule inspection failed. Check src/schedules.json and scheduler declarations.'); }
 }

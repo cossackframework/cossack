@@ -1291,3 +1291,24 @@ configuration and UI. It checks server-owned hostname/action with a private secr
 UI owns browser loading, typed widget events and disposal. Scaffold composes both
 through validated forms and server configuration, hydrating only the public site
 key. Client success events never authorize protected operations.
+
+## Schedules and notifications
+
+`core/schedules` owns portable validated schedule declarations and occurrence
+identity. It dispatches the existing jobs contract; it does not implement a clock
+or a durable scheduler. Scaffold generates Cloudflare Cron configuration and a
+native scheduled entry. Node-only `framework/schedules-inspection` and
+`cossackSchedules()` validate bounded JSON declarations against the selected
+Wrangler environment without evaluating application modules. Their public facts
+omit payload and actor/tenant scope, and do not claim remote readiness.
+
+`core/notifications` separates typed rendering, preferences, persisted intent,
+job dispatch and delivery. Applications supply a store and server-authorized
+recipient scope. Memory is explicit process storage; `framework/notifications`
+provides fenced D1 storage and the structured Cloudflare email adapter.
+`node-adapter/notifications` reuses the existing SMTP sender. Provider acceptance
+is distinct from authenticated delivery evidence. A persisted marker precedes
+external sends; uncertain non-idempotent attempts become `unknown` and never
+silently resend. Stable keys and terminal records must survive application
+restarts. The generated Cloudflare recipe stores scoped opt-in preferences and
+composes the jobs Queue instead of creating a second execution engine.

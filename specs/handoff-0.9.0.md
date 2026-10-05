@@ -2,32 +2,35 @@
 
 ## Current handoff — Codex (2026-10-05)
 
-Completed **SVC-01 and SVC-05**. Release: **43 complete / 15 open**.
-[Acceptance, commands, retries and limits](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05).
-Jobs have typed JSON payloads/scope, delays, persisted attempt/backoff state,
-fenced D1 claims, redacted inspection and deterministic local adapters. Actual
-Queues execute the generated consumer and retain completion across a Worker
-reload. Turnstile has authoritative bounded verification, typed widget lifecycle,
-validated form composition and server-secret stripping on Node/Cloudflare.
-Fresh installed acceptance and four new strict/executable guides pass. No batch
-blocker. Completed contexts are compacted into the plan/verification archives.
+Completed **SVC-02 and SVC-03**. Release: **45 complete / 13 open**.
+[Acceptance and limitations](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05).
+Named schedules dispatch shared jobs with UTC occurrence identity; generated and
+installed Cron/Queue/D1, cleanup and static build/CLI/MCP inspection pass. Typed
+notifications compose escaped templates, scoped opt-in preferences, durable fenced
+D1 status and Cloudflare/SMTP providers. Actual loopback SMTP and SQLite reopen
+prove safe rejection retry and no resend after ambiguous acceptance. Four new
+installed guides pass strict compilation and execution (81 guides / 88 examples).
+No batch blocker. Completed contexts are compacted into archives.
 
-Next assess **SVC-02 and SVC-03** for a bounded full-acceptance batch; SVC-01 now
-provides their shared jobs prerequisite. Keep shared APIs/integration with Codex
-and assign exclusive implementation files to up to three agents. Preserve RT-01,
-RT-11, RT-26, CF-04/08/09/10 and remaining release gates. Avoid Cloudflare budget
-polishing unless it closes a required criterion. Never replace dist while
-consumers run. Run targeted checks, then combined/type checks once; repeat only
-invalidated checks. Update records once per verified batch and commit owned files.
+Next assess **RT-01, RT-11 and RT-26** for independent full-acceptance gaps.
+SVC-04 remains open: choose it only when its interruption/event/retry criteria
+can be proved through the native Workflows provider. Keep shared APIs/integration
+with Codex; give at most three implementation agents exclusive files. Finish
+parent tasks before polishing working features. Do not revisit Cloudflare budgets
+unless that closes a required criterion. Never replace dist while consumers run.
+Run targeted checks, then combined/types once; repeat only invalidated evidence.
+Record one verified batch and commit only owned files.
 
-Limits: Queues/workerd/D1 acceptance is local; Worker reload retains the harness
-host's storage, while file SQLite close/reopen separately proves ledger persistence.
-No remote account/resource or live challenge-provider claim. Injected Siteverify
-and browser SDK fixtures prove rejection/lifecycle deterministically. Lease fencing
-does not guarantee exactly-once external effects; deleting terminal keys removes
-deduplication protection. Generated jobs require Cloudflare; the local adapter is
-a test clock, not durable production execution. Full CLI-08 and REL-02/03 matrices
-remain open. Versions stay 0.8.3 until REL-04. Preserve user reports.md and
+Limits: all Workers/D1/Queues are local. Reload retains harness-host storage;
+file SQLite reopen independently proves stored delivery state. SMTP uses only
+127.0.0.1; Cloudflare email responses are injected. No external mail or live
+account mutation, delivery/provisioning claim. Provider acceptance is distinct
+from delivered. Unknown non-idempotent sends need deliberate reconciliation;
+keep terminal keys for deduplication. Distinct schedule occurrences may overlap;
+jobs own execution retries, with no framework catch-up or Cron redelivery promise.
+Generated recipes require Cloudflare; other runtimes need explicit adapters.
+CLI-08, RT-01/11/26, SVC-04, CF-04/08/09/10 and REL-02/03/04/05 remain open
+(13 total). Versions stay 0.8.3 until REL-04. Preserve user reports.md and
 .zcodeignore. Desktop remains complete with remaining checks waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
@@ -45,11 +48,11 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 43 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 45 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
-Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
-It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
-Previous CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). The SVC-01/SVC-05 batch adds four independently strict-compiled/executed installed guides (77 guides / 84 examples now). CLI-08 stays open for broader library API, component and recipe coverage.
+Latest completed checkpoint: [Schedules and notifications](./release-0.9.0.md#codex-svc02-svc03-complete-2026-10-05).
+It closes SVC-02 and SVC-03. Earlier CF-01/CF-02 acceptance remains archived. No live Cloudflare account or database was contacted.
+Previous CLI-08 progress: [installed database transaction guidance](./release-0.9.0.md#codex-cli08-transactions-2026-10-05) adds a Node SQLite example that proves atomic commit and rollback, and explicitly scopes D1's lack of interactive ORM transactions. The fresh offline tarball gate passes all 76 standalone examples and four auth examples (80 total). The SVC-01/SVC-05 and SVC-02/SVC-03 batches each add four independently strict-compiled/executed installed guides (81 guides / 88 examples now). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
 Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and startup budgets remain open; primary-Worker build budgets and custom-source selection are verified in the latest checkpoint. The [CF-04 static resource plan](./release-0.9.0.md#codex-cf04-static-resource-plan-2026-10-05) removes misleading `existing`/`automatic` labels and surfaces configured references, unresolved setup actions, and unchecked remote status. D1 without either required `database_name` or `database_id` is now an error for remote deployment, with Wrangler list/create guidance in the scaffold docs. The 30 focused CLI tests, 81 scaffold tests, generated deployment dry-run and root typecheck pass; `git diff --check -- . ':!reports.md'` is clean. The dry-run did not upload or create resources. Account ownership/live existence remain unverified. CF-04 remains open. RT-11 retains its remaining criteria; RT-12 is completed in the archived acceptance.
 Forms are complete; preserve the [RT-10 acceptance](./release-0.9.0.md#codex-rt10-rt15-rt17-complete-2026-10-05).

@@ -12170,3 +12170,128 @@ Auth root remains TypeScript-source packaging; no plain-Node root-auth claim.
 CF-04/08, CLI-08 and REL-02/03 remain open for broader criteria. Desktop checks
 remain waived, not passed. **43 complete / 15 open**, versions 0.8.3 until REL-04.
 No batch blocker.
+
+<a id="codex-svc02-svc03-complete-2026-10-05"></a>
+## Codex: SVC-02 and SVC-03 completed (2026-10-05)
+
+Closed both parent tasks after coordinator integration/review of three agents with
+exclusive implementation ownership. Core owns portable schedule/notification
+contracts; framework owns Node-only static inspection and Cloudflare D1/email;
+Node owns SMTP; coordinator owns public entries, scaffold, CLI/MCP and integration.
+User-owned reports.md and .zcodeignore were preserved. Desktop was not reopened.
+
+### Full criterion proof
+
+**SVC-02:** Named validated JSON schedules dispatch the existing typed jobs.
+Generated Cloudflare configuration registers Cron and a native scheduled handler;
+actual WorkerHandle.scheduled produces Queue delivery, D1 receipts and asynchronous
+job cleanup. Provider duplicates and runOnce share occurrence identity; different
+UTC timestamps produce distinct work. Jobs own handler retries; separate schedule
+occurrences may overlap. There is no catch-up or promise of automatic Cron
+redelivery. Invalid job payloads publish no work; invalid Cron JSON fails actual
+Vite build and CLI inspection before exposing private values. Literal job types
+and the explicit validated JSON boundary pass positive/negative public type tests.
+Static CLI/MCP facts omit payload and actor/tenant scope, preserve authored files,
+compare selected environment triggers, and report handler/remote as not checked.
+Node/Deno generated recipes reject before writes with an explicit adapter
+requirement; the portable API permits explicit external schedulers/dispatchers.
+
+**SVC-03:** Schema-inferred templates and escaped HTML compose email/in-app
+channels, preferences at enqueue and delivery, persisted intent and jobs dispatch.
+Memory is an explicit process adapter; fenced D1 is optional database integration.
+Cloudflare structured email and existing createNodeEmailSender SMTP adapters are
+explicit and non-idempotent. Queued/provider-accepted/failed/unknown/delivered are
+distinct. Only authenticated matching message evidence may promote accepted email
+to delivered. Tests cover escaping, opt-out and preference failures, retryable
+pre-accept rejection, recipient isolation/read/unread, stale fencing, restart,
+provider capability changes, truthful uncertainty and terminal duplicate suppression.
+Preview performs no store/job/provider writes. Actual loopback SMTP returns 450
+before DATA, then accepts one DATA for that logical operation; duplicate replay
+sends nothing. A second operation drops the connection after DATA acceptance:
+status becomes unknown and remains unsent on replay after actual SQLite reopen.
+Generated/installed notifications execute actual Queue/in-app delivery with D1
+opt-in preferences, tenant/user isolation, read/unread and persistence across
+Worker reload. Recipient authorization remains an application responsibility;
+the native test supplies trusted test identities, not production auth middleware.
+
+### Commands and verified evidence
+
+- `pnpm --dir packages/core exec vitest run`: **1,665/104 files** passed.
+  Subsequent bounded schedule array validation added one regression;
+  `... vitest run tests/schedules.test.ts`: **35/35** passed on final code.
+  Final notification targeted suite is **19/19**. No claim of a repeated full
+  1,666-test run; unchanged full-suite evidence is retained.
+- Framework `vitest run tests/notification-email.test.ts tests/notification-d1-store.test.ts`:
+  **19/19**. Final `tests/schedules-inspection.test.ts tests/config-build-preflight.test.ts`:
+  **23/23** (42 unique framework cases across four files).
+- Node adapter full `exec vitest run`: **38/7 files**; scaffold full:
+  **160/10 files**. After the generated import fix, scaffold's seven application
+  service composition/ownership/schema/preferences cases reran **7/7**.
+- CLI `tests/mcp.test.js tests/inspect.test.js`: **34/2 files**, including actual
+  stdio MCP schedule inspection/redaction/invalid-definition parity. An extra
+  nonexistent command-specs filename matched no cases and is not separate evidence.
+- Required root `pnpm tsc --noEmit`: passed, again after the final Core fix.
+  Affected Core/framework/Node `pnpm --dir packages/<name> exec tsc --noEmit`:
+  terminal 0. Framework reran after the fixture import correction.
+- Core full runtime/declaration build, Node full build and framework `build:types`:
+  terminal 0. All dist writers stopped before consumers. Core rebuilt once after
+  the final inherited-array validation fix, with native consumers stopped.
+- Source public schedules acceptance **2/2**, generated notification Queue/D1
+  **1/1**, and real loopback SMTP **1/1**. Fresh installed versions of all three
+  fixtures pass the same **2/2**, **1/1**, **1/1** respectively:
+  ```sh
+  COSSACK_SCHEDULES_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production pnpm --dir packages/cossack exec vitest run tests/schedules-release-acceptance.test.js --maxWorkers=1
+  COSSACK_NOTIFICATIONS_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production pnpm --dir packages/cossack exec vitest run tests/notifications-release-acceptance.test.js --maxWorkers=1
+  COSSACK_NOTIFICATIONS_INSTALLED_ROOT=/tmp/cossack-local-pack-gZdSQv/minimal-production pnpm --dir packages/cossack exec vitest run tests/notifications-smtp-acceptance.test.js --maxWorkers=1
+  ```
+- Core/framework/Node/scaffold/CLI packed once, scripts disabled, into
+  `/tmp/cossack-svc02-03-tarballs`. Exact file overrides in gate package.json and
+  pnpm-workspace.yaml; `pnpm install --ignore-scripts --config.strict-dep-builds=false`.
+  Other package tarballs reused; no unchanged installed matrix rerun.
+- Four examples extracted from matching installed metadata into gate
+  `.svc02-03-guide-acceptance` pass strict no-path standalone compilation and
+  execution: schedule-occurrence-identity, notification-preview-isolation,
+  notification-durable-no-resend, notification-smtp-rejection. Source public
+  examples also passed. Catalog now **81 guides / 88 examples**; earlier unchanged
+  84 examples were not rerun and CLI-08 remains open for broader coverage.
+- Installed public scaffold composes schedules+notifications with one Queue,
+  EMAIL binding and Cron registry; repeat additions preserve authored files.
+  Installed CLI and actual installed MCP agree on redacted valid facts and reject
+  malformed metadata. Smoke runner uses the repository MCP client only as protocol
+  harness; server/CLI/scaffold come from installed tarballs.
+- `git diff --check -- . ':!reports.md'`: passed before commit.
+
+### Integration failures and fixes
+
+The first generated schedule build resolved extensionless './schedules' to the
+JSON file rather than the runtime directory. Generated entry and fixture now use
+'./schedules/index'; scaffold regression proves that path. The initial static
+inspection fixture linked a nonexistent package-local Wrangler directory;
+createRequire resolves its actual package root, then all six cases pass.
+Review fixed unsafe array accessors/overridden map in notifications and inherited
+array toJSON/extra properties in schedules; regression proves no accessor/schema
+or publication side effects. Recovery after earlier provider uncertainty now
+retains unknown even after a later rejection, opt-out or provider downgrade;
+Memory and actual SQLite tests cover that truthfulness. The first installed smoke
+runner used require.resolve for an import-only scaffold entry; a real ESM public
+import fixed the runner without changing or repacking runtime packages.
+
+Logs: `/tmp/cossack-svc02-03-{core,framework,node,scaffold,cli}-tests.log`,
+`/tmp/cossack-svc02-03-preflight-tests.log`,
+`/tmp/cossack-svc02-03-schedules-final-tests.log`,
+`/tmp/cossack-schedules-{native,installed}.log`,
+`/tmp/cossack-svc02-03-notifications-{native,installed}.log`,
+`/tmp/cossack-svc03-installed-smtp.log`,
+`/tmp/cossack-svc02-03-installed-guide-types.log`,
+`/tmp/cossack-svc02-03-installed-smoke-final.log` and affected type/build logs.
+
+Limits: local workerd/Queues/D1 and file SQLite, no remote account/resource or
+production restart proof. Worker reload preserves harness-host storage; SQLite
+close/reopen independently proves durable rows. Cloudflare email binding responses
+are injected, SMTP binds 127.0.0.1, no external email was sent. Non-idempotent
+unknown sends require deliberate reconciliation; terminal-key deletion loses
+deduplication. No exactly-once external delivery or automatic Cron retry promise.
+Framework schedules syntax is a conservative provider subset; no satisfiable-date
+proof. Generated recipes require Cloudflare; other runtimes require adapters.
+Desktop checks remain waived, not passed. **45 complete / 13 open**, versions
+0.8.3 until REL-04. No batch blocker.

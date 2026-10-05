@@ -367,3 +367,26 @@ it('shares localization diagnostics with the CLI without executing source or exp
   expect(JSON.stringify(result)).not.toContain('private catalog sentinel');
   expect(await fs.readdir(root)).toEqual(expect.not.arrayContaining(['.cossack']));
 }, 30_000);
+
+it('shares redacted schedule facts and invalid-definition failures with CLI inspection', async () => {
+  const root = await fixture();
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  await fs.mkdir(path.join(root, 'node_modules'), { recursive: true });
+  await fs.symlink(path.dirname(require.resolve('wrangler/package.json')), path.join(root, 'node_modules/wrangler'), 'junction');
+  await fs.writeFile(path.join(root, 'wrangler.jsonc'), JSON.stringify({ name: 'schedule-mcp', compatibility_date: '2026-10-05', triggers: { crons: ['0 * * * *'] } }));
+  const definition = [{ name: 'hourly', cron: '0 * * * *', job: 'record', payload: { value: 'PRIVATE_SCHEDULE_PAYLOAD' }, scope: { actorId: 'PRIVATE_SCHEDULE_ACTOR' } }];
+  const file = path.join(root, 'src/schedules.json');
+  const original = JSON.stringify(definition);
+  await fs.writeFile(file, original);
+  const { client } = await connect(root);
+  const result = await client.callTool({ name: 'inspect_project', arguments: { scope: 'schedules', check: true } });
+  const direct = await inspectProject(root, { scope: 'schedules', check: true });
+  expect(result.structuredContent).toMatchObject({ ok: true, data: direct.data, diagnostics: [] });
+  expect(JSON.stringify(result)).not.toContain('PRIVATE_SCHEDULE_');
+  expect(await fs.readFile(file, 'utf8')).toBe(original);
+  await fs.writeFile(file, JSON.stringify([{ ...definition[0], cron: 'PRIVATE_INVALID_CRON' }]));
+  const invalid = await client.callTool({ name: 'inspect_project', arguments: { scope: 'schedules', check: true } });
+  expect(invalid.structuredContent).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_SCHEDULES_INVALID' }] });
+  expect(JSON.stringify(invalid)).not.toContain('PRIVATE_');
+}, 30_000);

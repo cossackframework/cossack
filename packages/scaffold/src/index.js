@@ -1,4 +1,4 @@
-import { jobsRecipeFiles, turnstileRecipeFiles } from './service-recipes.js';
+import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
@@ -427,8 +427,8 @@ function wranglerConfig(recipe, projectName) {
       recipe.config.database.startsWith('hyperdrive-')) {
     database = `,\n  // Replace this placeholder with a real Hyperdrive configuration ID before deploying.\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;
   }
-  const email = recipe.resolvedFeatures.includes('auth') &&
-      recipe.config.authMethods.includes('credentials')
+  const email = recipe.resolvedFeatures.includes('notifications') || (recipe.resolvedFeatures.includes('auth') &&
+      recipe.config.authMethods.includes('credentials'))
     ? `,\n  "send_email": [{ "name": "EMAIL" }]`
     : '';
   // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
@@ -449,6 +449,8 @@ function wranglerConfig(recipe, projectName) {
     if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') database = database.replace(/]$/, `,${jobDatabase}]`);
     else database += `,\n  "d1_databases": [${jobDatabase}]`;
   }
+  const schedules = recipe.resolvedFeatures.includes('schedules') ? ',\n  "triggers": { "crons": ["0 * * * *"] }' : '';
+  const notifications = recipe.resolvedFeatures.includes('notifications') ? ',\n    "MAIL_FROM": "no-reply@example.com"' : '';
   const turnstile = recipe.resolvedFeatures.includes('turnstile') ? ',\n    "TURNSTILE_SITE_KEY": "your-site-key",\n    "TURNSTILE_HOSTNAME": "localhost"' : '';
   return `{
   "$schema": "./node_modules/wrangler/config-schema.json",
@@ -460,8 +462,8 @@ function wranglerConfig(recipe, projectName) {
   "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",
-    "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": "${projectName}-jobs-default"` : ''}${turnstile}
-  }${database}${email}${sse}${jobs}
+    "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": "${projectName}-jobs-default"` : ''}${turnstile}${notifications}
+  }${database}${email}${sse}${jobs}${schedules}
 }
 `;
 }
@@ -1857,15 +1859,24 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
-  for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles]]) {
+  for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles], ['schedules', schedulesRecipeFiles], ['notifications', notificationsRecipeFiles]]) {
     if (!recipe.resolvedFeatures.includes(feature)) continue;
-    for (const [file, source] of Object.entries(generated())) files.set(file, { content: text(source), capability: feature });
+    for (const [file, source] of Object.entries(generated({ notifications: recipe.resolvedFeatures.includes('notifications') }))) files.set(file, { content: text(source), capability: feature });
   }
   if (recipe.resolvedFeatures.includes('jobs')) {
     const entry = files.get('src/index.ts');
     const source = entry.content.toString('utf8').replace("import { template } from './root';", "import { template } from './root';\nimport { createJobs } from './jobs';")
       .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async queue(batch: MessageBatch, env: CloudflareBindings) { await createJobs(env).queue(batch); },");
     files.set('src/index.ts', { ...entry, content: text(source) });
+  }
+  if (recipe.resolvedFeatures.includes('schedules')) {
+    const entry = files.get('src/index.ts');
+    const source = entry.content.toString('utf8').replace("import { createJobs } from './jobs';", "import { createJobs } from './jobs';\nimport { createSchedules } from './schedules/index';")
+      .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },");
+    files.set('src/index.ts', { ...entry, content: text(source) });
+    const vite = files.get('vite.config.ts');
+    const config = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackSchedules }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackSchedules(),');
+    files.set('vite.config.ts', { ...vite, content: text(config) });
   }
   if (recipe.adapter === 'deno') {
     files.set('deno.json', {

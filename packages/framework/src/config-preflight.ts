@@ -59,6 +59,7 @@ function bindingKinds(config: Record<string, any>): Record<string, BindingKind> 
   const add = (name: unknown, kind: BindingKind) => { if (typeof name === 'string') kinds[name] = kind; };
   const groups: Record<string, BindingKind> = { d1_databases: 'd1', kv_namespaces: 'kv', r2_buckets: 'r2', services: 'service', hyperdrive: 'object', workflows: 'object', vectorize: 'object', analytics_engine_datasets: 'object', dispatch_namespaces: 'object', send_email: 'object', mtls_certificates: 'object', pipelines: 'object', secrets_store_secrets: 'object' };
   for (const [field, kind] of Object.entries(groups)) for (const binding of config[field] ?? []) add(binding.binding, kind);
+  for (const binding of config.send_email ?? []) add(binding.name, 'object');
   for (const binding of config.durable_objects?.bindings ?? []) add(binding.name, 'durable-object');
   for (const binding of config.queues?.producers ?? []) add(binding.binding, 'object');
   for (const field of ['ai', 'browser', 'assets', 'images', 'version_metadata']) add(config[field]?.binding, 'object');

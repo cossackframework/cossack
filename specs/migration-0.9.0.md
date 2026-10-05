@@ -2002,3 +2002,31 @@ configuration and check server-owned hostname/action before mutation. Browser
 success grants no access. Tokens are single-use; reset after every attempt.
 See the [verifier](../packages/auth/docs/turnstile.md) and
 [widget](../packages/ui/docs/turnstile.md) contracts.
+
+## Schedules and notifications
+
+Use `cossack add schedules` or `cossack add notifications` in a Cloudflare
+application. Both compose the jobs feature and its D1 ledger. Apply the generated
+migrations to the configured JOB_STATE database; adding files does not provision
+resources or apply migrations. Repeated additions preserve authored files.
+
+Schedules live in `src/schedules.json`. Keep its Cron expressions in sync with
+the selected Wrangler environment. The generated Vite hook and
+`cossack inspect schedules --json` / `cossack check schedules --json` reject
+invalid declarations without executing handlers. The supported five-field syntax
+is a documented subset of Cloudflare Cron. All occurrences use UTC; a repeated
+name/time pair deduplicates through jobs. Distinct occurrences may overlap, jobs
+own execution retries, and the framework performs no missed-run catch-up.
+Other runtimes need an explicit scheduler and job dispatcher.
+
+Notifications have typed templates, escaped HTML interpolation and explicit
+server-owned tenant/user recipients. The generated preference table defaults to
+disabled; opt in the exact tenant/user/template/channel and recheck permission at
+delivery. Configure an onboarded EMAIL binding and MAIL_FROM before real email
+use. Previews only render. The SMTP adapter uses `createNodeEmailSender()`.
+Provider acceptance is not proof of inbox delivery; only authenticated matching
+provider evidence may mark email delivered. Uncertain non-idempotent attempts
+remain `unknown`, including after restart, to avoid automatic duplicate sends.
+Retain terminal identity records and reconcile uncertain results deliberately.
+See [schedules](../docs/schedules.md), [notifications](../docs/notifications.md)
+and [provider setup](../docs/notification-providers.md).

@@ -5737,3 +5737,120 @@ Done when: Expired, reused, invalid, and missing tokens follow the documented
 provider behavior. Server tests prove no mutation after rejection. Browser tests
 cover widget reset, script failure, disposal, and form resubmission. A spoofed
 client success event grants nothing. Dependencies: RT-02, RT-10, and RT-24.
+
+<a id="codex-svc-02-completed-2026-10-05"></a>
+## Codex: SVC-02 completed (2026-10-05)
+
+<a id="svc-02"></a>
+### SVC-02: Schedules and Cron
+
+Purpose: Applications need recurring maintenance and report jobs without a
+handwritten Worker entry for every project.
+
+Baseline: Open as framework integration.
+
+Approach: Declare named schedules that invoke shared job handlers. Generate the
+Cloudflare scheduled handler and Cron configuration. Specify the schedule's time
+basis, overlap behavior, retry ownership, and missed-run behavior according to
+the selected provider. Provide local listing and one-shot execution for tests.
+Keep scheduling separate from the business logic in SVC-01.
+
+Start in scaffold Worker entry/configuration generation and the job registry.
+Retrieve the current provider documentation before defining supported expressions.
+
+Done when: A generated app registers and runs the expected handler. Local
+one-shot execution uses the same payload validation and cleanup as provider events.
+Duplicate or overlapping triggers follow the documented policy. Invalid schedule
+definitions fail during build/inspection. Nodes without a scheduler get an explicit
+adapter requirement. Dependencies: SVC-01, RT-25, and CF-01.
+
+Completion evidence: [Schedules and notifications](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05).
+
+<a id="codex-svc-03-completed-2026-10-05"></a>
+## Codex: SVC-03 completed (2026-10-05)
+
+<a id="svc-03"></a>
+### SVC-03: Notifications
+
+Purpose: Applications need reusable email and in-app notifications with delivery
+state and user preferences. Direct calls scattered through page methods cannot
+reliably track retries or duplicate sends.
+
+Baseline: Scaffold development tooling already supports SMTP configuration.
+Templates, preferences, persistence, and a notification service remain open.
+
+Approach: Define typed notification templates and channels. Separate rendering,
+recipient preferences, enqueueing, provider delivery, and delivery-status recording.
+Reuse SMTP where applicable and use an explicit Cloudflare email adapter when
+selected. Keep database persistence supplied through an optional adapter.
+Distinguish queued, sent to provider, failed, and delivered only when the provider
+actually supplies delivery evidence. Define in-app read/unread behavior.
+
+Start with `packages/scaffold/template/scripts/dev.js` and existing email recipes
+as references, then shared service contracts and SVC-01 jobs.
+
+Done when: Tests cover preference changes, template escaping, retry without an
+unwanted duplicate send, provider rejection, and per-user in-app isolation.
+Local previews do not send real mail. Dependencies: SVC-01, RT-14, and RT-24.
+
+Completion evidence: [Schedules and notifications](./release-0.9.0-verification-archive.md#codex-svc02-svc03-complete-2026-10-05).
+
+<a id="codex-cf-01-compacted-2026-10-05"></a>
+## Codex: Previously completed CF-01 context compacted (2026-10-05)
+
+<a id="cf-01"></a>
+### CF-01: One selected environment throughout the build
+
+Purpose: Building with production variables and deploying with a staging name
+can publish incorrect HTML or bind the wrong resources. Environment selection
+must happen before any environment-dependent build step.
+
+Baseline: `cossack deploy --env` sets the build environment, generates binding
+types, builds with Vite, and compares the resulting artifact with the selected
+source configuration. SSG understands named environments and dotenv precedence.
+
+Approach: Finish one resolved target contract shared by dev/build/deploy,
+migrations, and scaffold output. Preserve Wrangler's inheritance rules through
+its parser. Treat Vite mode and Cloudflare environment as separate choices.
+Deploy the exact flattened artifact without selecting the environment again.
+Report the selected target in JSON results and fail on stale build metadata.
+
+Start in CLI `deployment.js`, `commands/deploy.js`, framework `ssg-config.ts`,
+and database tooling context.
+
+Done when: Generated default/staging fixtures use the expected values, bindings,
+types, database target, and static URLs. Missing named bindings never inherit
+accidentally. Tests include custom D1 migration paths rewritten by Vite.
+Dependencies: CLI-03, RT-16, and RT-24.
+
+Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
+
+<a id="codex-cf-02-compacted-2026-10-05"></a>
+## Codex: Previously completed CF-02 context compacted (2026-10-05)
+
+<a id="cf-02"></a>
+### CF-02: Explicit database targets
+
+Purpose: A migration command must make it clear whether it affects local state
+or a remote database. An environment name alone must not silently imply remote mutation.
+
+Baseline: Tooling context and D1 local/remote selection exist. Real local D1 tests
+cover schema and migration behavior. Live remote verification remains unperformed.
+
+Approach: Complete target semantics for each provider. Require an explicit remote
+choice for operations that otherwise use local development storage. Show account,
+environment, binding/resource identity, and operation mode without credentials.
+Reject conflicting flags before adapter construction. Keep migrations in the
+existing database migration system instead of adding a second Wrangler SQL history.
+
+Start in database `tooling/cloudflare.ts`, `config.ts`, runtime adapters,
+and CLI `commands/db-run.js` and database command wrappers.
+
+Done when: Tests prove the selected adapter receives the intended target and
+read-only intent. Local commands share the app's local D1 state. Remote selection
+cannot fall back to local or another environment after failure. Add documented
+opt-in remote smoke coverage and label unrun remote checks accurately.
+
+Dependencies: RT-15, RT-16, and CF-01.
+
+Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
