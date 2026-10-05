@@ -1,5 +1,7 @@
 import type { Context } from 'hono';
 
+export const REQUEST_STARTED_AT_KEY = 'cossack.requestStartedAt';
+
 export interface ServerFailureContext {
   requestId: string;
   route: string;
@@ -21,8 +23,10 @@ export function createServerFailureContext(c: Context, options: { route?: string
   const requestId = existing && uuid.test(existing) ? existing : crypto.randomUUID();
   c.header('X-Cossack-Request-Id', requestId);
   const runtime = options.runtime ?? c.get('cossack.configContext')?.runtime ?? 'unknown';
+  const startedAt = c.get(REQUEST_STARTED_AT_KEY);
   return { requestId, route: label(options.route ?? c.req.routePath ?? 'unknown', 160),
-    action: label(options.action ?? 'unknown', 80), runtime: label(runtime, 40), startedAt: performance.now() };
+    action: label(options.action ?? 'unknown', 80), runtime: label(runtime, 40),
+    startedAt: typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : performance.now() };
 }
 /** No exception argument: arbitrary messages, stacks, causes and properties stay private. */
 export function logServerFailure(context: ServerFailureContext, kind: ServerFailureKind, stage: ServerFailureStage, code: ServerFailureCode): void {

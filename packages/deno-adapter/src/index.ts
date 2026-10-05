@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { Hono, type Context } from 'hono';
 import { serveStatic, upgradeWebSocket } from 'hono/deno';
 import { closeUnauthorizedSocket, InMemoryWebSocketRuntime } from '@cossackframework/core';
@@ -155,7 +156,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
           let cleanup: Promise<void> | undefined;
           const entry: RuntimeEntry = {
             runtime: new InMemoryWebSocketRuntime<DenoSocket>(component, {
-              onError: (error) => console.error('[Cossack] Ignoring malformed WebSocket message:', error),
+              onError: () => logRuntimeFailure({ runtime: 'deno' }, 'dispatch'),
             }),
             lastActive: Date.now(),
             clients: new Set(),
@@ -207,7 +208,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
           entry.clients.add(client);
           await entry.runtime.sendInitialState(client);
         } catch (error) {
-          console.error('[Cossack] Deno WebSocket upgrade failed:', error);
+          logRuntimeFailure({ runtime: 'deno' }, 'upgrade');
           client.close(1013, 'Runtime unavailable');
         }
       },
@@ -227,7 +228,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
           try { await action; }
           finally { entry.actions.delete(action); }
         } catch (error) {
-          console.error('[Cossack] Deno WebSocket message failed:', error);
+          logRuntimeFailure({ runtime: 'deno' }, 'dispatch');
           client.close(1013, 'Runtime unavailable');
         }
       },
@@ -241,7 +242,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
           entry.lastActive = Date.now();
         }
         try { await prune(); }
-        catch (error) { console.error('[Cossack] Deno WebSocket cleanup failed:', error); }
+        catch (error) { logRuntimeFailure({ runtime: 'deno' }, 'runtime-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED'); }
       },
     }));
     const response = await handler(context as any, async () => {});
@@ -272,7 +273,7 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         (error: unknown) => settle([Promise.reject(error), dispose()]),
       );
       // Keep background failures observed even if the caller only awaits shutdown.
-      void finished?.catch((error: unknown) => console.error('[Cossack] Deno server cleanup failed:', error));
+      void finished?.catch((error: unknown) => logRuntimeFailure({ runtime: 'deno' }, 'runtime-cleanup'));
       return new Proxy(server, {
         get(target, property) {
           if (property === 'finished') return finished;

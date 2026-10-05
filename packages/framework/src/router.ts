@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { createServerFailureContext, logServerFailure } from './server-logging.js';
 import { HTTPException } from 'hono/http-exception';
 import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream, developmentRpcNative } from './transports/development-trace.js';
@@ -184,10 +185,9 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
     resolved = JSON.parse(text);
   } catch (e) {
     // Dev mode or manifest not yet generated: renderRoot falls back to
-    // un-hashed dev paths. Warn (not error) so a genuinely broken/corrupt
-    // manifest isn't completely silent.
+    // un-hashed dev paths. Emit fixed metadata so a corrupt manifest is observable.
     if (!import.meta.env?.DEV) {
-      console.warn('[Cossack] Could not load client manifest; falling back to dev paths:', e);
+      logRuntimeFailure({ runtime: 'unknown', action: 'load-client-manifest' }, 'initialization');
     }
   }
   _manifest = resolved;
@@ -295,9 +295,8 @@ async function getInlineCss(env: any): Promise<string | undefined> {
     cachedInlineCss = null;
     return undefined;
   } catch (e) {
-    // Non-fatal: CSS inlining is an optimisation. Warn so a permissions /
-    // read error isn't completely silent.
-    console.warn('[Cossack] Could not read client CSS for inlining:', e);
+    // Non-fatal: CSS inlining is an optimisation. Emit fixed failure metadata.
+    logRuntimeFailure({ runtime: 'unknown', action: 'inline-client-css' }, 'initialization');
     cachedInlineCss = null;
     return undefined;
   }
@@ -538,7 +537,7 @@ export function createApp(options: CreateAppOptions = {}) {
             }
           } catch (e) {
             // DO might not exist yet, or other error - proceed with default state
-            console.log('[Cossack] Could not query DO state:', e);
+            logRuntimeFailure({ runtime: 'cloudflare', route: path, action: 'read-state' }, 'initial-state');
           }
         }
 
@@ -605,7 +604,7 @@ export function createApp(options: CreateAppOptions = {}) {
             const initialized = await sseStub.initialize(JSON.stringify(pageInstance.getPublicState()));
             if (!initialized.fresh) {
               try { hydrateSseScopeState(pageInstance, JSON.parse(initialized.state)); }
-              catch (error) { throw new Error(`[Cossack SSE] scope state is not valid JSON: ${error instanceof Error ? error.message : String(error)}`); }
+              catch { throw new Error('[Cossack SSE] scope state is not valid JSON.'); }
             }
           } else if (isCloudflareRuntime()) {
             throw new Error(`${sseBindingMissingMessage()} (page: ${path})`);
@@ -721,12 +720,11 @@ export function createApp(options: CreateAppOptions = {}) {
           c.status(500);
           return renderBoundary(errorPage.component, errorPage.path, c);
         }
-        // Escape the error to prevent XSS via user-controlled content in the
-        // message/stack, and only expose detailed traces in development. In
-        // production, stack traces leak file paths and library versions.
-        const detail = err instanceof Error ? err.stack : String(err);
+        // Development diagnostics retain correlation without publishing application exceptions.
         const body = import.meta.env.DEV
-          ? `<h1>Internal Server Error</h1><pre>${escapeHtml(detail)}</pre>`
+          ? `<h1>Internal Server Error</h1><pre>COSSACK_SSR_INTERNAL
+Request ID: ${escapeHtml(failureContext.requestId)}
+Route: ${escapeHtml(failureContext.route)}</pre>`
           : '<h1>Internal Server Error</h1>';
         return c.html(body, 500);
       } finally {

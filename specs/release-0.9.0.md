@@ -76,7 +76,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
-- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Source-map resolution, build/startup budgets, remaining core/adapter/framework log review and remote Workers Logs ingestion remain open. See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
+- [ ] [CF-08](./release-0.9.0-plan.md#cf-08) Production logs, source maps, correlation IDs, and build/startup budgets. Codex (2026-10-05): HTTP and layout-service RPC failures now emit bounded structured events with request ID, route, action, runtime, duration, stage and a fixed failure code. Raw errors and payloads are omitted. The 478-case framework RPC matrix checks action and stream log correlation and redaction. Native/class API, SSR/router cleanup and unhandled request catches now use fixed structured events; installed workerd emission/redaction is verified. Core/Node/Deno runtime and framework/SSG/access catches now use fixed metadata; DEV SSR fallback pages omit exceptions and managed timings start at request-context entry. Deno Vite compiler-channel review, native fault acceptance, source-map resolution, build/startup budgets and remote Workers Logs ingestion remain open. See [framework/Deno checkpoint](#codex-framework-deno-redaction-2026-10-05). See [the RPC logging checkpoint](#codex-cf08-rpc-logging-2026-10-05).
 - [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance.
 - [ ] [CF-10](./release-0.9.0-plan.md#cf-10) Correct custom-domain/build deployment documentation and tested compatibility baseline. Codex continuation (2026-10-02): resolved the development WebSocket crash by keeping Upgrade requests out of the ASSETS bridge; 24 navigation/guard/transition browser tests pass. The installed combination is recorded in deployment docs. Generated guide execution and the complete compatibility acceptance remain open.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
@@ -1524,3 +1524,54 @@ run uses completed builds and no concurrent dist writers. Logs:
 `/tmp/cossack-runtime-redaction-{core-serial,node-final,framework-final,types-final,core-types-final,node-types,framework-types,build-final,node-build,framework-emit}.log`.
 
 Final serial full core suite: **1580/1580 tests across 97 files pass**. Final owned-file whitespace check passes. No fresh installed tarball or remote Cloudflare check ran.
+
+<a id="codex-framework-deno-redaction-2026-10-05"></a>
+### Codex: Framework, SSG and Deno runtime redaction (2026-10-05)
+
+Development SSR fallback HTML now includes only a fixed code, managed UUID and
+bounded authored route. Exception stacks/messages/custom values are omitted.
+Authored error boundaries and response statuses remain intact. Manifest, CSS,
+Durable Object state and SSG loader/render/cleanup catches emit fixed metadata.
+SSG failed-page messages retain a fixed public-route code or generic failure;
+original cleanup causes remain available for control flow without being logged.
+Optional access logging records matched authored templates and allowlisted methods,
+not concrete paths or queries. Core server update catches now omit exceptions;
+browser diagnostics and explicit propagated navigation errors retain behavior.
+
+Request-context middleware captures monotonic entry time. Managed API/SSR/global
+failure durations now include downstream configuration and middleware; standalone
+handlers retain a local start fallback. This excludes pre-framework transport,
+startup and background work. Deno socket/runtime/development catches use fixed
+metadata; shared in-memory callbacks use generic dispatch stages rather than
+misclassifying delivery as parsing. Controlled socket closure remains unchanged.
+
+CF-08 and RT-24 remain open; **30 complete / 28 open**. Deno Vite module
+transport/load/reload compiler-channel review, native Deno startup/cleanup fault
+acceptance, remote Worker log ingestion, production source-map resolution and
+artifact/startup budgets remain. Desktop is closed with platform checks waived.
+No remote deployment or provisioned resource was used.
+
+Source verification: final full framework suite **1705/1705 across 91 files**
+passes with `--testTimeout=30000`; full core **1581/1581 across 97 files** and
+configured Deno suite **30/30 across 5 files** pass. Root `pnpm tsc --noEmit`,
+core build/declaration emit, Deno build/declaration emit and framework
+`build:types` pass. The first framework run had **1697 passes / one five-second
+SSG globals timeout**; the full extended-timeout rerun passed, followed by another
+full run after final agent additions. No timeout is recorded as a pass or waiver.
+Native Deno subprocess fault acceptance did not run (no `deno` executable on
+PATH); Node-based tests cover adapter socket/cleanup semantics, not actual
+Deno development startup faults. Deno Vite compiler-channel work remains open.
+Logs: `/tmp/cossack-redaction-phase2-{core-tests,framework-verified,deno-tests,root-types,core-build,deno-build,framework-types,installed}.log`.
+
+Final installed verification: `COSSACK_KEEP_SMOKE=1 node
+scripts/test-local-scaffold.mjs --agent-docs-only` **passes** from freshly built
+and packed non-Desktop packages. It verifies generated app types, configuration
+preflight, all 80 packaged usage/auth examples, local D1/workerd prepared config,
+HTTP/SSE/WebSocket browser traces, CLI/MCP parity, production stripping and private
+config SSR/browser/RPC/client-JavaScript/source-map secrecy. Retained fixture:
+`/tmp/cossack-local-pack-KrpbyE`. This existing gate proves package integration;
+new deliberate SSR/SSG/Deno failure cases are source regression evidence, not
+remote logging or native Deno fault acceptance. Final Deno rerun after correcting
+the generic dispatch callback: **30/30** (`deno-final.log`). Final root typecheck
+and owned-file diff checks pass. Reports and `.zcodeignore` remain untouched and
+excluded from the commit.

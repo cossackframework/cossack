@@ -141,7 +141,7 @@ it('reports cleanup failures without rejecting the socket close callback', async
     await a.open();
     await expect(a.close()).resolves.toBeUndefined();
     expect(adapter.instanceCount).toBe(0);
-    expect(log).toHaveBeenCalledWith('[Cossack] Deno WebSocket cleanup failed:', expect.any(Error));
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ event: 'cossack.runtime.failure', runtime: 'deno', stage: 'runtime-cleanup', code: 'COSSACK_COMPONENT_CLEANUP_FAILED' }));
   } finally { log.mockRestore(); }
 });
 it('waits for an in-flight action before disposing an evicted component', async () => {

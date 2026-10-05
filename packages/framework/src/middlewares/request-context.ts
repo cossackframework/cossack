@@ -13,9 +13,11 @@ import type { MiddlewareHandler } from 'hono';
 import { assertResponseHeadersMutable, RESPONSE_HEADER_STATE_KEY, type ResponseHeaderState } from '@cossackframework/core';
 import { ensureRequestContextAlsWired, runWithContext } from '../request-context-als.js';
 import { RESPONSE_LIFETIME_KEY, ResponseLifetime } from '../response-lifetime.js';
+import { REQUEST_STARTED_AT_KEY } from '../server-logging.js';
 
 export function createRequestContextMiddleware(): MiddlewareHandler {
     return async (c, next) => {
+        c.set(REQUEST_STARTED_AT_KEY, performance.now());
         ensureRequestContextAlsWired();
         c.set(RESPONSE_LIFETIME_KEY, new ResponseLifetime());
         const headers: ResponseHeaderState = { committed: false };

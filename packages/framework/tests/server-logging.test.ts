@@ -5,10 +5,11 @@ import { Cossack, Page } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
 const { registry, factories, policy } = vi.hoisted(() => ({
   registry: { pages: {} as Record<string, any>, layouts: {}, loadings: {} },
-  factories: { fail: false }, policy: { fail: false },
+  factories: { fail: false }, policy: { fail: false, delay: false },
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [async (_c: any, next: any) => {
+  if (policy.delay) await new Promise(resolve => setTimeout(resolve, 20));
   if (policy.fail) throw new Error('PRIVATE_MIDDLEWARE_SENTINEL');
   await next();
 }] }));
@@ -26,11 +27,21 @@ class CleanupFailure extends Cossack {
 registry.pages['/src/pages/items/[id].ts'] = { default: RenderFailure };
 registry.pages['/src/pages/cleanup.ts'] = { default: CleanupFailure };
 const { createApp } = await import('../src/router');
-afterEach(() => { factories.fail = false; policy.fail = false; vi.restoreAllMocks(); });
+afterEach(() => { factories.fail = false; policy.fail = false; policy.delay = false; vi.restoreAllMocks(); });
+it('measures uncaught middleware failure from request-scope entry', async () => {
+  policy.fail = true; policy.delay = true;
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  expect((await createApp().request('/items/example')).status).toBe(500);
+  expect(log.mock.calls[0][0].durationMs).toBeGreaterThanOrEqual(10);
+});
 it('correlates SSR failure with its authored template and excludes exception properties', async () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
   const response = await createApp().request('/items/PRIVATE_PATH_SENTINEL?token=PRIVATE_QUERY_SENTINEL');
   expect(response.status).toBe(500);
+  const body = await response.text();
+  expect(body).not.toContain('PRIVATE_');
+  expect(body).toContain(response.headers.get('X-Cossack-Request-Id'));
+  expect(body).toContain('COSSACK_SSR_INTERNAL');
   const event = log.mock.calls.map(call => call[0]).find(value => value?.event === 'cossack.ssr.failure');
   expect(event).toMatchObject({ requestId: response.headers.get('X-Cossack-Request-Id'), route: '/items/:id',
     action: 'render', runtime: 'cloudflare', stage: 'render', code: 'COSSACK_SSR_INTERNAL' });

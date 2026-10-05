@@ -16,25 +16,29 @@ replaces invalid existing response IDs with UUIDs and restores its managed ID
 when a failing API method changes the header. Controlled authorization failures
 and `HTTPException` responses keep their existing public behavior.
 
-API and SSR durations cover their handler scope. The global fallback starts its
-context when handling an uncaught failure; its duration does not measure the
-whole middleware chain. This is not a request timing or startup budget report.
+Framework-managed API, SSR and unhandled middleware failures measure duration
+from request-context entry. Standalone handlers without that middleware fall
+back to their own scope start. This does not measure time before framework
+middleware, startup, or background task execution.
 
 Core component actions, iterator cleanup, server tasks, asynchronous component
-cleanup and service rollback/disposal emit `cossack.runtime.failure`. Durable
-Object malformed-frame/delivery failures and Node adapter failures use the same
-portable `@cossackframework/core/server-diagnostics` entry. Unknown context fields
-and arbitrary exceptions are omitted. Authored labels are bounded; callers must
-supply authored identifiers, never actual URLs or arbitrary input. Missing or
-non-UUID request IDs become `unavailable`; adapter-level events can therefore
-lack correlation. The Node in-memory callback uses a generic `dispatch` stage
-because it cannot distinguish parsing from delivery. Task setup duration currently
-starts at failure capture; it is not task execution timing. Browser diagnostics
+cleanup, server update catches and service rollback/disposal emit
+`cossack.runtime.failure`. Durable Object and Node/Deno transport failures use
+the portable `@cossackframework/core/server-diagnostics` entry. Callers supply
+bounded authored identifiers, never actual URLs or arbitrary input. Missing or
+non-UUID IDs become `unavailable`. In-memory callbacks use generic dispatch
+stages because parsing and delivery share the callback. Browser diagnostics
 retain their existing behavior.
 
-This is a partial production logging contract. Remaining component update,
-Deno adapter, manifest/SSG diagnostics and optional access logs need review. Development SSR error pages still include detailed application
-exceptions; keep secrets out of authored error messages. Workers Logs ingestion,
-production source-map resolution and configurable build/startup budgets remain
-release work. Local workerd acceptance verifies event emission and redaction,
-not ingestion into Cloudflare's remote logging service.
+Development SSR fallback pages show a fixed code, request ID and authored route.
+They do not publish exception text. Authored error boundary pages remain under
+application control. Optional access logging emits `cossack.request` with the
+matched route template and allowlisted HTTP method, omitting concrete paths and
+queries. SSG loader/render/cleanup diagnostics use fixed events and failed-page
+messages; controlled public-route failures retain `COSSACK_SSG_NOT_PUBLIC`.
+
+This is partial release acceptance. Deno Vite module transport/reload and trusted
+compiler diagnostic channels still need review. Native Deno startup/cleanup,
+remote Workers Logs ingestion, production source-map resolution and configurable
+build/startup budgets remain unverified by these source tests. Local workerd
+checks prove local emission and redaction, not remote logging service ingestion.

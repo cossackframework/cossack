@@ -105,3 +105,21 @@ it('does not let unavailable context metadata prevent component or service teard
     expect(logged.mock.calls.every(call => call[0].requestId === 'unavailable' && call[0].runtime === 'unknown')).toBe(true);
     assertSafe(logged);
 });
+
+it('redacts actual server update failures while preserving propagated navigation errors', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    class Component extends Cossack {
+        render() { throw error(); }
+        updateNow() { return this.performUpdate(); }
+    }
+    const page = new Component(); page.__cossack_rpcOwner = '/src/pages/update.ts';
+    await page.bootstrap({ context: await context(), runtime: { platform: 'web', adapter: 'node' }, skipInit: true });
+    await expect(page.updateNow()).resolves.toBe(true);
+    expect(logged).toHaveBeenCalledOnce();
+    expect(logged.mock.calls[0][0]).toMatchObject({ requestId: id, route: '/src/pages/update.ts', component: 'Component',
+        runtime: 'node', stage: 'dispatch', code: 'COSSACK_RUNTIME_FAILED' });
+    assertSafe(logged);
+    await expect(page._frameworkRenderNavigation(() => true)).rejects.toMatchObject({ message: secret });
+    expect(logged).toHaveBeenCalledOnce();
+    await page.destroyAsync();
+});

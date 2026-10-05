@@ -2591,6 +2591,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return false;
         }
 
+        const failureContext = this.isServer ? this._failureContext() : undefined;
         let shouldUpdate = false;
         const elementInternal = this.getElementInternal();
         const pendingUpdate = elementInternal.__updatePromise;
@@ -2651,7 +2652,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 popCurrentInstance();
             }
             if (propagateError) throw e;
-            console.error('Error during update:', e);
+            if (failureContext) logRuntimeFailure(failureContext, 'dispatch', 'COSSACK_RUNTIME_FAILED');
+            else console.error('Error during update:', e);
         } finally {
             if (elementInternal.__updatePromise === pendingUpdate) {
                 elementInternal.__changedProperties = new Map();

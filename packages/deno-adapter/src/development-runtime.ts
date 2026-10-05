@@ -1,4 +1,5 @@
 /// <reference types="@types/deno" />
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { ModuleRunner, createWebSocketModuleRunnerTransport } from 'vite/module-runner';
 
 interface DevelopmentEntry {
@@ -56,7 +57,7 @@ const stop = () =>
       runner.close(),
     ]);
     const failures = results.filter((result) => result.status === 'rejected');
-    for (const failure of failures) console.error('[cossack deno] cleanup failed:', failure.reason);
+    for (const _failure of failures) logRuntimeFailure({ runtime: 'deno' }, 'runtime-cleanup');
     clearTimeout(timer);
     Deno.exit(failures.length ? 1 : 0);
   })());
@@ -103,7 +104,7 @@ try {
     if (!ready.ok) throw new Error(`Vite rejected Deno startup (${ready.status})`);
   }
 } catch (error) {
-  console.error('[cossack deno] startup failed:', error);
+  logRuntimeFailure({ runtime: 'deno' }, 'initialization');
   await runner.close();
   Deno.exit(1);
 }

@@ -1288,6 +1288,14 @@ completes the bounded redaction slice, not CF-08: component update, Deno and
 framework loader/SSG/access logs, DEV SSR detail policy, timing, remote ingestion,
 source maps and budgets remain. See the [verification checkpoint](./release-0.9.0-verification-archive.md#codex-core-node-redaction-2026-10-05).
 
+Codex framework/Deno checkpoint (2026-10-05): development SSR fallback pages,
+access logs, router loaders/state, SSG failures and core update catches now omit
+arbitrary exceptions and concrete request URLs. Deno runtime/development catches
+emit fixed events. Managed failures measure duration from request-context entry.
+Remaining criteria: Deno Vite trusted compiler-channel review, native fault
+acceptance, remote ingestion, production source maps and build/startup budgets.
+See [verification](./release-0.9.0-verification-archive.md#codex-framework-deno-redaction-2026-10-05).
+
 <a id="cf-09"></a>
 ### CF-09: Preview and CI resource lifecycle
 

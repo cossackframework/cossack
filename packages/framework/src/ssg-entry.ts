@@ -20,6 +20,8 @@
 // later `runSsg()` call would hit a "module runner has been closed" error.
 // `runSsg` therefore only consumes values captured here at load time.
 
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
+import { SsgPublicRouteError } from './ssg-request.js';
 import registry from 'virtual:cossack-pages';
 import configFactories, { requirements as configRequirements } from 'virtual:cossack-config';
 import requestMiddlewares from 'virtual:cossack-middlewares';
@@ -125,8 +127,12 @@ export async function runSsg(args: RunSsgArgs): Promise<SsgResult> {
         _renderedHtml.push({ routePath, html });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(`[cossack/ssg] Error rendering ${route.routePath}:`, error);
+      let publicRouteFailure = false;
+      try { publicRouteFailure = error instanceof SsgPublicRouteError; } catch { /* hostile exception prototypes are not diagnostic data */ }
+      const message = publicRouteFailure
+        ? 'COSSACK_SSG_NOT_PUBLIC: Static HTML requires a public request-independent route.'
+        : 'COSSACK_RUNTIME_FAILED: Static HTML rendering failed.';
+      logRuntimeFailure({ runtime: 'node', component: 'ssg-entry' }, 'dispatch');
       failed.push({ routePath: route.routePath, error: message });
     }
   }
@@ -158,7 +164,7 @@ export function drainRenderedHtml(): RenderedPage[] {
 async function loadAppComponent(): Promise<{ new (...args: any[]): any } | undefined> {
   const resolved = path.resolve(projectRoot, 'src/App.ts');
   if (!fs.existsSync(resolved)) {
-    console.warn(`[cossack/ssg] App not found at ${resolved}; using framework default.`);
+    console.warn('[cossack/ssg] App not found at src/App.ts; using framework default.');
     return undefined;
   }
   try {
@@ -166,7 +172,7 @@ async function loadAppComponent(): Promise<{ new (...args: any[]): any } | undef
     const mod: any = await import(/* @vite-ignore */ pathToFileURL(resolved).href);
     return mod.App || mod.default;
   } catch (e) {
-    console.warn(`[cossack/ssg] Could not load App from ${resolved}: ${e}`);
+    logRuntimeFailure({ runtime: 'node', component: 'ssg-App' }, 'initialization');
     return undefined;
   }
 }
@@ -183,7 +189,7 @@ async function loadHtmlTemplate(): Promise<HtmlTemplate | undefined> {
     }
     return undefined;
   } catch (e) {
-    console.warn(`[cossack/ssg] Could not load html template from ${resolved}: ${e}`);
+    logRuntimeFailure({ runtime: 'node', component: 'ssg-template' }, 'initialization');
     return undefined;
   }
 }

@@ -1,3 +1,4 @@
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import type { ConfigRequirementCollection } from './config-requirements.js';
 import './i18n-globals.js';
 import './config-globals.js';
@@ -361,12 +362,12 @@ export async function renderSsgPage(
       // Pages release first, followed by inner layouts and App. A failed hook
       // must not leave the rest of the request tree alive during the build.
       for (const instance of renderInstances.reverse()) {
-        try { await instance.destroyAsync(); } catch (error) { errors.push(error); }
+        try { await instance.destroyAsync(); } catch (error) { errors.push(error); logRuntimeFailure({ runtime: 'node', component: 'ssg-renderer' }, 'component-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED'); }
       }
-      try { await requestServiceScope.disposeAsync(); } catch (error) { errors.push(error); }
+      try { await requestServiceScope.disposeAsync(); } catch (error) { errors.push(error); logRuntimeFailure({ runtime: 'node', component: 'ssg-renderer' }, 'service-cleanup', 'COSSACK_SERVICE_CLEANUP_FAILED'); }
       if (errors.length) {
         throw new AggregateError(renderFailed ? [renderError, ...errors] : errors,
-          `[cossack/ssg] ${context.req.path} failed during ${renderFailed ? 'rendering and cleanup' : 'cleanup'}.`,
+          `[cossack/ssg] Static rendering failed during ${renderFailed ? 'rendering and cleanup' : 'cleanup'}.`,
           renderFailed ? { cause: renderError } : undefined);
       }
     }
@@ -385,7 +386,7 @@ function readManifestFile(): Record<string, any> {
   } catch (e) {
     // Non-fatal: SSG surfaces a clear error later if the manifest is missing,
     // but warn here so a corrupt read isn't silent.
-    console.warn('[cossack/ssg] Could not load client manifest:', e);
+    logRuntimeFailure({ runtime: 'node', component: 'ssg-manifest' }, 'initialization');
     return {};
   }
 }

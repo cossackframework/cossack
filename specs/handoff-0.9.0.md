@@ -9,13 +9,15 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [core/Node runtime redaction](./release-0.9.0-verification-archive.md#codex-core-node-redaction-2026-10-05).
-Next bounded logging work: component update catch, DEV SSR response details,
-framework loader/SSG/access logging, then Deno runtime catches. Keep compiler
-errors in an explicit trusted compiler channel; do not trust arbitrary caught
-application error messages or user-supplied failure codes. Adapter correlation,
-whole-request/task timing, native Worker/remote ingestion, source maps and budgets
-remain acceptance work. No parent release task closes in this checkpoint.
+Latest Codex progress: [framework/SSG/Deno redaction](./release-0.9.0-verification-archive.md#codex-framework-deno-redaction-2026-10-05).
+Development SSR fallback bodies, access/router/SSG logs, core server update and
+Deno runtime catches now omit arbitrary exceptions. Managed failure duration
+starts at request-context entry. Next logging work: Deno Vite module transport,
+load/reload and an explicit trusted compiler diagnostic channel; then native
+fault fixtures, production source-map resolution, configurable artifact/startup
+budgets and remote logging acceptance. Unknown adapter IDs/route labels remain
+explicit fallbacks. Background task execution timing is not established. No
+parent release task closes in this checkpoint.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
