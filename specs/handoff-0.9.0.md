@@ -26,7 +26,7 @@ all 30 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
-Latest CLI-08 progress: [typed model queries and projections](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05). Its installed example passes; CLI-08 stays open for broader library API and recipe coverage.
+Latest CLI-08 progress: [installed renderer API guides](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds executable examples for conditional templates, keyed list markup, server form values and safe CSS composition. The fresh offline tarball gate passes all 75 standalone examples and four auth examples (79 total). CLI-08 stays open for broader library API, component and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
@@ -77,7 +77,7 @@ REL-03 remains open for the required non-Desktop release matrix.
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
    plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
-   All 67 published-package guides now include examples, and all seventy-five
+   All 71 published-package guides now include examples, and all seventy-nine
    packaged examples run in the installed gate. Database guidance now includes
    typed model filters and query-builder projections; see the [latest query
    acceptance](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
@@ -96,6 +96,7 @@ REL-03 remains open for the required non-Desktop release matrix.
    The [locale guidance checkpoint](./release-0.9.0.md#codex-cli08-localization-2026-10-05) adds installed examples for Accept-Language fallback (including `q=0` exclusions) and CLDR plural formatting. Core now ignores explicitly unacceptable language ranges. The Core i18n suite passes 74 tests and the fresh installed gate passes. These examples cover pure Core helpers; they do not prove framework middleware or response-cache behavior.
    The [migration/seeding checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05) adds an installed Node SQLite lifecycle example for migration apply/status/rollback and idempotent seeding. It proves the documented Node API against an in-memory SQLite database, not provider portability or deployment readiness.
    The [request-config checkpoint](./release-0.9.0.md#codex-cli08-request-config-2026-10-05) adds an installed framework guide for request-time config factories, typed dotted paths, string environment values and raw bindings. Its example compiles and runs from the framework tarball and verifies safe missing-binding errors. Broader library and recipe coverage remains open.
+   The [latest renderer checkpoint](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05) adds four installed examples, raising the package catalog to 71 guides and the acceptance run to 79 examples including auth. Continue broader library API/component/recipe coverage and preserve the acceptance distinction between SSR output and browser interaction.
    Desktop remains closed by user decision. Do not spend work on its waived platform matrix.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
    recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)

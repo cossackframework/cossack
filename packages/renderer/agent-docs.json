@@ -16,6 +16,73 @@
           "source": "import { html, renderToString } from '@cossackframework/renderer/server';\n\nconst name: string = '<script>alert(1)</script>';\nconst output: string = await renderToString(html`<p>Hello ${name}</p>`);\nif (output.includes('<script>')) throw new Error('Text became executable markup');\nif (!output.includes('&lt;script&gt;')) throw new Error('Text was not escaped');\n"
         }
       ]
+    },
+    {
+      "id": "conditional-templates",
+      "title": "Select template branches and optional attributes",
+      "summary": "Render conditional content without building HTML strings.",
+      "imports": [
+        "@cossackframework/renderer",
+        "@cossackframework/renderer/server"
+      ],
+      "markdown": "Use `when` to select a branch and `choose` to match a value with strict equality. Their callbacks run while the template expression is evaluated. Use `nothing` for an empty child value. `ifDefined(undefined)` omits an attribute; other values, including `null`, `false`, and `0`, are serialized as values. HTML escaping does not validate URL schemes or authorize a destination.",
+      "examples": [
+        {
+          "id": "choose-safe-branches",
+          "language": "typescript",
+          "source": "import { choose, ifDefined, nothing, when } from '@cossackframework/renderer';\nimport { html, renderToString } from '@cossackframework/renderer/server';\n\nconst status: string = 'ready';\nconst output = await renderToString(html`<main><a href=\"${ifDefined(undefined)}\">Home</a>${when(status !== 'hidden', () => html`<p>${choose(status, [['ready', () => 'Ready'], ['saving', () => 'Saving']], () => nothing)}</p>`, () => nothing)}</main>`);\nif (output !== '<main><a>Home</a><p>Ready</p></main>') throw new Error(`Unexpected conditional output: ${output}`);\n"
+        }
+      ]
+    },
+    {
+      "id": "keyed-lists",
+      "title": "Render lists with stable item keys",
+      "summary": "Use keyed repeat for lists whose DOM items should keep their identity.",
+      "imports": [
+        "@cossackframework/renderer",
+        "@cossackframework/renderer/server"
+      ],
+      "markdown": "`repeat(items, keyFn, templateFn)` gives the browser renderer a stable key for each item so it can retain matching DOM nodes when the list changes. Server rendering emits the initial ordered markup; it does not prove browser node reuse. Use `join` when you need a renderable separator between values. Plain arrays and `map` are enough when item identity does not matter.",
+      "examples": [
+        {
+          "id": "keyed-initial-markup",
+          "language": "typescript",
+          "source": "import { join, repeat } from '@cossackframework/renderer';\nimport { html, renderToString } from '@cossackframework/renderer/server';\n\nconst people = [{ id: 'ada', name: 'Ada' }, { id: 'lin', name: 'Lin' }];\nconst output = await renderToString(html`<ol>${repeat(people, person => person.id, person => html`<li data-id=\"${person.id}\">${person.name}</li>`)}</ol><p>${join(people, person => person.name, ', ')}</p>`);\nif (!output.includes('<li data-id=\"ada\">Ada</li><li data-id=\"lin\">Lin</li>')) throw new Error('Initial list order or values are wrong');\nif (!output.endsWith('<p>Ada, Lin</p>')) throw new Error('List separator is missing');\n"
+        }
+      ]
+    },
+    {
+      "id": "server-form-values",
+      "title": "Render current form values before hydration",
+      "summary": "Seed input, checkbox, and textarea values in server-rendered HTML.",
+      "imports": [
+        "@cossackframework/renderer",
+        "@cossackframework/renderer/server"
+      ],
+      "markdown": "Use `.value=${bind(state, path)}` and `.checked=${bind(state, path)}` to render the current field values. `live(value)` supplies the current value when the renderer reconciles an existing DOM property. On the server these helpers only produce initial markup; client rendering or hydration is required for browser write-back. A binding does not validate submitted data or authorize a server action.",
+      "examples": [
+        {
+          "id": "seed-native-controls",
+          "language": "typescript",
+          "source": "import { bind, live } from '@cossackframework/renderer';\nimport { html, renderToString } from '@cossackframework/renderer/server';\n\nconst form = { email: 'agent@example.test', active: true, note: '<draft>' };\nconst output = await renderToString(html`<form><input name=\"email\" .value=${bind(form, 'email')}><input name=\"active\" type=\"checkbox\" .checked=${bind(form, 'active')}><textarea name=\"note\" .value=${live(form.note)}></textarea></form>`);\nif (!output.includes('name=\"email\" value=\"agent@example.test\"')) throw new Error('Email value was not rendered');\nif (!output.includes('type=\"checkbox\" checked')) throw new Error('Checked state was not rendered');\nif (!output.includes('&lt;draft&gt;</textarea>')) throw new Error('Textarea text was not escaped');\n"
+        }
+      ]
+    },
+    {
+      "id": "safe-component-css",
+      "title": "Compose component CSS from reviewed values",
+      "summary": "Use css tagged templates for static styles and reserve unsafeCSS for trusted values.",
+      "imports": [
+        "@cossackframework/renderer"
+      ],
+      "markdown": "`css` accepts numeric interpolations and other `CSSResult` values. It rejects ordinary strings, so use static styles and typed numbers for normal composition. `unsafeCSS` marks a string as trusted CSS; it does not sanitize it. Never pass user input, request data, or other untrusted values to `unsafeCSS`.",
+      "examples": [
+        {
+          "id": "safe-style-composition",
+          "language": "typescript",
+          "source": "import { css, unsafeCSS } from '@cossackframework/renderer';\n\nconst gap = 8;\nconst surface = css`background-color: #fff;`;\nconst card = css`article { padding: ${gap}px; ${surface} }`;\nif (!card.cssText.includes('padding: 8px')) throw new Error('Numeric CSS interpolation failed');\nif (!card.cssText.includes('background-color: #fff')) throw new Error('CSSResult composition failed');\nlet rejected = false;\ntry { css`color: ${'red'};`; } catch { rejected = true; }\nif (!rejected) throw new Error('A raw string was accepted by css');\nconst reviewedToken = unsafeCSS('var(--brand-color)');\nif (!css`color: ${reviewedToken};`.cssText.includes('var(--brand-color)')) throw new Error('Reviewed CSS token did not compose');\n"
+        }
+      ]
     }
   ]
 }

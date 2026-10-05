@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 28 complete and 30 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-05. The release has 58 tasks: 30 complete and 28 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Seventy-one standalone examples compile and execute from installed tarballs,
+Seventy-five standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -160,8 +160,8 @@ SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 39 UI guides now have executable
-examples; all 67 published-package guides have at least one example. The installed gate
-executes all seventy-five package examples, including four separately bundled auth
+examples; all 71 published-package guides have at least one example. The installed gate
+executes all seventy-nine package examples, including four separately bundled auth
 examples. Database guidance exercises typed model filters and query-builder
 projections as well as a reversible Node SQLite migration and repeatable seeder
 lifecycle. Framework guidance covers runtime capability planning and cache
@@ -220,6 +220,21 @@ UI and renderer tarballs. The test bundles selected UI examples for Node, matchi
 handling of the UI barrel's Solar icon TypeScript dependency. They verify
 server-rendered markup and callback ownership; they do not establish browser
 interaction or assistive technology.
+
+Checkpoint (Codex, 2026-10-05): the renderer catalog now has four more
+version-owned guides and executable examples for conditional templates and
+optional attributes, keyed list output and separators, server-rendered form
+values, and safe CSS composition. Their examples import the published root and
+`/server` entrypoints. The list guide explicitly limits its evidence to initial
+server markup; it does not use SSR to claim browser node reuse. The CSS guide
+shows that `css` rejects raw strings and `unsafeCSS` is an explicit trust
+boundary. The installed verifier now compiles and executes these guides along
+with the existing escaped-HTML guide. The fresh tarball gate passes with 75
+non-auth examples and four separately bundled auth examples (79 total),
+generated Cloudflare page examples, CLI/MCP parity, UI catalog checks and
+production stripping. This adds renderer library guidance but does not close
+broader API/component/recipe coverage or CLI-08. See the
+[renderer guide acceptance](./release-0.9.0.md#codex-cli08-renderer-guides-2026-10-05).
 
 Remaining: Complete broader authored API/component/recipe coverage across
 the libraries, beyond the now-executable UI guides. Preserve RT-23 regressions

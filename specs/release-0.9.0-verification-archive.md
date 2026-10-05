@@ -10328,3 +10328,40 @@ TCP disconnect delivery, terminate application I/O that ignores an aborted
 signal, rollback an already-applied mutation, or prove component
 initialization/restoration concurrency. RT-01 remains open. Desktop is complete
 by user decision; its waived platform checks remain unclaimed.
+
+<a id="codex-cli08-renderer-guides-2026-10-05"></a>
+### Codex: Installed renderer API guides (2026-10-05)
+
+The renderer package now has installed guides for conditional templates and
+optional attributes, keyed list rendering, server-rendered form values, and CSS
+composition. Together with the escaped-HTML guide, these cover five common
+areas of the public renderer API. The examples import the exact published root
+and `/server` entrypoints. They explain that keyed identity is a browser
+reconciliation behavior rather than a property proven by SSR; form binding only
+seeds HTML before hydration; and `unsafeCSS` marks trusted input rather than
+sanitizing it.
+
+The installed-docs verifier selects and compiles each example from its tarball
+catalog, then runs it with Node network APIs blocked. The full published-package
+catalog now has 71 guides, and the installed run has 75 non-auth examples plus
+four separately bundled auth examples.
+
+**Verification:**
+
+- `COSSACK_KEEP_SMOKE=1 pnpm test:agent-docs:local`: passes package builds and
+  tarball installs without Desktop; compiles and executes **75 packaged usage
+  examples**, then checks **4 auth examples**, local workerd D1 binding,
+  Cloudflare HTTP/SSE/WebSocket browser traces, generated page examples, UI
+  catalog contracts, production client/source-map stripping and offline CLI/MCP
+  parity.
+- The first acceptance run exposed an over-specific form assertion: serialized
+  textarea property bindings include whitespace before `>`. The final example
+  checks escaped content and the closing element without relying on incidental
+  attribute whitespace.
+
+**Limits:** Renderer examples are installed-package SSR examples. They do not
+prove browser DOM identity, interactive binding write-back, CSS rendering, or
+accessibility. The renderer has existing DOM/hydration tests; this checkpoint
+does not rerun the entire package suite. CLI-08 remains open for wider
+library/component/recipe coverage and REL-02/REL-03 acceptance. No Desktop
+checks, deployment or publication were run.
