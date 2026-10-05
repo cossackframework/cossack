@@ -6,6 +6,7 @@ import { readBuildBudgets, checkBuildBudgets, type BuildBudgets } from './build-
 import { findCloudflareConfig, readCloudflareDeclarationConfig, resolveConfigRuntime } from './config-preflight.js';
 import { inspectBuiltDeployment } from './deployment-artifact.js';
 import { BUDGET_RUN_ENV, clearBudgetReceipt, fingerprintBudgetArtifact, writeBudgetReceipt } from './budget-receipts.js';
+import { readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts, type AuxiliaryBudgetTarget } from './auxiliary-deployment.js';
 import type { ConfigRuntime } from './config-requirements.js';
 
 /** Place after cloudflare(). Budgets apply to the primary deployment Worker. */
@@ -13,6 +14,7 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
   let root = '';
   let environment: string | undefined;
   let budgets: BuildBudgets = {};
+  let auxiliary: AuxiliaryBudgetTarget[] = [];
   let expected: Record<string, any> | undefined;
   const fail = (code: string, message: string): never => { throw Object.assign(new Error(`${code}: ${message}`), { code }); };
   const rejectWatch = (config: { build?: { watch?: unknown }; environments?: Record<string, { build?: { watch?: unknown } }> }) => {
@@ -28,8 +30,9 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
       root = config.root;
       environment = options.environment ?? process.env.CLOUDFLARE_ENV;
       budgets = await readBuildBudgets(root);
+      const policies = await readAuxiliaryBuildBudgets(root);
       if (process.env[BUDGET_RUN_ENV]) await clearBudgetReceipt(root);
-      if (!Object.keys(budgets).length) return;
+      if (!Object.keys(budgets).length && !policies.length) return;
       rejectWatch(config);
       if (await resolveConfigRuntime(root, options.runtime) !== 'cloudflare') {
         fail('COSSACK_BUILD_BUDGET_RUNTIME_UNSUPPORTED', 'Configured build budgets require a Cloudflare Worker artifact.');
@@ -37,13 +40,14 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
       const file = await findCloudflareConfig(root, options.configPath);
       if (!file) fail('COSSACK_DEPLOY_CONFIG_MISSING', 'Cloudflare configuration is required for build budgets.');
       expected = await readCloudflareDeclarationConfig(root, file!, environment);
+      auxiliary = await prepareAuxiliaryBudgetTargets(root, policies, environment);
       // A failed or custom build cannot reuse metadata from an earlier build.
       await rm(join(root, '.wrangler/deploy/config.json'), { force: true });
     },
     buildApp: {
       order: 'post',
       async handler(builder) {
-        if (!Object.keys(budgets).length) return;
+        if (!Object.keys(budgets).length && !auxiliary.length) return;
         rejectWatch(builder.config);
         if (Object.values(builder.environments).some(item => item.config.build?.watch)) {
           fail('COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED', 'Build budgets require a completed application build. Use vite build without --watch.');
@@ -55,12 +59,14 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
         const artifact = await inspectBuiltDeployment(root, expected!);
         const key = process.env[BUDGET_RUN_ENV];
         const before = key ? await fingerprintBudgetArtifact(root, artifact, budgets, environment) : undefined;
-        const result = await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: environment ?? '' } });
+        const auxiliaryResult = await checkAuxiliaryBuildBudgets(root, auxiliary, environment);
+        const result = Object.keys(budgets).length ? await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: environment ?? '' } }) : { valid: true, measurements: [], diagnostics: [] };
+        if (auxiliary.length) await inspectAuxiliaryBudgetArtifacts(root, auxiliary, environment);
         await writeBudgetReceipt(root, artifact, budgets, environment, key, before, result);
-        for (const diagnostic of result.diagnostics) {
+        for (const diagnostic of [...result.diagnostics, ...auxiliaryResult.diagnostics]) {
           if (diagnostic.severity === 'warning') builder.config.logger.warn(`${diagnostic.code}: ${diagnostic.message}`);
         }
-        if (!result.valid) fail('COSSACK_BUILD_BUDGET_FAILED', result.diagnostics.map(item => `${item.code}: ${item.message}`).join('\n'));
+        if (!result.valid || !auxiliaryResult.valid) fail('COSSACK_BUILD_BUDGET_FAILED', [...result.diagnostics, ...auxiliaryResult.diagnostics].map(item => `${item.code}: ${item.message}`).join('\n'));
       },
     },
   };

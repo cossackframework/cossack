@@ -98,3 +98,16 @@ bridge. Browser recording is explicit. An optional session UUID selects one
 capture. Inspect snapshot events/components and freshness.ageMs; live is always
 false. Records omit selected state values and do not prove server execution,
 current source/environment state or that a collecting browser remains connected.
+
+
+Cloudflare build budgets are literal `package.json` settings under
+`cossack.buildBudgets`. Supported metrics: `uploadKiB`, `gzipUploadKiB`,
+`localStartupProfileMs`, `localStartupActiveMs`, and `providerStartupMs`.
+Each metric takes positive `warning`/`error` limits. Provider startup remains
+unavailable locally; never claim it passed a local gate. Local profile timings
+include machine/profiler overhead. For explicitly selected auxiliary Workers,
+use `cossack.auxiliaryBuildBudgets: [{ configPath, budgets }]` with the same
+project-relative source path in Cloudflare's `auxiliaryWorkers`. Read JSON
+`data.auxiliaryBuildBudgets.workers` for per-Worker measurements. Auxiliary
+validation does not upload those Workers. Watch builds are unsupported when
+budgets are configured. Raw tool output and profile files must remain private.

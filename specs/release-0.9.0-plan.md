@@ -1664,3 +1664,45 @@ affected CLI 63 / 6 files, root/framework types, declarations, native profiling
 and repacked installed acceptance pass. Initial framework timeout failures and
 unrun platform/remote/full-matrix checks are preserved in the
 [verification record](./release-0.9.0-verification-archive.md#codex-local-startup-2026-10-05).
+
+<a id="codex-auxiliary-budget-plan-2026-10-05"></a>
+### Codex: auxiliary budget implementation and next phase (2026-10-05)
+
+Goal: budget each explicitly selected auxiliary Worker using its own authored
+source/environment, even when the primary Worker has no limits. Read literal
+`cossack.auxiliaryBuildBudgets` entries without executing project config; share
+metric/limit validation with primary budgets. Give each target an independent
+source snapshot before building. After all server environments finish, require
+exactly one matching fresh auxiliary redirect artifact for each source. Reject
+missing/duplicate/ambiguous entries and primary/prerender reuse. Validate all
+selected targets before any tool measurement and recheck sources/policies/configs
+after measurement and before primary upload or dry-run success.
+
+Completed implementation: framework owns the Node-only reader/verifier and the
+CLI/Vite gate share it. JSON reports per-source safe measurements. Validation is
+bounded to 32 policies/redirect entries and 1 MiB regular project configuration
+files. Binding/deployment fields are compared using project-installed Wrangler
+normalization. D1 migration directories/patterns and empty Cron arrays need
+explicit canonicalization because Vite rewrites them. The native multi-Worker
+acceptance initially exposed the Cron default mismatch; it was repaired, then
+warning/deploy-dry-run and deliberate hard-limit cases passed. Final coordinator
+review also added a regression for source mutation during primary measurement.
+
+Limits and next steps: keep signed receipt reuse disabled for auxiliary redirects.
+A future authenticated multi-target receipt must bind every policy, source target,
+artifact/module inventory, environment and tool identity. Then failed builds can
+return precise auxiliary budget diagnostics and successful CLI commands can avoid
+repeated plugin measurement. Do not reuse primary-only signed status to classify
+an auxiliary failure. Wider graphs and source-entry correspondence need separate
+acceptance; configuration comparison does not authenticate all compiled code.
+Actual auxiliary upload orchestration is separate work: current deploy uploads
+only the primary Worker. Native provider startup, DEV faults, production source
+maps and remote logs remain open. No parent task closes; 30 complete / 28 open.
+Desktop remains complete and its remaining platform checks remain waived.
+
+Final Codex acceptance for this phase: framework 1,874 / 101 files, affected CLI
+65 / 6 files, root/framework types, declarations and repacked auxiliary plus
+primary startup/custom-config installed checks pass. Failed Cron attempts and the
+final dry-run repair are preserved in the
+[verification record](./release-0.9.0-verification-archive.md#codex-auxiliary-budgets-2026-10-05).
+The full CLI suite and non-Desktop release matrix remain REL-03 work.

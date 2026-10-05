@@ -18,8 +18,12 @@ export async function readBuildBudgets(root: string): Promise<BuildBudgets> {
   let manifest;
   try { manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')); }
   catch { throw Object.assign(new Error('Cannot read project build budgets. Check package.json.'), { code: 'COSSACK_BUILD_BUDGET_READ_FAILED' }); }
-  const input = manifest.cossack?.buildBudgets;
-  if (input === undefined) return {};
+  const input = manifest?.cossack?.buildBudgets;
+  return input === undefined ? {} : validateBuildBudgets(input);
+}
+
+/** Shared literal limits contract for primary and auxiliary Workers. */
+export function validateBuildBudgets(input: unknown): BuildBudgets {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw invalid();
   const result: BuildBudgets = {};
   for (const [metric, limits] of Object.entries(input) as [string, any][]) {

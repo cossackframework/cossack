@@ -1,3 +1,4 @@
+import { verifyAuxiliaryBuildBudgets } from './verify-auxiliary-build-budgets.mjs';
 import { verifyBudgetBuildModes } from './verify-budget-build-modes.mjs';
 import { verifyBuildBudgets } from './verify-build-budgets.mjs';
 import { verifyConfigHydration } from './verify-config-hydration.mjs';
@@ -664,6 +665,7 @@ try {
       await verifyConfigHydration(minimalProjectDir);
       await verifyBuildBudgets(minimalProjectDir);
       await verifyBudgetBuildModes(minimalProjectDir);
+      await verifyAuxiliaryBuildBudgets(minimalProjectDir);
     }
   }
   if (!desktopRuntimeOnly && !denoRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {

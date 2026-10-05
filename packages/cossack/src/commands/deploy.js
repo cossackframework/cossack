@@ -7,7 +7,7 @@ import { inspectConfigurationRequirements } from '../config-inspection.js';
 import { runProjectTool } from '../project-tools.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings, BUDGET_RUN_ENV } from '../build-budgets.js';
+import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings, BUDGET_RUN_ENV, readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts } from '../build-budgets.js';
 
 export async function deployCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.deploy, args, ctx, deployHelp)) return 0;
@@ -36,7 +36,8 @@ export async function deployCommand(args, ctx) {
     // --env to Wrangler after building; deploy that exact artifact instead.
     const options = { env: { CLOUDFLARE_ENV: environment ?? '' },
       ...(ctx.flags.json === true ? { stdio: ['ignore', 'ignore', 'ignore'] } : {}) };
-    const hasBudgets = Object.keys(budgets).length > 0;
+    const auxiliary = await prepareAuxiliaryBudgetTargets(root, await readAuxiliaryBuildBudgets(root), environment);
+    const hasBudgets = Object.keys(budgets).length > 0 || auxiliary.length > 0;
     const token = hasBudgets ? await prepareBudgetRun(root) : undefined;
     const steps = [
       ['types', 'wrangler', ['types', '--config', inspection.summary.configPath, '--env-interface', 'CloudflareBindings', ...(environment ? ['--env', environment] : [])]],
@@ -71,13 +72,18 @@ export async function deployCommand(args, ctx) {
     }
     data.artifact = await inspectBuiltDeployment(root, inspection.config);
     const budgetDiagnostics = [];
-    if (Object.keys(budgets).length) {
+    if (hasBudgets) {
       const budgetStarted = performance.now();
+      data.auxiliaryBuildBudgets = await checkAuxiliaryBuildBudgets(root, auxiliary, environment);
       data.buildBudgets = await readBudgetReceipt(root, data.artifact, budgets, environment, token)
-        ?? await checkBuildBudgets(root, data.artifact, budgets, { env: options.env });
-      data.steps.push({ name: 'budgets', exitCode: data.buildBudgets.valid ? 0 : 1, durationMs: Math.round(performance.now() - budgetStarted) });
-      budgetDiagnostics.push(...data.buildBudgets.diagnostics);
-      if (!data.buildBudgets.valid) return report(false, budgetDiagnostics);
+        ?? (Object.keys(budgets).length ? await checkBuildBudgets(root, data.artifact, budgets, { env: options.env }) : { valid: true, measurements: [], diagnostics: [] });
+      data.steps.push({ name: 'budgets', exitCode: data.buildBudgets.valid && data.auxiliaryBuildBudgets.valid ? 0 : 1, durationMs: Math.round(performance.now() - budgetStarted) });
+      budgetDiagnostics.push(...data.buildBudgets.diagnostics, ...data.auxiliaryBuildBudgets.diagnostics);
+      if (!data.buildBudgets.valid || !data.auxiliaryBuildBudgets.valid) return report(false, budgetDiagnostics);
+      if (auxiliary.length) {
+        await inspectAuxiliaryBudgetArtifacts(root, auxiliary, environment);
+        data.artifact = await inspectBuiltDeployment(root, inspection.config);
+      }
       if (ctx.dryRun) return report(true, budgetDiagnostics);
     }
     const started = performance.now();
@@ -105,6 +111,8 @@ selected environment, and deploy the verified artifact using project tools.
 --dry-run builds and validates locally without uploading or provisioning.
 It writes generated types and build artifacts. Remote secrets are validated
 by Wrangler on a real deployment, not by the local preflight.
+Auxiliary budget policies validate selected built Workers locally. This command
+uploads only the primary Worker.
 --json emits one versioned result with diagnostics and step results; tool
 output is suppressed to prevent configuration and secret values leaking.`);
 }

@@ -150,6 +150,10 @@
     "./budget-receipts": {
       "types": "./dist/esm/budget-receipts.d.ts",
       "import": "./dist/esm/budget-receipts.js"
+    },
+    "./auxiliary-build-budgets": {
+      "types": "./dist/esm/auxiliary-deployment.d.ts",
+      "import": "./dist/esm/auxiliary-deployment.js"
     }
   },
   "files": [

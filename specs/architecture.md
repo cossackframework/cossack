@@ -1249,3 +1249,14 @@ Installed private-config acceptance exercises real Cloudflare SSR, browser
 hydration/RPC and production client maps. The server ALS configuration store is
 not a hydration field. Classification is metadata, not automatic value tainting;
 application-public state/HTML/results still require deliberate selection.
+
+Cloudflare budget inspection is Node-only build tooling owned by framework.
+The CLI and Vite application hook share literal primary/auxiliary limits and
+independent source-target verification. Auxiliary policies capture source targets
+before building, match fresh redirect artifacts, verify normalized deployment
+fields, and recheck configuration after measurement. They do not upload auxiliary
+Workers. Runtime/core/adapter libraries do not depend on this tooling. Private
+normalized source snapshots must never enter client bundles or result envelopes;
+only authored policy paths and safe metric results are serialized. Configuration
+matching does not authenticate every compiled module graph. Auxiliary redirects
+continue to disable signed receipt reuse until all targets and graphs are bound.

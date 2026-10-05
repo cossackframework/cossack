@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { createRequire } from 'node:module';
 import { deployCommand } from '../src/commands/deploy.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../src/deployment.js';
 import { inspectConfigurationRequirements } from '../src/config-inspection.js';
@@ -106,4 +107,36 @@ describe('deploy command', () => {
     expect(await deployCommand([], ctx)).toBe(1);
     expect(inspectDeployment).not.toHaveBeenCalled();
   });
+});
+
+it('rechecks auxiliary source targets after primary measurement before reporting dry-run success', async () => {
+  const context = await setup({ json: true, 'dry-run': true });
+  const root = context.cwd;
+  const policy = { configPath: 'workers/jobs.json', budgets: { uploadKiB: { error: 100 } } };
+  await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ cossack: { buildBudgets: { uploadKiB: { error: 100 } }, auxiliaryBuildBudgets: [policy] } }));
+  await fs.mkdir(path.join(root, 'workers'));
+  await fs.mkdir(path.join(root, 'node_modules'));
+  await fs.symlink(path.dirname(createRequire(import.meta.url).resolve('wrangler/package.json')), path.join(root, 'node_modules/wrangler'), 'junction');
+  const source = path.join(root, policy.configPath);
+  const config = { name: 'jobs', main: 'worker.js', compatibility_date: '2026-01-01', vars: { MARKER: 'before' } };
+  await fs.writeFile(source, JSON.stringify(config));
+  runProjectTool.mockImplementation(async (_root, tool) => {
+    if (tool === 'vite') {
+      await fs.mkdir(path.join(root, 'dist/aux'), { recursive: true });
+      await fs.writeFile(path.join(root, 'dist/aux/wrangler.json'), JSON.stringify({ ...config, configPath: source, no_bundle: true }));
+      await fs.mkdir(path.join(root, '.wrangler/deploy'), { recursive: true });
+      await fs.writeFile(path.join(root, '.wrangler/deploy/config.json'), JSON.stringify({ configPath: '../../dist/wrangler.json', auxiliaryWorkers: [{ configPath: '../../dist/aux/wrangler.json' }] }));
+    }
+    return 0;
+  });
+  let measured = 0;
+  runProjectToolCaptured.mockImplementation(async () => {
+    if (++measured === 2) await fs.writeFile(source, JSON.stringify({ ...config, vars: { MARKER: 'PRIVATE_CHANGED_SOURCE' } }));
+    return { code: 0, stdout: 'Total Upload: 1.00 KiB / gzip: 0.50 KiB' };
+  });
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await deployCommand([], { ...context, dryRun: true })).toBe(1);
+  const report = JSON.parse(log.mock.calls.at(-1)[0]);
+  expect(report.diagnostics[0].code).toBe('COSSACK_AUXILIARY_BUILD_SOURCE_CHANGED');
+  expect(JSON.stringify(report)).not.toContain('PRIVATE_CHANGED_SOURCE');
 });

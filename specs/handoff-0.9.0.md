@@ -9,35 +9,40 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [local startup budgets](./release-0.9.0-verification-archive.md#codex-local-startup-2026-10-05).
-Primary Worker budgets now accept `localStartupProfileMs` (profile window) and
-`localStartupActiveMs` (non-idle sampled time, including GC). Profiling is opt-in,
-uses the fresh verified artifact and private temporary files, and persists only
-numeric timings in signed receipts. Each tool invocation has a 30-second deadline
-and bounded capture; invalid profiles, overflow and tool failures fail closed.
-Size-only budgets do not profile. `providerStartupMs` remains unavailable locally.
-These machine-dependent timings include profiler overhead and do not establish
-Cloudflare provider startup or production CPU limits.
+Latest Codex progress: [auxiliary Worker budgets](./release-0.9.0-verification-archive.md#codex-auxiliary-budgets-2026-10-05).
+Literal `cossack.auxiliaryBuildBudgets` policies independently capture each source
+and selected environment before building, match one fresh auxiliary artifact,
+verify all selected targets before measurement, and recheck configuration after
+measurement and before upload/dry-run success. Auxiliary-only policies activate
+the CLI and direct Vite gate. JSON contains per-source safe measurements. Private
+source snapshots and binding values are never serialized.
 
-Codex reviewed/integrated independent startup/auxiliary audits, the exclusive
-profile parser and the exclusive integration test file. Native workspace Wrangler
-4.114.0 and installed Wrangler 4.147.0 profile acceptance pass. Full framework:
-1,808 tests / 98 files; final combined affected CLI: 63 tests / 6 files.
-Root/framework types and declaration emission pass.
-The first unrestricted framework run had four SSG/view-transition failures,
-starting with timeouts; the complete rerun with two workers passed without code
-changes to those features. Repacked framework/CLI acceptance passes in retained
-`/tmp/cossack-local-pack-gZdSQv/minimal-production`. This is focused installed
-acceptance, not a fresh full agent-docs gate or release matrix. The linked verification record retains logs and scope limitations.
+Shared deployment comparison now covers additional binding/resource families,
+account, migration, routing and scheduling settings. D1 migration patterns are
+normalized along with directories; absent/empty Cron schedules are equivalent.
+Native acceptance exposed the Cron default discrepancy and it was repaired.
+Coordinator review also repaired the final dry-run recheck and added a source-
+mutation regression. Codex reviewed all exclusive reader, verifier-test and native
+binding-test agent changes and owns shared APIs/integration/final verification.
 
-Next: implement explicit auxiliary Worker budget policies and wider module-graph
-acceptance using the [bounded follow-up plan](./release-0.9.0-plan.md#codex-local-startup-plan-2026-10-05).
-Current Cossack deployment uploads only the primary Worker; auxiliary deployment
-is not implemented. Keep auxiliary receipt reuse disabled until every target and
-policy is authenticated. Provider startup, native DEV faults, production source
-maps and remote logs remain open. CF-08 stays open; counts stay 30 complete /
-28 open. No external credentials currently block local progress. Desktop is
-complete by user decision and platform checks remain waived.
+Verified: framework **1,874 tests / 101 files**, final affected CLI **65 / 6 files**,
+root/framework types, declarations, native multi-Worker warning/hard-limit builds,
+and source mutation privacy/failure tests. Final repacked auxiliary and primary
+startup/custom-config installed acceptance passes with Vite 8.3.2 / Wrangler
+4.147.0. The expanded installed helper is wired into the Cloudflare gate; the
+verification record retains final installed results,
+initial failed attempts and logs. Installed acceptance is a focused update to the
+retained fixture, not a fresh full agent-docs gate or non-Desktop release matrix.
+
+Next: broader module graph/source-entry acceptance and authenticated multi-target
+receipts. Auxiliary redirects still disable signed reuse. Successful builds can
+repeat plugin/CLI measurements; failed Vite auxiliary builds keep a generic build
+failure envelope. Do not treat a primary-only receipt as proof of auxiliary checks.
+Current deploy uploads only the primary Worker; auxiliary upload orchestration is
+separate work. Provider startup, native DEV faults, production source maps and
+remote logs remain open. Local profile timings remain machine/profiler dependent.
+No parent task closes; **30 complete / 28 open**. No local work is blocked.
+Desktop remains complete by user decision and its platform checks remain waived.
 
 Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
 and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).

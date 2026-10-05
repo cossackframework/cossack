@@ -11465,3 +11465,88 @@ profiling. No remote upload, provisioning, publication or push occurred. No
 fresh full agent-docs gate, full CLI suite or non-Desktop release matrix was run
 at this checkpoint. Auxiliary Worker budgets/receipts/uploads remain future work;
 current deploy uploads only the primary Worker. CF-08 and REL-03 remain open.
+
+<a id="codex-auxiliary-budgets-2026-10-05"></a>
+### Codex: explicit auxiliary Worker budget validation (2026-10-05)
+
+Author: Codex. Continued after `292a2aca`. CF-08 gains explicit auxiliary budget
+policies and broader deployment-target comparison. No parent task closes: counts
+remain **30 complete / 28 open**, versions remain 0.8.3. Desktop remains complete
+by user decision; remaining Desktop platform acceptance is waived, not passed.
+
+Ownership/review: the policy-reader agent exclusively wrote the new literal
+reader and its 34 tests. A separate agent exclusively wrote 21 auxiliary verifier
+tests. An independent binding audit then exclusively wrote ten native Wrangler
+binding/D1 tests. Codex reviewed all code, consolidated limit validation, owned
+shared APIs/CLI/Vite integration, added the Cron and final dry-run regressions,
+and ran combined/native/installed verification. No shared implementation files
+were concurrently assigned to agents.
+
+The Node-only API captures source configs before building and matches raw generated
+source-path metadata to exactly one fresh auxiliary redirect entry. Every selected
+artifact must pass normalized target comparison before any auxiliary measurement.
+Source/policy changes are checked after measurement, with a final check before
+primary upload or dry-run success. Ambiguous/duplicate/missing metadata,
+primary/prerender reuse and non-project/symlink configuration files fail. Limits:
+32 policies/redirect entries, 1 MiB regular source/redirect/artifact config files.
+Private normalized targets remain internal; result envelopes contain authored
+relative paths and fixed safe metrics/diagnostics only.
+
+Deployment comparison adds ordinary omitted bindings and deployment fields. Native
+fixtures directly cover vectorize, AI, browser, images, version metadata, Analytics
+Engine, mTLS and email binding changes/removals. D1 migration glob patterns and
+directories resolve to their source locations despite generated rewrites. Cron
+absence and explicit empty lists canonicalize equally; nonempty changes reject.
+Compiled entrypoints and bundle settings intentionally differ from source config;
+this comparison does not authenticate every compiled module graph or source entry.
+
+Verification:
+
+- Focused shared integration: **107 passed / 7 files** before adding the Cron
+  regression; `/tmp/cossack-aux-combined-focused.log`.
+- Full final framework: **1,874 passed / 101 files**, `--maxWorkers=2`;
+  `/tmp/cossack-aux-framework-complete.log`, terminal status 0.
+- Native generated multi-Worker warning build, deployment dry run and deliberate
+  auxiliary hard-limit failure: **1 passed, 6 filtered skips**;
+  `/tmp/cossack-aux-native-repaired.log`. The private tool capture proves the hard
+  failure was `COSSACK_BUILD_BUDGET_EXCEEDED`; no values appeared in JSON.
+- First combined affected CLI: **64 passed / 6 files**;
+  `/tmp/cossack-aux-cli-complete.log`. Final review found the dry-run early return
+  before the post-primary-measurement recheck. It was repaired and a source-mutation
+  regression added; focused deploy **11 passed**, `/tmp/cossack-aux-final-recheck.log`.
+  Final combined CLI: **65 passed / 6 files**, including all seven native cases;
+  `/tmp/cossack-aux-cli-final.log`, terminal status 0.
+- Root `pnpm tsc --noEmit`, framework package types, declaration emission, changed
+  JS/helper syntax and owned diff whitespace checks pass. Logs:
+  `/tmp/cossack-aux-{build-repaired,final-types}.log`.
+- Initial native attempts `/tmp/cossack-aux-native.log` and
+  `/tmp/cossack-aux-native-debug.log` failed `COSSACK_DEPLOY_TARGET_MISMATCH` on
+  empty Cron defaults. Native Vite output includes `triggers.crons: []`, whereas
+  project Wrangler can normalize an absent field to `{}`. Canonicalization and a
+  native regression repaired this; the successful rerun is recorded above.
+  Debug capture is private mode 0600 at `/tmp/cossack-aux-native-private-tool.log`;
+  it can contain fixture binding values and must not be published.
+- Repacked installed auxiliary acceptance initially passed
+  `/tmp/cossack-aux-installed.log`. That CLI predates the final dry-run recheck;
+  final repaired-package acceptance is recorded separately below.
+
+Limits: auxiliary redirects continue to disable signed receipt reuse. Successful
+CLI builds receive fresh measurements and may repeat the plugin's work. Failed
+Vite auxiliary builds retain generic compiler/build envelopes; no unauthenticated
+auxiliary receipt is trusted. No auxiliary Worker upload is implemented. No remote
+upload/provisioning, publication, push, fresh full agent-docs gate, full CLI suite,
+or non-Desktop release matrix occurred at this checkpoint. Native wider-graph,
+provider startup, DEV failure, production source-map and remote log acceptance
+remain open. No local progress is blocked.
+
+Final repaired-package acceptance: `/tmp/cossack-aux-installed-final.log`, terminal
+status **0**. Runs the installed auxiliary-only multi-Worker warning/build/deploy
+validation and hard failure helper, then the installed primary startup/custom
+source config, signed receipts, explicit Vite options, public SSG URL discovery
+and prompt watch rejection helper. Retained fixture:
+`/tmp/cossack-local-pack-gZdSQv/minimal-production`, Vite **8.3.2**, Wrangler
+**4.147.0**. Final tarballs are
+`/tmp/cossack-aux-tarballs/framework-aux-0.8.3.tgz` and
+`/tmp/cossack-aux-tarballs/cli-aux-final-0.8.3.tgz`.
+This is focused repacked acceptance with unchanged dependency tarballs, not a
+fresh full installed agent-docs gate or release matrix.

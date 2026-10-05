@@ -38,8 +38,8 @@ export default {
 
 The plugin measures the primary deployment Worker after Cloudflare's application
 build completes. It validates the selected source target against the fresh built
-artifact and rejects unfinished Worker environments. Auxiliary Workers do not
-receive separate budget measurements. Choose the environment through
+artifact and rejects unfinished Worker environments. Auxiliary Workers receive
+separate measurements only through explicit policies described below. Choose the environment through
 `CLOUDFLARE_ENV` or `cossackBuildBudgets({ environment: 'staging' })`, matching the
 Cloudflare plugin's target selection. Built configs are already environment-specific;
 verification and measurement do not apply that environment a second time.
@@ -134,3 +134,56 @@ The CLI does not evaluate Vite config to discover plugin options. Use the
 environment variable for CLI inspection and deployment so preflight, binding
 checks, type generation, SSG URL discovery and artifact validation select the same source. The
 selection order matches the [Cloudflare plugin API](https://developers.cloudflare.com/workers/vite-plugin/reference/api/).
+
+
+## Auxiliary Worker policies
+
+Declare each selected auxiliary Worker by its source config path:
+
+```json
+{
+  "cossack": {
+    "auxiliaryBuildBudgets": [
+      {
+        "configPath": "workers/jobs/wrangler.jsonc",
+        "budgets": { "uploadKiB": { "warning": 200, "error": 300 } }
+      }
+    ]
+  }
+}
+```
+
+Configure the same source file in Cloudflare's `auxiliaryWorkers` plugin option.
+Cossack reads these literal policies without evaluating Vite config. Paths must
+be unique, relative to the project, and cannot contain `..` or backslashes.
+The selected environment must exist in each source configuration. Policies can
+use all primary metrics and activate validation even without primary budgets.
+
+The CLI and direct Vite gate capture source targets before building. After the
+build, they match exactly one auxiliary redirect artifact per source path and
+compare normalized deployment fields with the independent source target. All
+selected artifacts are verified before any auxiliary measurement. Changed
+policies, changed sources, ambiguous matches, primary/prerender entries and
+non-project/symlink configuration files fail validation. Artifact configuration
+is rechecked after measurement and before primary upload. Ordinary binding
+families, account, migration, routing and schedule settings are compared; D1
+migration directories/patterns and empty Cron schedules are normalized to account
+for generated config rewrites. Compiled entrypoints and bundling options are
+owned by the build and are not treated as literal source target fields.
+
+Validation is bounded to 32 policies and 32 auxiliary redirect entries; each
+configuration file must be a regular project file no larger than 1 MiB.
+Prerender and dev-only Workers cannot satisfy an auxiliary policy. JSON returns
+`data.auxiliaryBuildBudgets.workers`, each with `configPath` and `buildBudgets`.
+Only authored paths and safe metric results are returned; binding values and
+raw tool output stay private.
+
+Auxiliary redirects disable signed receipt reuse. Successful builds receive
+fresh CLI measurements; failed Vite builds retain their compiler/build failure
+envelope rather than trusting unauthenticated auxiliary results. A hard limit
+still stops the build and upload. This can repeat measurement across the plugin
+and CLI. Broader module graph/receipt coverage remains separate work.
+
+These policies perform local budget validation. `cossack deploy` currently uploads
+only the primary Worker; it does not deploy the auxiliary Workers. Deploy those
+Workers separately until upload orchestration is implemented.
