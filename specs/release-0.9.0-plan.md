@@ -147,16 +147,18 @@ in the archive. The release checklist retains outcomes and verification evidence
 Codex status (2026-10-05): CLI and MCP share fresh installed-package catalogs,
 command schemas, declaration signatures, exact-symbol queries and packaged guidance.
 Wildcard discovery preserves export precedence and exclusions. Prop catalogs retain
-member documentation and explicit partial results. The examples now cover route URLs,
+member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Ten standalone examples compile and execute from installed tarballs. Three more
-packaged pages exercise component actions, resources and lifecycle tasks in
-generated applications. The harness uses the exact catalog source, owns the
-browser/server lifecycle and requires emitted client source maps before checking
-server stripping. Installed Cloudflare and Node acceptance passes. Discovery never
-invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04) and the
-[input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04).
+Sixteen standalone examples compile and execute from installed tarballs, including
+four UI SSR examples for native controls, a typed server data table, localized metrics
+and a controlled settings form. Three packaged pages exercise component actions,
+resources and lifecycle tasks in generated applications. The harness uses the exact
+catalog source, owns the browser/server lifecycle and requires emitted client source
+maps before checking server stripping. Installed Cloudflare and Node acceptance
+passes. Discovery never invokes it. See [application acceptance](./release-0.9.0.md#codex-cli08-application-guidance-2026-10-04),
+the [input guidance checkpoint](./release-0.9.0.md#codex-cli08-input-2026-10-04)
+and the [UI guide checkpoint](./release-0.9.0.md#codex-cli08-ui-guides-2026-10-05).
 The RT-23 UI catalog audit is complete.
 Auth now contributes session/role, record-policy, OAuth diagnostic and shared
 credential/session guides with four executable examples. Discovery exposes legacy root targets separately from an exports map
@@ -184,16 +186,18 @@ Vite discovers after its initial dependency scan.
 The Cloudflare D1 guide now has an installed example that runs against a fake
 binding contract and proves SQL values stay parameterized. This exercises the
 published adapter path but does not prove the guide in Miniflare/workerd or
-against a deployed database. The UI `native-controls` guide now has one
-executable SSR form example; it compiles and runs against the installed UI and
-renderer tarballs. The test bundles the UI barrel for Node, matching Vite's
-handling of its Solar icon TypeScript dependency. The example validates
-accessible rendered markup, not browser interaction or assistive technology.
+against a deployed database. Four of 39 UI guides have executable SSR examples:
+native controls, a server-controlled DataTable, DashboardStat metrics, and a
+controlled SettingsPanel inside an application-owned form. All four compile and
+run against the installed UI and renderer tarballs. The test bundles selected UI
+examples for Node, matching Vite's handling of the UI barrel's Solar icon
+TypeScript dependency. They verify server-rendered markup and callback ownership;
+they do not establish browser interaction or assistive technology.
 
 Remaining: Complete authored API/component/recipe coverage and examples across
 the libraries and UI, and verify runtime guidance in generated Worker
-applications, including the D1 example. Most UI guides still have no executable
-examples. Preserve RT-23 regressions and finish REL-02 acceptance. The full
+applications, including the D1 example. Thirty-five of 39 UI guides still have
+no executable example. Preserve RT-23 regressions and finish REL-02 acceptance. The full
 installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
 Discovery never executes examples. Declaration presence does not prove runtime
 imports or native attribute behavior. Platform diagnostics and bounded scans can

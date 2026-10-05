@@ -10159,3 +10159,38 @@ runtime coverage, including D1. Desktop is complete by user decision; the
 focused docs gate excludes Desktop, and waived platform checks are not claimed
 as passed. REL-02/REL-03 keep their existing acceptance criteria. Release status
 remains **28 complete / 30 open**. No deployment or publication occurred.
+
+<a id="codex-cli08-ui-guides-2026-10-05"></a>
+### Codex: Expanded installed UI guide examples (2026-10-05)
+
+Four of 39 UI guides have installed, executable examples: `native-controls`,
+`server-data-table`, `native-dashboard-stat` and `native-settings-panel`. They
+demonstrate an accessible native form; typed, server-owned table state with
+stable row identity and selection; zero-safe metrics with separately localized
+direction and meaning; and controlled settings within a native form owned by
+the application. The examples assert meaningful SSR markup and avoid invoking
+client callbacks while rendering.
+
+The installed documentation verifier now selects all four examples from the
+catalog returned by the installed CLI. It typechecks them with the installed
+TypeScript compiler and declaration files, bundles UI examples for Node, and
+executes the bundles. Bundling is required because the UI package's Solar icon
+barrel includes TypeScript source, as it does in Vite applications. The isolated
+compiler uses `skipLibCheck` to match the root config: transitively imported
+Cloudflare declarations use ambient Worker globals that are generated only in a
+Worker project. The examples themselves use renderer and UI APIs only.
+
+| Command | Result |
+| --- | --- |
+| `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local` | Fresh package builds/install pass; 16 standalone examples and four auth examples compile and execute from installed tarballs. Four generated application pages, Cloudflare HTTP/SSE/WebSocket browser traces, offline CLI/MCP parity, UI prop/index contracts and source-map-enabled production stripping pass. Database suite: 15 files / 92 tests. Retained logs: `/tmp/cossack-local-pack-DKi3wm`. |
+| Focused installed-example check (strict `tsc`, esbuild bundles, Node execution) | All three added UI examples pass against the fresh installed package set. |
+| `pnpm --filter cossack exec vitest run tests/package-guidance.test.js` | 1 file / 13 tests pass. |
+| `pnpm tsc --noEmit`; `git diff --check -- . ':!reports.md'` | Both pass. |
+
+Limits: the UI examples verify SSR only; they do not establish browser interaction,
+other engines or assistive-technology support. Thirty-five UI guides remain without
+examples. CLI-08 and REL-02/REL-03 stay open. The D1 guide uses an installed
+binding-contract fixture, not Miniflare/workerd or a deployed database. Desktop
+remains complete by user decision, with waived platform checks not claimed as
+passing. Release status remains 28 complete / 30 open. No deployment or
+publication occurred.

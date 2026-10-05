@@ -72,10 +72,14 @@ require('node:module').syncBuiltinESMExports();
     // The documentation tool itself only returns source text.
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
+    const uiExamples = [];
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ['@cossackframework/ui', 'native-controls'],
+      ['@cossackframework/ui', 'server-data-table'],
+      ['@cossackframework/ui', 'native-dashboard-stat'],
+      ['@cossackframework/ui', 'native-settings-panel'],
       ...['resource', 'mutation', 'scoped-service', 'protected-route'].map(feature => ['@cossackframework/scaffold', feature + '-recipe'])]) {
       const pkg = catalog.data.packages.find(pkg => pkg.name === name);
       assert.equal(pkg.guidance.status, 'available');
@@ -88,6 +92,7 @@ require('node:module').syncBuiltinESMExports();
         const file = path.join(scratch, `${id}-${example.id}.ts`);
         await fs.writeFile(file, example.source);
         examples.push(file);
+        if (name === '@cossackframework/ui') uiExamples.push(file);
       }
     }
     const config = path.join(scratch, 'tsconfig.json');
@@ -101,23 +106,27 @@ require('node:module').syncBuiltinESMExports();
     }, files: examples }));
     const tsc = path.join(path.dirname(installedRequire.resolve('typescript/package.json')), 'bin/tsc');
     await exec(process.execPath, [...nodeArgs, tsc, '-p', config], { cwd: projectDir, env, timeout: 60_000 });
-    const uiExample = examples.find(file => path.basename(file) === 'native-controls-accessible-profile-form.ts');
-    const bundledUiExample = path.join(scratch, 'compiled/native-controls-accessible-profile-form.mjs');
-    if (uiExample) {
+    const bundledUiExamples = new Map(uiExamples.map(file => [
+      file, path.join(scratch, 'compiled', path.basename(file, '.ts') + '.mjs'),
+    ]));
+    if (uiExamples.length) {
       // The UI barrel exposes Solar icon TypeScript source. Bundle this
-      // repository-owned example before Node execution, as the app's Vite
+      // repository-owned examples before Node execution, as the app's Vite
       // pipeline does for installed UI dependencies.
       const bundlerRequire = createRequire(installedRequire.resolve('tsx/package.json'));
       const bundler = pathToFileURL(bundlerRequire.resolve('esbuild')).href;
       const bundleScript = path.join(scratch, 'bundle-ui-example.mjs');
+      const bundleEntries = [...bundledUiExamples].map(([file, outfile]) => ({
+        entry: path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js'), outfile,
+      }));
       await fs.writeFile(bundleScript, `import esbuild from ${JSON.stringify(bundler)};
-esbuild.buildSync({ entryPoints: [${JSON.stringify(path.join(scratch, 'compiled/native-controls-accessible-profile-form.js'))}],
-  outfile: ${JSON.stringify(bundledUiExample)}, bundle: true, platform: 'node', format: 'esm', target: 'node22', logLevel: 'silent' });
+for (const { entry, outfile } of ${JSON.stringify(bundleEntries)}) esbuild.buildSync({
+  entryPoints: [entry], outfile, bundle: true, platform: 'node', format: 'esm', target: 'node22', logLevel: 'silent' });
 `);
       await exec(process.execPath, [...nodeArgs, bundleScript], { cwd: projectDir, env, timeout: 30_000 });
     }
     for (const file of examples) {
-      const executable = file === uiExample ? bundledUiExample : path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js');
+      const executable = bundledUiExamples.get(file) ?? path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js');
       const result = await exec(process.execPath, [...nodeArgs, executable], { cwd: projectDir, env, timeout: 30_000 });
       assert.equal(result.stderr, '');
     }
