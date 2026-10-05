@@ -1756,3 +1756,20 @@ receipts. Failed budgeted Vite builds with auxiliary redirects retain generic
 build failures; successful builds receive fresh CLI measurements. CF-08 remains
 open. Counts stay **30 complete / 28 open**. Desktop is complete by user decision;
 remaining Desktop platform checks remain waived.
+
+<a id="codex-runtime-receipt-identity-2026-10-05"></a>
+### Codex startup runtime identity and receipt validation (2026-10-05)
+
+Author: **Codex**. Primary startup receipts now bind Wrangler-resolved Miniflare,
+workerd manifests/loaders, the actual native executable and runtime override/
+autogate settings. Unsupported fallbacks and nonabsolute overrides decline reuse.
+Directory traversal, redirect reads and runtime/tool bytes are bounded. Empty
+Wrangler temporary directories do not invalidate an otherwise unchanged module
+inventory; adding a file does. Malformed fingerprint and partial configured size
+evidence cannot authorize reuse or turn an unavailable metric into zero.
+
+Verified: **1,926 framework tests / 102 files**, **65 affected CLI tests / 6 files**, root/framework typechecks, declarations and changed-package installed startup/custom-config acceptance. See [verification and limitations](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
+CF-08 remains open for authenticated aggregate receipts, broader module graphs,
+provider startup, production source maps and remote logs. No release task closes;
+counts remain **30 complete / 28 open**. Desktop remains complete with its
+platform checks waived.

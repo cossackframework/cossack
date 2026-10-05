@@ -9,40 +9,28 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [auxiliary Worker budgets](./release-0.9.0-verification-archive.md#codex-auxiliary-budgets-2026-10-05).
-Literal `cossack.auxiliaryBuildBudgets` policies independently capture each source
-and selected environment before building, match one fresh auxiliary artifact,
-verify all selected targets before measurement, and recheck configuration after
-measurement and before upload/dry-run success. Auxiliary-only policies activate
-the CLI and direct Vite gate. JSON contains per-source safe measurements. Private
-source snapshots and binding values are never serialized.
+Latest Codex batch: [primary receipt runtime identity](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
+Startup reuse now binds Miniflare/workerd and the actual native executable;
+malformed fingerprints/partial size evidence decline reuse. Bounded traversal
+retains empty-directory race checks without invalidating on Wrangler's empty
+temporary directories. Initial native failures were repaired and documented.
+Final framework **1,926 / 102 files**, affected CLI **65 / 6 files**, root/framework
+types, declarations and changed-package installed startup/custom-config acceptance
+pass. This hardening closes no parent task: **30 complete / 28 open**.
 
-Shared deployment comparison now covers additional binding/resource families,
-account, migration, routing and scheduling settings. D1 migration patterns are
-normalized along with directories; absent/empty Cron schedules are equivalent.
-Native acceptance exposed the Cron default discrepancy and it was repaired.
-Coordinator review also repaired the final dry-run recheck and added a source-
-mutation regression. Codex reviewed all exclusive reader, verifier-test and native
-binding-test agent changes and owns shared APIs/integration/final verification.
+User-directed execution strategy: finish 2–3 independent release tasks per batch,
+prefer existing feature acceptance over further budget polishing, assign exclusive
+implementation files to subagents, integrate centrally, and run relevant combined
+checks once after targeted tests. Update release records once per verified batch.
+Repeat broad/installed checks only when changes invalidate their evidence.
 
-Verified: framework **1,874 tests / 101 files**, final affected CLI **65 / 6 files**,
-root/framework types, declarations, native multi-Worker warning/hard-limit builds,
-and source mutation privacy/failure tests. Final repacked auxiliary and primary
-startup/custom-config installed acceptance passes with Vite 8.3.2 / Wrangler
-4.147.0. The expanded installed helper is wired into the Cloudflare gate; the
-verification record retains final installed results,
-initial failed attempts and logs. Installed acceptance is a focused update to the
-retained fixture, not a fresh full agent-docs gate or non-Desktop release matrix.
-
-Next: broader module graph/source-entry acceptance and authenticated multi-target
-receipts. Auxiliary redirects still disable signed reuse. Successful builds can
-repeat plugin/CLI measurements; failed Vite auxiliary builds keep a generic build
-failure envelope. Do not treat a primary-only receipt as proof of auxiliary checks.
-Current deploy uploads only the primary Worker; auxiliary upload orchestration is
-separate work. Provider startup, native DEV faults, production source maps and
-remote logs remain open. Local profile timings remain machine/profiler dependent.
-No parent task closes; **30 complete / 28 open**. No local work is blocked.
-Desktop remains complete by user decision and its platform checks remain waived.
+Next batch: **RT-12** runtime DI ownership/lifecycle acceptance and **RT-27**
+translation extraction, catalog validation, generated types and SSR/SSG locale
+isolation. Both have working runtime foundations and local acceptance paths.
+Further Cloudflare budget/module-graph/aggregate-receipt expansion is deferred
+unless it directly closes a required criterion. Auxiliary receipts/uploads,
+provider startup, native DEV faults, production maps and remote logs remain open.
+Desktop remains complete with platform checks waived. No local progress is blocked.
 
 Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
 and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).

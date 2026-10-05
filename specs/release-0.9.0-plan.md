@@ -1246,6 +1246,35 @@ the [static-plan checkpoint](./release-0.9.0.md#codex-cf04-static-resource-plan-
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets
 
+Codex primary receipt identity hardening (2026-10-05): local startup receipts
+must identify the external runtime that produced the profile. The private bounded
+inventory now resolves Miniflare from Wrangler, workerd from Miniflare, and binds
+manifests, loaders, native executable contents and runtime overrides/autogates.
+Bare/relative executable overrides and unsupported downloaded fallbacks decline
+reuse. Directory membership and redirect reads are bounded. This checkpoint
+retains the primary-only receipt contract and fresh-measurement fallback.
+See [verification](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
+
+Deferred CF-08 implementation context (not the next batch): authenticated aggregate receipts. One atomic receipt must
+cover the primary Worker and every selected auxiliary policy, with independent
+source snapshots, selected environment, complete redirect membership, settings,
+tool/runtime identities and ordered artifact inventories. Compute identity before
+all measurements and again after all results; never sign a partial prefix.
+Initially require auxiliary policies to cover every auxiliary redirect entry;
+unselected Workers must decline reuse rather than leave incomplete graph evidence.
+Keep the primary artifact bound even when only auxiliary limits are configured.
+Store only numeric values and fixed measured/failed outcomes, then reconstruct public
+diagnostics from current policies. A successful build may reuse only a complete
+matching receipt; missing/unsupported identities require fresh measurement. A
+failed build may report budget failures only from a complete authenticated failing
+receipt, without running tools again; passing receipts must not disguise unrelated
+build failures. Integrate shared APIs, Vite, CLI build/deploy and installed helpers
+under coordinator ownership; independent agents can own bounded tests after the
+API is fixed. Verify two auxiliary targets, auxiliary-only settings, stale source,
+redirect/module/tool/runtime mutations, malformed/partial receipts, private values
+and native single-measurement reuse. Auxiliary upload remains a separate task.
+
+
 Codex direct-Vite dependency audit (2026-10-05), read-only: retain cossackConfig's
 preflight order. A separate post plugin must run after Cloudflare's final buildApp
 hook, verify built environments and fresh selected-target artifacts, then measure.

@@ -1260,3 +1260,14 @@ normalized source snapshots must never enter client bundles or result envelopes;
 only authored policy paths and safe metric results are serialized. Configuration
 matching does not authenticate every compiled module graph. Auxiliary redirects
 continue to disable signed receipt reuse until all targets and graphs are bound.
+
+Primary receipt inventories now bind directory membership and bounded regular
+redirect reads. Local startup reuse additionally binds Wrangler-resolved
+Miniflare, its workerd loader and manifests, and the actual native executable,
+including override/autogate settings. Only absolute nonsymlink executable
+overrides are eligible; relative commands may use PATH resolution and decline
+reuse. Artifact/source inventories share 4,096 files/64 MiB, 4,096 directories
+and 8,192 entries. Tool/runtime files have a separate 256 MiB cap. Unsupported
+runtime fallbacks decline reuse rather than accepting incomplete identity.
+This does not authenticate every transitive tool dependency or expand the
+supported compiled module graph.

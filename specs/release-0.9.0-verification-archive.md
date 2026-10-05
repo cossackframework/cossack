@@ -11550,3 +11550,91 @@ and prompt watch rejection helper. Retained fixture:
 `/tmp/cossack-aux-tarballs/cli-aux-final-0.8.3.tgz`.
 This is focused repacked acceptance with unchanged dependency tarballs, not a
 fresh full installed agent-docs gate or release matrix.
+
+<a id="codex-runtime-receipt-identity-2026-10-05"></a>
+## Codex primary receipt runtime identity and bounded inventories (2026-10-05)
+
+Author: **Codex**. The dependency audit found that startup receipt reuse bound
+Wrangler but omitted the external Miniflare/workerd runtime producing its profile.
+An exclusive implementation agent owned the new private inventory helper/tests,
+then the receipt regression file. A separate read-only agent reviewed identity,
+resource limits and malformed receipt handling. The coordinator reviewed and
+integrated all changes, fixed shared APIs and native regressions, and owns final
+verification. No source ownership collisions occurred.
+
+Primary fingerprints now resolve Miniflare from Wrangler and workerd from
+Miniflare, hash their manifests/entrypoints and the native package/executable,
+and bind runtime override/autogate settings. Standard package resolution must
+agree with workerd's selected executable. Only absolute regular nonsymlink
+executable overrides are supported; bare/relative/empty overrides and downloaded
+fallbacks decline reuse. Unsupported identities retain fresh measurement after
+successful builds; failed builds do not run measurement again.
+
+The private helper bounds artifact/source files to 4,096 files/64 MiB, metadata
+files to 1 MiB, traversal to 4,096 directories/8,192 entries, and tool/runtime
+identity files separately to 256 MiB. Checked descriptors and file/directory
+metadata plus entry lists detect changes during traversal. All regular files
+remain hashed in native traversal order. Empty subtrees contribute no modules
+and no fingerprint entries, but retain traversal bounds/race checks; files added
+there change the digest and populated ancestor entries. Primary redirects are
+read through a bounded regular descriptor before parsing. Atomic HMAC storage
+remains private, invocation-bound and numeric-only.
+
+Missing/malformed fingerprints cannot match an unsupported inventory. Partial
+configured upload/gzip evidence is rejected before signing and when reading;
+missing configured values are never reconstructed as zero. Unconfigured size
+counterparts remain irrelevant to evaluation.
+
+Review and repair evidence:
+
+- Initial agent inventory run: 30 passed / 1 timed out on the 4,096-file filesystem
+  boundary case. That case received a local 20-second allowance; all 31 then
+  passed. Subsequent coordinator tests add directory/runtime caps and overrides.
+- First integrated focused run: **67 passed / 2 files**;
+  `/tmp/cossack-receipt-runtime-focused.log`.
+- First full framework run: **1,921 passed / 102 files**;
+  `/tmp/cossack-receipt-runtime-framework.log`. Further malformed-evidence and
+  empty-directory regressions were added afterward; final results follow below.
+- First affected CLI run: **61 passed / 4 failed / 6 files**;
+  `/tmp/cossack-receipt-runtime-cli.log`. Native reuse declined because Wrangler
+  creates empty `dist/ssr/.wrangler/tmp` directories during dry runs. Fingerprinting
+  their names invalidated before/after identity despite unchanged modules.
+  Coordinator repaired empty-subtree handling and added a regression proving
+  that later file additions still invalidate identity. Independent read-only
+  review found no omitted regular files or weakened race/cap checks.
+- Repaired native acceptance: **3 passed / 4 filtered skips**, terminal status 0;
+  `/tmp/cossack-receipt-runtime-native-repaired.log`. Verifies structured hard-limit
+  failure, successful build/deploy size reuse, and startup reuse without a second
+  CLI measurement. Filtered cases are not claimed as passed in this run.
+
+Limits: this checkpoint hardens existing primary receipts. It does not implement
+authenticated aggregate receipts or auxiliary uploads, expand supported module
+graphs, or identify every transitive tool dependency. Local startup timings remain
+machine/profiler dependent and do not establish provider startup/production CPU
+limits. Native evidence is Linux only; Windows/macOS runtime execution is not
+verified. No remote upload/provisioning, publication, push, full CLI package suite,
+fresh full installed agent-docs gate or non-Desktop release matrix is claimed.
+CF-08 stays open; **30 complete / 28 open**. Desktop remains complete by user
+decision, with its platform checks waived. No local progress is blocked.
+
+Final verification for this batch:
+
+- Framework **1,926 passed / 102 files**, `--maxWorkers=2`, terminal status 0;
+  `/tmp/cossack-receipt-runtime-framework-final.log`.
+- Affected CLI **65 passed / 6 files**, including all seven native cases,
+  terminal status 0; `/tmp/cossack-receipt-runtime-cli-final.log`.
+- Root `pnpm tsc --noEmit`, framework noEmit, declaration emission, emitted
+  helper syntax and owned diff checks pass. Logs:
+  `/tmp/cossack-receipt-runtime-{root-types,framework-types,build-final}.log`.
+- Changed-package installed acceptance passes, terminal status 0;
+  `/tmp/cossack-receipt-runtime-installed-final.log`. Runs the primary startup,
+  custom-source, build/deploy receipt, explicit Vite options, public SSG URL and
+  watch rejection helper once against the final package. Retained fixture:
+  `/tmp/cossack-local-pack-gZdSQv/minimal-production`, Vite 8.3.2 / Wrangler
+  4.147.0. Final framework tarball:
+  `/tmp/cossack-runtime-receipt-tarballs/framework-runtime-final-0.8.3.tgz`.
+  CLI/dependency packages were unchanged; this is not a fresh full installed gate.
+
+User-directed strategy change: defer further CF-08 budget expansion unless it
+closes a required criterion. Next batch targets full RT-12 and RT-27 acceptance,
+with exclusive implementation ownership and one combined verification run.

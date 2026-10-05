@@ -51,15 +51,25 @@ For supported no-bundle primary Worker artifacts, the CLI reuses the plugin's
 measurement through a private `.cossack/build-budget-receipt.json` file. Each
 build gets a fresh signing key that is never saved. Reuse requires matching
 settings, selected environment, artifact contents and metadata, installed Wrangler
-identity, and Node version. A failed Vite build yields structured budget errors
+identity, and Node version. Startup receipts also bind the installed Miniflare
+entry and manifest, workerd loader and manifests, native executable contents,
+and runtime override/autogate settings. A failed Vite build yields structured budget errors
 only when a valid receipt proves a budget failure. Other build failures retain
 their build diagnostics. Raw tool output and binding values never enter receipts.
 
 Reuse is deliberately conservative. Symlinks, external modules, custom builds,
 rebundling, auxiliary Workers and unsupported legacy configuration trigger a fresh
 CLI measurement after a successful build. Inventory is bounded to 4,096 files
-and 64 MiB, including tool identity files; exceeding that bound disables reuse,
-not budget enforcement. Budgeted watch builds are rejected with `COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED`:
+and 64 MiB of artifacts/metadata, 4,096 directories and 8,192 directory entries.
+Tool/runtime identity has a separate 256 MiB bound because native workerd binaries
+can exceed the artifact bound. Directory membership is checked before and after
+traversal. Exceeding a bound disables reuse, not budget enforcement. Empty
+directories created by Wrangler do not change the fingerprint; any file later
+added there does. Startup reuse
+requires a supported native package or an absolute, regular, nonsymlink
+`MINIFLARE_WORKERD_PATH`; relative overrides and downloaded fallback binaries
+trigger fresh measurement. These identities do not cover every transitive tool
+dependency. Budgeted watch builds are rejected with `COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED`:
 Vite application hooks do not verify every watch rebuild. Run `vite build` for a
 completed measurement. This guard checks root and environment watch settings,
 including custom builders; it adds no restriction when budgets are absent.
