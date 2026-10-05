@@ -96,7 +96,7 @@ it('reuses the default Vite measurement for a successful native CLI dry run', as
   expect(result.diagnostics).toEqual([expect.objectContaining({ code: 'COSSACK_BUILD_BUDGET_EXCEEDED', severity: 'warning' })]);
   expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   const receipt = JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8'));
-  expect(receipt).toMatchObject({ version: 1, outcome: 'measured', signature: expect.stringMatching(/^[a-f\d]{64}$/) });
+  expect(receipt).toMatchObject({ version: 2, primary: { outcome: 'measured' }, workers: [], signature: expect.stringMatching(/^[a-f\d]{64}$/) });
 }, 120000);
 
 it('builds and validates a nested custom config through CLI environment selection and explicit Vite options', async () => {
@@ -153,40 +153,48 @@ it('profiles a generated Worker once and reuses its signed local timings without
   const receipt = await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8');
   expect(receipt).not.toMatch(/functionName|cpuprofile|startTime|PRIVATE/);
 }, 120000);
-it('validates auxiliary-only budgets through a real multi-Worker build without uploading auxiliary Workers', async () => {
+it('reuses a complete auxiliary-only batch through a real two-auxiliary build without uploading Workers', async () => {
   const { projectDir, manifestPath, manifest } = await fixture({});
   const failures = [];
   const invoke = projectTools.runProjectToolCaptured;
-  vi.spyOn(projectTools, 'runProjectToolCaptured').mockImplementation(async (root, tool, args, options) => {
+  const captured = vi.spyOn(projectTools, 'runProjectToolCaptured').mockImplementation(async (root, tool, args, options) => {
     const result = await invoke(root, tool, args, { ...options, discardOutput: false });
     if (tool === 'vite' && result.code) failures.push(result.stdout + result.stderr);
     return result;
   });
-  manifest.cossack.auxiliaryBuildBudgets = [{ configPath: 'workers/jobs/wrangler.jsonc', budgets: { uploadKiB: { warning: 0.001 } } }];
+  const workers = ['jobs', 'events'];
+  manifest.cossack.auxiliaryBuildBudgets = workers.map(name => ({ configPath: `workers/${name}/wrangler.jsonc`, budgets: { uploadKiB: { warning: 0.001 } } }));
   await fs.writeFile(manifestPath, JSON.stringify(manifest));
-  const directory = path.join(projectDir, 'workers/jobs'); await fs.mkdir(directory, { recursive: true });
-  await fs.writeFile(path.join(directory, 'worker.ts'), 'export default { fetch() { return new Response("jobs") } };');
-  await fs.writeFile(path.join(directory, 'wrangler.jsonc'), JSON.stringify({ name: 'cossack-budget-jobs', main: 'worker.ts', compatibility_date: '2026-01-01', vars: { PRIVATE: 'PRIVATE_AUXILIARY_SENTINEL' } }));
+  for (const name of workers) {
+    const directory = path.join(projectDir, 'workers', name); await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'worker.ts'), `export default { fetch() { return new Response(${JSON.stringify(name)}) } };`);
+    await fs.writeFile(path.join(directory, 'wrangler.jsonc'), JSON.stringify({ name: `cossack-budget-${name}`, main: 'worker.ts', compatibility_date: '2026-01-01', vars: { PRIVATE: 'PRIVATE_AUXILIARY_SENTINEL' } }));
+  }
   const vite = path.join(projectDir, 'vite.config.ts');
-  await fs.writeFile(vite, (await fs.readFile(vite, 'utf8')).replace('cloudflare({', "cloudflare({ auxiliaryWorkers: [{ configPath: 'workers/jobs/wrangler.jsonc' }],"));
+  await fs.writeFile(vite, (await fs.readFile(vite, 'utf8')).replace('cloudflare({', `cloudflare({ auxiliaryWorkers: ${JSON.stringify(workers.map(name => ({ configPath: `workers/${name}/wrangler.jsonc` })))},`));
   const log = vi.spyOn(console, 'log').mockImplementation(() => {});
   expect(await buildCommand([], { cwd: projectDir, flags: { json: true } })).toBe(0);
   const report = JSON.parse(log.mock.calls.at(-1)[0]);
-  expect(report.data.auxiliaryBuildBudgets).toMatchObject({ valid: true, workers: [{ configPath: 'workers/jobs/wrangler.jsonc', buildBudgets: { valid: true, measurements: [expect.objectContaining({ metric: 'uploadKiB', status: 'measured' })] } }] });
+  expect(report.data.auxiliaryBuildBudgets).toMatchObject({ valid: true, workers: workers.map(name => ({ configPath: `workers/${name}/wrangler.jsonc`, buildBudgets: { valid: true, measurements: [expect.objectContaining({ metric: 'uploadKiB', status: 'measured' })] } })) });
+  expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   expect(report.diagnostics).toContainEqual(expect.objectContaining({ code: 'COSSACK_BUILD_BUDGET_EXCEEDED', severity: 'warning' }));
   expect(JSON.stringify(report)).not.toContain('PRIVATE_AUXILIARY_SENTINEL');
-  await expect(fs.access(path.join(projectDir, '.cossack/build-budget-receipt.json'))).rejects.toThrow();
+  expect(JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8'))).toMatchObject({ version: 2, primary: { outcome: 'measured', values: {} }, workers: [{ outcome: 'measured' }, { outcome: 'measured' }] });
   expect(await deployCommand([], { cwd: projectDir, flags: { json: true, 'dry-run': true }, dryRun: true })).toBe(0);
   const deployed = JSON.parse(log.mock.calls.at(-1)[0]);
   expect(deployed.data.auxiliaryBuildBudgets.valid).toBe(true);
   expect(deployed.data.steps.map(step => step.name)).toEqual(['types', 'build', 'budgets']);
+  expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   manifest.cossack.auxiliaryBuildBudgets[0].budgets = { uploadKiB: { error: 0.001 } };
   await fs.writeFile(manifestPath, JSON.stringify(manifest));
   expect(await buildCommand([], { cwd: projectDir, flags: { json: true } })).toBe(1);
   const rejected = JSON.parse(log.mock.calls.at(-1)[0]);
-  // Auxiliary redirects deliberately disable receipt reuse. A failed Vite build
-  // therefore retains its generic compiler envelope rather than trusting stale metrics.
-  expect(rejected.diagnostics[0].code).toBe('COSSACK_BUILD_FAILED');
+  // A complete signed batch preserves this auxiliary budget failure without
+  // another measurement; unrelated compiler failures retain the build envelope.
+  expect(rejected.diagnostics[0].code).toBe('COSSACK_BUILD_BUDGET_EXCEEDED');
+  expect(rejected.data.auxiliaryBuildBudgets.workers).toHaveLength(2);
+  expect(rejected.data.buildBudgets.valid).toBe(true);
+  expect(captured.mock.calls.filter(call => call[1] === 'wrangler')).toHaveLength(0);
   expect(failures.some(output => output.includes('COSSACK_BUILD_BUDGET_EXCEEDED'))).toBe(true);
   expect(JSON.stringify(rejected)).not.toContain('PRIVATE_AUXILIARY_SENTINEL');
 }, 120000);

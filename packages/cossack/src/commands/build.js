@@ -2,7 +2,7 @@ import { commandSpecs } from '../command-specs.js';
 import { runProjectTool, runProjectToolCaptured } from '../project-tools.js';
 import { runWithSpec } from '../command-spec.js';
 import { findProjectRoot } from '../fs-utils.js';
-import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings, BUDGET_RUN_ENV, readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts } from '../build-budgets.js';
+import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetBatchReceipt, assertBudgetSettings, BUDGET_RUN_ENV, readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts } from '../build-budgets.js';
 import { inspectDeployment, inspectBuiltDeployment } from '../deployment.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -36,18 +36,18 @@ export async function buildCommand(args, ctx) {
             inspected = await inspectDeployment(root, selectedEnvironment);
             if (!inspected.diagnostics.some(item => item.severity === 'error')) {
               artifact = await inspectBuiltDeployment(root, inspected.config);
-              receipt = await readBudgetReceipt(root, artifact, budgets, selectedEnvironment, token);
+              receipt = await readBudgetBatchReceipt(root, artifact, budgets, selectedEnvironment, token, auxiliary);
             }
           } catch { /* An unrelated build failure must keep its build diagnostic. */ }
         } else {
           inspected = await inspectDeployment(root, selectedEnvironment);
           if (inspected.diagnostics.some(item => item.severity === 'error')) return { exitCode: 1, data: null, diagnostics: inspected.diagnostics };
           artifact = await inspectBuiltDeployment(root, inspected.config);
-          receipt = await readBudgetReceipt(root, artifact, budgets, selectedEnvironment, token);
+          receipt = await readBudgetBatchReceipt(root, artifact, budgets, selectedEnvironment, token, auxiliary);
         }
-        if (!code || receipt?.valid === false) {
-          const auxiliaryResult = await checkAuxiliaryBuildBudgets(root, auxiliary, selectedEnvironment);
-          const result = receipt ?? (Object.keys(budgets).length ? await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: selectedEnvironment ?? '' } }) : { valid: true, measurements: [], diagnostics: [] });
+        if (!code || (receipt && (!receipt.primary.valid || !receipt.auxiliary.valid))) {
+          const auxiliaryResult = receipt?.auxiliary ?? await checkAuxiliaryBuildBudgets(root, auxiliary, selectedEnvironment);
+          const result = receipt?.primary ?? (Object.keys(budgets).length ? await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: selectedEnvironment ?? '' } }) : { valid: true, measurements: [], diagnostics: [] });
           if (auxiliary.length) await inspectAuxiliaryBudgetArtifacts(root, auxiliary, selectedEnvironment);
           const diagnostics = [...result.diagnostics, ...auxiliaryResult.diagnostics];
           const valid = result.valid && auxiliaryResult.valid;

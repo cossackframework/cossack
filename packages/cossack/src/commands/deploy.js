@@ -7,7 +7,7 @@ import { inspectConfigurationRequirements } from '../config-inspection.js';
 import { runProjectTool } from '../project-tools.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings, BUDGET_RUN_ENV, readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts } from '../build-budgets.js';
+import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetBatchReceipt, assertBudgetSettings, BUDGET_RUN_ENV, readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts } from '../build-budgets.js';
 
 export async function deployCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.deploy, args, ctx, deployHelp)) return 0;
@@ -59,12 +59,13 @@ export async function deployCommand(args, ctx) {
         let receipt;
         try {
           data.artifact = await inspectBuiltDeployment(root, inspection.config);
-          receipt = await readBudgetReceipt(root, data.artifact, budgets, environment, token);
+          receipt = await readBudgetBatchReceipt(root, data.artifact, budgets, environment, token, auxiliary);
         } catch { /* Preserve unrelated compiler/target failures as build failures. */ }
-        if (receipt?.valid === false) {
-          data.buildBudgets = receipt;
+        if (receipt && (!receipt.primary.valid || !receipt.auxiliary.valid)) {
+          data.buildBudgets = receipt.primary;
+          data.auxiliaryBuildBudgets = receipt.auxiliary;
           data.steps.push({ name: 'budgets', exitCode: 1, durationMs: Math.round(performance.now() - budgetStarted) });
-          return report(false, receipt.diagnostics);
+          return report(false, [...receipt.primary.diagnostics, ...receipt.auxiliary.diagnostics]);
         }
       }
       if (exitCode !== 0) return report(false, [{ code: `COSSACK_DEPLOY_${name.toUpperCase()}_FAILED`,
@@ -74,9 +75,9 @@ export async function deployCommand(args, ctx) {
     const budgetDiagnostics = [];
     if (hasBudgets) {
       const budgetStarted = performance.now();
-      data.auxiliaryBuildBudgets = await checkAuxiliaryBuildBudgets(root, auxiliary, environment);
-      data.buildBudgets = await readBudgetReceipt(root, data.artifact, budgets, environment, token)
-        ?? (Object.keys(budgets).length ? await checkBuildBudgets(root, data.artifact, budgets, { env: options.env }) : { valid: true, measurements: [], diagnostics: [] });
+      const receipt = await readBudgetBatchReceipt(root, data.artifact, budgets, environment, token, auxiliary);
+      data.auxiliaryBuildBudgets = receipt?.auxiliary ?? await checkAuxiliaryBuildBudgets(root, auxiliary, environment);
+      data.buildBudgets = receipt?.primary ?? (Object.keys(budgets).length ? await checkBuildBudgets(root, data.artifact, budgets, { env: options.env }) : { valid: true, measurements: [], diagnostics: [] });
       data.steps.push({ name: 'budgets', exitCode: data.buildBudgets.valid && data.auxiliaryBuildBudgets.valid ? 0 : 1, durationMs: Math.round(performance.now() - budgetStarted) });
       budgetDiagnostics.push(...data.buildBudgets.diagnostics, ...data.auxiliaryBuildBudgets.diagnostics);
       if (!data.buildBudgets.valid || !data.auxiliaryBuildBudgets.valid) return report(false, budgetDiagnostics);

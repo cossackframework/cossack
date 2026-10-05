@@ -7,7 +7,7 @@ export function checkBuildBudgets(root, artifact, budgets, options = {}) {
   });
 }
 
-export { BUDGET_RUN_ENV, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings } from '@cossackframework/framework/budget-receipts';
+export { BUDGET_RUN_ENV, prepareBudgetRun, readBudgetReceipt, readBudgetBatchReceipt, assertBudgetSettings } from '@cossackframework/framework/budget-receipts';
 
 import { checkAuxiliaryBuildBudgets as checkAuxiliary } from '@cossackframework/framework/auxiliary-build-budgets';
 export { readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, assertAuxiliaryBudgetTargets, inspectAuxiliaryBudgetArtifacts } from '@cossackframework/framework/auxiliary-build-budgets';

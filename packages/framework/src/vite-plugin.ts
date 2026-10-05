@@ -6,6 +6,9 @@ import type { ConfigRuntime } from './config-requirements.js';
 import { CONFIG_GLOB, generateConfigTypes, discoverConfigFactories } from './config-codegen.js';
 import { parseSync, type Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
@@ -286,24 +289,51 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       return [{ tag: 'script', attrs: { type: 'module', src: developmentBase + '@id/__x00__' + TRACE_BRIDGE_MODULE }, injectTo: 'body' }];
     },
     closeBundle() { traceBridge?.dispose(); traceBridge = undefined; },
-    configureServer(server) {
-      if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
-      const pagesDirectory = resolve(projectRoot, 'src/pages');
-      const update = (file: string) => {
-        const path = relative(pagesDirectory, file);
-        if (path.startsWith('..') || path.startsWith('/') || !/\.(?:ts|mdx?)$/.test(path)) return;
-        try {
-          if (options.capabilities) refreshCapabilityPages();
-          const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
-          if (!generated.changed) return;
-          const module = server.moduleGraph.getModuleById(generated.file);
-          if (module) server.moduleGraph.invalidateModule(module);
-        } catch (error) { server.config.logger.error(String(error)); }
-      };
-      server.watcher.on('add', update).on('unlink', update).on('change', update);
-      server.httpServer?.once('close', () => {
-        server.watcher.off('add', update).off('unlink', update).off('change', update);
-      });
+    configureServer: {
+      // Native Cloudflare handlers install their request proxy in a returned hook.
+      // Install our error boundary after that proxy and before Vite's HTML renderer.
+      order: 'post',
+      handler(server) {
+        if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
+        const pagesDirectory = resolve(projectRoot, 'src/pages');
+        const update = (file: string) => {
+          const path = relative(pagesDirectory, file);
+          if (path.startsWith('..') || path.startsWith('/') || !/\.(?:ts|mdx?)$/.test(path)) return;
+          try {
+            if (options.capabilities) refreshCapabilityPages();
+            const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+            if (!generated.changed) return;
+            const module = server.moduleGraph.getModuleById(generated.file);
+            if (module) server.moduleGraph.invalidateModule(module);
+          } catch (error) { server.config.logger.error(String(error)); }
+        };
+        server.watcher.on('add', update).on('unlink', update).on('change', update);
+        server.httpServer?.once('close', () => {
+          server.watcher.off('add', update).off('unlink', update).off('change', update);
+        });
+        if (options.capabilities?.runtime !== 'cloudflare') return;
+        const requestStarts = new WeakMap<IncomingMessage, number>();
+        server.middlewares.use((request, _response, next) => {
+          requestStarts.set(request, performance.now());
+          next();
+        });
+        return () => {
+          // ModuleRunner compiler results use the private hot channel. Only HTTP
+          // request exceptions are caught here; retain full compiler diagnostics
+          // in the developer's terminal without serializing them into HTML.
+          server.middlewares.use((error: unknown, request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => {
+            if (response.headersSent) { next(error); return; }
+            const requestId = randomUUID();
+            server.config.logger.error(error instanceof Error ? error.stack ?? error.message : String(error));
+            logRuntimeFailure({ requestId, runtime: 'cloudflare', startedAt: requestStarts.get(request) }, 'dispatch');
+            response.statusCode = 500;
+            response.setHeader('Content-Type', 'application/json; charset=utf-8');
+            response.setHeader('Cache-Control', 'no-store');
+            response.setHeader('X-Cossack-Request-Id', requestId);
+            response.end(JSON.stringify({ error: 'Internal Server Error', code: 'COSSACK_RUNTIME_FAILED', requestId }));
+          });
+        };
+      },
     },
     async transform(code, id) {
       // Inject source metadata for DevTools (only in dev mode for client environment)

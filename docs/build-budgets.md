@@ -47,8 +47,8 @@ verification and measurement do not apply that environment a second time.
 Use the installed Vite CLI or `createBuilder().buildApp()` for this gate. The
 single-environment `vite.build()` API does not invoke application build hooks.
 
-For supported no-bundle primary Worker artifacts, the CLI reuses the plugin's
-measurement through a private `.cossack/build-budget-receipt.json` file. Each
+For supported no-bundle Worker artifacts, the CLI reuses the plugin's complete
+measurement batch through a private `.cossack/build-budget-receipt.json` file. Each
 build gets a fresh signing key that is never saved. Reuse requires matching
 settings, selected environment, artifact contents and metadata, installed Wrangler
 identity, and Node version. Startup receipts also bind the installed Miniflare
@@ -58,7 +58,7 @@ only when a valid receipt proves a budget failure. Other build failures retain
 their build diagnostics. Raw tool output and binding values never enter receipts.
 
 Reuse is deliberately conservative. Symlinks, external modules, custom builds,
-rebundling, auxiliary Workers and unsupported legacy configuration trigger a fresh
+rebundling, unselected auxiliary Workers and unsupported legacy configuration trigger a fresh
 CLI measurement after a successful build. Inventory is bounded to 4,096 files
 and 64 MiB of artifacts/metadata, 4,096 directories and 8,192 directory entries.
 Tool/runtime identity has a separate 256 MiB bound because native workerd binaries
@@ -188,11 +188,23 @@ Prerender and dev-only Workers cannot satisfy an auxiliary policy. JSON returns
 Only authored paths and safe metric results are returned; binding values and
 raw tool output stay private.
 
-Auxiliary redirects disable signed receipt reuse. Successful builds receive
-fresh CLI measurements; failed Vite builds retain their compiler/build failure
-envelope rather than trusting unauthenticated auxiliary results. A hard limit
-still stops the build and upload. This can repeat measurement across the plugin
-and CLI. Broader module graph/receipt coverage remains separate work.
+A complete batch can reuse one signed version-2 receipt for the primary Worker
+and every selected auxiliary Worker. All auxiliary redirect entries must have
+policies; an unselected entry disables reuse. The receipt binds independent
+source snapshots and files, settings, selected environment, redirect membership,
+ordered artifacts, and tool/runtime identity. The primary artifact remains bound
+when only auxiliary limits exist. Supported prerender artifacts are also included
+in the identity but cannot satisfy an auxiliary policy.
+
+The gate fingerprints the whole batch before all measurements and again after
+the last result. It never signs a measured prefix. Receipts contain only numeric
+metrics, fixed outcomes and hashed identity, without source/config values or tool
+messages. The CLI reconstructs diagnostics from current limits. Successful builds
+reuse only a complete matching batch; unsupported or changed inventories receive
+fresh checks. A failed build can report an auxiliary budget failure only from a
+complete authenticated receipt. Passing or incomplete receipts never hide an
+unrelated compiler failure. Broader external/rebundled module graphs remain
+unsupported for reuse; local validation still enforces their budgets.
 
 These policies perform local budget validation. `cossack deploy` currently uploads
 only the primary Worker; it does not deploy the auxiliary Workers. Deploy those

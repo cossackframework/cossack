@@ -2,18 +2,24 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest verified Codex batch: **CLI gate, MessageScroller race and hosted preparation**
-([evidence](./release-0.9.0-verification-archive.md#codex-cli-gate-scroller-hosted-preparation-2026-10-06)).
-**51 complete / 7 open**, versions 0.8.3; no numbered task closes. The broad CLI
-run is terminal: **1,112 passed / 2 failed / 9 skipped**. MessageScroller's 25px
-resize/removal race is fixed with a deterministic regression; source and changed
-UI tarball browser acceptance pass. The strict Workflow probe still fails because
-native local status is Running, not Waiting. Never describe this as a green suite.
-Two non-Desktop cases accidentally name-filtered and one installed-env omission
-now pass separately; the six Desktop cases remain waived. Combined source checks
-pass 6 tests / 4 files; UI contracts 12 / 12; installed browser 1 / 1; root/all ten
-non-Desktop types pass. UI alone repacked once into a fresh consumer:
-`/tmp/cossack-scroller-release-installed`; unchanged package tarballs reused.
+Latest verified Codex batch: **compiler HTTP faults and complete aggregate receipts**
+([evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06)). **51 complete / 7 open**, versions 0.8.3; no numbered row
+closes. Complete atomic receipts bind primary/every selected auxiliary, source,
+redirect, environment, artifacts, tools and native startup runtime. Unsupported or
+partial identities decline reuse. Source two-Worker and installed public CLI
+primary-startup/two-auxiliary cases prove no repeated CLI measurements. Compiler
+HTTP failures from malformed server-only code return fixed correlated metadata
+and recover after repair; trusted terminal keeps diagnostic details. Initial
+malformed startup and HMR/browser-overlay privacy remain unproven.
+
+Framework **157 / 8 files**, CLI units **10 / 1** + related **33 / 3**, source
+two-auxiliary **1 / 1** (six filtered skips), installed public CLI **2 / 1**,
+compiler source and installed **1 / 1 each**, root/all ten non-Desktop types pass.
+Framework rebuilt/repacked after a real default-environment identity fix; CLI
+packed once. Unchanged tarballs reused. Current properly overridden installed
+consumer: `/tmp/cossack-aggregate-release-installed`. No broad CLI rerun; its prior
+terminal **1,112 / 2 failed / 9 skipped** remains historical, with targeted
+MessageScroller and three omission fixes proved separately. Waiting still unproven.
 
 **Hosted readiness:** cached Wrangler OAuth is authenticated with one account;
 API-token/account environment and CI credentials remain unconfigured. The private
@@ -25,8 +31,7 @@ No remote mutations occurred. Approval for hosted verification is pending; do no
 infer it from elapsed time. Preparation scripts contain no deployment-write command.
 
 Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Missing:
-actual Workflow Waiting; CF-08 compiler diagnostics, wider graphs/aggregate receipts,
-provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
+actual Workflow Waiting; CF-08 wider module graphs and provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
 production and safe no-tag recovery; Deno Deploy and final versioned artifact/runtime
 matrix, then versioning and final audit. Preserve reports.md/.zcodeignore and the
 two earlier strict uncommitted Workflow probes. Desktop remains waived.

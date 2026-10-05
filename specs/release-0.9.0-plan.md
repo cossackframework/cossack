@@ -225,24 +225,29 @@ reuse. Directory membership and redirect reads are bounded. This checkpoint
 retains the primary-only receipt contract and fresh-measurement fallback.
 See [verification](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
 
-Deferred CF-08 implementation context (not the next batch): authenticated aggregate receipts. One atomic receipt must
-cover the primary Worker and every selected auxiliary policy, with independent
-source snapshots, selected environment, complete redirect membership, settings,
-tool/runtime identities and ordered artifact inventories. Compute identity before
-all measurements and again after all results; never sign a partial prefix.
-Initially require auxiliary policies to cover every auxiliary redirect entry;
-unselected Workers must decline reuse rather than leave incomplete graph evidence.
-Keep the primary artifact bound even when only auxiliary limits are configured.
-Store only numeric values and fixed measured/failed outcomes, then reconstruct public
-diagnostics from current policies. A successful build may reuse only a complete
-matching receipt; missing/unsupported identities require fresh measurement. A
-failed build may report budget failures only from a complete authenticated failing
-receipt, without running tools again; passing receipts must not disguise unrelated
-build failures. Integrate shared APIs, Vite, CLI build/deploy and installed helpers
-under coordinator ownership; independent agents can own bounded tests after the
-API is fixed. Verify two auxiliary targets, auxiliary-only settings, stale source,
-redirect/module/tool/runtime mutations, malformed/partial receipts, private values
-and native single-measurement reuse. Auxiliary upload remains a separate task.
+Codex completed the aggregate receipt criterion (2026-10-06): one authenticated
+atomic receipt covers primary plus every selected auxiliary policy, independent
+source snapshots, selected environment, full redirect membership, settings, ordered
+artifacts and tool/native runtime identity. Identity is checked before all and
+after the final measurement; partial prefixes and unselected auxiliary graphs
+decline reuse. The primary remains bound for auxiliary-only policies. Only finite
+configured numeric measurements and fixed outcomes are stored; current policies
+reconstruct diagnostics. Missing/unsupported identities fall back to fresh
+measurements; only a complete failing receipt can replace a failed-build diagnostic.
+Default Wrangler environment metadata (empty/omitted) is normalized without
+weakening selected-environment binding. Native source and actual installed public
+CLI prove two auxiliaries, primary startup and no repeat measurements. Mutation,
+malformed, partial, private-value and startup runtime tests pass. Auxiliary upload
+remains separate; wider external/rebundled graphs still need their required
+acceptance. [Full evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06).
+
+Codex completed active compiler HTTP fault acceptance (2026-10-06): malformed
+server-only code returns fixed JSON/UUID/no-store, matching structured dispatch
+metadata and finite entry duration. Trusted terminal retains compiler diagnostics;
+repair works in the same process. Source and installed native checks pass. This
+does not prove browser overlay/HMR privacy or initially malformed startup; do not
+claim them passed. CF-08 hosted Logs ingestion, remote remapping/provider startup
+and wider graphs remain open.
 
 
 Codex direct-Vite dependency audit (2026-10-05), read-only: retain cossackConfig's
@@ -889,3 +894,16 @@ has not occurred. Neither local fixture success nor the plan proves hosted Waiti
 Logs/maps/startup, CI isolation or unchanged production. CF-08 also retains its
 compiler and wider graph/aggregate receipt requirements. Final versioned artifact,
 Deno Deploy and release-audit dependencies remain. [Verification](./release-0.9.0-verification-archive.md#codex-cli-gate-scroller-hosted-preparation-2026-10-06).
+
+
+## Codex — compiler and whole-batch receipt acceptance (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** Two independent implementation
+agents owned compiler files and aggregate regression tests. Codex owned shared
+APIs, Vite/CLI integration, installed public CLI acceptance and final verification.
+Framework 157 tests, CLI units 10 + related 33, native two-auxiliary regression,
+installed CLI two cases, compiler source/installed and root/all ten non-Desktop
+types pass. Framework and CLI changed artifacts packed; unchanged artifacts reused.
+[Exact commands, failures and limits](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06). Continue with wider graph acceptance
+or approved hosted checks; do not repeat unchanged receipt matrices. Native Waiting,
+CI credentials/lifecycle, Deno Deploy and final versioned release gates remain.

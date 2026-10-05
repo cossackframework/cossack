@@ -13656,3 +13656,88 @@ CI lifecycle/isolation/retry/unchanged production and safe no-tag ownership reco
 Deno Deploy and final versioned artifact/runtime matrix; gated versioning/release
 prose completeness and final requirement audit. Local hosted-fixture smoke does
 not prove any remote criterion. Desktop waiver is not runtime acceptance.
+
+
+<a id="codex-compiler-aggregate-acceptance-2026-10-06"></a>
+### Codex — compiler HTTP faults and complete aggregate receipts (2026-10-06)
+
+Author: **Codex**. **51 complete / 7 open; no numbered task closes.** Two
+implementation agents had exclusive compiler and aggregate-test ownership;
+coordinator reviewed all changes and owned shared APIs, integration and installed
+public CLI acceptance. Baseline reports.md/.zcodeignore and both strict uncommitted
+Workflow probes were preserved and excluded from this batch.
+
+**CF-08 criteria completed:**
+
+- One signed version-2 receipt for primary plus every selected auxiliary policy;
+  no partial prefix. Before-first/after-last identity binds primary even with
+  auxiliary-only budgets, each selected source snapshot/settings/environment,
+  complete redirect membership/order, module inventories and tool/runtime identity.
+  Unselected auxiliary membership and unsupported identities decline reuse.
+- Only configured finite numeric values and fixed measured/failed outcomes persist;
+  diagnostics are reconstructed from current policies. Malformed/signed-partial,
+  unknown fields/outcomes, tampered values, reordered/missing Workers and stale
+  source/module/chunk/tool/runtime identities reject reuse. A passing receipt
+  cannot disguise unrelated build failures. Genuine complete failing batches
+  provide structured budget failures without another tool run.
+- Actual installed public CLI success build, success deploy dry-run and failed
+  deploy dry-run each perform one native measurement per configured Worker in
+  Vite. Private fixed-command counters observe zero measurement commands in CLI.
+  Primary case performs 3 upload + 3 actual local startup checks across its three
+  builds; auxiliary-only case performs 6 upload checks across two Workers/three
+  builds. Real Wrangler executable/metrics run unchanged; no fabricated output.
+- Cloudflare Vite/compiler HTTP boundary returns fixed COSSACK_RUNTIME_FAILED JSON,
+  UUID matching response header/structured event, unknown route/action (routing
+  never ran), Cloudflare runtime/dispatch stage and finite entry duration, no-store.
+  Malformed @Server private method sentinel/source/path is absent from response
+  and structured event; full compiler source remains in trusted terminal. Active
+  page repair recovers in the same native process.
+
+**Verification:**
+
+| Check | Terminal result | Evidence |
+| --- | --- | --- |
+| Framework targeted combined receipt/budget/auxiliary/codegen checks (`pnpm --filter @cossackframework/framework exec vitest run`, eight selected files) | 157 passed / 8 files | `/tmp/cossack-aggregate-framework-final-combined.log` |
+| CLI `budget-reuse-command.test.js` | 10 passed / 1 file | `/tmp/cossack-aggregate-cli-unit.log` |
+| Related CLI build-budget-command/deploy/deployment checks | 33 passed / 3 files | `/tmp/cossack-aggregate-cli-related.log` |
+| Source `build-budget-integration.test.js` two-auxiliary regression, selected with `-t` | 1 passed / 6 filtered skips | `/tmp/cossack-aggregate-native-two-aux-final.log` |
+| `COSSACK_AGGREGATE_INSTALLED_ROOT=/tmp/cossack-aggregate-release-installed pnpm --filter cossack exec vitest run tests/aggregate-budget-installed.test.js` | 2 passed / 1 file | `/tmp/cossack-aggregate-public-installed-final.log` |
+| `pnpm --filter cossack exec vitest run tests/cloudflare-compiler-faults.test.js` | 1 passed / 1 file | `/tmp/cossack-server-compiler-source-final.log` |
+| Same compiler command with `COSSACK_COMPILER_FAULTS_INSTALLED_ROOT=/tmp/cossack-aggregate-release-installed` | 1 passed / 1 file | `/tmp/cossack-server-compiler-installed-final.log` |
+| Root `pnpm tsc --noEmit` | Passed | `/tmp/cossack-aggregate-final-root-types.log` |
+| Ten non-Desktop package typechecks | All passed; Desktop waived | `/tmp/cossack-aggregate-final-package-types.log` |
+| Framework `build:types` and changed-package tarballs | Passed | `/tmp/cossack-aggregate-framework-final-build.log`, `/tmp/cossack-aggregate-framework-final-pack.log`, `/tmp/cossack-aggregate-cli-pack.log` |
+
+Aggregate units include 32 cases; native undefined vs empty targetEnvironment
+default metadata now normalizes to the same independently bound selection.
+Source Wrangler 4.114.0/plugin 1.47.0 and installed Wrangler 4.147.0/plugin
+1.62.5/Vite 8.3.2 exercised. Framework packed twice because native testing exposed
+a real identity mismatch; CLI packed once. All unchanged packages reused, including
+the previous batch's fixed UI tarball. Fresh consumer uses pnpm-workspace.yaml
+overrides for every Cossack tarball; private transitive resolution audit found
+zero registry Cossack bindings across five inspected dependency relationships.
+
+**Failed iterations retained:** first source combined run was 8 passed/1 failed:
+CLI remeasured both auxiliaries because Wrangler default metadata differed. Fixed
+normalization and selected failed case passed; six unaffected source budget cases
+and native API/SSR proof retain their prior evidence. This is not a green rerun of
+all nine combined cases. Initial test typecheck failed inferred test-only shapes;
+explicit types fixed them before final checks. Initial installed setup lacked
+workspace overrides, and a later private-module integration mode could not spy
+on immutable installed ESM namespaces (4 passed/4 failed). Removed that mode and
+used the actual public CLI fixture above. The new fixture first caught a launcher
+that did not execute native require.main and then missing production APP_URL;
+correct real-bin spawn and valid test URL precede the final two-case pass. No
+acceptance assertions were weakened. Compiler fixture was subsequently strengthened
+from shared render syntax to server-only syntax; final source/installed proofs
+above apply to this strengthened variant.
+
+**Remaining:** wider external/rebundled module graph acceptance; hosted Workers
+Logs ingestion/remapping/provider startup; browser overlay/HMR and initially
+malformed startup are not proven by the HTTP boundary. Auxiliary upload remains
+a separate capability. SVC-04 needs actual native Waiting; CF-09 needs hosted
+CI lifecycle/isolation/retry/unchanged-production evidence and safe no-tag recovery.
+Hosted approval is still pending despite working cached OAuth; token/CI config
+remains absent. Deno Deploy, final versioned artifact/runtime matrices and REL-04/05
+gates remain open. No broad CLI/root build rerun, cloud mutation, publication or
+push occurred. Desktop checks were waived, not passed.

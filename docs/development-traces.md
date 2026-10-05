@@ -372,3 +372,21 @@ bridge uses the public inspector import so dependency optimization does not
 create a second capture owner. Other runtime development paths and remaining
 server transport evidence still have separate acceptance gates. The separate [stored test-results reader](./test-results.md)
 reads test evidence, not runtime traces.
+
+
+### Cloudflare compiler failures
+
+In generated Cloudflare development applications, a malformed page can fail in
+Vite before the Worker reaches the framework request handler. The HTTP boundary
+returns status 500 with `COSSACK_RUNTIME_FAILED` and a request UUID in both JSON
+and `X-Cossack-Request-Id`. The matching `cossack.runtime.failure` event records
+Cloudflare runtime, dispatch stage and duration; route/action remain `unknown`
+because application routing did not run. The response is not cached and omits
+compiler source, paths and stack traces.
+
+Full parse diagnostics remain in the trusted developer terminal. Private
+ModuleRunner compiler transport is unchanged. Repairing a page in a running
+server can recover without restarting it. An initially malformed eager module
+can prevent native Cloudflare startup before any listener exists; this HTTP
+boundary does not guarantee startup recovery. This describes HTTP failures,
+not Vite's browser overlay or HMR error-message privacy.

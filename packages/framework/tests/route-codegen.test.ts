@@ -86,7 +86,7 @@ describe('shared structural route model', () => {
     const plugin = cossackPages(); (plugin.configResolved as Function)({ root });
     const watcher = new EventEmitter(); const httpServer = new EventEmitter(); const module = {};
     const invalidateModule = vi.fn(); const error = vi.fn();
-    (plugin.configureServer as Function)({ watcher, httpServer, moduleGraph: { getModuleById: () => module, invalidateModule }, config: { logger: { error } } });
+    (plugin.configureServer as { handler: Function }).handler({ watcher, httpServer, moduleGraph: { getModuleById: () => module, invalidateModule }, config: { logger: { error } } });
     const file = write(root, 'src/pages/new/[id].ts'); watcher.emit('add', file);
     expect(readFileSync(join(root, '.cossack/routes.ts'), 'utf8')).toContain('/new/:id');
     unlinkSync(file); watcher.emit('unlink', file);

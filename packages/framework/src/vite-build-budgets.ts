@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { readBuildBudgets, checkBuildBudgets, type BuildBudgets } from './build-budgets.js';
 import { findCloudflareConfig, readCloudflareDeclarationConfig, resolveConfigRuntime } from './config-preflight.js';
 import { inspectBuiltDeployment } from './deployment-artifact.js';
-import { BUDGET_RUN_ENV, clearBudgetReceipt, fingerprintBudgetArtifact, writeBudgetReceipt } from './budget-receipts.js';
+import { BUDGET_RUN_ENV, clearBudgetReceipt, fingerprintBudgetBatch, writeBudgetBatchReceipt } from './budget-receipts.js';
 import { readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts, type AuxiliaryBudgetTarget } from './auxiliary-deployment.js';
 import type { ConfigRuntime } from './config-requirements.js';
 
@@ -58,11 +58,12 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
         }
         const artifact = await inspectBuiltDeployment(root, expected!);
         const key = process.env[BUDGET_RUN_ENV];
-        const before = key ? await fingerprintBudgetArtifact(root, artifact, budgets, environment) : undefined;
+        const before = key ? await fingerprintBudgetBatch(root, artifact, budgets, environment, auxiliary) : undefined;
         const auxiliaryResult = await checkAuxiliaryBuildBudgets(root, auxiliary, environment);
         const result = Object.keys(budgets).length ? await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: environment ?? '' } }) : { valid: true, measurements: [], diagnostics: [] };
         if (auxiliary.length) await inspectAuxiliaryBudgetArtifacts(root, auxiliary, environment);
-        await writeBudgetReceipt(root, artifact, budgets, environment, key, before, result);
+        await inspectBuiltDeployment(root, expected!);
+        await writeBudgetBatchReceipt(root, artifact, budgets, environment, key, before, { primary: result, auxiliary: auxiliaryResult }, auxiliary);
         for (const diagnostic of [...result.diagnostics, ...auxiliaryResult.diagnostics]) {
           if (diagnostic.severity === 'warning') builder.config.logger.warn(`${diagnostic.code}: ${diagnostic.message}`);
         }
