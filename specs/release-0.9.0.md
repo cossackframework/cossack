@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include eleven standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes a parameterized Node SQLite guide and example. Broader library/component/recipe coverage and runtime guidance remain open. See [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twelve standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -168,26 +168,28 @@ count remains **28 complete / 30 open**.
 ### Codex: Installed database guidance and cold-start acceptance (2026-10-05)
 
 The database package now ships authored agent guidance for parameterized Node
-SQLite usage, runtime-specific imports, safe identifier quoting, migration
-practice and the limits of D1 batch versus interactive transactions. Its example
-compiles and executes from the installed package in the offline docs gate.
+SQLite and Cloudflare D1 usage, runtime-specific imports, safe identifier
+quoting, migration practice and the limits of D1 batch versus interactive
+transactions. Both examples compile and execute from installed package exports
+in the offline docs gate. The D1 example runs against a binding-contract fixture,
+not a Miniflare or live D1 database.
 Generated Cloudflare trace fixtures now clear stale Vite optimizer artifacts
 between rewritten application graphs; the scaffold pre-bundles API and devtools
 entries discovered after Vite's initial scan. This keeps HTTP, SSE, WebSocket
 trace and packaged-page acceptance stable on cold generated applications.
 
 - `pnpm test:agent-docs:local`: passes fresh packed-package installation,
-  eleven standalone examples, four auth examples, four generated application
-  pages, offline CLI/MCP parity, Cloudflare HTTP/SSE/WebSocket traces, UI
-  contracts and production source-map stripping. Desktop is excluded from this
-  focused documentation gate by design.
+  twelve standalone examples (including the D1 prepared-binding assertion),
+  four auth examples, four generated application pages, offline CLI/MCP parity,
+  Cloudflare HTTP/SSE/WebSocket traces, UI contracts and production source-map
+  stripping. Desktop is excluded from this focused documentation gate by design.
 - `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`:
   **13 tests pass**.
 - `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'`: pass.
 
-CLI-08 remains open for broader library/component/recipe guidance and verified
-runtime coverage, including D1-specific examples. REL-02 and REL-03 retain their
-full criteria. Desktop remains complete by user decision; its waived platform
+CLI-08 remains open for broader library/component/recipe guidance and real
+Worker runtime execution of the D1 guide. REL-02 and REL-03 retain their full
+criteria. Desktop remains complete by user decision; its waived platform
 checks are not claimed as passed. The release count remains **28 complete / 30
 open**.
 

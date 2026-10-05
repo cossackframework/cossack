@@ -17,6 +17,23 @@
           "source": "import { createORM } from '@cossackframework/database';\nimport { nodeSQLite } from '@cossackframework/database/node';\n\nconst orm = createORM({ adapter: await nodeSQLite(), entities: [] });\ntry {\n  const notes = orm.sql.id('notes');\n  const body = orm.sql.id('body');\n  await orm.sql`CREATE TABLE ${notes} (${body} TEXT NOT NULL)`;\n  await orm.sql`INSERT INTO ${notes} (${body}) VALUES (${'hello'})`;\n\n  const hostile = \"' OR 1=1 --\";\n  const result = await orm.sql<{ body: string }>`SELECT ${body} FROM ${notes} WHERE ${body} = ${hostile}`;\n  if (result.rows.length !== 0) throw new Error('Query input must remain a bound value');\n\n  const stored = await orm.sql<{ body: string }>`SELECT ${body} FROM ${notes} WHERE ${body} = ${'hello'}`;\n  if (stored.rows[0]?.body !== 'hello') throw new Error('The safe value was not stored');\n} finally {\n  await orm.close();\n}\n"
         }
       ]
+    },
+    {
+      "id": "cloudflare-d1-bound-query",
+      "title": "Query Cloudflare D1 with bound values",
+      "summary": "Create the D1 adapter from a Worker binding and keep request values in prepared-statement parameters.",
+      "imports": [
+        "@cossackframework/database",
+        "@cossackframework/database/cloudflare"
+      ],
+      "markdown": "Import `d1` from `@cossackframework/database/cloudflare` and pass the D1 binding from the Worker's `env`. Do not import runtime adapters from the neutral database package. The example assumes a `notes` table created by a migration and uses an owned ORM for one direct query. In a Cossack app, prefer the request ORM middleware so it owns request scoping and cleanup.\n\nThe SQL tag binds interpolated values. Use `orm.sql.id()` for dynamic table or column names. D1 uses prepared statements and supports atomic sequential `batch()` calls. It does not support interactive transactions, savepoints, connection reservation or cancellation; unsupported transaction operations raise `UnsupportedCapabilityError`. The migration runner submits schema changes and migration bookkeeping in one D1 batch. Do not treat multiple ordinary queries as one transaction.\n\nThe example exercises the published D1 adapter against the binding contract. It does not provision a Cloudflare database or prove a remote deployment. For Worker request scopes that rely on AsyncLocalStorage, check the compatibility date and enable the Workers Node compatibility support only when needed.",
+      "examples": [
+        {
+          "id": "bound-query",
+          "language": "typescript",
+          "source": "import { createORM } from '@cossackframework/database';\nimport { d1, type D1DatabaseBinding } from '@cossackframework/database/cloudflare';\n\nexport async function findNote(database: D1DatabaseBinding, body: string) {\n  const orm = createORM({ adapter: await d1(database), entities: [] });\n  try {\n    const result = await orm.sql<{ body: string }>`SELECT body FROM notes WHERE body = ${body}`;\n    return result.rows[0]?.body;\n  } finally {\n    await orm.close();\n  }\n}\n"
+        }
+      ]
     }
   ]
 }

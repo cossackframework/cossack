@@ -74,6 +74,7 @@ require('node:module').syncBuiltinESMExports();
     const examples = [];
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input'].map(id => ['@cossackframework/core', id]), ['@cossackframework/renderer', 'server-html'],
       ['@cossackframework/database', 'parameterized-node-sqlite'],
+      ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ...['resource', 'mutation', 'scoped-service', 'protected-route'].map(feature => ['@cossackframework/scaffold', feature + '-recipe'])]) {
       const pkg = catalog.data.packages.find(pkg => pkg.name === name);
       assert.equal(pkg.guidance.status, 'available');
@@ -100,7 +101,27 @@ require('node:module').syncBuiltinESMExports();
       const result = await exec(process.execPath, [...nodeArgs, path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js')], { cwd: projectDir, env, timeout: 30_000 });
       assert.equal(result.stderr, '');
     }
-    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports.`);
+    const d1Example = await import(pathToFileURL(path.join(scratch, 'compiled', 'cloudflare-d1-bound-query-bound-query.js')).href);
+    const hostileD1Value = "' OR 1=1 --";
+    const preparedD1 = [];
+    const d1Binding = {
+      prepare(text) {
+        const record = { text, values: [] };
+        const statement = {
+          bind(...values) { record.values = values; return statement; },
+          async all() { return { success: true, results: [{ body: hostileD1Value }] }; },
+          async run() { return { success: true, results: [], meta: { changes: 1 } }; },
+        };
+        preparedD1.push(record);
+        return statement;
+      },
+      async batch() { return []; },
+    };
+    assert.equal(await d1Example.findNote(d1Binding, hostileD1Value), hostileD1Value);
+    assert.equal(preparedD1.length, 1);
+    assert.ok(!preparedD1[0].text.includes(hostileD1Value), 'D1 values must not be interpolated into SQL text');
+    assert.deepEqual(preparedD1[0].values, [hostileD1Value]);
+    console.log(`Compiled and executed ${examples.length} packaged usage examples against installed exports; D1 bound-value acceptance passed.`);
 
     // Auth publishes TypeScript source. Check its examples with bundler
     // resolution, then bundle and execute under the guard. The tsx loader

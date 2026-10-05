@@ -10046,16 +10046,17 @@ by user decision, with its waived OS acceptance not represented as passed.
 <a id="codex-cli08-database-guidance-2026-10-05"></a>
 ### Codex: Installed database guidance and cold-start acceptance (2026-10-05)
 
-`@cossackframework/database` now packages `agent-docs.json` with a guide for
-parameterized Node SQLite usage. It documents the runtime-specific package
-entries, bound SQL values, `sql.id` for identifiers, the restricted role of
-`unsafe`, migration practice and the difference between sequential atomic D1
-`batch()` operations and general interactive transactions. The compiled example
-creates an in-memory Node SQLite database from the installed `/node` export,
-creates a table and inserts a hostile SQL-looking value through a bound
-parameter. The package-guidance reader test proves these authored docs are
-accepted only when every referenced package entry is exported, without importing
-the modules.
+`@cossackframework/database` now packages `agent-docs.json` with guides for
+parameterized Node SQLite and Cloudflare D1 usage. They document runtime-specific
+package entries, bound SQL values, `sql.id` for identifiers, the restricted role
+of `unsafe`, migration practice and the difference between sequential atomic
+D1 `batch()` operations and general interactive transactions. The Node example
+creates an in-memory SQLite database from the installed `/node` export and
+proves a hostile SQL-looking value stays bound. The D1 example imports the
+installed `/cloudflare` adapter and runs a parameterized query against a binding
+contract fixture; this checks the adapter path but is not a Miniflare or live D1
+runtime test. The package-guidance reader test proves authored docs are accepted
+only when every referenced package entry is exported, without importing modules.
 
 The first clean generated Cloudflare run exposed stale Vite optimized SSR chunks:
 trace fixtures rewrite transport/page graphs, while API handlers and page
@@ -10068,7 +10069,8 @@ clear `node_modules/.vite` before starting a new generated graph.
 
 - `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local`:
   passes fresh package builds/installation, database build tests (**15 files /
-  92 tests**), eleven standalone examples, four auth examples, four generated
+  92 tests**), twelve standalone examples including the D1 binding assertion,
+  four auth examples, four generated
   action/resource/task/public-form pages, offline CLI/MCP parity, Cloudflare
   HTTP/SSE/WebSocket traces, installed UI contracts and production JavaScript /
   source-map stripping. Desktop is deliberately excluded from this focused

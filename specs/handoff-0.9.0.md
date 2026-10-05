@@ -56,16 +56,17 @@ the required non-Desktop release matrix.
    state storage, and native fixtures prove one exchange/account/session despite
    a provider that accepts repeated codes. Bundling does not prove plain
    Node imports or production hashing limits.
-   The database package now publishes a parameterized Node SQLite guide with
-   an installed example; it explains safe binding/identifiers, runtime entry
-   points, migrations, and D1 transaction limits. The full fresh-tarball docs
-   gate passes eleven standalone examples, four auth examples, four generated
-   pages, Cloudflare HTTP/SSE/WebSocket traces, UI contracts and production
-   stripping. Its cold-start Vite cache fix clears optimizer state between
+   The database package now publishes parameterized Node SQLite and Cloudflare
+   D1 guides. The D1 example runs against an installed binding-contract fixture
+   and verifies bound values; it has not run under a generated Worker with
+   Miniflare D1. The full fresh-tarball docs gate passes twelve standalone
+   examples, four auth examples, four generated pages, Cloudflare
+   HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
+   cold-start Vite cache fix clears optimizer state between
    rewritten graphs and pre-bundles late-discovered API/devtools entries. See
    [the CLI-08 checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05).
-   Continue other library and UI guidance and runtime coverage; there is not yet
-   a focused D1 database usage example.
+   Continue other library/UI guidance and real Worker runtime coverage for the
+   D1 guide.
    Pure helpers and recipe plans do not prove RPC, browser or adapter behavior.
 2. Continue **[RT-11](./release-0.9.0-plan.md#rt-11)** application session/flash
    recipes. The [session-dashboard checkpoint](./release-0.9.0.md#codex-rt11-dashboard-2026-10-05)
