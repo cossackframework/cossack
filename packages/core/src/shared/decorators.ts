@@ -2,6 +2,7 @@
 import './metadata';
 import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
+import { validateServerMethodTimeout } from './server-method-metadata';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
@@ -122,9 +123,10 @@ export interface ServerOptions {
   /** Server-only, evaluated on parsed input and trusted request context before inbound mutation. */
   authorize?: ServerActionAuthorizer<any>;
   /**
-   * Client-side deadline for calls to this method, in milliseconds. Exceeding
-   * it rejects the call with `COSSACK_RPC_TIMEOUT`; the server-side mutation
-   * may still have completed, so the outcome is uncertain, never retried.
+   * Client-side deadline for calls to this method, in milliseconds (integer
+   * from 1 through 2,147,483,647). Exceeding it rejects the call with
+   * `COSSACK_RPC_TIMEOUT`; the server-side mutation may still have completed,
+   * so the outcome is uncertain, never retried.
    */
   timeout?: number;
   /** @internal Compiler marker for generated server$ loaders. */
@@ -148,6 +150,7 @@ export function Server(options: ServerOptions = {}): any {
 }
 
 function registerServer(options: ServerOptions): any {
+  const timeout = validateServerMethodTimeout(options.timeout);
   return (target: any, propertyKey: string | symbol) => {
     const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
       ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
@@ -158,8 +161,7 @@ function registerServer(options: ServerOptions): any {
       provider: options.provider || 'page',
       ...(Object.hasOwn(options, 'input') ? { input: options.input } : {}),
       ...(Object.hasOwn(options, 'authorize') ? { authorize: options.authorize } : {}),
-      ...(Number.isFinite(options.timeout) && (options.timeout as number) > 0
-        ? { timeout: options.timeout } : {}),
+      ...(timeout === undefined ? {} : { timeout }),
       ...(options.serverResource ? { serverResource: true } : {}),
     };
     Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);

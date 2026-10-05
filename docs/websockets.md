@@ -28,7 +28,7 @@ with a unique request id and follows the same contract as HTTP/SSE:
   dispatches a second mutation.
 - `@Server({ timeout: ms })` adds a deadline. Exceeding it rejects with
   `COSSACK_RPC_TIMEOUT` — the server outcome stays **unknown** and is never
-  retried automatically.
+  retried automatically. `ms` must be an integer from 1 through 2,147,483,647.
 - If the socket closes mid-call, the call rejects with
   `COSSACK_RPC_TRANSPORT_CLOSED` (uncertain outcome). The transport reconnects
   automatically with bounded exponential backoff (0.5 s doubling to 30 s) and

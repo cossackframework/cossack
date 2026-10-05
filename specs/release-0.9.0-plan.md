@@ -301,6 +301,20 @@ release matrix remain separate gates. Basic Deno production execution is recorde
 in the [runtime checkpoint](./release-0.9.0.md#codex-deno-production-2026-10-04).
 RT-01 remains open.
 
+<a id="codex-rt01-timeout-bounds-2026-10-05"></a>
+Codex deadline-boundary review (2026-10-05): `@Server({ timeout })` now accepts
+only integer milliseconds from 1 through 2,147,483,647. Larger JavaScript timer
+delays are clamped by runtimes and could previously become near-immediate
+timeouts; fractional, non-finite, negative and nonnumeric values also silently
+lost their declared deadline. The decorator rejects invalid options, and the
+HTTP/SSE, WebSocket and service proxy paths validate inherited metadata before
+creating a timer. Core deadline and metadata regressions pass (25 tests), the
+full core suite passes (1,552 tests), the core package builds, and root
+`pnpm tsc --noEmit` passes. This tightens the existing per-method deadline
+contract but does not prove native disconnect delivery, server-side rollback,
+or arbitrary dynamic/per-call deadlines. Component initialization/restoration
+concurrency is still unaudited; RT-01 remains open.
+
 Start in core `shared/rpc-stream.ts`, `shared/rpc-json.ts`, `method-proxy.ts`, `service-scope.ts`,
 `transport-connections.ts`, and framework transport handlers and `router.ts`.
 

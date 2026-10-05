@@ -228,7 +228,10 @@ automatically after a timeout or disconnect: the server outcome may be unknown.
 Network failures report that uncertainty; the framework never retries the action.
 Cancelling response consumption does not roll back a completed mutation.
 
-A configured deadline continues while an iterator is paused at a yielded value.
+A method can declare a client-side deadline with `@Server({ timeout: ms })`.
+`ms` must be an integer from 1 through 2,147,483,647; invalid values throw when
+the decorator is applied. This bound avoids runtime timer clamping. A configured
+deadline continues while an iterator is paused at a yielded value.
 HTTP/SSE, explicit service and WebSocket calls reject completion with
 `COSSACK_RPC_TIMEOUT`, release local loading ownership and close the paused
 iterator without requiring another consumer pull. The next pull observes the

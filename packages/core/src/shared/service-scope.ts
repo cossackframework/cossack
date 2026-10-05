@@ -3,7 +3,7 @@ import { registerDevelopmentScope, developmentName } from './development-inspect
 import { collectReactiveMetadata } from './reactive-metadata';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers, optimisticHandler, optimisticKeys, ownRpcLoading } from './optimistic-state';
 import { createStateApplier } from './rpc-state';
-import { collectServerMethodMetadata } from './server-method-metadata';
+import { collectServerMethodMetadata, validateServerMethodTimeout } from './server-method-metadata';
 import './metadata';
 import type { Context } from 'hono';
 import type { User } from './user';
@@ -352,8 +352,7 @@ export class ServiceScope {
         const clientMethods = Reflect.getMetadata('cossack:client-methods', entry.serviceClass) || {};
         for (const action of Object.keys(serverMethods)) {
             if (clientMethods[action] || isSharedMethod(entry.serviceClass, action)) continue;
-            const declared = Number(serverMethods[action]?.timeout);
-            const timeoutMs = Number.isFinite(declared) && declared > 0 ? declared : undefined;
+            const timeoutMs = validateServerMethodTimeout(serverMethods[action]?.timeout);
             // One request-scoped RPC with the same contract as component calls:
             // promise or iterator consumption, stream frames, cancellation,
             // deadlines, and correlated RpcError failures.

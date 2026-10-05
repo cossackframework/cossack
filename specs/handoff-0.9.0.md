@@ -171,7 +171,13 @@ REL-03 remains open for the required non-Desktop release matrix.
    request semantics remain open.
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
-   disconnect, deadline and concurrency criteria; retain the limits below.
+   disconnect, dynamic/per-call deadline and initialization/restoration
+   concurrency criteria; retain the limits below. Codex bounded declared
+   `@Server({ timeout })` values to integer milliseconds from 1 to 2,147,483,647
+   and validated metadata before component and service timers. The core build,
+   all 1,552 core tests and root TypeScript check pass. See the [dated RT-01
+   review](./release-0.9.0-plan.md#codex-rt01-timeout-bounds-2026-10-05).
+   This does not close RT-01.
 4. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 
@@ -183,7 +189,7 @@ REL-03 remains open for the required non-Desktop release matrix.
   Stored records are not live state.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
-- RT-01 needs native pre-header disconnect delivery, arbitrary action deadlines and initialization/restoration concurrency acceptance.
+- RT-01 needs native pre-header disconnect delivery, dynamic/per-call action deadline acceptance and initialization/restoration concurrency acceptance. Declared method timeout bounds are enforced, but do not prove arbitrary deadlines.
   Explicit coordinator cancellation passes but does not prove incoming TCP abort delivery.
 - RT-11 retains session and stream-response cookie requirements. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno copied tokens remain replayable until signed expiry. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.

@@ -3,7 +3,7 @@ import { collectReactiveMetadata } from './reactive-metadata';
 import { createStateApplier, snapshotTransportState, rpcSseCursor } from './rpc-state';
 export { applyStateToComponent } from './rpc-state';
 import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers as collectOptimisticHandlers, optimisticHandler, optimisticKeys, type OptimisticCall } from './optimistic-state';
-import { collectServerMethodMetadata } from './server-method-metadata';
+import { collectServerMethodMetadata, validateServerMethodTimeout } from './server-method-metadata';
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
@@ -210,8 +210,7 @@ function rejectedRpcCall(code: string, message: string, name: string): ReturnTyp
 /** Resolve the @Server({ timeout }) deadline declared for a method, if any. */
 function serverMethodTimeout(constructor: any, name: string): number | undefined {
     const metadata = collectServerMethodMetadata(constructor);
-    const timeout = Number(metadata[name]?.timeout);
-    return Number.isFinite(timeout) && timeout > 0 ? timeout : undefined;
+    return validateServerMethodTimeout(metadata[name]?.timeout);
 }
 
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
