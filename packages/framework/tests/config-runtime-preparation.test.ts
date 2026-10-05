@@ -58,7 +58,7 @@ class SsgApp extends Cossack { render() { return html`<div>${this.children}</div
 const pageStarted = vi.fn();
 @Page({ ssg: true, transport: 'http' })
 class ConfigSsgPage extends Cossack {
-  init() { pageStarted(); }
+  async init() { pageStarted(); }
   render() { return html`<p>${config('app.url')}</p>`; }
 }
 it('supplies the SSG URL to required factory accessors', async () => {

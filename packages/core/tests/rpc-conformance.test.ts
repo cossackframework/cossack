@@ -630,7 +630,7 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
             await vi.advanceTimersByTimeAsync(28);
             await expect(observed).resolves.toMatchObject({ code: 'COSSACK_RPC_TIMEOUT' });
             expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(true);
-            expect(instance.loading).toBeUndefined();
+            expect(Reflect.get(instance, 'loading')).toBeUndefined();
         } finally { vi.useRealTimers(); }
     });
 
@@ -664,7 +664,7 @@ describe('service RPC conformance (client proxy over /crpc)', () => {
         controller.abort();
         await expect(observed).resolves.toMatchObject({ code: 'COSSACK_RPC_CANCELLED' });
         expect((fetchMock.mock.calls[0] as any[])[1].signal.aborted).toBe(true);
-        expect(instance.loading).toBeUndefined();
+        expect(Reflect.get(instance, 'loading')).toBeUndefined();
     });
 
     it('maps HTTP failures to RpcError codes and clears loading', async () => {

@@ -12,7 +12,8 @@ const RULE_KEYS = ['required', 'minLength', 'maxLength', 'min', 'max', 'pattern'
 
 type Rules = Omit<ValidationRule, 'coerce' | 'custom' | 'customAsync'>;
 export interface InputParseOptions { signal?: AbortSignal; }
-export interface InputSchema<Output = unknown, Raw = unknown> {
+/** Raw input matches Output unless a coercing or transforming schema declares another type. */
+export interface InputSchema<Output = unknown, Raw = Output> {
     readonly [BRAND]: true;
     /** Type-only incoming shape; not a runtime value. */
     readonly _raw?: Raw;

@@ -17,12 +17,12 @@ it.each(['authorize', 'handler', 'output'] as const)('redacts class API %s failu
     class Api extends Cossack { async get() { if (stage === 'handler') crash(); } }
     if (stage === 'authorize') rateLimit.mockImplementation(async () => crash());
     if (stage === 'output') vi.spyOn(Api.prototype, 'getPublicState').mockImplementation(crash);
-    const app = new Hono();
+    const app = new Hono<{ Variables: { 'cossack.configContext': { runtime: 'node' } } }>();
     app.use('*', async (c, next) => { c.set('cossack.configContext', { runtime: 'node' }); await next(); });
     app.get('/items/:id', createApiHandler(Api, ['get', 'init']));
     const response = await app.request('/items/private-path-sentinel?token=private-query-sentinel', { headers: { Authorization: 'Bearer private-header-sentinel' } });
     expect(response.status).toBe(500);
-    const body = await response.json();
+    const body = await response.json() as { requestId: string };
     expect(body).toEqual({ error: 'Internal Server Error', code: 'COSSACK_API_INTERNAL', requestId: expect.any(String) });
     expect(response.headers.get('X-Cossack-Request-Id')).toBe(body.requestId);
     expect(logged).toHaveBeenCalledOnce();
@@ -51,7 +51,7 @@ it('restores the managed correlation header when a failing method changes it', a
         throw Error('private-application-error');
     } }
     const app = new Hono(); app.get('/items/:id', createApiHandler(Api, 'get'));
-    const response = await app.request('/items/a'); const body = await response.json();
+    const response = await app.request('/items/a'); const body = await response.json() as { requestId: string };
     expect(response.status).toBe(500);
     expect(response.headers.get('X-Cossack-Request-Id')).toBe(body.requestId);
     expect(logged.mock.calls[0][0].requestId).toBe(body.requestId);

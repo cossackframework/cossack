@@ -42,6 +42,11 @@ async save(data: SaveInput) {
 }
 ```
 
+Noncoercing schemas keep the same raw and parsed types. String fields accept
+strings, enums accept their declared choices, and file arrays accept files.
+Optional fields add `undefined`; nullable fields add `null`. Coercing schemas
+explicitly include their supported incoming types.
+
 `InputOf` describes parsed values. `RawInputOf` describes supported incoming
 values, so the coercing count accepts a number or string at the boundary.
 Authored native method parameters keep the parsed type; ordinary direct server

@@ -34,6 +34,7 @@ import { config } from '@cossackframework/framework/config';
 
 const appName = config('app.name');           // 'My App'
 const appEnv = config('app.env', 'production'); // 'production' (with fallback)
+const app = config('app');                     // whole object, type inferred
 const debug = config('app.debug');             // false (type inferred)
 ```
 

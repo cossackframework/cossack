@@ -198,7 +198,7 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
             dispatch(app, '/form', { cookie: copiedCookie }),
             dispatch(app, '/form', { cookie: copiedCookie }),
         ]);
-        const bodies = await Promise.all([first.json(), replay.json()]);
+        const bodies = await Promise.all([first.json(), replay.json()]) as { success: string | null }[];
         expect(bodies.filter(body => body.success === 'Saved successfully!')).toHaveLength(1);
         expect(bodies.filter(body => body.success === null)).toHaveLength(1);
 
@@ -231,7 +231,7 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
         try {
             const shortWrite = await request(shortApp, '/write', undefined, 'POST');
             const shortToken = getSetCookie(shortWrite, 'cossack_flash')!;
-            expect((await (await request(shortApp, '/read', shortToken)).json()).notice).toBe('short');
+            expect((await (await request(shortApp, '/read', shortToken)).json() as { notice: string }).notice).toBe('short');
 
             now += 100;
             const longWrite = await request(longApp, '/write', undefined, 'POST');
@@ -270,7 +270,7 @@ describe('flash middleware — two-phase cookie lifecycle', () => {
             dispatch(app, '/form', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace }),
             dispatch(app, '/form', { cookie: `cossack_flash=${token}`, coordinator: coordinator.namespace }),
         ]);
-        const bodies = await Promise.all(reads.map(response => response.json()));
+        const bodies = await Promise.all(reads.map(response => response.json())) as { success: string | null }[];
         expect(bodies.filter(body => body.success === 'Saved successfully!')).toHaveLength(1);
         expect(bodies.filter(body => body.success === null)).toHaveLength(1);
         expect(coordinator.claimed.size).toBe(1);

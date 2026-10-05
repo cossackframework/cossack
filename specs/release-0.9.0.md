@@ -1626,3 +1626,18 @@ also checked the retained prior installed artifact locally (539.89 KiB upload /
 not provider startup, deployed source-map resolution or remote logs. Existing
 package-wide type failures recorded previously remain outside this checkpoint.
 Reports and `.zcodeignore` remain untouched and excluded from staging.
+
+<a id="codex-package-type-repair-2026-10-05"></a>
+### Codex package type repair (2026-10-05)
+
+Fixed raw schema typing for noncoercing fields, typed whole-object config access,
+locale inference and optional CORS config reads. Added negative published raw-input
+type fixtures, compiled config-subtree assertions and runtime config/CORS coverage.
+Reviewed and integrated the exclusive framework fixture-repair agent; a second
+agent audited direct Vite budgets without edits or tests. See the
+[verification record](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
+for final commands and results. Core **1,581/97** and framework **1,707/91**
+tests/files pass, as do root/core/framework/Node types and declaration builds.
+No parent acceptance row closes: RT-10, CF-08 and
+REL-03 retain their remaining criteria. Counts stay **30 complete / 28 open**.
+Desktop remains complete by user decision; platform checks remain waived.

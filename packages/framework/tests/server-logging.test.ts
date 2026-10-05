@@ -53,7 +53,7 @@ it.each(['config', 'middleware'])('sanitizes unhandled %s failures before the de
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
   const response = await createApp().request('/items/PRIVATE_PATH_SENTINEL');
   expect(response.status).toBe(500);
-  const body = await response.json();
+  const body = await response.json() as { requestId: string };
   expect(body).toMatchObject({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: response.headers.get('X-Cossack-Request-Id') });
   expect(log).toHaveBeenCalledOnce();
   expect(log.mock.calls[0][0]).toMatchObject({ event: 'cossack.request.failure', route: '/items/:id', requestId: body.requestId, stage: 'middleware' });

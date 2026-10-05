@@ -109,7 +109,7 @@ it('does not let unavailable context metadata prevent component or service teard
 it('redacts actual server update failures while preserving propagated navigation errors', async () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     class Component extends Cossack {
-        render() { throw error(); }
+        render(): never { throw error(); }
         updateNow() { return this.performUpdate(); }
     }
     const page = new Component(); page.__cossack_rpcOwner = '/src/pages/update.ts';

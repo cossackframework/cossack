@@ -36,7 +36,7 @@ describe('config requirement metadata', () => {
     it('rejects customized runtime arrays without running their iterator', () => {
         let calls = 0;
         const runtimes = ['cloudflare'];
-        runtimes[Symbol.iterator] = function* () { calls++; yield 'cloudflare'; };
+        runtimes[Symbol.iterator] = function* (): Generator<string, undefined> { calls++; yield 'cloudflare'; return undefined; };
         expect(() => normalizeConfigRequirements({ variables: { TOKEN: { type: 'string', runtimes } } })).toThrow();
         expect(calls).toBe(0);
     });

@@ -39,6 +39,10 @@ it('infers nested paths and preserves explicit registry overrides', () => {
   const consumer = join(root, 'consumer.ts');
   writeFileSync(consumer, `import { config } from '@cossackframework/framework/config';
 const count: number = config('custom.nested.count');
+const subtree: { count: number } = config('custom.nested');
+const root: { nested: { count: number }; flag: boolean } = config('custom');
+// @ts-expect-error Object paths retain their value shape.
+const wrongSubtree: string = config('custom.nested');
 // @ts-expect-error unknown path
 config('custom.missing');
 // @ts-expect-error incorrect default

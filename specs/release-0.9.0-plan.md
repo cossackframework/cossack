@@ -10,7 +10,7 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
-Continue CLI-08 as described in the handoff. All unchecked tasks
+Continue the open work as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
 **Desktop: completed for 0.9.0 by user decision (2026-10-05).** Remaining
@@ -1236,6 +1236,19 @@ the [static-plan checkpoint](./release-0.9.0.md#codex-cf04-static-resource-plan-
 <a id="cf-08"></a>
 ### CF-08: Production logs and build budgets
 
+Codex direct-Vite dependency audit (2026-10-05), read-only: retain cossackConfig's
+preflight order. A separate post plugin must run after Cloudflare's final buildApp
+hook, verify built environments and fresh selected-target artifacts, then measure.
+Vite build() bypasses buildApp hooks; acceptance must use createBuilder().buildApp()
+or the installed CLI. Shared Node-only budget code belongs in framework, consumed
+by CLI, never a reverse framework-to-CLI dependency. Reuse strict artifact
+verification. Avoid duplicate measurements with a receipt bound to settings,
+environment and artifact fingerprint; clear stale receipts before building.
+Define primary versus auxiliary Worker scope. Custom builders that leave outputs
+unfinished must fail closed. This audit changed no runtime code and ran no tests;
+direct Vite enforcement remains open for coordinator-owned integration.
+
+
 Purpose: An operator needs to connect a production error to a route and action.
 Builds also need to reveal oversized bundles or startup regressions before upload.
 
@@ -1394,6 +1407,19 @@ the final public APIs. Dependencies: all API-changing tasks and RT-29.
 
 <a id="rel-03"></a>
 ### REL-03: Complete verification run
+
+Codex type-verification repair (2026-10-05): package checks exposed a real
+RawInputOf defect: InputSchema's default raw type was unknown for noncoercing
+string, enum and file fields. Raw now defaults to Output; coercing schemas retain
+their explicit incoming types. Published declarations reject invalid raw nested
+strings, enums, file arrays and optional nulls. Typed config now permits whole
+objects and nested subtrees with inferred shapes while rejecting unknown paths.
+Locale uses inferred config access; optional CORS reads remain internal without
+loosening application config overloads. Test fixture types are repaired without
+removing runtime assertions. Acceptance evidence and limits are in the
+[verification checkpoint](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05).
+RT-10's browser/accessible bindings and the full REL-03 gate remain open.
+
 
 Purpose: Integration changes need a reproducible release gate. A historical
 green run cannot prove that later API or configuration changes are correct.

@@ -12,6 +12,14 @@ type Data=InputOf<typeof schema>;
 const output:Data={count:2,enabled:false,status:'draft',profile:{email:'a@b.test'},attachments:[],publishedAt:null};
 const raw:RawInputOf<typeof schema>={count:'2',enabled:'false',status:'published',profile:{email:'a@b.test'},attachments:[],publishedAt:'2026-10-03T00:00:00.000Z'};
 void raw; void output;
+// @ts-expect-error Noncoercing string fields reject numeric raw values.
+const wrongRawEmail:RawInputOf<typeof schema>={...raw,profile:{email:123}};
+// @ts-expect-error Raw enums retain their authored choices.
+const wrongRawStatus:RawInputOf<typeof schema>={...raw,status:'admin'};
+// @ts-expect-error Raw file arrays reject text entries.
+const wrongRawFiles:RawInputOf<typeof schema>={...raw,attachments:['file']};
+// @ts-expect-error Optional raw strings do not accept null.
+const wrongRawNote:RawInputOf<typeof schema>={...raw,note:null};
 // @ts-expect-error Coerced server input is numeric.
 const wrongCount:Data={...output,count:'2'};
 // @ts-expect-error Unknown schema action/status is rejected.

@@ -127,12 +127,12 @@ type UntypedConfigKey = keyof ConfigTree extends never ? string : never;
 /**
  * Recursively builds all valid dotted paths through a config tree type.
  * @example
- * type Paths = DottedPaths<{ app: { name: string } }>; // 'app.name'
+ * type Paths = DottedPaths<{ app: { name: string } }>; // 'app' | 'app.name'
  */
 type DottedPaths<T, Prefix extends string = ''> = T extends object
     ? {
           [K in keyof T & string]: T[K] extends object
-              ? DottedPaths<T[K], `${Prefix}${K}.`>
+              ? `${Prefix}${K}` | DottedPaths<T[K], `${Prefix}${K}.`>
               : `${Prefix}${K}`;
       }[keyof T & string]
     : never;

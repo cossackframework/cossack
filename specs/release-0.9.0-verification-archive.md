@@ -11132,3 +11132,52 @@ also checked the retained prior installed artifact locally (539.89 KiB upload /
 not provider startup, deployed source-map resolution or remote logs. Existing
 package-wide type failures recorded previously remain outside this checkpoint.
 Reports and `.zcodeignore` remain untouched and excluded from staging.
+
+<a id="codex-package-type-repair-2026-10-05"></a>
+## Codex: package type repair (2026-10-05)
+
+Scope: coordinator repaired shared InputSchema/config APIs and middleware consumers,
+reviewed and integrated the exclusive framework test-repair agent, and added
+regressions. A separate read-only agent audited direct Vite budgets; no budget
+runtime changes or tests came from that audit. User-owned reports.md and
+.zcodeignore were excluded from edits and staging.
+
+InputSchema now defaults Raw to Output. Coercing schemas retain explicit incoming
+types; noncoercing nested strings, enum choices, file arrays and optional strings
+reject invalid raw values through published declarations. Existing controller
+field-value assertions now compile and their invalid assignments fail as intended.
+Config accepts roots/subtrees with precise inferred shapes; unknown paths and
+incorrect defaults remain rejected. Locale consumers infer types. Optional CORS
+uses a bounded internal read without widening public config overloads, with actual
+request-store coverage for present/absent configuration.
+
+Verified final checks:
+- pnpm --filter @cossackframework/core build: passes JS/declaration emission.
+- pnpm exec tsc -p packages/framework/tsconfig.declarations.json: passes emission.
+- pnpm tsc --noEmit: passes; root is a references-only solution, so package checks
+  below provide source/test verification rather than relying on that root result.
+- pnpm exec tsc --noEmit -p packages/{core,framework,node-adapter}/tsconfig.json:
+  each run separately; all pass. Final framework check includes new CORS coverage.
+- pnpm --dir packages/core exec vitest run --maxWorkers=2:
+  **1,581 tests / 97 files**, all pass, including published InputSchema declarations.
+- pnpm --dir packages/framework exec vitest run --maxWorkers=2:
+  **1,707 tests / 91 files**, all pass, including compiled config inference fixtures.
+- Owned-file git diff --check passes.
+
+Initial full runs used default concurrency together and produced test timeouts;
+that run was stopped, not counted as passing. Final bounded suites ran separately
+with stable dependency declarations. Initial package-working-directory invocations
+could not find pnpm/node; root pnpm --dir invocation resolved the environment.
+Logs: /tmp/cossack-types-repair-{build,framework-build,root-final,core-final,
+framework-final,node,core-tests-final,framework-tests-final}.log.
+
+Limits: no fresh tarball-wide gate, browser E2E, remote deployment/log ingestion,
+provider startup measurement or deployed source-map check ran in this checkpoint.
+Core build verifies declarations used by the published-type fixture; framework
+codegen compiles source config types, not a freshly installed package. RT-10 still
+needs accessible/reactive bindings, array-item paths and browser/file transport
+acceptance; CF-08 still needs direct Vite integration and recorded operational
+acceptance. REL-03 remains open for its complete non-Desktop final-version gate.
+Direct Vite ordering/shared-module/artifact/receipt constraints are preserved in
+CF-08's detailed plan. No task closed; **30 complete / 28 open**. Desktop is
+complete by user decision, remaining platform checks waived. No blocked work.

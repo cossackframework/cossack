@@ -9,7 +9,16 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [size budgets and Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
+Latest Codex progress: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05).
+RawInputOf now preserves noncoercing field types, and config() accepts typed
+whole objects/subtrees. Framework test fixture types are repaired; package checks
+pass alongside root/core/framework/Node checks and declaration builds. Final
+core tests: 1,581/97 files; framework: 1,707/91 files. No fresh tarball/browser or
+remote gate ran. RT-10 and REL-03 remain open. Direct Vite budget
+integration was audited without edits; follow the ordering, artifact-verification
+and shared-module constraints in CF-08's plan before implementing it.
+
+Previous Codex progress: [size budgets and Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).
 CLI Cloudflare build/deploy enforce configured warning/error upload/gzip size
 budgets after fresh artifact validation. Reports state .01 KiB precision and
 omit arbitrary tool output. Provider startup is unavailable locally and cannot

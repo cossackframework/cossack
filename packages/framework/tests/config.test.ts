@@ -37,6 +37,13 @@ describe('config()', () => {
         expect(result).toBe('done');
     });
 
+    it('resolves whole config objects and nested subtrees', () => {
+        runWithConfig(sampleStore, () => {
+            expect(config('database')).toEqual(sampleStore.config.database);
+            expect(config('database.connections.mysql')).toEqual({ host: 'localhost', port: 3306 });
+        });
+    });
+
     it('resolves a deeply nested dotted path', () => {
         runWithConfig(sampleStore, () => {
             expect(config('database.connections.mysql.host')).toBe('localhost');
@@ -46,7 +53,9 @@ describe('config()', () => {
 
     it('returns the default when the key is missing', () => {
         runWithConfig(sampleStore, () => {
+            // @ts-expect-error Exercise runtime fallback for an unregistered path.
             expect(config('app.missing')).toBeUndefined();
+            // @ts-expect-error Exercise runtime fallback for an unregistered path.
             expect(config('app.missing', 'default')).toBe('default');
         });
     });
@@ -54,6 +63,7 @@ describe('config()', () => {
     it('returns the default when an intermediate segment is not an object', () => {
         runWithConfig(sampleStore, () => {
             // 'database.driver' is a string, so descending further should fail.
+            // @ts-expect-error Exercise runtime fallback below a scalar value.
             expect(config('database.driver.nested', 'fallback')).toBe('fallback');
         });
     });
