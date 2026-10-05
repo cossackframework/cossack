@@ -22,11 +22,14 @@ it.skipIf(!process.env.COSSACK_PREVIEW_INSTALLED_ROOT)('loads the new public CLI
   // The default app requires Worker secrets. Preserve that contract and prove
   // the new command does not silently upload an incomplete preview.
   const source = path.join(app, 'wrangler.jsonc'); const original = await fs.readFile(source, 'utf8');
-  await fs.writeFile(source, original.replace(/"name":/, '"previews": {},\n  "name":'));
+  await fs.writeFile(source, original.replace(/"name":/, '"previews": {"vars": {"APP_URL": "https://preview.example.test", "APP_LOCALE": "en"}},\n  "name":'));
   let failure;
   try { execFileSync(process.execPath, [cli, 'preview', 'create', '--account', 'a'.repeat(32), '--name', 'test', '--dry-run', '--json'], { cwd: app, encoding: 'utf8', env, timeout: 30_000 }); }
   catch (caught) { failure = JSON.parse(caught.stdout); }
-  expect(failure?.ok).toBe(false); expect(failure?.diagnostics[0].code).toBe('COSSACK_PREVIEW_BINDING_UNSUPPORTED');
+  expect(failure?.ok).toBe(false); expect(failure?.diagnostics[0].code).toBe('COSSACK_PREVIEW_SECRETS_REQUIRED');
+  const secretsFile = path.join(app, 'staging-secrets.json'); await fs.writeFile(secretsFile, JSON.stringify({ APP_SECRET: 'private installed staging value' }), { mode: 0o600 });
+  const plan = JSON.parse(execFileSync(process.execPath, [cli, 'preview', 'create', '--account', 'a'.repeat(32), '--name', 'test', '--dry-run', '--secrets-file', secretsFile, '--json'], { cwd: app, encoding: 'utf8', env, timeout: 30_000 }));
+  expect(plan.ok).toBe(true); expect(plan.data.requiredSecrets).toEqual(['APP_SECRET']); expect(JSON.stringify(plan)).not.toContain('private installed staging value');
   await expect(fs.access(path.join(app, '.cossack/preview.json'))).rejects.toThrow();
  } finally { await fs.rm(root, { recursive: true, force: true }); }
 }, 120_000);

@@ -32,7 +32,10 @@ it('uses trusted manual invocation, bounded tooling and no install-time deployme
   expect(privileged.map(step => step.name)).toEqual(['Create and smoke preview', 'Verify server ownership and clean preview resources']);
   expect(steps.indexOf(install)).toBeLessThan(steps.indexOf(privileged[0]));
   expect(privileged[0].run).toContain('--account "$CLOUDFLARE_ACCOUNT_ID" --name "$PREVIEW_NAME"');
-  expect(privileged[0].run).toContain('--state .cossack/preview.json --smoke / --json');
+  expect(privileged[0].run).toContain('--state .cossack/preview.json --secrets-file .cossack/preview-secrets.json --smoke / --json');
+  expect(privileged[0].env.COSSACK_PREVIEW_SECRETS_JSON).toBe('${{ secrets.COSSACK_PREVIEW_SECRETS_JSON }}');
+  expect(steps.filter(step => step.env?.COSSACK_PREVIEW_SECRETS_JSON)).toEqual([privileged[0]]);
+  expect(job.env.COSSACK_PREVIEW_SECRETS_JSON).toBeUndefined();
 });
 
 it('persists only journals around always-run cleanup and restores an explicit same-repository prior artifact', async () => {
@@ -96,5 +99,42 @@ it('executes verified cleanup in order and never deletes if inspection fails or 
     await fs.writeFile(log, '');
     expect(() => execFileSync('bash', ['-c', script], { cwd: root, env, stdio: 'pipe' })).toThrow();
     expect(await fs.readFile(log, 'utf8')).toBe('');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+
+it('passes a private explicit secret map only during creation and removes it after success or failure', async () => {
+  const { value } = await workflow();
+  const step = value.jobs.preview.steps.find(step => step.id === 'create');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-preview-secrets-ci-'));
+  const sentinel = 'preview-secret-do-not-log';
+  try {
+    await fs.mkdir(path.join(root, 'bin'));
+    await fs.writeFile(path.join(root, 'bin/pnpm'), `#!/bin/bash
+set -euo pipefail
+[[ "$*" == *"--secrets-file .cossack/preview-secrets.json"* ]]
+[[ -f .cossack/preview-secrets.json ]]
+[[ "$(stat -c %a .cossack/preview-secrets.json)" == 600 ]]
+[[ -z "\${COSSACK_PREVIEW_SECRETS_JSON:-}" ]]
+printf '%s' private-file-verified > "$MARKER"
+[[ "\${FAIL_CREATE:-}" != 1 ]]
+`, { mode: 0o755 });
+    const env = { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, MARKER: path.join(root, 'marker'), CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32), PREVIEW_NAME: 'pr-42', COSSACK_PREVIEW_SECRETS_JSON: JSON.stringify({ SESSION_SECRET: sentinel }), FAIL_CREATE: '' };
+    const output = execFileSync('bash', ['-c', step.run], { cwd: root, env, encoding: 'utf8' });
+    expect(output).not.toContain(sentinel);
+    expect(await fs.readFile(env.MARKER, 'utf8')).toBe('private-file-verified');
+    await expect(fs.access(path.join(root, '.cossack/preview-secrets.json'))).rejects.toThrow();
+    await fs.rm(env.MARKER);
+    expect(() => execFileSync('bash', ['-c', step.run], { cwd: root, env: { ...env, FAIL_CREATE: '1' }, stdio: 'pipe' })).toThrow();
+    expect(await fs.readFile(env.MARKER, 'utf8')).toBe('private-file-verified');
+    await expect(fs.access(path.join(root, '.cossack/preview-secrets.json'))).rejects.toThrow();
+    await fs.rm(env.MARKER);
+    expect(() => execFileSync('bash', ['-c', step.run], { cwd: root, env: { ...env, COSSACK_PREVIEW_SECRETS_JSON: '' }, stdio: 'pipe' })).toThrow();
+    await expect(fs.access(env.MARKER)).rejects.toThrow();
+    await expect(fs.access(path.join(root, '.cossack/preview-secrets.json'))).rejects.toThrow();
+    for (const upload of value.jobs.preview.steps.filter(item => item.uses === 'actions/upload-artifact@v4')) {
+      expect(upload.with.path).toBe('.cossack/preview.json');
+      expect(upload.with.path).not.toContain('secrets');
+    }
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

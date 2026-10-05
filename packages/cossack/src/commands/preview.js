@@ -10,7 +10,7 @@ export async function previewCommand(args, ctx) {
   try {
     const root = await findProjectRoot(ctx.cwd);
     const operation = { create: createPreview, inspect: inspectPreview, cleanup: cleanupPreview }[args[0]];
-    const data = await operation(root, { accountId: ctx.flags.account, name: ctx.flags.name, state: ctx.flags.state, smokePath: ctx.flags.smoke ?? '/', dryRun: ctx.dryRun });
+    const data = await operation(root, { accountId: ctx.flags.account, name: ctx.flags.name, state: ctx.flags.state, smokePath: ctx.flags.smoke ?? '/', dryRun: ctx.dryRun, secretsFile: ctx.flags['secrets-file'] });
     if (ctx.flags.json) writeResult('preview', { data });
     else console.log(`Preview ${args[0]}: ${data.status}`);
     return 0;
@@ -20,7 +20,7 @@ export async function previewCommand(args, ctx) {
   }
 }
 export function previewHelp() {
-  return commandSpecs.preview.help(`cossack preview create --account <ID> --name <LABEL> [--state .cossack/preview.json] [--smoke /] [--dry-run] [--json]
+  return commandSpecs.preview.help(`cossack preview create --account <ID> --name <LABEL> [--state .cossack/preview.json] [--smoke /] [--secrets-file <PRIVATE_JSON>] [--dry-run] [--json]
 cossack preview <inspect|cleanup> [--account <ID>] [--state .cossack/preview.json] [--json]
 
 Create runs the existing production build gate and native Wrangler preview with
@@ -28,8 +28,10 @@ explicit staging bindings and --ignore-defaults. Dry-run only plans, without
 builds, writes or authentication. Requires native Preview support and an API token.
 D1/KV/R2 staging resources are retained; local Durable Objects are native-preview
 owned. Workflow/service/queue and other unsupported bindings fail closed.
-Required Worker secrets need separate native secret setup and are not supported.
+Required Worker secrets use an explicit private staging JSON map, passed only
+to the preview deployment; no production/shared defaults are changed.
 Saved state precedes mutation; inspect and cleanup verify real provider identity
-and deployment tags. Lost creation receipts require manual recovery. Cleanup
+and deployment tags. Lost tagged deployment receipts can be recovered from the provider; creation
+without a matching tagged deployment still requires manual recovery. Cleanup
 never deletes externally bound storage. Hosted CI acceptance remains required.`);
 }

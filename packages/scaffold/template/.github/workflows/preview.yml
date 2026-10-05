@@ -86,7 +86,18 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PREVIEW_NAME: ${{ inputs.preview_name }}
-        run: pnpm exec cossack preview create --account "$CLOUDFLARE_ACCOUNT_ID" --name "$PREVIEW_NAME" --state .cossack/preview.json --smoke / --json
+          COSSACK_PREVIEW_SECRETS_JSON: ${{ secrets.COSSACK_PREVIEW_SECRETS_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .cossack
+          trap 'rm -f .cossack/preview-secrets.json' EXIT
+          [[ -n "$COSSACK_PREVIEW_SECRETS_JSON" ]] || { echo 'Set COSSACK_PREVIEW_SECRETS_JSON to an explicit JSON map of the required preview secrets'; exit 1; }
+          rm -f .cossack/preview-secrets.json
+          printf '%s' "$COSSACK_PREVIEW_SECRETS_JSON" > .cossack/preview-secrets.json
+          unset COSSACK_PREVIEW_SECRETS_JSON
+          pnpm exec cossack preview create --account "$CLOUDFLARE_ACCOUNT_ID" --name "$PREVIEW_NAME" --state .cossack/preview.json --secrets-file .cossack/preview-secrets.json --smoke / --json
       # The CLI atomically writes intent before the first remote mutation. Save it before teardown too.
       - name: Preserve pre-cleanup ownership journal
         if: always()

@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { readPreviewSecrets } from './preview-secrets.js';
 import { inspectDeployment } from './deployment.js';
 import { runCaptured } from './spawn.js';
 import { createWranglerPreviewProvider } from './cloudflare-preview-provider.js';
@@ -21,7 +22,7 @@ export function validatePreviewConfig(config, accountId) {
   if (!namePattern.test(config.name ?? '') || !config.previews || typeof config.previews !== 'object') throw error('CONFIG_REQUIRED');
   const preview = structuredClone(config.previews);
   const allowed = new Set(['vars', 'durable_objects', ...Object.keys(references), 'observability', 'logpush']);
-  if (Object.keys(preview).some(key => !allowed.has(key) && hasItems(preview[key])) || unsupported.some(key => hasItems(config[key])) || hasItems(config.triggers?.crons) || hasItems(config.secrets?.required)) throw error('BINDING_UNSUPPORTED');
+  if (Object.keys(preview).some(key => !allowed.has(key) && hasItems(preview[key])) || unsupported.some(key => hasItems(config[key])) || hasItems(config.triggers?.crons)) throw error('BINDING_UNSUPPORTED');
   for (const key of Object.keys(preview)) if (!allowed.has(key)) delete preview[key];
   const retained = [];
   for (const [group, reference] of Object.entries(references)) {
@@ -126,9 +127,10 @@ export async function createPreview(root, options, dependencies = {}) {
   const filename = await statePath(root, state);
   const inspection = await (dependencies.inspect ?? inspectDeployment)(root);
   const { preview, retained } = validatePreviewConfig(inspection.config, accountId);
+  const secretBindings = await readPreviewSecrets(root, options.secretsFile, inspection.config.secrets?.required ?? []);
   // Validate before any build, journal write, authenticated read or mutation.
   if (!smokePath.startsWith('/') || smokePath.startsWith('//') || smokePath.includes('\\')) throw error('SMOKE_PATH_INVALID');
-  if (dryRun) return { status: 'planned', accountId, worker: inspection.config.name, resources: retained, effects: { localWrites: 0, cloudWrites: 0 }, limitations: ['Existing staging bindings are retained; shared unsupported bindings require separate deployment.', 'Remote CI acceptance is not established by a local plan.'] };
+  if (dryRun) return { status: 'planned', accountId, worker: inspection.config.name, resources: retained, requiredSecrets: secretBindings.map(binding => binding.name), effects: { localWrites: 0, cloudWrites: 0 }, limitations: ['Existing staging bindings are retained; shared unsupported bindings require separate deployment.', 'Remote CI acceptance is not established by a local plan.'] };
   const provider = dependencies.provider ?? createWranglerPreviewProvider(root, { accountId });
   if ((await provider.verify()).status !== 'verified') throw error('PROVIDER_UNVERIFIED');
   // No overwrite: an earlier failed operation must stay inspectable.
@@ -143,7 +145,7 @@ export async function createPreview(root, options, dependencies = {}) {
     // Recheck the actual artifact before preparing a preview; Vite must not
     // substitute a Worker or bind another account after source inspection.
     if (artifactConfig.name !== journal.worker || artifactConfig.account_id && artifactConfig.account_id.toLowerCase() !== accountId.toLowerCase()) throw error('ARTIFACT_MISMATCH');
-    const prepared = { ...artifactConfig, account_id: accountId, previews: preview };
+    const prepared = { ...artifactConfig, account_id: accountId, previews: { ...preview, ...(secretBindings.length ? { unsafe: { bindings: secretBindings } } : {}) } };
     delete prepared.env;
     const configPath = path.join(path.dirname(artifact), `cossack-preview-${nonce}.json`);
     await fs.writeFile(configPath, JSON.stringify(prepared), { flag: 'wx', mode: 0o600 });
@@ -165,6 +167,16 @@ export async function createPreview(root, options, dependencies = {}) {
 }
 
 async function inspectOwned(provider, journal) {
+  // Latest deployment evidence both recovers a lost receipt and prevents an
+  // older tagged version from authorizing removal after someone else redeploys.
+  if (provider.recoverDeployment) {
+    const recovered = await provider.recoverDeployment(journal.worker, journal.name, journal.tag);
+    if (recovered.status === 'absent' && recovered.code === 'COSSACK_CF_PREVIEW_ABSENT') return { status: 'absent' };
+    if (recovered.status !== 'recovered' || recovered.preview.name !== journal.name || recovered.deployment.tag !== journal.tag) throw error('OWNERSHIP_UNPROVEN');
+    if (journal.preview && (recovered.preview.id !== journal.preview.id || recovered.preview.createdOn !== journal.preview.createdOn) || journal.deployment && recovered.deployment.id !== journal.deployment.id) throw error('OWNERSHIP_UNPROVEN');
+    return { status: 'owned', preview: recovered.preview, deployment: recovered.deployment };
+  }
+  // Test/providers without recovery still require their original persisted proof.
   const remote = await provider.inspect(journal.worker, journal.name);
   if (remote.status === 'absent') return { status: 'absent' };
   if (remote.status !== 'present') throw error('INSPECTION_UNKNOWN');
@@ -189,6 +201,10 @@ export async function cleanupPreview(root, options, dependencies = {}) {
     if ((await provider.verify()).status !== 'verified') throw error('PROVIDER_UNVERIFIED');
     const ownership = await inspectOwned(provider, journal);
     if (ownership.status !== 'absent') {
+      if (!journal.preview || !journal.deployment) {
+        Object.assign(journal, { preview: ownership.preview, deployment: ownership.deployment });
+        await save(filename, journal); // Persist recovered provider proof before removal.
+      }
       const configPath = `${filename}.${randomBytes(8).toString('hex')}.cleanup.json`;
       await fs.writeFile(configPath, JSON.stringify({ name: journal.worker, account_id: journal.accountId, previews: {} }), { flag: 'wx', mode: 0o600 });
       try {

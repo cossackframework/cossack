@@ -72,7 +72,7 @@ export const commandSpecs = {
   preview: new CommandSpec({ name: 'preview', globals: ['json', 'help'],
     positionals: ['subcommand'], minPositionals: 1,
     flags: { account: str('Explicit Cloudflare account ID; checked against restored state.'), state: str('Ownership journal under .cossack (default: .cossack/preview.json).') },
-    subcommands: { create: { flags: { name: str('Preview label.'), smoke: str('Same-origin smoke path (default: /).'), 'dry-run': bool('Plan only; no writes or authentication.') } }, inspect: {}, cleanup: {} },
+    subcommands: { create: { flags: { name: str('Preview label.'), 'secrets-file': str('Private JSON map of required staging secrets.'), smoke: str('Same-origin smoke path (default: /).'), 'dry-run': bool('Plan only; no writes or authentication.') } }, inspect: {}, cleanup: {} },
     check: (args, flags) => args[0] === 'create' && (!/^[a-f0-9]{32}$/i.test(flags.account ?? '') || /^0+$/.test(flags.account))
       ? [{ code: 'COSSACK_PREVIEW_ACCOUNT_REQUIRED', severity: 'error', message: 'Supply the intended account with --account.' }] : [] }),
   resources: new CommandSpec({ name: 'resources', globals: readonly,

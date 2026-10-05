@@ -69,13 +69,33 @@ that lifecycle to the provider. Bindings to another Worker's class or environmen
 are rejected.
 
 Service, Workflow, Queue, Hyperdrive, and other unsupported bindings fail closed.
-Cron triggers and declared required Worker secrets are also rejected. Secret-like
-variable names such as `APP_SECRET` or `API_TOKEN` cannot go in `previews.vars`.
-Generated apps normally declare required `APP_SECRET`, so the current flow rejects
-them while that requirement is present. This CLI does not yet automate native
-preview secret setup. Do not remove an application's
-security requirements merely to pass preview validation. Native Cloudflare supports
-more configuration than this first Cossack implementation.
+Cron triggers remain unsupported. Secret-like variable names such as `APP_SECRET`
+or `API_TOKEN` cannot go in `previews.vars`.
+
+Generated apps declare `APP_SECRET`. Supply an explicit staging JSON map through
+`--secrets-file`; its keys must exactly match `secrets.required`. Cossack never
+copies production secrets or local `.dev.vars` automatically. For example, create
+a private file with a staging-only secret and restrict its permissions:
+
+```sh
+chmod 600 /secure/staging-secrets.json
+```
+
+The input is a JSON object such as `{"APP_SECRET":"<STAGING_ONLY_SECRET>"}`. Replace
+the placeholder; do not commit the file. Cossack accepts at most 64 declared names,
+a 64 KiB regular file, and 16 KiB per nonempty string value. It rejects duplicate
+keys, missing/extra names, NUL values, symlink/hardlink files and, on POSIX, files
+owned by another user or accessible to group/others.
+
+Secrets are attached to this preview deployment as native `secret_text` bindings
+with `--ignore-defaults`; shared preview defaults and production secrets are not
+changed. Only the CLI's private prepared configuration contains the supplied
+values. It is mode 600 and removed after the operation. Values do not appear in
+journals, CLI results or client bundles. Native Wrangler warnings can contain
+values, so the provider captures stderr and writes logs to a private temporary
+directory that it removes. Abrupt process termination can leave private local
+files; retain filesystem access restrictions and remove abandoned private files
+after the owning process stops.
 
 ## Plan, create, and smoke-test
 
@@ -87,7 +107,7 @@ does not prove every permission or binding is ready. Do not print or commit toke
 
 ```sh
 pnpm exec cossack preview create --account "$CLOUDFLARE_ACCOUNT_ID" \
-  --name pr-42 --state .cossack/preview.json --smoke / --dry-run --json
+  --name pr-42 --state .cossack/preview.json --secrets-file /secure/staging-secrets.json --smoke / --dry-run --json
 ```
 
 This dry-run validates the local declaration and reports planned ownership. It
@@ -98,7 +118,7 @@ After reviewing the plan, omit `--dry-run` to create the preview:
 
 ```sh
 pnpm exec cossack preview create --account "$CLOUDFLARE_ACCOUNT_ID" \
-  --name pr-42 --state .cossack/preview.json --smoke / --json
+  --name pr-42 --state .cossack/preview.json --secrets-file /secure/staging-secrets.json --smoke / --json
 ```
 
 Creation runs the existing `cossack deploy --dry-run` build gate, including
@@ -131,7 +151,8 @@ pnpm exec cossack preview cleanup --account "$CLOUDFLARE_ACCOUNT_ID" \
 Both commands authenticate in the account saved in the journal. An explicitly
 supplied different account fails. Inspection and cleanup compare the remote
 preview's immutable ID and creation time with the saved receipt, then inspect the
-saved deployment ID and its Cossack ownership tag. A matching name alone never
+latest deployment ID and its Cossack ownership tag. An older tagged deployment
+cannot authorize cleanup after the latest deployment changes. A matching name alone never
 authorizes deletion. Cleanup targets the verified immutable ID and confirms remote
 absence before saving `cleaned`. It never deletes the retained D1, KV, or R2 bindings.
 
@@ -140,12 +161,16 @@ response was lost, confirmed remote absence can complete cleanup. A replaced
 preview, unreadable provider state, or changed deployment ownership blocks deletion.
 Do not repair a journal by inventing IDs or tags.
 
-If creation loses its response before the preview and tagged deployment receipt
-are saved, intent does not prove ownership. A still-present preview then requires
-manual provider recovery. Preserve the journal and provider evidence; identify the
-actual resource in the intended account before any manual removal. Cancellation can
-also stop a CI runner before its journal artifact upload. Automatic cleanup cannot
-recover proof that was never saved.
+If creation loses its response after the tagged deployment was committed,
+inspection reads the real latest deployment and verifies the journal's exact
+ownership tag. Inspection performs no journal writes. Cleanup persists that
+recovered receipt before deleting by immutable ID. Missing deployment evidence,
+foreign tags, unknown reads, or a replacement preview block deletion.
+
+If creation stopped before any matching tagged deployment exists, intent and a
+name do not prove ownership. Preserve the journal and provider evidence for manual
+recovery in the intended account. A missing latest deployment is not treated as an
+absent preview. Cancellation can also stop CI before its journal artifact upload.
 
 ## Trusted CI and retained artifacts
 
@@ -155,9 +180,12 @@ trusted repository code. Do not combine privileged preview tokens with untrusted
 pull-request code or change it to `pull_request_target`.
 
 Set repository variable `CLOUDFLARE_ACCOUNT_ID` and protected secret
-`CLOUDFLARE_API_TOKEN`. The template installs locked dependencies without exposing
+`CLOUDFLARE_API_TOKEN`, plus `COSSACK_PREVIEW_SECRETS_JSON` containing the exact
+staging secret map (`{}` for apps without required secrets). The template installs locked dependencies without exposing
 the deployment token, then supplies it only to preview creation and verified cleanup.
-It uses Node 24, pnpm 11.19.0, and a 30-minute job limit. Same-label concurrency does
+Creation writes a mode-600 temporary secret file, unsets the environment blob
+before invoking the CLI, and removes the file on shell exit. Journal artifacts
+exclude secret files. It uses Node 24, pnpm 11.19.0, and a 30-minute job limit. Same-label concurrency does
 not cancel an in-flight ownership operation.
 
 A create run deploys and smokes, saves `cossack-preview-intent` before teardown,

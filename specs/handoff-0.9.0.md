@@ -2,36 +2,35 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest Codex batch adds **connected native preview CLI/provider and trusted CI**,
-with [source/installed local evidence](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
-**51 complete / 7 open**, versions 0.8.3; no numbered task closes. Native
-account verification and scoped GETs precede ownership-verified cleanup by
-immutable preview ID. Intent precedes create; receipt precedes smoke. Existing
-staging D1/KV/R2 resources are retained; local DOs use native preview ownership.
+Latest Codex batch verifies **preview staging secrets and tagged-receipt recovery**
+([evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06)).
+**51 complete / 7 open**, versions 0.8.3; no numbered task closes. Generated apps
+can supply required secrets via private `--secrets-file` maps; native deployment
+receives `secret_text` without shared defaults or production bindings. Wrangler
+warnings can contain values: provider captures stderr, isolates mode-700 tool
+logs and removes them. Prepared config is mode 600; no secret values in journals,
+public results or client bundles. CI scopes its secret map to creation only.
 
-Checks: CLI/contracts/MCP/provider combined **184 pass**, final service **23 pass**,
-scaffold **88 pass**, source native build gate **1 pass**, final installed **25 pass**;
-root and all ten non-Desktop package types pass. Later journal hardening is in
-the final source/installed checks. Hosted CI/cloud mutation is **not run**.
-Changed CLI/Scaffold tarballs: `/tmp/cossack-preview-final-artifacts`; fresh
-installed gate: `/tmp/cossack-preview-installed-final`. Unchanged packages reused.
+Lost tagged receipts can be independently recovered from the native latest
+deployment. Read-only inspect does not write; cleanup persists recovered proof
+before immutable-ID deletion. Older tagged deployments, replacement identity,
+foreign latest tags and missing/unknown latest evidence cannot authorize cleanup.
+
+Checks: CLI/provider/loader/native transport/contracts **182 pass**, scaffold
+**89 pass**, source generated-app native smoke **1 pass**, final installed
+**29 pass**. Root/all ten non-Desktop package types pass. Hosted CI/cloud
+mutation is **not run**. Changed CLI/Scaffold tarballs: `/tmp/cossack-preview-secret-recovery-artifacts`;
+fresh gate: `/tmp/cossack-preview-secret-recovery-installed`. Unchanged dependencies reused.
 
 Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. CF-09 needs
-hosted account/CI isolation and retry proof, required-secret support (default
-generated apps currently fail closed), and lost-create receipt recovery. A
-still-present preview without a tagged receipt requires manual provider recovery;
-intent/name alone cannot authorize deletion. API token/account environment are
-not configured in this session. Strict native Workflow Waiting/event-resume/
-failure acceptance remains unproven; pinned local status reports Running.
-CF-08 remote logs/maps/provider startup, Deno Deploy and final versioned artifact
-gates remain. Avoid polishing working budgets or rechecking unchanged gates.
-
-[Earlier maps/release checks](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06),
-[Deno draining](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06)
-and [CF-10](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06)
-evidence remain valid with their recorded limits. Preserve user `reports.md`,
-`.zcodeignore`, and earlier uncommitted Workflow probes. No cloud provisioning,
-deployment, push or publication occurred. Desktop stays completed/waived.
+hosted account/CI isolation and retry proof; a created preview without a matching
+tagged deployment remains manual-recovery only. API token/account environment
+remain unconfigured. Strict Workflow Waiting/event-resume/failure acceptance is
+unproven; pinned local status reports Running. CF-08 remote logs/maps/startup,
+Deno Deploy and final versioned artifact gates remain. Do not polish working
+budgets or repeat unchanged gates. Preserve earlier proofs and baseline user
+`reports.md`, `.zcodeignore`, and two uncommitted Workflow probes. No cloud
+provisioning/deployment/push/publication occurred. Desktop stays completed/waived.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.

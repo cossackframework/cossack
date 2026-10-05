@@ -32,6 +32,81 @@ async function config(account = accountId) {
 const response = value => new Response(JSON.stringify({ success: true, result: value }));
 
 describe('Wrangler preview provider transport', () => {
+  it('isolates every native run in a fresh mode-700 private log directory and removes logs on success', async () => {
+    const logPaths = [];
+    const runner = async (args, context) => {
+      const filename = context.env.WRANGLER_LOG_PATH;
+      expect(path.basename(filename)).toBe('wrangler.log');
+      if (process.platform !== 'win32') expect((await fs.stat(path.dirname(filename))).mode & 0o777).toBe(0o700);
+      logPaths.push(filename);
+      await fs.writeFile(filename, token);
+      if (args.includes('--help')) return ok('--name --worker-name --json --ignore-defaults --tag --skip-confirmation');
+      if (args[0] === '--version') return ok('4.147.0');
+      return ok({ loggedIn: true, accounts: [{ id: accountId }] });
+    };
+    const result = await fixture({ runner }).provider.verify();
+    expect(result).toEqual({ status: 'verified', accountId });
+    expect(logPaths).toHaveLength(5);
+    expect(new Set(logPaths).size).toBe(5);
+    for (const filename of logPaths) await expect(fs.stat(path.dirname(filename))).rejects.toThrow();
+    expect(JSON.stringify(result)).not.toContain(token);
+  });
+  it.each(['failure', 'cancel', 'timeout'])('removes private native logs after %s without leaking their values', async mode => {
+    let filename;
+    const controller = new AbortController();
+    const runner = async (_args, context) => {
+      filename = context.env.WRANGLER_LOG_PATH;
+      await fs.writeFile(filename, token);
+      if (mode === 'failure') throw new Error(token);
+      if (mode === 'cancel') controller.abort();
+      return new Promise(() => {});
+    };
+    const result = await fixture({ runner, timeoutMs: 40 }).provider.verify({ signal: controller.signal });
+    expect(result.status).toBe('unknown');
+    expect(result.code).toBe(mode === 'failure' ? 'COSSACK_CF_PREVIEW_TRANSPORT_FAILED'
+      : mode === 'cancel' ? 'COSSACK_CF_PREVIEW_CANCELLED' : 'COSSACK_CF_PREVIEW_TIMEOUT');
+    await expect(fs.stat(path.dirname(filename))).rejects.toThrow();
+    expect(JSON.stringify(result)).not.toContain(token);
+  });
+  it('recovers a lost receipt only from independent native latest deployment ownership proof', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response(deployment));
+    const { provider, calls } = fixture({ fetch: fetcher });
+    expect(await provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id')).toEqual({
+      status: 'recovered', preview: { id: preview.id, name: preview.name, createdOn: preview.created_on },
+      deployment: { id: deployment.id, tag: 'cossack-owner-id' }, url: preview.urls[0],
+    });
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews/pr-42`,
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews/preview-id/deployments/latest`,
+    ]);
+    expect(calls).toHaveLength(0); // Recovery never invokes mutation commands.
+  });
+  it('rejects a foreign latest deployment tag even when the preview name matches intent', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response({ ...deployment, annotations: { 'workers/tag': 'foreign-owner' } }));
+    expect(await fixture({ fetch: fetcher }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id'))
+      .toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OWNERSHIP_MISMATCH' });
+  });
+  it.each([{ ...deployment, preview_id: 'foreign-preview' }, { ...deployment, preview_name: 'foreign-name' }, { ...deployment, annotations: {} }])('rejects invalid latest deployment scope or missing tag during recovery', async latest => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response(latest));
+    expect(await fixture({ fetch: fetcher }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id'))
+      .toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OUTPUT_INVALID' });
+  });
+  it('does not infer recovery from unknown or absent independent provider reads', async () => {
+    const first = vi.fn(async () => new Response('', { status: 404 }));
+    expect(await fixture({ fetch: first }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id'))
+      .toEqual({ status: 'absent', code: 'COSSACK_CF_PREVIEW_ABSENT' });
+    expect(first).toHaveBeenCalledTimes(1);
+    for (const [status, expected] of [[404, { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT' }], [403, { status: 'unknown', code: 'COSSACK_CF_PREVIEW_INSPECTION_FAILED' }]]) {
+      const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(new Response(token, { status }));
+      expect(await fixture({ fetch: fetcher }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id')).toEqual(expected);
+    }
+  });
+  it('recovers identity without inventing a missing native URL', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ ...preview, urls: [] })).mockResolvedValueOnce(response(deployment));
+    const result = await fixture({ fetch: fetcher }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id');
+    expect(result.status).toBe('recovered');
+    expect(result).not.toHaveProperty('url');
+  });
   it('proves native command capabilities and target account before mutation', async () => {
     const { provider, calls } = fixture();
     expect(await provider.verify()).toEqual({ status: 'verified', accountId });

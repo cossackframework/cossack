@@ -405,8 +405,10 @@ Baseline: Deployment docs explain separate resources and rollback limits.
 Codex now implements native preview creation, same-origin smoke, saved journals,
 account/provider ownership inspection and immutable-ID cleanup through the public
 CLI, with a trusted manual scaffold CI workflow. These are locally verified, not
-hosted acceptance. Required Worker secrets and lost creation receipts are explicit
-unsupported/recovery boundaries. [Evidence](./release-0.9.0-verification-archive.md#codex-native-preview-cli-ci-2026-10-06).
+hosted acceptance. Required staging secrets and recovery of lost tagged receipts
+now pass native transport and generated-app source/installed smoke acceptance.
+Creation without a matching tagged deployment still requires manual provider
+recovery. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
 Promotion remains a separate reviewed production deployment with migration order
 and code/state rollback limits documented in [the guide](../docs/cloudflare-previews.md).
 
@@ -800,3 +802,18 @@ per-branch provisioning is not implemented. Do not treat transport fixtures or
 CI shell tests as provider execution. Preserve strict SVC-04 waiting/lifecycle
 criteria and earlier failed probes. Other remote/runtime/final release gates
 remain unchanged; Desktop is waived and versions stay 0.8.3.
+
+
+## Codex: preview secret/recovery acceptance — 2026-10-06
+
+**51 complete / 7 open; no numbered task closes.** The required-secret and lost
+tagged-receipt gaps from the prior batch are now locally verified: explicit
+private staging maps, per-deployment native secret bindings, protected tool logs,
+latest-provider ownership recovery and generated-app workerd smoke.
+[Checks and limits](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
+Next CF-09 acceptance needs a configured account/token and hosted creation, smoke,
+cleanup and retry proof without production effects. A preview created before a
+tagged deployment exists still cannot establish independent ownership for
+automatic deletion; preserve/manual-recover its state. Existing staging storage
+is retained, not provisioned per branch. Do not convert these gaps into waivers.
+SVC-04 native Waiting, CF-08 remote and final REL gates remain unchanged.

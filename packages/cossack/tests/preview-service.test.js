@@ -50,7 +50,7 @@ it.each(['d1_databases', 'kv_namespaces', 'r2_buckets'])('retains explicit stagi
   expect(() => validatePreviewConfig({ ...value, previews: {} }, accountId)).toThrow();
   expect(() => validatePreviewConfig({ ...value, previews: { [group]: value[group] } }, accountId)).toThrow();
 });
-it.each([{ services: [{ binding: 'SERVICE', service: 'prod' }] }, { workflows: [{ binding: 'FLOW', name: 'prod' }] }, { queues: { producers: [{ binding: 'QUEUE', queue: 'prod' }] } }, { secrets: { required: ['SECRET'] } }, { triggers: { crons: ['* * * * *'] } }, { previews: { unsafe: { bindings: [{ name: 'DATA', type: 'd1', database_id: 'prod' }] } } }])('rejects unsupported/shared capabilities before build or authentication: %j', async extra => {
+it.each([{ services: [{ binding: 'SERVICE', service: 'prod' }] }, { workflows: [{ binding: 'FLOW', name: 'prod' }] }, { queues: { producers: [{ binding: 'QUEUE', queue: 'prod' }] } }, { triggers: { crons: ['* * * * *'] } }, { previews: { unsafe: { bindings: [{ name: 'DATA', type: 'd1', database_id: 'prod' }] } } }])('rejects unsupported/shared capabilities before build or authentication: %j', async extra => {
   dependencies.inspect = async () => ({ config: { ...config, ...extra } });
   await expect(createPreview(root, options(), dependencies)).rejects.toThrow();
   expect(provider.verify).not.toHaveBeenCalled(); expect(provider.deploy).not.toHaveBeenCalled();
@@ -135,5 +135,45 @@ it('rejects extra fields in restored resource records before public output or de
  const value = await created(); value.resources[0].privateValue = 'do not echo';
  await fs.writeFile(path.join(root, '.cossack/preview.json'), JSON.stringify(value));
  await expect(cleanupPreview(root, { accountId }, dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_STATE_INVALID' });
+ expect(provider.remove).not.toHaveBeenCalled();
+});
+it('passes explicit staging secrets only in private prepared native deployment config', async () => {
+ const secretsFile = path.join(root, 'secrets.json'); await fs.writeFile(secretsFile, JSON.stringify({ APP_SECRET: 'private staging value' }), { mode: 0o600 });
+ dependencies.inspect = async () => ({ config: { ...config, secrets: { required: ['APP_SECRET'] } } });
+ const prior = provider.deploy.getMockImplementation(); let preparedPath;
+ provider.deploy.mockImplementation(async (filename, ...args) => {
+  preparedPath = filename; expect((await fs.stat(filename)).mode & 0o777).toBe(0o600);
+  const prepared = JSON.parse(await fs.readFile(filename, 'utf8'));
+  expect(prepared.previews.unsafe.bindings).toEqual([{ name: 'APP_SECRET', type: 'secret_text', text: 'private staging value' }]);
+  return prior(filename, ...args);
+ });
+ const result = await createPreview(root, { ...options(), secretsFile }, dependencies);
+ expect(JSON.stringify(result)).not.toContain('private staging value');
+ expect(await fs.readFile(path.join(root, '.cossack/preview.json'), 'utf8')).not.toContain('private staging value');
+ await expect(fs.access(preparedPath)).rejects.toThrow();
+});
+it('recovers a provider-tagged lost receipt read-only, then persists before immutable-ID cleanup', async () => {
+ provider.deploy.mockResolvedValue({ status: 'unknown' });
+ await expect(createPreview(root, options(), dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_CREATE_UNKNOWN' });
+ const filename = path.join(root, '.cossack/preview.json'); const initial = await fs.readFile(filename, 'utf8'); const intent = JSON.parse(initial);
+ const receipt = { status: 'recovered', preview: { id: 'recovered-id', name: intent.name, createdOn: '2026-10-06T00:00:00Z' }, deployment: { id: 'recovered-deploy', tag: intent.tag } };
+ provider.recoverDeployment = vi.fn(async () => receipt);
+ expect((await inspectPreview(root, { accountId }, dependencies)).status).toBe('owned');
+ expect(await fs.readFile(filename, 'utf8')).toBe(initial);
+ provider.remove.mockImplementation(async (_config, _worker, id) => {
+  expect(id).toBe('recovered-id'); expect(JSON.parse(await fs.readFile(filename, 'utf8')).deployment.id).toBe('recovered-deploy');
+  provider.inspect.mockResolvedValue({ status: 'absent' }); return { status: 'removed' };
+ });
+ expect((await cleanupPreview(root, { accountId }, dependencies)).status).toBe('cleaned');
+});
+it.each([{ status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT' }, { status: 'unknown', code: 'COSSACK_CF_PREVIEW_OWNERSHIP_MISMATCH' }])('never treats missing latest/unmatched ownership as remote preview absence: %j', async recovered => {
+ await created(); provider.recoverDeployment = async () => recovered;
+ await expect(cleanupPreview(root, { accountId }, dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_OWNERSHIP_UNPROVEN' });
+ expect(provider.remove).not.toHaveBeenCalled();
+});
+it('rejects a new latest deployment when an older tagged receipt still exists', async () => {
+ const value = await created();
+ provider.recoverDeployment = async () => ({ status: 'recovered', preview: value.preview, deployment: { ...value.deployment, id: 'replacement-deployment' } });
+ await expect(cleanupPreview(root, { accountId }, dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_OWNERSHIP_UNPROVEN' });
  expect(provider.remove).not.toHaveBeenCalled();
 });

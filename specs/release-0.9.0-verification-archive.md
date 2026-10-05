@@ -13342,3 +13342,83 @@ These limits are documented, not waived. Strict SVC-04 native Waiting/lifecycle
 acceptance remains open; CF-08 remote and final REL gates remain as previously
 recorded. Versions remain 0.8.3. No cloud mutation/deployment/push/publication.
 Preserved baseline changes: reports.md, .zcodeignore and two Workflow probe files.
+
+
+<a id="codex-preview-secrets-recovery-2026-10-06"></a>
+## Codex: native preview secrets and recovery — 2026-10-06
+
+**Completed task IDs: none. 51 complete / 7 open.** This verified batch closes
+CF-09's local required-secret and lost-tagged-receipt acceptance gaps, not its
+hosted lifecycle criteria. Independent agent ownership: provider/recovery/tests;
+new secret loader/native transport tests; CI template/tests. Codex integrated
+service/CLI/scaffold and reviewed generated-app/published acceptance.
+
+Implementation:
+
+- `--secrets-file` requires an explicit private staging JSON map with exactly the
+  declared secret names. Rejects duplicates/extra/missing/reserved names, invalid
+  values, oversized inputs, symlinks/hardlinks and unsafe POSIX ownership/modes.
+  Values stay internal; errors/results/journals contain no secret values. No
+  production or local-development secret copying.
+- Real Wrangler 4.147 against a test-only local HTTP API proves prepared native
+  `secret_text` bindings are sent in the selected preview deployment JSON, with
+  `ignore_defaults=true`. Root production bindings are absent and no global
+  Worker/defaults PATCH occurs. The production provider still fixes the official
+  API endpoint; tests alone override the native tool API for transport evidence.
+- Native validation warnings expose values even with sanitization enabled. This
+  discovery required captured/discarded stderr plus a mode-700 private temporary
+  Wrangler log directory, removed on success/failure/cancel/deadline. Provider
+  tests verify these file effects with dummy secrets. Log-cleanup failure returns
+  a fixed failure code. Prepared configuration stays mode 600 and is removed
+  after the operation; abrupt kill may retain private local files.
+- Recovery independently GETs preview identity and its native `latest` deployment
+  scoped to immutable ID, then checks exact ownership annotation. Inspection is
+  read-only. Cleanup saves recovered proof before deletion, rejects mismatched
+  latest/saved identities, and confirms remote absence. Missing latest deployment
+  is explicitly distinct from an absent preview. No name/intent-only deletion.
+- CI uses protected `COSSACK_PREVIEW_SECRETS_JSON`, creates a mode-600 temporary
+  file under umask 077, unsets the blob before invoking CLI, removes the file on
+  EXIT and excludes it from journal artifacts. Real bash fixture tests cover
+  success/failure/missing-input cleanup and installation credential scope.
+
+Verified checks, all exit 0:
+
+```sh
+pnpm --filter cossack exec vitest run tests/preview-service.test.js tests/cloudflare-preview-provider.test.js tests/preview-secrets.test.js tests/preview-secrets-native.test.js tests/command-contracts.test.js
+pnpm --filter @cossackframework/scaffold exec vitest run tests/preview-workflow.test.js tests/preview-rendering.test.js tests/scaffold.test.js
+pnpm --filter cossack exec vitest run tests/preview-generated-acceptance.test.js
+COSSACK_PREVIEW_INSTALLED_ROOT=/tmp/cossack-preview-secret-recovery-installed pnpm --filter cossack exec vitest run tests/preview-service.test.js tests/preview-generated-acceptance.test.js tests/preview-installed-acceptance.test.js
+pnpm tsc --noEmit
+pnpm run typecheck -- --exclude-desktop
+```
+
+Results: CLI **182 pass / 5 files** (27 service, 43 provider, two loader/native
+transport cases and command contracts), scaffold **89 pass / 3 files**, source
+generated-app **one pass**, installed **29 pass / 3 files**. The source/installed
+generated app retains required APP_SECRET, executes the real production build
+gate, checks prepared native secret bindings, serves a real workerd 200 response
+and scans client bundles/journal/result for the dummy secret. Provider creation
+is a fixture input; workerd secrets are explicit test overrides. Thus this proves
+local generated usability, not remote Worker preview execution. First generated
+source attempts exposed fixture module links missing framework packages and an
+incompatible harness Request invocation; corrected the fixture links/API call.
+No application secret requirement, assertion or runtime criterion was removed.
+
+Changed CLI/Scaffold packed once into `/tmp/cossack-preview-secret-recovery-artifacts`,
+installed fresh in `/tmp/cossack-preview-secret-recovery-installed`; unchanged
+package tarballs reused. No unchanged installed matrix repacked/rerun. Logs:
+`/tmp/cossack-preview-secret-recovery-cli.log`,
+`/tmp/cossack-preview-secret-recovery-scaffold.log`,
+`/tmp/cossack-preview-generated-source.log`,
+`/tmp/cossack-preview-secret-recovery-installed.log`,
+`/tmp/cossack-preview-secret-recovery-root-types.log`,
+`/tmp/cossack-preview-secret-recovery-package-types.log`. Root/all ten non-Desktop
+package types pass; Desktop waived explicitly, not reported as passed.
+
+**Missing criteria:** no configured explicit account/API token and no hosted CI
+run, so actual create/smoke/owned cleanup/retry and unchanged-production evidence
+remain missing. Creation interrupted before a matching tagged deployment exists
+remains manual-recovery only. Existing staging D1/KV/R2 is retained, not provisioned
+per branch. Strict SVC-04 Waiting/lifecycle, CF-08 remote/provider startup and
+final versioned REL/runtime gates remain unchanged. No cloud mutation, deployment,
+push or publication; versions remain 0.8.3. Preserved all four baseline changes.

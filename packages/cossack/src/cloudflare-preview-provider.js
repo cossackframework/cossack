@@ -108,18 +108,35 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
   }
   async function run(args, signal) {
     if (!auth()) return unknown('COSSACK_CF_PREVIEW_AUTH_REQUIRED');
-    return bounded(async ownedSignal => {
+    let logDirectory, finished = false;
+    try { return await bounded(async ownedSignal => {
+      logDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-preview-private-log-'));
+      // Late filesystem completion after a deadline must never start a tool.
+      if (finished || ownedSignal.aborted) {
+        await fs.rm(logDirectory, { recursive: true, force: true });
+        return unknown('COSSACK_CF_PREVIEW_CANCELLED');
+      }
+      await fs.chmod(logDirectory, 0o700);
+      if (finished || ownedSignal.aborted) return unknown('COSSACK_CF_PREVIEW_CANCELLED');
       const result = await runner(args, { cwd: root, signal: ownedSignal, timeoutMs, maxOutputBytes,
         env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: token,
           CLOUDFLARE_API_BASE_URL: API, CLOUDFLARE_ENV: '', CI: 'true', WRANGLER_SEND_METRICS: 'false',
-          WRANGLER_HIDE_BANNER: 'true', WRANGLER_LOG_SANITIZE: 'true', FORCE_COLOR: '0' } });
+          WRANGLER_HIDE_BANNER: 'true', WRANGLER_LOG_SANITIZE: 'true',
+          WRANGLER_LOG_PATH: path.join(logDirectory, 'wrangler.log'), FORCE_COLOR: '0' } });
       const code = data(result, 'code');
       if (KNOWN.has(code)) return unknown(code);
       const stdout = data(result, 'stdout');
       if (data(result, 'exitCode') !== 0 || typeof stdout !== 'string') return unknown('COSSACK_CF_PREVIEW_TOOL_FAILED');
       if (Buffer.byteLength(stdout) > maxOutputBytes) return unknown('COSSACK_CF_PREVIEW_OUTPUT_LIMIT');
       return { status: 'ok', stdout };
-    }, signal);
+    }, signal); }
+    finally {
+      finished = true;
+      if (logDirectory) {
+        try { await fs.rm(logDirectory, { recursive: true, force: true }); }
+        catch { return unknown('COSSACK_CF_PREVIEW_LOG_CLEANUP_FAILED'); }
+      }
+    }
   }
   async function read(worker, identifiers, signal) {
     if (!auth()) return unknown('COSSACK_CF_PREVIEW_AUTH_REQUIRED');
@@ -208,6 +225,24 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
       if (value.status !== 'ok') return value;
       const deployment = deploymentRecord(value.result, previewId);
       return deployment && deployment.id === deploymentId ? { status: 'present', deployment } : unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
+    },
+    async recoverDeployment(worker, previewName, ownershipTag, { signal } = {}) {
+      if (!valid(ownershipTag, TAG)) return unknown('COSSACK_CF_PREVIEW_REFERENCE_INVALID');
+      const value = await read(worker, [previewName], signal);
+      if (value.status === 'absent') return { status: 'absent', code: 'COSSACK_CF_PREVIEW_ABSENT' };
+      if (value.status !== 'ok') return value;
+      const preview = previewRecord(value.result);
+      if (!preview || preview.name !== previewName) return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
+      // Read independently after identifying the native preview. Intent and
+      // name alone cannot establish ownership of an indeterminate deployment.
+      const latest = await read(worker, [preview.id, 'latest'], signal);
+      if (latest.status === 'absent') return { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT' };
+      if (latest.status !== 'ok') return latest;
+      const deployment = deploymentRecord(latest.result, preview.id, previewName);
+      if (!deployment) return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
+      if (deployment.tag !== ownershipTag) return unknown('COSSACK_CF_PREVIEW_OWNERSHIP_MISMATCH');
+      const url = providerUrl(value.result, latest.result);
+      return { status: 'recovered', preview, deployment, ...(url ? { url } : {}) };
     },
     async deploy(configPath, worker, name, tag, { signal } = {}) {
       if (!verified) return unknown('COSSACK_CF_PREVIEW_ACCOUNT_UNVERIFIED');
