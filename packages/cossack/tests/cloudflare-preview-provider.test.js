@@ -15,7 +15,7 @@ function fixture(options = {}) {
   const calls = [];
   const runner = options.runner ?? (async (args, context) => {
     calls.push({ args, context });
-    if (args.includes('--help')) return ok('--name --worker-name --json --ignore-defaults --tag --skip-confirmation');
+    if (args.includes('--help')) return ok('--name --worker-name --json --ignore-base-config --tag --skip-confirmation');
     if (args[0] === '--version') return ok('4.147.0');
     if (args[0] === 'whoami') return ok({ loggedIn: true, accounts: [{ id: accountId }] });
     if (args[1] === 'delete') return ok('Deleted');
@@ -96,7 +96,7 @@ describe('Wrangler preview provider transport', () => {
     expect(await fixture({ fetch: first }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id'))
       .toEqual({ status: 'absent', code: 'COSSACK_CF_PREVIEW_ABSENT' });
     expect(first).toHaveBeenCalledTimes(1);
-    for (const [status, expected] of [[404, { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT' }], [403, { status: 'unknown', code: 'COSSACK_CF_PREVIEW_INSPECTION_FAILED' }]]) {
+    for (const [status, expected] of [[404, { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT', preview: { id: preview.id, name: preview.name, createdOn: preview.created_on } }], [403, { status: 'unknown', code: 'COSSACK_CF_PREVIEW_INSPECTION_FAILED' }]]) {
       const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(new Response(token, { status }));
       expect(await fixture({ fetch: fetcher }).provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id')).toEqual(expected);
     }
@@ -129,7 +129,7 @@ describe('Wrangler preview provider transport', () => {
       status: 'deployed', preview: { id: 'preview-id', name: 'pr-42', createdOn: preview.created_on },
       deployment: { id: 'deployment-id', tag: 'cossack-owner-id' }, url: preview.urls[0],
     });
-    expect(calls.at(-1).args).toEqual(['preview', '--name', 'pr-42', '--worker-name', 'worker', '--tag', 'cossack-owner-id', '--json', '--ignore-defaults', '--config', filename]);
+    expect(calls.at(-1).args).toEqual(['preview', '--name', 'pr-42', '--worker-name', 'worker', '--tag', 'cossack-owner-id', '--json', '--ignore-base-config', '--config', filename]);
   });
   it('uses native skip-confirmation delete after caller ownership verification', async () => {
     const { provider, calls } = fixture(); await provider.verify(); const filename = await config();
@@ -287,4 +287,117 @@ setInterval(()=>{},1000);
       }, { timeout: 3000 }).toBe(true);
     }
   });
+});
+
+describe('empty native preview creation proof', () => {
+  it('creates only an empty account-scoped preview with defaults disabled after verification', async () => {
+    const fetcher = vi.fn(async () => response(preview));
+    const { provider, calls } = fixture({ fetch: fetcher });
+    await provider.verify();
+    const result = await provider.createEmptyPreview('worker', 'pr-42');
+    expect(result).toEqual({ status: 'created', preview: { id: preview.id, name: preview.name, createdOn: preview.created_on } });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [url, request] = fetcher.mock.calls[0];
+    expect(url).toBe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews?ignore_base_config=true`);
+    expect(request).toMatchObject({ method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${token}`, accept: 'application/json', 'content-type': 'application/json' } });
+    expect(request.signal).toBeInstanceOf(AbortSignal);
+    expect(JSON.parse(request.body)).toEqual({ name: 'pr-42' });
+    expect(calls).toHaveLength(5); // No upload/settings/resource/delete native command.
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(JSON.stringify(result)).not.toMatch(/urls|env|settings|resources|deployment/);
+  });
+  it('never sends a mutation before account/tool verification or after failed verification', async () => {
+    const fetcher = vi.fn();
+    const { provider } = fixture({ fetch: fetcher });
+    expect(await provider.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_ACCOUNT_UNVERIFIED' });
+    const rejected = fixture({ fetch: fetcher, token: '', runner: async () => ok('4.147.0') }).provider;
+    expect(await rejected.verify()).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_AUTH_REQUIRED' });
+    expect(await rejected.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_ACCOUNT_UNVERIFIED' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each([['../foreign', 'pr-42'], ['worker/foreign', 'pr-42'], ['worker', 'bad\nname'], ['worker', '']])('rejects invalid worker/name scope %s %s without a request', async (worker, name) => {
+    const fetcher = vi.fn(); const { provider } = fixture({ fetch: fetcher }); await provider.verify();
+    expect(await provider.createEmptyPreview(worker, name)).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_REFERENCE_INVALID' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it.each([
+    { ...preview, id: '../foreign' }, { ...preview, id: '' }, { ...preview, name: 'foreign-name' },
+    { ...preview, created_on: 'not-a-date' }, { ...preview, created_on: '2026-99-99T00:00:00.000Z' },
+  ])('rejects an invalid or mismatched created identity', async created => {
+    const { provider } = fixture({ fetch: async () => response(created) }); await provider.verify();
+    expect(await provider.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OUTPUT_INVALID' });
+  });
+  it.each([403, 404, 409, 500])('redacts %s creation failure without claiming an absent resource', async status => {
+    const { provider } = fixture({ fetch: async () => new Response(token, { status }) }); await provider.verify();
+    expect(await provider.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_CREATION_FAILED' });
+  });
+  it.each(['redirected', 'foreign-url'])('rejects %s response identity and never follows a redirect', async mode => {
+    const created = response(preview);
+    Object.defineProperty(created, mode === 'redirected' ? 'redirected' : 'url', { value: mode === 'redirected' ? true : `https://api.cloudflare.com/client/v4/accounts/${'b'.repeat(32)}/workers/workers/worker/previews` });
+    const fetcher = vi.fn(async (_url, options) => { expect(options.redirect).toBe('error'); return created; });
+    const { provider } = fixture({ fetch: fetcher }); await provider.verify();
+    expect(await provider.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_RESPONSE_SCOPE_INVALID' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('bounds streamed mutation output without publishing provider bodies', async () => {
+    const { provider } = fixture({ maxOutputBytes: 256, fetch: async () => response({ ...preview, secret: token.repeat(30) }) }); await provider.verify();
+    expect(await provider.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OUTPUT_LIMIT' });
+  });
+  it('redacts transport exceptions and malformed success envelopes', async () => {
+    for (const fetcher of [async () => { throw new Error(token); }, async () => new Response(token)]) {
+      const { provider } = fixture({ fetch: fetcher }); await provider.verify();
+      const result = await provider.createEmptyPreview('worker', 'pr-42');
+      expect(result.status).toBe('unknown');
+      expect(result.code).toMatch(/^COSSACK_CF_PREVIEW_(TRANSPORT_FAILED|OUTPUT_INVALID)$/);
+      expect(JSON.stringify(result)).not.toContain(token);
+    }
+  });
+  it.each(['cancel', 'timeout'])('bounds %s while an empty-preview mutation is in flight', async mode => {
+    let signal, entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const fetcher = vi.fn(async (_url, options) => { signal = options.signal; entered(); return new Promise(() => {}); });
+    const controller = new AbortController();
+    const { provider } = fixture({ timeoutMs: 30, fetch: fetcher }); await provider.verify();
+    const pending = provider.createEmptyPreview('worker', 'pr-42', { signal: controller.signal });
+    await started;
+    if (mode === 'cancel') controller.abort();
+    expect(await pending).toEqual({ status: 'unknown', code: mode === 'cancel' ? 'COSSACK_CF_PREVIEW_CANCELLED' : 'COSSACK_CF_PREVIEW_TIMEOUT' });
+    expect(signal.aborted).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it('makes no POST at all for an already cancelled creation', async () => {
+    const fetcher = vi.fn(); const { provider } = fixture({ fetch: fetcher }); await provider.verify();
+    const controller = new AbortController(); controller.abort();
+    expect(await provider.createEmptyPreview('worker', 'pr-42', { signal: controller.signal })).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_CANCELLED' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+
+it('negotiates proven legacy defaults bypass for earlier native preview tooling', async () => {
+  const calls = [];
+  const fetcher = vi.fn(async () => response(preview));
+  const runner = async args => {
+    calls.push(args);
+    if (args.includes('--help')) return ok('--name --worker-name --json --ignore-defaults --tag --skip-confirmation');
+    if (args[0] === '--version') return ok('4.135.0');
+    if (args[0] === 'whoami') return ok({ loggedIn: true, accounts: [{ id: accountId }] });
+    return ok({ preview, deployment });
+  };
+  const { provider } = fixture({ fetch: fetcher, runner });
+  expect(await provider.verify()).toEqual({ status: 'verified', accountId });
+  expect((await provider.createEmptyPreview('worker', 'pr-42')).status).toBe('created');
+  expect(fetcher.mock.calls[0][0]).toBe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews?ignore_defaults=true`);
+  expect((await provider.deploy(await config(), 'worker', 'pr-42', 'cossack-owner-id')).status).toBe('deployed');
+  expect(calls.at(-1)).toContain('--ignore-defaults');
+  expect(calls.at(-1)).not.toContain('--ignore-base-config');
+});
+
+it('declines creation when neither native defaults bypass capability is advertised', async () => {
+  const fetcher = vi.fn();
+  const runner = async args => args[0] === '--version' ? ok('4.147.0') : ok('--name --worker-name --json --tag --skip-confirmation');
+  const { provider } = fixture({ runner, fetch: fetcher });
+  expect(await provider.verify()).toEqual({ status: 'unsupported', code: 'COSSACK_CF_PREVIEW_COMMAND_UNSUPPORTED' });
+  expect(await provider.createEmptyPreview('worker', 'pr-42')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_ACCOUNT_UNVERIFIED' });
+  expect(fetcher).not.toHaveBeenCalled();
 });

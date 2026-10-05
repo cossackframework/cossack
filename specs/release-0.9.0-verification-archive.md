@@ -13741,3 +13741,86 @@ Hosted approval is still pending despite working cached OAuth; token/CI config
 remains absent. Deno Deploy, final versioned artifact/runtime matrices and REL-04/05
 gates remain open. No broad CLI/root build rerun, cloud mutation, publication or
 push occurred. Desktop checks were waived, not passed.
+
+
+<a id="codex-preview-creation-release-build-2026-10-06"></a>
+### Codex — preview creation proof and release build (2026-10-06)
+
+Author: **Codex**. **51 complete / 7 open; no numbered task closes.** Previous
+goal turn was progress (commit 8d27e4eb); this batch implements existing CF-09
+cleanup and REL-03 build acceptance gaps. Two implementation agents exclusively
+owned provider/tests and build orchestration/tests. Coordinator owned lifecycle,
+CLI help/docs, native integration, package script and final checks. User baseline
+reports.md/.zcodeignore/two uncommitted strict Workflow probes remain untouched.
+
+**Completed criteria:**
+
+- Empty preview creation uses verified account auth, bounded POST `{name}` and
+  explicit default bypass, without resource settings. Provider response is reduced
+  to validated ID/name/creation time and saved atomically before native upload.
+  Parent Worker must already exist; Cossack never provisions it in this path.
+- If upload fails before deployment, cleanup requires exact saved creation identity
+  matching an independent provider read plus actual latest-deployment 404. Names,
+  missing creation proof, unknown reads, substituted preview ID/time/name and
+  foreign latest deployment never authorize removal. Saved deployment proof cannot
+  be downgraded into empty-preview proof. Delete failure retains retryable state;
+  only provider-confirmed preview absence records cleaned. Lost create response
+  before persistence still requires manual recovery.
+- Real Wrangler 4.147 help uses `--ignore-base-config`, not the formerly assumed
+  `--ignore-defaults`. Provider now negotiates actual help, prefers current flag,
+  supports the legacy flag only when advertised and uses corresponding REST query.
+  Native source confirms no create-only CLI exists, so empty creation uses its
+  account-scoped REST contract; deployments/deletions still use native Wrangler.
+- Native source and changed installed CLI acceptance use actual Wrangler binary
+  version/help/whoami/deploy/delete. A loopback API replaces only destination and
+  authenticated responses; no synthetic CLI success, fake tool output or cloud
+  write occurs. Fixture observes creation receipt before upload, actual multipart
+  staging-variable metadata, failed upload, failed delete, successful retry and
+  idempotent cleanup. All mutations stay under the exact account/Worker preview
+  subtree; production Worker/default endpoints receive no mutations. This local
+  proof does not establish hosted provider/CI isolation or real production state.
+- `pnpm build:release` preserves every root non-Desktop build stage, orders
+  Renderer→Core→UI before consumers, adds test-utils and performs Studio's full
+  Vite build. Framework retains root build's library `build:types` stage. Auth has
+  no build script and publishes source; its typecheck passed. Desktop explicitly
+  waived, never reported passed. First failed native stage stops/propagates exit.
+
+**Terminal verification:**
+
+| Command / scope | Result | Evidence |
+| --- | --- | --- |
+| `pnpm build:release` | Nine native non-Desktop build stages passed | `/tmp/cossack-preview-release-build.log` |
+| `pnpm audit:bundle` | Passed, 32 neutral modules / Workers-safe entry | `/tmp/cossack-preview-release-bundle-audit.log` |
+| `pnpm tsc --noEmit` | Passed | `/tmp/cossack-preview-empty-root-types-final.log` |
+| `node scripts/typecheck.mjs --exclude-desktop` | Ten packages passed; Desktop waived | `/tmp/cossack-preview-empty-package-types.log` |
+| `pnpm --filter cossack exec vitest run tests/preview-service.test.js tests/cloudflare-preview-provider.test.js tests/preview-secrets.test.js tests/release-build-command.test.js` | 108 passed / 4 files | `/tmp/cossack-preview-empty-combined.log` |
+| `COSSACK_PREVIEW_NATIVE_TOOL_ROOT=/tmp/cossack-aggregate-release-installed pnpm --filter cossack exec vitest run tests/preview-creation-native.test.js` | 1 passed / 1 file | `/tmp/cossack-preview-empty-native-source-final3.log` |
+| `COSSACK_PREVIEW_INSTALLED_ROOT=/tmp/cossack-preview-empty-release-installed pnpm --filter cossack exec vitest run tests/preview-creation-native.test.js tests/preview-service.test.js tests/preview-installed-acceptance.test.js` | 38 passed / 3 files | `/tmp/cossack-preview-empty-installed-final.log` |
+| Changed CLI `pnpm pack`; fresh overridden consumer | Passed, CLI packed once; unchanged tarballs reused | `/tmp/cossack-preview-empty-cli-pack.log`, `/tmp/cossack-preview-empty-installed-setup-final.log` |
+
+Provider has 67 tests, lifecycle 36, release orchestrator four and secrets one.
+Installed resolution audit confirms CLI binds the new preview-empty tarball and
+Framework binds prior verified aggregate tarball, with native Wrangler 4.147.0.
+Only that changed package was packed; native build refreshed local dist without
+repacking unchanged packages or repeating unchanged installed matrices.
+
+**Failed iterations:** real 4.147 help exposed a product compatibility failure
+missed by mock-help tests (renamed bypass flag). Initial new native fixture then
+failed verification because its memberships response was missing; corrected the
+account-intersection fixture. Next test wrongly required PATCH for variable-only
+settings, although native puts variables in deployment metadata; assertion now
+checks actual staging upload contents. Native 4.147 uploads multipart, whereas the
+earlier 4.114 fixture used JSON; updated metadata parser to real multipart before
+final source/installed passes. No ownership checks weakened. Initial copied lock
+was edited incorrectly and retained old CLI resolution; restored unchanged prior
+lock before installing the new manifest/overrides. Actual new artifact binding
+was checked before installed acceptance; initial resolution failure is not a pass.
+
+**Limits and remaining tasks:** CF-09 stays open for hosted CI creation/smoke/
+cleanup, isolation, retry and unchanged production. Cached OAuth exists, but
+preview token/CI configuration and hosted approval are pending. Creation response
+loss before saving immutable identity stays manual recovery; random intent is not
+proof. SVC-04 actual native Waiting, CF-08 wider graphs and remote Logs/remapping/
+provider startup, Deno Deploy and final versioned runtime/unit/browser matrices
+remain unproven. REL-04 versioning and REL-05 audit remain gated. No broad unit
+rerun, remote resource write, publication or push; Desktop remains waived.

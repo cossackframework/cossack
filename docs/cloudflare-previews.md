@@ -21,7 +21,9 @@ A newer global Wrangler does not replace the project's installed dependency.
 Add a top-level `previews` object to the source Wrangler configuration. This is
 native preview configuration; `env.staging` alone does not configure this command.
 Cossack builds the default Worker configuration and passes explicit preview
-settings to native Wrangler with `--ignore-defaults`.
+settings using the flag advertised by the installed Wrangler: `--ignore-base-config`
+in current versions or `--ignore-defaults` in compatible older versions. Both bypass
+shared defaults; unsupported flag contracts fail before mutation.
 
 Repeat every top-level variable name in `previews.vars`, using appropriate
 non-secret values. For each production D1, KV, or R2 binding, declare the same
@@ -124,7 +126,10 @@ pnpm exec cossack preview create --account "$CLOUDFLARE_ACCOUNT_ID" \
 Creation runs the existing `cossack deploy --dry-run` build gate, including
 configuration checks and configured build budgets. It builds locally without a
 production upload, prepares the selected preview configuration, records intent,
-and invokes native preview deployment. The actual provider name adds a random
+creates an empty preview without inherited settings, and saves the provider
+creation ID/time before invoking native deployment. The parent Worker must already
+exist in the selected account; Cossack does not create or modify it.
+The actual provider name adds a random
 suffix to your label, so separate creations do not update an older preview by name.
 
 The smoke request uses a same-origin HTTPS path on the returned `workers.dev` URL,
@@ -164,13 +169,17 @@ Do not repair a journal by inventing IDs or tags.
 If creation loses its response after the tagged deployment was committed,
 inspection reads the real latest deployment and verifies the journal's exact
 ownership tag. Inspection performs no journal writes. Cleanup persists that
-recovered receipt before deleting by immutable ID. Missing deployment evidence,
-foreign tags, unknown reads, or a replacement preview block deletion.
+recovered receipt before deleting by immutable ID. Foreign tags, unknown reads, or a replacement preview block deletion.
 
-If creation stopped before any matching tagged deployment exists, intent and a
-name do not prove ownership. Preserve the journal and provider evidence for manual
-recovery in the intended account. A missing latest deployment is not treated as an
-absent preview. Cancellation can also stop CI before its journal artifact upload.
+If creation stops before deployment, cleanup can use the creation receipt saved
+before native upload. It must match the independently read preview ID, name and
+creation time, and the provider must confirm that its latest deployment is absent.
+A failed deletion remains retryable; only confirmed preview absence completes it.
+
+If the creation response was lost before that receipt was saved, intent and a name
+do not prove ownership. Preserve the journal and provider evidence for manual
+recovery in the intended account. A missing latest deployment is not an absent
+preview. Cancellation can also stop CI before its journal artifact upload.
 
 ## Trusted CI and retained artifacts
 

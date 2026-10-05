@@ -422,8 +422,11 @@ account/provider ownership inspection and immutable-ID cleanup through the publi
 CLI, with a trusted manual scaffold CI workflow. These are locally verified, not
 hosted acceptance. Required staging secrets and recovery of lost tagged receipts
 now pass native transport and generated-app source/installed smoke acceptance.
-Creation without a matching tagged deployment still requires manual provider
-recovery. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
+Codex (2026-10-06): native source/installed no-tag cleanup now requires the
+creation ID/name/time saved before native upload and independent latest-deployment
+404. An unknown creation response without saved identity still requires manual
+provider recovery; names never establish ownership. Current Wrangler default-bypass
+flags are negotiated, with real 4.147 acceptance. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
 Promotion remains a separate reviewed production deployment with migration order
 and code/state rollback limits documented in [the guide](../docs/cloudflare-previews.md).
 
@@ -515,6 +518,14 @@ Approach: Build dependencies first. Run `pnpm tsc --noEmit`, `pnpm typecheck`,
 artifact tests. Include the test-utils suite after RT-29. Do not run type checks
 while another command deletes dependency declarations. Record exact commands,
 counts, failures, and unavailable external checks.
+
+Codex (2026-10-06): `pnpm build:release` serially runs every non-Desktop native
+build stage from the root build and also builds test-utils. Renderer/Core/UI
+dependencies precede consumers; Framework retains its library declaration stage,
+Studio runs its full Vite build. Auth publishes source and has no build script;
+its typecheck is required. Native build, bundle audit and ten package types pass.
+This completes the current non-Desktop build criterion, not final versioned or
+full unit/browser gates. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06).
 
 Start in root scripts and package test/build scripts. Fix meaningful failures
 instead of changing assertions only to preserve a green gate.
@@ -907,3 +918,18 @@ types pass. Framework and CLI changed artifacts packed; unchanged artifacts reus
 [Exact commands, failures and limits](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06). Continue with wider graph acceptance
 or approved hosted checks; do not repeat unchanged receipt matrices. Native Waiting,
 CI credentials/lifecycle, Deno Deploy and final versioned release gates remain.
+
+
+## Codex — preview creation and release build batch (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** Independent agents owned
+provider transport/tests and release build orchestration/tests. Coordinator owned
+preview lifecycle, real native source/installed integration, package-script wiring
+and combined verification. No-tag saved-creation cleanup, compatible actual native
+flags and the non-Desktop native build criterion now pass. Lost creation identity
+and unknown provider state still refuse cleanup. Parent Worker must already exist;
+Cossack does not provision or update it. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06).
+Hosted approval and CI credentials are still pending; source/loopback success does
+not prove hosted isolation, production preservation or provider resource cleanup.
+Native Waiting, CF-08 wider graphs/remote evidence, Deno Deploy and final versions
+still block their full task closures. Continue independent acceptance work.

@@ -177,3 +177,75 @@ it('rejects a new latest deployment when an older tagged receipt still exists', 
  await expect(cleanupPreview(root, { accountId }, dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_OWNERSHIP_UNPROVEN' });
  expect(provider.remove).not.toHaveBeenCalled();
 });
+
+it('persists independent creation identity before a failed deployment and cleans without a tag', async () => {
+ const filename = path.join(root, '.cossack/preview.json'); let proof;
+ provider.createEmptyPreview = vi.fn(async (_worker, name) => {
+  expect(JSON.parse(await fs.readFile(filename, 'utf8')).status).toBe('intent');
+  proof = { id: 'new-empty-id', name, createdOn: '2026-10-06T02:00:00Z' };
+  return { status: 'created', preview: proof };
+ });
+ provider.deploy.mockImplementation(async () => {
+  const saved = JSON.parse(await fs.readFile(filename, 'utf8'));
+  expect(saved.status).toBe('created'); expect(saved.preview).toEqual(proof);
+  expect(saved.deployment).toBeUndefined();
+  return { status: 'unknown' };
+ });
+ await expect(createPreview(root, options(), dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_CREATE_UNKNOWN' });
+ provider.recoverDeployment = vi.fn(async () => ({ status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT', preview: proof }));
+ const before = await fs.readFile(filename, 'utf8');
+ expect(await inspectPreview(root, { accountId }, dependencies)).toMatchObject({ status: 'owned', preview: proof });
+ expect(await fs.readFile(filename, 'utf8')).toBe(before);
+ provider.remove.mockImplementation(async (_config, worker, id) => {
+  expect(worker).toBe('app'); expect(id).toBe(proof.id);
+  expect(JSON.parse(await fs.readFile(filename, 'utf8')).preview).toEqual(proof);
+  provider.inspect.mockResolvedValue({ status: 'absent' }); return { status: 'removed' };
+ });
+ expect((await cleanupPreview(root, { accountId }, dependencies)).status).toBe('cleaned');
+ provider.recoverDeployment.mockResolvedValue({ status: 'absent', code: 'COSSACK_CF_PREVIEW_ABSENT' });
+ expect((await cleanupPreview(root, { accountId }, dependencies)).status).toBe('cleaned');
+ expect(provider.remove).toHaveBeenCalledTimes(1);
+});
+it.each(['missing', 'identity', 'time', 'name', 'foreign-deployment'])('rejects no-tag cleanup without matching independent creation proof: %s', async mode => {
+ let proof;
+ provider.createEmptyPreview = async (_worker, name) => ({ status: 'created', preview: proof = { id: 'empty-id', name, createdOn: '2026-10-06T02:00:00Z' } });
+ provider.deploy.mockResolvedValue({ status: 'unknown' });
+ await expect(createPreview(root, options(), dependencies)).rejects.toThrow();
+ const remote = { ...proof };
+ if (mode === 'identity') remote.id = 'replacement';
+ if (mode === 'time') remote.createdOn = '2026-10-07T02:00:00Z';
+ if (mode === 'name') remote.name = 'foreign-name';
+ provider.recoverDeployment = async () => mode === 'foreign-deployment'
+  ? { status: 'unknown', code: 'COSSACK_CF_PREVIEW_OWNERSHIP_MISMATCH' }
+  : { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT', ...(mode === 'missing' ? {} : { preview: remote }) };
+ await expect(cleanupPreview(root, { accountId }, dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_OWNERSHIP_UNPROVEN' });
+ expect(provider.remove).not.toHaveBeenCalled();
+});
+it('stops before deployment when the separate creation response is lost', async () => {
+ provider.createEmptyPreview = async () => ({ status: 'unknown' });
+ await expect(createPreview(root, options(), dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_CREATE_UNKNOWN' });
+ expect(provider.deploy).not.toHaveBeenCalled();
+ const saved = JSON.parse(await fs.readFile(path.join(root, '.cossack/preview.json'), 'utf8'));
+ expect(saved.status).toBe('unknown'); expect(saved.preview).toBeUndefined();
+ provider.recoverDeployment = async () => ({ status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT', preview: { id: 'unproven', name: saved.name, createdOn: '2026-10-06T02:00:00Z' } });
+ await expect(cleanupPreview(root, { accountId }, dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_OWNERSHIP_UNPROVEN' });
+ expect(provider.remove).not.toHaveBeenCalled();
+});
+it('retains creation proof after a thrown deployment failure', async () => {
+ let proof;
+ provider.createEmptyPreview = async (_worker, name) => ({ status: 'created', preview: proof = { id: 'empty-id', name, createdOn: '2026-10-06T02:00:00Z' } });
+ provider.deploy.mockRejectedValue(new Error('private native failure'));
+ await expect(createPreview(root, options(), dependencies)).rejects.toThrow();
+ const saved = JSON.parse(await fs.readFile(path.join(root, '.cossack/preview.json'), 'utf8'));
+ expect(saved.status).toBe('created'); expect(saved.preview).toEqual(proof);
+ provider.recoverDeployment = async () => ({ status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT', preview: proof });
+ expect((await inspectPreview(root, { accountId }, dependencies)).status).toBe('owned');
+});
+it('does not replace creation proof with a different native deployment preview', async () => {
+ provider.createEmptyPreview = async (_worker, name) => ({ status: 'created', preview: { id: 'original-id', name, createdOn: '2026-10-06T02:00:00Z' } });
+ provider.deploy.mockImplementation(async (_file, _worker, name, tag) => ({ status: 'deployed', preview: { id: 'replacement-id', name, createdOn: '2026-10-06T03:00:00Z' }, deployment: { id: 'deploy-id', tag }, url: 'https://preview.account.workers.dev' }));
+ await expect(createPreview(root, options(), dependencies)).rejects.toMatchObject({ code: 'COSSACK_PREVIEW_CREATE_UNKNOWN' });
+ const saved = JSON.parse(await fs.readFile(path.join(root, '.cossack/preview.json'), 'utf8'));
+ expect(saved.preview.id).toBe('original-id'); expect(saved.deployment).toBeUndefined();
+ expect(dependencies.fetch).not.toHaveBeenCalled();
+});

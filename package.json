@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
+    "build:release": "node scripts/build-release.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "dev": "pnpm --filter @cossackframework/framework run dev",
     "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run build && pnpm --filter @cossackframework/framework run build:types && pnpm --filter @cossackframework/node-adapter --filter @cossackframework/deno-adapter --filter @cossackframework/desktop --filter @cossackframework/ui --filter @cossackframework/database run build && pnpm --filter @cossackframework/studio run build",

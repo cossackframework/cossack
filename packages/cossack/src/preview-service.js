@@ -91,7 +91,7 @@ async function load(filename, accountId) {
   const stat = await fs.stat(filename);
   if (!stat.isFile() || stat.size > 64 * 1024) throw error('STATE_INVALID');
   const value = JSON.parse(await fs.readFile(filename, 'utf8'));
-  if (value.schemaVersion !== 1 || !accountPattern.test(value.accountId ?? '') || !namePattern.test(value.worker ?? '') || !namePattern.test(value.name ?? '') || !/^cossack:[a-f0-9]{32}$/.test(value.tag ?? '') || !['intent', 'deployed', 'smoke-failed', 'unknown', 'cleaned'].includes(value.status)) throw error('STATE_INVALID');
+  if (value.schemaVersion !== 1 || !accountPattern.test(value.accountId ?? '') || !namePattern.test(value.worker ?? '') || !namePattern.test(value.name ?? '') || !/^cossack:[a-f0-9]{32}$/.test(value.tag ?? '') || !['intent', 'created', 'deployed', 'smoke-failed', 'unknown', 'cleaned'].includes(value.status)) throw error('STATE_INVALID');
   if (!Array.isArray(value.resources) || value.resources.length > 128 || value.resources.some(item => !item || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(item.binding ?? '') ||
     !(Object.hasOwn(references, item.kind) && item.ownership === 'existing-staging' && item.cleanup === 'retain' || item.kind === 'durable-object' && item.ownership === 'native-preview' && item.cleanup === 'provider') ||
     Object.keys(item).some(key => !['kind', 'binding', 'ownership', 'cleanup'].includes(key)))) throw error('STATE_INVALID');
@@ -152,8 +152,18 @@ export async function createPreview(root, options, dependencies = {}) {
     try {
       if ((await provider.inspect(journal.worker, journal.name)).status !== 'absent') throw error('NAME_NOT_AVAILABLE');
       await save(filename, journal);
+      if (provider.createEmptyPreview) {
+        // Persist independent creation identity before any deployment attempt.
+        // An intent/name alone cannot authorize cleanup after a lost response.
+        const creation = await provider.createEmptyPreview(journal.worker, journal.name);
+        if (creation.status !== 'created' || creation.preview?.name !== journal.name) {
+          journal.status = 'unknown'; await save(filename, journal); throw error('CREATE_UNKNOWN');
+        }
+        Object.assign(journal, { status: 'created', preview: creation.preview });
+        await save(filename, journal);
+      }
       const receipt = await provider.deploy(configPath, journal.worker, journal.name, journal.tag);
-      if (receipt.status !== 'deployed' || receipt.preview.name !== journal.name || receipt.deployment.tag !== journal.tag) {
+      if (receipt.status !== 'deployed' || receipt.preview.name !== journal.name || receipt.deployment.tag !== journal.tag || journal.preview && (receipt.preview.id !== journal.preview.id || receipt.preview.createdOn !== journal.preview.createdOn)) {
         journal.status = 'unknown'; await save(filename, journal); throw error('CREATE_UNKNOWN');
       }
       Object.assign(journal, { status: 'deployed', preview: receipt.preview, deployment: receipt.deployment, url: receipt.url });
@@ -172,6 +182,14 @@ async function inspectOwned(provider, journal) {
   if (provider.recoverDeployment) {
     const recovered = await provider.recoverDeployment(journal.worker, journal.name, journal.tag);
     if (recovered.status === 'absent' && recovered.code === 'COSSACK_CF_PREVIEW_ABSENT') return { status: 'absent' };
+    if (recovered.status === 'absent' && recovered.code === 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT') {
+      // A present, never-deployed preview is removable only with the exact
+      // creation response saved before deployment, independently re-read now.
+      if (!journal.preview || journal.deployment || !recovered.preview ||
+        recovered.preview.name !== journal.name || recovered.preview.id !== journal.preview.id ||
+        recovered.preview.createdOn !== journal.preview.createdOn) throw error('OWNERSHIP_UNPROVEN');
+      return { status: 'owned', preview: recovered.preview };
+    }
     if (recovered.status !== 'recovered' || recovered.preview.name !== journal.name || recovered.deployment.tag !== journal.tag) throw error('OWNERSHIP_UNPROVEN');
     if (journal.preview && (recovered.preview.id !== journal.preview.id || recovered.preview.createdOn !== journal.preview.createdOn) || journal.deployment && recovered.deployment.id !== journal.deployment.id) throw error('OWNERSHIP_UNPROVEN');
     return { status: 'owned', preview: recovered.preview, deployment: recovered.deployment };
@@ -201,8 +219,8 @@ export async function cleanupPreview(root, options, dependencies = {}) {
     if ((await provider.verify()).status !== 'verified') throw error('PROVIDER_UNVERIFIED');
     const ownership = await inspectOwned(provider, journal);
     if (ownership.status !== 'absent') {
-      if (!journal.preview || !journal.deployment) {
-        Object.assign(journal, { preview: ownership.preview, deployment: ownership.deployment });
+      if (!journal.preview || ownership.deployment && !journal.deployment) {
+        Object.assign(journal, { preview: ownership.preview, ...(ownership.deployment ? { deployment: ownership.deployment } : {}) });
         await save(filename, journal); // Persist recovered provider proof before removal.
       }
       const configPath = `${filename}.${randomBytes(8).toString('hex')}.cleanup.json`;

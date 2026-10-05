@@ -73,7 +73,7 @@ function nativeRunner(binary) {
   });
 }
 
-/** Native Wrangler mutations and account-scoped read-only REST inspection. */
+/** Native Wrangler deployments/deletion and bounded account-scoped preview REST operations. */
 export function createWranglerPreviewProvider(projectRoot, options = {}) {
   const accountId = typeof options.accountId === 'string' ? options.accountId.toLowerCase() : undefined;
   const token = options.token ?? process.env.CLOUDFLARE_API_TOKEN;
@@ -83,7 +83,7 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000
     || !Number.isInteger(maxOutputBytes) || maxOutputBytes < 1 || maxOutputBytes > 8 * 1024 * 1024) throw new TypeError('COSSACK_CF_PREVIEW_LIMITS_INVALID');
   const root = path.resolve(projectRoot);
-  let runner = options.runner, verified = false;
+  let runner = options.runner, verified = false, ignoreConfigurationFlag;
   if (!runner) {
     try {
       const require = createRequire(path.join(root, 'package.json'));
@@ -143,10 +143,21 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
     if (!valid(worker) || identifiers.some(value => !valid(value, NAME))) return unknown('COSSACK_CF_PREVIEW_REFERENCE_INVALID');
     const suffix = '/accounts/' + accountId + '/workers/workers/' + encodeURIComponent(worker) + '/previews/'
       + encodeURIComponent(identifiers[0]) + (identifiers[1] ? '/deployments/' + encodeURIComponent(identifiers[1]) : '');
+    return request(suffix, 'GET', undefined, signal);
+  }
+  async function request(suffix, method, body, signal) {
+    const endpoint = API + suffix;
     return bounded(async ownedSignal => {
-      const response = await fetcher(API + suffix, { method: 'GET', headers: { authorization: 'Bearer ' + token, accept: 'application/json' }, redirect: 'error', signal: ownedSignal });
-      if (response.status === 404) { await response.body?.cancel(); return { status: 'absent' }; }
-      if (!response.ok) { await response.body?.cancel(); return unknown('COSSACK_CF_PREVIEW_INSPECTION_FAILED'); }
+      const response = await fetcher(endpoint, { method, headers: { authorization: 'Bearer ' + token, accept: 'application/json',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'error', signal: ownedSignal });
+      // Native fetch refuses redirects. Also reject substituted response URLs
+      // from injected transports before trusting any identity in the envelope.
+      if (response.redirected || (response.url && response.url !== endpoint)) {
+        await response.body?.cancel(); return unknown('COSSACK_CF_PREVIEW_RESPONSE_SCOPE_INVALID');
+      }
+      if (response.status === 404 && method === 'GET') { await response.body?.cancel(); return { status: 'absent' }; }
+      if (!response.ok) { await response.body?.cancel(); return unknown(method === 'POST' ? 'COSSACK_CF_PREVIEW_CREATION_FAILED' : 'COSSACK_CF_PREVIEW_INSPECTION_FAILED'); }
       const reader = response.body?.getReader();
       if (!reader) return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
       const cancelBody = () => { void reader.cancel().catch(() => {}); };
@@ -183,6 +194,7 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
   return {
     async verify({ signal } = {}) {
       verified = false;
+      ignoreConfigurationFlag = undefined;
       let directory;
       try {
         directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-preview-account-'));
@@ -193,13 +205,19 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
         const match = /^4\.(\d+)\.\d+(?:[-+][\w.-]+)?\s*$/.exec(version.stdout.trim());
         if (!match || Number(match[1]) < 135) return { status: 'unsupported', code: 'COSSACK_CF_PREVIEW_VERSION_UNSUPPORTED' };
         for (const [args, flags] of [
-          [['preview', '--help'], ['--name', '--worker-name', '--json', '--ignore-defaults', '--tag']],
+          [['preview', '--help'], ['--name', '--worker-name', '--json', '--tag']],
           [['preview', 'delete', '--help'], ['--name', '--worker-name', '--skip-confirmation']],
           [['whoami', '--help'], ['--json']],
         ]) {
           const help = await run([...args, '--config', config], signal);
           if (help.status !== 'ok') return help;
           if (flags.some(flag => !new RegExp('(?:^|\\s)' + flag + '(?:\\s|$)').test(help.stdout))) return { status: 'unsupported', code: 'COSSACK_CF_PREVIEW_COMMAND_UNSUPPORTED' };
+          if (args[0] === 'preview' && args[1] === '--help') {
+            const advertised = flag => new RegExp('(?:^|\\s)' + flag + '(?:\\s|$)').test(help.stdout);
+            ignoreConfigurationFlag = advertised('--ignore-base-config') ? '--ignore-base-config'
+              : advertised('--ignore-defaults') ? '--ignore-defaults' : undefined;
+            if (!ignoreConfigurationFlag) return { status: 'unsupported', code: 'COSSACK_CF_PREVIEW_COMMAND_UNSUPPORTED' };
+          }
         }
         const result = await run(['whoami', '--json', '--config', config], signal);
         if (result.status !== 'ok') return result;
@@ -213,6 +231,20 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
         return { status: 'verified', accountId };
       } catch { return unknown('COSSACK_CF_PREVIEW_VERIFICATION_FAILED'); }
       finally { if (directory) await fs.rm(directory, { recursive: true, force: true }).catch(() => {}); }
+    },
+    // Wrangler 4.147 uses this endpoint and ignore_base_config option internally.
+    // Its preview command also uploads a deployment; no native create-only
+    // command exists. Request no settings/resources to persist creation proof
+    // before any potentially failing deployment or resource reconciliation.
+    async createEmptyPreview(worker, name, { signal } = {}) {
+      if (!verified) return unknown('COSSACK_CF_PREVIEW_ACCOUNT_UNVERIFIED');
+      if (!auth()) return unknown('COSSACK_CF_PREVIEW_AUTH_REQUIRED');
+      if (!valid(worker) || !valid(name, NAME)) return unknown('COSSACK_CF_PREVIEW_REFERENCE_INVALID');
+      const suffix = '/accounts/' + accountId + '/workers/workers/' + encodeURIComponent(worker) + '/previews?' + (ignoreConfigurationFlag === '--ignore-base-config' ? 'ignore_base_config=true' : 'ignore_defaults=true');
+      const value = await request(suffix, 'POST', { name }, signal);
+      if (value.status !== 'ok') return value;
+      const preview = previewRecord(value.result);
+      return preview && preview.name === name ? { status: 'created', preview } : unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
     },
     async inspect(worker, name, { signal } = {}) {
       const value = await read(worker, [name], signal);
@@ -236,7 +268,7 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
       // Read independently after identifying the native preview. Intent and
       // name alone cannot establish ownership of an indeterminate deployment.
       const latest = await read(worker, [preview.id, 'latest'], signal);
-      if (latest.status === 'absent') return { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT' };
+      if (latest.status === 'absent') return { status: 'absent', code: 'COSSACK_CF_PREVIEW_DEPLOYMENT_ABSENT', preview };
       if (latest.status !== 'ok') return latest;
       const deployment = deploymentRecord(latest.result, preview.id, previewName);
       if (!deployment) return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
@@ -248,7 +280,7 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
       if (!verified) return unknown('COSSACK_CF_PREVIEW_ACCOUNT_UNVERIFIED');
       if (!valid(worker) || !valid(name, NAME) || !valid(tag, TAG)) return unknown('COSSACK_CF_PREVIEW_REFERENCE_INVALID');
       const config = await configuration(configPath); if (config.status !== 'ok') return config;
-      const value = await run(['preview', '--name', name, '--worker-name', worker, '--tag', tag, '--json', '--ignore-defaults', '--config', config.filename], signal);
+      const value = await run(['preview', '--name', name, '--worker-name', worker, '--tag', tag, '--json', ignoreConfigurationFlag, '--config', config.filename], signal);
       if (value.status !== 'ok') return value;
       let result;
       try { result = JSON.parse(value.stdout); } catch { return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID'); }

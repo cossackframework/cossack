@@ -2,24 +2,24 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest verified Codex batch: **compiler HTTP faults and complete aggregate receipts**
-([evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06)). **51 complete / 7 open**, versions 0.8.3; no numbered row
-closes. Complete atomic receipts bind primary/every selected auxiliary, source,
-redirect, environment, artifacts, tools and native startup runtime. Unsupported or
-partial identities decline reuse. Source two-Worker and installed public CLI
-primary-startup/two-auxiliary cases prove no repeated CLI measurements. Compiler
-HTTP failures from malformed server-only code return fixed correlated metadata
-and recover after repair; trusted terminal keeps diagnostic details. Initial
-malformed startup and HMR/browser-overlay privacy remain unproven.
+Latest verified Codex batch: **preview creation proof and non-Desktop release build**
+([evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06)). **51 complete / 7 open**, versions 0.8.3; no numbered
+row closes. No-tag cleanup now requires saved creation ID/name/time plus matching
+independent identity and absent latest deployment. Creation identity is saved
+before native upload; foreign/latest deployment changes and lost creation responses
+remain unproven ownership. Native default-bypass flags are negotiated from actual
+help; Wrangler 4.147 uses --ignore-base-config. Parent Worker must already exist.
 
-Framework **157 / 8 files**, CLI units **10 / 1** + related **33 / 3**, source
-two-auxiliary **1 / 1** (six filtered skips), installed public CLI **2 / 1**,
-compiler source and installed **1 / 1 each**, root/all ten non-Desktop types pass.
-Framework rebuilt/repacked after a real default-environment identity fix; CLI
-packed once. Unchanged tarballs reused. Current properly overridden installed
-consumer: `/tmp/cossack-aggregate-release-installed`. No broad CLI rerun; its prior
-terminal **1,112 / 2 failed / 9 skipped** remains historical, with targeted
-MessageScroller and three omission fixes proved separately. Waiting still unproven.
+`pnpm build:release` runs serial non-Desktop native builds including Studio and
+test-utils; Framework retains root build's library declaration stage. Native build,
+bundle audit, root/all ten non-Desktop types pass. Source combined **108 / 4**,
+native source **1 / 1**, installed combined **38 / 3** pass, including actual
+Wrangler upload failure, real staging metadata, cleanup failure/retry/idempotency
+and preview-only mutation paths. CLI packed once; unchanged tarballs reused in
+`/tmp/cossack-preview-empty-release-installed`. This is loopback evidence, not
+hosted CI. Prior compiler/aggregate acceptance remains in the archive. Broad CLI
+still has its historical 1,112 passed / 2 failed / 9 skipped terminal result,
+subsequent targeted scroller/omission fixes and unresolved native Waiting.
 
 **Hosted readiness:** cached Wrangler OAuth is authenticated with one account;
 API-token/account environment and CI credentials remain unconfigured. The private
@@ -32,7 +32,7 @@ infer it from elapsed time. Preparation scripts contain no deployment-write comm
 
 Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Missing:
 actual Workflow Waiting; CF-08 wider module graphs and provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
-production and safe no-tag recovery; Deno Deploy and final versioned artifact/runtime
+production; lost creation identity still requires manual recovery; Deno Deploy and final versioned artifact/runtime
 matrix, then versioning and final audit. Preserve reports.md/.zcodeignore and the
 two earlier strict uncommitted Workflow probes. Desktop remains waived.
 
