@@ -162,6 +162,8 @@ describe('recipe resolution', () => {
     expect(files.has('scripts/dev.js')).toBe(adapter === 'node');
     expect(files.get('vite.config.ts').content.toString().includes('@cossackframework/node-adapter/vite')).toBe(adapter === 'node');
     expect(pkg.devDependencies.typescript).toBe(dependencyVersions.typescript);
+    expect(JSON.parse(files.get('tsconfig.json').content.toString()).include).toContain('.cossack/config.d.ts');
+    expect(files.get('.gitignore').content.toString()).toContain('.cossack/config.d.ts');
     if (adapter === 'cloudflare') {
       expect(pkg.scripts['build:ssg']).toBe('vite build');
       expect(pkg.scripts['cf-typegen']).toBe(

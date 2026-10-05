@@ -1,3 +1,4 @@
+import { CONFIG_GLOB, generateConfigTypes } from './config-codegen.js';
 import type { Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
@@ -568,9 +569,28 @@ const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
  * ```
  */
 export function cossackConfig(): Plugin {
+  let projectRoot = '';
   return {
     name: 'cossack-config',
     enforce: 'pre',
+    configResolved(config) {
+      projectRoot = config.root;
+      generateConfigTypes(projectRoot);
+    },
+    configureServer(server) {
+      const directory = resolve(projectRoot, 'src/config');
+      const update = (file: string) => {
+        if (dirname(resolve(file)) === directory && file.endsWith('.ts')) {
+          try { generateConfigTypes(projectRoot); }
+          catch (error) { server.config.logger.error(String(error)); }
+        }
+      };
+      server.watcher.add(directory);
+      for (const event of ['add', 'unlink', 'change'] as const) server.watcher.on(event, update);
+      server.httpServer?.once('close', () => {
+        for (const event of ['add', 'unlink', 'change'] as const) server.watcher.off(event, update);
+      });
+    },
     resolveId(id) {
       if (id === configVirtualModuleId) return resolvedConfigVirtualModuleId;
     },
@@ -584,7 +604,7 @@ export function cossackConfig(): Plugin {
       return `
         // Loads src/config/*.ts (if present). Globs the well-known config
         // directory so an absent folder resolves to {} (no-op).
-        const modules = import.meta.glob('/src/config/*.ts', { eager: true });
+        const modules = import.meta.glob(${JSON.stringify(CONFIG_GLOB)}, { eager: true });
         const configs = {};
         for (const [filePath, mod] of Object.entries(modules)) {
           const name = filePath.split('/').pop().replace(/\\.ts$/, '');

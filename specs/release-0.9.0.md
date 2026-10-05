@@ -52,7 +52,7 @@ remain archived, and the verification log below retains test evidence.
 - [ ] [RT-21](./release-0.9.0-plan.md#rt-21) SSG entry/plugin validation, per-route results/timings, and dependency compatibility tests.
 - [ ] [RT-22](./release-0.9.0-plan.md#rt-22) Typed markdown frontmatter, route/URL collision checks, and locale static output.
 - [x] [RT-23](./release-0.9.0-plan.md#rt-23) Typed server DataTable, native UI contracts and installed accessibility guidance; [audit](#codex-rt23-complete-2026-10-04).
-- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Remaining: registry generation from project configuration. See [typed config paths](#codex-rt24-typed-paths-2026-10-05).
+- [ ] [RT-24](./release-0.9.0-plan.md#rt-24) Inferred configuration factories, required binding validation, and secret redaction. GLM (2026-10-02): `requireBinding`/`requireEnv` fail with `COSSACK_BINDING_MISSING` naming the binding, listing available binding NAMES only (never values, secrets stay redacted), and pointing at per-environment wrangler configuration. Codex (2026-10-05): when `CossackConfigRegistry` is populated, misspelled paths and mismatched defaults now fail compile-time checks; root and installed declaration checks pass. Codex generated factory registry types on 2026-10-05; standalone CLI integration and full required-binding/redaction acceptance remain. See [generated config checkpoint](#codex-rt24-generated-config-2026-10-05).
 - [x] [RT-25](./release-0.9.0-plan.md#rt-25) Build-time capability checks across Cloudflare, Node, Deno, and Desktop.
 - [ ] [RT-26](./release-0.9.0-plan.md#rt-26) Storage providers for local/R2/S3, uploads/downloads/deletes, signed URLs, progress, metadata, and authorization; image diagnostics.
 - [ ] [RT-27](./release-0.9.0-plan.md#rt-27) Localization extraction/checks, placeholder validation, missing/unused keys, and typed translation keys.
@@ -1267,3 +1267,32 @@ parent task. Current status is 30 complete and 28 open.
 | <a id="codex-cf08-rpc-logging-2026-10-05-index"></a>[Codex: Correlated RPC failure logs (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf08-rpc-logging-2026-10-05) |
 | <a id="codex-rt20-safe-hydration-diagnostics-2026-10-05-index"></a>[Codex: Safe hydration mismatch diagnostics (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt20-safe-hydration-diagnostics-2026-10-05) |
 | <a id="codex-rt10-form-controller-2026-10-05-index"></a>[Codex: Typed headless form controller foundation (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt10-typed-headless-form-controller-2026-10-05) |
+
+<a id="codex-rt24-generated-config-2026-10-05"></a>
+### Codex: Generate configuration factory types (2026-10-05)
+
+Vite configuration tooling now generates `.cossack/config.d.ts` from flat config
+factory filenames and refreshes it on development additions, changes and removals.
+Type-only references infer factory return shapes without evaluating modules or
+copying values. A separate generated registry preserves explicit authored
+registry overrides. Scaffold TypeScript includes the generated declaration and
+Git ignores it. The Node-only `framework/config-codegen` export supports explicit
+pre-typecheck generation and a no-write preview; authored or symlinked output
+files are protected. Server config discovery now excludes declarations/tests/specs.
+
+**Verification:** framework config-codegen/config/route-codegen suites pass
+**32/32**, including actual compiler checks with `skipLibCheck: false`, inferred
+nested paths, bad defaults/paths and authored override precedence. Scaffold suite
+passes **81/81**, including generated include/ignore assertions. Framework
+`tsc -p tsconfig.declarations.json`, root `pnpm tsc --noEmit`, emitted tooling
+import/no-write preview and task-owned diff checks pass. A read-only subagent
+review found interface-return and symlink-discovery issues; Codex fixed both and
+reran the combined framework tests.
+
+**Limits:** RT-24 remains open. Standalone CLI generation/inspection, required
+variable and binding metadata/coercion, selected-environment preflight, and full
+secret-redaction/request-isolation acceptance remain. Tests prove no factory
+execution/source-value copying and an empty client virtual module, but a fresh
+installed app/browser bundle gate was not run for this checkpoint. Config types
+require generation before standalone typechecking; Vite performs it on startup.
+Task counts remain **30 complete / 28 open**; Desktop platform checks stay waived.

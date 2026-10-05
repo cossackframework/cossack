@@ -10594,3 +10594,32 @@ check account ownership or live resource existence/access, provision resources,
 or establish wrong-account/repeated-application behavior. CF-04 remains open;
 task counts stay **30 complete / 28 open**. The dry-run did not upload or create
 resources; remote account/resource readiness remains unverified.
+
+<a id="codex-rt24-generated-config-2026-10-05"></a>
+### Codex: Generate configuration factory types (2026-10-05)
+
+Vite configuration tooling now generates `.cossack/config.d.ts` from flat config
+factory filenames and refreshes it on development additions, changes and removals.
+Type-only references infer factory return shapes without evaluating modules or
+copying values. A separate generated registry preserves explicit authored
+registry overrides. Scaffold TypeScript includes the generated declaration and
+Git ignores it. The Node-only `framework/config-codegen` export supports explicit
+pre-typecheck generation and a no-write preview; authored or symlinked output
+files are protected. Server config discovery now excludes declarations/tests/specs.
+
+**Verification:** framework config-codegen/config/route-codegen suites pass
+**32/32**, including actual compiler checks with `skipLibCheck: false`, inferred
+nested paths, bad defaults/paths and authored override precedence. Scaffold suite
+passes **81/81**, including generated include/ignore assertions. Framework
+`tsc -p tsconfig.declarations.json`, root `pnpm tsc --noEmit`, emitted tooling
+import/no-write preview and task-owned diff checks pass. A read-only subagent
+review found interface-return and symlink-discovery issues; Codex fixed both and
+reran the combined framework tests.
+
+**Limits:** RT-24 remains open. Standalone CLI generation/inspection, required
+variable and binding metadata/coercion, selected-environment preflight, and full
+secret-redaction/request-isolation acceptance remain. Tests prove no factory
+execution/source-value copying and an empty client virtual module, but a fresh
+installed app/browser bundle gate was not run for this checkpoint. Config types
+require generation before standalone typechecking; Vite performs it on startup.
+Task counts remain **30 complete / 28 open**; Desktop platform checks stay waived.

@@ -213,13 +213,15 @@ Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-
    typecheck pass. See the [construction rollback checkpoint](./release-0.9.0.md#codex-rt12-construction-rollback-2026-10-05).
 5. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
-6. [RT-24 typed config paths](./release-0.9.0.md#codex-rt24-typed-paths-2026-10-05)
-   now rejects misspelled paths and mismatched defaults when the app augments
-   `CossackConfigRegistry`. Root typechecking and the fresh installed agent-docs
-   gate pass. The app still must write the registry augmentation by hand, so
-   RT-24 remains open; see its detailed checkpoint in the plan and verification
-   archive. Continue with registry generation or another open task, preserving
-   the secret-redaction and request-scope limits in RT-24's acceptance criteria.
+6. Continue [RT-24](./release-0.9.0-plan.md#rt-24) from the
+   [generated config checkpoint](./release-0.9.0.md#codex-rt24-generated-config-2026-10-05).
+   Vite now infers registry types without executing factories; explicit authored
+   registry entries override generated entries. Framework tests pass 32/32,
+   scaffold 81/81, framework declaration emission and root typecheck pass.
+   Next add standalone CLI generation/inspection and required variable/binding
+   metadata/coercion, then prove selected-environment preflight and full secret
+   redaction/request isolation. Fresh installed/browser acceptance was not run.
+   RT-24 stays open; counts remain 30 complete / 28 open.
 7. Continue **[CF-08](./release-0.9.0-plan.md#cf-08)** from the [RPC log
    checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05). Keep the
    fixed failure-code and payload-redaction tests. Next review the remaining

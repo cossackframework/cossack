@@ -110,9 +110,12 @@ export function buildConfig(
  * ```
  */
 export interface CossackConfigRegistry {}
+/** Populated by Node-only tooling; authored entries take precedence. */
+export interface CossackGeneratedConfigRegistry {}
+type ConfigTree = Omit<CossackGeneratedConfigRegistry, keyof CossackConfigRegistry> & CossackConfigRegistry;
 
 /** Permit arbitrary paths only until an application declares its config tree. */
-type UntypedConfigKey = keyof CossackConfigRegistry extends never ? string : never;
+type UntypedConfigKey = keyof ConfigTree extends never ? string : never;
 
 /**
  * Recursively builds all valid dotted paths through a config tree type.
@@ -194,10 +197,10 @@ export function runWithConfig<T>(
  * const host = config('database.connections.mysql.host', 'localhost');
  * ```
  */
-export function config<Path extends DottedPaths<CossackConfigRegistry>>(
+export function config<Path extends DottedPaths<ConfigTree>>(
     key: Path,
-    defaultValue?: GetByPath<CossackConfigRegistry, Path>,
-): GetByPath<CossackConfigRegistry, Path>;
+    defaultValue?: GetByPath<ConfigTree, Path>,
+): GetByPath<ConfigTree, Path>;
 export function config<T = unknown>(key: UntypedConfigKey, defaultValue?: T): T;
 export function config(key: string, defaultValue?: unknown): unknown {
     const store = requestStore();

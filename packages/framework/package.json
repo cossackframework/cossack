@@ -122,6 +122,10 @@
     "./development-traces": {
       "types": "./dist/esm/development-traces.d.ts",
       "import": "./dist/esm/development-traces.js"
+    },
+    "./config-codegen": {
+      "types": "./dist/esm/config-codegen.d.ts",
+      "import": "./dist/esm/config-codegen.js"
     }
   },
   "files": [

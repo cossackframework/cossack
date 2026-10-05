@@ -1743,6 +1743,7 @@ export async function renderRecipe(recipe, options = {}) {
       },
       include: [
         'src/**/*.ts',
+        '.cossack/config.d.ts',
         ...(recipe.adapter === 'cloudflare' ? ['worker-configuration.d.ts'] : []),
       ],
     }, null, 2) + '\n'),
@@ -1753,7 +1754,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n'),
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n'),
     capability: 'base',
   });
 

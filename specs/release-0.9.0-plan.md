@@ -820,6 +820,16 @@ the wrong value type. Root typechecking and the installed documentation gate
 pass. The registry is still manually declared by each app, so automatic
 registry generation and the remaining RT-24 acceptance criteria stay open.
 
+Codex checkpoint (2026-10-05, generated types): Vite now generates and watches
+`.cossack/config.d.ts` with type-only factory return references. Authored registry
+entries override generated entries. New scaffold TypeScript includes the output;
+existing apps must add it. Node-only `framework/config-codegen` supports explicit
+generation and write:false. Combined framework suites pass 32/32, scaffold 81/81,
+framework declaration emission and root typecheck pass. Continue with standalone
+CLI generation/inspection, required binding/variable metadata and coercion,
+selected-environment preflight, and full redaction/isolation acceptance. A fresh
+installed/browser gate was not run. RT-24 remains open; see the verification archive.
+
 <a id="rt-26"></a>
 ### RT-26: Storage providers and image diagnostics
 

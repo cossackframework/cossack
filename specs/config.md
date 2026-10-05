@@ -149,7 +149,35 @@ Two internal conditional types walk the registry tree:
 
 `config()` has two overloads:
 
-1. **Typed overload:** `config<Path extends DottedPaths<CossackConfigRegistry>>(key: Path, ...)` : matches when the key is a known path. Infers the return type via `GetByPath`.
+1. **Typed overload:** `config<Path extends DottedPaths<ConfigTree>>(key: Path, ...)` : matches when the key is a known path. Infers the return type via `GetByPath`.
 2. **Untyped fallback:** accepts any string only while `CossackConfigRegistry` is empty. It returns the type of the supplied default, or `unknown` when no default is supplied. Once an app augments the registry, this fallback accepts no keys; a misspelled path cannot bypass the typed overload.
 
 When `CossackConfigRegistry` is empty (no augmentation), `DottedPaths<{}>` is `never`, so overload 1 never matches : calls use the string fallback. Existing apps can add the registry augmentation incrementally; after they do, config paths and defaults are checked against their registered types.
+
+### Generated factory types (Codex, 2026-10-05)
+
+`cossackConfig()` generates `.cossack/config.d.ts` when Vite resolves the project,
+and refreshes it when development config files change. New scaffold projects
+include this file in `tsconfig.json` and ignore it in Git. Existing apps should
+add `.cossack/config.d.ts` to their TypeScript `include` list.
+
+The generator discovers direct `src/config/*.ts` files, excluding declarations,
+tests and specs, matching the server virtual module. It references each default
+factory with type-only imports. It never executes factories or copies values.
+Factory return types populate `CossackGeneratedConfigRegistry`; explicit
+`CossackConfigRegistry` entries replace the generated shape for the same key.
+The effective tree controls typed paths and disables arbitrary string fallback
+once either registry has entries.
+
+For typechecking before starting Vite, call the Node-only tooling export:
+
+```js
+import { generateConfigTypes } from '@cossackframework/framework/config-codegen';
+generateConfigTypes(process.cwd());
+// Preview without writing: generateConfigTypes(process.cwd(), { write: false });
+```
+
+Generation is deterministic and does not replace authored files or symlinked
+output destinations. This tooling is not a runtime API. Standalone CLI
+integration and required variable/binding metadata remain RT-24 work; generated
+types do not prove a selected environment supplies the declared values.
