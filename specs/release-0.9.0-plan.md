@@ -401,6 +401,18 @@ cannot overwrite a later edit. Type tests reject invalid field names. Browser
 tests cover keyboard submission, labels, error associations, and focus recovery.
 Dependencies: RT-02 and RT-05.
 
+Codex partial foundation (2026-10-05): Core exports a DOM-free
+`createFormController(schema, initialValues)`. It owns cloned raw values and
+initial values, typed nested dot-path reads/writes, dirty/touched/error state,
+schema validation, reset, single-submit lifecycle, cancellation of stale
+validation, and nested `ActionValidationError`/`RpcError` field-error mapping.
+`File`/`Blob` identity is preserved locally. The docs distinguish this new
+controller from the existing page `@Store()` flow, and correct an async form
+example. The Core suite (95 files / 1,568 tests), 9 focused controller tests,
+root typecheck, and owned-file whitespace check pass. This is not RT-10
+completion: accessible bindings, reactive adapters, keyboard/label/error/focus
+browser tests, nested array-item paths and real file transport acceptance remain.
+
 <a id="rt-11"></a>
 ### RT-11: Session and flash recipes
 

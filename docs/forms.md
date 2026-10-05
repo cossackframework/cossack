@@ -147,7 +147,7 @@ You can validate form data server-side using `this.c.getFormData()` with `storeR
 > **Tip:** `FormData` values are always strings. Add a `coerce` rule to produce typed `data` : e.g. `age: { coerce: 'number', min: 18 }` turns `"25"` into `25`. See [Validation → Coercion](/docs/validation.md#coercion).
 
 ```typescript
-post() {
+async post() {
     const { data, valid } = await this.c.getFormData<ContactFormShape>({
       rules: storeRules<ContactFormShape>({
         name: { required: true, message: 'Name is required' },

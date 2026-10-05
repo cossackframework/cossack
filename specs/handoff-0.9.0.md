@@ -33,6 +33,8 @@ REL-03 remains open for the required non-Desktop release matrix.
 Latest Cloudflare progress: [CF-08 RPC logging](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05) adds correlated, redacted structured failure events for component, service, stream and cleanup paths. Its 478-case framework RPC matrix and 24 stream/native-response tests pass with root typechecking. This is local harness evidence only. Worker Logs ingestion, production source maps and build/startup budgets remain open. The [CF-04 scaffold checkpoint](./release-0.9.0.md#codex-cf04-scaffold-guidance-2026-10-05) still leaves resource selection/provisioning open. Latest RT-11 and RT-12 progress is recorded in their linked checkpoints below; neither parent task is complete.
 Latest runtime progress: [RT-20 hydration diagnostics](./release-0.9.0.md#codex-rt20-safe-hydration-diagnostics-2026-10-05) now reports typed root and nested component fallback events without logging rendered text. All 333 renderer tests and root typechecking pass. Source/field metadata, state comparison, retained layout/service browser cases and reusable test helpers remain open.
 
+Latest form progress: [RT-10 headless controller](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05) adds a schema-backed Core controller with typed field paths, validation, reset, dirty/touched state, server error mapping, duplicate-module validation-error support and stale-result protection. The 9 focused tests, all 1,568 Core tests and root typecheck pass. This is a partial foundation; accessible bindings, UI adapters, keyboard/label/error/focus browser tests and file transport acceptance remain. The `getFormData()` guide example's missing `async` was also fixed.
+
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
 
 1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
@@ -224,6 +226,13 @@ Latest runtime progress: [RT-20 hydration diagnostics](./release-0.9.0.md#codex-
    server log paths, prove event visibility in a built Worker test, then add
    source-map and measured budget checks. Do not close CF-08 from the local
    framework matrix alone.
+8. Continue **[RT-10](./release-0.9.0-plan.md#rt-10)** from the [headless
+   controller checkpoint](./release-0.9.0.md#codex-rt10-form-controller-2026-10-05).
+   Preserve its 9 Core regression tests and the passing 95-file Core suite.
+   Add UI/reactivity integration, accessible field bindings, real keyboard and
+   focus/error-association browser coverage, and file transport acceptance
+   before closing RT-10. Keep Desktop closed; its remaining platform checks
+   are waived.
 
 ## Limits to retain
 

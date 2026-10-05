@@ -38,7 +38,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [RT-07](./release-0.9.0-plan.md#rt-07) Typed routes and API schemas; effective layout, middleware, transport, error, and SSG inspection.
 - [x] [RT-08](./release-0.9.0-plan.md#rt-08) Typed URL state for search, filtering, sorting and pagination.
 - [x] [RT-09](./release-0.9.0-plan.md#rt-09) Navigation completion and cache/scroll/transition diagnostics.
-- [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration.
+- [ ] [RT-10](./release-0.9.0-plan.md#rt-10) Typed form controller: values, errors, touched state, submit/reset, and existing validation integration. Codex adds a DOM-free schema-backed controller with typed dot-path access, dirty/touched tracking, reset, validation, stale-result protection and server field-error mapping. Core tests/typecheck pass; accessible bindings and browser acceptance remain open. See [the RT-10 checkpoint](#codex-rt10-form-controller-2026-10-05).
 - [ ] [RT-11](./release-0.9.0-plan.md#rt-11) Session/flash recipes covering RPC failure, redirects, old input, and rotation. Native redirect/flash consumption, background failure preservation and late-write rejection pass. Generated dashboard references, owner/purpose checks, RPC guards and rotation races pass SQLite/D1 acceptance. Explicit public old-input selection now passes decoded-cookie and following-SSR checks on Node/Cloudflare. Actual generated auth forms now keep drafts outside shared state, validate inbound objects and pass login/reset/logout/rotation failures and redirects on Node/Cloudflare. Authenticated SSE and WebSockets revalidate storage, fresh guards and scope before delivery; session rotation closes both transports on subsequent traffic. The built-in database store now applies key-level atomic JSON mutations for SQLite, PostgreSQL and MySQL. Flash payloads enforce a signed server-side expiry; Cloudflare atomically consumes each signed nonce through `COSSACK_SSE`, with real two-Worker coverage. Node/Deno claim each signed nonce once per loaded module instance in a bounded 10,000-entry store; expired claims are purged and capacity fails closed. This does not coordinate across processes/isolates or survive restart. Remaining: broader concurrent request semantics and cross-process replay guarantees. See [process-local flash claims](#codex-rt11-process-flash-claims-2026-10-05), [SSE acceptance](#codex-rt11-sse-auth-2026-10-05), [WebSocket acceptance](#codex-rt11-websocket-auth-2026-10-05), [database session acceptance](#codex-rt11-session-concurrency-2026-10-05), [flash expiry acceptance](#codex-rt11-flash-expiry-2026-10-05), and [Cloudflare flash claims](#codex-rt11-cloudflare-flash-claims-2026-10-05).
 - [ ] [RT-12](./release-0.9.0-plan.md#rt-12) DI resolution errors and scope/lifetime inspection with clear global/scoped guidance. GLM implemented contextual resolution failures and scoped disposal. Codex adds static TypeScript-source `serviceOwnership` for imported/re-exported tokens and inherited layout decorators, and classifies imported core `@Service()` syntax as declared, missing or unknown without running project code. Generated Node/Cloudflare browser acceptance now passes navigation, SSE and WebSocket ownership checks after the synthetic auth fixture supplies its required identity provider. A later service-constructor failure now disposes earlier instances in the partial scope; focused cleanup tests and root typechecking pass. Remaining: runtime metadata/lifecycle behavior and broader release acceptance. See the [ownership-inspection checkpoint](./release-0.9.0-plan.md#rt-12), [browser checkpoint](#codex-rt12-navigation-fixture-2026-10-05), and [construction rollback checkpoint](#codex-rt12-construction-rollback-2026-10-05).
 - [x] [RT-13](./release-0.9.0-plan.md#rt-13) Shared credentials/sessions and safe OAuth diagnostics with required atomic state consumption. Generated Node SQLite and Cloudflare D1 verify expiry, rotation, concurrent callback replay, failed exchange and mapping. [Original acceptance audit](#codex-rt13-complete-2026-10-05).
@@ -165,6 +165,31 @@ or database was contacted.
 
 Release status is **30 complete / 28 open**. Desktop remains complete by user
 decision; waived platform checks are not claimed as passed.
+
+<a id="codex-rt10-form-controller-2026-10-05"></a>
+### Codex: Typed headless form controller foundation (2026-10-05)
+
+Core now exports `createFormController()` and `FormController`. The controller
+uses an `InputSchema` to type raw and parsed values, narrows dot-path reads and
+writes, tracks dirty/touched/error/submission state, supports reset, translates
+nested action/RPC validation errors, rejects duplicate submits, and ignores
+validation or server errors made stale by a later edit. Plain values are copied;
+`File` and `Blob` objects retain identity. It has no DOM or UI dependency. The
+forms guide shows the initial client-side API and states the current boundary.
+The existing `getFormData()` sample now correctly declares `async post()`.
+
+**Verification:**
+
+- `pnpm --filter @cossackframework/core exec vitest run tests/form-controller.test.ts`: **1 file / 9 tests pass**.
+- `pnpm --filter @cossackframework/core exec vitest run`: **95 files / 1,568 tests pass**.
+- `pnpm tsc --noEmit`: passes, including negative type assertions for invalid field paths and values.
+- `git diff --check -- . ':!reports.md'`: passes.
+
+**Limits:** This is only the shared state/controller foundation. It does not
+provide accessible field bindings, browser keyboard/label/error/focus tests,
+nested array-item paths, UI reactivity adapters or actual file transport
+acceptance. RT-10 remains open and the release count stays **30 complete / 28
+open**. No task count changed.
 
 <a id="codex-rt11-sse-auth-2026-10-05"></a>
 ### Codex: SSE session freshness (2026-10-05)
@@ -1215,3 +1240,4 @@ parent task. Current status is 30 complete and 28 open.
 | <a id="codex-rt12-construction-rollback-2026-10-05-index"></a>[Codex: Roll back partial service-scope construction (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt12-service-scope-construction-rollback-2026-10-05) |
 | <a id="codex-cf08-rpc-logging-2026-10-05-index"></a>[Codex: Correlated RPC failure logs (2026-10-05)](./release-0.9.0-verification-archive.md#codex-cf08-rpc-logging-2026-10-05) |
 | <a id="codex-rt20-safe-hydration-diagnostics-2026-10-05-index"></a>[Codex: Safe hydration mismatch diagnostics (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt20-safe-hydration-diagnostics-2026-10-05) |
+| <a id="codex-rt10-form-controller-2026-10-05-index"></a>[Codex: Typed headless form controller foundation (2026-10-05)](./release-0.9.0-verification-archive.md#codex-rt10-typed-headless-form-controller-2026-10-05) |

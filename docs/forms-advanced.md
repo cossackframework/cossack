@@ -5,6 +5,70 @@ description: "Build forms with nested fields, arrays, and validation rules in Co
 
 # Advanced Forms Handling
 
+## Headless typed form state
+
+For a standalone client-side form, use `createFormController()` with an
+`InputSchema`. The controller owns raw field values, typed dot-path updates,
+field errors, touched state, validation, reset, and single-submit behavior. The
+schema converts raw strings into the types your submit handler receives. This
+API has no DOM dependency, so a page or UI package can connect its own labels,
+inputs, and error announcements.
+
+```typescript
+import { createFormController, input, type InputOf } from '@cossackframework/core';
+
+const profileSchema = input.object({
+  name: input.string({ required: true }),
+  address: input.object({
+    city: input.string({ required: true }),
+    age: input.number({ coerce: true, min: 18 }),
+  }),
+  enabled: input.boolean({ coerce: true }),
+});
+
+const profileForm = createFormController(profileSchema, {
+  name: 'Ada',
+  address: { city: 'London', age: '17' },
+  enabled: 'on',
+});
+
+profileForm.markTouched('address.age');
+const checked = await profileForm.validate();
+
+if (!checked.valid) {
+  showError('address.age', profileForm.fieldError('address.age'));
+}
+
+profileForm.setFieldValue('address.age', '42');
+const result = await profileForm.submit(async data => saveProfile(data));
+if (result.status === 'submitted') console.log('Profile saved.');
+
+// Keep a successful submission's edited values, or restore the initial values.
+profileForm.reset();
+
+function saveProfile(data: InputOf<typeof profileSchema>) {
+  console.log(data);
+}
+
+function showError(field: string, message: string | undefined) {
+  console.error(field, message);
+}
+```
+
+`validate()` returns parsed data only when valid. A later edit cancels an
+in-flight validation and ignores its stale result. `submit()` prevents a second
+concurrent submit and copies field errors from Cossack validation failures. If
+the values change while the submit handler is pending, the result is reported
+as `stale`; the handler's external effects may already have completed.
+Call `setFieldError()` or `setFormError()` for other server responses. The
+controller does not render markup or create accessible field bindings; connect
+`fieldError()`, `getField()`, and your own form controls to the UI. Array values
+are supported as whole fields. Nested array-item dot paths and built-in browser
+focus or keyboard behavior are not included in this controller yet.
+
+This controller is separate from the existing `@Store()`/`@Validate()` page
+workflow below. Use that workflow when page reactivity should own the state.
+
 Use `@Store()` when a form has many fields, nested values, arrays, or client-side interactions. It groups the form values in one state object.
 
 ## Defining Complex Fields

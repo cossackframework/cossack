@@ -10550,3 +10550,23 @@ describes the behavior.
 **Limits:** This covers partially initialized service scopes. It does not
 complete RT-12 runtime metadata/lifecycle acceptance or the CLI/release gates.
 No task count changed: 30 complete / 28 open.
+
+### Codex RT-10 typed headless form controller (2026-10-05)
+
+Core now exports a schema-backed `FormController` for DOM-free form state. It
+types raw and parsed values, accepts typed nested dot paths, copies plain values,
+tracks dirty/touched/errors/submission state, resets to initial data, aborts
+stale validation, blocks duplicate submits, and maps nested action/RPC field
+errors. `File` and `Blob` values retain identity. Forms documentation separates
+this API from the existing reactive `@Store()` workflow and fixes a missing
+`async` in a `getFormData()` example.
+
+**Verification:** The focused controller tests pass **9/9**; the full Core
+suite passes **95 files / 1,568 tests**; `pnpm tsc --noEmit` passes, including
+negative field-path/value type checks; `git diff --check -- . ':!reports.md'`
+passes.
+
+**Remaining:** This does not satisfy the whole RT-10 contract. Accessible
+bindings, reactive UI adapters, keyboard submission, labels/error associations,
+focus recovery, nested array-item paths, and file transport have no acceptance
+yet. RT-10 remains open. Release count stays **30 complete / 28 open**.
