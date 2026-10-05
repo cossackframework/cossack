@@ -9,24 +9,26 @@ longer the continuation owner. Preserve user-owned changes, integrate and
 verify all work, and keep task counts consistent.
 Keep this file current as work progresses.
 
-Latest Codex progress: [opt-in direct Vite budgets](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
-The `cossackBuildBudgets()` post plugin checks completed Cloudflare application
-builds, fresh primary-target artifacts and private local Wrangler measurements.
-Framework owns Node-only budget/artifact APIs consumed by CLI. Built target reads
-and measurements clear ambient environment selection to prevent a second suffix
-or inherited configuration reset. Final CLI deployment clears selection too. The plugin is opt-in, not scaffold-default.
-Next: implement validated CLI result receipts and default Cloudflare composition
-as described in CF-08's detailed plan; then startup profiling/provider metrics,
-native development faults, production source-map resolution and remote logs.
-Single-environment `vite.build()` bypasses application hooks; use installed CLI
-or `createBuilder().buildApp()`. Do not claim auxiliary Workers are measured.
-Verified: 1,716 framework tests / 94 files, affected CLI units, root/package
-checks and declaration emission. Fresh non-Desktop tarball gate passed at
-/tmp/cossack-local-pack-G0M6gm; after the last CLI fix, updated CLI tarball and
-expanded direct-budget/CLI dry-run helper passed in that retained fixture.
-CLI JSON matrix: 54/54 pass after three cases adopt the existing 30-second
-integration allowance; initial five-second timeouts remain recorded.
-No release task closes in this checkpoint. No blocked work.
+Latest Codex progress: [signed budget receipts and default scaffold](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
+New Cloudflare projects include `cossackBuildBudgets()` after Cloudflare. CLI
+build/deploy reuse invocation-signed safe metric receipts only when settings,
+environment, bounded artifact/module inventory, installed Wrangler and Node
+identity match. Unsupported graphs get a fresh successful-build measurement;
+unrelated failed builds retain build diagnostics. No budget-skip bypass exists.
+Framework owns shared Node-only APIs consumed by CLI. Built artifact reads and
+measurement clear ambient target selection. Use installed Vite CLI or
+`createBuilder().buildApp()`; `vite.build()` bypasses application hooks.
+Verified: 1,736 framework tests / 95 files, affected CLI 56 tests / 6 files,
+expanded native integration 3 tests (build/deploy reuse with zero CLI fallback measurements),
+91 scaffold tests with 9 Desktop cases skipped, root/framework typechecks and
+framework declaration emission. Fresh Cloudflare installed-package gate passes
+at `/tmp/cossack-local-pack-gZdSQv` with Vite 8.3.2 / Wrangler 4.147.0, including
+signed selected-target CLI diagnostics and direct Vite limits/privacy. This does
+not close REL-03's wider runtime matrix. Read-only review found no defects.
+Next: custom Cloudflare config path acceptance and watch-build semantics;
+define auxiliary Worker policies, then startup/provider metrics, native
+DEV faults, production source-map resolution and remote logs. CF-08 remains
+open; no parent task closes. Counts remain 30 complete / 28 open. No blocked work.
 
 Previous checkpoints: [package type repair](./release-0.9.0-verification-archive.md#codex-package-type-repair-2026-10-05)
 and [CLI budgets/Deno transport](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05).

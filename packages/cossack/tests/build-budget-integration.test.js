@@ -8,6 +8,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
 import { deployCommand } from '../src/commands/deploy.js';
+import { buildCommand } from '../src/commands/build.js';
+import * as projectTools from '../src/project-tools.js';
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
 let parent;
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); if (parent) await fs.rm(parent, { recursive: true, force: true }); });
@@ -48,9 +50,7 @@ it('rejects an actual generated Worker artifact against a deliberate size regres
 it('enforces direct installed Vite budgets for a completed selected-environment Worker', async () => {
   const { projectDir, manifestPath, manifest, configPath, config } = await fixture({ uploadKiB: { warning: 0.001 } });
   const viteConfig = path.join(projectDir, 'vite.config.ts');
-  let source = await fs.readFile(viteConfig, 'utf8');
-  source = source.replace('cossackMiddlewares, cossackConfig }', 'cossackMiddlewares, cossackConfig, cossackBuildBudgets }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackBuildBudgets(),');
-  await fs.writeFile(viteConfig, source);
+  expect(await fs.readFile(viteConfig, 'utf8')).toContain('cossackBuildBudgets()');
   config.env = { staging: { name: config.name + '-staging', vars: { ...config.vars, APP_URL: 'https://staging-budget.example.test', BUDGET_MARKER: 'PRIVATE_BUDGET_VALUE_SENTINEL' }, secrets: config.secrets, durable_objects: config.durable_objects } };
   await fs.writeFile(configPath, JSON.stringify(config));
   await fs.mkdir(path.join(projectDir, '.wrangler/deploy'), { recursive: true });
@@ -79,3 +79,22 @@ it('enforces direct installed Vite budgets for a completed selected-environment 
   const accepted = await build(); expect(accepted.code, accepted.output).toBe(0);
   expect(accepted.output).not.toContain('COSSACK_BUILD_BUDGET_EXCEEDED');
 }, 240000);
+
+it('reuses the default Vite measurement for a successful native CLI dry run', async () => {
+  const { projectDir } = await fixture({ uploadKiB: { warning: 0.001 } });
+  const captured = vi.spyOn(projectTools, 'runProjectToolCaptured');
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await buildCommand([], { cwd: projectDir, flags: { json: true } })).toBe(0);
+  const built = JSON.parse(log.mock.calls.at(-1)[0]);
+  expect(built.data.buildBudgets.valid).toBe(true);
+  expect(built.data.buildBudgets.measurements[0].value).toBeGreaterThan(0);
+  expect(captured).not.toHaveBeenCalled();
+  expect(await deployCommand([], { cwd: projectDir, flags: { json: true, 'dry-run': true }, dryRun: true })).toBe(0);
+  const result = JSON.parse(log.mock.calls.at(-1)[0]);
+  expect(result.data.buildBudgets.valid).toBe(true);
+  expect(result.data.buildBudgets.measurements[0].value).toBeGreaterThan(0);
+  expect(result.diagnostics).toEqual([expect.objectContaining({ code: 'COSSACK_BUILD_BUDGET_EXCEEDED', severity: 'warning' })]);
+  expect(captured).not.toHaveBeenCalled();
+  const receipt = JSON.parse(await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8'));
+  expect(receipt).toMatchObject({ version: 1, outcome: 'measured', signature: expect.stringMatching(/^[a-f\d]{64}$/) });
+}, 120000);

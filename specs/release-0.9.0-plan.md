@@ -1256,8 +1256,8 @@ verification. Avoid duplicate measurements with a receipt bound to settings,
 environment and artifact fingerprint; clear stale receipts before building.
 Define primary versus auxiliary Worker scope. Custom builders that leave outputs
 unfinished must fail closed. This audit changed no runtime code and ran no tests;
-the implementation checkpoint below supersedes its audit-only status. CLI receipt
-and default scaffold integration remain coordinator-owned work.
+the implementation checkpoints below supersede its audit-only status. CLI receipt
+and default scaffold integration are now verified coordinator-owned work.
 
 
 Codex opt-in direct Vite implementation (2026-10-05): `cossackBuildBudgets()`
@@ -1270,16 +1270,34 @@ configs. Explicit empty environment now means inspect/measure the already-built
 target. Primary Worker scope is documented; auxiliary Workers need separate
 future policies. See the [verification checkpoint](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
 
-Remaining integration: keep the plugin opt-in until CLI can reuse its result
-without weakening validation. Write a private receipt after measurement, bound to
-current settings, selected environment, a fresh CLI invocation token and a digest
-of all measured artifact modules/config. Delete stale receipts before builds and
-reject mismatched fingerprints. Never add a budget-skip environment bypass. A
-failed measurement may yield structured CLI budget diagnostics only when the
-receipt proves that failure; unrelated build failures must remain build failures.
-Then add the plugin to default Cloudflare scaffold composition and verify one
-measurement per build/deploy path, selected environments and stale/failure cases.
-Also cover custom Cloudflare config paths and define watch-build semantics.
+Codex receipt/default scaffold integration (2026-10-05): implemented a fresh
+UUID signing key per CLI build, never persisted. Private atomic receipts contain
+only safe metrics and HMAC-bound invocation/settings/environment/fingerprint
+metadata. Fingerprints cover all files in supported no-bundle Worker output,
+redirect configuration, Wrangler manifest/entry/bin and Node version, with
+before/after content and metadata checks. Current manifest limits are rechecked
+after building. Unsupported graphs (including auxiliary Workers, symlinks,
+external modules, custom builds and rebundling), or bounded inventory overflow,
+fall back to a fresh measurement after successful builds. Failed builds are
+never freshly measured or excused by passing receipts. Valid failing receipts
+preserve structured budget diagnostics and truthful failed build-step status.
+New Cloudflare projects include the post plugin; non-Cloudflare recipes strip it.
+
+Acceptance verified: stale invocation/environment/settings, corruption/tampering,
+module/config/redirect/tool changes, changes during measurement, unsafe storage,
+unsupported graphs, private persistence, unrelated failed builds, fallback and
+native build/deploy single-measurement reuse. Framework 1,736 tests, affected CLI 56 tests,
+final native integration 3 tests and 91 scaffold cases pass; 9 Desktop cases
+were skipped. Root/framework typechecks, declarations and fresh Cloudflare
+installed-package gate pass (`/tmp/cossack-local-pack-gZdSQv`). This proves new
+published exports, default composition and selected-target signed diagnostics
+with Vite 8.3.2 / Wrangler 4.147.0; broader REL-03 acceptance remains. See the
+[verification record](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
+
+Remaining: custom Cloudflare config path acceptance, watch-build semantics,
+auxiliary Worker budget policies and wider module graphs. The receipt's
+4,096-file/64-MiB inventory cap is a conservative reuse bound, not a provider
+limit; failing to fingerprint never weakens budget enforcement.
 Local/provider startup costs, native development fault acceptance, remote logs
 and deployed source-map resolution retain their full original criteria.
 

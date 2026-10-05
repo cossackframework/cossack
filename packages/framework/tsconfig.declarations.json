@@ -26,6 +26,7 @@
     "src/config-inspection.ts",
     "src/config-preflight.ts",
     "src/build-budgets.ts",
+    "src/budget-receipts.ts",
     "src/deployment-artifact.ts",
     "src/config-requirements.ts",
     "src/DurableObject.ts",

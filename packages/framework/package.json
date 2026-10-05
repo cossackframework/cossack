@@ -146,6 +146,10 @@
     "./deployment-artifact": {
       "types": "./dist/esm/deployment-artifact.d.ts",
       "import": "./dist/esm/deployment-artifact.js"
+    },
+    "./budget-receipts": {
+      "types": "./dist/esm/budget-receipts.d.ts",
+      "import": "./dist/esm/budget-receipts.js"
     }
   },
   "files": [

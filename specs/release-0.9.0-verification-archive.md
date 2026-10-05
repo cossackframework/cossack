@@ -11262,3 +11262,55 @@ startup metrics, native development faults, deployed source maps and remote logs
 remain as specified in the detailed plan. Desktop stays complete by user decision,
 platform checks waived. No parent acceptance row closed; **30 complete / 28 open**.
 Versions stay 0.8.3 until REL-04. No blocked work.
+
+<a id="codex-budget-receipts-2026-10-05"></a>
+## Codex signed budget receipts and default scaffold (2026-10-05)
+
+Ownership: coordinator implemented shared Node-only framework APIs, CLI
+integration, template composition and tests. The independent receipt audit was
+read-only, changed no files and ran no checks; it reported no actionable defects.
+User-owned `reports.md` and `.zcodeignore` were preserved and excluded from staging.
+
+Receipt acceptance: 20 new framework regressions cover authenticated round trips,
+stale invocation/environment, signature tampering/corruption, settings drift,
+module/config/redirect/tool changes, before/after identity, unsupported graphs,
+symlinks, storage clearing, safe values and fixed measurement failures. Ten new
+command regressions cover successful reuse, failing receipt classification,
+unrelated failures, fresh fallback and settings mutation for build and deploy.
+Native generated-app acceptance proves deliberate hard rejection, direct Vite
+selected-environment warning/error/pass and successful CLI build/deploy warning reuse with
+zero `runProjectToolCaptured` fallback calls. Only the primary Worker is measured.
+
+Verification:
+- Full framework: **1,736/1,736, 95 files** (`/tmp/cossack-receipt-framework-full.log`).
+- Affected CLI: **56/56, 6 files** (`/tmp/cossack-receipt-cli-verified.log`).
+- Native integration: **3/3** in the final combined run, including build/deploy
+  reuse. Earlier deploy-only reuse pass: `/tmp/cossack-receipt-native-reuse.log`.
+- Scaffold creation/adapter regressions: **91 passed, 9 Desktop cases skipped**
+  (`/tmp/cossack-receipt-scaffold.log`). Desktop platform checks remain waived.
+- Root `pnpm tsc --noEmit`, framework package typecheck and declaration emission
+  pass. Initial numeric `createReadStream` flags type error was repaired with
+  `fs.promises.open` and a bounded handle stream before final checks.
+- Installed helper syntax check and fresh Cloudflare tarball gate pass:
+  `COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --agent-docs-only`.
+  Retained `/tmp/cossack-local-pack-gZdSQv`; terminal exit 0 in
+  `/tmp/cossack-receipt-installed.log`. Installed Vite 8.3.2 / Wrangler 4.147.0
+  validate the new export/default template, selected-environment direct warning,
+  hard rejection, signed CLI warning/hard diagnostics, and private measurement.
+  The gate also verifies 76 packaged usage examples, four auth examples,
+  configuration generation/inference, CLI/MCP parity, real Cloudflare
+  HTTP/SSE/WebSocket browser traces, application examples/client stripping and
+  private SSR hydration. This is the Cloudflare agent-docs gate, not the full
+  non-Desktop release matrix; no remote deployment or resource creation occurs.
+
+Limits: fingerprints accept bounded no-bundle JavaScript primary-Worker graphs.
+They hash a conservative output directory superset, native traversal order,
+metadata, redirect, installed Wrangler manifest/entry/bin and Node identity.
+Inventory caps are 4,096 files / 64 MiB including tool files. Unsupported or
+changed inventories disable reuse and trigger fresh measurement after successful
+builds. Failed builds keep build diagnostics unless a valid failing receipt
+classifies them. Receipts contain no signing key, tool output, binding values or
+private diagnostics. Watch/custom-config-path acceptance, auxiliary Worker
+policies, provider startup metrics, native development faults, deployed source
+maps and remote logs remain open. No live deployment/provisioning occurred.
+CF-08 remains open; **30 complete / 28 open**, no blocked work.

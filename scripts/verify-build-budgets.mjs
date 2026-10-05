@@ -13,9 +13,8 @@ export async function verifyBuildBudgets(projectDir) {
   try {
     const manifest = JSON.parse(saved[0]);
     const config = JSON.parse(saved[1]);
-    const source = saved[2].replace('cossackMiddlewares, cossackConfig }', 'cossackMiddlewares, cossackConfig, cossackBuildBudgets }')
-      .replace('    cossackConfig(),', '    cossackConfig(),\n    cossackBuildBudgets(),');
-    assert.ok(source.includes('    cossackBuildBudgets(),'), 'Budget acceptance requires the generated Vite composition.');
+    const source = saved[2];
+    assert.ok(source.includes('cossackBuildBudgets()'), 'Cloudflare scaffold must include the build budget gate.');
     config.env ??= {};
     config.env.budgetAcceptance = { name: `${config.name}-budget`, vars: { ...config.vars, APP_URL: 'https://budget-acceptance.example.test', BUDGET_MARKER: 'PRIVATE_INSTALLED_BUDGET_SENTINEL' },
       secrets: config.secrets, durable_objects: config.durable_objects, d1_databases: config.d1_databases, kv_namespaces: config.kv_namespaces, r2_buckets: config.r2_buckets };
@@ -58,6 +57,32 @@ export async function verifyBuildBudgets(projectDir) {
     assert.equal(report.data.worker, config.env.budgetAcceptance.name);
     assert.deepEqual(report.data.steps.map(step => step.name), ['types', 'build', 'deploy']);
     assert.ok(!deployed.stdout.includes('PRIVATE_INSTALLED_BUDGET_SENTINEL'));
+    manifest.cossack.buildBudgets = { uploadKiB: { warning: 0.001 } };
+    await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify(manifest));
+    const cliArgs = [path.join(cliDirectory, 'bin/cossack.js'), 'deploy', '--dry-run', '--env', 'budgetAcceptance', '--json'];
+    const cliOptions = { cwd: projectDir, timeout: 120000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } };
+    const accepted = await exec(process.execPath, cliArgs, cliOptions);
+    const budgetReport = JSON.parse(accepted.stdout);
+    assert.equal(budgetReport.ok, true);
+    assert.deepEqual(budgetReport.data.steps.map(step => step.name), ['types', 'build', 'budgets']);
+    assert.equal(budgetReport.data.buildBudgets.valid, true);
+    assert.ok(budgetReport.data.buildBudgets.measurements[0].value > 0);
+    assert.ok(!accepted.stdout.includes('PRIVATE_INSTALLED_BUDGET_SENTINEL'));
+    const receipt = await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8');
+    assert.match(JSON.parse(receipt).signature, /^[a-f\d]{64}$/);
+    assert.ok(!receipt.includes('PRIVATE_INSTALLED_BUDGET_SENTINEL'));
+    manifest.cossack.buildBudgets = { uploadKiB: { error: 0.001 } };
+    await fs.writeFile(path.join(projectDir, 'package.json'), JSON.stringify(manifest));
+    try { await exec(process.execPath, cliArgs, cliOptions); assert.fail('Installed CLI must reject the hard size budget.'); }
+    catch (error) {
+      assert.equal(error.code, 1);
+      const rejected = JSON.parse(error.stdout);
+      assert.equal(rejected.ok, false);
+      assert.equal(rejected.data.buildBudgets.valid, false);
+      assert.deepEqual(rejected.diagnostics.map(item => item.code), ['COSSACK_BUILD_BUDGET_EXCEEDED']);
+      assert.ok(!error.stdout.includes('PRIVATE_INSTALLED_BUDGET_SENTINEL'));
+    }
+    console.log('Installed CLI signed budget receipt, warning and structured hard rejection verified.');
     console.log('Installed CLI selected-target artifact dry run verified.');
     console.log('Installed direct Vite budget warnings, rejection, selected target and private measurement verified.');
   } finally {

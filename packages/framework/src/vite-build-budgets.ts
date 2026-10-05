@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { readBuildBudgets, checkBuildBudgets, type BuildBudgets } from './build-budgets.js';
 import { findCloudflareConfig, readCloudflareDeclarationConfig, resolveConfigRuntime } from './config-preflight.js';
 import { inspectBuiltDeployment } from './deployment-artifact.js';
+import { BUDGET_RUN_ENV, clearBudgetReceipt, fingerprintBudgetArtifact, writeBudgetReceipt } from './budget-receipts.js';
 import type { ConfigRuntime } from './config-requirements.js';
 
 /** Place after cloudflare(). Budgets apply to the primary deployment Worker. */
@@ -22,6 +23,7 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
       root = config.root;
       environment = options.environment ?? process.env.CLOUDFLARE_ENV;
       budgets = await readBuildBudgets(root);
+      if (process.env[BUDGET_RUN_ENV]) await clearBudgetReceipt(root);
       if (!Object.keys(budgets).length) return;
       if (await resolveConfigRuntime(root, options.runtime) !== 'cloudflare') {
         fail('COSSACK_BUILD_BUDGET_RUNTIME_UNSUPPORTED', 'Configured build budgets require a Cloudflare Worker artifact.');
@@ -41,7 +43,10 @@ export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environm
           fail('COSSACK_BUILD_BUDGET_BUILD_INCOMPLETE', 'Cloudflare Worker environments must finish before budget measurement.');
         }
         const artifact = await inspectBuiltDeployment(root, expected!);
+        const key = process.env[BUDGET_RUN_ENV];
+        const before = key ? await fingerprintBudgetArtifact(root, artifact, budgets, environment) : undefined;
         const result = await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: environment ?? '' } });
+        await writeBudgetReceipt(root, artifact, budgets, environment, key, before, result);
         for (const diagnostic of result.diagnostics) {
           if (diagnostic.severity === 'warning') builder.config.logger.warn(`${diagnostic.code}: ${diagnostic.message}`);
         }

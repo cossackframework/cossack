@@ -24,7 +24,8 @@ second deployment invocation. Without budgets, normal commands retain their
 existing measurement behavior. These settings currently require Cloudflare
 artifacts; they do not govern Node/Deno builds.
 
-For direct Cloudflare `vite build`, add the opt-in plugin after `cloudflare()`:
+New Cloudflare projects include this plugin. For an existing project, add it after
+`cloudflare()` to enforce budgets through direct `vite build`:
 
 ```ts
 import { cloudflare } from '@cloudflare/vite-plugin';
@@ -45,10 +46,21 @@ verification and measurement do not apply that environment a second time.
 
 Use the installed Vite CLI or `createBuilder().buildApp()` for this gate. The
 single-environment `vite.build()` API does not invoke application build hooks.
-The scaffold does not add this plugin automatically yet. A project that opts in
-and also runs the Cossack CLI currently measures again after a successful build;
-a plugin failure is reported by CLI as a build failure. Structured CLI result
-reuse and default scaffold composition remain release work.
+
+For supported no-bundle primary Worker artifacts, the CLI reuses the plugin's
+measurement through a private `.cossack/build-budget-receipt.json` file. Each
+build gets a fresh signing key that is never saved. Reuse requires matching
+settings, selected environment, artifact contents and metadata, installed Wrangler
+identity, and Node version. A failed Vite build yields structured budget errors
+only when a valid receipt proves a budget failure. Other build failures retain
+their build diagnostics. Raw tool output and binding values never enter receipts.
+
+Reuse is deliberately conservative. Symlinks, external modules, custom builds,
+rebundling, auxiliary Workers and unsupported legacy configuration trigger a fresh
+CLI measurement after a successful build. Inventory is bounded to 4,096 files
+and 64 MiB, including tool identity files; exceeding that bound disables reuse,
+not budget enforcement. Watch-build policy and custom Cloudflare config path
+acceptance remain release work.
 
 JSON results contain `data.buildBudgets.measurements`, `diagnostics` and `valid`.
 Only selected metrics enter the result. Tool stdout/stderr stays private because

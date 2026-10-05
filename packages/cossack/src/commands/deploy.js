@@ -7,7 +7,7 @@ import { inspectConfigurationRequirements } from '../config-inspection.js';
 import { runProjectTool } from '../project-tools.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { readBuildBudgets, checkBuildBudgets } from '../build-budgets.js';
+import { readBuildBudgets, checkBuildBudgets, prepareBudgetRun, readBudgetReceipt, assertBudgetSettings, BUDGET_RUN_ENV } from '../build-budgets.js';
 
 export async function deployCommand(args, ctx) {
   if (showCommandHelp(commandSpecs.deploy, args, ctx, deployHelp)) return 0;
@@ -36,6 +36,8 @@ export async function deployCommand(args, ctx) {
     // --env to Wrangler after building; deploy that exact artifact instead.
     const options = { env: { CLOUDFLARE_ENV: environment ?? '' },
       ...(ctx.flags.json === true ? { stdio: ['ignore', 'ignore', 'ignore'] } : {}) };
+    const hasBudgets = Object.keys(budgets).length > 0;
+    const token = hasBudgets ? await prepareBudgetRun(root) : undefined;
     const steps = [
       ['types', 'wrangler', ['types', '--config', inspection.summary.configPath, '--env-interface', 'CloudflareBindings', ...(environment ? ['--env', environment] : [])]],
       ['build', 'vite', ['build', ...(ctx.flags.mode ? ['--mode', ctx.flags.mode] : [])]],
@@ -47,8 +49,23 @@ export async function deployCommand(args, ctx) {
         await fs.rm(path.join(root, '.wrangler/deploy/config.json'), { force: true });
       }
       const started = performance.now();
-      const exitCode = await runProjectTool(root, tool, toolArgs, options);
+      const exitCode = await runProjectTool(root, tool, toolArgs, name === 'build' && token
+        ? { ...options, env: { ...options.env, [BUDGET_RUN_ENV]: token } } : options);
       data.steps.push({ name, exitCode, durationMs: Math.round(performance.now() - started) });
+      if (name === 'build' && hasBudgets) await assertBudgetSettings(root, budgets);
+      if (exitCode !== 0 && name === 'build' && token) {
+        const budgetStarted = performance.now();
+        let receipt;
+        try {
+          data.artifact = await inspectBuiltDeployment(root, inspection.config);
+          receipt = await readBudgetReceipt(root, data.artifact, budgets, environment, token);
+        } catch { /* Preserve unrelated compiler/target failures as build failures. */ }
+        if (receipt?.valid === false) {
+          data.buildBudgets = receipt;
+          data.steps.push({ name: 'budgets', exitCode: 1, durationMs: Math.round(performance.now() - budgetStarted) });
+          return report(false, receipt.diagnostics);
+        }
+      }
       if (exitCode !== 0) return report(false, [{ code: `COSSACK_DEPLOY_${name.toUpperCase()}_FAILED`,
         severity: 'error', message: `${name} failed with exit code ${exitCode}. Run without --json for tool diagnostics.` }]);
     }
@@ -56,7 +73,8 @@ export async function deployCommand(args, ctx) {
     const budgetDiagnostics = [];
     if (Object.keys(budgets).length) {
       const budgetStarted = performance.now();
-      data.buildBudgets = await checkBuildBudgets(root, data.artifact, budgets, { env: options.env });
+      data.buildBudgets = await readBudgetReceipt(root, data.artifact, budgets, environment, token)
+        ?? await checkBuildBudgets(root, data.artifact, budgets, { env: options.env });
       data.steps.push({ name: 'budgets', exitCode: data.buildBudgets.valid ? 0 : 1, durationMs: Math.round(performance.now() - budgetStarted) });
       budgetDiagnostics.push(...data.buildBudgets.diagnostics);
       if (!data.buildBudgets.valid) return report(false, budgetDiagnostics);

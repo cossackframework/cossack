@@ -3,6 +3,7 @@ import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
 // @cossack:cloudflare-start
 import { cloudflare } from '@cloudflare/vite-plugin';
+import { cossackBuildBudgets } from '@cossackframework/framework/vite-plugin';
 // @cossack:cloudflare-end
 import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
@@ -21,7 +22,7 @@ export default defineConfig(({ mode, command }) => ({
     // @cossack:cloudflare-start
     ...(mode === 'desktop' ? [] : [cloudflare({
       viteEnvironment: { name: 'ssr' },
-    })]),
+    }), cossackBuildBudgets()]),
     // @cossack:cloudflare-end
     cossackSecurityPlugin({ devWarning: true }),
     cossackPages(),
