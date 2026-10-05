@@ -90,6 +90,7 @@ require('node:module').syncBuiltinESMExports();
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
       ['@cossackframework/database', 'node-sqlite-migrations-and-seeding'],
+      ['@cossackframework/database', 'typed-model-queries'],
       ['@cossackframework/ui', 'native-controls'],
       ['@cossackframework/ui', 'radio-and-range'],
       ['@cossackframework/ui', 'one-time-code'],

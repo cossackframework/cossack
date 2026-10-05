@@ -150,7 +150,7 @@ Wildcard discovery preserves export precedence and exclusions. Prop catalogs ret
 member documentation and explicit partial results. The examples cover route URLs,
 query state, schemas, nested forms, renderer output and recipes. The portable
 `core/input` entry keeps schema/form helpers independent of component runtimes.
-Seventy standalone examples compile and execute from installed tarballs,
+Seventy-one standalone examples compile and execute from installed tarballs,
 including thirty-nine UI SSR examples for native controls, one-time codes,
 breadcrumbs, URL pagination, status/progress, linked fields/empty states,
 display/layout surfaces, avatars, typed tables and dashboard forms, radio/range
@@ -160,10 +160,11 @@ SVG icons, native popovers, alert confirmation, hover content, attachments,
 chat display, date controls, action menus, command search, carousels, resizable
 panels, Menubar, native-link navigation, Sidebar, toast rendering, MessageScroller,
 AuthForm and the development RPC trace guard. All 39 UI guides now have executable
-examples; all 66 published-package guides have at least one example. The installed gate
-executes all seventy-four package examples, including four separately bundled auth
-examples. Database guidance now exercises a reversible Node SQLite migration and
-repeatable seeder lifecycle. Framework guidance covers runtime capability planning and cache
+examples; all 67 published-package guides have at least one example. The installed gate
+executes all seventy-five package examples, including four separately bundled auth
+examples. Database guidance exercises typed model filters and query-builder
+projections as well as a reversible Node SQLite migration and repeatable seeder
+lifecycle. Framework guidance covers runtime capability planning and cache
 guarantees; Node and Deno guidance covers adapter lifecycle, binding precedence,
 cleanup and the separate Vite development integrations; Studio guidance covers
 local/remote data selection and embedded lifecycle; Core guidance covers locale
@@ -223,7 +224,8 @@ interaction or assistive technology.
 Remaining: Complete broader authored API/component/recipe coverage across
 the libraries, beyond the now-executable UI guides. Preserve RT-23 regressions
 and finish REL-02 acceptance. The full
-installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open.
+installed docs gate passes, but CLI-08 and REL-02/REL-03 remain open. The latest
+typed-query acceptance is recorded in the [release checklist](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
 Discovery never executes examples, but the separate installed acceptance runs
 every packaged example. Declaration presence does not prove runtime imports or
 native attribute behavior. Platform diagnostics and bounded scans can

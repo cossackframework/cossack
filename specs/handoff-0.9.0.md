@@ -26,7 +26,7 @@ all 30 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
 Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
-Latest CLI-08 progress: [request-scoped typed configuration and bindings](./release-0.9.0.md#codex-cli08-request-config-2026-10-05). Its installed example passes, but CLI-08 stays open for broader library API and recipe coverage.
+Latest CLI-08 progress: [typed model queries and projections](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05). Its installed example passes; CLI-08 stays open for broader library API and recipe coverage.
 REL-03 remains open for the required non-Desktop release matrix.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-05)
@@ -68,7 +68,7 @@ REL-03 remains open for the required non-Desktop release matrix.
    Earlier examples cover native dialogs/disclosures, tabs, toggles, icons,
    radio/range controls, searchable choice, repeated tag values, semantic
    lists/actions, named tables/scroll regions and other UI surfaces. The full
-   fresh-tarball docs gate now passes seventy standalone
+   fresh-tarball docs gate now passes seventy-one standalone
    examples, four auth
    examples, four generated pages, Cloudflare
    HTTP/SSE/WebSocket traces, UI contracts and production stripping. Its
@@ -77,8 +77,11 @@ REL-03 remains open for the required non-Desktop release matrix.
    [the database checkpoint](./release-0.9.0.md#codex-cli08-database-guidance-2026-10-05)
    and [D1 workerd acceptance](./release-0.9.0.md#codex-cli08-d1-workerd-2026-10-05),
    plus the [latest package guide checkpoint](./release-0.9.0.md#codex-cli08-migration-guidance-2026-10-05).
-   All 66 published-package guides now include examples, and all seventy-four
-   packaged examples run in the installed gate. Framework guidance now covers runtime
+   All 67 published-package guides now include examples, and all seventy-five
+   packaged examples run in the installed gate. Database guidance now includes
+   typed model filters and query-builder projections; see the [latest query
+   acceptance](./release-0.9.0.md#codex-cli08-database-queries-2026-10-05).
+   Framework guidance now covers runtime
    capabilities, cache guarantees, typed request-scoped config, environment
    strings and raw binding requirements; Node and Deno guidance covers adapter
    lifecycle, binding precedence and development plugins; Studio guidance covers
