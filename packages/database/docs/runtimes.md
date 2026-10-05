@@ -194,9 +194,12 @@ export function createToolingAdapter(context: ORMToolingContext) {
 
 The helper resolves Wrangler from the application and uses its configuration
 parser. Local tooling disables remote bindings and shares the application's
-`.wrangler/state/v3` storage. Remote tooling forces the selected D1 binding to
-use the remote resource, requires a real `database_id`, and closes the proxy
-when the ORM closes. The helper does not provision a remote database.
+`.wrangler/state/v3` storage used by Wrangler and the Cloudflare Vite plugin.
+Remote tooling forces the selected D1 binding to use the remote resource,
+requires a real `database_id`, and closes the proxy when the ORM closes. The
+helper does not provision a remote database. JSON results include the selected
+account ID, environment, binding and D1 identity when Wrangler provides them;
+they never include credential values.
 
 Named environments use their own binding declarations. Missing environments
 fail instead of falling back to production. CLI and Studio share this binding

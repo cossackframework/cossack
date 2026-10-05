@@ -76,6 +76,7 @@ async function readCloudflareConfig(
 
 export interface D1ToolingBinding {
   readonly binding: string;
+  readonly accountId?: string;
   readonly databaseName?: string;
   readonly databaseId?: string;
 }
@@ -87,6 +88,7 @@ export async function readD1ToolingBindings(
 ): Promise<readonly D1ToolingBinding[]> {
   const { config } = await readCloudflareConfig(context, options);
   return config.d1_databases.map(database => ({ binding: database.binding,
+    ...(config.account_id ? { accountId: config.account_id } : {}),
     ...(database.database_name ? { databaseName: database.database_name } : {}),
     ...(database.database_id ? { databaseId: database.database_id } : {}),
   }));
@@ -103,6 +105,7 @@ export async function createD1ToolingAdapter(
   const database = config.d1_databases.find(binding => binding.binding === bindingName);
   if (!database) throw new ConfigurationError(`D1 binding "${bindingName}" is not configured for this environment.`);
   const tooling: NonNullable<Adapter["tooling"]> = { provider: "d1", target: context.target,
+    ...(config.account_id ? { accountId: config.account_id } : {}),
     ...(context.environment ? { environment: context.environment } : {}), binding: bindingName,
     ...(database.database_name ? { databaseName: database.database_name } : {}),
     ...(database.database_id ? { databaseId: database.database_id } : {}) };

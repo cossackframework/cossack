@@ -175,7 +175,10 @@ export const commandSpecs = {
     } }),
 };
 for (const name of ['dev', 'build', 'start', 'ssg']) {
-  commandSpecs[name] = new CommandSpec({ name, globals: readonly, forwardsArgs: true });
+  const environment = ['dev', 'build', 'ssg'].includes(name)
+    ? { env: str('Select the Cloudflare environment before Vite config, SSG, and bindings load.') }
+    : {};
+  commandSpecs[name] = new CommandSpec({ name, globals: readonly, flags: environment, forwardsArgs: true });
 }
 export const inspectRoutesSpec = new CommandSpec({
   name: 'inspect', globals: readonly, positionals: ['route'],

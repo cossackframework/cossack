@@ -425,6 +425,31 @@ describe('lifecycle process event contract', () => {
     expect(() => process.kill(events[0].data.pid, 0)).toThrow();
   });
 
+  it('dev --env overrides the inherited environment and reports the resolved target', async () => {
+    const tools = path.join(root, 'tools'); await fs.mkdir(tools);
+    await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\nrequire("node:fs").writeFileSync("selected-env.txt", process.env.CLOUDFLARE_ENV || ""); setInterval(() => {}, 10000);', { mode: 0o755 });
+    const result = await execute(['dev', '--env', 'staging', '--json'], {
+      stopOnStarted: true, stopDelay: 500,
+      env: { PATH: tools + path.delimiter + process.env.PATH, CLOUDFLARE_ENV: 'production' },
+    });
+    expect(result.code).toBe(0);
+    const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
+    expect(events.map(event => event.data.event)).toEqual(['started', 'stopped']);
+    expect(events.every(event => event.data.environment === 'staging')).toBe(true);
+    expect(await fs.readFile(path.join(root, 'selected-env.txt'), 'utf8')).toBe('staging');
+  });
+
+  it.each(['build', 'ssg'])('%s --env reaches Vite and reports the resolved target', async command => {
+    const tools = path.join(root, 'tools'); await fs.mkdir(tools);
+    await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\nrequire("node:fs").writeFileSync("selected-env.txt", process.env.CLOUDFLARE_ENV || "");', { mode: 0o755 });
+    const result = await execute([command, '--env', 'staging', '--json'], {
+      env: { PATH: tools + path.delimiter + process.env.PATH, CLOUDFLARE_ENV: 'production' },
+    });
+    const data = envelope(result, command);
+    expect(data.data).toMatchObject({ exitCode: 0, environment: 'staging' });
+    expect(await fs.readFile(path.join(root, 'selected-env.txt'), 'utf8')).toBe('staging');
+  });
+
   it.each([[true,143],[false,143],[true,130],[false,130]])('classifies a signal exit code only after requested shutdown (%s, %s)', async (requested, exitCode) => {
     const tools = path.join(root, 'tools'); await fs.mkdir(tools);
     const source = requested

@@ -61,7 +61,8 @@ describe("ORM tooling API", () => {
     expect(stderr).toEqual([]);
     expect(JSON.parse(stdout[0]!)).toMatchObject({ schemaVersion: 1, command: "migration", action: "plan", ok: true,
       data: { target: { environment: "staging", target: "remote", readOnly: true },
-        resolvedTarget: { provider: "context-fixture", environment: "staging", target: "remote" },
+        resolvedTarget: { provider: "context-fixture", accountId: "selected-account",
+          environment: "staging", target: "remote" },
         complete: true, migrations: [{ name: "001_queued", statements: [{ text: "CREATE TABLE users (id integer primary key)" }] }] } });
   });
 

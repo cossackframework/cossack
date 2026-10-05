@@ -1,10 +1,11 @@
 # Cossack 0.9.0 continuation notes
 
 Author: Codex. Updated on 2026-10-05. Branch: `fix-084`.
-28 of 58 release tasks are complete. 30 remain open.
+30 of 58 release tasks are complete. 28 remain open.
 Versions stay at 0.8.3 until REL-04.
-GLM may implement the next phase; Codex reviews changes, runs acceptance and
-records the result here. Keep this file current for each handoff.
+**Codex owns implementation, review, acceptance and status for every remaining
+task.** The earlier GLM handoff is superseded; do not delegate this release.
+Keep this file current as work progresses.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -21,17 +22,13 @@ CLI/agent tooling and Cloudflare.
 ## Completed work — reference only
 
 The [completed task index](./release-0.9.0-plan.md#completed-task-index) links
-all 28 tasks to archived criteria. Preserve their regressions. Runtime evidence
+all 30 tasks to archived criteria. Preserve their regressions. Runtime evidence
 is in the [verification index](./release-0.9.0.md#archived-checkpoints).
-Latest completed checkpoint: [RT-13 credentials, sessions and atomic OAuth state](./release-0.9.0.md#codex-rt13-complete-2026-10-05).
-Generated Node SQLite and Cloudflare D1 verify persistent session expiry/rotation,
-callback replay, failed exchange and account mapping. Preserve required state
-storage, fixed diagnostics, cookie policy and explicit migration instructions.
-The full [criterion audit](./release-0.9.0-verification-archive.md#codex-rt13-complete-2026-10-05)
-separates local native fixtures from deployed readiness. REL-03 remains open for
-the required non-Desktop release matrix.
+Latest completed checkpoint: [Cloudflare environment and database targets](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
+It closes CF-01 and CF-02. No live Cloudflare account or database was contacted.
+REL-03 remains open for the required non-Desktop release matrix.
 
-## Next implementation phase — GLM, with Codex review (2026-10-05)
+## Active implementation plan — Codex owns remaining work (2026-10-05)
 
 1. Finish **[CLI-08](./release-0.9.0-plan.md#cli-08)** authored API/component/recipe
    guidance, executable examples and verified runtime support through the
@@ -169,7 +166,7 @@ the required non-Desktop release matrix.
 
 3. Continue **[RT-01](./release-0.9.0-plan.md#rt-01)** against its remaining native
    disconnect, deadline and concurrency criteria; retain the limits below.
-4. Follow the detailed plan for all 30 open tasks. Close each only against its
+4. Follow the detailed plan for all 28 open tasks. Close each only against its
    original acceptance criteria; completed portions do not close their parent task.
 
 ## Limits to retain
@@ -211,5 +208,5 @@ the required non-Desktop release matrix.
   Use `git diff --check -- . ':!reports.md'` for the known report whitespace exception.
 - Keep the database JSON bootstrap in default CommonJS eval mode. Miniflare
   Workers inherit eval flags; `--input-type=module` stalls the synchronous bridge.
-- Codex continues the remaining tasks. These notes do not authorize delegation, new chats, messages, publishing or deployment.
+- Continue the remaining tasks directly. Do not delegate, create new chats, send messages, publish, or deploy without new authorization.
 - Keep this file focused on current state and next steps. Add new evidence to the release verification log. Archive older checkpoints with links.

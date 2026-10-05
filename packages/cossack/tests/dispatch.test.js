@@ -4,15 +4,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { COMMANDS, dispatch } from '../src/dispatch.js';
 import { run, runCaptured } from '../src/spawn.js';
+import { runLifecycle } from '../src/lifecycle-process.js';
 
 vi.mock('../src/spawn.js', () => ({
   run: vi.fn(async () => 0),
   runCaptured: vi.fn(async () => ({ code: 0, stdout: 'built\n', stderr: '' })),
 }));
+vi.mock('../src/lifecycle-process.js', () => ({
+  runLifecycle: vi.fn(async () => ({ exitCode: 0, data: { event: 'started' }, diagnostics: [] })),
+}));
 
 const temporaryDirectories = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
   await Promise.all(temporaryDirectories.splice(0).map(dir =>
     fs.rm(dir, { recursive: true, force: true })));
@@ -34,13 +39,87 @@ describe('command dispatch', () => {
   ])('forwards %s options to Vite', async (command, args, viteCommand) => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await dispatch([command, ...args])).toBe(0);
-    expect(run).toHaveBeenCalledWith('vite', [viteCommand, ...args]);
+    if (command === 'dev') {
+      expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', [viteCommand, ...args], expect.objectContaining({
+        cwd: process.cwd(), metadata: { tool: 'vite' }, json: false,
+      }));
+    } else expect(run).toHaveBeenCalledWith('vite', [viteCommand, ...args]);
+  });
+
+  it.each([
+    ['build', ['--env', 'staging', '--mode', 'development'], 'build'],
+    ['dev', ['--mode', 'development', '--env=staging', '--host', '127.0.0.1'], 'dev'],
+    ['ssg', ['--mode', 'staging', '--env', 'staging'], 'build'],
+  ])('selects the Cloudflare environment before %s loads Vite config', async (command, args, viteCommand) => {
+    vi.stubEnv('CLOUDFLARE_ENV', 'production');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await dispatch([command, ...args])).toBe(0);
+    const expectedArgs = command === 'dev'
+      ? ['dev', '--mode', 'development', '--host', '127.0.0.1']
+      : command === 'build'
+        ? ['build', '--mode', 'development']
+        : ['build', '--mode', 'staging'];
+    const options = { env: { CLOUDFLARE_ENV: 'staging' } };
+    if (command === 'dev') {
+      expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', expectedArgs, expect.objectContaining({
+        env: options.env,
+        metadata: { tool: 'vite', environment: 'staging' },
+      }));
+    } else {
+      expect(run).toHaveBeenCalledWith('vite', expectedArgs, options);
+    }
+    expect(viteCommand).toBe(command === 'dev' ? 'dev' : 'build');
+  });
+
+  it.each(['build', 'ssg'])('%s forwards --env to Vite through JSON child environment', async command => {
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await dispatch([command, '--env=staging', '--json', '--mode', 'preview'])).toBe(0);
+    expect(runCaptured).toHaveBeenCalledWith('vite', ['build', '--mode', 'preview'], {
+      env: { CLOUDFLARE_ENV: 'staging' }, discardOutput: true,
+    });
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ command, ok: true,
+      data: { environment: 'staging' } });
+  });
+
+  it.each(['build', 'dev', 'ssg'])('%s reports an inherited Cloudflare environment in JSON', async command => {
+    vi.stubEnv('CLOUDFLARE_ENV', 'staging');
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await dispatch([command, '--json'])).toBe(0);
+    if (command === 'dev') {
+      expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', ['dev'], expect.objectContaining({
+        metadata: { tool: 'vite', environment: 'staging' },
+      }));
+    } else {
+      expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ command, ok: true,
+        data: { environment: 'staging' } });
+      expect(runCaptured).toHaveBeenCalledWith('vite', ['build'], { discardOutput: true });
+    }
+  });
+
+  it.each([
+    [['--env'], 'COSSACK_OPTION_VALUE_REQUIRED'],
+    [['--env='], 'COSSACK_OPTION_VALUE_REQUIRED'],
+    [['--env=staging', '--env=production'], 'COSSACK_OPTION_REPEATED'],
+  ])('rejects invalid or repeated Vite environments before starting a process', async (args, code) => {
+    const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await dispatch(['build', ...args, '--json'])).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(runCaptured).not.toHaveBeenCalled();
+    expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
+      command: 'build', ok: false, diagnostics: [{ code, severity: 'error' }],
+    });
   });
 
   it('leaves arguments after -- untouched, including help', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await dispatch(['dev', '--', '--help']);
-    expect(run).toHaveBeenCalledWith('vite', ['dev', '--', '--help']);
+    expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', ['dev', '--', '--help'], expect.any(Object));
+  });
+
+  it('leaves Cloudflare-looking arguments after -- to the underlying tool', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    await dispatch(['dev', '--', '--env', 'staging']);
+    expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', ['dev', '--', '--env', 'staging'], expect.any(Object));
   });
 
   it.each(['build', 'ssg'])('%s consumes --json and emits exactly one envelope', async command => {

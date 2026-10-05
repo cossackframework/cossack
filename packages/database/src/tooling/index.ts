@@ -208,7 +208,7 @@ export async function runORMCommandInProcess(
     // Application factories may return extra connection fields at runtime.
     // Only documented public identity fields enter the machine result.
     const resolvedTarget = orm.tooling ? Object.fromEntries(
-      ["provider", "target", "environment", "binding", "databaseName", "databaseId"]
+      ["provider", "target", "accountId", "environment", "binding", "databaseName", "databaseId"]
         .filter(key => typeof orm.tooling?.[key as keyof NonNullable<ORM["tooling"]>] === "string")
         .map(key => [key, orm.tooling![key as keyof NonNullable<ORM["tooling"]>]]),
     ) : null;

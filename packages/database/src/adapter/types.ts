@@ -61,6 +61,7 @@ export interface Adapter {
   readonly tooling?: {
     readonly provider: string;
     readonly target: "local" | "remote";
+    readonly accountId?: string;
     readonly environment?: string;
     readonly binding?: string;
     readonly databaseName?: string;

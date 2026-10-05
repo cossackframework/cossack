@@ -53,16 +53,24 @@ export async function ssgCommand(args, ctx) {
     );
   }
   if (!ctx.flags.json) console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
+  const selectedEnvironment = ctx.flags.env ?? (process.env.CLOUDFLARE_ENV || undefined);
+  const environment = ctx.flags.env === undefined ? undefined : { CLOUDFLARE_ENV: ctx.flags.env };
   if (ctx.flags.json === true) {
-    const { code } = await runCaptured('vite', ['build', ...viteArgs], { discardOutput: true });
-    return { exitCode: code, data: { exitCode: code, legacyFlags: legacy.map(item => item.flag),
+    const { code } = await runCaptured('vite', ['build', ...viteArgs], {
+      ...(environment ? { env: environment } : {}), discardOutput: true,
+    });
+    return { exitCode: code, data: { exitCode: code,
+      ...(selectedEnvironment ? { environment: selectedEnvironment } : {}),
+      legacyFlags: legacy.map(item => item.flag),
       ...(code ? { nextActions: ['cossack ssg'] } : {}) },
       diagnostics: [...(legacy.length ? [{ code: 'COSSACK_SSG_LEGACY_OPTION_IGNORED', severity: 'warning',
         message: 'Legacy SSG options were ignored. Configure cossackSsg() in vite.config.ts.' }] : []),
       ...(code ? [{ code: 'COSSACK_SSG_BUILD_FAILED', severity: 'error',
         message: 'SSG build failed. Run cossack ssg without --json for tool diagnostics.' }] : [])] };
   }
-  return run('vite', ['build', ...viteArgs]);
+  return environment
+    ? run('vite', ['build', ...viteArgs], { env: environment })
+    : run('vite', ['build', ...viteArgs]);
   });
 }
 
@@ -99,6 +107,8 @@ static HTML.
 
 SSG runs as part of \`vite build\` (via the \`cossackSsg\` plugin), so this
 command delegates to \`vite build\`. Extra args are forwarded to vite.
+--env selects a Cloudflare environment before Vite loads project config. Vite
+--mode remains an independent choice.
 
 SSG options are configured on the \`cossackSsg\` plugin in \`vite.config.ts\`:
 

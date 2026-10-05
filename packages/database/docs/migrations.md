@@ -169,6 +169,22 @@ Use `--direction down` to preview the most recent reversal. A squash that
 replaces fully applied migrations reports `mode: "consolidate"` without
 replaying application SQL.
 
+For a remote smoke test, first point a named Wrangler environment such as
+`staging` at a dedicated disposable D1 database. Review its resolved target and
+plan, then apply only the reviewed migration set:
+
+```sh
+pnpm exec cossack migration plan --env staging --target remote --json
+pnpm exec cossack migration up --env staging --target remote --dry-run --json
+pnpm exec cossack migration up --env staging --target remote
+pnpm exec cossack migration check --env staging --target remote --json
+```
+
+This is an opt-in procedure and has not been run against a live account by the
+release verification. Never point it at production for a smoke test. Remote
+commands require `--target remote` (or `--remote`); an environment name alone
+always uses local state.
+
 Migration callbacks are trusted application code. Keep writes on the provided
 `schema` and use the provided `orm`; planning cannot isolate external services
 or a separately captured database connection. Callbacks that need live queries

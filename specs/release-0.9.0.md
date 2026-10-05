@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 28 complete / 30 open.
+  acceptance; the numbered release task count is 30 complete / 28 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -69,8 +69,8 @@ remain archived, and the verification log below retains test evidence.
 
 ## Cloudflare deployment
 
-- [ ] [CF-01](./release-0.9.0-plan.md#cf-01) Select environment before Vite build and share it across SSG, bindings, migrations, and deployment.
-- [ ] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system.
+- [x] [CF-01](./release-0.9.0-plan.md#cf-01) Select environment before Vite build and share it across SSG, bindings, migrations, and deployment; [acceptance](#codex-cf-targets-complete-2026-10-05).
+- [x] [CF-02](./release-0.9.0-plan.md#cf-02) Explicit local/remote database targets using the existing migration system; [acceptance](#codex-cf-targets-complete-2026-10-05).
 - [x] [CF-03](./release-0.9.0-plan.md#cf-03) Required secret declarations, placeholder checks, environment-specific ignore rules, and deployment binding type generation.
 - [ ] [CF-04](./release-0.9.0-plan.md#cf-04) Real resource selection or Wrangler provisioning in place of fake resource IDs.
 - [x] [CF-05](./release-0.9.0-plan.md#cf-05) Distributed SSE coordination for cross-request state/broadcasts, retaining per-response streams.
@@ -93,6 +93,36 @@ remain archived, and the verification log below retains test evidence.
 
 Record new checkpoints here with exact commands, results and remaining limits.
 Focused checks do not replace the final monorepo and runtime release gates.
+
+<a id="codex-cf-targets-complete-2026-10-05"></a>
+### Codex: Cloudflare environment and database targets (2026-10-05)
+
+`cossack dev`, `build`, and `ssg` now accept `--env` before forwarding Vite
+arguments. The selected environment reaches Vite as `CLOUDFLARE_ENV`, while
+`--mode` stays independent. JSON lifecycle/build/SSG results identify the
+selected environment whether it came from `--env` or the inherited variable.
+Generated staging deployment acceptance checks its APP_URL, binding types,
+Worker artifact, static HTML and runtime URL behavior. Deployment checks also
+cover non-inherited bindings and Vite-rewritten custom D1 migration paths.
+
+Cloudflare D1 tooling remains local by default, including when a named
+environment is selected. It uses the `.wrangler/state/v3` path shared by
+Wrangler and the Cloudflare Vite plugin. Remote tooling requires explicit
+`--target remote`/`--remote`, selects exactly the configured binding, requires
+a real database ID, and has no local fallback. Safe JSON identity now includes
+account, environment, binding, database name/ID, target, and read-only intent.
+The migration guide contains an opt-in remote smoke procedure; no live account
+or database was contacted.
+
+- `pnpm --filter cossack exec vitest run tests/dispatch.test.js`: **49 tests pass**.
+- `pnpm --filter cossack exec vitest run tests/deploy.test.js tests/deployment.test.js tests/dispatch.test.js`: **72 tests pass**.
+- `pnpm --filter cossack exec vitest run tests/deploy-integration.test.js`: **1 generated Worker/workerd integration test passes**.
+- `pnpm --filter cossack exec vitest run tests/cli-json-matrix.test.js --testTimeout=30000 -t 'create plans without writes|generate/delete plan and apply affected paths|lang publishes and adds catalogs|top-level help/version'`: **4 previously timed-out cases pass**. The unfiltered default-timeout run had those four unrelated cases exceed five seconds; its other **50 tests passed**.
+- `pnpm --filter @cossackframework/database exec vitest run test/tooling.test.ts test/cloudflare-tooling.test.ts`: **32 tests pass**.
+- `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'`: pass.
+
+Release status is **30 complete / 28 open**. Desktop remains complete by user
+decision; waived platform checks are not claimed as passed.
 
 <a id="codex-rt11-sse-auth-2026-10-05"></a>
 ### Codex: SSE session freshness (2026-10-05)

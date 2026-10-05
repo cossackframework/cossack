@@ -4,7 +4,7 @@ import { defineSeeder } from "../../src/seeding/types.js";
 
 export default defineConfig({
   adapter: context => ({ driver: new MemoryDriver(), tooling: {
-    provider: "context-fixture", target: context.target,
+    provider: "context-fixture", target: context.target, accountId: "selected-account",
     ...(context.environment ? { environment: context.environment } : {}),
   } }),
   entities: [],

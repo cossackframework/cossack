@@ -40,7 +40,8 @@ describe("D1 tooling target selection", () => {
     const adapter = await createD1ToolingAdapter(context, { wrangler });
     expect(getPlatformProxy).toHaveBeenCalledWith({ configPath: join(context.cwd, "wrangler.jsonc"),
       environment: "staging", remoteBindings: false, persist: { path: join(context.cwd, ".wrangler/state/v3") } });
-    expect(adapter.tooling).toMatchObject({ provider: "d1", target: "local", environment: "staging", databaseName: "staging-db" });
+    expect(adapter.tooling).toMatchObject({ provider: "d1", target: "local", accountId: "selected-account",
+      environment: "staging", databaseName: "staging-db" });
     await adapter.driver.close(); await adapter.driver.close();
     expect(dispose).toHaveBeenCalledTimes(1);
   });

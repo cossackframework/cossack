@@ -905,6 +905,8 @@ types, database target, and static URLs. Missing named bindings never inherit
 accidentally. Tests include custom D1 migration paths rewritten by Vite.
 Dependencies: CLI-03, RT-16, and RT-24.
 
+Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
+
 <a id="cf-02"></a>
 ### CF-02: Explicit database targets
 
@@ -927,7 +929,10 @@ Done when: Tests prove the selected adapter receives the intended target and
 read-only intent. Local commands share the app's local D1 state. Remote selection
 cannot fall back to local or another environment after failure. Add documented
 opt-in remote smoke coverage and label unrun remote checks accurately.
+
 Dependencies: RT-15, RT-16, and CF-01.
+
+Completion: [Codex CF-01/02 acceptance](./release-0.9.0.md#codex-cf-targets-complete-2026-10-05).
 
 <a id="cf-04"></a>
 ### CF-04: Resource selection and setup

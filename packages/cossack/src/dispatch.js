@@ -127,8 +127,23 @@ export async function dispatch(argv) {
     const toolArgs = [];
     let json = false;
     let forwarding = false;
-    for (const argument of rest) {
+    let environment;
+    for (let index = 0; index < rest.length; index++) {
+      const argument = rest[index];
       if (argument === '--') forwarding = true;
+      if (!forwarding && def.spec.flags?.env && (argument === '--env' || argument.startsWith('--env='))) {
+        const value = argument === '--env' ? rest[++index] : argument.slice('--env='.length);
+        if (value === undefined || !value.trim() || value.startsWith('-')) {
+          return commandFailure({ flags: { json: requestsJSON(rest) } }, command,
+            'COSSACK_OPTION_VALUE_REQUIRED', '--env requires a nonempty Cloudflare environment name.');
+        }
+        if (environment !== undefined) {
+          return commandFailure({ flags: { json: requestsJSON(rest) } }, command,
+            'COSSACK_OPTION_REPEATED', '--env accepts one Cloudflare environment name.');
+        }
+        environment = value;
+        continue;
+      }
       if (!forwarding && (argument === '--json' || argument === '--json=true')) json = true;
       else if (!forwarding && argument === '--json=false') json = false;
       else if (!forwarding && argument.startsWith('--json=')) {
@@ -136,7 +151,7 @@ export async function dispatch(argv) {
           'COSSACK_OPTION_INVALID', '--json expects true or false.');
       } else toolArgs.push(argument);
     }
-    return def.run(toolArgs, await buildCtx({ json }));
+    return def.run(toolArgs, await buildCtx({ json, ...(environment === undefined ? {} : { env: environment }) }));
   }
   let parsed;
   try { parsed = parseFlags(rest, def.spec); }

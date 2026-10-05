@@ -113,14 +113,21 @@ Wrangler validates required remote secrets during a real deployment.
 ### Environments and CI
 
 ```sh
+pnpm exec cossack dev --env staging
+pnpm exec cossack build --env staging
+pnpm exec cossack ssg --env staging
 pnpm exec cossack deploy --env staging --dry-run --json
 pnpm exec cossack deploy --env staging
 ```
 
 Define `env.staging` in Wrangler first. Declare its variables and bindings
 explicitly because these settings do not inherit from the top-level config.
-Cossack sets `CLOUDFLARE_ENV` before the Vite build, so SSG and bindings select
-the same environment. `--mode` optionally selects a separate Vite mode.
+Cossack sets `CLOUDFLARE_ENV` before Vite loads the project configuration, so
+local development, regular builds, SSG, and deployment use the selected
+environment for configuration, bindings, and static URLs. `--mode` optionally
+selects a separate Vite mode. For example,
+`cossack build --env staging --mode development` selects staging bindings and
+variables while retaining Vite's development mode.
 
 JSON mode emits one versioned result containing the Worker name, environment,
 binding resources, required secret names, step exit codes and timings, artifact
