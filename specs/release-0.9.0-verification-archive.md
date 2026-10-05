@@ -10242,3 +10242,32 @@ Treat the coordinator stream failure as a current baseline issue, not as a green
 full-file result, and investigate it before claiming that broader suite passes.
 Desktop remains complete by user decision; no Desktop platform checks are
 claimed. No deployment or publication occurred.
+
+<a id="codex-cli08-ui-coverage-2026-10-05"></a>
+### Codex: Four more executable UI guides (2026-10-05)
+
+The installed UI catalog now has executable SSR examples for eight guides:
+native controls, one-time codes, breadcrumbs, pagination, status/progress,
+server DataTable, dashboard metrics and settings. The four new examples verify
+that OTP normalization keeps leading zeroes and emits six decorative slots;
+breadcrumbs expose named native links and mark the final link current;
+pagination renders accessible native URLs for previous/current/next; and a
+polite status alert can accompany named determinate progress at zero. They make
+no claim about browser interaction or assistive-technology output.
+
+The verifier reads all eight examples from the installed CLI catalog, compiles
+them against installed declarations, bundles UI output for Node, then executes
+the examples. Their assertions use only the runtime-neutral example environment.
+
+**Verification:**
+
+- `COSSACK_KEEP_SMOKE=1 PATH=/home/tan/.local/share/pnpm/bin:/home/tan/.nvm/versions/node/v24.19.0/bin:$PATH pnpm test:agent-docs:local`: passes fresh package builds and installs, **20 packaged usage examples**, four auth examples, four generated application pages, installed Cloudflare HTTP/SSE/WebSocket traces, offline CLI/MCP parity, UI prop/index contracts and production source-map stripping. D1 bound-value acceptance passes.
+- `pnpm --filter cossack exec vitest run tests/package-guidance.test.js`: **1 file / 13 tests pass**.
+- `pnpm tsc --noEmit` and `git diff --check -- . ':!reports.md'`: pass.
+
+CLI-08 remains open for broader authored library/component/recipe guidance and
+real Worker runtime coverage of the D1 guide. Thirty-one of 39 UI guides remain
+without executable examples. Desktop is complete by user decision; waived
+platform checks are not claimed as passed. REL-02/REL-03 remain open for
+non-Desktop criteria. Release status remains **28 complete / 30 open**. No
+deployment or publication occurred.

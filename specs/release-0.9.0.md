@@ -4,11 +4,11 @@ This release implements the framework, developer experience, agent tooling,
 and Cloudflare work agreed in the feature review. An unchecked item remains
 in scope. Package versions change only after implementation and verification.
 
-**Desktop: completed for 0.9.0 by user decision (2026-10-05).** Remaining
-Desktop-only platform checks are waived for this release, not reported as passed.
-Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
-tooling and Cloudflare. This closes Desktop scope within the existing tasks;
-the release now has 28 of 58 tasks complete, including RT-13 below.
+- [x] **Desktop scope is complete for 0.9.0 by user decision (2026-10-05).**
+  Remaining Desktop-only platform checks are waived, not reported as passed.
+  Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
+  tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
+  acceptance; the numbered release task count is 28 complete / 30 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include sixteen standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Four UI guides now include executable SSR examples for native controls, a typed server data table, localized metrics and controlled settings. Thirty-five of 39 UI guides still have no executable example. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [UI guide acceptance](#codex-cli08-ui-guides-2026-10-05), [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
+- [ ] [CLI-08](./release-0.9.0-plan.md#cli-08) Installed-version offline AGENTS guide, generated API/component catalog, and executable documentation/skill examples. Codex (2026-10-05): fresh CLI/MCP catalogs include twenty standalone examples, four bundled auth examples and four complete action/resource/task/public-form pages. Auth guidance includes typed OAuth failures, shared credential/session contracts, legacy root and static TypeScript source facts. Packaged pages pass types, native Cloudflare/Node browser behavior and client JavaScript/source-map stripping. The database now publishes Node SQLite and Cloudflare D1 guides; the D1 bound-query example executes against an installed binding-contract fixture. Eight UI guides now include executable SSR examples for native controls, one-time codes, breadcrumbs, URL pagination, status/progress, a typed server data table, localized metrics and controlled settings. Thirty-one of 39 UI guides still have no executable example. Broader library/component/recipe coverage and real Worker runtime guidance remain open. See [UI guide acceptance](#codex-cli08-ui-coverage-2026-10-05), [database guidance acceptance](#codex-cli08-database-guidance-2026-10-05), [shared primitives](#codex-rt13-primitives-2026-10-05) and [application acceptance](#codex-cli08-application-guidance-2026-10-04).
 
 ## Runtime and application APIs
 
@@ -516,6 +516,33 @@ binding-contract fixture rather than Miniflare/workerd or a deployed database.
 user decision; its waived platform checks are not claimed as passing. REL-02 and
 REL-03 retain their existing acceptance criteria. No deployment or publication
 occurred.
+
+<a id="codex-cli08-ui-coverage-2026-10-05"></a>
+### Codex: Four more executable UI guides (2026-10-05)
+
+The installed CLI catalog now supplies eight executable SSR UI examples.
+Four new guides cover a normalized six-digit OTP that preserves leading zeroes,
+named breadcrumb links with current-page semantics, URL-backed pagination with
+native links, and a polite Alert beside determinate zero progress. The examples
+check rendered form/accessibility markup and verify server rendering does not
+call client callbacks. The installed verifier compiles, bundles and executes all
+eight selected UI examples.
+
+**Verification:** the fresh-tarball `pnpm test:agent-docs:local` gate passes,
+including 20 packaged usage examples, four auth examples, four generated
+application pages, installed Cloudflare HTTP/SSE/WebSocket traces, CLI/MCP
+offline parity, UI contracts and production source-map stripping. The D1 example
+passes its installed binding-contract assertion. `pnpm --filter cossack exec
+vitest run tests/package-guidance.test.js` passes 13 tests; `pnpm tsc --noEmit`
+and `git diff --check -- . ':!reports.md'` pass.
+
+These examples prove SSR output only; they do not establish browser interaction
+or assistive-technology behavior. Thirty-one of 39 UI guides remain without
+examples. CLI-08 stays open for broader guidance and real Worker coverage of the
+D1 example. Desktop is complete by user decision, with remaining platform checks
+waived and not claimed as passed. REL-02/REL-03 remain open for non-Desktop
+acceptance; task status remains 28 complete / 30 open. No deployment or
+publication occurred.
 
 <a id="codex-desktop-native-2026-10-04"></a>
 ### Codex: Completed Desktop checkpoint (2026-10-04)
