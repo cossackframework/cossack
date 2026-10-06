@@ -26,6 +26,13 @@ probe is privately archived at `/tmp/cossack-workflow-waiting-current-toolchain/
 Do not upgrade speculatively or map Running to Waiting. Earlier failures and
 superseding terminal passes remain in the verification archive.
 
+**Readiness recheck — Codex:** GitHub CLI authentication is available. Deno
+2.9.6 exists at the recorded private binary path; official Deploy 0.0.9908
+noninteractive `whoami` fails with `NON_INTERACTIVE_REQUIRED`, requiring a token.
+No open task can currently close through local implementation alone. Retain
+existing verification; do not repeat budgets or installed matrices.
+[Readiness evidence](./release-0.9.0-verification-archive.md#codex-hosted-readiness-blockers-2026-10-06).
+
 **Hosted readiness:** cached Wrangler OAuth is authenticated with one account;
 API-token/account environment and CI credentials remain unconfigured. The private
 fixture `/tmp/cossack-hosted-release-ready-final` passes generated workflow types,

@@ -2082,3 +2082,11 @@ Final full Framework **2,089 / 120 files**, native startup **3 each**, native
 compiler-browser **1 each**, root/all ten non-Desktop package types pass. Only
 Framework packed once. Hosted criteria, native Waiting, Deno Deploy and final
 versioned/CLI gates remain open; Desktop waived. [Commands, failures and limits](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
+
+### Codex — hosted readiness blockers (2026-10-06)
+
+**51 complete / 7 open; no task closes.** Read-only checks confirm GitHub CLI
+authentication, an available recorded Deno 2.9.6 binary, and a token requirement
+for official Deno Deploy noninteractive identity. Cloudflare CI credentials and
+hosted approval remain pending. No code changed; prior checks retained without
+reruns. Desktop waived, versions 0.8.3. [Evidence](./release-0.9.0-verification-archive.md#codex-hosted-readiness-blockers-2026-10-06).

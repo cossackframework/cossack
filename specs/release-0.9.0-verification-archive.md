@@ -14048,3 +14048,31 @@ run. Current non-Desktop/non-CLI composite is 5,579 passed across 381 files,
 with two external Database cases unrun. It is not a single root monorepo command
 or a green full CLI gate. No remote writes, push, publication or version bump.
 Hosted approval and CI credentials remain pending. Versions stay 0.8.3.
+
+<a id="codex-hosted-readiness-blockers-2026-10-06"></a>
+### Codex — hosted readiness blockers (2026-10-06)
+
+Read-only recheck; no implementation or completed task. Baseline reports.md,
+.zcodeignore and the two uncommitted strict Workflow probes remain untouched.
+GitHub CLI `gh auth status` exits 0 with an authenticated account; absent token
+environment variables alone do not establish lack of cached authentication.
+Cloudflare API-token/account environment and CI credential configuration remain
+unavailable; cached Wrangler OAuth does not prove hosted CI readiness.
+
+The recorded native executable is Deno 2.9.6, although it is absent from PATH.
+Native `deno deploy --help` exits 2 (duplicate help option); `deno deploy help`
+exits 2 (too many arguments). Direct official module help succeeds:
+`deno run --no-config -A jsr:@deno/deploy@0.0.9908 --help`. Its read-only
+`whoami --json --non-interactive` exits 2 with `NON_INTERACTIVE_REQUIRED`,
+explicitly requiring DENO_DEPLOY_TOKEN or --token. No login, deployment or
+provisioning was attempted. Private logs:
+`/tmp/cossack-release-readiness-{github,deno,deno-help,deno-direct-help,deno-auth}.log`
+(mode 600); account details are not copied into release records.
+
+Remaining criteria are unchanged: SVC-04 native Waiting; CF-08 provider Logs,
+remapping and startup; CF-09 hosted CI isolation/lifecycle/retry/unchanged
+production; REL-02/03 Deno Deploy and final artifact/runtime/full CLI gates;
+REL-04/05 prerequisite-dependent versioning and final audit. Hosted approval
+remains pending. No code changed, broad tests/types/packing were not rerun and
+prior evidence is retained. **51 complete / 7 open**, versions 0.8.3, Desktop
+waived. This readiness check does not satisfy any hosted acceptance criterion.

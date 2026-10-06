@@ -10,6 +10,12 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
+Codex readiness recheck (2026-10-06): GitHub CLI authentication is available,
+but Cloudflare API-token/CI configuration and hosted approval remain pending.
+The official Deno Deploy noninteractive identity check requires a token. No
+numbered task closes; REL-04/05 keep their prerequisite gates.
+[Exact readiness evidence](./release-0.9.0-verification-archive.md#codex-hosted-readiness-blockers-2026-10-06).
+
 Continue the open work as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
