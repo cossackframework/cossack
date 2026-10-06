@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
+import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, scanPagesDir, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -294,6 +295,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // Install our error boundary after that proxy and before Vite's HTML renderer.
       order: 'post',
       handler(server) {
+        const restoreReloadPrivacy = installPublicReloadPrivacy(server);
+        server.httpServer?.once('close', restoreReloadPrivacy);
         if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
         const pagesDirectory = resolve(projectRoot, 'src/pages');
         const update = (file: string) => {

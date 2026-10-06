@@ -2,23 +2,29 @@
 
 ## Current handoff — Codex (2026-10-06)
 
-Latest verified Codex batch: **native module graphs and non-CLI unit gates**
-([evidence](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06)). **51 complete / 7 open**, versions 0.8.3; no numbered
-row closes. Dynamic/source-map, rebundled and external native upload/gzip graph
-acceptance passes source/installed; wider startup profiles remain unproven.
-All eleven non-Desktop, non-CLI unit suites pass **5,575 tests / 380 files**;
-two external Database cases were skipped for absent URLs. Root/all ten package
-types pass. Core's optional JSON reporter failed; its complete standard run passed.
+Latest verified Codex batch: **local observability criteria and full development
+browser gate** ([evidence](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06)). **51 complete / 7 open**, versions 0.8.3; no numbered row closes.
 
-Actual installed Wrangler 4.147.0 / Miniflare 5.20261001.0-alpha also fails strict
-native Waiting (running at the event barrier throughout 30 seconds). Do not
-upgrade speculatively or map Running to Waiting. New failing diagnostic files are
-privately archived at `/tmp/cossack-workflow-waiting-current-toolchain/`; original
-strict uncommitted probes are preserved. No repack or product changes this batch.
-Use `/tmp/cossack-preview-empty-release-installed` for the existing verified
-artifacts. Prior preview creation/native build/compiler/aggregate proof is in the
-archive. Full CLI still lacks a green terminal result; do not rerun unchanged
-installed matrices or polish working budgets without closing required criteria.
+CF-08 local wider-graph startup passes all three native source/installed cases;
+provider startup remains unavailable locally. Tested malformed-startup rejection,
+private terminal diagnostics, browser/HMR privacy and same-healthy-process edit
+repair pass source/installed. Public full-reload triggeredBy absolute paths are
+omitted; private hot channels stay intact. Only Framework packed once; current
+verified consumer is `/tmp/cossack-compiler-browser-release-installed`.
+
+Final development browser gate: **297 passed** in one complete invocation after
+SSE test UUID room isolation, actual connection/hydration and controlled-input
+repair; broadcast/isolation assertions preserved. Full Framework: **2,089 / 120
+files**. Root/all ten non-Desktop types pass. Other unchanged unit proof remains:
+non-Desktop/non-CLI composite **5,579 / 381 files**, two external Database cases
+unrun. Full CLI still lacks a green terminal result; Desktop remains waived.
+Do not repeat unchanged installed matrices or polish verified budgets.
+
+Actual installed Wrangler 4.147.0 / Miniflare 5.20261001.0-alpha still fails strict
+native Waiting. Original uncommitted probes are preserved; the newer failing
+probe is privately archived at `/tmp/cossack-workflow-waiting-current-toolchain/`.
+Do not upgrade speculatively or map Running to Waiting. Earlier failures and
+superseding terminal passes remain in the verification archive.
 
 **Hosted readiness:** cached Wrangler OAuth is authenticated with one account;
 API-token/account environment and CI credentials remain unconfigured. The private
@@ -30,7 +36,7 @@ No remote mutations occurred. Approval for hosted verification is pending; do no
 infer it from elapsed time. Preparation scripts contain no deployment-write command.
 
 Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Missing:
-actual Workflow Waiting; CF-08 wider-graph startup profiles and provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
+actual Workflow Waiting; CF-08 provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
 production; lost creation identity still requires manual recovery; Deno Deploy and final versioned artifact/runtime
 matrix, then versioning and final audit. Preserve reports.md/.zcodeignore and the
 two earlier strict uncommitted Workflow probes. Desktop remains waived.

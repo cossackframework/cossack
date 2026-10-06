@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Helper: read the current counter value from the page.
@@ -27,6 +28,21 @@ async function waitForCounterAtLeast(page: import('@playwright/test').Page, expe
     const match = text?.match(/Count:\s*(\d+)/i);
     return match ? parseInt(match[1], 10) : -1;
   }, { timeout: 60000, interval: 500 }).toBeGreaterThanOrEqual(expected);
+}
+
+async function openSseChat(page: import('@playwright/test').Page, room: string): Promise<void> {
+  const sseResponse = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname.startsWith('/sse/');
+  });
+
+  await page.goto(`/sse-chat?room=${encodeURIComponent(room)}`);
+  const response = await sseResponse;
+  expect(response.status()).toBe(200);
+  await page.waitForFunction(
+    () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
+  );
+  await expect(page.locator('.sse-chat h1')).toHaveText('SSE Chat');
 }
 
 test.describe('Transport Multi-Tab Sync', () => {
@@ -90,43 +106,44 @@ test.describe('Transport Multi-Tab Sync', () => {
 
   test.describe('SSE', () => {
     test('should sync state across two tabs', async ({ page, context }) => {
-      // Tab 1: load the SSE chat page
-      // Use waitForSelector instead of networkidle — SSE keeps a persistent
-      // connection open, so networkidle never resolves.
-      await page.goto('/sse-chat');
-      await page.waitForSelector('.sse-chat h1');
+      const room = `transport-sync-${randomUUID()}`;
+      await openSseChat(page, room);
 
-      // Tab 2: open the same page (same default scope)
+      // The room is unique to this test, but shared by the two intended tabs.
       const tab2 = await context.newPage();
-      await tab2.goto('/sse-chat');
-      await tab2.waitForSelector('.sse-chat h1');
+      await openSseChat(tab2, room);
 
       // Tab 1: send a message
-      await page.fill('input[type="text"]', 'Hello from tab 1');
-      await page.click('button[type="submit"]');
+      const input = page.getByPlaceholder('Type a message...', { exact: true });
+      await expect(input).toBeEnabled();
+      await input.fill('Hello from tab 1');
+      await expect(input).toHaveValue('Hello from tab 1');
+      await input.press('Enter');
 
       // Tab 1: user message should appear immediately
-      await expect(page.locator('.msg.user .bubble')).toContainText('Hello from tab 1', { timeout: 5000 });
+      await expect(page.locator('.msg.user .bubble').last()).toContainText('Hello from tab 1', { timeout: 5000 });
 
       // Tab 2: should see the user message broadcast via SSE
-      await expect(tab2.locator('.msg.user .bubble')).toContainText('Hello from tab 1', { timeout: 10000 });
+      await expect(tab2.locator('.msg.user .bubble').last()).toContainText('Hello from tab 1', { timeout: 10000 });
 
       await tab2.close();
     });
 
     test('should isolate state between different scope keys', async ({ page, context }) => {
-      // Tab 1: join room alpha
-      await page.goto('/sse-chat?room=alpha');
-      await page.waitForSelector('.sse-chat h1');
+      const alphaRoom = `transport-sync-alpha-${randomUUID()}`;
+      const betaRoom = `transport-sync-beta-${randomUUID()}`;
+      await openSseChat(page, alphaRoom);
 
       // Tab 2: join room beta
       const tab2 = await context.newPage();
-      await tab2.goto('/sse-chat?room=beta');
-      await tab2.waitForSelector('.sse-chat h1');
+      await openSseChat(tab2, betaRoom);
 
       // Tab 1: send a message in room alpha
-      await page.fill('input[type="text"]', 'alpha-msg');
-      await page.click('button[type="submit"]');
+      const alphaInput = page.getByPlaceholder('Type a message...', { exact: true });
+      await expect(alphaInput).toBeEnabled();
+      await alphaInput.fill('alpha-msg');
+      await expect(alphaInput).toHaveValue('alpha-msg');
+      await alphaInput.press('Enter');
 
       // Tab 1: should see the alpha message
       await expect(page.locator('.msg.user .bubble').first()).toContainText('alpha-msg', { timeout: 5000 });
@@ -138,8 +155,11 @@ test.describe('Transport Multi-Tab Sync', () => {
       expect(tab2Body).not.toContain('alpha-msg');
 
       // Tab 2: send a message in room beta
-      await tab2.fill('input[type="text"]', 'beta-msg');
-      await tab2.click('button[type="submit"]');
+      const betaInput = tab2.getByPlaceholder('Type a message...', { exact: true });
+      await expect(betaInput).toBeEnabled();
+      await betaInput.fill('beta-msg');
+      await expect(betaInput).toHaveValue('beta-msg');
+      await betaInput.press('Enter');
 
       // Tab 2: should see the beta message
       await expect(tab2.locator('.msg.user .bubble').first()).toContainText('beta-msg', { timeout: 5000 });

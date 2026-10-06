@@ -6,7 +6,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { runCaptured } from '../../src/spawn.js';
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url));
-export async function createBudgetModuleGraphFixture(mode, installedRoot) {
+export async function createBudgetModuleGraphFixture(mode, installedRoot, { startup = false } = {}) {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-native-budget-graph-'));
   await fs.chmod(parent, 0o700);
   const dependencyRoot = installedRoot || repository;
@@ -30,7 +30,7 @@ export async function createBudgetModuleGraphFixture(mode, installedRoot) {
   const counter = path.join(root, 'private-tool-counts.jsonl');
   const launcher = path.join(modules, 'wrangler'); await fs.mkdir(launcher);
   await fs.writeFile(path.join(launcher, 'package.json'), JSON.stringify({ name: 'wrangler', version: nativeManifest.version, main: require.resolve('wrangler'), bin: { wrangler: 'launcher.cjs' } }));
-  await fs.writeFile(path.join(launcher, 'launcher.cjs'), `const fs=require('node:fs');const {spawn}=require('node:child_process');fs.appendFileSync(${JSON.stringify(counter)},JSON.stringify({command:process.argv[2],phase:process.env.COSSACK_BUILD_BUDGET_RUN_ID?'vite':'cli'})+'\\n',{mode:0o600});const child=spawn(process.execPath,[${JSON.stringify(nativeBin)},...process.argv.slice(2)],{stdio:'inherit'});child.on('error',()=>process.exit(1));child.on('exit',code=>process.exit(code??1));`);
+  await fs.writeFile(path.join(launcher, 'launcher.cjs'), `const fs=require('node:fs');const {spawn}=require('node:child_process');fs.appendFileSync(${JSON.stringify(counter)},JSON.stringify({command:process.argv[2],phase:process.env.COSSACK_BUILD_BUDGET_RUN_ID?'vite':'cli',outputFile:process.argv.includes('--outfile')?process.argv[process.argv.indexOf('--outfile')+1]:undefined})+'\\n',{mode:0o600});const child=spawn(process.execPath,[${JSON.stringify(nativeBin)},...process.argv.slice(2)],{stdio:'inherit'});child.on('error',()=>process.exit(1));child.on('exit',code=>process.exit(code??1));`);
   const configFile = path.join(root, 'wrangler.jsonc');
   const config = JSON.parse(await fs.readFile(configFile, 'utf8'));
   config.vars.APP_URL = 'https://budget-graph.example.test'; config.vars.PRIVATE_GRAPH = 'PRIVATE_GRAPH_CONFIG_SENTINEL';
@@ -41,6 +41,9 @@ export async function createBudgetModuleGraphFixture(mode, installedRoot) {
   await setBudgets({ uploadKiB: { warning: 0.001, error: 100000 }, gzipUploadKiB: { error: 100000 } });
   const lazyFile = path.join(root, 'src/budget-lazy.js');
   await fs.writeFile(lazyFile, "export const value='PRIVATE_GRAPH_SOURCE_SENTINEL';");
+  // Workers clocks can remain frozen between I/O events. Terminate by a fixed
+  // iteration count and retain the result so the real initializer cannot vanish.
+  if (startup) await fs.appendFile(path.join(root, 'src/index.ts'), '\nlet startupAccumulator=0;for(let startupIndex=0;startupIndex<5000000;startupIndex++){startupAccumulator=(Math.imul(startupAccumulator^startupIndex,1664525)+1013904223)|0;}globalThis.__startupWork=startupAccumulator;\n');
   await fs.appendFile(path.join(root, 'src/index.ts'), "\nglobalThis.__budgetGraph = () => import('./budget-lazy.js');\n");
   await fs.writeFile(path.join(root, 'outside-output.js'), "export const value='PRIVATE_EXTERNAL_SOURCE_SENTINEL';");
   const viteFile = path.join(root, 'vite.config.ts');

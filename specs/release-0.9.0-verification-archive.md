@@ -13920,3 +13920,131 @@ those gates. Hosted approval/CI configuration remain pending; authenticated OAut
 alone does not authorize or prove hosted readiness. No cloud writes, push,
 publication or version bump occurred. Baseline reports.md, .zcodeignore and both
 original Workflow probes were preserved and excluded from staging.
+
+
+<a id="codex-local-observability-browser-gates-2026-10-06"></a>
+## Codex — local observability criteria and full browser gate (2026-10-06)
+
+**51 complete / 7 open; no numbered task closes.** Three exclusive-file agents
+implemented wider startup acceptance, compiler-browser acceptance and the SSE
+browser isolation repair. Codex reviewed/integrated them and owned the shared
+public-channel fix, declarations, packaging, types and final gates. Baseline
+reports.md, .zcodeignore and the two original uncommitted Workflow probes remain
+untouched and excluded from the commit. Desktop remains waived, not passed.
+
+**CF-08 local wider-graph startup criterion completed:** real native Wrangler
+multipart dry-run output and CPU profiling now prove both local profile-window
+and active-sample metrics, warnings and hard limits for dynamic/source-map,
+rebundled and outside-output import graphs. Dynamic signed receipts avoid repeat
+CLI profiling; unsupported rebundled/external identities receive fresh profiling
+on successful builds and retain generic failed-build classification on failure.
+Their direct Vite hard-limit failures separately prove actual startup enforcement.
+Private raw bundles/profile directories are removed on success and failure;
+receipts/public JSON exclude raw profile data. Provider startup is explicitly
+unavailable locally, never substituted with these metrics. Earlier upload/gzip
+acceptance remains valid; unchanged upload cases were name-filtered this batch.
+
+**CF-08 malformed-startup/browser criterion completed for the tested @Server
+syntax fault:** both native toolchains reject malformed startup before listening,
+with the exact authored parse error and source retained in the private terminal.
+A fresh healthy process then supplies browser acceptance: real connected HMR,
+malformed edit, safe HTTP 500/UUID/no-store and terminal correlation, no private
+sentinel or absolute authored path in page/overlay/WebSocket diagnostics, then
+repair in that same healthy process. This does not claim the initially rejected
+process survived or resumed. It does not redact every intentional client compiler
+diagnostic, prove remote logging, or establish provider startup metrics.
+
+Native acceptance discovered Vite's public full-reload `triggeredBy` absolute
+path leak. Framework now omits that optional field at the browser WebSocket
+boundary while preserving reload path, custom events, original private payload
+objects, send receiver and disposal. Private ModuleRunner hot channels are not
+wrapped. Source and freshly packed Framework installed acceptance pass. Only
+Framework was packed once; unchanged artifacts were reused in the overridden
+consumer `/tmp/cossack-compiler-browser-release-installed`. Its real package path
+resolves the new `/tmp/cossack-compiler-browser-release-artifacts` tarball.
+
+**REL-03 current development browser criterion completed:** all 297 repository
+cases pass in one unfiltered final invocation. The initial run found the SSE
+multi-tab test using persisted shared rooms and heading-only readiness; one
+failed and its serial successor did not run. The repair gives each test UUID
+rooms, shares a room only between intended tabs, requires HTTP 200 SSE and
+hydration, uses the exact chat input and waits for its controlled value before
+normal Enter submission. Broadcast/isolation assertions remain; WebSocket cases
+are unchanged. No force clicks, skips or removed assertions hide the failure.
+Both corrected SSE cases pass before the final full run. This is development
+acceptance, not a new final-versioned/production/installed full matrix.
+
+### Terminal verification
+
+| Command / scope | Result | Private evidence under `/tmp/` |
+| --- | --- | --- |
+| `pnpm --dir packages/cossack exec vitest run tests/budget-module-graphs-native.test.js -t 'local startup'` | Final source 3 passed / 3 filtered unchanged upload cases, 114.40s | `cossack-startup-graphs-source-final.log` |
+| Same with `COSSACK_BUDGET_GRAPH_INSTALLED_ROOT=/tmp/cossack-preview-empty-release-installed` | Final installed 3 passed / 3 filtered unchanged upload cases, 113.14s | `cossack-startup-graphs-installed-final.log` |
+| `pnpm --filter cossack exec vitest run tests/cloudflare-compiler-browser-native.test.js` | Source 1 passed, 19.02s | `cossack-public-reload-source-native.log` |
+| Same with `COSSACK_COMPILER_BROWSER_INSTALLED_ROOT=/tmp/cossack-compiler-browser-release-installed` | Installed 1 passed, 15.12s | `cossack-public-reload-installed-native.log` |
+| Framework reload privacy / development trace bridge+traces / route tests | 4 / 16 / 6 passed respectively | `cossack-public-reload-unit.log`, `cossack-public-reload-traces.log`, `cossack-public-reload-route-final.log` |
+| `pnpm --filter @cossackframework/framework exec vitest run --maxWorkers=1` | Final full 120 files / 2,089 tests passed, 168.35s | `cossack-public-reload-framework-full.log` |
+| Root `pnpm tsc --noEmit` after final edits | Passed | `cossack-public-reload-root-types-complete.log` |
+| `node scripts/typecheck.mjs --exclude-desktop` | Ten packages passed; Desktop waived | `cossack-public-reload-package-types.log` |
+| Final Framework `pnpm --filter @cossackframework/framework exec tsc --noEmit` | Passed | `cossack-public-reload-framework-types-final.log` |
+| Framework `build:types`, one pack, fresh offline overridden consumer | Passed | `cossack-public-reload-declarations.log`, `cossack-public-reload-pack.log`, `cossack-public-reload-install.log` |
+| Browser corrected SSE-only run | 2 passed, 14.8s | `cossack-release-browser-sse-fixed.log` |
+| Final complete browser command below | 297 passed, 7.6m, terminal 0 | `cossack-release-browser-full-verified.log` |
+
+Owned server: `pnpm --filter @cossackframework/framework run dev --host
+127.0.0.1 --port 59123 --strictPort`, verified native HTTP 200 before tests.
+Private config `/tmp/cossack-release-browser-current.config.mts` imports the
+repository Playwright config, changes only absolute testDir and
+`webServer: undefined`. Complete command:
+
+```sh
+NO_PROXY=localhost,127.0.0.1,::1 COSSACK_E2E_PORT=59123 pnpm --filter @cossackframework/framework exec playwright test --config /tmp/cossack-release-browser-current.config.mts --workers=2 --reporter=line
+```
+
+SSE targeted invocation additionally selected
+`e2e/core-features/transport-sync.spec.ts --grep SSE --workers=1`. No grep,
+sharding, exclusions or retries were added to the final 297-case invocation.
+Owned server PID was stopped only after terminal browser success; session exited
+143 from intentional SIGTERM and port 59123 was confirmed unbound. This cleanup
+exit is not a failed test. Native source uses Vite 8.1.4/Wrangler 4.114.0;
+installed uses Vite 8.3.2/Wrangler 4.147.0.
+
+**Failed iterations retained:** initial installed startup cases all failed
+measurement (70.74s, `cossack-startup-graphs-installed.log`). The fixture used a
+clock-terminated busy loop; newer Workers profiling does not advance that clock
+during CPU work. Finite five-million-iteration integer work with a retained
+result corrected the fixture without changing limits/assertions or product code.
+Initial source clock-based pass is superseded by the final bounded source pass.
+See [Workers timer semantics](https://developers.cloudflare.com/workers/runtime-apis/performance/).
+Private failing generated fixture remains `/tmp/cossack-native-budget-graph-7hATqt/app`.
+
+The initial compiler-browser fixture assumed malformed startup must listen and
+failed before browser assertions (`cossack-compiler-browser-installed.log`).
+Actual native startup rejects before a listener; the corrected branch requires
+nonzero compiler-specific failure, exact authored file/source and no origin,
+never generic process death. The first corrected assertion failed because native
+ANSI colors separated every source character; only trusted terminal assertions
+now normalize ANSI. Raw public channel assertions remain intact. Subsequent
+installed acceptance found the real triggeredBy leak
+(`cossack-compiler-browser-installed-agent.log`) before the product fix. One route
+unit mock lacked Vite's ws member; added it while preserving assertions. A focused
+command included two nonexistent file filters and actually ran only the four
+privacy tests; it is not evidence for those nonexistent suites. The real trace
+files subsequently passed all sixteen cases.
+
+Initial standard Playwright setup was intentionally stopped after confirming a
+live SYN-SENT availability probe and no started server; no test had run. Owned
+server workaround preserves all suite assertions. First complete owned run:
+295 passed / 1 failed / 1 did not run, 8.4m,
+`cossack-release-browser-full-final.log`. The final 297-pass invocation supersedes
+that failure for the repaired suite; it does not erase its history.
+
+**Remaining:** CF-08 hosted Logs ingestion/remapping/provider startup, CF-09
+hosted CI lifecycle/isolation/retry/unchanged production, SVC-04 literal native
+Waiting, and REL-02/03's final artifact/runtime matrix, Deno Deploy and complete
+CLI gate. REL-04/05 remain dependent on those gates. Prior unchanged package unit
+proof is retained; Framework's new full run supersedes its previous 2,085-pass
+run. Current non-Desktop/non-CLI composite is 5,579 passed across 381 files,
+with two external Database cases unrun. It is not a single root monorepo command
+or a green full CLI gate. No remote writes, push, publication or version bump.
+Hosted approval and CI credentials remain pending. Versions stay 0.8.3.

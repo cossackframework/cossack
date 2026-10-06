@@ -241,16 +241,23 @@ CLI prove two auxiliaries, primary startup and no repeat measurements. Mutation,
 malformed, partial, private-value and startup runtime tests pass. Auxiliary upload
 remains separate. Native dynamic/source-map, rebundled and external graphs now
 pass upload/gzip warning/hard-limit and conservative receipt fallback acceptance
-in source and installed consumers. Wider-graph startup profiles remain unproven.
+in source and installed consumers. Subsequent native source/installed acceptance
+also completes both local startup metrics and hard limits for all three graphs,
+including private raw-profile cleanup and conservative reuse. Provider startup
+remains unavailable locally. [Local criteria](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
 [Current graph/unit evidence](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Full evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06).
 
 Codex completed active compiler HTTP fault acceptance (2026-10-06): malformed
 server-only code returns fixed JSON/UUID/no-store, matching structured dispatch
 metadata and finite entry duration. Trusted terminal retains compiler diagnostics;
 repair works in the same process. Source and installed native checks pass. This
-does not prove browser overlay/HMR privacy or initially malformed startup; do not
-claim them passed. CF-08 hosted Logs ingestion, remote remapping/provider startup
-and wider-graph startup profiles remain open.
+has subsequent source/installed browser proof for the tested malformed @Server
+method: initial native startup refuses listening with private compiler diagnostics;
+a fresh healthy process then passes malformed-edit HTTP/HMR privacy and repair
+without restarting that healthy process. Public full-reload triggeredBy absolute
+paths are now omitted; private hot channels remain unchanged. CF-08 hosted Logs
+ingestion, remote remapping and provider startup remain open.
+[Exact native and browser evidence](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
 
 
 Codex direct-Vite dependency audit (2026-10-05), read-only: retain cossackConfig's
@@ -536,6 +543,13 @@ for absent connection URLs. Root/all ten non-Desktop types pass. Full CLI and
 final versioned gates remain open. Core's optional JSON reporter failed; the
 standard reporter passed its complete suite without repository changes.
 [Commands and exact limits](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06).
+
+Codex (2026-10-06): final full development browser gate passes all 297 cases
+in one unfiltered invocation after repairing SSE test room isolation/readiness.
+Full Framework now passes 2,089 tests / 120 files after the public reload fix;
+other unchanged package unit proof is retained. This closes the current local
+browser criterion, not the full final-versioned/CLI/hosted runtime gate.
+[Final commands and failed iterations](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
 
 Start in root scripts and package test/build scripts. Fix meaningful failures
 instead of changing assertions only to preserve a green gate.
