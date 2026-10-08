@@ -84,8 +84,8 @@ remain archived, and the verification log below retains test evidence.
 ## Release gates
 
 - [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
-- [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs.
-- [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: generated standalone Deno draining now passes real signals and installed public types; Deno Deploy and the full final matrix remain. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06).
+- [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex: hosted Deno compiled installed-artifact acceptance passes; full final artifact criteria remain. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
+- [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: standalone Deno draining and hosted Deploy HTTP/SSE/WebSocket acceptance pass; full final matrix remains. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
 - [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes. Codex: migration-history preservation and rejection paths pass real SQLite acceptance; version/release preparation remains gated. [Evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06).
 - [ ] [REL-05](./release-0.9.0-plan.md#rel-05) Audit every checklist item against implementation and verification evidence before marking the goal complete.
 
@@ -2100,3 +2100,12 @@ Native deployment reports 10 ms startup. All eight hosted evidence criteria pass
 Worker, Workflow, D1 and owned DO namespace are verified absent after cleanup.
 Hosted native Waiting still fails; Deno personal-token REST cleanup is blocked.
 No CI/push/publication/version bump; Desktop waived. [Exact evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+
+### Codex — Deno Deploy acceptance verified (2026-10-09)
+
+**52 complete / 6 open; no numbered task closes.** REL-02/03 gain real hosted
+installed compiled-artifact acceptance: POST body/two cookies, production assets,
+hydration and HTTP/SSE/WebSocket mutations. Exact UUID cleanup and independent
+GET404 pass. Hosted test: 1 passed; root and all ten non-Desktop package types
+pass. Desktop checks remain waived. Final artifact/full CLI gates, native
+Waiting and hosted CI remain open. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).

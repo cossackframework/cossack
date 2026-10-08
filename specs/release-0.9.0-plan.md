@@ -12,8 +12,9 @@ Historical status statements inside task sections do not override the checklist.
 
 Codex hosted batch (2026-10-09): CF-08 is complete with real stored Workers
 Logs, provider-remapped authored stack and native startup evidence, plus verified
-owned-resource cleanup. Hosted Workflow Waiting remains unproven. Deno CLI
-authenticates, but documented REST management requires an organization token.
+owned-resource cleanup. Hosted Workflow Waiting remains unproven. Deno hosted
+compiled-artifact acceptance now passes with verified immutable-ID cleanup;
+organization and CLI tokens are available through interactive zsh.
 [Exact evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
 
 Continue the open work as described in the handoff. All unchecked tasks
@@ -373,7 +374,14 @@ CLI lifecycle and trace checks. See the [runtime evidence index](./release-0.9.0
 and [archived implementation context](./release-0.9.0-plan-archive.md#codex-runtime-progress-2026-10-04).
 `pnpm test:deno` owns the repeatable native Deno gate.
 
-Remaining: Deno Deploy and the required non-Desktop final release matrix.
+**Deno Deploy criterion verified — Codex (2026-10-09).** Installed compiled
+artifacts pass real hosted POST/cookies, production hydration and mutations over
+HTTP, SSE and WebSocket; cleanup is independently confirmed by GET404.
+[Commands, evidence and limits](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09). Provider source builds and final 0.9.0
+artifacts are not covered. REL-02/03 remain open.
+
+Remaining: the required non-Desktop final release matrix, including full CLI
+and final versioned artifacts.
 Generated Deno standalone shutdown/draining is verified under real signals and
 installed tarballs in the [Codex acceptance](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06). Node standalone draining is verified in the
 [Codex batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). The initial full CLI run failed; all 19 failures

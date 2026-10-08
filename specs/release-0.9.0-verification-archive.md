@@ -14145,3 +14145,68 @@ DENO_DEPLOY_API_TOKEN is pending so UUID cleanup can be verified before creation
 CF-09 hosted CI remains unrun; cf/Wrangler OAuth does not supply portable CI
 credentials or authorize GitHub changes. REL-02/03/04/05 remain open, versions
 0.8.3. No production promotion, GitHub push, npm publication or credential rotation.
+
+## Codex Deno Deploy hosted — 2026-10-09
+
+<a id="codex-deno-deploy-hosted-2026-10-09"></a>
+
+Author: **Codex**. REL-02/03 Deno Deploy compiled installed-artifact criterion
+verified; neither full row closes. **52 complete / 6 open**, versions 0.8.3.
+User authorized creating, deploying, testing and deleting a temporary app in the
+accessible test organization. Interactive zsh loads DENO_DEPLOY_TOKEN and
+DENO_DEPLOY_API_TOKEN; token values stay in inherited environments/HTTP headers.
+Personal CLI and organization REST identities match the same organization UUID.
+Management access and fresh name absence were checked before creation.
+
+Exclusive agent ownership: packages/cossack/tests/deno-deploy-hosted-acceptance.test.js
+and packages/cossack/tests/fixtures/deno-deploy-hosted-acceptance.js. Coordinator
+reviewed the harness, including explicit production builds, real transport
+assertions and nested browser-close/resource-cleanup finally blocks. No shared
+product APIs, package manifests or lockfile changed.
+
+Native hosted command: interactive zsh with COSSACK_DENO_HOSTED_MODE=deploy,
+COSSACK_DENO_HOSTED_INSTALLED_ROOT=/tmp/cossack-compiler-browser-release-installed,
+and COSSACK_DENO_BINARY pointing to the retained native Deno2.9.6 executable,
+running `pnpm --filter cossack exec vitest run tests/deno-deploy-hosted-acceptance.test.js`.
+Official native Deploy module is pinned to jsr:@deno/deploy@0.0.9908. Terminal
+result: **1 passed / 1 file, 31.75 seconds**, recorded privately in
+/tmp/cossack-deno-hosted-deploy-test-fourth.log.
+
+Private final evidence: /tmp/cossack-deno-hosted-mFjtUA (mode700; receipts/logs
+mode600). prepared.json identifies the retained installed tarball consumer.
+Native client/SSR production builds, client server-marker exclusion and absence
+of cloudflare:workers imports pass; native cached-only Deno graph check passes.
+Provider revision px6p2t6kqeff runs native Deno **2.9.5+e312172**. POST echoes the
+request body and returns two separate Set-Cookie headers. All three browser
+routes hydrate and mutate count0 to2. Native SSE response is HTTP200 with
+text/event-stream; native WebSocket receives a real frame. browser.json records
+no page errors; production assets load successfully.
+
+owned.json, hosted-verified.json and cleaned.json agree on exact app UUID/slug.
+Cleanup rechecks UUID/slug with GET200, deletes that UUID with DELETE204, then
+confirms GET404. Coordinator separately rechecked GET404 with authenticated
+REST; coordinator-cleanup-lookup.json preserves that receipt. All temporary
+apps from failed iterations were also deleted and verified absent.
+
+Failed iterations retained privately: ZWEMLK reached app creation but native
+configuration lacked deploy.org; ywpfuR deployed/API passed but browser mutation
+failed; E4Axm2 reused that upload and proved dev asset URLs returned404. The
+fixture inherited Vitest NODE_ENV=test. Explicit NODE_ENV=production for both
+builds resolved it; no framework behavior was changed. Each attempt's exact
+UUID cleanup passed DELETE204/GET404. Rebuilding the invalid upload was necessary;
+no packages were repacked or unchanged installed matrices rerun.
+
+Final coordinator verification: `pnpm tsc --noEmit` and
+`node scripts/typecheck.mjs --exclude-desktop` pass (all ten non-Desktop packages).
+Private logs: /tmp/cossack-deno-hosted-final-root-types.log and
+/tmp/cossack-deno-hosted-final-packages-types.log. JavaScript syntax and owned
+whitespace checks pass. Prior broad test evidence remains valid; no broad rerun.
+Desktop acceptance remains waived, not passed.
+
+Limits: this deploys bundled compiled artifacts from installed current tarballs;
+it does not prove provider source installation/build, final 0.9.0 artifact
+versions, distributed Deno transport durability or the complete CLI/release
+matrix. SVC-04 literal native Waiting, CF-09 hosted CI lifecycle and final
+REL-02/03/04/05 gates remain open. No GitHub write, package publication or
+existing production promotion. Baseline reports.md, .zcodeignore and both strict
+Workflow probes are preserved and excluded from staging.

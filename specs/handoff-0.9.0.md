@@ -20,17 +20,19 @@ API also report running at the event barrier. Real D1 proves first1/attempt2,
 which does not establish Waiting. Preserve the two strict baseline probes;
 do not map Running/paused/private step state to Waiting or upgrade speculatively.
 
-Deno token is loaded through interactive zsh from ~/.zshrc. CLI authenticates
-and lists one organization; documented REST management rejects the personal
-token (401). DENO_DEPLOY_API_TOKEN organization token is requested for verified
-immutable-ID cleanup before any app creation. Two new batch-owned Deno harness
-files remain uncommitted pending real hosted acceptance; installed preparation
-passes 1 test, builds and native cached-only graph checks. No Deno app created.
+Deno Deploy acceptance now passes using both tokens loaded through interactive
+zsh from ~/.zshrc. Installed compiled artifacts run on provider Deno 2.9.5:
+POST body/two cookies, production assets/hydration and HTTP/SSE/WebSocket
+mutations pass. Exact app UUID ownership was checked before DELETE204; GET404
+and a separate coordinator lookup confirm cleanup. Both Deno harness files are
+verified for this batch. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
+Private evidence: /tmp/cossack-deno-hosted-mFjtUA. This proves uploaded compiled
+installed artifacts, not provider source builds or final 0.9.0 packages.
 
 Open: **SVC-04, CF-09, REL-02, REL-03, REL-04, REL-05 (6)**. CF-09 needs actual
 hosted CI lifecycle/isolation/retry/unchanged-production evidence and portable CI
-credentials; cf/Wrangler login alone is not CI authentication. REL-02/03 need Deno
-Deploy/final artifact/runtime/full CLI gates, then REL-04/05 versioning/audit.
+credentials; cf/Wrangler login alone is not CI authentication. REL-02/03 still
+need final artifact/runtime/full CLI gates, then REL-04/05 versioning/audit.
 Preserve reports.md/.zcodeignore and the two baseline Workflow probes.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
@@ -82,7 +84,8 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
 - Desktop installed OS integration, Windows/macOS packaging and conditional
   signing checks were waived when the user closed Desktop for this release.
-  Deno Deploy and the required non-Desktop release matrix remain acceptance gaps.
+  Hosted Deno compiled-artifact acceptance passes; the required final non-Desktop
+  release matrix remains open.
   Generated Node and Deno standalone draining are verified.
 - Local checks do not prove remote readiness. CF-08 now has actual hosted acceptance and verified cleanup; no production promotion, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
