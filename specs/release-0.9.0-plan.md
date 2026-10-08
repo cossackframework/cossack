@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-06. The release has 58 tasks: 51 complete and 7 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 52 complete and 6 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -10,11 +10,11 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
-Codex readiness recheck (2026-10-06): GitHub CLI authentication is available,
-but Cloudflare API-token/CI configuration and hosted approval remain pending.
-The official Deno Deploy noninteractive identity check requires a token. No
-numbered task closes; REL-04/05 keep their prerequisite gates.
-[Exact readiness evidence](./release-0.9.0-verification-archive.md#codex-hosted-readiness-blockers-2026-10-06).
+Codex hosted batch (2026-10-09): CF-08 is complete with real stored Workers
+Logs, provider-remapped authored stack and native startup evidence, plus verified
+owned-resource cleanup. Hosted Workflow Waiting remains unproven. Deno CLI
+authenticates, but documented REST management requires an organization token.
+[Exact evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
 
 Continue the open work as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
@@ -181,6 +181,11 @@ assertion remains unsatisfied: workspace tooling and actual installed Wrangler
 4.147.0 / Miniflare 5.20261001.0-alpha report running throughout a 30-second
 event-barrier poll. A simple tooling upgrade has no supporting proof. Do not
 substitute running, paused or inferred private step state for Waiting. Preserve the two earlier uncommitted probes.
+Codex (2026-10-09): actual hosted binding plus independent provider API also
+report running at the external-event barrier after a bounded 65-second poll.
+Two retry effects and one first-step effect persist in real D1; these do not prove
+literal Waiting. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+
 Only the Waiting criterion remains missing from this lifecycle batch; hosted
 durability is not claimed. [Actual installed probe](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
 
@@ -213,218 +218,15 @@ database tooling, and deployment. Local validation must distinguish itself from
 checks that require authenticated access to real resources.
 
 <a id="cf-08"></a>
-### CF-08: Production logs and build budgets
+### CF-08: Production logs and build budgets — complete
 
-Latest Codex native DEV acceptance (2026-10-06): generated Cloudflare Vite/workerd
-API and SSR failures have source/installed proof of fixed diagnostics, separate
-response/log request IDs, authored route/action/runtime/stage/code and finite
-durations, private-value redaction, and recovery after editing the failed page
-without restarting the process. This closes that native API/SSR DEV criterion;
-compiler diagnostics and hosted Logs/maps/startup are not covered. Retain the
-wider graph/aggregate receipt requirements below. [Evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
-
-Codex primary receipt identity hardening (2026-10-05): local startup receipts
-must identify the external runtime that produced the profile. The private bounded
-inventory now resolves Miniflare from Wrangler, workerd from Miniflare, and binds
-manifests, loaders, native executable contents and runtime overrides/autogates.
-Bare/relative executable overrides and unsupported downloaded fallbacks decline
-reuse. Directory membership and redirect reads are bounded. This checkpoint
-retains the primary-only receipt contract and fresh-measurement fallback.
-See [verification](./release-0.9.0-verification-archive.md#codex-runtime-receipt-identity-2026-10-05).
-
-Codex completed the aggregate receipt criterion (2026-10-06): one authenticated
-atomic receipt covers primary plus every selected auxiliary policy, independent
-source snapshots, selected environment, full redirect membership, settings, ordered
-artifacts and tool/native runtime identity. Identity is checked before all and
-after the final measurement; partial prefixes and unselected auxiliary graphs
-decline reuse. The primary remains bound for auxiliary-only policies. Only finite
-configured numeric measurements and fixed outcomes are stored; current policies
-reconstruct diagnostics. Missing/unsupported identities fall back to fresh
-measurements; only a complete failing receipt can replace a failed-build diagnostic.
-Default Wrangler environment metadata (empty/omitted) is normalized without
-weakening selected-environment binding. Native source and actual installed public
-CLI prove two auxiliaries, primary startup and no repeat measurements. Mutation,
-malformed, partial, private-value and startup runtime tests pass. Auxiliary upload
-remains separate. Native dynamic/source-map, rebundled and external graphs now
-pass upload/gzip warning/hard-limit and conservative receipt fallback acceptance
-in source and installed consumers. Subsequent native source/installed acceptance
-also completes both local startup metrics and hard limits for all three graphs,
-including private raw-profile cleanup and conservative reuse. Provider startup
-remains unavailable locally. [Local criteria](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
-[Current graph/unit evidence](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Full evidence](./release-0.9.0-verification-archive.md#codex-compiler-aggregate-acceptance-2026-10-06).
-
-Codex completed active compiler HTTP fault acceptance (2026-10-06): malformed
-server-only code returns fixed JSON/UUID/no-store, matching structured dispatch
-metadata and finite entry duration. Trusted terminal retains compiler diagnostics;
-repair works in the same process. Source and installed native checks pass. This
-has subsequent source/installed browser proof for the tested malformed @Server
-method: initial native startup refuses listening with private compiler diagnostics;
-a fresh healthy process then passes malformed-edit HTTP/HMR privacy and repair
-without restarting that healthy process. Public full-reload triggeredBy absolute
-paths are now omitted; private hot channels remain unchanged. CF-08 hosted Logs
-ingestion, remote remapping and provider startup remain open.
-[Exact native and browser evidence](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
-
-
-Codex direct-Vite dependency audit (2026-10-05), read-only: retain cossackConfig's
-preflight order. A separate post plugin must run after Cloudflare's final buildApp
-hook, verify built environments and fresh selected-target artifacts, then measure.
-Vite build() bypasses buildApp hooks; acceptance must use createBuilder().buildApp()
-or the installed CLI. Shared Node-only budget code belongs in framework, consumed
-by CLI, never a reverse framework-to-CLI dependency. Reuse strict artifact
-verification. Avoid duplicate measurements with a receipt bound to settings,
-environment and artifact fingerprint; clear stale receipts before building.
-Define primary versus auxiliary Worker scope. Custom builders that leave outputs
-unfinished must fail closed. This audit changed no runtime code and ran no tests;
-the implementation checkpoints below supersede its audit-only status. CLI receipt
-and default scaffold integration are now verified coordinator-owned work.
-
-
-Codex opt-in direct Vite implementation (2026-10-05): `cossackBuildBudgets()`
-now runs after Cloudflare's application build, validates completed Worker
-environments and fresh primary-target artifacts, then measures the installed
-Wrangler dry-run summary privately. Node-only budget and artifact modules are
-shared by framework and CLI; framework never depends on CLI. Real staging builds
-exposed and fixed ambient environment selection being applied twice to built
-configs. Explicit empty environment now means inspect/measure the already-built
-target. Primary Worker scope is documented; auxiliary Workers need separate
-future policies. See the [verification checkpoint](./release-0.9.0-verification-archive.md#codex-direct-vite-budgets-2026-10-05).
-
-Codex receipt/default scaffold integration (2026-10-05): implemented a fresh
-UUID signing key per CLI build, never persisted. Private atomic receipts contain
-only safe metrics and HMAC-bound invocation/settings/environment/fingerprint
-metadata. Fingerprints cover all files in supported no-bundle Worker output,
-redirect configuration, Wrangler manifest/entry/bin and Node version, with
-before/after content and metadata checks. Current manifest limits are rechecked
-after building. Unsupported graphs (including auxiliary Workers, symlinks,
-external modules, custom builds and rebundling), or bounded inventory overflow,
-fall back to a fresh measurement after successful builds. Failed builds are
-never freshly measured or excused by passing receipts. Valid failing receipts
-preserve structured budget diagnostics and truthful failed build-step status.
-New Cloudflare projects include the post plugin; non-Cloudflare recipes strip it.
-
-Acceptance verified: stale invocation/environment/settings, corruption/tampering,
-module/config/redirect/tool changes, changes during measurement, unsafe storage,
-unsupported graphs, private persistence, unrelated failed builds, fallback and
-native build/deploy single-measurement reuse. Framework 1,736 tests, affected CLI 56 tests,
-final native integration 3 tests and 91 scaffold cases pass; 9 Desktop cases
-were skipped. Root/framework typechecks, declarations and fresh Cloudflare
-installed-package gate pass (`/tmp/cossack-local-pack-gZdSQv`). This proves new
-published exports, default composition and selected-target signed diagnostics
-with Vite 8.3.2 / Wrangler 4.147.0; broader REL-03 acceptance remains. See the
-[verification record](./release-0.9.0-verification-archive.md#codex-budget-receipts-2026-10-05).
-
-Codex custom-source/watch integration (2026-10-05): the shared selector now
-honors explicit `configPath`, then `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`, then
-root defaults, matching Cloudflare's plugin order. Explicit paths are available
-on `cossackConfig`, `cossackPages` and `cossackBuildBudgets`; declaration and page
-binding checks use the selected file. CLI inspection uses the environment path,
-which also reaches Wrangler type generation and Vite. Missing selected files
-cannot silently fall back. Native nested-config and explicit plugin composition
-acceptance passes after repairing the page binding reader uncovered by the first
-run. Framework 1,757 tests, affected CLI 60 tests, root/framework types and
-emitted declarations pass. See the [verification record](./release-0.9.0-verification-archive.md#codex-custom-config-watch-2026-10-05).
-
-Installed acceptance exposed another DX gap: direct CLI build depended on vite
-being in the caller's PATH. Build now resolves the project-installed Vite for
-captured and human paths; both unbudgeted modes have regressions. Final affected
-CLI total is 60; native build/deploy receipts remain verified.
-
-SSG review also found its sync URL discovery still selecting root files. It now
-shares the source candidate helper; getSiteUrl/cossackSsg support explicit paths.
-JSONC/TOML regressions prove selected environment URLs and no root fallback for
-missing selected sources. Final full framework total is 1,757.
-
-Final repacked framework/CLI acceptance passes in the retained installed fixture
-with Vite 8.3.2 / Wrangler 4.147.0: custom-path CLI receipts, explicit Vite options,
-published SSG URL discovery and prompt native watch rejection/privacy. The helper
-is included in future Cloudflare tarball gates. This focused final-package update
-is not a rerun of the full gate or REL-03 runtime matrix.
-
-Watch policy: configured budgets reject root or environment build.watch before
-output/measurement, and recheck custom builder options in buildApp. Installed
-Vite returns watchers before output completion and does not rerun buildApp for
-each generation. This is explicit unsupported behavior, not successful watch
-budget acceptance. Supporting future watch measurement requires synchronized
-Worker/client generation completion and fresh receipts per generation. Ordinary
-DEV and builds without budgets get no new watch restriction.
-
-Remaining: auxiliary Worker budget policies and wider module graphs. The receipt's
-4,096-file/64-MiB inventory cap is a conservative reuse bound, not a provider
-limit; failing to fingerprint never weakens budget enforcement.
-Local/provider startup costs, native development fault acceptance, remote logs
-and deployed source-map resolution retain their full original criteria.
-
-Purpose: An operator needs to connect a production error to a route and action.
-Builds also need to reveal oversized bundles or startup regressions before upload.
-
-Baseline: RPC request IDs and some error logging exist. A complete production
-logging, source-map, and budget workflow remains open.
-
-Approach: Add structured logs with request/action IDs, route identity, duration,
-runtime, and redacted failure codes. Generate observability configuration with
-explicit sampling defaults. Preserve source maps for server diagnosis through
-the supported deployment path. Measure bundle and startup costs from actual
-artifacts. Define project-configurable warning/error budgets using current
-provider limits rather than hardcoded assumptions from old documentation.
-
-Start in framework logging/request middleware and RPC handlers, scaffold Worker
-configuration, CLI build/deploy orchestration, and RT-28 event contracts.
-
-Done when: A failed action can be located from its returned request ID. Logs
-exclude credentials and full sensitive payloads. A deliberate budget regression
-fails with the measured value and limit. Source maps resolve a production fixture
-stack to authored code. Dependencies: RT-01, RT-24, and CF-06.
-
-Codex checkpoint (2026-10-05): HTTP component and layout-service RPC failures
-now emit structured events with request ID, bounded route/action/runtime labels,
-elapsed time, stage and a fixed failure code. Stream and cleanup failures use the
-same redacted shape. The shared framework matrix checks action and stream events
-against caller-visible IDs and confirms that exception text stays out of logs.
-The local harness does not prove Cloudflare Workers Logs ingestion. Production
-source-map resolution, configurable artifact/startup budgets, full framework log
-review and native Worker log acceptance remain open. See the [verification
-checkpoint](./release-0.9.0.md#codex-cf08-rpc-logging-2026-10-05).
-
-Codex HTTP/SSR checkpoint (2026-10-05): native/class API, SSR rendering and
-router cleanup catches now emit fixed metadata without arbitrary exceptions.
-Unhandled configuration/middleware failures use a safe Hono error handler.
-Caller-visible UUIDs correlate with logs; authored templates omit concrete paths
-and query values, and unknown methods are not retained as labels. The shared
-scope helper validates IDs and API failures restore a modified response header.
-Global fallback duration covers failure handling only, not the original request.
-Source regressions and installed workerd check emission/redaction. Remaining:
-core lifecycle/WebSocket and adapter logs, manifest/SSG/access logger review,
-development SSR detail policy, whole-request timing, remote Workers Logs
-acceptance, source-map resolution and configurable budgets. CF-08 stays open.
-See [server logging contract](../docs/server-logging.md).
-
-Codex core/Node checkpoint (2026-10-05): core action/task/cleanup, service
-rollback/disposal, Durable Object parse/delivery and Node transport catches now
-omit raw exceptions. Shared dispatch omits incoming target/action labels.
-Synthetic or hostile request metadata cannot change teardown behavior. This
-completes the bounded redaction slice, not CF-08: component update, Deno and
-framework loader/SSG/access logs, DEV SSR detail policy, timing, remote ingestion,
-source maps and budgets remain. See the [verification checkpoint](./release-0.9.0-verification-archive.md#codex-core-node-redaction-2026-10-05).
-
-Codex framework/Deno checkpoint (2026-10-05): development SSR fallback pages,
-access logs, router loaders/state, SSG failures and core update catches now omit
-arbitrary exceptions and concrete request URLs. Deno runtime/development catches
-emit fixed events. Managed failures measure duration from request-context entry.
-Remaining criteria: Deno Vite trusted compiler-channel review, native fault
-acceptance, remote ingestion, production source maps and build/startup budgets.
-See [verification](./release-0.9.0-verification-archive.md#codex-framework-deno-redaction-2026-10-05).
-
-Codex budget/Deno transport checkpoint (2026-10-05): CLI build/deploy now
-share literal project warning/error size budgets measured by local Wrangler
-against validated fresh Cloudflare artifacts, with explicit .01 KiB precision
-and conservative rounding. Arbitrary tool output is private/bounded. Provider
-startup is unavailable locally; configured hard startup budgets fail. Deno Vite
-caught errors no longer leak into console or public middleware; private compiler
-results are preserved. Remaining criteria: direct Vite budgets, local/provider
-startup, native development faults, source-map resolution and remote logs. See
-[checkpoint](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05)
-and [budget contract](../docs/build-budgets.md).
+Codex (2026-10-09): real current installed production acceptance proves returned
+request-ID correlation in tail and stored Workers Logs, safe redacted event
+fields, direct provider-remapped authored source and native provider startup.
+Retained source/installed tests prove compiler/browser privacy, local startup,
+complete authenticated graph receipts and measured warning/hard regressions.
+All owned hosted resources are confirmed removed. [Completion evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+Full implementation context remains in the [plan archive](./release-0.9.0-plan-archive.md#codex-cf08-completed-context-2026-10-09).
 
 <a id="cf-09"></a>
 ### CF-09: Preview and CI resource lifecycle

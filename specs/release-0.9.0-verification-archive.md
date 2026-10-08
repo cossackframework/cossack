@@ -14076,3 +14076,72 @@ REL-04/05 prerequisite-dependent versioning and final audit. Hosted approval
 remains pending. No code changed, broad tests/types/packing were not rerun and
 prior evidence is retained. **51 complete / 7 open**, versions 0.8.3, Desktop
 waived. This readiness check does not satisfy any hosted acceptance criterion.
+
+<a id="codex-hosted-cf08-complete-2026-10-09"></a>
+### Codex — CF-08 hosted completion (2026-10-09)
+
+**CF-08 complete; 52 complete / 6 open.** User authorized temporary Cloudflare
+and Deno acceptance. Existing reports.md/.zcodeignore and two uncommitted strict
+Workflow probes are untouched. Coordinator integrated/reviewed two exclusively
+owned hosted-observability assertion files. Two Deno acceptance files remain
+batch-owned/uncommitted pending the missing organization API credential.
+
+CF-08 acceptance mapping:
+- Returned HTTP500 JSON and X-Cossack-Request-Id contain the same UUID as the
+  actual deployed Worker's fixed cossack.request.failure event. Native tail has
+  78 records; real persisted query has 80 events, including that matching UUID.
+  Completed nondry stored Workers Logs record has provider identity/timeframe,
+  owned Worker name, safe exact source fields and agreement with native tail.
+- Framework event/public response exclude both runtime secrets and deliberate
+  private exception marker. Its route/action/runtime/stage/code and finite
+  duration match the authored fixture. Raw provider envelopes remain private;
+  provider headers and the separate deliberate map exception are not claimed
+  as redacted framework output. All 19 compiled client files exclude secrets
+  and private server markers.
+- Provider exception stack directly resolves Object.fetch to src/index.ts:25:17
+  in the deployed current Worker. This is provider output, not local mapping or
+  upload-only evidence. Native Wrangler 4.148.0 deploy reports 10 ms startup,
+  545.11 KiB upload / 159.07 KiB gzip. Local/size warning and measured hard-limit
+  regression, atomic receipts/wider graphs and compiler/browser acceptance remain
+  proven by the prior source/installed archive; unchanged tests were not rerun.
+- Eight hosted evidence criteria pass via
+  `node packages/cossack/tests/fixtures/cloudflare-hosted-observability.js /tmp/cossack-hosted-20261009/observability-evidence.json`.
+
+Private evidence directory /tmp/cossack-hosted-20261009 is mode700; receipts,
+secrets, provider raw logs and final verification logs mode600. Generated app
+installed the retained current tarballs through all-package overrides, without
+workspace package links. Generated Wrangler types, application typecheck/build
+pass. No packages repacked. Account equality and fresh absence of all three
+resource names were proven before creation. D1 UUID was saved before deployment;
+Worker immutable ID/creation time, Workflow ID and owned DO namespace IDs were
+saved and rechecked before deletion. Cleanup confirmed Worker, Workflow, D1 and
+owned namespace absent. See private cleanup-verified.json and before/after receipts.
+
+Batch verification: agent targeted assertion regressions 23 passed; coordinator
+combined invocation `pnpm --filter cossack exec vitest run tests/cloudflare-hosted-observability.test.js tests/deno-deploy-hosted-acceptance.test.js`
+passes 23 / 1 file, with the explicitly opt-in Deno case skipped. Separate agent
+Deno installed preparation passes 1 case with real client/SSR build, stripping
+and native Deno2.9.6 cached-only graph proof. It is not hosted Deno acceptance.
+Root `pnpm tsc --noEmit` and `node scripts/typecheck.mjs --exclude-desktop` pass
+(all ten packages). JS syntax/owned whitespace pass. Prior browser297/full
+Framework2089 evidence retained; no broad reruns. Desktop remains waived.
+
+Failed iterations/limits: the original private app used a shared node_modules
+link; pnpm12 refused its hoist layout and offline metadata. A fresh private app
+with current overrides installed successfully. No repository manifests/lockfile
+changed. Initial Python HTTP User-Agent received edge403/1010 without entering
+the Worker; browser User-Agent requests reach the intended authorization401.
+Initial filtered persisted query was empty; the unfiltered completed query using
+actual tail timestamps supplies the raw stored proof. No synthetic tail-to-stored
+conversion was used. Native Workflow Waiting still fails at the external event
+barrier after the 65-second hosted poll; independent provider API also reports
+running. D1 effects are first1/attempt2. Retry/event/failure/paused-restart local
+proof remains valid; these hosted observations do not establish Waiting. Owned
+Workflow was deleted during verified cleanup.
+
+Deno personal CLI token authenticates and lists one organization, but documented
+REST app management returns401; no Deno resource created. Organization-scoped
+DENO_DEPLOY_API_TOKEN is pending so UUID cleanup can be verified before creation.
+CF-09 hosted CI remains unrun; cf/Wrangler OAuth does not supply portable CI
+credentials or authorize GitHub changes. REL-02/03/04/05 remain open, versions
+0.8.3. No production promotion, GitHub push, npm publication or credential rotation.

@@ -1,52 +1,37 @@
 # Cossack 0.9.0 continuation notes
 
-## Current handoff — Codex (2026-10-06)
+## Current handoff — Codex (2026-10-09)
 
-Latest verified Codex batch: **local observability criteria and full development
-browser gate** ([evidence](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06)). **51 complete / 7 open**, versions 0.8.3; no numbered row closes.
+**52 complete / 6 open. CF-08 complete**, versions 0.8.3. [Hosted completion](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+Real current installed Worker: caller UUID matches native tail and stored Workers
+Logs; safe fields/credential redaction, provider-authored source remapping and
+10 ms native startup pass all eight evidence criteria. Owned temporary Worker,
+Workflow, D1 and DO namespace are confirmed absent after cleanup. No production
+promotion, GitHub write or publication. User authorized temporary Cloudflare
+and Deno hosted acceptance; earlier hosted-approval blocker is superseded.
 
-CF-08 local wider-graph startup passes all three native source/installed cases;
-provider startup remains unavailable locally. Tested malformed-startup rejection,
-private terminal diagnostics, browser/HMR privacy and same-healthy-process edit
-repair pass source/installed. Public full-reload triggeredBy absolute paths are
-omitted; private hot channels stay intact. Only Framework packed once; current
-verified consumer is `/tmp/cossack-compiler-browser-release-installed`.
+New hosted evidence assertions: 23 passed. Root/all ten non-Desktop types pass.
+Prior full browser 297 and Framework 2,089 / 120 files remain valid; no repeat
+packing or broad browser/unit runs. Full CLI still lacks a green terminal result.
+Desktop remains completed by user decision; its remaining checks are waived.
 
-Final development browser gate: **297 passed** in one complete invocation after
-SSE test UUID room isolation, actual connection/hydration and controlled-input
-repair; broadcast/isolation assertions preserved. Full Framework: **2,089 / 120
-files**. Root/all ten non-Desktop types pass. Other unchanged unit proof remains:
-non-Desktop/non-CLI composite **5,579 / 381 files**, two external Database cases
-unrun. Full CLI still lacks a green terminal result; Desktop remains waived.
-Do not repeat unchanged installed matrices or polish verified budgets.
+SVC-04 remains open: actual hosted Workflow binding and independent provider
+API also report running at the event barrier. Real D1 proves first1/attempt2,
+which does not establish Waiting. Preserve the two strict baseline probes;
+do not map Running/paused/private step state to Waiting or upgrade speculatively.
 
-Actual installed Wrangler 4.147.0 / Miniflare 5.20261001.0-alpha still fails strict
-native Waiting. Original uncommitted probes are preserved; the newer failing
-probe is privately archived at `/tmp/cossack-workflow-waiting-current-toolchain/`.
-Do not upgrade speculatively or map Running to Waiting. Earlier failures and
-superseding terminal passes remain in the verification archive.
+Deno token is loaded through interactive zsh from ~/.zshrc. CLI authenticates
+and lists one organization; documented REST management rejects the personal
+token (401). DENO_DEPLOY_API_TOKEN organization token is requested for verified
+immutable-ID cleanup before any app creation. Two new batch-owned Deno harness
+files remain uncommitted pending real hosted acceptance; installed preparation
+passes 1 test, builds and native cached-only graph checks. No Deno app created.
 
-**Readiness recheck — Codex:** GitHub CLI authentication is available. Deno
-2.9.6 exists at the recorded private binary path; official Deploy 0.0.9908
-noninteractive `whoami` fails with `NON_INTERACTIVE_REQUIRED`, requiring a token.
-No open task can currently close through local implementation alone. Retain
-existing verification; do not repeat budgets or installed matrices.
-[Readiness evidence](./release-0.9.0-verification-archive.md#codex-hosted-readiness-blockers-2026-10-06).
-
-**Hosted readiness:** cached Wrangler OAuth is authenticated with one account;
-API-token/account environment and CI credentials remain unconfigured. The private
-fixture `/tmp/cossack-hosted-release-ready-final` passes generated workflow types,
-build, native upload dry-run, authentication guards, retry/event/failure and client
-secret scans. `review.md` describes fresh Worker/Workflow/D1/SSE resources and
-ownership-verified cleanup; `plan.json`, secrets and native logs remain private.
-No remote mutations occurred. Approval for hosted verification is pending; do not
-infer it from elapsed time. Preparation scripts contain no deployment-write command.
-
-Open: **SVC-04, CF-08, CF-09, REL-02, REL-03, REL-04, REL-05 (7)**. Missing:
-actual Workflow Waiting; CF-08 provider Logs/maps/startup; CF-09 hosted CI lifecycle/isolation/retry/unchanged
-production; lost creation identity still requires manual recovery; Deno Deploy and final versioned artifact/runtime
-matrix, then versioning and final audit. Preserve reports.md/.zcodeignore and the
-two earlier strict uncommitted Workflow probes. Desktop remains waived.
+Open: **SVC-04, CF-09, REL-02, REL-03, REL-04, REL-05 (6)**. CF-09 needs actual
+hosted CI lifecycle/isolation/retry/unchanged-production evidence and portable CI
+credentials; cf/Wrangler login alone is not CI authentication. REL-02/03 need Deno
+Deploy/final artifact/runtime/full CLI gates, then REL-04/05 versioning/audit.
+Preserve reports.md/.zcodeignore and the two baseline Workflow probes.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
@@ -65,8 +50,8 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-06)
 
-1. Finish CF-08/09 observability and isolated previews; reuse completed CF-10 acceptance.
-   Local logs/static plans do not prove remote readiness or log ingestion.
+1. Finish CF-09 hosted CI previews; CF-08 and CF-10 acceptance is complete.
+   Local static plans do not prove hosted CI isolation or unchanged production.
 2. Revisit SVC-04 only with real native Waiting proof; event/failure and paused
    process-restart criteria are now verified. Preserve the strict older probes.
 3. Complete REL-02/03 non-Desktop published/generated/build/unit/runtime gates,
@@ -99,7 +84,7 @@ Retain their acceptance evidence without rerunning unchanged matrices.
   signing checks were waived when the user closed Desktop for this release.
   Deno Deploy and the required non-Desktop release matrix remain acceptance gaps.
   Generated Node and Deno standalone draining are verified.
-- Local checks do not prove remote readiness. No live deployment, provisioning, publication, push or credential rotation occurred.
+- Local checks do not prove remote readiness. CF-08 now has actual hosted acceptance and verified cleanup; no production promotion, publication, push or credential rotation occurred.
   Never copy old credential values from Git history.
 
 ## Working rules
