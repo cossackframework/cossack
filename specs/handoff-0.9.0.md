@@ -2,7 +2,7 @@
 
 ## Current handoff — Codex (2026-10-09)
 
-**52 complete / 6 open. CF-08 complete**, versions 0.8.3. [Hosted completion](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+**53 complete / 5 open. SVC-04 and CF-08 complete**, versions 0.8.3. [Hosted completion](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
 Real current installed Worker: caller UUID matches native tail and stored Workers
 Logs; safe fields/credential redaction, provider-authored source remapping and
 10 ms native startup pass all eight evidence criteria. Owned temporary Worker,
@@ -15,10 +15,19 @@ Prior full browser 297 and Framework 2,089 / 120 files remain valid; no repeat
 packing or broad browser/unit runs. Full CLI still lacks a green terminal result.
 Desktop remains completed by user decision; its remaining checks are waived.
 
-SVC-04 remains open: actual hosted Workflow binding and independent provider
-API also report running at the event barrier. Real D1 proves first1/attempt2,
-which does not establish Waiting. Preserve the two strict baseline probes;
-do not map Running/paused/private step state to Waiting or upgrade speculatively.
+SVC-04 original criteria are complete: retained native interruption/restart,
+exact step reuse, retries/events and failure redaction plus new actual hosted
+REST/native binding/public inspection Waiting. [Audit and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
+Strict local Waiting still fails; Miniflare's hibernation transition is disabled.
+The expanded hosted experiment is also red (pause availability, then inconsistent
+routing/404), not a green hosted lifecycle or full CLI result. All three attempts'
+Worker/Workflow/D1/owned DO namespaces are confirmed absent. Preserve baseline
+probes; do not substitute statuses, waive or claim these release tests passed.
+
+Provider acceptance: 6 tests pass, zero skips, including real PostgreSQL 18.6
+and MySQL 8.0.46; four cleanup tests pass.
+Use node scripts/test-database-providers.mjs for disposable POSIX native providers.
+Final root/all ten non-Desktop package types pass. Existing services were untouched.
 
 Deno Deploy acceptance now passes using both tokens loaded through interactive
 zsh from ~/.zshrc. Installed compiled artifacts run on provider Deno 2.9.5:
@@ -29,10 +38,16 @@ verified for this batch. [Evidence](./release-0.9.0-verification-archive.md#code
 Private evidence: /tmp/cossack-deno-hosted-mFjtUA. This proves uploaded compiled
 installed artifacts, not provider source builds or final 0.9.0 packages.
 
-Open: **SVC-04, CF-09, REL-02, REL-03, REL-04, REL-05 (6)**. CF-09 needs actual
+Open: **CF-09, REL-02, REL-03, REL-04, REL-05 (5)**. CF-09 needs actual
 hosted CI lifecycle/isolation/retry/unchanged-production evidence and portable CI
-credentials; cf/Wrangler login alone is not CI authentication. REL-02/03 still
-need final artifact/runtime/full CLI gates, then REL-04/05 versioning/audit.
+credentials; cf/Wrangler login alone is not CI authentication. User authorized
+creating/running/deleting a temporary private GitHub acceptance repository and
+will add CLOUDFLARE_API_TOKEN to ~/.zshrc; final interactive check still finds it
+absent. No GitHub/CI resources created. Portable installed app and reviewed setup/
+teardown: /tmp/cossack-preview-ci-20261009-agent (setup.mjs prepare/provision/run/
+cleanup). Supply verified accountId from prior plan if env absent, revalidate access
+before writes. CI evidence helper has 21 passing regressions; hosted case skipped.
+REL-02/03 still need final artifact/runtime/full CLI gates, then REL-04/05 versioning/audit.
 Preserve reports.md/.zcodeignore and the two baseline Workflow probes.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
@@ -54,8 +69,8 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 
 1. Finish CF-09 hosted CI previews; CF-08 and CF-10 acceptance is complete.
    Local static plans do not prove hosted CI isolation or unchanged production.
-2. Revisit SVC-04 only with real native Waiting proof; event/failure and paused
-   process-restart criteria are now verified. Preserve the strict older probes.
+2. Resolve REL-03 strict local Waiting/full CLI and expanded hosted-test failures;
+   SVC-04 original acceptance is complete. Preserve the strict older probes.
 3. Complete REL-02/03 non-Desktop published/generated/build/unit/runtime gates,
    then versioning and the requirement audit (REL-04/05).
 4. Use at most three implementation agents with exclusive ownership, targeted

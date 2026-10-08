@@ -8,7 +8,7 @@ in scope. Package versions change only after implementation and verification.
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
   tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 52 complete / 6 open.
+  acceptance; the numbered release task count is 53 complete / 5 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -64,7 +64,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 - [x] [SVC-02](./release-0.9.0-plan.md#svc-02) Named UTC schedules share jobs validation, occurrence deduplication, retries and cleanup; generated/installed Cron, local one-shot, build and CLI/MCP inspection pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
 - [x] [SVC-03](./release-0.9.0-plan.md#svc-03) Typed escaped notifications, scoped preferences/inboxes, durable delivery status and explicit Cloudflare/SMTP providers. Source/installed Queue/D1 and loopback SMTP retry, uncertainty and restart acceptance pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
-- [ ] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: typed contracts, native bridge, recipe and read-only inspection are implemented and source-verified. Source and installed native retry, external event, terminal failure and persisted pause/process-restart/resume acceptance pass. Waiting-status acceptance remains unproven: workspace and actual installed Wrangler 4.147.0 / Miniflare 5.20261001.0-alpha report running at the event barrier. [Evidence and exact remaining criterion](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06). Codex (2026-10-09): actual hosted Worker binding and independent provider API also remain running at the external-event barrier; no Waiting substitution. [Hosted result](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+- [x] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: source/installed native interruption, persisted pause/restart/resume, exact step reuse, retry/event and redacted failure acceptance pass; real provider REST, native binding and public inspection now report literal Waiting after an uninterrupted idle interval. Original criteria close through composite evidence. Strict local Waiting and the expanded hosted end-to-end test remain failing REL-03 gates, not waived. [Acceptance mapping and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
 - [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
 ## Cloudflare deployment
@@ -84,8 +84,8 @@ remain archived, and the verification log below retains test evidence.
 ## Release gates
 
 - [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
-- [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex: hosted Deno compiled installed-artifact acceptance passes; full final artifact criteria remain. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
-- [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: standalone Deno draining and hosted Deploy HTTP/SSE/WebSocket acceptance pass; full final matrix remains. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
+- [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex: hosted Deno compiled installed-artifact acceptance passes; full final artifact criteria remain; native Workflow lifecycle criteria are now complete. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
+- [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: standalone Deno draining and hosted Deploy HTTP/SSE/WebSocket acceptance pass; external PostgreSQL/MySQL omissions now pass, while strict local Waiting/full CLI and the final matrix remain. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
 - [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes. Codex: migration-history preservation and rejection paths pass real SQLite acceptance; version/release preparation remains gated. [Evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06).
 - [ ] [REL-05](./release-0.9.0-plan.md#rel-05) Audit every checklist item against implementation and verification evidence before marking the goal complete.
 
@@ -2109,3 +2109,16 @@ hydration and HTTP/SSE/WebSocket mutations. Exact UUID cleanup and independent
 GET404 pass. Hosted test: 1 passed; root and all ten non-Desktop package types
 pass. Desktop checks remain waived. Final artifact/full CLI gates, native
 Waiting and hosted CI remain open. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
+
+### Codex — SVC-04 complete; provider and CI batch (2026-10-09)
+
+**53 complete / 5 open. SVC-04 complete against its original criteria.** Existing
+source/installed native restart/event/retry/failure evidence plus actual hosted
+REST/binding/inspection Waiting close the original lifecycle requirements.
+The new expanded hosted test is still red; it does not replace the failing
+strict local probe or establish a green full CLI gate. All temporary resources
+are confirmed absent. Actual PostgreSQL18.6/MySQL8.0.46 acceptance: 6 passed,
+zero skips; cleanup regressions4 pass. CI preparation/evidence assertions are
+verified locally; hosted CI awaits the promised portable token. Final root/all
+ten non-Desktop types pass. Versions0.8.3; Desktop waived.
+[Commands, failed attempts and exact remaining gates](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).

@@ -6857,3 +6857,56 @@ results are preserved. Remaining criteria: direct Vite budgets, local/provider
 startup, native development faults, source-map resolution and remote logs. See
 [checkpoint](./release-0.9.0-verification-archive.md#codex-cf08-budgets-deno-transport-2026-10-05)
 and [budget contract](../docs/build-budgets.md).
+
+## Codex SVC-04 complete — 2026-10-09
+
+<a id="codex-svc04-complete-2026-10-09"></a>
+
+Original SVC-04 criteria close through retained source/installed native
+interruption, event, retry and failure proof plus actual three-channel hosted
+Waiting. [Acceptance mapping and unresolved release tests](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09). Expanded
+hosted end-to-end and strict local Waiting tests remain red under REL-03; no
+waiver or full hosted lifecycle pass is claimed. Counts: 53 complete / 5 open.
+
+### Original task context (historical)
+
+<a id="svc-04"></a>
+### SVC-04: Durable multi-step workflows
+
+Codex status (2026-10-06): source and installed native acceptance now proves
+external event completion, failed-step retry, redacted terminal failure and
+persisted pause/process-kill/restart/resume without repeating completed steps.
+The harness disables persistence; the restart proof uses a new native Wrangler
+process with the same explicit persisted directory. The strict waiting-status
+assertion remains unsatisfied: workspace tooling and actual installed Wrangler
+4.147.0 / Miniflare 5.20261001.0-alpha report running throughout a 30-second
+event-barrier poll. A simple tooling upgrade has no supporting proof. Do not
+substitute running, paused or inferred private step state for Waiting. Preserve the two earlier uncommitted probes.
+Codex (2026-10-09): actual hosted binding plus independent provider API also
+report running at the external-event barrier after a bounded 65-second poll.
+Two retry effects and one first-step effect persist in real D1; these do not prove
+literal Waiting. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+
+Only the Waiting criterion remains missing from this lifecycle batch; hosted
+durability is not claimed. [Actual installed probe](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
+
+Purpose: Some processes must pause, resume, and retry individual steps across
+requests or restarts. A long async function inside an RPC response cannot provide
+that execution model.
+
+Baseline: Open. This task integrates durable workflow infrastructure.
+
+Approach: Supply typed workflow input, identity, invocation, status, events, and
+inspection around Cloudflare Workflows. Keep step persistence, waits, and retries
+aligned with the provider's actual execution rules. Generate binding/entry setup
+and provide local deterministic tests. Reuse job/notification operations where
+appropriate. Make step side-effect and idempotency requirements explicit.
+
+Start with runtime capability contracts and scaffold generation. Keep the native
+Cloudflare entry separate from core. Do not build a competing workflow engine
+or claim parity for runtimes without a configured durable provider.
+
+Done when: A workflow survives interruption between steps, resumes without
+repeating completed work incorrectly, and reports failures and waiting state.
+Tests cover an external event and a failed retried step. Dependencies: SVC-01,
+RT-24, RT-25, CF-04, and CF-08.

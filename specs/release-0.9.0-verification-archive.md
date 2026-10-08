@@ -14210,3 +14210,108 @@ matrix. SVC-04 literal native Waiting, CF-09 hosted CI lifecycle and final
 REL-02/03/04/05 gates remain open. No GitHub write, package publication or
 existing production promotion. Baseline reports.md, .zcodeignore and both strict
 Workflow probes are preserved and excluded from staging.
+
+## Codex SVC-04, database providers and hosted CI preparation — 2026-10-09
+
+<a id="codex-svc04-waiting-provider-ci-2026-10-09"></a>
+
+Author: **Codex**. **53 complete / 5 open. SVC-04 complete against its original
+criteria; CF-09 and REL-02/03/04/05 open.** Versions remain0.8.3. Desktop remains
+completed by user decision, with outstanding platform checks waived, not passed.
+Three exclusively scoped agents implemented provider tooling, Workflow evidence
+and CI preparation. Coordinator reviewed/integrated all six owned new files and
+verified final types, tests, exact original acceptance mapping and remote absence.
+Baseline reports.md/.zcodeignore and both strict Workflow probe files preserved.
+
+SVC-04 acceptance audit (coordinator plus independent agent):
+- Interruption/resume/no completed-step repeat: retained native persisted runner
+  kills its POSIX process group, starts a new PID against the same state, reads
+  paused state, resumes, sends event and completes with D1first1/attempt2/last1.
+- Failure/reporting/event/retried-step: native source and installed bridge tests
+  prove invalid-event rejection, failed-first/successful-second retry, native
+  errored/public failed WORKFLOW_FAILED and private-error exclusion.
+- Both actual lifecycle logs /tmp/cossack-workflow-batch-source.log and
+  /tmp/cossack-workflow-batch-installed.log terminate4passed/3files. Workflow
+  implementation paths last changed at baa8d7a9, before that4b0f368e proof;
+  unchanged lifecycle gates were not repeated. See the prior
+  [native lifecycle archive](#codex-workflow-native-lifecycle-2026-10-06).
+- Sole previously missing Waiting criterion: fresh deployed retained installed
+  fixture, actual Wrangler4.148.0. After330seconds without instance requests,
+  independent provider REST reports waiting, native binding HTTP200 reports
+  waiting, and public inspection HTTP200 reports waiting. Provider envelope and
+  public inspection match the exact invoked Cossack identity. D1first1/attempt2.
+  Evidence /tmp/cossack-workflow-waiting-20261009-aOl5MB: identity.json,
+  first-wait-provider.json, http-receipts.json and idle start/end timestamps.
+- SVC-01, RT-24, RT-25, CF-04 and CF-08 dependencies are complete. Original
+  Done when does not require all criteria in one hosted run, every interruption
+  point or immediate Waiting after every resume. This is composite original-scope
+  proof, not a claim that the expanded hosted end-to-end test passed.
+
+Expanded hosted experiment remains FAILED, not waived:
+1. aOl5MB reached all three Waiting observations, then immediate pause inspection
+   returned WORKFLOW_PROVIDER_UNAVAILABLE. Polling failed rather than establishing
+   paused/resumed Waiting. Empty successful cf D1-delete output initially masked
+   that failure; independent after-lookups subsequently confirmed full cleanup.
+2. 8HLHiE reached invoke and an empty effects audit, then received HTML that the
+   old parser could not decode. Raw status was not recorded, so its exact HTTP
+   cause is unknown. Cleanup succeeded. Fixture now preserves raw status/text
+   before decoding, bounds known read-only gateway retries and never replays
+   invoke/pause/resume/event/terminate mutations.
+3. Df35Du passed invalid-identity readiness HTTP400, then invoke received an actual
+   Cloudflare-branded404 HTML response. No mutation replay and no idle interval
+   occurred. This proves inconsistent routing; propagation is only a hypothesis.
+   Final terminal /tmp/cossack-workflow-waiting-hosted-third-20261009.log is
+   4unitpassed/1hostedfailed, not a green runtime result. No further speculative
+   deployment cycles were run.
+All three owned Worker/Workflow/D1/DO namespaces are confirmed absent with
+immutable receipts. Coordinator independently re-queried Worker/Workflow/D1 for
+all three, saving coordinator-*-absent.json. Earlier and latest owned namespace
+UUIDs were independently checked absent. Private directories mode700/logs600.
+
+Local strict Waiting/full CLI remains red under REL-03. Workspace
+Wrangler4.114.0/Miniflare4.20260722.0 and retained installed
+Wrangler4.148.0/Miniflare5.20261006.0-alpha maps show a five-minute grace period,
+commented hibernation abort and no Waiting assignment. Source locations:
+node_modules/miniflare/dist/src/workers/workflows/binding.worker.js.map and
+/tmp/cossack-hosted-20261009/app/node_modules/.pnpm/miniflare@5.20261006.0-alpha_@types+node@22.20.5/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js.map.
+[Official current source](https://github.com/cloudflare/workers-sdk/blob/main/packages/workflows-shared/src/lib/gracePeriodSemaphore.ts)
+and [native statuses](https://developers.cloudflare.com/workflows/build/workers-api/)
+provide context; five minutes is not a documented hosted timing guarantee.
+No provider patch, private-state inference, status substitution or test waiver.
+
+REL-03 external-provider omissions close: coordinator final
+`node scripts/test-database-providers.mjs` proves **6passed/zero skips**, actual
+PostgreSQL18.6 and Oracle MySQL8.0.46. Evidence
+/tmp/cossack-provider-acceptance-ip6yF4 contains versions, Vitest JSON and cleanup
+receipts. Private loopback data directories and exclusively owned POSIX process
+groups are removed; existing services/databases/Docker untouched. The runner
+supports explicit native binary path overrides; it requires POSIX and optional
+pg/mysql2 drivers. Agent SIGTERM-during-testcommand evidence
+/tmp/cossack-provider-acceptance-egd2Hz confirms13owned descendants exited;
+startup interruption also cleaned. SIGKILL of the runner cannot execute cleanup.
+Final focused `pnpm --filter @cossackframework/database exec vitest run test/provider-runner.test.ts`
+passes4. No full database/monorepo matrix rerun or package repack.
+
+CF-09 preparation only: user explicitly authorizes a temporary private GitHub
+acceptance repo, reviewed manual workflow installation/run and deletion; portable
+CLOUDFLARE_API_TOKEN promised in ~/.zshrc but final interactive presence check is
+false. No GitHub/cloud CI resources created. Prepared fresh installed app
+/tmp/cossack-preview-ci-20261009-agent/app uses relative retained tarballs and
+pnpm11.19.0 locked install; setup.mjs verifies access/account and immutable
+creation/cleanup ownership before writes. Pipeline helper checks real run IDs,
+actual workflow bytes on both refs, remote gitblob hashes/portable lock, successful
+create, failed-smoke journal, cleanup retry, staging D1 effects and unchanged
+production snapshot. These checks have not run on hosted CI. Full requirement
+remains open; fake snapshots in pure regression tests are not provider evidence.
+
+Final integrated checks: combined CLI fixture regression invocation passes22
+with2explicit hosted skips; after later Workflow capture fixes, focused
+`pnpm --filter cossack exec vitest run tests/workflow-waiting-resolution.test.js`
+passes4with1hostedskip. Unchanged CI helper's21regressions remain valid.
+Root `pnpm tsc --noEmit` passes after final source changes; log
+/tmp/cossack-batch-final-root-types-20261009.log. All ten non-Desktop package
+checks pass via `node scripts/typecheck.mjs --exclude-desktop` in
+/tmp/cossack-batch-package-types-20261009.log. JavaScript syntax/owned whitespace
+pass. No broad unchanged browser/installed/unit reruns or version bump.
+Remaining tasks: CF-09 hosted CI, REL-02 final artifacts, REL-03 full CLI/runtime/
+versioned matrix, REL-04 versioning/doc audit and REL-05 final requirement audit.

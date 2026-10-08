@@ -126,8 +126,11 @@ failed/terminated/unknown; an unfamiliar provider status remains unknown.
 The current local Miniflare provider can report `running` during an external
 event wait. The wrapper preserves that provider status; it does not infer a
 waiting state from private step outputs. A running status alone does not prove
-that an authored callback is executing. Native waiting-status acceptance remains
-open in the 0.9.0 checklist. Local native acceptance verifies completed-step
+that an authored callback is executing. Hosted acceptance verifies literal
+Waiting through the provider API, native binding and public inspection after an
+uninterrupted idle interval; its timing remains provider-owned. The strict local
+Waiting probe and broader hosted lifecycle test are still failing release gates.
+Local native acceptance verifies completed-step
 reuse after pausing at an event boundary, killing Wrangler, and starting a new
 process against the same persisted state directory. It also verifies external
 event completion, a retried step and redacted terminal failure. This does not

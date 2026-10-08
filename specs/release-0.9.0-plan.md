@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 52 complete and 6 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 53 complete and 5 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -12,7 +12,8 @@ Historical status statements inside task sections do not override the checklist.
 
 Codex hosted batch (2026-10-09): CF-08 is complete with real stored Workers
 Logs, provider-remapped authored stack and native startup evidence, plus verified
-owned-resource cleanup. Hosted Workflow Waiting remains unproven. Deno hosted
+owned-resource cleanup. SVC-04 now closes with actual hosted Waiting plus retained
+native lifecycle evidence ([audit](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09)). Deno hosted
 compiled-artifact acceptance now passes with verified immutable-ID cleanup;
 organization and CLI tokens are available through interactive zsh.
 [Exact evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
@@ -162,54 +163,8 @@ in the archive. The release checklist retains outcomes and verification evidence
 | <a id="cf-06"></a>CF-06 | [Built-artifact runtime tests](./release-0.9.0-plan-archive.md#cf-06) |
 | <a id="cf-07"></a>CF-07 | [Public-only SSG and protected assets](./release-0.9.0-plan-archive.md#cf-07) |
 | <a id="cf-11"></a>CF-11 | [Tracked credential removal](./release-0.9.0-plan-archive.md#cf-11) |
+| <a id="svc-04"></a>SVC-04 | [Original context and completed acceptance](./release-0.9.0-plan-archive.md#codex-svc04-complete-2026-10-09) |
 | <a id="rel-01"></a>REL-01 | [Reported regressions](./release-0.9.0-plan-archive.md#rel-01) |
-
-## New application services
-
-These are application features, not replacements for component lifecycle tasks.
-Each feature needs a portable contract and explicit provider support. A local
-test adapter must not be described as durable production infrastructure.
-
-<a id="svc-04"></a>
-### SVC-04: Durable multi-step workflows
-
-Codex status (2026-10-06): source and installed native acceptance now proves
-external event completion, failed-step retry, redacted terminal failure and
-persisted pause/process-kill/restart/resume without repeating completed steps.
-The harness disables persistence; the restart proof uses a new native Wrangler
-process with the same explicit persisted directory. The strict waiting-status
-assertion remains unsatisfied: workspace tooling and actual installed Wrangler
-4.147.0 / Miniflare 5.20261001.0-alpha report running throughout a 30-second
-event-barrier poll. A simple tooling upgrade has no supporting proof. Do not
-substitute running, paused or inferred private step state for Waiting. Preserve the two earlier uncommitted probes.
-Codex (2026-10-09): actual hosted binding plus independent provider API also
-report running at the external-event barrier after a bounded 65-second poll.
-Two retry effects and one first-step effect persist in real D1; these do not prove
-literal Waiting. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
-
-Only the Waiting criterion remains missing from this lifecycle batch; hosted
-durability is not claimed. [Actual installed probe](./release-0.9.0-verification-archive.md#codex-module-graphs-unit-gates-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
-
-Purpose: Some processes must pause, resume, and retry individual steps across
-requests or restarts. A long async function inside an RPC response cannot provide
-that execution model.
-
-Baseline: Open. This task integrates durable workflow infrastructure.
-
-Approach: Supply typed workflow input, identity, invocation, status, events, and
-inspection around Cloudflare Workflows. Keep step persistence, waits, and retries
-aligned with the provider's actual execution rules. Generate binding/entry setup
-and provide local deterministic tests. Reuse job/notification operations where
-appropriate. Make step side-effect and idempotency requirements explicit.
-
-Start with runtime capability contracts and scaffold generation. Keep the native
-Cloudflare entry separate from core. Do not build a competing workflow engine
-or claim parity for runtimes without a configured durable provider.
-
-Done when: A workflow survives interruption between steps, resumes without
-repeating completed work incorrectly, and reports failures and waiting state.
-Tests cover an external event and a failed retried step. Dependencies: SVC-01,
-RT-24, RT-25, CF-04, and CF-08.
 
 ## Cloudflare development and deployment
 
@@ -287,8 +242,8 @@ tarball/runtime/recipe matrix and executable documentation coverage remain open.
 export targets, 74 Node imports, strict Bundler/NodeNext declaration imports,
 representative generated compositions, and fresh native D1 migration/model
 acceptance. Templates now declare authoritative operations; existing applied
-callback migration histories still reject changed checksums. Native Workflow Waiting and the remaining final artifact/runtime matrix keep
-REL-02 open. A subsequent source/installed batch compiles all four unchanged
+callback migration histories still reject changed checksums. The remaining final artifact/runtime matrix keeps REL-02 open; native Workflow
+lifecycle criteria now close through retained interruption proof and real hosted Waiting. A subsequent source/installed batch compiles all four unchanged
 Workflow guide snippets with generated Cloudflare types, checks NodeNext public
 exports and rejects invalid input/event types. Application-owned operation and
 authorization stubs prove contracts only; they do not implement those services.
@@ -359,6 +314,12 @@ Full Framework now passes 2,089 tests / 120 files after the public reload fix;
 other unchanged package unit proof is retained. This closes the current local
 browser criterion, not the full final-versioned/CLI/hosted runtime gate.
 [Final commands and failed iterations](./release-0.9.0-verification-archive.md#codex-local-observability-browser-gates-2026-10-06).
+
+Codex (2026-10-09): previously skipped PostgreSQL/MySQL cases execute against
+isolated real native providers: 6 passed, zero skips; owned processes/data removed.
+Strict local Waiting/full CLI remains red, as does the expanded hosted experiment.
+Hosted Waiting closes SVC-04's original criterion, not those release tests.
+[Batch evidence](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
 
 Start in root scripts and package test/build scripts. Fix meaningful failures
 instead of changing assertions only to preserve a green gate.
