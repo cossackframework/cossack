@@ -15035,3 +15035,241 @@ Coordinator record validation: **627 local links/anchors resolve**; all 58 numbe
 rows reconcile to 55 complete / 3 open. Owned-file syntax/whitespace checks pass.
 Only four new acceptance helper/test files and five release-record files belong
 to this batch. User reports/tool settings/baseline Workflow probes remain excluded.
+
+<a id="codex-final-release-acceptance-2026-10-09"></a>
+## Codex — final 0.9.0 release acceptance (2026-10-09)
+
+**REL-03, REL-04 and REL-05 complete; 58 complete / 0 open.** This records
+verified release preparation, not npm publication, tagging, upstream push or
+production promotion. Desktop remains complete by user decision; its remaining
+platform checks are waived, not passed. Its version metadata alone was aligned.
+The [Workflow scope decision](./release-0.9.0-workflow-acceptance.md) accepts
+actual hosted literal Waiting and native local retry/events/pause/restart/resume,
+exact effects, redacted failure and cleanup. The original user-owned strict local
+probe is byte-identical and excluded explicitly; no provider status was patched.
+
+### Terminal implementation gate and exact exclusions
+
+The first broad invocation failed: **1,259 passed / 2 failed / 24 skipped**,
+143 files passed / 2 failed / 9 skipped, 3,101.51 seconds. Its deletion case had
+an enclosing five-second timeout around three CLI processes, each already bounded
+at 20 seconds. Its browser case raced a real HMR document replacement while reading
+privacy channels. The repaired deletion test retains child deadlines and adds
+exact before/after bytes and inventory assertions; its enclosing deadline is 65
+seconds. Browser privacy uses one document/overlay snapshot and retries only the
+specific destroyed-navigation-context exception for five seconds. Assertions are
+outside the retry and cannot be retried into a pass. Private best-effort receipts
+cannot prevent cleanup. The original broad name filter also excluded six shared
+non-Desktop tests accidentally; the corrected filter includes them.
+
+Targeted repairs passed: deletion one case (38 filtered); compiler native browser
+one case, zero skips; guidance four cases, zero skips. Then this complete invocation
+ran to terminal success (no interrupted quiet runner):
+
+```sh
+COSSACK_DENO_BINARY="$(cat /tmp/cossack-deno-binary.txt)" pnpm --filter cossack exec vitest run \
+  --exclude tests/workflows-release-acceptance.test.js \
+  --maxWorkers=1 --no-file-parallelism \
+  --testNamePattern='^(?!.*(?:builds the generated Node application Desktop side target|rejects a generated Desktop target|builds a portable Cloudflare application Desktop target|executes a generated Desktop application in Electron|executes Desktop development with the native Vite runner))' \
+  --reporter=default --reporter=json \
+  --outputFile=/tmp/cossack-release-090-final/corrected-cli.json
+```
+
+**1,267 passed / 0 failed / 18 skipped; 146 files passed / 8 files skipped;
+2,930.80 seconds.** Generated native runtime: 60 passed, six Desktop cases waived.
+Shared guidance/release-build tests are included. The new native local Workflow
+lifecycle and process restart gate, compiler/browser privacy, Node/Deno draining
+and the other selected generated/browser/runtime cases pass. Source full CLI
+completed before version metadata alignment and the later isolated Database loader
+fix. It is not relabeled as a second full 0.9.0 invocation: final public payload
+comparison and fresh affected tests below establish continued applicability.
+
+Six skipped cases are actual Desktop waivers: Node side-target build, unsupported
+native Cloudflare database rejection, portable Cloudflare side-target build,
+Electron native RPC/persistence, and the two native Desktop development variants.
+The remaining twelve opt-ins have separate scoped proof rather than passing claims
+from this invocation. Exact skipped names are listed at the end of this receipt.
+
+### Final versions, build, types and package suites
+
+`pnpm bump 0.9.0` aligns all 13 packages and three internal ranges; root metadata
+is also 0.9.0. Generated public scaffold templates derive these final versions.
+`pnpm install --lockfile-only --ignore-scripts --offline` passes; workspace links
+leave `pnpm-lock.yaml` byte-identical, with no third-party dependency upgrade.
+Root/package/internal/template metadata checks pass.
+
+- `pnpm build:release`: all nine actual non-Desktop build stages pass. Auth
+  publishes TypeScript source and has no build script; it is checked separately.
+- `pnpm tsc --noEmit` passes. Root is a solution check; explicit
+  `node scripts/typecheck.mjs --exclude-desktop` also passes all ten non-Desktop
+  package checks. Database's check and root types pass again after its code fix.
+- `pnpm --filter @cossackframework/database audit:bundle`: 32 runtime-neutral
+  modules and Workers-safe graphs pass, including after the final tooling repair.
+- Eleven complete non-CLI/non-Desktop package suites pass: Renderer 343/25 files;
+  Core 1,716/107; UI 653/49; Database final 126/22 with two provider opt-ins;
+  Auth 298/12; Framework 2,089/120; Node 52/9; Deno 42/8; test-utils 17/3;
+  Scaffold 179/16; Studio 69/12. **5,584 passed across 383 files.**
+- First default-parallel Framework run failed five cases (three timeouts and two
+  consequences); the unchanged three affected files passed all ten targeted tests.
+  The complete Framework suite then passed with one worker: 2,089 tests, 173.73
+  seconds. Other already-green suites were retained. Database and Studio complete
+  suites pass again after the loader change, 20.41/12.84 seconds.
+- `node scripts/test-database-providers.mjs`: six native tests, zero skips, actual
+  PostgreSQL 18.6 and MySQL 8.0.46. This executes the two otherwise skipped provider
+  obligations; owned process groups/data directories are independently removed.
+  The later loader-only change does not alter provider/runtime modules.
+
+### Public artifact and installed acceptance
+
+Twelve non-Desktop 0.9.0 tarballs were packed once after explicit build/test/audit
+using `pnpm --dir <package> --config.ignore-scripts=true pack`. No hook bypass is
+claimed as test evidence. The one later Database code repair required rebuilding
+and repacking only Database; the other eleven archives were reused unchanged.
+The final set is `/tmp/cossack-release-090-final/tarballs-final`, and `packed.json`
+records each public artifact. The original set and failed receipts remain retained.
+
+Tarball-only consumer `/tmp/cossack-local-pack-8zgn0J/minimal-production` uses actual
+`.pnpm/@file+` package installations, not workspace aliases. The final full-stack
+consumer is `/tmp/cossack-local-pack-X9ObgH/app`; both install the repaired Database
+archive. File overrides were updated along with manifests before verifying installed
+code provenance. Primary native tooling: Node 24.19.0, TypeScript 7.0.2, Wrangler
+4.114.0, Cloudflare Vite plugin 1.47.0 and Vite 8.1.4; generated compatibility date
+2026-06-06 and `nodejs_als`/`enable_request_signal` flags remain authored defaults.
+
+`COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --reuse-artifacts=/tmp/cossack-release-090-final/tarballs --published-release-only`
+passes **204 concrete export mappings, 90 Bundler and 88 NodeNext declaration
+imports, 74 native Node imports**; 98 targets require separate app/native fixtures.
+Auth's TypeScript source is not claimed as an implicit native Node runtime import.
+Its three declared export targets are checked strictly as present/not-runtime-verified.
+
+The 11-file combined installed CLI batch passes **11 tests / 0 skips**, 161.90
+seconds: local Workflow lifecycle, Workflow guidance, all nine migration snippets,
+agent composition, protected resource, two-Worker realtime, background preferences,
+preview recipe, Node/Deno draining and compiler browser privacy. These consume
+0.9.0 artifacts. Protected/realtime fixtures now inherit generated/compiled
+compatibility dates instead of forcing an unsupported October date; security,
+concurrency, mutation, failure and cleanup assertions remain unchanged.
+
+Installed first attempts remain failed evidence: newer 4.148.0 native Workflow
+returned 400 and Node draining lacked `@hono/node-server`; pinning Wrangler alone
+left an incompatible Vite plugin; coherent pinning then exposed the two fixture
+date overrides. Final coherent-tooling batch passes after those repairs. The newer
+native Workflow failure is not accepted or hidden as a pass. Newer ordinary
+Wrangler 4.148.0/plugin 1.63/Vite 8.3.3 generated builds have separate scaffold proof.
+
+`COSSACK_KEEP_SMOKE=1 node scripts/test-local-scaffold.mjs --reuse-artifacts=/tmp/cossack-release-090-final/tarballs --scaffold-only`
+passes generated Cloudflare minimal/Markdown/SSG and Deno/Node apps, public package
+provenance, strict types/builds, code stripping, static route/sitemap exclusions,
+feature composition/ejected UI, migration plan/apply/seeding/schema checks, Studio
+readiness and adapter conversion. This metadata/application-runtime gate preceded
+the isolated loader repair; generated content and runtime modules are unchanged.
+Fresh repaired-tooling native migration acceptance below supplements it.
+
+### Offline guides, native configuration and final tooling repair
+
+All five installed verifier stages pass, using the same public artifacts:
+`verifyConfigTypes` (20.52s), `verifyAgentDocumentation` (211.438s),
+`verifyConfigHydration` (23.378s), `verifyDeploymentGuide` (88.439s), and
+`verifyGeneratedMigrationPlans` (41.187s). First four use the minimal consumer;
+the generated full-stack migration stage uses the full-stack consumer and primary
+native tooling. Invoke exported verifiers from normal `.mjs` scripts, or the
+migration script's documented file entrypoint; no special loader flag is needed.
+
+Packaged guidance: **109 guides / 116 examples**, all compiled/executed at their
+reported boundary (76 curated, 35 additional, five Auth). Deno import examples
+use their explicit Node shim; jsdom/helper contract examples are not claimed as
+native browser/provider execution. Separate installed Cloudflare browser/runtime
+checks prove HTTP/SSE/WebSocket traces, CLI/MCP parity, actions/resources/tasks/
+public forms, hydration/secret isolation and production/source-map stripping.
+UI contracts, manifest refresh/removal and exact catalog/version/export signatures
+match through actual CLI and MCP. The complete documentation verifier finishes
+with **zero blocked network/IPC attempts**; its guard is self-tested and unchanged.
+
+The failed verifier attempts remain explicit: forced D1 fixture date exceeded the
+pinned runtime; obsolete Auth legacy-export assertions contradicted its actual
+three declared exports; final offline guard caught two swallowed tsx IPC attempts;
+a minimal consumer lacked full-stack Markdown/dashboard dependencies. Native D1
+now uses a profile generated by the installed public CLI, including for Node/Deno
+consumers. Strict Auth metadata assertions reflect declared source exports. The
+full-stack stage now runs with an installed full-stack fixture, not substituted
+modules or weakened type assertions.
+
+Both Studio examples triggered loader IPC through eager Database tooling imports.
+`packages/database/src/tooling/index.ts` now imports/registers tsx only inside
+`loadORMConfig`; imported inspection/helpers do not activate a loader. Actual
+unchanged examples show **two attempts before / zero after**, including embedded
+readiness/abort/close. A new native-child regression proves the guard denies fetch,
+public tooling import has zero swallowed network/IPC attempts, and actual TS
+configuration still loads on demand. New/existing tooling/inspection: **33 passed**;
+affected CLI database/Studio integration: **15 passed**, 20.79 seconds. Complete
+Database/Studio suites, Database build/types, root types, bundle audit, repaired
+installed guides and native generated migrations also pass.
+
+One coordinator migration invocation used stdin `--input-type=module`; native
+eval Workers inherited that flag and blocked the D1 bridge. It was interrupted,
+not counted as passing; owned processes were terminated and its temporary root
+removed. Rerun from a normal `.mjs` file passes all original assertions: seven
+complete read-only plans, nine zero-parameter DDL statements, no authored/history
+tables from planning, generated types/build, empty native D1 followed by actual
+User/Session insert/find/count/public-ID checks. No product assertion was reduced.
+
+### Retained proof, final audit and ownership
+
+Comparison of all twelve packages covers **1,381 files**, with unchanged counts.
+Core changes only the manifest and truthful Workflow guidance; CLI/Framework/
+adapter/Renderer/Auth/UI/Scaffold runtime JS and declarations are byte-identical.
+Database changes only lazy loader activation and tooling source/declaration maps;
+its application/provider/migration runtime bytes and public declarations are
+unchanged, and changed tooling has fresh evidence above. Test-utils additionally
+changes only build-info metadata. Studio normalized JavaScript differs only by
+0.9.0/version/asset references; CSS adds `.static{position:static}` (24 bytes),
+with existing styles unchanged. Its full units and installed embedded examples pass.
+
+The earlier **297-case browser** and actual hosted Workflow Waiting/lifecycle,
+preview CI, staging scenario, CF-08 Tail/stored Logs/source remapping/startup and
+Deno Deploy receipts retain their original recorded versions/scope through those
+unchanged runtime graphs. They were not rerun as 0.9.0 hosted tests. Exact staging
+migration selection/application still has original hosted CI proof; fresh installed
+repaired tooling additionally proves native target/config/migration behavior.
+Hosted resource/repository deletion and production unchanged checks retain their
+independent archived evidence. Deleted options are never reused.
+
+Coordinator reviewed all 58 original linked Purpose/Done when criteria, the
+[requirement map](./release-0.9.0-requirement-audit.md), five-scenario audit, current
+source/agent diff, final installed provenance and payload invalidation boundaries.
+No original requirement is shortened. Nine migration TypeScript fences and three Workflow skill
+code fences remain byte-identical. Four unrelated baseline files remain
+byte-identical and unstaged: `reports.md`, `.zcodeignore`, original Workflow
+fixture and test. Local references/anchors, 58 distinct task/audit IDs and all
+current counts are validated. Final owned diff passes whitespace/syntax checks.
+Private baseline hashes, exact receipts, JSON results and provenance comparisons
+remain in `/tmp/cossack-release-090-final`. Only verified batch-owned files are
+staged/committed. No numbered task or external acceptance blocker remains within
+the accepted scope; Desktop checks and newer native Workflow support are not
+invented passing claims.
+
+Final record validation: **1,132 local links/anchors resolve; 58 distinct checked
+task IDs and 58 distinct audit rows; zero open tasks.** All 12 authored fences,
+four unrelated baseline hashes and the lockfile remain unchanged. Owned syntax
+and whitespace checks pass.
+
+### Exact full-CLI skips
+
+- `agent-release-scenario.test.js`: composes an inspected tarball app without overwriting edits and reports CLI/MCP metadata and diagnostics consistently.
+- `aggregate-budget-installed.test.js`: reuses native installed CLI measurement batches, auxiliary-only=false.
+- `aggregate-budget-installed.test.js`: reuses native installed CLI measurement batches, auxiliary-only=true.
+- `background-release-scenario.test.js`: returns before native background retry, records truthful notification outcomes, respects changed preferences and releases consumer facilities.
+- `cloudflare-preview-hosted-ci.test.js`: executes the reviewed workflow on actual hosted GitHub and verifies provider isolation.
+- `deno-deploy-hosted-acceptance.test.js`: prepares installed Deno artifacts and optionally verifies real Deploy HTTP/SSE/WebSocket acceptance.
+- `generated-runtime-build.test.js`: builds the generated Node application Desktop side target with its HTTP boundary.
+- `generated-runtime-build.test.js`: rejects a generated Desktop target that retains a native Cloudflare database.
+- `generated-runtime-build.test.js`: builds a portable Cloudflare application Desktop target without the Workers Vite plugin.
+- `generated-runtime-build.test.js`: executes a generated Desktop application in Electron with native RPC and persistence.
+- `generated-runtime-build.test.js`: executes Desktop development with the native Vite runner and shared traces (CLI: false).
+- `generated-runtime-build.test.js`: executes Desktop development with the native Vite runner and shared traces (CLI: true).
+- `hosted-staging-scenario-ci.test.js`: actual hosted staging migration, protected resources and preview cleanup.
+- `preview-creation-native.test.js`: persists empty creation proof before real Wrangler deployment fails and safely retries cleanup.
+- `preview-installed-acceptance.test.js`: loads the new public CLI and CI recipe from changed tarballs alone.
+- `protected-resource-scenario.test.js`: composes a protected typed resource, URL filter and validated durable edit without granting forged RPC authority.
+- `realtime-release-scenario.test.js`: composes permitted concurrent editors, two native Workers, disconnect outcomes and a subscribed private-scope observer.
+- `workflow-waiting-resolution.test.js`: proves literal hosted Waiting after an uninterrupted native idle interval and guarded cleanup.

@@ -102,13 +102,15 @@ export async function verifyProtectedResourceScenario(installedRoot) {
           await fs.symlink(await fs.realpath(path.join(source, name)), path.join(target, name));
       } else await fs.symlink(await fs.realpath(source), target, 'dir');
     }
+    const generatedConfig = JSON.parse(await fs.readFile(path.join(app, 'wrangler.jsonc'), 'utf8'));
+    assert.match(generatedConfig.compatibility_date, /^\d{4}-\d{2}-\d{2}$/);
     await fs.writeFile(
       path.join(app, 'wrangler.jsonc'),
       JSON.stringify(
         {
           name: 'protected-resource-local',
           main: './src/index.ts',
-          compatibility_date: '2026-10-09',
+          compatibility_date: generatedConfig.compatibility_date,
           compatibility_flags: ['nodejs_als', 'enable_request_signal'],
           assets: { binding: 'ASSETS', run_worker_first: true },
           vars: { APP_URL: 'http://localhost', APP_LOCALE: 'en' },

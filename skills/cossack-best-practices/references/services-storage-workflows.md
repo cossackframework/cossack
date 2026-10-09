@@ -87,7 +87,12 @@ not a durable engine. Termination cancels owned timers but cannot stop callback
 I/O that ignores cancellation. Read `local-workflow-lifecycle` and
 `docs/workflows.md` for complete typed examples.
 
-Native SVC-04 acceptance remains open: the pinned local Cloudflare provider
-reports running while awaiting an external event. Native waiting-status inspection,
-process interruption/resumption and event completion are not proven. Do not
-claim local example execution closes those native release requirements.
+SVC-04 native acceptance is complete at its recorded composite scope. Native
+persisted local lifecycle acceptance proves retry effects, pause, process restart,
+resume, validated events, completion, failure redaction and cleanup. Actual hosted
+Cloudflare acceptance separately proves literal Waiting before and after
+pause/resume, with exact retry/event effects and cleanup. The pinned local
+Miniflare provider does not prove literal Waiting; release acceptance uses the
+approved hosted/local split. The process-only example above proves only local
+typed event delivery, completion and redacted process durability. Do not present
+this example as native restart or hosted Waiting evidence.

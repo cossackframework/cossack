@@ -20,7 +20,8 @@ import {html} from '@cossackframework/renderer';
   await fs.writeFile(filename, malformed);
   await fs.writeFile(path.join(root, 'src/pages/layout.ts'), "import {Cossack,Page} from '@cossackframework/core';import {html} from '@cossackframework/renderer';@Page()export default class Layout extends Cossack{render(){return html`${this.children}`;}}\n");
   await fs.rm(path.join(root, 'src/pages/error.ts'), { force: true });
-  let child, exited, output = '', browser, spawnFailed = false;
+  let child, exited, output = '', browser, page, lastFault, spawnFailed = false, phase = 'malformed-startup';
+  const frames = [], diagnostics = [];
   const launch = () => {
   child = spawn(process.execPath, ['--input-type=module', '-e', `
 import {createServer} from 'vite';
@@ -48,6 +49,7 @@ process.on('message',async()=>{await server.close();process.exit(0);});
       expect(output.replace(/\u001b\[[0-9;]*m/g, '')).toContain(PRIVATE);
       expect(output).not.toContain('COMPILER_BROWSER_ORIGIN=');
       refusedMalformedStartup = true;
+      phase = 'healthy-restart';
       await fs.writeFile(filename, valid);
       output += '\nHEALTHY_PROCESS_START\n';
       launch();
@@ -55,17 +57,32 @@ process.on('message',async()=>{await server.close();process.exit(0);});
     }
     const origin = /COMPILER_BROWSER_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    const frames = [], diagnostics = [];
+    page = await browser.newPage();
     page.on('websocket', socket => socket.on('framereceived', frame => frames.push(String(frame.payload))));
     page.on('console', message => diagnostics.push(message.text()));
     page.on('pageerror', error => diagnostics.push(error.message));
     const assertPublic = async () => {
-      const overlay = await page.evaluate(() => Array.from(document.querySelectorAll('vite-error-overlay')).map(node => node.shadowRoot?.textContent ?? node.textContent).join('\n'));
-      expect((await page.content()) + overlay + frames.join('\n') + diagnostics.join('\n')).not.toContain(PRIVATE);
-      expect(overlay + frames.join('\n')).not.toContain(filename);
+      // Native HMR may replace the document while the privacy snapshot is read.
+      // Retry only that transient navigation error; privacy assertions stay
+      // outside the retry loop and can never be retried into a passing state.
+      const deadline = Date.now() + 5000;
+      let snapshot;
+      while (!snapshot) {
+        try {
+          snapshot = await page.evaluate(() => ({
+            content: (document.doctype ? new XMLSerializer().serializeToString(document.doctype) : '') + document.documentElement.outerHTML,
+            overlay: Array.from(document.querySelectorAll('vite-error-overlay')).map(node => node.shadowRoot?.textContent ?? node.textContent).join('\n'),
+          }));
+        } catch (error) {
+          if (!/Execution context was destroyed, most likely because of a navigation/.test(error.message) || Date.now() >= deadline) throw error;
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      expect(snapshot.content + snapshot.overlay + frames.join('\n') + diagnostics.join('\n')).not.toContain(PRIVATE);
+      expect(snapshot.overlay + frames.join('\n')).not.toContain(filename);
     };
     const safeResponse = async response => {
+      lastFault = { status: response.status(), headers: response.headers(), body: await response.text() };
       expect(response.status()).toBe(500);
       const requestId = response.headers()['x-cossack-request-id'];
       expect(requestId).toMatch(UUID);
@@ -81,19 +98,24 @@ process.on('message',async()=>{await server.close();process.exit(0);});
       await expect.poll(() => output.replace(/\u001b\[[0-9;]*m/g, ''), { timeout: 10000 }).toContain(PRIVATE);
       await fs.writeFile(filename, valid);
     }
+    phase = 'healthy-browser-connect';
     await expect.poll(async () => { const r = await fetch(origin + '/compiler-browser', { signal: AbortSignal.timeout(5000) }); return r.status === 200 && (await r.text()).includes('Compiler browser recovery passed'); }, { timeout: 20000 }).toBe(true);
     await page.goto(origin + '/compiler-browser');
     await expect.poll(() => frames.some(frame => frame.includes('"type":"connected"')), { timeout: 15000 }).toBe(true);
     await expect.poll(() => page.locator('p').filter({ hasText: 'Compiler browser recovery passed' }).count()).toBe(1);
     frames.length = 0;
     diagnostics.length = 0;
+    phase = 'malformed-hmr';
     await fs.writeFile(filename, malformed);
     // A real invalidated browser module produces an HMR error, reload, or update frame.
     await expect.poll(() => frames.some(frame => /"type":"(?:error|full-reload|update)"/.test(frame)), { timeout: 20000 }).toBe(true);
+    phase = 'malformed-http';
     let fault;
     await expect.poll(async () => { fault = await page.request.get(origin + '/compiler-browser'); return fault.status(); }, { timeout: 20000 }).toBe(500);
     await safeResponse(fault);
+    phase = 'malformed-browser-privacy';
     await assertPublic();
+    phase = 'healthy-hmr-recovery';
     await fs.writeFile(filename, valid);
     await expect.poll(async () => { const r = await page.request.get(origin + '/compiler-browser'); return r.status() === 200 && (await r.text()).includes('Compiler browser recovery passed'); }, { timeout: 20000 }).toBe(true);
     await page.goto(origin + '/compiler-browser');
@@ -102,10 +124,17 @@ process.on('message',async()=>{await server.close();process.exit(0);});
     expect(child.exitCode).toBeNull();
     return { startup: refusedMalformedStartup ? 'refused-with-private-parse-diagnostic' : 'redacted', hmr: 'redacted', recovered: true };
   } finally {
-    await browser?.close();
-    const diagnosticDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-compiler-browser-private-'));
-    await fs.chmod(diagnosticDirectory, 0o700);
-    await fs.writeFile(path.join(diagnosticDirectory, 'terminal.log'), output, { mode: 0o600 });
+    // Private, best-effort receipts must never replace an assertion failure or
+    // prevent ownership cleanup. Keep raw browser channels out of CLI output.
+    try {
+      const diagnosticDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-compiler-browser-private-'));
+      await fs.chmod(diagnosticDirectory, 0o700);
+      await fs.writeFile(path.join(diagnosticDirectory, 'terminal.log'), output, { mode: 0o600 });
+      const content = await page?.content().catch(() => undefined);
+      const overlay = await page?.evaluate(() => Array.from(document.querySelectorAll('vite-error-overlay')).map(node => node.shadowRoot?.textContent ?? node.textContent).join('\n')).catch(() => undefined);
+      await fs.writeFile(path.join(diagnosticDirectory, 'browser.json'), JSON.stringify({ phase, frames, diagnostics, content, overlay, lastFault }, null, 2), { mode: 0o600 });
+    } catch {}
+    await browser?.close().catch(() => undefined);
     clearTimeout(timer);
     if (child.exitCode === null && child.connected) child.send('close');
     let cleanup;

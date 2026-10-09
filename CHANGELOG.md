@@ -2,10 +2,10 @@
 
 ## 0.9.0 — Unreleased
 
-This entry describes the implemented 0.9.0 work. It is a release candidate
-record, not an announcement that 0.9.0 is available. Package versions remain
-0.8.3. Complete release verification, version alignment and
-the final requirement audit remain open in the [release checklist](specs/release-0.9.0.md).
+This entry describes verified release preparation for 0.9.0. Root and all package
+versions are 0.9.0; final non-Desktop artifacts, release checks and the 58-task
+audit are complete. Packages remain unpublished. The [release checklist](specs/release-0.9.0.md)
+records acceptance and the user's Desktop waiver.
 See the [release notes](specs/release-notes-0.9.0.md) and
 [migration guide](specs/migration-0.9.0.md) before upgrading.
 

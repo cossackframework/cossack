@@ -15,11 +15,14 @@ it('keeps non-Desktop skill policies aligned with public 0.9 APIs and offline gu
  expect(byName['cossack-best-practices/references/forms.md']).not.toMatch(/default.*flash both input|auto-flashes.*input.*by default/);
  expect(byName['setup-websocket/SKILL.md']).toContain('COSSACK_SSE');expect(byName['setup-websocket/SKILL.md']).not.toContain('no binding required');
  const reference=byName['cossack-best-practices/references/services-storage-workflows.md'];
- expect(reference).toContain('process-only');expect(reference).toContain('Native SVC-04 acceptance remains open');expect(reference).toContain('not proven');
+ for(const phrase of ['process-only','SVC-04 native acceptance is complete at its recorded composite scope','persisted local lifecycle acceptance proves retry effects, pause, process restart','Cloudflare acceptance separately proves literal Waiting','Miniflare provider does not prove literal Waiting','example as native restart or hosted Waiting evidence'])expect(reference).toContain(phrase);
+ expect(reference).not.toContain('acceptance remains open');
  const catalog=JSON.parse(await fs.readFile(path.join(repository,'packages/core/agent-docs.json'),'utf8'));
  for(const id of ['scoped-services-and-injection','authorized-object-storage','local-workflow-lifecycle','runtime-and-counter-guarantees','server-action-access-policy','accessible-form-controller'])expect(docs.some(([,text])=>text.includes(id)),id).toBe(true);
  for(const [,text]of docs){expect(text).not.toContain('--guide <');expect(text).not.toMatch(/from ['"]@cossackframework\/[^'"]+\/(?:src|dist)\//);}
- expect(catalog.guides.find(guide=>guide.id==='local-workflow-lifecycle').markdown).toContain('native acceptance remains open');
+ const workflow=catalog.guides.find(guide=>guide.id==='local-workflow-lifecycle').markdown;
+ for(const phrase of ['Native persisted local lifecycle acceptance proves retry effects, pause, process restart','Actual hosted Cloudflare acceptance separately proves literal Waiting','Miniflare provider does not prove literal Waiting','process-only example below','example as native restart or hosted Waiting evidence'])expect(workflow).toContain(phrase);
+ expect(workflow).not.toContain('acceptance remains open');
 });
 it('strictly checks every public named snippet import and executes portable ownership examples',async()=>{
  const scratch=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-skill-guides-'));

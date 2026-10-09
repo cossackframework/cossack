@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/test-utils",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {

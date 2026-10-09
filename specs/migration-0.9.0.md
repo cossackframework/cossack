@@ -1,11 +1,11 @@
-# Draft 0.9.0 migration guide
+# Cossack 0.9.0 migration guide
 
-This draft covers migration steps for the current implemented 0.9.0 APIs and
-runtime contracts. Package versions remain 0.8.3. Version/range/lockfile/template
-alignment, affected installation checks and the final requirement audit remain
-release gates; this document does not announce a published or fully verified release.
-The existing TypeScript examples retain their prior compile evidence. New upgrade
-instructions below link to public guides instead of adding executable examples.
+This guide covers verified prepared 0.9.0 APIs and runtime contracts. Root/package
+versions and internal/template references are aligned; affected installed checks
+and the requirement audit pass. Packages remain unpublished. All nine TypeScript
+examples compile against installed public 0.9.0 APIs and remain byte-identical.
+The [final acceptance](release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09)
+records execution scope, failures and the user's Desktop waiver.
 
 ## Upgrade order and scaffold ownership
 
@@ -13,7 +13,7 @@ Read the target release's installed CLI help and inspect its upgrade plan before
 changing an application. `cossack upgrade --dry-run --json` reports dependencies,
 file effects, conflicts, preserved edits, installation requirements and follow-up
 actions. Select the intended published scaffold version with `--tag`; a repository
-containing this draft is not evidence that 0.9.0 is already published.
+containing this guide is not evidence that 0.9.0 is already published.
 
 The recorded schema-v3 recipe and dependency baseline distinguish framework-owned
 files/dependencies from application edits. `--apply-template` updates unchanged

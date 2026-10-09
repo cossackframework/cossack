@@ -7,8 +7,8 @@ in scope. Package versions change only after implementation and verification.
 - [x] **Desktop scope is complete for 0.9.0 by user decision (2026-10-05).**
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
-  tooling and Cloudflare. REL-03 remains open for its non-Desktop
-  acceptance; the numbered release task count is 55 complete / 3 open.
+  tooling and Cloudflare. The numbered release task count is **58 complete / 0 open**.
+  [Final Codex acceptance](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) records the non-Desktop evidence and limits.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -25,7 +25,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CLI-05](./release-0.9.0-plan.md#cli-05) Complete resource, validated mutation, protected route, and scoped service recipes with tests and capability checks.
 - [x] [CLI-06](./release-0.9.0-plan.md#cli-06) Structured upgrades with dependency changes, conflicts, preserved files, and follow-up actions.
 - [x] [CLI-07](./release-0.9.0-plan.md#cli-07) Shared local CLI/MCP tools, installed parity and native interruption acceptance; [audit](#codex-cli07-complete-2026-10-04).
-- [x] [CLI-08](./release-0.9.0-plan.md#cli-08) Versioned offline API/usage family inventory, aligned non-Desktop skills, published imports and 109 guides / 116 examples. All 28 new examples pass installed compilation/execution; retained earlier evidence covers unchanged examples. [Verification and limits](#codex-cli08-cf04-complete-2026-10-06).
+- [x] [CLI-08](./release-0.9.0-plan.md#cli-08) Versioned offline API/usage family inventory, aligned non-Desktop skills, published imports and 109 guides / 116 examples. Final installed acceptance compiles/executes all 116 examples at their documented boundaries. [Verification and limits](#codex-cli08-cf04-complete-2026-10-06).
 
 ## Runtime and application APIs
 
@@ -64,7 +64,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 - [x] [SVC-02](./release-0.9.0-plan.md#svc-02) Named UTC schedules share jobs validation, occurrence deduplication, retries and cleanup; generated/installed Cron, local one-shot, build and CLI/MCP inspection pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
 - [x] [SVC-03](./release-0.9.0-plan.md#svc-03) Typed escaped notifications, scoped preferences/inboxes, durable delivery status and explicit Cloudflare/SMTP providers. Source/installed Queue/D1 and loopback SMTP retry, uncertainty and restart acceptance pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
-- [x] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: source/installed native interruption, persisted pause/restart/resume, exact step reuse, retry/event and redacted failure acceptance pass; real provider REST, native binding and public inspection now report literal Waiting after an uninterrupted idle interval. Original criteria close through composite evidence. Strict local Waiting remains a failing REL-03 gate, not waived; expanded hosted lifecycle now passes. [Latest proof](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09). [Acceptance mapping and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
+- [x] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: source/installed native interruption, persisted pause/restart/resume, exact step reuse, retry/event and redacted failure acceptance pass; real provider REST, native binding and public inspection now report literal Waiting after an uninterrupted idle interval. Original criteria close through composite evidence. The user-approved [acceptance split](./release-0.9.0-workflow-acceptance.md) retains hosted literal Waiting and native local lifecycle coverage; the revised full CLI gate passes. [Latest proof](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09). [Acceptance mapping and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
 - [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
 ## Cloudflare deployment
@@ -84,10 +84,10 @@ remain archived, and the verification log below retains test evidence.
 ## Release gates
 
 - [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
-- [x] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex (2026-10-09): retained tarball-only imports/declarations/helpers/providers/generated applications and public-API examples, hosted Deno and new changed-CLI hosted acceptance satisfy the original criteria; CF-09 closes its last feature dependency. Final version alignment and affected artifact rechecks remain REL-04. [Completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
-- [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: standalone Deno draining and hosted Deploy HTTP/SSE/WebSocket acceptance pass; external PostgreSQL/MySQL omissions now pass, while strict local Waiting/full CLI and the final matrix remain. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
-- [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes. Codex: Unreleased changelog/release notes and current-API migration coverage are reviewed; all 58 IDs map to upgrade guidance, with nine compiled examples unchanged. Versioning and affected artifact checks remain gated. [Migration audit](./release-0.9.0-verification-archive.md#codex-migration-coverage-2026-10-09). [Prose and gate-order review](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09). [Evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06).
-- [ ] [REL-05](./release-0.9.0-plan.md#rel-05) Audit every checklist item against implementation and verification evidence before marking the goal complete.
+- [x] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex (2026-10-09): retained tarball-only imports/declarations/helpers/providers/generated applications and public-API examples, hosted Deno and new changed-CLI hosted acceptance satisfy the original criteria; CF-09 closes its last feature dependency. Final 0.9.0 imports, packaged examples and generated applications pass; [final evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09). [Completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
+- [x] [REL-03](./release-0.9.0-plan.md#rel-03) Complete non-Desktop build, types, bundle audit, units, end-to-end/runtime tests and affected installed acceptance. Codex: full CLI 1,267 passed / 0 failed / 18 skipped; final package suites, native providers and 0.9.0 installed gates pass. Desktop checks are waived; earlier unchanged browser/hosted proof retains its original scope. [Final evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09).
+- [x] [REL-04](./release-0.9.0-plan.md#rel-04) Align root/all 13 package versions and internal/template references to 0.9.0; verify lockfile, changelog, migration guide, release notes and 12 non-Desktop installed artifacts. Codex: final public imports/examples/migration checks pass; offline lock refresh is byte-identical. Prepared artifacts remain unpublished. [Final evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09).
+- [x] [REL-05](./release-0.9.0-plan.md#rel-05) Audit all 58 original criteria against final implementation, execution evidence, payload changes and preserved limitations. Codex: [requirement audit](./release-0.9.0-requirement-audit.md) and [scenario audit](./release-0.9.0-scenario-audit.md) reconcile every task; **58 complete / 0 open**. [Final evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09).
 
 ## Verification log
 
@@ -2178,3 +2178,11 @@ The initial setup guard failure and recovered deletion are retained in the archi
 No original workflow template/product API changes or repacks. Strict local Waiting/
 full CLI, final versions/artifacts and final requirement audit remain open; Desktop
 stays waived. [Commands, receipts and limits](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09).
+
+## Codex — final verified release batch (2026-10-09)
+
+**REL-03, REL-04 and REL-05 complete; 58 complete / 0 open.** Root and all
+13 package manifests are 0.9.0; 12 non-Desktop public artifacts are verified.
+The [final archive](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) records terminal checks, failed attempts, exact skips,
+artifact comparisons and retained hosted/browser scope. Desktop remains waived.
+Publication, tagging, upstream push and production promotion were not performed.

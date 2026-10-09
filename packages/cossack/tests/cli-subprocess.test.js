@@ -469,20 +469,28 @@ describe('routes and inspection', () => {
 });
 
 describe('generate', () => {
+  // Three sequential CLI processes each retain runCli's 20-second deadline.
   it('delete plans effects without removing files and reports missing files with a code', async () => {
-    await runCli(['generate', 'component', 'KeepMe']);
+    const generated = await runCli(['generate', 'component', 'KeepMe']);
+    expect(generated.code).toBe(0);
+    const component = path.join(tmp, 'src/components/KeepMe.ts');
+    const original = await fs.readFile(component, 'utf8');
+    const entries = await fs.readdir(path.dirname(component));
     const planned = await runCli(['delete', 'component', 'KeepMe', '--dry-run', '--json']);
     expect(planned.code).toBe(0);
     expect(planned.stderr).toBe('');
     expect(parseEnvelope(planned.stdout).data.effects).toEqual([
       { action: 'planned-delete', path: 'src/components/KeepMe.ts' },
     ]);
-    expect(await fs.readFile(path.join(tmp, 'src/components/KeepMe.ts'), 'utf8')).toContain('KeepMe');
+    expect(await fs.readFile(component, 'utf8')).toBe(original);
+    expect(await fs.readdir(path.dirname(component))).toEqual(entries);
     const missing = await runCli(['delete', 'component', 'Missing', '--json']);
     expect(missing.code).toBe(1);
     expect(missing.stderr).toBe('');
     expect(parseEnvelope(missing.stdout).diagnostics[0].code).toBe('COSSACK_FILE_NOT_FOUND');
-  });
+    expect(await fs.readFile(component, 'utf8')).toBe(original);
+    expect(await fs.readdir(path.dirname(component))).toEqual(entries);
+  }, 65000);
   it('dry run plans the file without writing and emits one envelope', async () => {
     const { code, stdout, stderr } = await runCli(['generate', 'component', 'ReviewProbe', '--dry-run', '--json']);
     expect(code).toBe(0);

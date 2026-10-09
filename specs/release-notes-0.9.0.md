@@ -2,8 +2,8 @@
 
 0.9.0 brings typed application contracts, safer runtime ownership, offline agent
 tooling and Cloudflare deployment checks into one release. This document is the
-proposed release prose. Package versions are still **0.8.3**; completion of the
-remaining gates, version changes and affected installation checks precedes release.
+verified release preparation record. Root and package versions are **0.9.0**;
+all 58 release tasks are complete within their recorded scope. Packages remain unpublished.
 
 Read the [migration guide](migration-0.9.0.md) before applying scaffold upgrades.
 The [checklist](release-0.9.0.md) and [verification archive](release-0.9.0-verification-archive.md)
@@ -205,17 +205,22 @@ provider startup. Hosted Deno Deploy acceptance covers uploaded compiled install
 artifacts, request bodies/cookies, assets/hydration and HTTP/SSE/WebSocket mutation;
 it does not prove provider source builds.
 
-Workflow completion uses retained native interruption/restart/step-reuse/retry/event
-proof plus real hosted literal Waiting observations. Strict local Waiting and
-the full CLI gate remain unresolved. The broader hosted lifecycle experiment also
-failed and is not counted as passing evidence; it does not reopen the original
-SVC-04 criteria closed by the composite evidence. A full green CLI result and
-complete final release matrix are not claimed. Hosted preview CI now proves
-creation, intentional smoke failure, immutable-journal cleanup retry, staging
-isolation and unchanged production. Owned test resources and repository are
-confirmed absent. The current public-artifact gate REL-02 is complete. Package version,
-lockfile, template references and affected installed checks remain REL-04 work;
-the final requirement audit remains REL-05 work.
+Workflow completion uses the [user-approved scope](release-0.9.0-workflow-acceptance.md):
+native local interruption/restart/step reuse/retry/events/failure and real hosted
+literal Waiting plus lifecycle checks. The revised full CLI gate passes: 1,267
+passed, zero failed, 18 skipped (six Desktop waivers and twelve scoped opt-ins).
+Final 0.9.0 builds/types/package units/providers, installed imports/examples,
+generated applications/configuration/migrations and affected runtime checks pass.
+REL-03/04/05 are complete. [Final verification](release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09).
+
+Earlier hosted Workflow/preview/staging/logging/Deno and 297-case browser receipts
+retain their original versions and scope through reviewed unchanged runtime graphs;
+they are not claimed as fresh 0.9.0 hosted runs. Owned hosted resources/repositories
+were independently confirmed absent. Changed database tooling now activates its
+TypeScript loader only on configuration load; guarded import, configuration and
+installed migration acceptance pass. Native Cloudflare acceptance uses Wrangler
+4.114.0 / plugin 1.47.0 / Vite 8.1.4; the newer 4.148.0 native Workflow failure is
+not passing evidence. Ordinary newer-tool generated builds pass separately.
 
 Desktop scope is closed for this release by user decision. Its remaining platform
 checks are waived, not passing evidence. Node/Deno component/SSE locality and
@@ -224,5 +229,4 @@ new distributed guarantees.
 
 Current facts and later changes belong in the
 [checklist](release-0.9.0.md), [handoff](handoff-0.9.0.md) and
-[verification archive](release-0.9.0-verification-archive.md). Do not use this draft
-as approval to publish packages or promote production.
+[verification archive](release-0.9.0-verification-archive.md). Release preparation is not approval to publish packages or promote production.

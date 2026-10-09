@@ -2,58 +2,43 @@
 
 ## Current handoff — Codex (2026-10-09)
 
-**55 complete / 3 open**, versions 0.8.3. All five original cross-feature
-acceptance scenarios now pass at current versions. Latest batch finishes
-**scenario 5** through actual hosted CI; no numbered release task closes.
-[Evidence](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09).
+**58 complete / 0 open. REL-03, REL-04 and REL-05 are complete.** Root and all
+13 package manifests are 0.9.0. Twelve non-Desktop public artifacts pass installed
+acceptance. This is verified release preparation; packages remain unpublished.
+The commit containing this handoff follows `6f9639b1`; use Git history for its ID.
 
-GitHub run **37880536071** installs retained tarballs, plans/applies the public
-remote migration to the exact staging account/D1 UUID, verifies its persisted
-checksum and zero pending migrations, and explicitly builds with staging bindings.
-The native preview uses staging overrides. Anonymous protected asset/RPC requests
-return 401 with no effects; authorized asset/RPC checks return 200 and create
-exactly one D1 row. Identity is a server-owned synthetic cookie, not a real login.
-Production Worker settings/active deployments and D1 schema/sentinel stay unchanged;
-a separate coordinator read confirms all production fixture rows match bootstrap.
+[Final verification](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09), [requirement audit](./release-0.9.0-requirement-audit.md)
+and [scenario audit](./release-0.9.0-scenario-audit.md) own the detailed receipts.
+Full CLI: 1,267 passed / 0 failed / 18 skipped. Non-CLI package suites: 5,584
+passed, with two provider cases separately proven by six native PostgreSQL/MySQL
+tests. Root and ten non-Desktop package typechecks, builds and bundle audit pass.
+Installed public imports, 116 packaged examples, configuration/browser isolation,
+deployment guidance, migrations and affected CLI/runtime scenarios pass.
 
-Combined acceptance: **24 passed / 0 skipped**, 154.09 seconds. Installed app
-local types/build/native smoke and public local migration plan/up also pass;
-root `pnpm tsc --noEmit` passes. Preview, temporary parent Worker/D1 pair,
-known DO namespaces and private repository are independently confirmed absent.
-An initial missing request-signal setup flag failed the existing deploy guard;
-both first-attempt databases were deleted before the corrected fresh setup.
-No product APIs, package versions or original workflow template changed; no repacks.
+Database tooling now activates its TypeScript loader only when reading a config;
+native guarded imports make zero IPC/network attempts, and TS configs still load.
+The [user-approved Workflow split](./release-0.9.0-workflow-acceptance.md) proves
+literal Waiting on hosted Cloudflare and the remaining lifecycle locally. The
+original strict local probe remains unchanged and excluded from the revised gate.
 
-Open: **REL-03, REL-04, REL-05 (3)**. The exact remaining implementation gate
-is strict local Workflow Waiting/full CLI: current Miniflare lacks the native
-Waiting transition. Preserve the user-owned probe; do not patch the simulator,
-substitute Running, weaken assertions or waive this gate. All five compositions
-now have current-version proof. After the implementation gate passes, align 0.9.0
-versions and rebuild/recheck affected artifacts, then finish the requirement audit.
-Earlier unchanged hosted Workflow, CF-09/REL-02, CF-08, Deno and database evidence
-retains its archived scope; final-version acceptance remains unproven.
+Earlier 297-case browser and hosted Cloudflare/Deno/CI evidence retains its archived
+version/scope through reviewed unchanged runtime payloads. It was not rerun under
+new version labels. Changed database tooling has fresh source/native/installed
+proof. Primary native Cloudflare acceptance uses Wrangler 4.114.0, plugin 1.47.0
+and Vite 8.1.4. Newer 4.148.0 native Workflow acceptance failed and is not claimed;
+ordinary generated builds with newer tools have separate passing proof.
 
-Private latest proof/setup: /tmp/cossack-hosted-staging-20261009. Its cloud IDs
-and repository are deleted; do not rerun its options. Earlier preview setup is
-/tmp/cossack-preview-ci-20261009-agent, also deleted. Credentials remain outside
-the repository. The scoped cf-created Worker/D1 token remains available through
-interactive zsh and expires 2026-10-10T00:52:59Z; never print it.
+**Desktop remains complete by user decision; remaining platform checks are waived.**
+Only its version metadata changed. Preserve reports.md, .zcodeignore and both
+baseline Workflow probe files; their bytes are unchanged and they are unstaged.
 
-**Desktop is complete by user decision; remaining platform checks are waived.**
-Do not reopen it. Preserve unrelated reports.md, .zcodeignore and both baseline
-Workflow probe files; do not stage them. The [checklist](./release-0.9.0.md) owns
-status; the [plan](./release-0.9.0-plan.md) retains open-task criteria.
+## Continuation
 
-## Active implementation plan — Codex owns remaining work (2026-10-06)
-
-1. Retain all five verified cross-feature compositions and hosted Workflow proof.
-   These pass at current versions and do not establish final 0.9.0 artifacts.
-2. Resolve REL-03 strict local Waiting/full CLI when upstream supports the required
-   native status; do not patch the simulator or substitute Running for Waiting.
-3. Finish the remaining non-Desktop release verification without weakening tests.
-4. Align 0.9.0 versions and verify affected artifacts (REL-04), then audit REL-05.
-5. Use at most three implementation agents with exclusive ownership, targeted
-   checks, coordinator integration, one verified-batch record and explicit staging.
+No numbered release work remains. Publication, tagging, upstream push or production
+promotion requires a separate request. Do not reuse deleted hosted resource options
+or assume old credentials remain valid. Final private receipts/artifacts are in
+`/tmp/cossack-release-090-final`; installed consumers are named in the archive.
+Keep current notes compact and preserve failed/historical receipts in that archive.
 
 ## Limits to retain
 
@@ -64,7 +49,7 @@ status; the [plan](./release-0.9.0-plan.md) retains open-task criteria.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 native Node/workerd disconnect and component initialization/restoration acceptance is complete. Cancellation remains cooperative and does not stop ignored application I/O.
-- Initial CLI run: 1,007 passed / 19 failed / 6 skipped, with later targeted fixes. Latest terminal run: 1,112 passed / 2 failed / 9 skipped; MessageScroller is subsequently fixed, strict local Waiting remains red and three non-Desktop omissions pass separately. Six Desktop cases are waived. Neither composite proves a green full CLI gate.
+- Historical CLI failures remain archived, including 1,259 passed / 2 failed / 24 skipped before this batch’s repairs. The corrected full invocation is green: 1,267 passed / 0 failed / 18 skipped. Six Desktop cases are waived; twelve opt-in cases have separate scoped evidence. The user-approved split does not claim local literal Waiting passed.
 - Browser ownership acceptance passes its focused generated Node and Cloudflare
   cases, including SSE and WebSocket ownership. The fixture uses a synthetic
   identity provider only; real authentication has separate RT-13 evidence.
@@ -78,8 +63,8 @@ status; the [plan](./release-0.9.0-plan.md) retains open-task criteria.
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
 - Desktop installed OS integration, Windows/macOS packaging and conditional
   signing checks were waived when the user closed Desktop for this release.
-  Hosted Deno compiled-artifact acceptance passes; the required final non-Desktop
-  release matrix remains open.
+  Hosted Deno compiled-artifact acceptance retains its scope; the final non-Desktop
+  matrix and affected 0.9.0 checks pass.
   Generated Node and Deno standalone draining are verified.
 - Local checks do not prove remote readiness. CF-08 has actual hosted acceptance and verified cleanup; that earlier batch performed no production promotion, publication, push or credential rotation. The latest CF-09 batch pushed only to its authorized temporary private repository, now deleted.
   Never copy old credential values from Git history.

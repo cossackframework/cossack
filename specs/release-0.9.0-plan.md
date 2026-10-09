@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 55 complete and 3 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 58 complete and 0 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -15,16 +15,14 @@ installed hosted preview creation, intentional smoke failure, cleanup retry,
 unchanged production and verified teardown. Earlier CF-08, SVC-04 and Deno
 acceptance remains valid at its documented scope. [Completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
 
-Codex current acceptance (2026-10-09): all five original cross-feature scenarios
-now pass at current installed versions. Hosted scenario 5 proves exact staging
-migration plan/apply/history, explicit staging build, protected asset/RPC checks,
-unchanged production and independent cleanup. Combined: **24 passed / 0 skipped**;
-root types pass. Strict local Waiting/full CLI remains blocked by the upstream
-simulator; no numbered task closes and final-version artifacts remain required.
-[Latest verified batch](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09).
-
-Continue the open work as described in the handoff. All unchecked tasks
-remain in scope. Versions stay at 0.8.3 until REL-04.
+Codex final acceptance (2026-10-09): **REL-03/04/05 complete; 58/58 tasks complete**.
+The revised full CLI gate passes; final 0.9.0 build/types/unit/provider and installed
+acceptance pass. The [final archive](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) distinguishes rerun checks from
+retained unchanged browser/hosted evidence. The [Workflow scope decision](./release-0.9.0-workflow-acceptance.md)
+requires hosted literal Waiting and native local lifecycle coverage. All 13 package
+versions are 0.9.0, with 12 verified non-Desktop artifacts. The release is unpublished.
+This current outcome supersedes historical open-task statements below; original
+Purpose, Approach, Baseline and Done when paragraphs remain available for review.
 
 **Desktop: completed for 0.9.0 by user decision (2026-10-05).** Remaining
 Desktop-only platform acceptance is waived for this release; it is not pending
@@ -98,18 +96,18 @@ fields, not only in prose that an agent must parse.
 
 ## Suggested execution order
 
-These groups list remaining work in dependency order. Completed prerequisites
+These groups record the completed release gate order. Completed prerequisites
 and the original sequence remain in the [archive](./release-0.9.0-plan-archive.md#suggested-execution-order).
 They do not reduce the release scope.
 Add focused tests during each group, and run broader gates after integration.
 
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
-| 1. Finish verification | REL-03 | Resolve strict local Waiting/full CLI and the remaining release matrix. |
-| 2. Prepare versions | REL-04 | Align versions and rebuild/recheck affected release artifacts. |
-| 3. Audit release | REL-05 | Verify every requirement against the final release state. |
+| 1. Finish verification | REL-03 — complete | Revised full CLI, non-Desktop release matrix and final affected installed checks pass. |
+| 2. Prepare versions | REL-04 — complete | Root/package/internal/template versions, rebuilt public artifacts and release documents agree on 0.9.0. |
+| 3. Audit release | REL-05 — complete | All 58 original criteria reconcile with final execution receipts, payloads and limitations. |
 
-Preserve regression coverage for completed prerequisites while closing the open criteria.
+Preserve regression coverage and the recorded acceptance limits for the completed release.
 
 ## Completed task index
 
@@ -232,7 +230,11 @@ belong to REL-04; REL-03's full green CLI/runtime gate is still required.
 [Original purpose, approach and full criteria](./release-0.9.0-plan-archive.md#rel-02).
 
 <a id="rel-03"></a>
-### REL-03: Complete verification run
+### REL-03: Complete verification run — complete
+
+**Final outcome — Codex (2026-10-09): complete.** [Terminal evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09)
+and the [58-task audit](./release-0.9.0-requirement-audit.md) preserve the full criterion.
+The dated checkpoints and original baseline below remain historical context.
 
 Codex type-verification repair (2026-10-05): package checks exposed a real
 RawInputOf defect: InputSchema's default raw type was unknown for noncoercing
@@ -309,9 +311,8 @@ HTTP, SSE and WebSocket; cleanup is independently confirmed by GET404.
 [Commands, evidence and limits](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09). Provider source builds and final 0.9.0
 artifacts are not covered. REL-02/03 remain open.
 
-Remaining before REL-03 closes: the required non-Desktop implementation matrix,
-including a green full CLI/runtime gate. REL-04 owns the subsequent version bump
-and affected final 0.9.0 artifact rechecks.
+This earlier remaining-work checkpoint is superseded by the [final acceptance](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09):
+full CLI, non-Desktop verification and affected final 0.9.0 artifacts now pass.
 Generated Deno standalone shutdown/draining is verified under real signals and
 installed tarballs in the [Codex acceptance](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06). Node standalone draining is verified in the
 [Codex batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). The initial full CLI run failed; all 19 failures
@@ -324,7 +325,11 @@ Retain `pnpm test:desktop` for any future requested Desktop changes; do not reop
 Desktop work or repeat its gate for unrelated work.
 
 <a id="rel-04"></a>
-### REL-04: Versioning and release documents
+### REL-04: Versioning and release documents — complete
+
+**Final outcome — Codex (2026-10-09): complete.** [Terminal evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09)
+and the [58-task audit](./release-0.9.0-requirement-audit.md) preserve the full criterion.
+The dated checkpoints and original baseline below remain historical context.
 
 Codex executable migration examples (2026-10-06): all nine unchanged TypeScript
 fences compile through public Core/Renderer/UI exports under strict Bundler and
@@ -371,7 +376,11 @@ do not retain stale 0.8.x references. Release preparation remains distinct from
 an actual package publication or Cloudflare deployment. Dependencies: REL-02 and REL-03.
 
 <a id="rel-05"></a>
-### REL-05: Requirement-by-requirement completion audit
+### REL-05: Requirement-by-requirement completion audit — complete
+
+**Final outcome — Codex (2026-10-09): complete.** [Terminal evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09)
+and the [58-task audit](./release-0.9.0-requirement-audit.md) preserve the full criterion.
+The dated checkpoints and original baseline below remain historical context.
 
 Purpose: A large refactor can appear finished while entire checklist rows remain
 partially implemented. Completion needs evidence for each requirement.
@@ -420,7 +429,8 @@ versions. Scenarios 1–4 cover protected resource/edit, two-Worker realtime,
 Queue retry/preferences and CLI/MCP composition. Scenario 5 now passes actual
 hosted CI migration/build/protected asset/RPC/isolation/cleanup acceptance.
 [Latest checks](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09). Feature-level evidence remains valid; final versions,
-strict local Waiting/full CLI and final audit criteria still govern REL-03/04/05.
+the [final reconciliation](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) closes REL-03/04/05 using the approved
+hosted/local Workflow split and final 0.9.0 affected acceptance.
 
 ## How Codex records progress
 

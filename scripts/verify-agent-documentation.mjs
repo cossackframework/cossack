@@ -215,6 +215,19 @@ globalThis.Deno = {
     assert.equal(preparedD1.length, 1);
     assert.ok(!preparedD1[0].text.includes(hostileD1Value), 'D1 values must not be interpolated into SQL text');
     assert.deepEqual(preparedD1[0].values, [hostileD1Value]);
+    // Derive the native fixture's date from the installed public Cloudflare
+    // profile, including when the consumer itself targets Node or Deno.
+    // Creation writes files only; the existing offline guard prevents requests.
+    const nativeProfileName = 'agent-docs-native-profile';
+    const nativeProfileResult = await exec(process.execPath, [...nodeArgs, cli,
+      'create', nativeProfileName, '--adapter=cloudflare', '--preset=minimal',
+      '--package-manager=pnpm', '--yes', '--json'], {
+      cwd: scratch, env, timeout: 60_000, maxBuffer: 16 * 1024 * 1024,
+    });
+    assert.equal(nativeProfileResult.stderr, '');
+    assert.equal(JSON.parse(nativeProfileResult.stdout).ok, true, 'Installed CLI must generate the native Cloudflare profile');
+    const nativeProfile = JSON.parse(await fs.readFile(path.join(scratch, nativeProfileName, 'wrangler.jsonc'), 'utf8'));
+    assert.match(nativeProfile.compatibility_date, /^\d{4}-\d{2}-\d{2}$/);
     const { createTestHarness } = await import(installedRequire.resolve('wrangler'));
     const d1WorkerRoot = path.join(scratch, 'd1-worker-runtime');
     await fs.mkdir(d1WorkerRoot);
@@ -280,7 +293,7 @@ export default {
       name: 'cossack-agent-docs-d1-runtime',
       compatibility_flags: ['nodejs_compat'],
       main: 'worker.mjs',
-      compatibility_date: '2026-10-05',
+      compatibility_date: nativeProfile.compatibility_date,
       d1_databases: [{ binding: 'DB', database_name: 'agent-docs-d1-runtime' }],
     }));
     const d1Worker = createTestHarness({ root: scratch, workers: [{ configPath: d1ConfigPath }] });
@@ -345,8 +358,17 @@ export default {
     assert.equal(auth.guidance.version, auth.version);
     assert.equal(auth.guidance.exampleExecution, 'not-performed');
     assert.equal(auth.guidance.runtimeSupport, 'not-verified');
-    assert.deepEqual(auth.exports, []);
-    assert.equal(auth.implicitEntry.origin, 'legacy-manifest');
+    assert.deepEqual(auth.exportDiscovery, { status: 'complete', reasons: [] });
+    assert.equal(auth.implicitEntry, null);
+    assert.deepEqual(auth.exports, [
+      ['.', '@cossackframework/auth', './src/index.ts'],
+      ['./turnstile', '@cossackframework/auth/turnstile', './src/turnstile.ts'],
+      ['./package.json', '@cossackframework/auth/package.json', './package.json'],
+    ].map(([subpath, specifier, target]) => ({
+      import: specifier, subpath,
+      targets: [{ conditions: [], target, status: 'present' }],
+      runtime: 'not-verified',
+    })));
     const authExamples = [];
     for (const guide of auth.guidance.guides) for (const example of guide.examples) {
       const file = path.join(scratch, `${guide.id}-${example.id}.ts`);

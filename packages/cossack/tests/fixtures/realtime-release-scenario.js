@@ -230,7 +230,6 @@ export default class Live extends Cossack<any> {
     delete compiled.topLevelName;
     const common = {
       ...compiled,
-      compatibility_date: '2026-10-09',
       main: path.join(app, 'dist/ssr/index.js'),
       assets: { ...compiled.assets, directory: path.join(app, 'dist/client') },
     };

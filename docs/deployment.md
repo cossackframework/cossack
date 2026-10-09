@@ -339,16 +339,17 @@ KiB and their rounding resolution. See [Build budgets](./build-budgets.md).
 
 ### Generated deployment baseline
 
-The local generated-guide verifier passed on 2026-10-06 with this installed
-combination. Package versions remain 0.8.3 until the release version task.
+The local generated-guide verifier passed on 2026-10-09 with this installed
+combination. This is the native acceptance baseline; newer tool versions are not
+assumed to pass every native lifecycle check.
 
 | Tool or setting | Verified value |
 | --- | --- |
 | Node.js | 24.19.0 |
-| Cossack CLI and Framework | 0.8.3 release worktree tarballs |
-| Vite | 8.3.2 |
-| `@cloudflare/vite-plugin` | 1.62.5 |
-| Wrangler | 4.147.0 |
+| Cossack CLI and Framework | 0.9.0 installed public tarballs |
+| Vite | 8.1.4 |
+| `@cloudflare/vite-plugin` | 1.47.0 |
+| Wrangler | 4.114.0 |
 | Generated compatibility date | 2026-06-06 |
 | Generated flags | `nodejs_als`, `enable_request_signal` |
 

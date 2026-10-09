@@ -1,8 +1,8 @@
 {
   "name": "cossack",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
-  "description": "The Cossack Framework CLI \u2014 scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
+  "description": "The Cossack Framework CLI — scaffolding, code generation, lifecycle, and upgrades for Cossack projects.",
   "license": "MIT",
   "repository": {
     "type": "git",

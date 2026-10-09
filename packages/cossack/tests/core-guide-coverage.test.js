@@ -45,7 +45,8 @@ describe('authored public Core family guides',()=>{
    expect(source).not.toMatch(/\bas any\b|@ts-ignore|\/src\/|\/dist\//);
   }
   const workflow=guides.find(guide=>guide.id==='local-workflow-lifecycle');
-  expect(workflow.markdown).toMatch(/process-only/);expect(workflow.markdown).toMatch(/native acceptance remains open/);expect(workflow.markdown).toMatch(/not proven/);
+  for(const phrase of ['process-only','SVC-04 native acceptance is complete at its recorded composite scope','Native persisted local lifecycle acceptance proves retry effects, pause, process restart','Actual hosted Cloudflare acceptance separately proves literal Waiting','Miniflare provider does not prove literal Waiting','example as native restart or hosted Waiting evidence'])expect(workflow.markdown).toContain(phrase);
+  expect(workflow.markdown).not.toContain('acceptance remains open');
   for(const id of ['reactive-state-and-stores','optimistic-edits-and-uncertain-rpc','navigation-result-ownership'])expect(guides.find(guide=>guide.id===id).markdown).toMatch(/not.*(?:prove|run|call)|does not/);
  });
  it('strictly compiles and executes new portable examples against public workspace packages',async()=>{

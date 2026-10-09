@@ -3,9 +3,9 @@
 Author: Codex. Source/evidence review and installed scenarios 1–5 acceptance, 2026-10-09.
 
 This indexes the five exact [cross-feature scenarios](./release-0.9.0-plan.md#cross-feature-acceptance-scenarios).
-It does not close REL-03 or REL-05. The initial review performed no tests, builds,
+The historical baseline below did not close REL-03 or REL-05. Final reconciliation now closes them. The initial review performed no tests, builds,
 packing or provider writes; the follow-ups below execute installed native/browser,
-CLI/MCP and hosted CI acceptance. Package versions remain 0.8.3. Desktop's remaining
+CLI/MCP and hosted CI acceptance. Those original receipts used packages 0.8.3; final packages are 0.9.0. Desktop's remaining
 checks are waived by the user and outside this audit.
 
 “Proven” below means the stated assertion has execution evidence at the named
@@ -128,12 +128,13 @@ retains its three-run failure/retry coverage; it was not repeated unchanged.
 
 ## Integration follow-up
 
-Scenarios 1–5 now have combined installed acceptance at current 0.8.3 versions,
-including actual hosted CI for scenario 5.
-These are acceptance obligations, not new feature requests.
-Retain the recorded scopes and rerun affected installed acceptance at final
-versions before claiming REL-05 complete. Original task
-completion remains governed by each task's own acceptance criteria. REL-03 still
-requires its full implementation gate and affected final-version evidence;
-REL-04 owns version alignment, builds and installed artifact checks. None of those
-requirements are replaced by this document or by a list of completed feature IDs.
+Final reconciliation — Codex (2026-10-09): scenarios 1–4 have fresh 0.9.0
+installed native/browser/CLI/MCP acceptance in the 11-test combined gate. Scenario
+5 retains its actual hosted 24-test proof at 0.8.3; the Worker/CLI/database runtime
+payloads it exercised are unchanged. The later database tooling import repair has
+fresh CLI, full package, installed guide and generated native migration evidence.
+Hosted lifecycle and cleanup are not relabeled as rerun 0.9.0 checks. The
+[final archive](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) and [58-task audit](./release-0.9.0-requirement-audit.md)
+record version alignment, payload classification and all release gate outcomes.
+REL-03/04/05 are complete; Desktop remains waived and prior identity/process/provider
+limitations remain intact.

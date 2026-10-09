@@ -1,7 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { register } from "tsx/esm/api";
 import type { ORMConfig, ORMToolingContext } from "../config.js";
 import type { ORM } from "../orm.js";
 import { planTarget } from "../migration/plan.js";
@@ -74,6 +73,8 @@ function enabled(args: Arguments, flag: string): boolean { return args.flags.get
 
 export async function loadORMConfig(configPath: string): Promise<ORMConfig> {
   const absolute = resolve(configPath);
+  // Read-only tooling imports must not start the TypeScript loader's IPC.
+  const { register } = await import("tsx/esm/api");
   const unregister = register();
   let module: { default?: ORMConfig; config?: ORMConfig };
   try {
