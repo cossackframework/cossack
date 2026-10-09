@@ -1,10 +1,11 @@
 # Cossack 0.9.0 cross-feature evidence audit
 
-Author: Codex. Source/evidence review and installed scenario-4 acceptance, 2026-10-09.
+Author: Codex. Source/evidence review and installed scenarios 1–4 acceptance, 2026-10-09.
 
 This indexes the five exact [cross-feature scenarios](./release-0.9.0-plan.md#cross-feature-acceptance-scenarios).
 It does not close REL-03 or REL-05. The initial review performed no tests, builds,
-packing or provider writes; the scenario-4 follow-up below executes installed CLI/MCP checks. Package versions remain 0.8.3. Desktop's remaining
+packing or provider writes; the follow-ups below execute installed native/browser
+and CLI/MCP acceptance. Package versions remain 0.8.3. Desktop's remaining
 checks are waived by the user and outside this audit.
 
 “Proven” below means the stated assertion has execution evidence at the named
@@ -25,7 +26,7 @@ not a real login, and installed 0.8.3 acceptance is not final 0.9.0 acceptance.
 | Typed server query and URL-state filters | [DataTable fixture](../packages/cossack/tests/fixtures/data-table-acceptance.js) uses `server$`, an authored result type and `defineUrlState`; [generated runtime test](../packages/cossack/tests/generated-runtime-build.test.js) runs its Node and Cloudflare cases and checks browser URL changes, filtered results and failure recovery. | Proven for generated apps; the DataTable fixture is not protected. |
 | Validated edit with field errors and preserved input | The generated runtime test's mutation/resource browser case checks server validation, argument snapshots, failed input, retry/reset and pending controls. The [form fixture](../packages/cossack/tests/fixtures/auth-forms-acceptance.js) separately checks generated authenticated forms. | Proven separately from the typed URL-filtered resource. |
 | Unauthorized direct RPC leaves the edit unapplied | [Policy fixture](../packages/cossack/tests/fixtures/worker-policy-acceptance.js), composed by [RPC fixture](../packages/cossack/tests/fixtures/worker-rpc-acceptance.js), checks HTTP/SSE component/service calls, forged permissions, anonymous/foreign owners and tenants, validation rejection, unchanged database rows and empty mutation audit on denial. | Proven for the native policy fixture, not the same DataTable/mutation page. |
-| All features on one protected resource page | The DataTable, mutation and policy fixtures author different pages and state. | Missing combined scope: one protected typed resource page with URL filters, a validated edit retaining failed input, and a direct unauthorized attempt against that same edit. |
+| All features on one protected resource page | [Installed fixture](../packages/cossack/tests/fixtures/protected-resource-scenario.js) and [test](../packages/cossack/tests/protected-resource-scenario.test.js) compose the typed resource, URL filters, validated edit and anonymous replay against the same page/D1 rows. Actual Chromium retains invalid input/field error; the successful edit produces exactly one effect; forged anonymous replay leaves rows/effects unchanged. | Proven together on local workerd/D1/Chromium using current installed tarballs and a server-owned synthetic cookie identity. No real identity-provider claim. |
 
 Recorded execution: [mutation browser recipe](./release-0.9.0-verification-archive.md#codex-mutation-browser-recipe-2026-10-03)
 reports the combined generated-app/inspection/command suite at 37 passing cases
@@ -35,7 +36,8 @@ records four generated DataTable/URL-state cases across Node and workerd.
 record source and installed browser/type checks; their failed preliminary checks
 remain separate from repaired results. [Installed/native release acceptance](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06)
 retains actual D1/policy/schema/RPC/asset coverage. These records do not assert
-that all scenario-1 clauses executed against one protected page.
+that all scenario-1 clauses executed against one protected page. The subsequent
+[combined installed acceptance](./release-0.9.0-verification-archive.md#codex-cross-feature-scenarios-123-2026-10-09) now proves that composition; generated app types/build and native owner cleanup also pass.
 
 ## 2. Concurrent permitted users across Workers
 
@@ -48,14 +50,15 @@ that all scenario-1 clauses executed against one protected page.
 | Different Workers edit concurrently and state converges | [Native SSE integration](../packages/cossack/tests/sse-coordinator-integration.test.js) creates two actual local Worker instances sharing a SQLite Durable Object; six concurrent calls alternate Workers and yield counts 6–11 with final count 11. It also verifies state after reload. | Proven in local native workerd, including an installed Framework run. Workers use fixture markers, not two authenticated users. |
 | Another scope remains isolated | That integration initializes a second scope and observes its independent count. [Coordinator transport](../packages/framework/tests/sse-coordinator-transport.test.ts) rejects cross-user keys and revalidates replay/idle authorization; [SSE scope tests](../packages/framework/tests/sse-scope.test.ts) reject other-user/custom-tenant keys. [Auth SSE fixture](../packages/cossack/tests/fixtures/auth-sse-acceptance.js) also observes denied delivery after logout, expiry, scope or permission changes. | Proven native state isolation plus separate framework/authenticated subscription tests. The native count test alone does not prove another scope receives no private updates. |
 | Disconnected caller gets an explicit outcome | Native SSE integration covers queued cancellation and pending guard cancellation. Its legacy unbridged-abort case deliberately allows the queued action to run; it does not promise cancellation undoes effects. [RPC conformance matrix](../packages/framework/tests/rpc-conformance-matrix.test.ts) separately covers transport failure/cancellation outcomes. | Proven within those transport cases, not for two authenticated concurrent editors. |
-| Complete permitted-user composition | No inspected test combines two permitted identities, two Workers, concurrent edits, caller disconnect and another-scope private-update observer. | Missing combined scope at that identity/transport boundary. Native local Workers are sufficient; this scenario does not require browser UI or hosted Cloudflare. |
+| Complete permitted-user composition | [Installed fixture](../packages/cossack/tests/fixtures/realtime-release-scenario.js) and [test](../packages/cossack/tests/realtime-release-scenario.test.js) run two real Workers sharing a Durable Object. Permitted Alice/Bob identities concurrently edit through distinct Worker markers, both live subscriptions converge, actual TCP abort produces `COSSACK_RPC_CANCELLED`, and a live other-scope observer receives its own positive control without shared private/forged updates. | Proven together through installed public production SSE/RPC on local workerd, with application-owned synthetic sessions. No real login or rollback claim; no browser UI/hosted execution condition added. |
 
 Recorded execution: [installed/native release acceptance](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06)
 records native SSE **3/3** and installed `coordinates native RPC callbacks`
 **1/1**, with two unrelated cases filtered. [RPC matrix](./release-0.9.0-verification-archive.md#codex-rpc-conformance-matrix-2026-10-03)
 records the corresponding shared transport contract proof; [auth SSE acceptance](./release-0.9.0-verification-archive.md#codex-rt11-sse-auth-2026-10-05)
 records separate session revocation/subscription behavior. Their individual scopes
-do not establish the combined permitted-user/disconnect/observer assertions.
+do not establish the combined permitted-user/disconnect/observer assertions. The
+[subsequent combined native case](./release-0.9.0-verification-archive.md#codex-cross-feature-scenarios-123-2026-10-09) proves those assertions together and verifies app types/build and harness cleanup.
 
 ## 3. Action, background retry and notification preferences
 
@@ -69,7 +72,7 @@ do not establish the combined permitted-user/disconnect/observer assertions.
 | Transient retry and durable state | [Jobs unit tests](../packages/core/tests/jobs.test.ts) verify retry deadlines, attempts, cleanup and terminal deduplication. [D1 ledger tests](../packages/framework/tests/jobs-d1-store.test.ts) exercise actual SQLite SQL and owner fencing. | Proven separately from the generated notification Queue delivery. |
 | Preferences and notification delivery state | [Notifications acceptance](../packages/cossack/tests/notifications-release-acceptance.test.js) observes suppression without opt-in, actual local Queue/in-app delivery, persisted inbox state, user/tenant isolation and reload. [Notification unit tests](../packages/core/tests/notifications.test.ts) test opt-out before enqueue and while queued, retryable pre-accept rejection and truthful provider uncertainty. | Proven local native in-app delivery plus separate retry/preferences units. Provider acceptance is not confirmed email delivery. |
 | Original request/database handle not retained | Jobs tests reject request retention and non-JSON scope; the public job boundary carries serialized payload/context, and handler cleanup is awaited. The generated endpoint sends payload and explicit IDs, not its request or a database handle. | Proven serialized-boundary validation and separate cleanup assertions. The combined retry/notification flow still needs to preserve that boundary and consumer-owned facility cleanup; no special object-tracking instrument is required. |
-| Complete server-operation-to-notification retry flow | Generated jobs and notifications run separate endpoints/handlers; transient notification rejection is tested separately from native generated Queue delivery. | Missing combined scope: the request-side operation returns, its queued job encounters a controlled transient failure, retry respects preferences and records delivery state while retaining the serialized-context/consumer-cleanup boundary. |
+| Complete server-operation-to-notification retry flow | [Installed fixture](../packages/cossack/tests/fixtures/background-release-scenario.js) and [test](../packages/cossack/tests/background-release-scenario.test.js) prove response-before-consumer ordering, native transient Queue retry, persisted job/notification outcomes and preferences changed during the retry window. Four native deliveries carry only JSON IDs/context, four per-attempt cleanup receipts complete, and Request/D1/non-JSON scope input rejects. | Proven together on local native Queue/D1 using installed tarballs. Enabled in-app notification delivers on attempt 2; opting out during retry prevents delivery. D1 bindings have no close API; consumer-owned facades release, and request-owned prepared statements are never queued. |
 
 Recorded execution: [SVC-01 proof](./release-0.9.0-verification-archive.md#codex-svc01-svc05-complete-2026-10-05)
 records jobs acceptance **1/1 source and installed**; full Core **1,612/102 files**
@@ -78,6 +81,7 @@ and framework jobs/config cases **85/4 files** cover their then-current scope.
 records notification Queue/D1 **1/1**, loopback SMTP **1/1**, and corresponding
 installed runs; final notification units **19/19**. Cloudflare email responses
 were injected and SMTP was loopback. No external email delivery is claimed.
+The [new combined native retry/preference case](./release-0.9.0-verification-archive.md#codex-cross-feature-scenarios-123-2026-10-09) executes both delivery/opt-out outcomes and serialized-boundary/cleanup assertions; generated bindings, app types/build and native teardown pass.
 
 ## 4. Installed inspection, preserved upgrades and CLI/MCP parity
 
@@ -124,8 +128,9 @@ CF-08 hosted logging evidence does not supply the missing CI migration/RPC check
 
 ## Integration follow-up
 
-Scenario 4 now has combined installed acceptance. Scenarios 1, 2, 3 and 5 retain
-the explicit composition gaps above; these are not new feature requests.
+Scenarios 1–4 now have combined installed acceptance at current 0.8.3 versions.
+Scenario 5 retains its explicit hosted migration/protected asset/RPC gaps above.
+These are acceptance obligations, not new feature requests.
 The coordinator should decide the smallest existing fixture extension per missing
 scope and record actual execution before claiming REL-05 complete. Original task
 completion remains governed by each task's own acceptance criteria. REL-03 still

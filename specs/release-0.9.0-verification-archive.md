@@ -14760,3 +14760,164 @@ by adding explicit IDs to their original archived checkpoints; no historical
 results or task counts are changed. All current checklist/plan/handoff/audit and
 new archive-block local links resolve (514 checked). Numbered checklist count: 58 total,
 55 complete / 3 open.
+
+<a id="codex-cross-feature-scenarios-123-2026-10-09"></a>
+## Codex — cross-feature scenarios 1, 2 and 3 (2026-10-09)
+
+**Tasks:** REL-03/REL-05 cross-feature acceptance. **55 complete / 3 open**;
+no numbered task closes. Scenarios 1–4 now have combined current-version evidence.
+Scenario 5, the strict local Waiting/full CLI implementation gate, final 0.9.0
+artifacts and final requirement audit remain. Desktop stays complete by user
+choice; waived platform checks are not reported as passed.
+
+Three implementation agents independently own one new fixture/test pair each.
+Coordinator reviews every file and actual receipts, keeps shared APIs and records,
+then runs one combined installed invocation and root types. No product/shared API
+changes are necessary. Retained package payloads are reused without installation
+or repacking; each new app verifies CLI/Scaffold/Core/Framework/Renderer manifests
+at external consumer file-tarball paths with versions and SHA-256 receipts.
+
+### Scenario 1 — protected resource and validated edit
+
+Implementation: `packages/cossack/tests/fixtures/protected-resource-scenario.js`
+and `packages/cossack/tests/protected-resource-scenario.test.js`.
+
+One protected page composes public `server$`, typed rows, `defineUrlState`,
+`@Server` input validation/authorization and client error/refresh handling.
+Generated application `pnpm exec tsc --noEmit` and production Vite build pass.
+Native workerd/D1 and actual Chromium demonstrate:
+
+- The anonymous page is denied. A server-owned random cookie identity opens it
+  and loads Alice/Bob rows from the typed server resource.
+- Filtering sets browser `search=Alice`, records actual D1 reads by the same
+  typed loader and changes visible rows. `updateUrlState` performs navigation;
+  a query RPC is not falsely claimed.
+- The edit with input `x` receives its authored server field error, retains `x`
+  and leaves rows/effects unchanged.
+- The accepted edit produces row version 1 and exactly one durable effect, then
+  refreshes the filtered visible row.
+- Anonymous replay of that same captured edit with forged user/permission client
+  state rejects HTTP 401; durable rows and effects remain identical.
+- Browser errors remain empty. Browser/harness close independently; private
+  dependencies are removed even if one cleanup fails, with truthful receipts.
+
+Final agent retest: **1 passed**, 11.12 seconds. Evidence:
+`/tmp/cossack-protected-resource-cbCBTP`. Identity is synthetic and server-owned;
+this is no real external authentication-provider or hosted Worker claim.
+
+### Scenario 2 — two permitted users through two Workers
+
+Implementation: `packages/cossack/tests/fixtures/realtime-release-scenario.js`
+and `packages/cossack/tests/realtime-release-scenario.test.js`.
+
+The generated app typechecks before its production build. Two actual native
+Workers share the installed public `SseDurableObject`, use the public production
+Page/SSE/RPC path and structural captured/revalidated fixture sessions. Assertions
+join every scenario clause in one case:
+
+- Alice/Bob are permitted in one team; each RPC result identifies its distinct
+  executing Worker. Concurrent edits yield counts 1 and 2 and both live
+  subscriptions converge on the same two authored effects.
+- A denied identity and another scope cannot invoke/subscribe to the shared
+  component. Forged client count/effects never enter the authoritative state.
+- An actual TCP streaming caller receives a native yield, aborts, and the public
+  `readRpcStream` reports `COSSACK_RPC_CANCELLED`. A subsequent Bob call succeeds;
+  both subscribers converge to count 4 with exact effects. Cancellation does not
+  promise rollback of the already observed yield.
+- Another scope's live subscription receives its own positive control and state,
+  with none of the shared private sentinel or forged updates.
+- Native harness closes and its private app is removed. Cleanup records true
+  only after actual successful close/removal, rather than unconditionally.
+
+Final agent retest: **1 passed**, 12.96 seconds. Evidence:
+`/tmp/cossack-realtime-scenario-jo6gvs`; log
+`/tmp/cossack-realtime-scenario-installed.log`. Sessions are application-owned
+synthetic identities, not a login-provider claim. Local native Workers satisfy
+this original scenario; no browser UI or hosted condition is added.
+
+### Scenario 3 — background retry and notification preferences
+
+Implementation: `packages/cossack/tests/fixtures/background-release-scenario.js`
+and `packages/cossack/tests/background-release-scenario.test.js`.
+
+An installed CLI generates jobs/notifications composition. Native production
+build, Wrangler binding generation (`types --env-interface CloudflareBindings`)
+and installed application `tsc --noEmit` pass. Actual native Queue/D1 evidence:
+
+- The request-side operation returns HTTP 202 before any consumer attempt starts.
+  Only serialized notification ID and explicit tenant/actor context are queued;
+  the request-owned prepared statement stays in the request operation.
+- Controlled transient preferences failure records job retrying/attempt 1 with
+  `JOB_TRANSIENT_FAILURE`, and notification queued/attempt 1 with
+  `NOTIFICATION_PREFERENCES_UNAVAILABLE`.
+- Actual native retry completes both jobs on attempt 2. The enabled in-app
+  notification reaches `delivered`; opting out during the retry window records
+  `failed`/`NOTIFICATION_PREFERENCE_DISABLED` and creates no delivered inbox row.
+- Four actual Queue envelopes contain only the public versioned JSON job fields,
+  notification ID payload and explicit IDs. Request, D1 binding and non-JSON
+  request context inputs reject in three separate checks.
+- Each attempt opens a consumer-owned facade and registers awaited release with
+  `onCleanup`; all four cleanup rows are confirmed by bounded polling. D1 platform
+  bindings have no close API; no binding closure or garbage-collection claim is
+  substituted for the scoped-facade release.
+- Native harness closes and the private application is removed.
+
+Final agent retest: **1 passed**, 31.14 seconds. Evidence:
+`/tmp/cossack-background-scenario-KOBvMD`. Scope is local native Queue/D1 and
+in-app notifications; no external email delivery is claimed. The original
+scenario permits a request-side server operation, without a mandatory decorator.
+
+### Coordinator review, fixes and combined checks
+
+Review corrections preserve all acceptance assertions:
+
+- Reject workspace consumers and verify actual retained file-tarball origins.
+- Isolate Vite caches with private dependency directories and per-package/tool
+  links. Earlier whole-directory-link runs do not prove the retained consumer
+  was untouched; that stronger preliminary assertion is retracted. Final helpers
+  keep new caches private; no retained package payload was intentionally changed.
+- Use truthful teardown receipts and clean private dependencies/apps when native
+  cleanup fails. Final acceptance has successful cleanup, not a waiver.
+- Observe job and notification state in one native D1 batch, require the exact
+  transient notification state, and wait for actual cleanup receipts. Earlier
+  mixed-time probe failure is a fixture observation race, not an inferred product
+  defect. Terminal job state alone does not establish cleanup completion.
+
+Combined command, using the retained installed consumer:
+
+```sh
+COSSACK_SCENARIO_INSTALLED_ROOT=/tmp/cossack-preview-ci-20261009-agent/app \
+COSSACK_REALTIME_SCENARIO_INSTALLED_ROOT=/tmp/cossack-preview-ci-20261009-agent/app \
+COSSACK_BACKGROUND_SCENARIO_INSTALLED_ROOT=/tmp/cossack-preview-ci-20261009-agent/app \
+  pnpm --filter cossack exec vitest run \
+  tests/protected-resource-scenario.test.js \
+  tests/realtime-release-scenario.test.js tests/background-release-scenario.test.js
+pnpm tsc --noEmit
+```
+
+**3 files / 3 passed / 0 skipped**, 31.29 seconds, exit 0. Root types pass,
+exit 0. Logs: `/tmp/cossack-cross-feature-combined-20261009.log` and
+`/tmp/cossack-cross-feature-root-types-20261009.log`.
+Coordinator inspects final combined verified/cleanup receipts:
+
+- `/tmp/cossack-protected-resource-lSWhqR`: browser/harness closed; dependencies detached.
+- `/tmp/cossack-realtime-scenario-2Trn1u`: native harness closed; app removed.
+- `/tmp/cossack-background-scenario-fpaiUb`: native harness closed; app removed.
+
+All used packages remain **0.8.3**. No broad unchanged suites, scenario-4 or hosted
+Workflow repeats, packing, installation or cloud writes. These current-version
+proofs do not establish final 0.9.0 artifacts or a green full CLI release gate.
+The strict user-owned local Workflow probe stays unchanged, with its upstream
+blocker retained; no provider patch/status inference/waiver.
+
+Checklist, current plan, scenario audit and handoff are updated once for this
+verified batch. The next independent criterion is scenario 5's actual hosted
+CI migration plan/apply and protected asset/RPC checks, preserving production
+and proving cleanup. Existing CF-09 simple hosted smoke is insufficient for those
+additional assertions. Original feature completions retain their evidence;
+REL-03/04/05 stay open. User reports/tool settings/baseline probes stay unstaged.
+
+Coordinator documentation validation: **523 local links/anchors resolve**, all
+58 numbered checklist rows account for 55 complete / 3 open, and owned-file
+syntax/whitespace checks pass. Only the six new acceptance fixture/test files and
+five release-record files belong to this batch; unrelated user files are excluded.

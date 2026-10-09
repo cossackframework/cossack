@@ -2150,3 +2150,17 @@ inspect/plan/preserve/apply/check/CLI-MCP sequence. Combined local checks:
 Strict local Waiting/full CLI remains blocked by the simulator's missing native
 transition; final versions and cross-feature scenarios 1/2/3/5 remain required.
 Desktop stays waived. [Commands and exact scope](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09).
+
+### Codex — cross-feature scenarios 1, 2 and 3 complete (2026-10-09)
+
+**55 complete / 3 open; no numbered task closes.** Three combined installed
+acceptance cases pass: protected typed resource/URL filter/validated edit and
+unauthorized effect-free denial; two permitted realtime editors across native
+Workers with convergence, explicit TCP cancellation and private-scope observer;
+request-return/native Queue retry/preferences/delivery with JSON-only context and
+confirmed per-attempt cleanup. Combined: **3 passed / 0 skipped**; generated app
+types/build and root `pnpm tsc --noEmit` pass. Native teardown is verified.
+No product changes, repacks, installations or cloud writes. Scenarios 1–4 now
+pass at current versions; hosted scenario 5, strict local Waiting/full CLI,
+final versions/artifacts and requirement audit remain. Desktop stays waived.
+[Commands, observations and limits](./release-0.9.0-verification-archive.md#codex-cross-feature-scenarios-123-2026-10-09).
