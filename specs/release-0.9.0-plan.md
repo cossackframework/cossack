@@ -228,6 +228,13 @@ These tasks establish release readiness after implementation. A passing narrow
 test is evidence for its behavior only. It does not close unrelated features
 or the final release audit.
 
+**Gate order — Codex (2026-10-09).** Close REL-02/03 against the completed
+implementation at the current package versions. REL-04 then bumps to 0.9.0,
+rebuilds and repeats affected package/install checks; REL-05 audits that final
+release state. Requiring 0.9.0 artifacts before REL-02/03 would introduce a
+circular dependency absent from the original plan. Final 0.9.0 artifact checks
+remain required under REL-04. [Original-plan and current-payload audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
+
 <a id="rel-02"></a>
 ### REL-02: Executable docs and published packages
 
@@ -242,8 +249,11 @@ tarball/runtime/recipe matrix and executable documentation coverage remain open.
 export targets, 74 Node imports, strict Bundler/NodeNext declaration imports,
 representative generated compositions, and fresh native D1 migration/model
 acceptance. Templates now declare authoritative operations; existing applied
-callback migration histories still reject changed checksums. The remaining final artifact/runtime matrix keeps REL-02 open; native Workflow
-lifecycle criteria now close through retained interruption proof and real hosted Waiting. A subsequent source/installed batch compiles all four unchanged
+callback migration histories still reject changed checksums. CF-09 remains the original outstanding API-changing task dependency for REL-02;
+native Workflow lifecycle criteria now close through retained interruption proof
+and real hosted Waiting. Current retained public API/guide payloads match the
+implementation, with Studio asset/build-cache differences recorded in the
+[artifact audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09). A subsequent source/installed batch compiles all four unchanged
 Workflow guide snippets with generated Cloudflare types, checks NodeNext public
 exports and rejects invalid input/event types. Application-owned operation and
 authorization stubs prove contracts only; they do not implement those services.
@@ -341,8 +351,9 @@ HTTP, SSE and WebSocket; cleanup is independently confirmed by GET404.
 [Commands, evidence and limits](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09). Provider source builds and final 0.9.0
 artifacts are not covered. REL-02/03 remain open.
 
-Remaining: the required non-Desktop final release matrix, including full CLI
-and final versioned artifacts.
+Remaining before REL-03 closes: the required non-Desktop implementation matrix,
+including a green full CLI/runtime gate. REL-04 owns the subsequent version bump
+and affected final 0.9.0 artifact rechecks.
 Generated Deno standalone shutdown/draining is verified under real signals and
 installed tarballs in the [Codex acceptance](./release-0.9.0-verification-archive.md#codex-deno-standalone-draining-2026-10-06). Node standalone draining is verified in the
 [Codex batch](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06). The initial full CLI run failed; all 19 failures
@@ -364,6 +375,14 @@ serialization and native UI prop contracts. Application-owned method/data stubs
 provide type context only; obsolete before examples are compiled, not endorsed
 at runtime. The draft prose/completeness audit and version bump remain gated.
 [Evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
+
+Codex release prose (2026-10-09): [changelog](../CHANGELOG.md) and
+[release notes](./release-notes-0.9.0.md) are prepared as Unreleased candidates.
+Coordinator reviewed feature coverage, migration claims and all 97 local links/
+anchors against the current guides. No new executable examples or source changes.
+Full REL-04 remains open: REL-02/03 dependencies, final migration completeness,
+version/range/lock/template alignment and affected build/install acceptance.
+[Batch evidence](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
 
 Purpose: A release must present one consistent version and explain intentional
 API changes. Users need a migration path from 0.8.x.

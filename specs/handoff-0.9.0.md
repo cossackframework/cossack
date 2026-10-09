@@ -47,7 +47,16 @@ absent. No GitHub/CI resources created. Portable installed app and reviewed setu
 teardown: /tmp/cossack-preview-ci-20261009-agent (setup.mjs prepare/provision/run/
 cleanup). Supply verified accountId from prior plan if env absent, revalidate access
 before writes. CI evidence helper has 21 passing regressions; hosted case skipped.
-REL-02/03 still need final artifact/runtime/full CLI gates, then REL-04/05 versioning/audit.
+REL-02 remains gated on CF-09, not on a premature 0.9.0 version bump. Current
+retained public APIs/guides match source; Studio asset names/CSS and a build cache
+differ. REL-03 needs its green full CLI/runtime gate. Then REL-04 bumps versions
+and repeats affected artifact/install checks before REL-05 audits the final state.
+[Original order and payload audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
+Unreleased [changelog](../CHANGELOG.md) and [release notes](./release-notes-0.9.0.md)
+are now prepared; coordinator reviewed claims and all 97 local links/anchors.
+REL-04 still needs final migration completeness, version alignment and affected
+build/install proof after its dependency gates. No source changes or rerun checks
+in this documentation batch; counts remain 53/5.
 Preserve reports.md/.zcodeignore and the two baseline Workflow probes.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.

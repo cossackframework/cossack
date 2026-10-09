@@ -14315,3 +14315,62 @@ checks pass via `node scripts/typecheck.mjs --exclude-desktop` in
 pass. No broad unchanged browser/installed/unit reruns or version bump.
 Remaining tasks: CF-09 hosted CI, REL-02 final artifacts, REL-03 full CLI/runtime/
 versioned matrix, REL-04 versioning/doc audit and REL-05 final requirement audit.
+
+## Codex release gate order and current artifact audit — 2026-10-09
+
+<a id="codex-release-gate-order-audit-2026-10-09"></a>
+
+Author: **Codex**. **53 complete / 5 open; no task closes.** Original plan at
+289d1810 requires tarball imports, helpers/providers and final public-API examples
+for REL-02, with all API-changing tasks/RT-29 as dependencies. REL-04 explicitly
+bumps versions after REL-02/03, then rebuilds/repeats affected package/install
+checks. Requiring final 0.9.0 artifacts before REL-02 introduces a circular
+prerequisite. Corrected current plan/handoff/checklist sequencing; no requirement
+removed. Final versioned artifacts still require verification under REL-04/05.
+
+Coordinator and independent agent inspected the actual twelve retained package
+tarballs referenced by /tmp/cossack-compiler-browser-release-installed/package.json.
+Coordinator compared 1,356 published file paths against current workspace bytes;
+private audit /tmp/cossack-rel02-current-payload-audit-20261009.json. Runtime
+code, declarations, templates and guides match except recorded asset/cache
+variation. Inherited LICENSE files are artifact-only at package roots, supplied
+from the monorepo license; these are not missing runtime dependencies.
+
+Studio's manifest names an older hashed entry JS/CSS pair; entry JavaScript bytes
+are identical to current output. Current CSS differs only by the additional
+.static{position:static} rule. This is not a byte-identical current Studio
+artifact claim. Semantic comparison is saved in
+/tmp/cossack-rel02-studio-payload-audit-20261009.json. Test-utils differs only in
+dist/tsconfig.tsbuildinfo; runtime/declaration payloads match. Agent metadata
+comparison found only database/UI development test-script differences after
+normalizing packed workspace ranges. No packages were rebuilt/repacked, and no
+unchanged installed acceptance was repeated. Final versioning will refresh
+artifacts and verify the affected package/install gates.
+
+Retained import/example coverage remains valid for unchanged APIs: 200 exports,
+90 Bundler/88 NodeNext declaration imports, 74 Node imports, published helpers/
+providers and recorded generated/runtime/guide acceptance. The artifact byte
+comparison alone is not runtime or declaration execution proof. SVC-04's sole
+missing Waiting criterion is now verified; CF-09 remains the outstanding original
+API-changing task dependency. Thus REL-02 stays open, without adding a version
+prerequisite that depends on REL-02 itself.
+
+Actual blockers revalidated: interactive zsh has neither exported nor unexported
+CLOUDFLARE_API_TOKEN (CF_API_TOKEN absent too); hosted CI cannot start despite
+existing authorization/preparation. Strict local Waiting/full CLI remains red;
+no change to baseline probes, provider status mapping or required assertions.
+No hosted jobs/resources are live. No source changes, tests/typechecks reruns,
+GitHub writes or cloud mutations. Baseline user changes preserved.
+
+Independent implementation agent owned only CHANGELOG.md and
+specs/release-notes-0.9.0.md. Prepared Unreleased prose across all release
+categories, migration changes and provider/runtime limits. Coordinator reviewed
+both files against architecture, checklist, migration sections and linked guides;
+all 97 relative links/anchors resolve. Explicitly retain full CLI/local Waiting
+failure, broader hosted experiment failure, hosted CI omission and Desktop waiver.
+No new code examples, source changes or package version edits. Root/package
+TypeScript and runtime suites were not rerun for this prose-only batch; prior
+results are retained at their documented scope, not reported as new passes.
+Owned whitespace and 58-task status consistency checks pass. Full REL-04 remains
+open for REL-02/03 dependencies, final migration completeness, version/range/lock/
+template alignment and affected build/install proof. No new task ID completes.
