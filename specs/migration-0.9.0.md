@@ -1,9 +1,365 @@
 # Draft 0.9.0 migration guide
 
-This is a working record of verified behavior changes. It is not yet a complete
-release migration guide. REL-04 must audit the full release checklist, add every
-remaining break, compile its examples, and verify package installation before
-publishing 0.9.0. Package versions remain 0.8.3 while that work is open.
+This draft covers migration steps for the current implemented 0.9.0 APIs and
+runtime contracts. Package versions remain 0.8.3. Version/range/lockfile/template
+alignment, affected installation checks and the final requirement audit remain
+release gates; this document does not announce a published or fully verified release.
+The existing TypeScript examples retain their prior compile evidence. New upgrade
+instructions below link to public guides instead of adding executable examples.
+
+## Upgrade order and scaffold ownership
+
+Read the target release's installed CLI help and inspect its upgrade plan before
+changing an application. `cossack upgrade --dry-run --json` reports dependencies,
+file effects, conflicts, preserved edits, installation requirements and follow-up
+actions. Select the intended published scaffold version with `--tag`; a repository
+containing this draft is not evidence that 0.9.0 is already published.
+
+The recorded schema-v3 recipe and dependency baseline distinguish framework-owned
+files/dependencies from application edits. `--apply-template` updates unchanged
+owned files and may delete unchanged obsolete files. Modified files remain
+conflicts. `--force` restores missing owned files while preserving modified files;
+`--force-file` selects a particular permitted file and cannot replace package/runtime
+configuration or local secrets. Review any intentional overwrite separately.
+Keep `.cossack/scaffold.json`; deleting it loses the ownership evidence used to
+plan later composition and upgrades.
+
+An updated dependency manifest does not finish migration. Install dependencies,
+merge preserved application-owned auth/config/entry/Vite/ORM files, regenerate
+route/config/binding types, and build server and browser together. Applied database
+migrations need the separate [history-preservation procedure](#codex-preserve-applied-generated-migration-definitions-2026-10-06),
+even when a scaffold file is classified as safely replaceable. A partial installation
+failure reports the changes already applied and a retry action; do not treat it
+as a successful upgrade or automatically rerun application mutations.
+
+Adapter changes re-render the recorded recipe rather than importing the previous
+runtime's resources. A D1 application moving to Node needs SQLite/Turso; SQLite
+moving to Workers needs D1/Turso. The adapter command does not move database data,
+provision resources or complete dependency installation. Recognized local environment
+values may be transferred, but existing target values win and the source environment
+file remains. Use the [upgrade and adapter contracts](../docs/cossack-cli.md#upgrades)
+for conflict behavior and provider choices.
+
+## CLI automation and agent inspection
+
+Replace stdout scraping and permissive unknown flags with the installed command's
+help and JSON contract. Invalid, repeated, ambiguous or command-incompatible options
+return stable diagnostics and a nonzero exit. Noninteractive execution does not
+prompt; provide required choices explicitly. Creation/feature dry runs describe
+planned effects without writing the project. Deployment dry runs have a different
+contract: they write generated types/build/tool artifacts while preventing uploads.
+
+Finite JSON commands emit one envelope with `schemaVersion: 1`, `command`, `ok`
+and `diagnostics`, plus command-specific `data` when supplied. Dev/start/Studio lifecycle output is newline-delimited
+JSON and must be consumed until stopped/failed. Dev/start `started` confirms child
+creation, not HTTP readiness; Studio has its own readiness event. Signals request
+bounded cleanup, and a forced termination is failure. Raw tool/project output and
+arguments are excluded from JSON; use human mode for private diagnosis. Handle
+nonzero exit codes and follow-up actions as well as the envelope.
+See [machine output](../docs/cossack-cli.md#machine-readable-output-contract-codex-2026-10-02).
+
+Bind `cossack-mcp` to one explicit existing project. Inspection/checks/explanations
+and offline documentation use the same models as the CLI. They can read installed
+declarations outside the project during dependency resolution; the project binding
+is not a sandbox for hostile local code. Cancellation/deadlines terminate the
+request's worker. Do not interpret export presence, a signature, authored guidance
+or static binding names as proof of runtime support or remote resource readiness.
+Discovery never executes its usage examples.
+
+Stored test-result readers report the selected run's outcome, scope and freshness.
+Development trace records report bounded observations and receipt age, not live
+state. Neither substitutes for running an acceptance suite. Treat CLI/MCP versions
+as installed-package facts; do not assume the agent's global CLI version equals
+the application's library version. Use [local tools](../docs/local-agent-tools.md),
+[test records](../docs/test-results.md) and [trace semantics](../docs/development-traces.md).
+
+## Public imports and generated contracts
+
+Replace repository/demo-relative imports and undeclared package internals with
+published export entries from the installed package. Core owns portable runtime,
+input, routes, jobs, schedules, notifications, storage and diagnostics contracts;
+Node-only scaffold/inspection/compiler tooling must not enter a browser or edge
+runtime graph. Framework runtime libraries do not make the Node-only CLI/MCP SDK
+part of the application. Presence in a tarball does not make every entry suitable
+for every runtime.
+
+Auth intentionally publishes TypeScript consumed by the framework build pipeline;
+do not assume its root is a plain native Node ESM entry. Deno and Node development
+plugins live in the adapters' separate `/vite` entries, not their production entry.
+Native Cloudflare Workflow entry classes stay separate from pure provider helpers,
+as described under [Workflows](#storage-images-and-workflows). Use installed
+[package guidance](../docs/local-agent-tools.md#package-owned-usage-guides) and
+[architecture boundaries](architecture.md), rather than copying private build paths.
+
+For standalone typechecking, generate `.cossack/routes.ts` through
+`cossack routes --generate` and port the `virtual:cossack-routes` tsconfig mapping
+from the [typed URL guide](../docs/routing.md#typed-urls). Vite generates this file
+as well; keep it out of version control and regenerate after route changes.
+Use the generated API request/response types with [declared API schemas](../docs/api-routes.md#declared-input-and-output).
+Native API handlers explicitly parse inputs and authorize access; a generated type
+is not runtime validation. Plain handlers/components without declared native API
+contracts do not gain inferred validated schemas.
+
+Add config type generation through the documented `cossackConfig()` integration
+or `cossack config --generate`; merge its generated declaration into the application's
+TypeScript setup. Keep translation extraction/catalog checks and generated key/
+parameter declarations in the application workflow. Unknown config/route/translation
+keys now surface during checks rather than requiring a live request to find them.
+See [configuration](../docs/config.md) and [localization](../docs/localization.md).
+
+## Configuration requirements and private values
+
+Port configuration factories as synchronous request-scoped factories. Do not
+resolve request bindings into a module-global singleton or reuse another request's
+configuration tree. Literal `requirements` describe variables/bindings and runtime
+compatibility. Request preparation validates the active requirements before any
+factory or application middleware executes, including scalar coercion and local
+binding shapes. Missing/conflicting/invalid values fail instead of silently
+falling back to a different provider.
+
+Cloudflare build checks use the selected Wrangler environment. Node/Deno build
+checks validate metadata and compatibility but do not read production process
+values or arbitrary `.env` files. Their `cossack config --check` returns
+`COSSACK_CONFIG_CHECK_UNAVAILABLE`; supply values to the production host and
+verify request preparation. Generated Node uses `createEnv()`; generated Deno uses
+`Deno.env.toObject()`. A structurally valid binding object does not prove remote
+connectivity. Async configuration factories remain unsupported; put I/O in
+request-owned services. See [requirement checks](../docs/config.md#build-time-requirement-checks).
+
+The configuration store itself is private and is not a hydration field.
+`secret: true` is classification metadata, not automatic value tainting. Never
+copy a secret into public state/resources, rendered HTML, head tags or RPC replies.
+Client-only fields can still have authored initial values during SSR and explicit
+RPC arguments; they are not secret storage. Keep config modules and their private
+dependencies out of the client bundle using the framework compiler, then inspect
+the built application. [Private configuration](../docs/config.md#keep-private-configuration-out-of-hydration)
+and [state contracts](#state-contracts-and-development-diagnostics) explain these boundaries.
+
+## Controlled server DataTable
+
+Port table query ownership to the parent instead of expecting `DataTable` to
+fetch, filter, sort or slice rows. Supply the current page's `rows`, the complete
+matching `rowCount`, one-based query `state` and `onStateChange`. Filtering, sorting
+and page-size changes request page 1; the parent fetches that state and guards
+against stale replies or an out-of-range page after the total changes. Compose
+these reads with the existing server-resource/URL-state contracts.
+
+Use typed row columns and a stable nonempty `getRowId`, not the index within a
+page. Duplicate row/column IDs reject. Controlled selection requires both
+`selection` and `onSelectionChange`; selecting visible rows preserves off-page
+IDs, so reconcile them explicitly when the application needs a different policy.
+Authorize every selected identifier on the server before a mutation.
+
+Provide a visible `caption`, a unique table `id` for same-page navigation/focus,
+and declared props rather than spreading arbitrary native attributes. Use safe
+loading/error/retry state; stale rows may remain visible during a query but selection
+is blocked. The packaged [server-data-table guide](../packages/ui/agent-docs.json)
+contains the tested public import, typed columns, selection and accessibility example.
+
+## Service ownership and test helpers
+
+Declare scoped service ownership on the relevant layout/component before injecting
+it. Injection resolves the nearest declared owner and is lazy/read-only; it is not
+an implicit application-global service registration. Inherited metadata and nested
+renderer-created consumers retain that scope. Constructor dependencies must resolve
+within the declared hierarchy; use contextual resolution errors to correct missing
+or circular dependencies instead of creating a fallback singleton.
+
+SSR and component/service RPC receive fresh request scopes, while a reused browser
+layout retains its scope until its subtree is destroyed. Request-aware service
+facilities bind to the active invocation, not a previous user's bootstrap request.
+Do not retain request credentials/identity as global service state. Realtime scope
+is a separate transport contract and does not make an SSR service process-global.
+
+Service `onDispose()` runs once. Synchronous `dispose()`/`destroy()` initiate cleanup
+without waiting; use `scope.disposeAsync()`/`component.destroyAsync()` when the host
+must await owned cleanup. One failing hook does not skip remaining hooks. Streamed
+RPC retains its request owner until body completion/failure/cancellation, so a
+consumer abandoning a stream must release it. Application I/O still needs cooperative
+cancellation. Follow the [service lifetime guide](../docs/services.md#scope-and-lifetime)
+for owner declarations and cleanup hooks.
+
+Replace hand-built router/auth doubles when the test needs production behavior
+with the published [test helpers](../docs/test-utils.md). Supply the actual production
+fetch handler and explicit credential fixtures for request/RPC checks; the helper
+does not invent authentication or bypass authorization. Browser hydration helpers
+accept the production envelope, retain DI/bootstrap ownership and provide awaitable
+idempotent unmount. Await that cleanup rather than leaving later tests with owned
+subscriptions or async work.
+
+A request-scope helper alone does not supply framework routing/session middleware,
+and a DOM simulation does not prove browser transport, compiler stripping or provider
+durability. Test those boundaries through generated built applications and the
+appropriate native/browser acceptance. Installed helper imports and typechecking
+also do not establish that an application's production credential provider is safe.
+
+## Cloudflare bindings, environments and deployment
+
+Existing Wrangler files are preserved by upgrades. Add `enable_request_signal`
+explicitly to the applicable `compatibility_flags` to deliver incoming request
+aborts to pending RPC work. New configurations include it alongside `nodejs_als`;
+retain the AsyncLocalStorage support required by your application. The generated
+compatibility date is 2026-06-06, not a command to rewrite an existing application's
+migration history or tested compatibility settings. Select and test its date/flags
+intentionally. CLI deployment preflight rejects a coordinator without the request
+signal flag as `COSSACK_REQUEST_SIGNAL_REQUIRED`. Named environments inherit flags
+unless they override them; inspect each effective environment.
+
+Cloudflare SSE now needs the `COSSACK_SSE` binding, an exported
+`SseDurableObject` and its SQLite Durable Object migration. Keep existing applied
+DO migration tags intact; add the required class migration through Wrangler's
+normal history rather than replacing old tags. Repeat coordinator bindings in
+named environments. Worker SSE shares scoped state/broadcasts through that
+coordinator; Node/Deno SSE remains local to a process/module instance.
+
+Select `--env` before dev/build/SSG/deploy so Vite, generated URLs, bindings and
+migrations agree. Deployment-only environment selection cannot fix an artifact
+already built for another target. Vite `--mode` is separate from the Cloudflare
+environment. Repeat variables/bindings/required secret names in named Wrangler
+environments; these declarations do not inherit from top level. Set a real
+`APP_URL`, replace resource placeholders, keep secrets out of `vars`, and generate
+binding types for the selected target. Declare and provision required resources/
+secrets explicitly. Read [deployment configuration](../docs/deployment.md).
+
+Preserve `ASSETS` and `assets.run_worker_first: true`. Global and owning route/layout
+policies now run for asset requests too; move page-only work out of global middleware
+when appropriate. Private/authenticated or cookie-setting pages must remain SSR.
+A static file or SSG result cannot replace authorization. Review [public-only SSG](../docs/static-site-generation.md)
+and [asset policy](../docs/deployment.md#static-assets-and-authentication).
+
+Database migration/inspection commands choose their local/remote target explicitly.
+A local schema/history inspection cannot prove production state. Resource plans/
+apply may verify existing D1/KV/R2/Hyperdrive selection and write local JSON/JSONC;
+unsupported discovery/provisioning remains an unresolved action. They do not create
+cloud resources. `cossack deploy --dry-run` validates the fresh selected artifact
+locally but does not establish remote permissions, secrets or resource availability.
+Use [resource selection](../docs/cloudflare-resources.md) and the configured live
+migration target before a real deployment.
+
+## Node and Deno development and shutdown
+
+An adapter's runtime support is distinct from the application's build tools.
+The current Vite 8 package declares Node `^20.19.0 || >=22.12.0`; use a compatible
+Node version for Node-hosted build/development tooling, including Deno applications.
+Repository acceptance used Node 24.19.0; that observation is not a new minimum
+for every runtime API. The Deno adapter documents Deno 2.9+, Hono 4.12+ and ESM;
+keep the application's installed dependency/runtime versions compatible with its
+[adapter requirements](../packages/deno-adapter/README.md).
+
+Port `cossackNode()` or `cossackDeno()` from the relevant adapter `/vite` entry
+into the owned web Vite configuration. Vite remains Node-hosted and owns browser
+assets/HMR. Node loads the server graph through Vite's runner; Deno executes it
+in its separate native child and replaces that process on server edits. A reload
+resets process-local state and does not reverse external effects. Deno's Vite
+integration rejects embedded middleware mode; use the documented standalone
+host. See [Node development](../packages/node-adapter/README.md) and
+[Deno installation/development](../packages/deno-adapter/docs/installation.md).
+
+Generated Deno projects use `nodeModulesDir: 'manual'`; install their pnpm-managed
+dependencies before building/starting, and preserve the committed `deno.lock`.
+The production entry reads process environment, not `.env` files. Grant the
+application's required Deno permissions explicitly; `cossack start` uses its
+documented environment/network/read permissions, while the authored `deno.json`
+task can supply a deliberate permission policy. `COSSACK_DENO_BINARY` selects the
+native executable. The [Deno web guide](../packages/deno-adapter/docs/web.md)
+describes fetch, origin and asset contracts; uploaded compiled-artifact acceptance
+does not establish a provider source-build workflow.
+
+For generated standalone entries, retain explicit `installNodeShutdown` or
+`installDenoShutdown` ownership. SIGTERM/SIGINT share one shutdown operation that
+stops admitting HTTP, drains accepted responses and disposes runtime resources.
+One deadline covers all work (10 seconds by default); forced/failed generated
+shutdown exits 1. Importing an adapter or embedding the app installs no process
+signal handlers. Embedded hosts explicitly own disposal and any shutdown policy.
+A deadline can stop waiting/abort the listener, but cannot undo accepted mutations
+or prove completion of ignored application I/O.
+
+Node/Deno WebSocket component state is process-local and is lost on restart.
+Do not enable durable `stateful: true` on Deno; choose a durable backend for data
+that must survive. Multiple processes do not gain shared SSE state or broadcasts
+from the common adapter interface. Preserve authentication/origin/scope checks
+through the framework upgrade handler. Configure trusted proxy/public origins
+intentionally, and use the current socket's identity for shared-component actions,
+as described under [socket request context](#websocket-actions-use-each-connections-request-context).
+
+## Cloudflare diagnostics, budgets and preview credentials
+
+Merge generated server sourcemap settings into owned web Vite configuration and
+`upload_source_maps: true` into the Cloudflare configuration when private diagnosis
+needs them. Keep server maps outside client assets, and deploy the matched built
+Worker artifact with its maps. Maps do not add exception messages/stacks to fixed
+public failure events. Use returned request IDs and private provider diagnostics;
+a framework catch emitting a fixed code supplies no uncaught stack for provider
+remapping. Review [server logging/maps](../docs/server-logging.md#production-server-source-maps).
+
+Consumers of old development exception pages/logs must switch to fixed codes,
+authored identifiers and request correlation. Framework API/SSR/middleware failures
+and transport diagnostics omit arbitrary exceptions, concrete paths, payloads and
+credentials. Application-authored logs/responses still need deliberate treatment.
+Development snapshots/timelines are opt-in, bounded and excluded from production;
+handle optional event variants without assuming a server terminal means client
+consumption or cleanup after a socket send. See [trace semantics](../docs/development-traces.md).
+
+For direct Vite builds, port `cossackBuildBudgets()` after the Cloudflare plugin
+as documented in [build budgets](../docs/build-budgets.md). Use the application
+build path; a single-environment `vite.build()` does not run application hooks.
+Limits use KiB/native upload summaries, not a sum of compressed files. Unknown
+required metrics fail enforcement; local dry runs do not establish provider startup.
+Auxiliary Workers need explicit policies. Budgeted watch builds reject because
+completed measurement cannot establish every watch rebuild. Private receipts
+allow conservative supported reuse, not a remote authentication claim.
+
+Native preview commands need the project's installed compatible Wrangler 4.x
+at least 4.135.0; a global CLI cannot replace that dependency. Check the current
+native flag contract before changing tooling. Preview configuration is top-level
+`previews`, not merely `env.staging`. Repeat all non-secret variables and give
+D1/KV/R2 distinct existing staging references. Local DO classes get native preview
+namespaces; unsupported external/service/Workflow/Queue bindings reject.
+
+Keep required staging secrets in an explicit private `--secrets-file` JSON map.
+No production secret or local `.dev.vars` is copied automatically. Repository
+credential cleanup does not rotate remote credentials. Replace any real credential
+previously copied from an example through its provider's secret/token controls;
+do not restore historical values from Git or put replacement secrets into `vars`.
+The reviewed manual CI template uses protected `CLOUDFLARE_API_TOKEN`, repository account
+selection and `COSSACK_PREVIEW_SECRETS_JSON`, installing locked dependencies before
+receiving deployment credentials. Do not run privileged preview code from untrusted
+pull requests. A local template test is not hosted CI acceptance.
+
+Preserve `.cossack/preview.json` and uploaded ownership journals after a failed
+create/smoke. Cleanup compares immutable provider identity/time and current tagged
+deployment; a name or an old tag cannot authorize deletion. A saved creation ID/name/time
+plus independent provider confirmation that the latest deployment is absent permits
+never-deployed cleanup; a lost creation response without that receipt requires
+manual recovery. An empty ID or a guessed name cannot authorize deletion. Restore the explicit earlier CI
+journal to retry cleanup, rather than inventing identities.
+
+Cleanup retains external staging D1/KV/R2 resources. Branches using the same
+staging references still share data. Production promotion is separate: review the
+live target, apply compatible migrations before code that needs them, then deploy
+and smoke. Code rollback never restores rows, objects, DO state or external effects.
+See [preview lifecycle and rollback](../docs/cloudflare-previews.md).
+
+## SSG, Markdown and localization upgrade checks
+
+Use the Vite SSG plugin and the generated application's App/template conventions.
+Legacy SSG `--base-url`/`--out-dir` options no longer configure plugin output;
+move those settings into the plugin. Legacy `--app`, `--template` and
+`--project-root` have no plugin equivalent; retain the documented application
+conventions. Select the effective environment/base URL before generating canonical
+links or sitemaps. The [SSG guide](../docs/static-site-generation.md) contains the
+tested plugin pattern.
+
+Inspect structured route failures and incomplete/collision results before publishing
+static output; a partial build is not an acceptable substitute for private-page
+checks. Keep Markdown metadata validators, locale catalogs and static aliases
+consistent with generated route identities. Aliases copy canonical HTML rather
+than adding runtime redirects or duplicate sitemap entries. Translation extraction
+and generated key/parameter types should run after catalog changes. SSR and each
+SSG render have their own locale/config scope; do not cache visitor locale globally.
+See [Markdown migration](#codex-read-only-plans-and-typed-markdown-2026-10-05),
+[localization](../docs/localization.md) and [typed configuration](../docs/config.md).
+
 
 ## Durable Object readiness and session concurrency
 
@@ -259,7 +615,7 @@ new URL when their path updates.
 Use `defineUrlState` for typed query defaults and serialization. Choose
 `this.navigate(path, { history: 'replace' })` to replace the active history entry.
 Existing calls create a new entry. Read the [URL-state guide](../docs/url-state.md)
-for the API and the remaining RT-08 integration work.
+for the API and its navigation/serialization limits.
 
 For overlapping query edits, use `this.updateUrlState(definition, patch, options)`.
 It merges against the latest live pending intent. Constructing a URL from the
@@ -337,8 +693,8 @@ KV storage retention has a minimum of 60 seconds, while its stored millisecond
 deadline determines the logical window. KV still cannot guarantee exact counting
 across regions or sustain more than one write to a key per second; write failures
 reject. Provider inspection and required-guarantee checks are documented in the cache
-and rate-limiting guides. Actual native pre-header disconnect delivery remains
-an RT-01 acceptance gap.
+and rate-limiting guides. Native disconnect acceptance establishes delivery only
+for the tested transports; it does not cancel effects already committed.
 
 ## Counter decisions own a deadline and bounded replies
 
@@ -359,7 +715,7 @@ Observed HTTP request abort and socket cancellation/close stop a pending decisio
 from invoking its action. In-flight writes or already started application work
 can still finish. Cloudflare incoming disconnect signals require the
 [`enable_request_signal` compatibility flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-requestsignal-for-incoming-requests).
-Native coordinator queued cancellation remains a separate gate.
+Queued cancellation still cannot undo an operation that has already committed.
 
 HTTP, multipart and service proxies send a UUID v4 `X-Cossack-Request-Id` from
 dispatch. The transport guard accepts a valid UUID v4 and generates a fresh ID
@@ -382,7 +738,7 @@ range. Invalid direct requests return 400/`COSSACK_RATE_LIMIT_CONFIG_INVALID`;
 `DurableObjectRateLimitStore.hit()` rejects invalid windows before contacting the
 binding. Corrupt records and malformed replies reject rather than reset budgets.
 Storage failures reject before action mutation. Counter validation now also applies to other providers; capability inspection
-and cache duration conventions remain under the RT-18 audit.
+and cache duration conventions are documented in the linked provider guides.
 
 Create new namespaces with `new_sqlite_classes`. Keep existing migration history;
 the transactional key-value implementation also supports legacy DO storage.
@@ -498,7 +854,8 @@ Native API handlers explicitly parse their request values before use. Use
 `@Server({input:contract,authorize:policy.action('edit',lookup)})` for RPC resource
 access; native handlers/reads explicitly call `policy.authorize`. The
 [resource kit](../docs/authorization.md#typed-resource-policies) is implemented.
-Session freshness and the final release gates remain separate.
+Native authorization still needs current session checks; release verification
+remains distinct from an input schema contract.
 
 ## Service RPC keeps internal exceptions private in development
 
@@ -693,7 +1050,7 @@ still be undefined. See [server resources](../docs/server-functions.md#refresh-a
 Task cancellation signals now remain owned after setup settles. Rerun aborts
 before registered cleanup; destroy aborts all task signals before any application
 cleanup hook. Returned subscriptions can keep checking the signal. Application
-writes remain cooperative; typed paths and framework-gated commits remain RT-05.
+writes remain cooperative; use the typed paths and framework-gated commits below.
 
 ## Typed task dependencies and owned commits
 

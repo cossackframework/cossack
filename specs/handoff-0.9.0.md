@@ -54,9 +54,12 @@ and repeats affected artifact/install checks before REL-05 audits the final stat
 [Original order and payload audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
 Unreleased [changelog](../CHANGELOG.md) and [release notes](./release-notes-0.9.0.md)
 are now prepared; coordinator reviewed claims and all 97 local links/anchors.
-REL-04 still needs final migration completeness, version alignment and affected
-build/install proof after its dependency gates. No source changes or rerun checks
-in this documentation batch; counts remain 53/5.
+Current-API migration coverage now maps all 58 IDs; missing runtime/CLI/scaffold/
+config/DI/DataTable/deployment instructions are filled. All 75 guide links resolve;
+nine previously compiled examples are unchanged. [Audit](./release-0.9.0-verification-archive.md#codex-migration-coverage-2026-10-09).
+REL-04 still needs version alignment and affected build/install proof after its
+dependency gates. No source changes or rerun checks in these documentation batches;
+counts remain 53/5.
 Preserve reports.md/.zcodeignore and the two baseline Workflow probes.
 
 The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.

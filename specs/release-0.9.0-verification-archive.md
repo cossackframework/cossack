@@ -14374,3 +14374,67 @@ results are retained at their documented scope, not reported as new passes.
 Owned whitespace and 58-task status consistency checks pass. Full REL-04 remains
 open for REL-02/03 dependencies, final migration completeness, version/range/lock/
 template alignment and affected build/install proof. No new task ID completes.
+
+
+## Codex current-API migration coverage — 2026-10-09
+
+<a id="codex-migration-coverage-2026-10-09"></a>
+
+Author: **Codex**. **53 complete / 5 open; no full task closes.** Independent
+agent exclusively edited specs/migration-0.9.0.md; coordinator reviewed the final
+diff, public guides and relevant source/manifests. Filled genuine omissions in
+scaffold ownership, CLI finite/lifecycle JSON, MCP/stored evidence, public imports,
+generated route/config/translation contracts, private configuration, DataTable,
+scoped DI/awaitable cleanup, production helpers, Cloudflare flags/environments/
+bindings/assets/targets, Node/Deno development/shutdown/locality, maps/budgets,
+preview secrets/journals/cleanup/rollback and SSG/locale upgrade instructions.
+Removed stale completed-task acceptance-gap prose; Desktop sections untouched.
+
+Migration coverage mapping (migration guidance, not final acceptance proof):
+
+- CLI-01–08: upgrade order/scaffold ownership, CLI automation/agent inspection,
+  public imports/generated contracts; static evidence is distinct from execution.
+- RT-01: existing Durable Object readiness/socket context, new Node/Deno shutdown.
+- RT-02–06: typed input/resources/tasks/state and optimistic ownership sections.
+- RT-07–09: file routes/browser query/history and generated route/API contracts.
+- RT-10: existing typed forms and native UI control migration sections.
+- RT-11/13: credentials/session dashboard, authenticated SSE, OAuth and old input.
+- RT-12: new service ownership/awaitable disposal and test-helper boundaries.
+- RT-14: existing typed input/resource policies and explicit native authorization.
+- RT-15–17: database inspection, read-only plans and applied-history preservation.
+- RT-18: limiter deadlines/persistence and storage guarantees/key migration.
+- RT-19: optimistic/socket context and paused-consumer cancellation limits.
+- RT-20: state/inspector/server evidence and new private-configuration boundaries.
+- RT-21–22: typed Markdown and SSG/localization upgrade checks.
+- RT-23: new controlled server DataTable plus unchanged native UI sections.
+- RT-24–25: generated/config/runtime contracts and Cloudflare binding/flag guidance.
+- RT-26: existing storage/image/provider contracts.
+- RT-27: generated translations and SSR/SSG locale checks.
+- RT-28: inspector/server evidence, agent inspection and diagnostics.
+- RT-29: new production-fetch/credential/hydration test-helper migration guidance.
+- SVC-01–05: existing jobs/Turnstile/schedules/notifications/Workflows sections.
+- CF-01–07/10: environment/targets/types/secrets/resources/SSE/asset and SSG guidance.
+- CF-08–09/11: maps/budgets/previews/journals/rollback and external credential rotation.
+- REL-01–05: draft status, upgrade order, public-import/verification boundaries and
+  migration history; these process gates do not create a separate product API.
+
+Coordinator checks: all 75 local links/anchors resolve. All nine TypeScript fences
+and all nine code blocks exactly match HEAD before this batch; baseline hashes at
+/tmp/cossack-migration-prose-baseline-20261009.json. Retained source/installed
+Bundler/NodeNext compile and negative-type results remain valid for those unchanged
+examples (codex-migration-native-development-2026-10-06). No new executable examples.
+Checked actual installed Vite 8.1.4 Node engine range, adapter exports/shutdown,
+deployment request-signal preflight, selected environment/scaffold configuration,
+config check policy, SSG legacy flags, public Core/Auth entries and packaged
+DataTable/service/helper contracts. Documentation describes tested-version limits
+without turning them into unsupported universal runtime claims.
+
+Owned whitespace and 58-task count/status checks pass. No source/API/version edits;
+root/package typechecks, runtime suites and installed checks were not rerun for
+prose-only edits. No publication, GitHub/cloud mutations or new live resources.
+User baseline files preserved. Current migration prose criterion is prepared;
+full REL-04 remains open for REL-02/03 dependencies, version/internal ranges/
+lock/template alignment and affected rebuilt artifact/install proof. REL-05 final
+requirement audit remains separate. Interactive zsh still lacks the portable
+Cloudflare CI token; strict local Waiting/full CLI remains red. No requirement,
+status mapping or baseline Workflow probe was weakened.

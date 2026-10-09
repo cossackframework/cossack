@@ -373,7 +373,7 @@ fences compile through public Core/Renderer/UI exports under strict Bundler and
 NodeNext in source and installed consumers. Negative cases enforce JSON Date
 serialization and native UI prop contracts. Application-owned method/data stubs
 provide type context only; obsolete before examples are compiled, not endorsed
-at runtime. The draft prose/completeness audit and version bump remain gated.
+at runtime. The subsequent current-API migration coverage audit is complete; versioning and affected artifact checks remain gated.
 [Evidence](./release-0.9.0-verification-archive.md#codex-migration-native-development-2026-10-06).
 
 Codex release prose (2026-10-09): [changelog](../CHANGELOG.md) and
@@ -383,6 +383,14 @@ anchors against the current guides. No new executable examples or source changes
 Full REL-04 remains open: REL-02/03 dependencies, final migration completeness,
 version/range/lock/template alignment and affected build/install acceptance.
 [Batch evidence](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
+
+Codex migration coverage (2026-10-09): audited all 58 checklist IDs against
+existing/new migration sections. Filled CLI/scaffold/generated-contract, runtime/
+binding/config, DataTable, DI/test-helper and deployment upgrade omissions. All
+75 local links/anchors resolve; all nine previously compiled TypeScript examples
+are byte-identical. Current implementation migration prose is prepared; this is
+not final versioned artifact or requirement acceptance. No source/tests/types
+reruns for prose-only edits. [Coverage and limits](./release-0.9.0-verification-archive.md#codex-migration-coverage-2026-10-09).
 
 Purpose: A release must present one consistent version and explain intentional
 API changes. Users need a migration path from 0.8.x.
