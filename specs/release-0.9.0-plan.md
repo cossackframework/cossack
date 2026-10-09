@@ -204,6 +204,14 @@ flags are negotiated, with real 4.147 acceptance. [Evidence](./release-0.9.0-ver
 Promotion remains a separate reviewed production deployment with migration order
 and code/state rollback limits documented in [the guide](../docs/cloudflare-previews.md).
 
+Codex credential bootstrap (2026-10-09): user-requested cf account-owned token
+creation succeeds; scoped Worker/D1 access and protected shell loading are verified.
+Actual hosted CI remains red: missing journal in the first run, dispatch failure
+in the next attempt. Setup and test resources are confirmed removed; the token is
+intentionally retained until its 24-hour expiry. Capture GitHub diagnostics before
+teardown and resolve the observed CI failure before claiming acceptance.
+[Evidence and limits](./release-0.9.0-verification-archive.md#codex-cf-token-bootstrap-2026-10-09).
+
 Approach: Plan code and bound resources together. Identify which D1, KV, R2,
 Durable Object, Queue, Workflow, and service bindings are isolated or shared.
 Use native Worker Previews only after upgrading and testing the pinned tooling.

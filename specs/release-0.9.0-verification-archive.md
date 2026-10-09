@@ -14438,3 +14438,58 @@ lock/template alignment and affected rebuilt artifact/install proof. REL-05 fina
 requirement audit remains separate. Interactive zsh still lacks the portable
 Cloudflare CI token; strict local Waiting/full CLI remains red. No requirement,
 status mapping or baseline Workflow probe was weakened.
+
+
+## Codex cf token bootstrap and hosted CI attempts — 2026-10-09
+
+<a id="codex-cf-token-bootstrap-2026-10-09"></a>
+
+Author: **Codex**. **53 complete / 5 open; no release task closes.** User explicitly
+asked to use cf to get an API token. Installed cf command discovery/schema and
+provider permission groups establish account-owned token creation support; current
+OAuth login has account_api_tokens:create. This supersedes the prior assumption
+that the user must manually supply a token. Verified the selected account against
+the retained test plan and authenticated cf account membership before creation.
+
+Created an account-owned token with only Workers Scripts Write and D1 Write,
+resources restricted to the one test account, expires 2026-10-10T00:52:59Z.
+Provider account-token verification reports active; Worker script inventory, D1
+inventory and selected account GET each return 200/success. Token files live at
+/home/tan/.config/cossack/acceptance-cloudflare, directory 0700/files 0600. Added a
+conditional ~/.zshrc loader that preserves an existing environment export. Fresh
+interactive zsh confirms availability. No credential value entered tool output,
+argv, repository, commit or handoff. Token intentionally remains for authorized
+CI until its provider expiry; it is distinct from cleaned test infrastructure.
+
+Four disposable setup attempts: first stopped before Worker upload on placeholder
+APP_URL; second uploaded then upload-index guard rejected .dev.vars.example;
+third reached real hosted CI; fourth reached dispatch. Private fixture fixes use
+the provider account subdomain/actual test Worker URL, exclude the example file
+without relaxing secret guards, and use the account-owned token verify endpoint.
+No framework/public CLI/template/API changes or repacking.
+
+Actual hosted Vitest attempts each report **21 passed / 1 failed**, zero hosted
+skips. First GitHub run fails without the cossack-preview-intent artifact;
+missing journal is not evidence of successful preview creation. Next attempt
+fails on workflow dispatch (GitHub operation receipt gh-19); the helper does not
+retain failed-command stderr, so the underlying cause is unproven. No invented
+permission/billing/tool diagnosis. Private job/log capture was added before
+teardown for the latter attempt; no dispatched run was recorded. Future work must
+preserve bounded actual GitHub failure diagnostics before deleting the repository.
+Full success/failure/retry lifecycle and unchanged-production proof remain open.
+
+Logs: /tmp/cossack-preview-ci-hosted-acceptance-20261009.log and
+/tmp/cossack-preview-ci-hosted-second-20261009.log. Both terminal summaries have
+ACCEPTANCE_EXIT=1/CLEANUP_EXIT=0. Four private cleanup-verified receipts under
+/tmp/cossack-preview-ci-20261009-agent (failed-url-setup, failed-index-setup,
+failed-hosted-first, current root) independently check Worker absence, owned DO
+namespace absence, D1 UUID absence and repository absence. Current ownership
+flags confirm parent, both databases and private repository cleaned. No live
+CI/test resources remain; no production application promotion/publication.
+
+Only release records change in the repository. Root/package typechecks were not
+rerun for these prose-only edits; hosted test results are reported as failures,
+not acceptance. Baseline reports/tool settings/two Workflow probes preserved.
+REL-02 retains CF-09 dependency; REL-03 local Waiting/full CLI remains red;
+REL-04/05 versioning/affected artifact checks/final audit remain gated. Desktop
+remains complete with waived platform checks.

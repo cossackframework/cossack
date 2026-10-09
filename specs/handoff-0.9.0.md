@@ -40,13 +40,19 @@ installed artifacts, not provider source builds or final 0.9.0 packages.
 
 Open: **CF-09, REL-02, REL-03, REL-04, REL-05 (5)**. CF-09 needs actual
 hosted CI lifecycle/isolation/retry/unchanged-production evidence and portable CI
-credentials; cf/Wrangler login alone is not CI authentication. User authorized
-creating/running/deleting a temporary private GitHub acceptance repository and
-will add CLOUDFLARE_API_TOKEN to ~/.zshrc; final interactive check still finds it
-absent. No GitHub/CI resources created. Portable installed app and reviewed setup/
-teardown: /tmp/cossack-preview-ci-20261009-agent (setup.mjs prepare/provision/run/
-cleanup). Supply verified accountId from prior plan if env absent, revalidate access
-before writes. CI evidence helper has 21 passing regressions; hosted case skipped.
+credentials; the credential blocker is now resolved. At the user’s request,
+cf created a 24-hour account-owned token with Workers Scripts Write/D1 Write in
+only the test account. Active verification, Workers/D1/account reads and interactive
+shell loading pass; protected token files are outside the repository. Temporary
+private GitHub testing remains authorized. Two actual hosted acceptance attempts
+are red (21 unit checks pass each): first failed without a journal; second dispatch
+failed before a run was recorded. Four setup attempts’ Worker/DO/D1/repository
+cleanup receipts confirm absence. Keep CI open; no success/isolation/retry claim.
+[Token and hosted failures](./release-0.9.0-verification-archive.md#codex-cf-token-bootstrap-2026-10-09).
+Portable installed app/setup: /tmp/cossack-preview-ci-20261009-agent. Private setup
+now verifies account-owned tokens, uses the real test Worker APP_URL and excludes
+.dev.vars.example from upload. Next: retain bounded GitHub error/job/log evidence
+before teardown, identify the failed CI step, then prove the full three-run lifecycle.
 REL-02 remains gated on CF-09, not on a premature 0.9.0 version bump. Current
 retained public APIs/guides match source; Studio asset names/CSS and a build cache
 differ. REL-03 needs its green full CLI/runtime gate. Then REL-04 bumps versions
