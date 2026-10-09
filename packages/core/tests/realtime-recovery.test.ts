@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beginOptimisticCall, applyOptimisticState, finishOptimisticCall } from '../src/shared/optimistic-state';

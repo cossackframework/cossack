@@ -7,15 +7,48 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commandSpecs } from '../src/command-specs.js';
 import { parseFlags } from '../src/flags.js';
 import { COMMANDS, dispatch } from '../src/dispatch.js';
+import { setResultSink } from '../src/output.js';
 
 const bin = fileURLToPath(new URL('../bin/cossack.js', import.meta.url));
+const initialCwd = process.cwd();
 let root;
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-contract-'));
   // Any attempted project-code/config parsing is detectable and must not occur.
   await fs.writeFile(path.join(root, 'package.json'), '{private-parse-value');
+  process.chdir(root);
 });
-afterEach(async () => { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  process.chdir(initialCwd);
+  setResultSink(undefined);
+  vi.restoreAllMocks();
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+/**
+ * Dispatch in-process with the same result sink the JSON runner installs, and
+ * report what would have reached stdout/stderr. Validation contracts do not
+ * need a fresh Node process per command; `run()` below keeps real-subprocess
+ * smoke coverage for the bin/JSON-runner path.
+ */
+async function dispatchCaptured(argv) {
+  const results = [];
+  setResultSink(result => results.push(result));
+  const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const code = await dispatch(argv);
+    return {
+      code,
+      stdout: results.map(result => JSON.stringify(result) + '\n').join('') + log.mock.calls.map(args => args.join(' ') + '\n').join(''),
+      stderr: error.mock.calls.map(args => args.join(' ')).join('\n'),
+    };
+  } finally {
+    setResultSink(undefined);
+    log.mockRestore();
+    error.mockRestore();
+  }
+}
 
 function run(argv) {
   return new Promise((resolve, reject) => {
@@ -30,9 +63,9 @@ function run(argv) {
 }
 
 describe('metadata-backed command validation', () => {
-  it.each(Object.entries(COMMANDS))('%s generates options/help from its parser contract', (name, command) => {
+  it.each(Object.entries(COMMANDS))('%s generates options/help from its parser contract', async (name, command) => {
     expect(command.spec).toBe(commandSpecs[name]);
-    const help = command.help();
+    const help = (await command.load()).help();
     for (const [option, definition] of command.spec.options([], true)) {
       expect(help).toContain((option.length === 1 ? '-' : '--') + option);
       const scope = Object.entries(command.spec.subcommands ?? {}).find(([, sub]) =>
@@ -88,7 +121,7 @@ describe('metadata-backed command validation', () => {
     ['inspect', ['routes', '--env'], 'COSSACK_OPTION_VALUE_REQUIRED'],
     ['check', ['cloudflare', 'ignored'], 'COSSACK_ARGUMENT_UNEXPECTED'],
   ])('%s rejects invalid input before project parsing/effects', async (command, args, code) => {
-    const result = await run([command, ...args, '--json']);
+    const result = await dispatchCaptured([command, ...args, '--json']);
     expect(result.code).toBe(1);
     expect(result.stderr).toBe('');
     const lines = result.stdout.trim().split('\n');
@@ -101,8 +134,8 @@ describe('metadata-backed command validation', () => {
     expect(await fs.readFile(path.join(root, 'package.json'), 'utf8')).toBe('{private-parse-value');
   });
 
-  it.each(Object.keys(COMMANDS))('%s rejects invalid boolean syntax in a real subprocess', async command => {
-    const result = await run([command, '--json', '--json=invalid']);
+  it.each(Object.keys(COMMANDS))('%s rejects invalid boolean syntax', async command => {
+    const result = await dispatchCaptured([command, '--json', '--json=invalid']);
     expect(result.code).toBe(1);
     expect(result.stderr).toBe('');
     const resultData = JSON.parse(result.stdout);
@@ -113,7 +146,7 @@ describe('metadata-backed command validation', () => {
 
   it.each(Object.keys(COMMANDS).filter(name => !commandSpecs[name].forwardsArgs))(
     '%s rejects unknown options with supported alternatives before project imports', async command => {
-      const result = await run([command, '--unknown-option=private-option-value', '--json']);
+      const result = await dispatchCaptured([command, '--unknown-option=private-option-value', '--json']);
       expect(result.code).toBe(1);
       expect(result.stderr).toBe('');
       expect(result.stdout).not.toContain('private-option-value');
@@ -124,7 +157,7 @@ describe('metadata-backed command validation', () => {
     });
 
   it.each(['g', 'd', 'migrate', 'seed', 'v'])('%s resolves its canonical command before validation', async alias => {
-    const result = await run([alias, '--unknown-option=value', '--json']);
+    const result = await dispatchCaptured([alias, '--unknown-option=value', '--json']);
     expect(result.code).toBe(1);
     expect(JSON.parse(result.stdout).command).toBe(Object.entries(COMMANDS).find(([, def]) => def.aliases.includes(alias))[0]);
   });
@@ -145,12 +178,25 @@ describe('metadata-backed command validation', () => {
     await fs.writeFile(path.join(packageRoot, 'dist', 'tooling', 'index.js'),
       'import fs from "node:fs"; fs.writeFileSync("project-imported", "effect"); ' +
       'console.log("private-project-log"); export async function runORMCommand() { return 0; }');
-    const result = await run([command, action, option, '--json']);
+    const result = await dispatchCaptured([command, action, option, '--json']);
     expect(result.code).toBe(1);
     expect(result.stderr).toBe('');
     expect(result.stdout).not.toContain('private-project-log');
     expect(JSON.parse(result.stdout).diagnostics[0].code).toBe('COSSACK_OPTION_UNKNOWN');
     expect(await fs.readdir(root)).toEqual(['node_modules', 'package.json']);
+  });
+
+  it.each([
+    [['version', '--json', '--json=invalid'], 'version', 'COSSACK_OPTION_INVALID'],
+    [['migrate', 'up', '--direction=down', '--json'], 'migration', 'COSSACK_OPTION_UNKNOWN'],
+  ])('real subprocess smoke: %j fails validation through the JSON runner', async (argv, command, code) => {
+    const result = await run(argv);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toBe('');
+    const lines = result.stdout.trim().split('\n');
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ schemaVersion: 1, command, ok: false, diagnostics: [{ code }] });
+    expect(await fs.readdir(root)).toEqual(['package.json']);
   });
 
   it('supports explicit help true/false and never resolves a project for help', async () => {

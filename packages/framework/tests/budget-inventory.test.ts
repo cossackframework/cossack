@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm, symlink, truncate, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fingerprintBudgetInventory } from '../src/budget-inventory';
+import { BUDGET_INVENTORY_LIMITS, fingerprintBudgetInventory } from '../src/budget-inventory';
 
 const roots: string[] = [];
 const originalPath = process.env.MINIFLARE_WORKERD_PATH;
@@ -71,16 +71,27 @@ it('enforces the aggregate artifact byte limit without reading oversized files',
   const f = await fixture(); const large = join(f.root, 'dist/auxiliary/large.bin'); await writeFile(large, ''); await truncate(large, 64 * 1024 * 1024);
   expect(await f.fingerprint()).toBeUndefined();
 });
+it('keeps the default inventory limits', () => {
+  expect(BUDGET_INVENTORY_LIMITS).toEqual({ files: 4096, directories: 4096, entries: 8192 });
+});
 it('enforces the aggregate file limit across Workers', async () => {
-  const f = await fixture();
-  await Promise.all(Array.from({ length: 4096 }, (_, index) => writeFile(join(f.root, 'dist/auxiliary', `${index}.txt`), '')));
-  expect(await f.fingerprint()).toBeUndefined();
-}, 20000);
+  // The fixture hashes 9 non-tool reads (each wrangler.json twice, index.js, data.txt, plus the source); 7 more reach a cap of 16.
+  const f = await fixture(); const limits = { files: 16 };
+  const fingerprint = () => fingerprintBudgetInventory(f.root, f.artifacts, [f.source], 'policy', false, limits);
+  await Promise.all(Array.from({ length: 7 }, (_, index) => writeFile(join(f.root, 'dist/auxiliary', `${index}.txt`), '')));
+  expect(await fingerprint()).toMatch(/^[a-f\d]{64}$/);
+  await writeFile(join(f.root, 'dist/primary/extra.txt'), '');
+  expect(await fingerprint()).toBeUndefined();
+});
 it('bounds empty directories across Worker inventories', async () => {
-  const f = await fixture();
-  await Promise.all(Array.from({ length: 4096 }, (_, index) => mkdir(join(f.root, 'dist/auxiliary', `empty-${index}`))));
-  expect(await f.fingerprint()).toBeUndefined();
-}, 20000);
+  // The fixture traverses 4 directories (each Worker root and its chunks); 12 empty ones reach a cap of 16.
+  const f = await fixture(); const limits = { directories: 16 };
+  const fingerprint = () => fingerprintBudgetInventory(f.root, f.artifacts, [f.source], 'policy', false, limits);
+  await Promise.all(Array.from({ length: 12 }, (_, index) => mkdir(join(f.root, 'dist/auxiliary', `empty-${index}`))));
+  expect(await fingerprint()).toMatch(/^[a-f\d]{64}$/);
+  await mkdir(join(f.root, 'dist/primary/empty-extra'));
+  expect(await fingerprint()).toBeUndefined();
+});
 it('ignores tool-created empty directories but binds any files later added there', async () => {
   const f = await fixture(); const before = await f.fingerprint();
   const temporary = join(f.root, 'dist/primary/.wrangler/tmp'); await mkdir(temporary, { recursive: true });

@@ -1,4 +1,5 @@
-import { expect, test } from '../fixtures';
+import { expect, test } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Renderer Lit compatibility demos', () => {
   test.beforeEach(async ({ page }) => {
@@ -8,11 +9,7 @@ test.describe('Renderer Lit compatibility demos', () => {
     // Wait for Cossack's readiness signal, then yield two animation frames so
     // the async mount/update and nested component hydration microtasks settle
     // before any test captures DOM node identity.
-    await page.waitForFunction(
-      () => (window as any).__cossackReady === true,
-      undefined,
-      { timeout: 15000 },
-    );
+    await waitForHydration(page);
     await page.evaluate(() => new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     }));

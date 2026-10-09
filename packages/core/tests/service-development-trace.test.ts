@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Server, Service, State } from '../src/shared/decorators';

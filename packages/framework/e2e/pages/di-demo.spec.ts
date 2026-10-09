@@ -1,15 +1,14 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('DI Demo Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/di-demo');
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
   });
 
   test('should render the page with injected service', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     const body = await page.locator('body').textContent();
     expect(body).toContain('Dependency Injection Demo');
@@ -24,7 +23,7 @@ test.describe('DI Demo Page', () => {
   });
 
   test('should increment counter via service', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     // Verify initial state
     const body = await page.locator('body').textContent();
@@ -46,7 +45,7 @@ test.describe('DI Demo Page', () => {
   });
 
   test('should decrement counter via service', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     // First increment to 1
     await page.click('button:has-text("+")');
@@ -69,7 +68,7 @@ test.describe('DI Demo Page', () => {
   });
 
   test('should handle multiple increments', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     // Click increment 3 times
     for (let i = 0; i < 3; i++) {
@@ -86,7 +85,7 @@ test.describe('DI Demo Page', () => {
   });
 
   test('persists within the layout and resets after leaving its subtree', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
     await page.click('button:has-text("+")');
     await expect(page.locator('body')).toContainText('Count: 1');
 

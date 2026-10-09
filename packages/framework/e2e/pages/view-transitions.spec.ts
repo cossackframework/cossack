@@ -1,9 +1,10 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('View Transitions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/view-transitions');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
   });
 
   test('list page renders cards with data-transition-types', async ({ page }) => {
@@ -107,7 +108,8 @@ test.describe('View Transitions', () => {
     });
     await page.locator('a[data-transition-types="nav-forward"]').first().click();
     await expect(page.locator('a[data-transition-types="nav-back"]')).toBeVisible();
-    await expect.poll(() => page.evaluate(() => (window as any).__navigationEvidence)).toEqual(
+    // Navigation diagnostics are only emitted by development builds.
+    if (process.env.COSSACK_E2E_SERVER === 'dev') await expect.poll(() => page.evaluate(() => (window as any).__navigationEvidence)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ phase: 'transition', decision: 'unsupported' }),
         expect.objectContaining({ phase: 'finish', outcome: 'completed', committed: true }),

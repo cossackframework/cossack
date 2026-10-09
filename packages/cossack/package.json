@@ -22,7 +22,8 @@
   },
   "scripts": {
     "start": "node ./bin/cossack.js",
-    "test": "vitest --run"
+    "test": "vitest --run --project unit",
+    "test:integration": "vitest --run --project integration"
   },
   "dependencies": {
     "@cossackframework/framework": "workspace:*",

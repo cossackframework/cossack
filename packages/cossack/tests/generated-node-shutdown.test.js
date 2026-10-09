@@ -7,8 +7,7 @@ import {once} from 'node:events';
 import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRequire} from 'node:module';
-import {createApp} from '@cossackframework/scaffold';
-const repository=path.resolve(import.meta.dirname,'../../..');
+import {scaffoldLinkedApp} from './fixtures/linked-app.js';
 const execute=promisify(execFile);
 
 it('generated production Node entry drains accepted requests and bounds uncooperative work on real signals',async()=>{
@@ -22,11 +21,7 @@ it('generated production Node entry drains accepted requests and bounds uncooper
    await execute(process.execPath,[path.join(gate,'node_modules/cossack/bin/cossack.js'),'create','app','--adapter','node','--preset','minimal','--yes','--json'],{cwd:parent,timeout:30000,env:{...process.env,COSSACK_DISABLE_UPDATE_CHECK:'1'}});
    await fs.symlink(path.join(gate,'node_modules'),path.join(root,'node_modules'),'junction');
   }else{
-   ({projectDir:root}=await createApp('app',{cwd:parent,adapter:'node',preset:'minimal',interactive:false}));
-   await fs.mkdir(path.join(root,'node_modules'));
-   for(const name of await fs.readdir(path.join(repository,'node_modules'))){if(name.startsWith('.')||name==='@cossackframework')continue;await fs.symlink(path.join(repository,'node_modules',name),path.join(root,'node_modules',name),'junction');}
-   await fs.mkdir(path.join(root,'node_modules/@cossackframework'));
-   for(const name of ['core','renderer','framework','node-adapter'])await fs.symlink(path.join(repository,'packages',name),path.join(root,'node_modules/@cossackframework',name),'junction');
+   root=await scaffoldLinkedApp(parent,{adapter:'node',packages:['core','renderer','framework','node-adapter']});
   }
   const entry=await fs.readFile(path.join(root,'src/index.ts'),'utf8');expect(entry).toContain('installNodeShutdown(server');
   await fs.mkdir(path.join(root,'src/pages/api'),{recursive:true});

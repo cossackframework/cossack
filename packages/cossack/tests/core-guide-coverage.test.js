@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readPackageGuidance } from '../src/package-guidance.js';
+import { linkRepositoryModules } from './fixtures/linked-app.js';
 
 const repository=fileURLToPath(new URL('../../../',import.meta.url));
 const execute=promisify(execFile);
@@ -52,9 +53,7 @@ describe('authored public Core family guides',()=>{
  it('strictly compiles and executes new portable examples against public workspace packages',async()=>{
   const scratch=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-core-guides-'));
   try{
-   const modules=path.join(scratch,'node_modules');await fs.mkdir(modules);
-   for(const name of await fs.readdir(path.join(repository,'node_modules'))){if(name==='@cossackframework')continue;await fs.symlink(path.join(repository,'node_modules',name),path.join(modules,name),'junction');}
-   await fs.mkdir(path.join(modules,'@cossackframework'));for(const name of ['core','renderer'])await fs.symlink(path.join(repository,'packages',name),path.join(modules,'@cossackframework',name),'junction');
+   await linkRepositoryModules(scratch,{packages:['core','renderer'],includeHidden:true});
    await fs.writeFile(path.join(scratch,'package.json'),' {"type":"module"}');
    const {guides}=await catalog();const files=[];
    for(const guide of guides.filter(guide=>Object.hasOwn(coverage,guide.id))){const file=path.join(scratch,guide.id+'.ts');await fs.writeFile(file,guide.examples[0].source);files.push(file);}

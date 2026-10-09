@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // tests/i18n.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {

@@ -220,6 +220,7 @@
     "pretest": "pnpm run build:types",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:dev": "COSSACK_E2E_SERVER=dev playwright test",
     "test:e2e:ssg": "COSSACK_TEST_SSG=1 playwright test e2e/pages/ssg.spec.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug"

@@ -1,8 +1,9 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test('edits controlled settings through labeled native controls and explicit actions', async ({ page }) => {
     await page.goto('/blocks/settings');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     const name = page.getByLabel('Display name', { exact: true });
     const email = page.getByRole('switch', { name: 'Email notifications', exact: true });
     await expect(name).toHaveValue('Jane Doe');

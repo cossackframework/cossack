@@ -1,4 +1,5 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Error Pages', () => {
   test.describe('404 Not Found Page', () => {
@@ -13,7 +14,7 @@ test.describe('Error Pages', () => {
       await page.goto('/non-existent-route-xyz');
 
       // Wait for 404 page to load
-      await page.waitForLoadState('networkidle');
+      await waitForHydration(page);
 
       // Use .first() in case there are multiple home links
       const homeLink = page.locator('a[href="/"]').first();

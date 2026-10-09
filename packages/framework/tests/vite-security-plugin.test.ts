@@ -14,6 +14,7 @@ import {
   inspectCompilerMethods,
   injectAutomaticServerMethodMetadata,
   isClientSafeMethod,
+  BUILTIN_METHODS,
   stripSsgGenerateStaticParams,
   isServerOnlyModule,
   generateServerOnlyStub,
@@ -246,16 +247,7 @@ describe('server$ compiler macro', () => {
 
 describe('vite-security-plugin', () => {
   describe('isClientSafeMethod', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    // Create a local version for testing
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should mark @Client decorated methods as client-safe', () => {
       expect(isClientSafeMethod(['@Client()'], 'myMethod', BUILTIN_METHODS)).toBe(true);
@@ -304,10 +296,15 @@ describe('vite-security-plugin', () => {
       expect(isClientSafeMethod([], 'onNavigateComplete', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'escapeHtml', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'loadingTemplate', BUILTIN_METHODS)).toBe(true);
+      for (const name of ['clientInit', 'getError', 'hasError', 'validateProperty', 'validateAll', 'clearErrors', 'startViewTransition']) {
+        expect(isClientSafeMethod([], name, BUILTIN_METHODS)).toBe(true);
+      }
     });
 
     it('should mark @Server decorated methods as server-only', () => {
       expect(isClientSafeMethod(['@Server()'], 'myMethod', BUILTIN_METHODS)).toBe(false);
+      expect(isClientSafeMethod(['@ServerTask()'], 'myMethod', BUILTIN_METHODS)).toBe(false);
+      expect(isClientSafeMethod(['@ClientTask()'], 'myMethod', BUILTIN_METHODS)).toBe(true);
     });
 
     it('should mark methods without decorators as server-only (secure by default)', () => {
@@ -318,15 +315,7 @@ describe('vite-security-plugin', () => {
   });
 
   describe('Transform Methods', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should keep @Client decorated methods', () => {
       const code = `
@@ -637,15 +626,7 @@ export class TestPage extends Cossack {
   });
 
   describe('Edge Cases', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should handle deeply nested code blocks correctly', () => {
       const code = `
@@ -917,15 +898,7 @@ export class CounterPage extends Cossack {
   });
 
   describe('Security Tests', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should remove database query strings from client bundle', () => {
       const code = `
@@ -992,15 +965,7 @@ export class TestPage extends Cossack {
   });
 
   describe('Real-world Patterns', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should handle the counter-http pattern', () => {
       const code = `
@@ -1198,15 +1163,7 @@ export default class LifecycleDemo extends Cossack {
   });
 
   describe('transitive preservation / loud failure', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('preserves a helper called from onMount (transitive, depth 1)', () => {
       const code = `
@@ -1501,14 +1458,6 @@ export class B extends Cossack {}`;
   });
 
   it('integration: real ssg-demo/users/[username] shape — class methods stripped AND generateStaticParams stripped', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     const code = `
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -1561,14 +1510,6 @@ export class UserProfile extends Cossack {
   });
 
   describe('constructor metadata injection (no duplicate constructor)', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     /**
      * Count top-level `constructor(` occurrences in the transformed class body.
@@ -1689,14 +1630,6 @@ export class TestPage extends Cossack {
   });
 
   describe('regex literals in method bodies (no brace corruption)', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('strips a server method whose body contains a regex with a closing brace', () => {
       // The `}` inside /}/ previously decremented the method's brace depth,
@@ -1781,14 +1714,6 @@ export class TestPage extends Cossack {
   });
 
   describe('member-kind stripping (generators, fields, computed names)', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('strips generator methods', () => {
       const code = `
@@ -1910,20 +1835,7 @@ export class TestPage extends Cossack {
 // rewrite fixes them. These guard against regressions if the discovery logic
 // ever moves back to text scanning.
 describe('vite-security-plugin — AST-driven bug fixes', () => {
-  const BUILTIN_METHODS = new Set([
-    'render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml',
-    'loadingTemplate', 'toString', 'valueOf', 'clientInit',
-    'getError', 'hasError', 'validateProperty', 'validateAll', 'clearErrors',
-    'startViewTransition',
-  ]);
 
-  function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-    const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-    if (hasClientDecorator) return true;
-    if (builtinMethods.has(methodName)) return true;
-    if (decorators.some((d) => /@Server\b/.test(d))) return false;
-    return false;
-  }
 
   it('stubs a single-statement @Server method body', () => {
     // Previously: a one-line body like `{ this.count++; }` was not detected
@@ -2236,11 +2148,7 @@ describe('server-only module detection', () => {
 });
 
 describe('client result typing (RT-01)', () => {
-  const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-  function isClientSafe(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-    return builtinMethods.has(methodName) || decorators.some(d => d.startsWith('@Client') || d.startsWith('@Shared'));
-  }
-  const transform = (code: string) => transformCossackClass(code, 'page.ts', isClientSafe, BUILTIN_METHODS, false);
+  const transform = (code: string) => transformCossackClass(code, 'page.ts', isClientSafeMethod, BUILTIN_METHODS, false);
   const callType = (type: string, name = 'RpcCall') => `${name}<import('@cossackframework/core').RpcResult<${type}>, import('@cossackframework/core').RpcYield<${type}>>`;
 
   it('parses nested generic arguments and removes async generator modifiers', () => {

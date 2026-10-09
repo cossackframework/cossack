@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import type { Context } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';

@@ -53,6 +53,7 @@ jobs:
           pnpm --filter @cossackframework/studio test
           pnpm --filter @cossackframework/scaffold test
           pnpm --filter cossack test
+          pnpm run test:integration
 
       - name: Test generated app with local package tarballs
         run: pnpm run test:scaffold:local

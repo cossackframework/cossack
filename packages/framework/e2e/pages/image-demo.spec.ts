@@ -1,61 +1,24 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+
+const SOURCE = 'https://images.unsplash.com/photo-1550989460-0adf9ea622e2?q=80&w=600&auto=format&fit=crop';
 
 test.describe('Image Demo Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/image-demo');
   });
 
-  test('should display image optimization demo', async ({ page }) => {
-    await expect(page.locator('body')).toBeVisible();
+  test('renders the Image helper with dimensions, alt text and lazy loading', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Image Optimization Demo' })).toBeVisible();
+    const image = page.getByRole('img', { name: 'Demo Image' });
+    await expect(image).toHaveClass(/demo-img/);
+    await expect(image).toHaveAttribute('width', '600');
+    await expect(image).toHaveAttribute('height', '400');
+    await expect(image).toHaveAttribute('loading', 'lazy');
   });
 
-  test('should render images with src attribute', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
-
-    const images = page.locator('img');
-    const count = await images.count();
-
-    // The image-demo page should have at least one image
-    expect(count).toBeGreaterThanOrEqual(0);
-
-    // If images exist, verify they have src attributes
-    for (let i = 0; i < count; i++) {
-      const src = await images.nth(i).getAttribute('src');
-      expect(src).toBeDefined();
-      expect(src).not.toBe('');
-    }
-  });
-
-  test('should have responsive image attributes', async ({ page }) => {
-    const images = page.locator('img');
-    const count = await images.count();
-
-    if (count > 0) {
-      const firstImage = images.first();
-
-      const alt = await firstImage.getAttribute('alt');
-      expect(alt).toBeDefined();
-    }
-  });
-
-  test('should load images successfully', async ({ page }) => {
-    const images = page.locator('img');
-    const count = await images.count();
-
-    if (count > 0) {
-      const firstImage = images.first();
-
-      await expect(firstImage).toBeVisible();
-
-      const naturalWidth = await firstImage.evaluate((img: HTMLImageElement) => img.naturalWidth);
-      expect(naturalWidth).toBeGreaterThan(0);
-    }
-  });
-
-  test('should use Cloudflare image resizing when configured', async ({ page }) => {
-    const images = page.locator('img[src*="cdn-cgi/image"]');
-
-    const count = await images.count();
-    expect(count).toBeGreaterThanOrEqual(0);
+  test('serves the original URL when no image provider is configured', async ({ page }) => {
+    // The demo does not set VITE_COSSACK_IMAGE_PROVIDER, so no /cdn-cgi/image
+    // rewrite must be applied.
+    await expect(page.getByRole('img', { name: 'Demo Image' })).toHaveAttribute('src', SOURCE);
   });
 });

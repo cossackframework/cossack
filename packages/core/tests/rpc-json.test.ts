@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readRpcHttpError, readRpcJsonResponse, RPC_JSON_RESPONSE_MAX_BYTES } from '../src/shared/rpc-json';

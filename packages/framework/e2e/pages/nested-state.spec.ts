@@ -1,4 +1,5 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Nested State Page', () => {
   test.beforeEach(async ({ page }) => {
@@ -6,11 +7,7 @@ test.describe('Nested State Page', () => {
     // The counters are visible from SSR before their server-action handlers
     // are hydrated. Wait for client bootstrap and nested component hydration
     // before interacting so the first click cannot be lost.
-    await page.waitForFunction(
-      () => (window as any).__cossackReady === true,
-      undefined,
-      { timeout: 15000 },
-    );
+    await waitForHydration(page);
     await page.evaluate(() => new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     }));

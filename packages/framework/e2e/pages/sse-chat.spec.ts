@@ -1,5 +1,6 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('SSE Chat Page', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,9 +13,7 @@ test.describe('SSE Chat Page', () => {
     });
 
     await page.goto(`/sse-chat?room=${room}`);
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
     await sseResponse;
   });
 

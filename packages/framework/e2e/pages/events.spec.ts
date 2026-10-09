@@ -1,11 +1,10 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Events Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/events');
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
   });
 
   test('should track click events via @On', async ({ page }) => {
@@ -59,9 +58,7 @@ test.describe('Events Page', () => {
 test.describe('App @On("navigate-complete")', () => {
   test('should fire navigate-complete handler after SPA navigation', async ({ page }) => {
     await page.goto('/');
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
 
     // Trigger SPA navigation via link click. page.goto() would be a full page
     // reload (not SPA) and would also leak buffered console messages from the

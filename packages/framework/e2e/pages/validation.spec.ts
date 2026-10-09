@@ -1,12 +1,19 @@
-import { test, expect } from '../fixtures';
+import { test, expect, type Page } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
+
+/** Blur the discount field and wait for its customAsync server RPC to return. */
+async function blurAndValidate(page: Page) {
+  const rpc = page.waitForResponse(r => new URL(r.url()).pathname === '/crpc'
+    && (r.request().postData() ?? '').includes('validateDiscountCode'));
+  await page.locator('input#discountCode').blur();
+  expect((await rpc).ok()).toBe(true);
+}
 
 test.describe('Validation Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/validation');
     await page.waitForSelector('text=Validation Demo');
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
   });
 
   test('should display validation form', async ({ page }) => {
@@ -150,9 +157,8 @@ const websiteInput = page.locator('input#website');
 // Leave fields empty and try to submit
     await page.locator('button[type="submit"]').click();
 
-    await page.waitForTimeout(500);
-
-    // Should show errors (not success)
+    // validateAll() rendered the errors, so submission was refused.
+    await expect(page.locator('input#email')).toHaveAttribute('aria-invalid', 'true');
     const successMessage = page.locator('text=Form submitted successfully!');
     await expect(successMessage).not.toBeVisible();
   });
@@ -163,9 +169,6 @@ const emailInput = page.locator('input#email');
 
     // Enter invalid email (should trigger validation on input)
     await emailInput.fill('notanemail');
-
-    // Wait a bit for validation to run
-    await page.waitForTimeout(100);
 
     // Error should be visible (validation runs on input with trigger='all')
     const errorMessage = page.locator('text=Please enter a valid email address');
@@ -178,10 +181,7 @@ const discountInput = page.locator('input#discountCode');
 
     // Enter an invalid discount code
     await discountInput.fill('INVALID');
-    await discountInput.blur();
-
-    // Wait for async validation
-    await page.waitForTimeout(300);
+    await blurAndValidate(page);
 
     // Should show error
     const errorMessage = page.locator('text=Invalid discount code');
@@ -194,14 +194,12 @@ const discountInput = page.locator('input#discountCode');
 
     // Enter a valid discount code
     await discountInput.fill('SAVE10');
-    await discountInput.blur();
-
-    // Wait for async validation
-    await page.waitForTimeout(500);
+    await blurAndValidate(page);
 
     // Should NOT show error
     const errorMessage = page.locator('text=Invalid discount code');
     await expect(errorMessage).not.toBeVisible();
+    await expect(discountInput).toHaveAttribute('aria-invalid', 'false');
   });
 
   test('should accept different valid discount codes', async ({ page }) => {
@@ -211,20 +209,17 @@ const discountInput = page.locator('input#discountCode');
 
     // Test SAVE20
     await discountInput.fill('SAVE20');
-    await discountInput.blur();
-    await page.waitForTimeout(300);
+    await blurAndValidate(page);
     await expect(errorMessage).not.toBeVisible();
 
     // Test WELCOME
     await discountInput.fill('WELCOME');
-    await discountInput.blur();
-    await page.waitForTimeout(300);
+    await blurAndValidate(page);
     await expect(errorMessage).not.toBeVisible();
 
     // Test VIP50
     await discountInput.fill('VIP50');
-    await discountInput.blur();
-    await page.waitForTimeout(300);
+    await blurAndValidate(page);
     await expect(errorMessage).not.toBeVisible();
   });
 
@@ -233,11 +228,13 @@ const discountInput = page.locator('input#discountCode');
 const discountInput = page.locator('input#discountCode');
 
     // Leave empty (field is not required)
+    // Make the field invalid first so "no error" proves the empty value was
+    // validated (customAsync short-circuits empty values without an RPC).
+    await discountInput.fill('INVALID');
+    await blurAndValidate(page);
+    await expect(page.locator('text=Invalid discount code')).toBeVisible();
     await discountInput.fill('');
     await discountInput.blur();
-
-    // Wait for validation
-    await page.waitForTimeout(300);
 
     // Should NOT show error for empty optional field
     const errorMessage = page.locator('text=Invalid discount code');
@@ -251,20 +248,19 @@ const discountInput = page.locator('input#discountCode');
     // Type an invalid discount code character-by-character (input events).
     // The field is configured with trigger: 'blur', so async validation
     // should NOT fire on each keystroke.
+    const rpcs: string[] = [];
+    page.on('request', request => {
+      if ((request.postData() ?? '').includes('validateDiscountCode')) rpcs.push(request.url());
+    });
     await discountInput.click();
-    await discountInput.type('INVALID', { delay: 20 });
+    await discountInput.pressSequentially('INVALID', { delay: 20 });
+    await expect(discountInput).toHaveValue('INVALID');
 
-    // Wait long enough that any (incorrectly triggered) async validation
-    // would have completed. Server-side customAsync sleeps ~100ms.
-    await page.waitForTimeout(400);
-
-    // No error should be visible yet — validation only fires on blur.
     const errorMessage = page.locator('text=Invalid discount code');
-    await expect(errorMessage).not.toBeVisible();
-
-    // Blurring should now trigger validation and reveal the error.
-    await discountInput.blur();
-    await expect(errorMessage).toBeVisible({ timeout: 2000 });
+    // Blurring triggers exactly one validation RPC; keystrokes triggered none.
+    await blurAndValidate(page);
+    await expect(errorMessage).toBeVisible();
+    expect(rpcs).toHaveLength(1);
   });
 
   test('should submit form with valid discount code', async ({ page }) => {
@@ -278,10 +274,9 @@ const discountInput = page.locator('input#discountCode');
     await page.locator('input#website').fill('https://example.com');
     await page.locator('input#discountCode').fill('SAVE10');
 
-    // Blur the discount code field to trigger its async server validation,
-    // then wait for it to complete before submitting.
-    await page.locator('input#discountCode').blur();
-    await expect(page.locator('text=Invalid discount code')).not.toBeVisible({ timeout: 5000 });
+    // Blur the discount code field and wait for its async server validation.
+    await blurAndValidate(page);
+    await expect(page.locator('text=Invalid discount code')).not.toBeVisible();
 
     await page.locator('button[type="submit"]').click();
 

@@ -51,6 +51,8 @@
     "prepublishOnly": "pnpm run build",
     "pretest": "pnpm run build",
     "test": "vitest",
+    "pretest:browser": "pnpm run build",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
     "build:icons": "tsx src/scripts/build-icons.ts"
   },
   "peerDependencies": {
@@ -60,9 +62,12 @@
   },
   "devDependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/solar-icons": "^0.7.1",
     "@cossackframework/renderer": "workspace:*",
+    "@cossackframework/solar-icons": "^0.7.1",
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.19.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.11"

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';

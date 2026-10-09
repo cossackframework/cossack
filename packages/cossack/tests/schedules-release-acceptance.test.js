@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { parseSync } from 'vite';
 import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { createTestHarness } from 'wrangler';
 const execute = promisify(execFile);
 const repository = fileURLToPath(new URL('../../../', import.meta.url));
@@ -42,20 +43,17 @@ runtime.runOnce('hourly',{scheduledTime:new Date()});
 }
 async function project() {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-schedules-release-'));
-  const { projectDir: root } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', features: ['schedules'], interactive: false });
+  let root;
   const installed = process.env.COSSACK_SCHEDULES_INSTALLED_ROOT;
   if (installed) {
+    ({ projectDir: root } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', features: ['schedules'], interactive: false }));
     const gate = JSON.parse(await fs.readFile(path.join(installed, 'package.json'), 'utf8'));
     const overrides = Object.fromEntries(Object.entries({ ...gate.dependencies, ...gate.devDependencies }).filter(([name, value]) => (name.startsWith('@cossackframework/') || name === 'cossack') && typeof value === 'string' && value.startsWith('file:')));
     const file = path.join(root, 'package.json'); const manifest = JSON.parse(await fs.readFile(file, 'utf8')); manifest.pnpm = { ...manifest.pnpm, overrides };
     await fs.writeFile(file, JSON.stringify(manifest, null, 2)); await fs.writeFile(path.join(root, 'pnpm-workspace.yaml'), 'overrides:\n' + Object.entries(overrides).map(([name, value]) => `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`).join('\n') + '\n');
     await execute('pnpm', ['install', '--ignore-scripts', '--config.strict-dep-builds=false'], { cwd: root, timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
     for (const name of ['core', 'framework']) expect((await fs.realpath(path.join(root, 'node_modules/@cossackframework', name))).startsWith(root + path.sep)).toBe(true);
-  } else {
-    await fs.mkdir(path.join(root, 'node_modules/@cossackframework'), { recursive: true });
-    for (const name of await fs.readdir(path.join(repository, 'node_modules'))) if (!name.startsWith('.') && name !== '@cossackframework') await fs.symlink(path.join(repository, 'node_modules', name), path.join(root, 'node_modules', name), 'junction');
-    for (const name of ['core', 'renderer', 'framework']) await fs.symlink(path.join(repository, 'packages', name), path.join(root, 'node_modules/@cossackframework', name), 'junction');
-  }
+  } else root = await scaffoldLinkedApp(parent, { adapter: 'cloudflare', features: ['schedules'], packages: ['core', 'renderer', 'framework'] });
   await writeAcceptance(root); return { root, parent };
 }
 function tool(root, name, file) { const require = createRequire(path.join(root, 'package.json')); return path.join(path.dirname(require.resolve(name + '/package.json')), file); }

@@ -5,11 +5,10 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
-import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { writeProductionSourceMapFixture, verifyProductionSourceMap, verifyWranglerSourceMapArtifacts } from './fixtures/production-source-maps.js';
 
 const execute = promisify(execFile);
-const repository = path.resolve(import.meta.dirname, '../../..');
 
 it.each([{ features: [] }, { features: ['workflows'] }])('resolves a real workerd production fault and prepared upload map with features $features', async ({ features }) => {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-production-source-maps-'));
@@ -24,17 +23,7 @@ it.each([{ features: [] }, { features: ['workflows'] }])('resolves a real worker
       });
       await fs.symlink(path.join(gate, 'node_modules'), path.join(root, 'node_modules'), 'junction');
     } else {
-      ({ projectDir: root } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', features, interactive: false }));
-      const modules = path.join(root, 'node_modules');
-      await fs.mkdir(modules);
-      for (const name of await fs.readdir(path.join(repository, 'node_modules'))) {
-        if (name.startsWith('.') || name === '@cossackframework') continue;
-        await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
-      }
-      await fs.mkdir(path.join(modules, '@cossackframework'));
-      for (const name of ['framework', 'core', 'renderer', 'scaffold']) {
-        await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
-      }
+      root = await scaffoldLinkedApp(parent, { adapter: 'cloudflare', features, packages: ['framework', 'core', 'renderer', 'scaffold'] });
     }
     const fixture = await writeProductionSourceMapFixture(root);
     const require = createRequire(path.join(root, 'package.json'));

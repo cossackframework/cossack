@@ -33,10 +33,11 @@ afterEach(async () => {
 describe('command dispatch', () => {
   it.each(Object.keys(COMMANDS))('%s help succeeds without running the command', async command => {
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const handler = vi.spyOn(COMMANDS[command], 'run');
+    const loaded = await COMMANDS[command].load();
+    const handler = vi.spyOn(loaded, 'run');
     expect(await dispatch([command, '--help'])).toBe(0);
     expect(handler).not.toHaveBeenCalled();
-    expect(output).toHaveBeenCalledWith(COMMANDS[command].help());
+    expect(output).toHaveBeenCalledWith(loaded.help());
   });
 
   it.each([

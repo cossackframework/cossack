@@ -1,8 +1,9 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test('renders the shared metric list with explicit change meaning and responsive columns', async ({ page }) => {
     await page.goto('/blocks/dashboard');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     const metrics = page.getByRole('list', { name: 'Overview metrics' });
     await expect(metrics.getByRole('listitem')).toHaveCount(4);
     await expect(metrics.locator('[data-stat-id="revenue"]')).toContainText('Favorable');

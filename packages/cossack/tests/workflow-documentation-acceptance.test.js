@@ -5,7 +5,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
-import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 const execute = promisify(execFile);
 const repository = path.resolve(import.meta.dirname, '../../..');
 
@@ -19,13 +19,7 @@ it('strictly compiles the unchanged Workflow guide examples against public gener
    await execute(process.execPath,[path.join(installed,'node_modules/cossack/bin/cossack.js'),'create','app','--adapter=cloudflare','--preset=minimal','--features=workflows','--yes','--json'],{cwd:parent,timeout:30000,env:{...process.env,COSSACK_DISABLE_UPDATE_CHECK:'1'}});
    await fs.symlink(path.join(installed,'node_modules'),path.join(root,'node_modules'),'junction');
   } else {
-   ({projectDir:root}=await createApp('app',{cwd:parent,adapter:'cloudflare',preset:'minimal',features:['workflows'],interactive:false}));
-   await fs.mkdir(path.join(root,'node_modules/@cossackframework'),{recursive:true});
-   for(const name of await fs.readdir(path.join(repository,'node_modules'))) {
-    if(name.startsWith('.')||name==='@cossackframework')continue;
-    await fs.symlink(path.join(repository,'node_modules',name),path.join(root,'node_modules',name),'junction');
-   }
-   for(const name of ['core','renderer','framework','scaffold'])await fs.symlink(path.join(repository,'packages',name),path.join(root,'node_modules/@cossackframework',name),'junction');
+   root=await scaffoldLinkedApp(parent,{adapter:'cloudflare',features:['workflows'],packages:['core','renderer','framework','scaffold']});
   }
   const markdown=await fs.readFile(path.join(repository,'docs/workflows.md'),'utf8');
   const snippets=[...markdown.matchAll(/^```ts\n([\s\S]*?)^```/gm)].map(match=>match[1]);

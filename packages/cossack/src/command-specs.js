@@ -1,5 +1,4 @@
 import { DEVELOPMENT_TRACE_SESSION } from '@cossackframework/framework/development-traces';
-import { testRunIdSchema } from './test-results-service.js';
 import { COSSACK_PACKAGES } from './installed-packages.js';
 /**
  * Built-in command contracts. Parsing, preflight validation, and help all use
@@ -10,6 +9,10 @@ import {
   ADAPTERS, FEATURES, AUTH_METHODS, OAUTH_PROVIDERS, UI_THEMES,
   DASHBOARD_MODULES, DATABASE_PROVIDERS, PRESET_REGISTRY,
 } from '@cossackframework/scaffold/registry';
+
+// Mirrors testRunIdSchema in test-results-service.js; kept inline so option
+// validation does not load zod on every CLI start.
+const TEST_RUN_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
 const bool = (description, extra = {}) => ({ type: 'boolean', description, repeated: 'last', ...extra });
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
@@ -180,7 +183,7 @@ export const commandSpecs = {
       ? [{ code: 'COSSACK_TRACE_SESSION_INVALID', severity: 'error', message: 'Use a capture session UUID, not a path.' }] : [] }),
   'test-results': new CommandSpec({ name: 'test-results', globals: readonly, flags: {
     run: str('Read one recorded run UUID; default is the most recently started run.'),
-  }, check: (_args, flags) => flags.run !== undefined && !testRunIdSchema.safeParse(flags.run).success
+  }, check: (_args, flags) => flags.run !== undefined && !TEST_RUN_ID.test(flags.run)
     ? [{ code: 'COSSACK_TEST_RUN_INVALID', severity: 'error', message: 'Use a test run UUID, not a file path.' }] : [] }),
   info: new CommandSpec({ name: 'info', globals: readonly }),
   version: new CommandSpec({ name: 'version', aliases: ['v'], globals: readonly }),

@@ -1,644 +1,656 @@
-import { test, expect } from '../fixtures';
+import { test, expect, type Page } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/components-demo');
-  await page.waitForSelector('h1:has-text("Components Demo")');
-  // Wait for client hydration to complete before interacting. The h1 above
-  // is present from SSR immediately, so it doesn't guarantee @Client handlers
-  // are wired — clicking before hydration completes silently no-ops. Under
-  // parallel workers the demo page (heavy, many components) hydrates slower,
-  // so gate on the framework's ready signal.
-  await page.waitForFunction(
-    () => (window as any).__cossackReady === true,
-    undefined,
-    { timeout: 15000 },
-  );
+// Render-only assertions share one page load; they never mutate the page.
+test.describe('Components demo: static rendering', () => {
+  test.describe.configure({ mode: 'serial' });
+  let page: Page;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('/components-demo');
+    await waitForHydration(page);
+  });
+
+  test.afterAll(async () => {
+    await page.close();
+  });
+
+    test('renders all button variants', async () => {
+      const body = await page.locator('body').textContent();
+      expect(body).toContain('Primary');
+      expect(body).toContain('Secondary');
+      expect(body).toContain('Outline');
+      expect(body).toContain('Ghost');
+      expect(body).toContain('Delete');
+      // The disabled button is present and disabled.
+      await expect(page.locator('button:has-text("Disabled")')).toBeDisabled();
+    });
+
+    test('applies token-driven classes to buttons', async () => {
+      // The cs-button hook class is always present on UI buttons.
+      const uiButtons = page.locator('button.cs-button');
+      const count = await uiButtons.count();
+      expect(count).toBeGreaterThanOrEqual(5);
+
+      // Variant class flows through classMap.
+      await expect(page.locator('button.cs-button--destructive:has-text("Delete")').first()).toBeVisible();
+      await expect(page.locator('button.cs-button--outline:has-text("Outline")').first()).toBeVisible();
+    });
+
+    test('renders all badge variants', async () => {
+      for (const label of ['Active', 'Pending', 'Failed', 'Recommended']) {
+        await expect(page.locator(`span.cs-badge:has-text("${label}")`).first()).toBeVisible();
+      }
+    });
+
+    test('renders labelled inputs', async () => {
+      await expect(page.locator('label.cs-label:has-text("Email")')).toBeVisible();
+      await expect(page.locator('#email-demo')).toHaveAttribute('type', 'email');
+      // Error variant carries the cs-input--error hook.
+      await expect(page.locator('input.cs-input--error')).toBeVisible();
+    });
+
+    test('renders all static alert variants without live announcements', async () => {
+      const alerts = page.locator('.cs-alert');
+      await expect(alerts).toHaveCount(4);
+      for (const [variant, title] of [['default', 'Heads up'], ['success', 'Success'], ['warning', 'Warning'], ['destructive', 'Error']]) {
+        const alert = page.locator(`.cs-alert--${variant}`);
+        await expect(alert).toBeVisible();
+        await expect(alert).toContainText(title);
+        await expect(alert).not.toHaveAttribute('role');
+        await expect(alert).not.toHaveAttribute('aria-live');
+      }
+    });
+
+    test('renders the card with header/body/footer slots', async () => {
+      await expect(page.locator('.cs-card-header:has-text("Plan: Pro")')).toBeVisible();
+      await expect(page.locator('.cs-card-body:has-text("Unlimited projects")')).toBeVisible();
+      await expect(page.locator('.cs-card-footer')).toBeVisible();
+    });
+
+    test('renders Solar icons as inline svg', async () => {
+      // Labeled icons get role=img; unlabeled ones get aria-hidden.
+      const labeled = page.locator('svg[role="img"][aria-label="Arrow right"]');
+      await expect(labeled).toBeVisible();
+
+      // Style variants for the check icon all render.
+      const svgs = page.locator('svg.cs-icon');
+      expect(await svgs.count()).toBeGreaterThanOrEqual(7);
+    });
+
+    test('icon paths are real SVG geometry (namespace + stroke)', async () => {
+      // Regression guard: unsafeHTML-injected <path> inside <svg> gets parsed in
+      // the XHTML namespace and never becomes a real SVGPathElement, so the icon
+      // renders blank. The fix emits the whole <svg> as one unsafeHTML blob so
+      // the parser enters SVG namespace. This test pins that.
+      const data = await page.evaluate(() => {
+        const path = document.querySelector('svg.cs-icon path') as unknown as SVGPathElement | null;
+        if (!path) return { ok: false, reason: 'no path element' };
+        const isReal = path instanceof SVGPathElement;
+        let length: number | null = null;
+        try { length = isReal ? path.getTotalLength() : null; } catch {}
+        return {
+          ok: isReal && length !== null && length > 0,
+          isSVGPathElement: isReal,
+          namespace: (path as Element).namespaceURI,
+          totalLength: length,
+          computedStroke: getComputedStyle(path as Element).stroke,
+        };
+      });
+      expect(data.ok, JSON.stringify(data)).toBe(true);
+      // stroke must resolve to a real color, not the UA default "none"
+      expect(data.computedStroke).not.toBe('none');
+    });
+
+    test('bordered elements render a non-zero border', async () => {
+      // Regression guard: a global `* { border-width: 0 }` reset (or border-none
+      // on a shared base class) makes outlines/inputs/cards render borderless.
+      const widths = await page.evaluate(() => {
+        const bw = (el: Element | null) =>
+          el ? parseFloat(getComputedStyle(el).borderWidth) : -1;
+        return {
+          outlineBtn: bw(document.querySelector('button.cs-button--outline')),
+          input: bw(document.querySelector('input.cs-input')),
+          card: bw(document.querySelector('.cs-card')),
+          alert: bw(document.querySelector('.cs-alert--default')),
+        };
+      });
+      for (const [name, w] of Object.entries(widths)) {
+        expect(w, `${name} border-width should be > 0`).toBeGreaterThan(0);
+      }
+    });
+
+    test('theme tokens produce a non-default background on the primary button', async () => {
+      // The token chain resolves: bg-primary utility is generated from the
+      // @theme --color-primary declared in @cossackframework/ui/theme/theme.css.
+      const primary = page.locator('button.cs-button.bg-primary').first();
+      const bg = await primary.evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
+      );
+      // Token-driven background is set (not the transparent default).
+      expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+      expect(bg).not.toBe('transparent');
+    });
+
+    test('every variant utility is generated (regression guard for @source)', async () => {
+      // Tailwind v4 excludes node_modules unless @source points at the package.
+      // If that directive is missing, only classes that also appear in app source
+      // are generated — so bg-secondary/bg-destructive/bg-success would resolve
+      // to transparent. This test pins the @source wiring.
+      const checks = await page.evaluate(() => {
+        const bg = (el: Element | null) =>
+          el ? getComputedStyle(el).backgroundColor : 'missing';
+        return {
+          primary: bg(document.querySelector('button.cs-button.bg-primary')),
+          secondary: bg(document.querySelector('button.cs-button--secondary')),
+          destructive: bg(document.querySelector('button.cs-button--destructive')),
+          success: bg(document.querySelector('span.cs-badge--success')),
+          warning: bg(document.querySelector('span.cs-badge--warning')),
+          destructiveBadge: bg(document.querySelector('span.cs-badge--destructive')),
+        };
+      });
+      // Every variant must resolve to a real color, not the transparent default
+      // that indicates a missing utility.
+      for (const [name, value] of Object.entries(checks)) {
+        expect(value, `${name} should not be transparent`).not.toBe('rgba(0, 0, 0, 0)');
+        expect(value, `${name} should not be transparent`).not.toBe('transparent');
+      }
+    });
+
+    test('extended form primitives render their native elements', async () => {
+      // Textarea
+      await expect(page.locator('textarea.cs-textarea#bio')).toBeVisible();
+
+      // Select with options
+      const select = page.locator('select.cs-select__input#country');
+      await expect(select).toBeVisible();
+      expect(await select.locator('option').count()).toBeGreaterThanOrEqual(3);
+
+      // Checkbox (native input type=checkbox) + Switch (role=switch)
+      await expect(page.locator('.cs-checkbox input[type="checkbox"]')).toBeChecked();
+      // Switch semantics belong on the native checkbox, not its label. The
+      // checkbox is visually hidden, so assert it is attached and its styled
+      // label is visible.
+      const switches = page.locator('label.cs-switch input.cs-switch__input[role="switch"]');
+      expect(await switches.count()).toBeGreaterThanOrEqual(1);
+      await expect(switches.first()).toBeAttached();
+      await expect(switches.first()).toHaveAttribute('type', 'checkbox');
+      await expect(page.locator('label.cs-switch').first()).toBeVisible();
+
+      // Spinner uses animate-spin (rendered as an inline SVG)
+      await expect(page.locator('svg.cs-spinner.animate-spin').first()).toBeVisible();
+    });
+
+    test('avatar, separator, skeleton, progress render', async () => {
+      expect(await page.locator('.cs-avatar').count()).toBeGreaterThanOrEqual(2);
+      await expect(page.locator('.cs-separator--vertical')).toBeVisible();
+      await expect(page.locator('.cs-skeleton.animate-pulse')).toBeVisible();
+      const bars = page.locator('.cs-progress[role="progressbar"]');
+      expect(await bars.count()).toBeGreaterThanOrEqual(3);
+    });
+
+    test('avatar group stacks avatars with overflow counter', async () => {
+      const group = page.locator('.cs-avatar-group').first();
+      await expect(group).toBeVisible();
+      // 4 visible avatars + 1 overflow counter = 5 children.
+      const avatars = group.locator('.cs-avatar-group__item .cs-avatar');
+      expect(await avatars.count()).toBe(4);
+      // Overflow shows "+2" (6 items, max 4).
+      await expect(group.locator('.cs-avatar-group__overflow [aria-hidden="true"]')).toHaveText('+2');
+      await expect(group.locator('.cs-avatar-group__overflow .sr-only')).toHaveText('2 more people');
+      // Second group uses square shape.
+      const squareGroup = page.locator('.cs-avatar-group').nth(1);
+      await expect(squareGroup.locator('.cs-avatar-group__item .cs-avatar')).toHaveCount(3);
+      await expect(squareGroup.locator('.cs-avatar-group__overflow [aria-hidden="true"]')).toHaveText('+2');
+      await expect(squareGroup.locator('.cs-avatar-group__overflow .sr-only')).toHaveText('2 more people');
+    });
+
+    test('radio group renders native radios and slider renders range input', async () => {
+      const radios = page.locator('.cs-radio-group input[type="radio"]');
+      expect(await radios.count()).toBeGreaterThanOrEqual(3);
+
+      // The "pro" radio should be checked.
+      await expect(page.locator('.cs-radio-group input[value="pro"]')).toBeChecked();
+
+      // Slider is a native range input.
+      await expect(page.locator('input.cs-slider[type="range"]')).toBeVisible();
+    });
+
+    test('table renders with striped styling', async () => {
+      const table = page.locator('table.cs-table__element');
+      await expect(table).toBeVisible();
+      expect(await table.locator('tbody tr').count()).toBeGreaterThanOrEqual(2);
+      // Badge inside table cell.
+      await expect(table.locator('.cs-badge--success:has-text("Active")')).toBeVisible();
+    });
+
+    test('typography renders semantic heading and blockquote elements', async () => {
+      await expect(page.locator('.cs-typography--h1')).toBeVisible();
+      await expect(page.locator('.cs-typography--blockquote')).toBeVisible();
+      await expect(page.locator('.cs-typography--ul')).toBeVisible();
+    });
+
+    test('native select and input group render their native elements', async () => {
+      await expect(page.locator('select.cs-native-select__input').first()).toBeVisible();
+      expect(await page.locator('select.cs-native-select__input option').count()).toBeGreaterThanOrEqual(3);
+      await expect(page.locator('.cs-input-group__input')).toHaveCount(3);
+      // Prefix @ and suffix USD are present.
+      await expect(page.locator('.cs-input-group__prefix:has-text("@")')).toBeAttached();
+      await expect(page.locator('.cs-input-group__suffix:has-text("USD")')).toBeAttached();
+    });
+
+    test('item primitive renders media, content, and trailing slots', async () => {
+      const items = page.locator('.cs-item');
+      expect(await items.count()).toBe(3);
+      // First item has an avatar media + badge trailing.
+      await expect(items.first().locator('.cs-avatar')).toBeAttached();
+      await expect(items.first().locator('.cs-item__trailing .cs-badge')).toBeAttached();
+    });
 });
 
-  test('renders all button variants', async ({ page }) => {
-    const body = await page.locator('body').textContent();
-    expect(body).toContain('Primary');
-    expect(body).toContain('Secondary');
-    expect(body).toContain('Outline');
-    expect(body).toContain('Ghost');
-    expect(body).toContain('Delete');
-    // The disabled button is present and disabled.
-    await expect(page.locator('button:has-text("Disabled")')).toBeDisabled();
+// Interactive tests mutate component state, so each gets a fresh page.
+test.describe('Components demo: interactions', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/components-demo');
+    await page.waitForSelector('h1:has-text("Components Demo")');
+    // Wait for client hydration to complete before interacting. The h1 above
+    // is present from SSR immediately, so it doesn't guarantee @Client handlers
+    // are wired — clicking before hydration completes silently no-ops. Under
+    // parallel workers the demo page (heavy, many components) hydrates slower,
+    // so gate on the framework's ready signal.
+    await waitForHydration(page);
   });
 
-  test('applies token-driven classes to buttons', async ({ page }) => {
-    // The cs-button hook class is always present on UI buttons.
-    const uiButtons = page.locator('button.cs-button');
-    const count = await uiButtons.count();
-    expect(count).toBeGreaterThanOrEqual(5);
-
-    // Variant class flows through classMap.
-    await expect(page.locator('button.cs-button--destructive:has-text("Delete")').first()).toBeVisible();
-    await expect(page.locator('button.cs-button--outline:has-text("Outline")').first()).toBeVisible();
-  });
-
-  test('renders all badge variants', async ({ page }) => {
-    for (const label of ['Active', 'Pending', 'Failed', 'Recommended']) {
-      await expect(page.locator(`span.cs-badge:has-text("${label}")`).first()).toBeVisible();
-    }
-  });
-
-  test('renders labelled inputs', async ({ page }) => {
-    await expect(page.locator('label.cs-label:has-text("Email")')).toBeVisible();
-    await expect(page.locator('#email-demo')).toHaveAttribute('type', 'email');
-    // Error variant carries the cs-input--error hook.
-    await expect(page.locator('input.cs-input--error')).toBeVisible();
-  });
-
-  test('renders all static alert variants without live announcements', async ({ page }) => {
-    const alerts = page.locator('.cs-alert');
-    await expect(alerts).toHaveCount(4);
-    for (const [variant, title] of [['default', 'Heads up'], ['success', 'Success'], ['warning', 'Warning'], ['destructive', 'Error']]) {
-      const alert = page.locator(`.cs-alert--${variant}`);
-      await expect(alert).toBeVisible();
-      await expect(alert).toContainText(title);
-      await expect(alert).not.toHaveAttribute('role');
-      await expect(alert).not.toHaveAttribute('aria-live');
-    }
-  });
-
-  test('renders the card with header/body/footer slots', async ({ page }) => {
-    await expect(page.locator('.cs-card-header:has-text("Plan: Pro")')).toBeVisible();
-    await expect(page.locator('.cs-card-body:has-text("Unlimited projects")')).toBeVisible();
-    await expect(page.locator('.cs-card-footer')).toBeVisible();
-  });
-
-  test('renders Solar icons as inline svg', async ({ page }) => {
-    // Labeled icons get role=img; unlabeled ones get aria-hidden.
-    const labeled = page.locator('svg[role="img"][aria-label="Arrow right"]');
-    await expect(labeled).toBeVisible();
-
-    // Style variants for the check icon all render.
-    const svgs = page.locator('svg.cs-icon');
-    expect(await svgs.count()).toBeGreaterThanOrEqual(7);
-  });
-
-  test('icon paths are real SVG geometry (namespace + stroke)', async ({ page }) => {
-    // Regression guard: unsafeHTML-injected <path> inside <svg> gets parsed in
-    // the XHTML namespace and never becomes a real SVGPathElement, so the icon
-    // renders blank. The fix emits the whole <svg> as one unsafeHTML blob so
-    // the parser enters SVG namespace. This test pins that.
-    const data = await page.evaluate(() => {
-      const path = document.querySelector('svg.cs-icon path') as unknown as SVGPathElement | null;
-      if (!path) return { ok: false, reason: 'no path element' };
-      const isReal = path instanceof SVGPathElement;
-      let length: number | null = null;
-      try { length = isReal ? path.getTotalLength() : null; } catch {}
-      return {
-        ok: isReal && length !== null && length > 0,
-        isSVGPathElement: isReal,
-        namespace: (path as Element).namespaceURI,
-        totalLength: length,
-        computedStroke: getComputedStyle(path as Element).stroke,
-      };
-    });
-    expect(data.ok, JSON.stringify(data)).toBe(true);
-    // stroke must resolve to a real color, not the UA default "none"
-    expect(data.computedStroke).not.toBe('none');
-  });
-
-  test('bordered elements render a non-zero border', async ({ page }) => {
-    // Regression guard: a global `* { border-width: 0 }` reset (or border-none
-    // on a shared base class) makes outlines/inputs/cards render borderless.
-    const widths = await page.evaluate(() => {
-      const bw = (el: Element | null) =>
-        el ? parseFloat(getComputedStyle(el).borderWidth) : -1;
-      return {
-        outlineBtn: bw(document.querySelector('button.cs-button--outline')),
-        input: bw(document.querySelector('input.cs-input')),
-        card: bw(document.querySelector('.cs-card')),
-        alert: bw(document.querySelector('.cs-alert--default')),
-      };
-    });
-    for (const [name, w] of Object.entries(widths)) {
-      expect(w, `${name} border-width should be > 0`).toBeGreaterThan(0);
-    }
-  });
-
-  test('theme tokens produce a non-default background on the primary button', async ({
-    page,
-  }) => {
-    // The token chain resolves: bg-primary utility is generated from the
-    // @theme --color-primary declared in @cossackframework/ui/theme/theme.css.
-    const primary = page.locator('button.cs-button.bg-primary').first();
-    const bg = await primary.evaluate(
-      (el) => getComputedStyle(el).backgroundColor,
-    );
-    // Token-driven background is set (not the transparent default).
-    expect(bg).not.toBe('rgba(0, 0, 0, 0)');
-    expect(bg).not.toBe('transparent');
-  });
-
-  test('input, native select, and outline button share transparent light and dark surfaces', async ({
-    page,
-  }) => {
-    const readBackgrounds = () => page.evaluate(() => {
-      const background = (selector: string) =>
-        getComputedStyle(document.querySelector(selector)!).backgroundColor;
-      return {
-        input: background('#surface-input'),
-        select: background('#surface-select'),
-        button: background('#surface-button'),
-      };
-    });
-
-    await page.evaluate(() => document.documentElement.classList.remove('dark'));
-    const light = await readBackgrounds();
-    await page.evaluate(() => document.documentElement.classList.add('dark'));
-    const dark = await readBackgrounds();
-
-    expect(new Set(Object.values(light))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
-    expect(new Set(Object.values(dark))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
-  });
-
-  test('every variant utility is generated (regression guard for @source)', async ({
-    page,
-  }) => {
-    // Tailwind v4 excludes node_modules unless @source points at the package.
-    // If that directive is missing, only classes that also appear in app source
-    // are generated — so bg-secondary/bg-destructive/bg-success would resolve
-    // to transparent. This test pins the @source wiring.
-    const checks = await page.evaluate(() => {
-      const bg = (el: Element | null) =>
-        el ? getComputedStyle(el).backgroundColor : 'missing';
-      return {
-        primary: bg(document.querySelector('button.cs-button.bg-primary')),
-        secondary: bg(document.querySelector('button.cs-button--secondary')),
-        destructive: bg(document.querySelector('button.cs-button--destructive')),
-        success: bg(document.querySelector('span.cs-badge--success')),
-        warning: bg(document.querySelector('span.cs-badge--warning')),
-        destructiveBadge: bg(document.querySelector('span.cs-badge--destructive')),
-      };
-    });
-    // Every variant must resolve to a real color, not the transparent default
-    // that indicates a missing utility.
-    for (const [name, value] of Object.entries(checks)) {
-      expect(value, `${name} should not be transparent`).not.toBe('rgba(0, 0, 0, 0)');
-      expect(value, `${name} should not be transparent`).not.toBe('transparent');
-    }
-  });
-
-  test('modal opens via button and closes via Cancel', async ({ page }) => {
-    // The <dialog> starts closed (no [open] attribute).
-    await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
-
-    // Click "Open modal" → dialog should be open.
-    await page.locator('button:has-text("Open modal")').click();
-    await expect(page.locator('dialog.cs-modal')).toHaveAttribute('open', '');
-
-    // The confirm body is visible inside the dialog.
-    await expect(page.locator('dialog.cs-modal h3:has-text("Confirm action")')).toBeVisible();
-
-    // Click Cancel → dialog closes.
-    await page.locator('dialog.cs-modal button:has-text("Cancel")').click();
-    await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
-  });
-
-  test('accordion toggles open state via button click with animation', async ({ page }) => {
-    const items = page.locator('.cs-accordion');
-    expect(await items.count()).toBeGreaterThanOrEqual(3);
-
-    await expect(items.nth(0).locator('button')).toHaveAttribute('aria-expanded', 'true');
-    const item = items.nth(1);
-    const trigger = item.locator('button');
-    const wrapper = item.locator('.cs-accordion__content-wrapper');
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await trigger.click();
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    await expect(wrapper).toHaveCSS('overflow', 'visible');
-    await expect(wrapper).not.toHaveAttribute('inert');
-    await trigger.click();
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await expect(wrapper).toHaveCSS('height', '0px');
-    await expect(wrapper).toHaveAttribute('inert');
-  });
-
-  for (const kind of ['accordion', 'collapsible']) {
-    test(`${kind} supports dynamic content, escaping overlays, and closed focus isolation`, async ({ page }) => {
-      const item = page.locator(`.cs-${kind}`).first();
-      const wrapper = item.locator(`.cs-${kind}__content-wrapper`);
-      const content = wrapper.locator(':scope > div');
-      const trigger = item.locator(kind === 'accordion' ? '.cs-accordion__summary' : '.cs-collapsible__trigger');
-      if (await wrapper.getAttribute('aria-hidden') === 'true') await trigger.click();
-      await expect(wrapper).toHaveCSS('overflow', 'visible');
-
-      // Simulate asynchronous content and an absolutely positioned autocomplete.
-      await content.evaluate((element) => {
-        const box = document.createElement('div');
-        box.style.cssText = 'height: 640px; position: relative';
-        const button = document.createElement('button');
-        button.textContent = 'Dynamic overlay';
-        button.dataset.testid = 'dynamic-overlay';
-        button.style.cssText = 'position: absolute; top: 100%; left: 0; height: 80px; width: 150px; z-index: 9999; background: red';
-        box.append(button);
-        element.append(box);
+    test('input, native select, and outline button share transparent light and dark surfaces', async ({
+      page,
+    }) => {
+      const readBackgrounds = () => page.evaluate(() => {
+        const background = (selector: string) =>
+          getComputedStyle(document.querySelector(selector)!).backgroundColor;
+        return {
+          input: background('#surface-input'),
+          select: background('#surface-select'),
+          button: background('#surface-button'),
+        };
       });
-      expect(await wrapper.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(640);
-      const overlay = item.getByTestId('dynamic-overlay');
-      await overlay.scrollIntoViewIfNeeded();
-      expect(await overlay.evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        return document.elementFromPoint(rect.left + 10, rect.top + 10) === element;
-      })).toBe(true);
-      await overlay.focus();
-      await expect(overlay).toBeFocused();
+
+      await page.evaluate(() => document.documentElement.classList.remove('dark'));
+      const light = await readBackgrounds();
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+      const dark = await readBackgrounds();
+
+      expect(new Set(Object.values(light))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
+      expect(new Set(Object.values(dark))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
+    });
+
+    test('modal opens via button and closes via Cancel', async ({ page }) => {
+      // The <dialog> starts closed (no [open] attribute).
+      await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
+
+      // Click "Open modal" → dialog should be open.
+      await page.locator('button:has-text("Open modal")').click();
+      await expect(page.locator('dialog.cs-modal')).toHaveAttribute('open', '');
+
+      // The confirm body is visible inside the dialog.
+      await expect(page.locator('dialog.cs-modal h3:has-text("Confirm action")')).toBeVisible();
+
+      // Click Cancel → dialog closes.
+      await page.locator('dialog.cs-modal button:has-text("Cancel")').click();
+      await expect(page.locator('dialog.cs-modal')).not.toHaveAttribute('open');
+    });
+
+    test('accordion toggles open state via button click with animation', async ({ page }) => {
+      const items = page.locator('.cs-accordion');
+      expect(await items.count()).toBeGreaterThanOrEqual(3);
+
+      await expect(items.nth(0).locator('button')).toHaveAttribute('aria-expanded', 'true');
+      const item = items.nth(1);
+      const trigger = item.locator('button');
+      const wrapper = item.locator('.cs-accordion__content-wrapper');
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await trigger.click();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      await expect(wrapper).toHaveCSS('overflow', 'visible');
+      await expect(wrapper).not.toHaveAttribute('inert');
+      await trigger.click();
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
       await expect(wrapper).toHaveCSS('height', '0px');
-      await overlay.evaluate((element) => element.focus());
-      await expect(overlay).not.toBeFocused();
-      await trigger.click();
+      await expect(wrapper).toHaveAttribute('inert');
+    });
+
+    for (const kind of ['accordion', 'collapsible']) {
+      test(`${kind} supports dynamic content, escaping overlays, and closed focus isolation`, async ({ page }) => {
+        const item = page.locator(`.cs-${kind}`).first();
+        const wrapper = item.locator(`.cs-${kind}__content-wrapper`);
+        const content = wrapper.locator(':scope > div');
+        const trigger = item.locator(kind === 'accordion' ? '.cs-accordion__summary' : '.cs-collapsible__trigger');
+        if (await wrapper.getAttribute('aria-hidden') === 'true') await trigger.click();
+        await expect(wrapper).toHaveCSS('overflow', 'visible');
+
+        // Simulate asynchronous content and an absolutely positioned autocomplete.
+        await content.evaluate((element) => {
+          const box = document.createElement('div');
+          box.style.cssText = 'height: 640px; position: relative';
+          const button = document.createElement('button');
+          button.textContent = 'Dynamic overlay';
+          button.dataset.testid = 'dynamic-overlay';
+          button.style.cssText = 'position: absolute; top: 100%; left: 0; height: 80px; width: 150px; z-index: 9999; background: red';
+          box.append(button);
+          element.append(box);
+        });
+        expect(await wrapper.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(640);
+        const overlay = item.getByTestId('dynamic-overlay');
+        await overlay.scrollIntoViewIfNeeded();
+        expect(await overlay.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          return document.elementFromPoint(rect.left + 10, rect.top + 10) === element;
+        })).toBe(true);
+        await overlay.focus();
+        await expect(overlay).toBeFocused();
+        await trigger.click();
+        await expect(wrapper).toHaveCSS('height', '0px');
+        await overlay.evaluate((element) => element.focus());
+        await expect(overlay).not.toBeFocused();
+        await trigger.click();
+        await expect(wrapper).toHaveCSS('overflow', 'visible');
+        expect(await wrapper.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(640);
+      });
+    }
+
+    test('accordion settles immediately when reduced motion is requested', async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      const item = page.locator('.cs-accordion').nth(1);
+      await item.locator('button').click();
+      const wrapper = item.locator('.cs-accordion__content-wrapper');
       await expect(wrapper).toHaveCSS('overflow', 'visible');
-      expect(await wrapper.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(640);
+      expect(await wrapper.evaluate((element) => element.getAnimations().length)).toBe(0);
     });
-  }
 
-  test('accordion settles immediately when reduced motion is requested', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    const item = page.locator('.cs-accordion').nth(1);
-    await item.locator('button').click();
-    const wrapper = item.locator('.cs-accordion__content-wrapper');
-    await expect(wrapper).toHaveCSS('overflow', 'visible');
-    expect(await wrapper.evaluate((element) => element.getAnimations().length)).toBe(0);
-  });
+    test('tabs switch panels on click with sliding indicator', async ({ page }) => {
+      // Default tab shows account content.
+      await expect(page.locator('.cs-tabs__panel:has-text("Account settings")')).toBeVisible();
 
-  test('extended form primitives render their native elements', async ({ page }) => {
-    // Textarea
-    await expect(page.locator('textarea.cs-textarea#bio')).toBeVisible();
+      // The sliding indicator element exists and has a position.
+      const indicator = page.locator('.cs-tabs__indicator').first();
+      await expect(indicator).toBeAttached();
+      const initialLeft = await indicator.evaluate((el) => el.style.left);
 
-    // Select with options
-    const select = page.locator('select.cs-select__input#country');
-    await expect(select).toBeVisible();
-    expect(await select.locator('option').count()).toBeGreaterThanOrEqual(3);
+      // Click the Password tab.
+      await page.locator('[role="tab"]:has-text("Password")').click();
 
-    // Checkbox (native input type=checkbox) + Switch (role=switch)
-    await expect(page.locator('.cs-checkbox input[type="checkbox"]')).toBeChecked();
-    // Switch semantics belong on the native checkbox, not its label. The
-    // checkbox is visually hidden, so assert it is attached and its styled
-    // label is visible.
-    const switches = page.locator('label.cs-switch input.cs-switch__input[role="switch"]');
-    expect(await switches.count()).toBeGreaterThanOrEqual(1);
-    await expect(switches.first()).toBeAttached();
-    await expect(switches.first()).toHaveAttribute('type', 'checkbox');
-    await expect(page.locator('label.cs-switch').first()).toBeVisible();
+      // Account panel should be unmounted; Password panel visible.
+      await expect(page.locator('.cs-tabs__panel:has-text("Password settings")')).toBeVisible();
 
-    // Spinner uses animate-spin (rendered as an inline SVG)
-    await expect(page.locator('svg.cs-spinner.animate-spin').first()).toBeVisible();
-  });
+      // The indicator moved to a new position (slid to the right).
+      const newLeft = await indicator.evaluate((el) => el.style.left);
+      expect(newLeft).not.toBe(initialLeft);
+    });
 
-  test('avatar, separator, skeleton, progress render', async ({ page }) => {
-    expect(await page.locator('.cs-avatar').count()).toBeGreaterThanOrEqual(2);
-    await expect(page.locator('.cs-separator--vertical')).toBeVisible();
-    await expect(page.locator('.cs-skeleton.animate-pulse')).toBeVisible();
-    const bars = page.locator('.cs-progress[role="progressbar"]');
-    expect(await bars.count()).toBeGreaterThanOrEqual(3);
-  });
+    test('tabs underline variant and vertical orientation render', async ({ page }) => {
+      // Underline variant: the indicator is 2px tall (bottom border style).
+      const underlineTabs = page.locator('.cs-tabs').nth(1);
+      await expect(underlineTabs.locator('[role="tab"]:has-text("Overview")')).toBeVisible();
 
-  test('avatar group stacks avatars with overflow counter', async ({ page }) => {
-    const group = page.locator('.cs-avatar-group').first();
-    await expect(group).toBeVisible();
-    // 4 visible avatars + 1 overflow counter = 5 children.
-    const avatars = group.locator('.cs-avatar-group__item .cs-avatar');
-    expect(await avatars.count()).toBe(4);
-    // Overflow shows "+2" (6 items, max 4).
-    await expect(group.locator('.cs-avatar-group__overflow [aria-hidden="true"]')).toHaveText('+2');
-    await expect(group.locator('.cs-avatar-group__overflow .sr-only')).toHaveText('2 more people');
-    // Second group uses square shape.
-    const squareGroup = page.locator('.cs-avatar-group').nth(1);
-    await expect(squareGroup.locator('.cs-avatar-group__item .cs-avatar')).toHaveCount(3);
-    await expect(squareGroup.locator('.cs-avatar-group__overflow [aria-hidden="true"]')).toHaveText('+2');
-    await expect(squareGroup.locator('.cs-avatar-group__overflow .sr-only')).toHaveText('2 more people');
-  });
+      // Vertical orientation: tablist has aria-orientation="vertical".
+      const verticalTabs = page.locator('.cs-tabs').nth(2);
+      await expect(verticalTabs.locator('[role="tablist"]')).toHaveAttribute('aria-orientation', 'vertical');
 
-  test('tabs switch panels on click with sliding indicator', async ({ page }) => {
-    // Default tab shows account content.
-    await expect(page.locator('.cs-tabs__panel:has-text("Account settings")')).toBeVisible();
+      // Icons render inside tab triggers.
+      expect(await verticalTabs.locator('.cs-tabs__icon svg').count()).toBeGreaterThanOrEqual(4);
+      // Pill variant tabs also have icons.
+      expect(await page.locator('.cs-tabs').first().locator('.cs-tabs__icon svg').count()).toBeGreaterThanOrEqual(1);
 
-    // The sliding indicator element exists and has a position.
-    const indicator = page.locator('.cs-tabs__indicator').first();
-    await expect(indicator).toBeAttached();
-    const initialLeft = await indicator.evaluate((el) => el.style.left);
+      // Switching a vertical tab works.
+      await verticalTabs.locator('[role="tab"]:has-text("Security")').click();
+      await expect(page.locator('.cs-tabs__panel:has-text("Security settings")')).toBeVisible();
+    });
 
-    // Click the Password tab.
-    await page.locator('[role="tab"]:has-text("Password")').click();
+    test('popover opens via native popovertarget button', async ({ page }) => {
+      const trigger = page.locator('button[popovertarget]:has-text("Open popover")');
+      await expect(trigger).toBeVisible();
 
-    // Account panel should be unmounted; Password panel visible.
-    await expect(page.locator('.cs-tabs__panel:has-text("Password settings")')).toBeVisible();
+      // Click opens the popover (native popover API).
+      await trigger.click();
+      // The popover content appears in the top layer.
+      await expect(page.locator('[popover] :text("Popover title")')).toBeVisible({ timeout: 5000 });
+    });
 
-    // The indicator moved to a new position (slid to the right).
-    const newLeft = await indicator.evaluate((el) => el.style.left);
-    expect(newLeft).not.toBe(initialLeft);
-  });
+    test('toast appears when triggered and auto-dismisses', async ({ page }) => {
+      // Click the "Toast: Success" button.
+      await page.locator('button:has-text("Toast: Success")').click();
 
-  test('tabs underline variant and vertical orientation render', async ({ page }) => {
-    // Underline variant: the indicator is 2px tall (bottom border style).
-    const underlineTabs = page.locator('.cs-tabs').nth(1);
-    await expect(underlineTabs.locator('[role="tab"]:has-text("Overview")')).toBeVisible();
+      // The toast message appears in the aria-live region.
+      await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeVisible();
 
-    // Vertical orientation: tablist has aria-orientation="vertical".
-    const verticalTabs = page.locator('.cs-tabs').nth(2);
-    await expect(verticalTabs.locator('[role="tablist"]')).toHaveAttribute('aria-orientation', 'vertical');
+      // Wait for auto-dismiss (default 4s; use a shorter timeout to avoid flakiness).
+      await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeHidden({ timeout: 6000 });
+    });
 
-    // Icons render inside tab triggers.
-    expect(await verticalTabs.locator('.cs-tabs__icon svg').count()).toBeGreaterThanOrEqual(4);
-    // Pill variant tabs also have icons.
-    expect(await page.locator('.cs-tabs').first().locator('.cs-tabs__icon svg').count()).toBeGreaterThanOrEqual(1);
+    test('toggle group slides indicator between items', async ({ page }) => {
+      const group = page.locator('.cs-toggle-group').first();
+      await expect(group).toBeVisible();
+      // The sliding indicator exists and has an initial position.
+      const indicator = group.locator('.cs-toggle-group__indicator');
+      await expect(indicator).toBeAttached();
+      const initialLeft = await indicator.evaluate((el) => el.style.left);
 
-    // Switching a vertical tab works.
-    await verticalTabs.locator('[role="tab"]:has-text("Security")').click();
-    await expect(page.locator('.cs-tabs__panel:has-text("Security settings")')).toBeVisible();
-  });
+      // Click "Center" — indicator should move.
+      await group.locator('button:has-text("Center")').click();
+      await expect.poll(async () => {
+        return await indicator.evaluate((el) => el.style.left);
+      }, { timeout: 5000 }).not.toBe(initialLeft);
+    });
 
-  test('popover opens via native popovertarget button', async ({ page }) => {
-    const trigger = page.locator('button[popovertarget]:has-text("Open popover")');
-    await expect(trigger).toBeVisible();
+    test('dropdown menu opens and lists items via native popover', async ({ page }) => {
+      const trigger = page.locator('button[popovertarget]:has-text("Dropdown")');
+      await trigger.click();
 
-    // Click opens the popover (native popover API).
-    await trigger.click();
-    // The popover content appears in the top layer.
-    await expect(page.locator('[popover] :text("Popover title")')).toBeVisible({ timeout: 5000 });
-  });
+      // Menu items appear in the top layer.
+      await expect(page.locator('[popover] button:has-text("Profile")')).toBeVisible({ timeout: 5000 });
+      await expect(page.locator('[popover] button:has-text("Settings")')).toBeVisible();
 
-  test('radio group renders native radios and slider renders range input', async ({ page }) => {
-    const radios = page.locator('.cs-radio-group input[type="radio"]');
-    expect(await radios.count()).toBeGreaterThanOrEqual(3);
+      // Clicking an item closes the menu.
+      await page.locator('[popover] button:has-text("Settings")').click();
+      await expect(page.locator('[popover] button:has-text("Settings")')).toBeHidden({ timeout: 5000 });
+    });
 
-    // The "pro" radio should be checked.
-    await expect(page.locator('.cs-radio-group input[value="pro"]')).toBeChecked();
+    test('sheet opens from the right edge and closes', async ({ page }) => {
+      // Open the sheet.
+      await page.locator('button:has-text("Open Sheet")').click();
 
-    // Slider is a native range input.
-    await expect(page.locator('input.cs-slider[type="range"]')).toBeVisible();
-  });
+      // The sheet dialog should be open.
+      const sheet = page.locator('dialog.cs-sheet').filter({ hasText: 'Sheet Panel' });
+      await expect(sheet).toHaveAttribute('open', '', { timeout: 5000 });
+      await expect(sheet.locator('h3:has-text("Sheet Panel")')).toBeVisible();
 
-  test('table renders with striped styling', async ({ page }) => {
-    const table = page.locator('table.cs-table__element');
-    await expect(table).toBeVisible();
-    expect(await table.locator('tbody tr').count()).toBeGreaterThanOrEqual(2);
-    // Badge inside table cell.
-    await expect(table.locator('.cs-badge--success:has-text("Active")')).toBeVisible();
-  });
+      // Click Close inside the sheet.
+      await sheet.locator('button:has-text("Close")').click();
+      await expect(sheet).not.toHaveAttribute('open', '', { timeout: 5000 });
+    });
 
-  test('toast appears when triggered and auto-dismisses', async ({ page }) => {
-    // Click the "Toast: Success" button.
-    await page.locator('button:has-text("Toast: Success")').click();
+    test('calendar renders a month grid and supports date selection', async ({ page }) => {
+      const calendar = page.locator('#demo-calendar');
+      await expect(calendar).toBeVisible();
+      // 7 weekday headers (Su..Sa)
+      await expect(calendar.getByRole('columnheader')).toHaveCount(7);
+      // Pick the 15th day cell
+      const day = calendar.locator('.cs-calendar__day[data-date$="-15"]');
+      const selectedDate = await day.getAttribute('data-date');
+      expect(selectedDate).toMatch(/^\d{4}-\d{2}-15$/);
+      await day.click();
+      await expect(day.locator('..')).toHaveAttribute('aria-selected', 'true');
+      // The selected status text updates with an ISO date ending in -15.
+      await expect(page.getByText(`Selected: ${selectedDate}`, { exact: true })).toBeVisible();
+    });
 
-    // The toast message appears in the aria-live region.
-    await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeVisible();
+    test('date-picker popover opens on trigger click', async ({ page }) => {
+      await page.locator('.cs-datepicker__trigger').click();
+      // Native popovers live in the top layer; assert open state via JS (the
+      // element reports "hidden" to Playwright's visibility checks).
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const el = document.querySelector('.cs-datepicker__panel') as HTMLElement | null;
+          return el ? el.matches(':popover-open') : false;
+        });
+      }).toBe(true);
+    });
 
-    // Wait for auto-dismiss (default 4s; use a shorter timeout to avoid flakiness).
-    await expect(page.locator('.cs-toast:has-text("Saved successfully!")')).toBeHidden({ timeout: 6000 });
-  });
-
-  test('toggle group slides indicator between items', async ({ page }) => {
-    const group = page.locator('.cs-toggle-group').first();
-    await expect(group).toBeVisible();
-    // The sliding indicator exists and has an initial position.
-    const indicator = group.locator('.cs-toggle-group__indicator');
-    await expect(indicator).toBeAttached();
-    const initialLeft = await indicator.evaluate((el) => el.style.left);
-
-    // Click "Center" — indicator should move.
-    await group.locator('button:has-text("Center")').click();
-    await expect.poll(async () => {
-      return await indicator.evaluate((el) => el.style.left);
-    }, { timeout: 5000 }).not.toBe(initialLeft);
-  });
-
-  test('dropdown menu opens and lists items via native popover', async ({ page }) => {
-    const trigger = page.locator('button[popovertarget]:has-text("Dropdown")');
-    await trigger.click();
-
-    // Menu items appear in the top layer.
-    await expect(page.locator('[popover] button:has-text("Profile")')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('[popover] button:has-text("Settings")')).toBeVisible();
-
-    // Clicking an item closes the menu.
-    await page.locator('[popover] button:has-text("Settings")').click();
-    await expect(page.locator('[popover] button:has-text("Settings")')).toBeHidden({ timeout: 5000 });
-  });
-
-  test('sheet opens from the right edge and closes', async ({ page }) => {
-    // Open the sheet.
-    await page.locator('button:has-text("Open Sheet")').click();
-
-    // The sheet dialog should be open.
-    const sheet = page.locator('dialog.cs-sheet').filter({ hasText: 'Sheet Panel' });
-    await expect(sheet).toHaveAttribute('open', '', { timeout: 5000 });
-    await expect(sheet.locator('h3:has-text("Sheet Panel")')).toBeVisible();
-
-    // Click Close inside the sheet.
-    await sheet.locator('button:has-text("Close")').click();
-    await expect(sheet).not.toHaveAttribute('open', '', { timeout: 5000 });
-  });
-
-  test('calendar renders a month grid and supports date selection', async ({ page }) => {
-    const calendar = page.locator('#demo-calendar');
-    await expect(calendar).toBeVisible();
-    // 7 weekday headers (Su..Sa)
-    await expect(calendar.getByRole('columnheader')).toHaveCount(7);
-    // Pick the 15th day cell
-    const day = calendar.locator('.cs-calendar__day[data-date$="-15"]');
-    const selectedDate = await day.getAttribute('data-date');
-    expect(selectedDate).toMatch(/^\d{4}-\d{2}-15$/);
-    await day.click();
-    await expect(day.locator('..')).toHaveAttribute('aria-selected', 'true');
-    // The selected status text updates with an ISO date ending in -15.
-    await expect(page.getByText(`Selected: ${selectedDate}`, { exact: true })).toBeVisible();
-  });
-
-  test('date-picker popover opens on trigger click', async ({ page }) => {
-    await page.locator('.cs-datepicker__trigger').click();
-    // Native popovers live in the top layer; assert open state via JS (the
-    // element reports "hidden" to Playwright's visibility checks).
-    await expect.poll(async () => {
-      return await page.evaluate(() => {
-        const el = document.querySelector('.cs-datepicker__panel') as HTMLElement | null;
-        return el ? el.matches(':popover-open') : false;
+    test('context menu opens on right-click', async ({ page }) => {
+      // Playwright's right-click dispatches real OS-level contextmenu; trigger the
+      // event directly to exercise the component's @contextmenu handler.
+      await page.locator('.cs-context-menu').hover();
+      await page.locator('.cs-context-menu').evaluate((el: HTMLElement) => {
+        el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
       });
-    }).toBe(true);
-  });
-
-  test('context menu opens on right-click', async ({ page }) => {
-    // Playwright's right-click dispatches real OS-level contextmenu; trigger the
-    // event directly to exercise the component's @contextmenu handler.
-    await page.locator('.cs-context-menu').hover();
-    await page.locator('.cs-context-menu').evaluate((el: HTMLElement) => {
-      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
-    });
-    await expect.poll(async () => {
-      return await page.evaluate(() => {
-        const el = document.querySelector('.cs-context-menu__panel') as HTMLElement | null;
-        return el ? el.matches(':popover-open') : false;
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const el = document.querySelector('.cs-context-menu__panel') as HTMLElement | null;
+          return el ? el.matches(':popover-open') : false;
+        });
+      }).toBe(true);
+      // The Copy item is present inside the open popover.
+      const hasCopy = await page.evaluate(() => {
+        return !!document.querySelector('.cs-context-menu__item');
       });
-    }).toBe(true);
-    // The Copy item is present inside the open popover.
-    const hasCopy = await page.evaluate(() => {
-      return !!document.querySelector('.cs-context-menu__item');
+      expect(hasCopy).toBe(true);
     });
-    expect(hasCopy).toBe(true);
-  });
 
-  test('input-otp renders the configured number of boxes', async ({ page }) => {
-    const boxes = page.locator('.cs-input-otp__box');
-    await expect(boxes).toHaveCount(6);
-    // Typing a digit fills the first box and the live status updates.
-    const input = page.locator('.cs-input-otp__input');
-    await input.click();
-    await expect(input).toBeFocused();
-    await page.keyboard.type('4');
-    await expect(input).toHaveValue('4');
-    await expect(boxes.first()).toHaveText('4');
-    // The OTP status <code> reflects the joined value (starts with "4").
-    await expect(page.locator('code.text-xs')).toContainText(/^4/, { timeout: 5000 });
-  });
+    test('input-otp renders the configured number of boxes', async ({ page }) => {
+      const boxes = page.locator('.cs-input-otp__box');
+      await expect(boxes).toHaveCount(6);
+      // Typing a digit fills the first box and the live status updates.
+      const input = page.locator('.cs-input-otp__input');
+      await input.click();
+      await expect(input).toBeFocused();
+      await page.keyboard.type('4');
+      await expect(input).toHaveValue('4');
+      await expect(boxes.first()).toHaveText('4');
+      // The OTP status <code> reflects the joined value (starts with "4").
+      await expect(page.locator('code.text-xs')).toContainText(/^4/, { timeout: 5000 });
+    });
 
-  test('typography renders semantic heading and blockquote elements', async ({ page }) => {
-    await expect(page.locator('.cs-typography--h1')).toBeVisible();
-    await expect(page.locator('.cs-typography--blockquote')).toBeVisible();
-    await expect(page.locator('.cs-typography--ul')).toBeVisible();
-  });
+    test('drawer opens via button and renders the title header', async ({ page }) => {
+      await page.locator('button:has-text("Open Drawer")').click();
+      await expect(page.locator('dialog.cs-drawer')).toHaveAttribute('open', '', { timeout: 5000 });
+      await expect(page.locator('.cs-drawer__header:has-text("Settings")')).toBeVisible();
 
-  test('drawer opens via button and renders the title header', async ({ page }) => {
-    await page.locator('button:has-text("Open Drawer")').click();
-    await expect(page.locator('dialog.cs-drawer')).toHaveAttribute('open', '', { timeout: 5000 });
-    await expect(page.locator('.cs-drawer__header:has-text("Settings")')).toBeVisible();
+      // The panel must be pinned to the right edge (not stuck at 0,0).
+      const panelBox = await page.locator('.cs-drawer__panel').boundingBox();
+      expect(panelBox).toBeTruthy();
+      expect(panelBox!.x).toBeGreaterThan(100); // not at left edge (0,0)
 
-    // The panel must be pinned to the right edge (not stuck at 0,0).
-    const panelBox = await page.locator('.cs-drawer__panel').boundingBox();
-    expect(panelBox).toBeTruthy();
-    expect(panelBox!.x).toBeGreaterThan(100); // not at left edge (0,0)
+      // Close it via the X button.
+      await page.locator('.cs-drawer__close').click();
+      await expect(page.locator('dialog.cs-drawer')).not.toHaveAttribute('open', '', { timeout: 5000 });
+    });
 
-    // Close it via the X button.
-    await page.locator('.cs-drawer__close').click();
-    await expect(page.locator('dialog.cs-drawer')).not.toHaveAttribute('open', '', { timeout: 5000 });
-  });
+    test('sidebar renders nav items and collapses to icon rail', async ({ page }) => {
+      const sidebar = page.locator('main .cs-sidebar');
+      await expect(sidebar).toBeVisible();
+      // Initial width ~260px.
+      expect(await sidebar.locator('.cs-sidebar__link').count()).toBeGreaterThanOrEqual(3);
+      // Toggle collapse.
+      await sidebar.locator('.cs-sidebar__toggle').click();
+      // Icon-rail mode: links become centered + body labels hidden.
+      await expect(sidebar).toHaveClass(/cs-sidebar--collapsed/);
+    });
 
-  test('sidebar renders nav items and collapses to icon rail', async ({ page }) => {
-    const sidebar = page.locator('main .cs-sidebar');
-    await expect(sidebar).toBeVisible();
-    // Initial width ~260px.
-    expect(await sidebar.locator('.cs-sidebar__link').count()).toBeGreaterThanOrEqual(3);
-    // Toggle collapse.
-    await sidebar.locator('.cs-sidebar__toggle').click();
-    // Icon-rail mode: links become centered + body labels hidden.
-    await expect(sidebar).toHaveClass(/cs-sidebar--collapsed/);
-  });
+    test('sidebar footer collapses to avatar-only in icon-rail mode', async ({ page }) => {
+      const sidebar = page.locator('main .cs-sidebar');
+      const footer = sidebar.locator('.cs-sidebar__footer');
+      await expect(footer).toBeVisible();
+      // The trigger's name span (the first .text-sm.font-medium inside the trigger button).
+      const nameInTrigger = footer.locator(
+        '.cs-dropdown-menu__trigger span.text-sm.font-medium'
+      );
+      // Expanded: name is visible.
+      await expect(nameInTrigger).toBeVisible();
+      await expect(nameInTrigger).toHaveText('Tan Nguyen');
+      // Collapse the sidebar.
+      await sidebar.locator('.cs-sidebar__toggle').click();
+      await expect(sidebar).toHaveClass(/cs-sidebar--collapsed/);
+      // The footer carries the is-collapsed class so slotted content adapts.
+      await expect(footer).toHaveClass(/is-collapsed/);
+      // Avatar still visible; name hidden via group variant.
+      await expect(footer.locator('.cs-avatar').first()).toBeVisible();
+      await expect(nameInTrigger).toBeHidden();
+    });
 
-  test('sidebar footer collapses to avatar-only in icon-rail mode', async ({ page }) => {
-    const sidebar = page.locator('main .cs-sidebar');
-    const footer = sidebar.locator('.cs-sidebar__footer');
-    await expect(footer).toBeVisible();
-    // The trigger's name span (the first .text-sm.font-medium inside the trigger button).
-    const nameInTrigger = footer.locator(
-      '.cs-dropdown-menu__trigger span.text-sm.font-medium'
-    );
-    // Expanded: name is visible.
-    await expect(nameInTrigger).toBeVisible();
-    await expect(nameInTrigger).toHaveText('Tan Nguyen');
-    // Collapse the sidebar.
-    await sidebar.locator('.cs-sidebar__toggle').click();
-    await expect(sidebar).toHaveClass(/cs-sidebar--collapsed/);
-    // The footer carries the is-collapsed class so slotted content adapts.
-    await expect(footer).toHaveClass(/is-collapsed/);
-    // Avatar still visible; name hidden via group variant.
-    await expect(footer.locator('.cs-avatar').first()).toBeVisible();
-    await expect(nameInTrigger).toBeHidden();
-  });
+    test('sidebar footer user menu opens a dropdown with identity + actions', async ({ page }) => {
+      // The footer trigger is composed from Avatar + DropdownMenu.
+      const trigger = page.locator('.cs-sidebar__footer .cs-dropdown-menu__trigger');
+      await expect(trigger).toBeVisible();
+      // Resolve the popover id tied to this trigger, then open.
+      const popoverId = await trigger.getAttribute('popovertarget');
+      expect(popoverId).toBeTruthy();
+      await trigger.click();
+      // That specific popover opens in the top layer.
+      await expect.poll(async () => {
+        return await page.evaluate((id) => {
+          const el = document.getElementById(id!) as HTMLElement | null;
+          return el ? el.matches(':popover-open') : false;
+        }, popoverId);
+      }, { timeout: 10000 }).toBe(true);
+      // Identity header shows the user's name + action rows render inside the popover.
+      const popoverContent = page.locator(`#${popoverId}`);
+      await expect(popoverContent.locator('text=Tan Nguyen').first()).toBeAttached();
+      await expect(popoverContent.locator('button:has-text("Upgrade to Pro")')).toBeAttached();
+      await expect(popoverContent.locator('button:has-text("Log out")')).toBeAttached();
+    });
 
-  test('sidebar footer user menu opens a dropdown with identity + actions', async ({ page }) => {
-    // The footer trigger is composed from Avatar + DropdownMenu.
-    const trigger = page.locator('.cs-sidebar__footer .cs-dropdown-menu__trigger');
-    await expect(trigger).toBeVisible();
-    // Resolve the popover id tied to this trigger, then open.
-    const popoverId = await trigger.getAttribute('popovertarget');
-    expect(popoverId).toBeTruthy();
-    await trigger.click();
-    // That specific popover opens in the top layer.
-    await expect.poll(async () => {
-      return await page.evaluate((id) => {
-        const el = document.getElementById(id!) as HTMLElement | null;
-        return el ? el.matches(':popover-open') : false;
-      }, popoverId);
-    }, { timeout: 10000 }).toBe(true);
-    // Identity header shows the user's name + action rows render inside the popover.
-    const popoverContent = page.locator(`#${popoverId}`);
-    await expect(popoverContent.locator('text=Tan Nguyen').first()).toBeAttached();
-    await expect(popoverContent.locator('button:has-text("Upgrade to Pro")')).toBeAttached();
-    await expect(popoverContent.locator('button:has-text("Log out")')).toBeAttached();
-  });
+    test('chat components render bubbles, messages, marker, and attachments', async ({ page }) => {
+      // Marker divider.
+      await expect(page.locator('.cs-marker__label:has-text("Today")')).toBeAttached();
+      // Sent + received bubbles.
+      expect(await page.locator('.cs-bubble--sent').count()).toBeGreaterThanOrEqual(2);
+      expect(await page.locator('.cs-bubble--received').count()).toBeGreaterThanOrEqual(2);
+      // Reaction badges on bubbles.
+      expect(await page.locator('.cs-bubble__reactions').count()).toBeGreaterThanOrEqual(2);
+      // Message wrapper with avatar + name.
+      await expect(page.locator('.cs-message__meta:has-text("Alice")')).toHaveCount(3);
+      // Attachment card.
+      await expect(page.locator('.cs-attachment__info:has-text("design-system.fig")')).toBeAttached();
+      // Native named viewport remains keyboard-scrollable through the real app.
+      const transcript = page.getByRole('region', { name: 'Example conversation' });
+      await expect(transcript).toHaveAttribute('id', 'demo-messages-viewport');
+      await transcript.focus();
+      await page.keyboard.press('Home');
+      await expect.poll(() => transcript.evaluate(element => element.scrollTop)).toBeLessThan(1);
+      const latest = page.getByRole('button', { name: 'Scroll to latest messages' });
+      await expect(latest).toBeVisible();
+      await latest.focus();
+      await page.keyboard.press('Enter');
+      await expect.poll(() => transcript.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(1);
+      await expect(transcript).toBeFocused();
+    });
 
-  test('native select and input group render their native elements', async ({ page }) => {
-    await expect(page.locator('select.cs-native-select__input').first()).toBeVisible();
-    expect(await page.locator('select.cs-native-select__input option').count()).toBeGreaterThanOrEqual(3);
-    await expect(page.locator('.cs-input-group__input')).toHaveCount(3);
-    // Prefix @ and suffix USD are present.
-    await expect(page.locator('.cs-input-group__prefix:has-text("@")')).toBeAttached();
-    await expect(page.locator('.cs-input-group__suffix:has-text("USD")')).toBeAttached();
-  });
+    test('password input has show/hide toggle that changes input type', async ({ page }) => {
+      const field = page.locator('.cs-password-input__field');
+      await expect(field).toBeVisible();
+      // Initially password type.
+      await expect(field).toHaveAttribute('type', 'password');
+      // Click the eye toggle.
+      await page.locator('.cs-password-input__toggle').click();
+      // Now text type (revealed).
+      await expect(field).toHaveAttribute('type', 'text');
+      // Toggle back.
+      await page.locator('.cs-password-input__toggle').click();
+      await expect(field).toHaveAttribute('type', 'password');
+    });
 
-  test('item primitive renders media, content, and trailing slots', async ({ page }) => {
-    const items = page.locator('.cs-item');
-    expect(await items.count()).toBe(3);
-    // First item has an avatar media + badge trailing.
-    await expect(items.first().locator('.cs-avatar')).toBeAttached();
-    await expect(items.first().locator('.cs-item__trailing .cs-badge')).toBeAttached();
-  });
-
-  test('chat components render bubbles, messages, marker, and attachments', async ({ page }) => {
-    // Marker divider.
-    await expect(page.locator('.cs-marker__label:has-text("Today")')).toBeAttached();
-    // Sent + received bubbles.
-    expect(await page.locator('.cs-bubble--sent').count()).toBeGreaterThanOrEqual(2);
-    expect(await page.locator('.cs-bubble--received').count()).toBeGreaterThanOrEqual(2);
-    // Reaction badges on bubbles.
-    expect(await page.locator('.cs-bubble__reactions').count()).toBeGreaterThanOrEqual(2);
-    // Message wrapper with avatar + name.
-    await expect(page.locator('.cs-message__meta:has-text("Alice")')).toHaveCount(3);
-    // Attachment card.
-    await expect(page.locator('.cs-attachment__info:has-text("design-system.fig")')).toBeAttached();
-    // Native named viewport remains keyboard-scrollable through the real app.
-    const transcript = page.getByRole('region', { name: 'Example conversation' });
-    await expect(transcript).toHaveAttribute('id', 'demo-messages-viewport');
-    await transcript.focus();
-    await page.keyboard.press('Home');
-    await expect.poll(() => transcript.evaluate(element => element.scrollTop)).toBeLessThan(1);
-    const latest = page.getByRole('button', { name: 'Scroll to latest messages' });
-    await expect(latest).toBeVisible();
-    await latest.focus();
-    await page.keyboard.press('Enter');
-    await expect.poll(() => transcript.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(1);
-    await expect(transcript).toBeFocused();
-  });
-
-  test('password input has show/hide toggle that changes input type', async ({ page }) => {
-    const field = page.locator('.cs-password-input__field');
-    await expect(field).toBeVisible();
-    // Initially password type.
-    await expect(field).toHaveAttribute('type', 'password');
-    // Click the eye toggle.
-    await page.locator('.cs-password-input__toggle').click();
-    // Now text type (revealed).
-    await expect(field).toHaveAttribute('type', 'text');
-    // Toggle back.
-    await page.locator('.cs-password-input__toggle').click();
-    await expect(field).toHaveAttribute('type', 'password');
-  });
-
-  test('multi-select renders selected tags and allows adding new ones', async ({ page }) => {
-    // Pre-selected tags from the demo.
-    const tags = page.locator('.cs-multiselect__tag');
-    expect(await tags.count()).toBeGreaterThanOrEqual(2);
-    // Type to add a new tag (keypress by keypress so @input fires).
-    const input = page.locator('.cs-multiselect__input');
-    await input.click();
-    await page.keyboard.type('GraphQL');
-    await page.keyboard.press('Enter');
-    // The new tag appears.
-    await expect(page.locator('.cs-multiselect__tag').filter({ hasText: 'GraphQL' })).toBeVisible({ timeout: 10000 });
-    // Tag count increased by 1.
-    expect(await tags.count()).toBeGreaterThanOrEqual(3);
-  });
+    test('multi-select renders selected tags and allows adding new ones', async ({ page }) => {
+      // Pre-selected tags from the demo.
+      const tags = page.locator('.cs-multiselect__tag');
+      expect(await tags.count()).toBeGreaterThanOrEqual(2);
+      // Type to add a new tag (keypress by keypress so @input fires).
+      const input = page.locator('.cs-multiselect__input');
+      await input.click();
+      await page.keyboard.type('GraphQL');
+      await page.keyboard.press('Enter');
+      // The new tag appears.
+      await expect(page.locator('.cs-multiselect__tag').filter({ hasText: 'GraphQL' })).toBeVisible({ timeout: 10000 });
+      // Tag count increased by 1.
+      expect(await tags.count()).toBeGreaterThanOrEqual(3);
+    });
+});

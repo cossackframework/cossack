@@ -7,9 +7,12 @@ export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
 }
 
-// Built-in methods that should always be kept in client bundles
-// Note: init() and get() are intentionally NOT included - they are server-only by default
-const BUILTIN_METHODS = new Set([
+/**
+ * @internal Built-in methods that are always kept in client bundles.
+ * Exported so tests exercise the real list instead of a drifting copy.
+ * Note: init() and get() are intentionally NOT included - they are server-only by default.
+ */
+export const BUILTIN_METHODS: ReadonlySet<string> = new Set([
   'render',
   'head',
   'onMount',
@@ -1274,8 +1277,8 @@ function computeAutomaticRpcSet(
 function computePreservedSet(
   cls: any,
   methods: AstMethod[],
-  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
 ): Set<string> {
   const byName = new Map<string, AstMethod>();
   for (const m of methods) {
@@ -1341,7 +1344,7 @@ function analyzeClassMethods(
   code: string,
   program: any,
   policy: typeof isClientSafeMethod,
-  builtins: Set<string>,
+  builtins: ReadonlySet<string>,
 ) {
   const methods = collectAstMethods(cls, code, program);
   const preserved = computePreservedSet(cls, methods, policy, builtins);
@@ -1678,8 +1681,8 @@ ${REGISTER_SERVER_METHODS_CALL}${superCall}    }
 export function injectAutomaticServerMethodMetadata(
   code: string,
   _id: string,
-  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
 ): string {
   const program = parseProgram(code);
   if (!program) return code;
@@ -1963,8 +1966,8 @@ function stripServerActionInput(code: string): {code:string;bindings:Set<string>
 export function transformCossackClass(
   code: string,
   id: string,
-  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
   devWarning: boolean
 ): string {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
@@ -2179,13 +2182,13 @@ function findGenerateStaticParamsValueNode(decoratorNode: any, code: string): an
 // ============================================================================
 
 /**
- * Check if a method is decorated with a client-safe decorator.
+ * @internal Check if a method is decorated with a client-safe decorator or is a built-in.
  * Exported for testing purposes.
  */
 export function isClientSafeMethod(
   decorators: string[],
   methodName: string,
-  builtinMethods: Set<string>
+  builtinMethods: ReadonlySet<string>
 ): boolean {
   // Check for client-safe decorators
   const hasClientDecorator = decorators.some((d) =>

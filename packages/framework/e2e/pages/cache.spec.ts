@@ -1,4 +1,5 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 // E2E test for the cache example page (/examples/cache).
 //
@@ -23,7 +24,7 @@ test.describe.serial('Cache Example Page', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/examples/cache');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
   });
 
   test('should render the page with a run button', async ({ page }) => {

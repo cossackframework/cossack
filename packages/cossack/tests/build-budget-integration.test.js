@@ -2,29 +2,19 @@ import { afterEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { deployCommand } from '../src/commands/deploy.js';
 import { buildCommand } from '../src/commands/build.js';
 import * as projectTools from '../src/project-tools.js';
-const repository = fileURLToPath(new URL('../../../', import.meta.url));
 let parent;
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); if (parent) await fs.rm(parent, { recursive: true, force: true }); });
 async function fixture(budgets = { uploadKiB: { error: 0.001 } }) {
   vi.stubEnv('VITEST', ''); vi.stubEnv('NODE_ENV', 'production'); vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-budget-integration-'));
-  const { projectDir } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', interactive: false });
-  const modules = path.join(projectDir, 'node_modules'); await fs.mkdir(modules);
-  for (const name of await fs.readdir(path.join(repository, 'node_modules'))) {
-    if (name.startsWith('.') || name === '@cossackframework') continue;
-    await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
-  }
-  await fs.mkdir(path.join(modules, '@cossackframework'));
-  for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold'])
-    await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
+  const projectDir = await scaffoldLinkedApp(parent, { adapter: 'cloudflare', packages: ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold'] });
   const manifestPath = path.join(projectDir, 'package.json');
   const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
   manifest.cossack = { buildBudgets: budgets };

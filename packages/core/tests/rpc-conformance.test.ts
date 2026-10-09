@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { startDevelopmentTrace } from '../src/shared/development-trace';
 import { parseDevelopmentSocketEvidence } from '../src/shared/development-rpc-evidence';

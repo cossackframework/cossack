@@ -1,82 +1,72 @@
-import { previewCommand, previewHelp } from './commands/preview.js';
-import { tracesCommand, tracesHelp } from './commands/traces.js';
-import { testResultsCommand, testResultsHelp } from './commands/test-results.js';
-import { docsCommand, docsHelp } from './commands/docs.js';
-import { resourcesCommand, resourcesHelp } from './commands/resources.js';
-import { commandSpecs } from './command-specs.js';
 /**
  * Command resolution + top-level dispatch.
  *
  * Each command module exports `async function run(args, ctx): Promise<number>`
  * where `args` is the remaining argv after the command/subcommand and `ctx`
  * holds shared flags. Returns a process exit code.
+ *
+ * Command modules are imported lazily on dispatch so that cheap commands
+ * (`version`, `--help`, option validation) never pay for loading Vite, the
+ * TypeScript compiler, scaffold recipes or provider SDKs.
  */
-import { versionCommand, versionHelp } from './commands/version.js';
-import { configCommand, configHelp } from './commands/config.js';
-import { routesCommand, routesHelp } from './commands/routes.js';
-import { generateCommand, generateHelp } from './commands/generate.js';
+import { commandSpecs } from './command-specs.js';
 import { renderBanner } from './banner.js';
-import { deleteCommand, deleteHelp } from './commands/delete.js';
-import { createCommand, createHelp } from './commands/create.js';
-import { ssgCommand, ssgHelp } from './commands/ssg.js';
-import { addCommand, addHelp } from './commands/add.js';
-import { removeCommand, removeHelp } from './commands/remove.js';
-import { langCommand, langHelp } from './commands/lang.js';
-import { migrationCommand, migrationHelp } from './commands/migration.js';
-import { seederCommand, seederHelp } from './commands/seeder.js';
-import { schemaCommand, schemaHelp } from './commands/schema.js';
-import { devCommand, devHelp } from './commands/dev.js';
-import { buildCommand, buildHelp } from './commands/build.js';
-import { startCommand, startHelp } from './commands/start.js';
-import { infoCommand, infoHelp } from './commands/info.js';
-import { upgradeCommand, upgradeHelp } from './commands/upgrade.js';
-import { imageCommand, imageHelp } from './commands/image.js';
-import { adapterCommand, adapterHelp } from './commands/adapter.js';
-import { studioCommand, studioHelp } from './commands/studio.js';
 import { parseFlags, requestsJSON, requestsHelp } from './flags.js';
 import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from './output.js';
-import { deployCommand, deployHelp } from './commands/deploy.js';
-import { inspectCommand, inspectHelp, checkCommand, checkHelp } from './commands/inspect.js';
 
-const COMMANDS = {
+/** name -> [module loader, run export, help export] */
+const LOADERS = {
   // lifecycle
-  dev: { run: devCommand, help: devHelp },
-  build: { run: buildCommand, help: buildHelp },
-  start: { run: startCommand, help: startHelp },
-  deploy: { run: deployCommand, help: deployHelp },
-  preview: { run: previewCommand, help: previewHelp },
-  resources: { run: resourcesCommand, help: resourcesHelp },
+  dev: [() => import('./commands/dev.js'), 'devCommand', 'devHelp'],
+  build: [() => import('./commands/build.js'), 'buildCommand', 'buildHelp'],
+  start: [() => import('./commands/start.js'), 'startCommand', 'startHelp'],
+  deploy: [() => import('./commands/deploy.js'), 'deployCommand', 'deployHelp'],
+  preview: [() => import('./commands/preview.js'), 'previewCommand', 'previewHelp'],
+  resources: [() => import('./commands/resources.js'), 'resourcesCommand', 'resourcesHelp'],
   // scaffolding
-  create: { run: createCommand, help: createHelp },
-  generate: { run: generateCommand, help: generateHelp },
-  delete: { run: deleteCommand, help: deleteHelp },
-  add: { run: addCommand, help: addHelp },
-  remove: { run: removeCommand, help: removeHelp },
-  adapter: { run: adapterCommand, help: adapterHelp },
-  lang: { run: langCommand, help: langHelp },
-  migration: { run: migrationCommand, help: migrationHelp },
-  seeder: { run: seederCommand, help: seederHelp },
-  schema: { run: schemaCommand, help: schemaHelp },
-  studio: { run: studioCommand, help: studioHelp },
-  docs: { run: docsCommand, help: docsHelp },
-  traces: { run: tracesCommand, help: tracesHelp },
-  'test-results': { run: testResultsCommand, help: testResultsHelp },
+  create: [() => import('./commands/create.js'), 'createCommand', 'createHelp'],
+  generate: [() => import('./commands/generate.js'), 'generateCommand', 'generateHelp'],
+  delete: [() => import('./commands/delete.js'), 'deleteCommand', 'deleteHelp'],
+  add: [() => import('./commands/add.js'), 'addCommand', 'addHelp'],
+  remove: [() => import('./commands/remove.js'), 'removeCommand', 'removeHelp'],
+  adapter: [() => import('./commands/adapter.js'), 'adapterCommand', 'adapterHelp'],
+  lang: [() => import('./commands/lang.js'), 'langCommand', 'langHelp'],
+  migration: [() => import('./commands/migration.js'), 'migrationCommand', 'migrationHelp'],
+  seeder: [() => import('./commands/seeder.js'), 'seederCommand', 'seederHelp'],
+  schema: [() => import('./commands/schema.js'), 'schemaCommand', 'schemaHelp'],
+  studio: [() => import('./commands/studio.js'), 'studioCommand', 'studioHelp'],
+  docs: [() => import('./commands/docs.js'), 'docsCommand', 'docsHelp'],
+  traces: [() => import('./commands/traces.js'), 'tracesCommand', 'tracesHelp'],
+  'test-results': [() => import('./commands/test-results.js'), 'testResultsCommand', 'testResultsHelp'],
   // introspection
-  inspect: { run: inspectCommand, help: inspectHelp },
-  check: { run: checkCommand, help: checkHelp },
-  routes: { run: routesCommand, help: routesHelp },
-  config: { run: configCommand, help: configHelp },
-  info: { run: infoCommand, help: infoHelp },
-  version: { run: versionCommand, help: versionHelp },
+  inspect: [() => import('./commands/inspect.js'), 'inspectCommand', 'inspectHelp'],
+  check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
+  routes: [() => import('./commands/routes.js'), 'routesCommand', 'routesHelp'],
+  config: [() => import('./commands/config.js'), 'configCommand', 'configHelp'],
+  info: [() => import('./commands/info.js'), 'infoCommand', 'infoHelp'],
+  version: [() => import('./commands/version.js'), 'versionCommand', 'versionHelp'],
   // engine / maintenance
-  ssg: { run: ssgCommand, help: ssgHelp },
-  upgrade: { run: upgradeCommand, help: upgradeHelp },
-  image: { run: imageCommand, help: imageHelp },
+  ssg: [() => import('./commands/ssg.js'), 'ssgCommand', 'ssgHelp'],
+  upgrade: [() => import('./commands/upgrade.js'), 'upgradeCommand', 'upgradeHelp'],
+  image: [() => import('./commands/image.js'), 'imageCommand', 'imageHelp'],
 };
 
-for (const [name, definition] of Object.entries(COMMANDS)) {
-  definition.spec = commandSpecs[name];
-  definition.aliases = definition.spec.aliases;
+/**
+ * Registry of commands. `load()` imports the command module once and resolves
+ * to a stable `{ run, help }` object (stable so tests can spy on it).
+ */
+const COMMANDS = {};
+for (const [name, [importModule, runName, helpName]] of Object.entries(LOADERS)) {
+  const spec = commandSpecs[name];
+  let loaded;
+  COMMANDS[name] = {
+    spec,
+    aliases: spec.aliases,
+    load() {
+      loaded ??= importModule().then(mod => ({ run: mod[runName], help: mod[helpName] }));
+      return loaded;
+    },
+  };
 }
 
 function resolveCommand(name) {
@@ -123,8 +113,9 @@ export async function dispatch(argv) {
 
   const def = COMMANDS[command];
   if (requestsHelp(rest)) {
-    if (requestsJSON(rest)) writeResult(command, { data: { help: def.help() } });
-    else console.log(def.help());
+    const loaded = await def.load();
+    if (requestsJSON(rest)) writeResult(command, { data: { help: loaded.help() } });
+    else console.log(loaded.help());
     return 0;
   }
   // Preserve the downstream tool's argument syntax and ordering verbatim.
@@ -157,7 +148,8 @@ export async function dispatch(argv) {
           'COSSACK_OPTION_INVALID', '--json expects true or false.');
       } else toolArgs.push(argument);
     }
-    return def.run(toolArgs, await buildCtx({ json, ...(environment === undefined ? {} : { env: environment }) }));
+    const loaded = await def.load();
+    return loaded.run(toolArgs, await buildCtx({ json, ...(environment === undefined ? {} : { env: environment }) }));
   }
   let parsed;
   try { parsed = parseFlags(rest, def.spec); }
@@ -173,7 +165,7 @@ export async function dispatch(argv) {
   }
   const { args, flags } = parsed;
   const ctx = await buildCtx(flags);
-  try { return await def.run(args, ctx); }
+  try { return await (await def.load()).run(args, ctx); }
   catch (error) { return commandFailure(ctx, command, diagnosticCode(error),
     ctx.flags.json === true ? diagnosticMessage(error) : error.message); }
 }

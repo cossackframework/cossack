@@ -1,9 +1,10 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Localization Demo', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/localization-demo');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
   });
 
   test('renders in English by default with the correct <html lang>', async ({ page }) => {
@@ -110,7 +111,7 @@ test.describe('Localization Demo', () => {
     await page.waitForFunction(() => document.documentElement.lang === 'es');
 
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
     // The server reads the cossack_locale cookie and SSRs in Spanish.
     await expect(page.locator('html')).toHaveAttribute('lang', 'es');
     const body = await page.locator('body').textContent();

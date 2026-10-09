@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
 import { component, html, render } from '@cossackframework/renderer';

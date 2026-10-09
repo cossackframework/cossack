@@ -2,18 +2,18 @@ import { it, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { createTestHarness } from 'wrangler';
 const execute = promisify(execFile);
-const repository = fileURLToPath(new URL('../../../', import.meta.url));
 async function project() {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-notifications-release-'));
-  const { projectDir: root } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', features: ['notifications'], interactive: false });
+  let root;
   if (process.env.COSSACK_NOTIFICATIONS_INSTALLED_ROOT) {
+    ({ projectDir: root } = await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', features: ['notifications'], interactive: false }));
     const gate = JSON.parse(await fs.readFile(path.join(process.env.COSSACK_NOTIFICATIONS_INSTALLED_ROOT, 'package.json'), 'utf8'));
     const overrides = Object.fromEntries(Object.entries({ ...gate.dependencies, ...gate.devDependencies }).filter(([name, value]) => (name.startsWith('@cossackframework/') || name === 'cossack') && value.startsWith('file:')));
     const file = path.join(root, 'package.json'); const manifest = JSON.parse(await fs.readFile(file, 'utf8')); manifest.pnpm = { ...manifest.pnpm, overrides };
@@ -21,11 +21,7 @@ async function project() {
     await fs.writeFile(path.join(root, 'pnpm-workspace.yaml'), 'overrides:\n' + Object.entries(overrides).map(([name, value]) => `  ${JSON.stringify(name)}: ${JSON.stringify(value)}`).join('\n') + '\n');
     await execute('pnpm', ['install', '--ignore-scripts', '--config.strict-dep-builds=false'], { cwd: root, timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
     for (const name of ['core', 'framework']) expect((await fs.realpath(path.join(root, 'node_modules/@cossackframework', name))).startsWith(root + path.sep)).toBe(true);
-  } else {
-    await fs.mkdir(path.join(root, 'node_modules/@cossackframework'), { recursive: true });
-    for (const name of await fs.readdir(path.join(repository, 'node_modules'))) if (!name.startsWith('.') && name !== '@cossackframework') await fs.symlink(path.join(repository, 'node_modules', name), path.join(root, 'node_modules', name), 'junction');
-    for (const name of ['core', 'renderer', 'framework']) await fs.symlink(path.join(repository, 'packages', name), path.join(root, 'node_modules/@cossackframework', name), 'junction');
-  }
+  } else root = await scaffoldLinkedApp(parent, { adapter: 'cloudflare', features: ['notifications'], packages: ['core', 'renderer', 'framework'] });
   await fs.mkdir(path.join(root, 'src/pages/api'), { recursive: true });
   await fs.writeFile(path.join(root, 'src/pages/api/notifications-test.ts'), `import {createNotifications} from '../../notifications';
 const owner=(c:any)=>({tenantId:c.req.query('tenant')==='other'?'tenant-b':'tenant-a',userId:c.req.query('user')==='b'?'user-b':'user-a'});

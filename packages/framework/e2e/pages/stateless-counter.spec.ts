@@ -1,4 +1,5 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Stateless Counter Page', () => {
   // Increase timeout: the shared DO can be slow under heavy parallel test runs.
@@ -6,8 +7,8 @@ test.describe('Stateless Counter Page', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/stateless-counter');
-    // Wait for the counter UI to render instead of networkidle.
-    // The DO/WS transport keeps a connection alive that can delay networkidle.
+    // Clicks before hydration are lost; the DO/WS connection never goes idle.
+    await waitForHydration(page);
     await page.waitForSelector('text=/Count:\\s*\\d+/');
   });
 
@@ -31,7 +32,7 @@ test.describe('Stateless Counter Page', () => {
       const text = await page.locator('body').textContent({ timeout: 5000 });
       const m = text?.match(/Count:\s*(\d+)/i);
       return m ? parseInt(m[1], 10) : -1;
-    }, { timeout: 30000, interval: 500 }).toBeGreaterThanOrEqual(initialValue + 1);
+    }, { timeout: 30000 }).toBeGreaterThanOrEqual(initialValue + 1);
   });
 
   test('should handle rapid clicks', async ({ page }) => {
@@ -45,7 +46,6 @@ test.describe('Stateless Counter Page', () => {
 
     for (let i = 0; i < 3; i++) {
       await incrementButton.click();
-      await page.waitForTimeout(50);
     }
 
     // Wait for all server responses to complete: count should be >= initialValue + 3
@@ -53,7 +53,7 @@ test.describe('Stateless Counter Page', () => {
       const text = await page.locator('body').textContent({ timeout: 5000 });
       const m = text?.match(/Count:\s*(\d+)/i);
       return m ? parseInt(m[1], 10) : -1;
-    }, { timeout: 30000, interval: 500 }).toBeGreaterThanOrEqual(initialValue + 3);
+    }, { timeout: 30000 }).toBeGreaterThanOrEqual(initialValue + 3);
   });
 
   test('should render stateless description text', async ({ page }) => {

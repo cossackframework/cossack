@@ -18,9 +18,23 @@ const nativePackages: Record<string, string> = {
   'win32 x64 LE': '@cloudflare/workerd-windows-64',
 };
 
+/** Inventory caps; exceeding any of them declines reuse. */
+export interface BudgetInventoryLimits {
+  /** Non-tool files hashed across all Worker inventories and sources. */
+  files: number;
+  /** Directories traversed across all Worker inventories. */
+  directories: number;
+  /** Directory entries listed across all Worker inventories. */
+  entries: number;
+}
+
+/** @internal Default inventory caps; exported so tests can assert them. */
+export const BUDGET_INVENTORY_LIMITS: Readonly<BudgetInventoryLimits> = Object.freeze({ files: 4096, directories: 4096, entries: 8192 });
+
 /** Unsupported or changing inventories decline reuse; they never invent evidence. */
 export async function fingerprintBudgetInventory(root: string, artifacts: string[], sourceFiles: string[], context: string,
-  includeStartupRuntime = false): Promise<string | undefined> {
+  includeStartupRuntime = false, limits: Partial<BudgetInventoryLimits> = {}): Promise<string | undefined> {
+  const { files: maxFiles, directories: maxDirectories, entries: maxEntries } = { ...BUDGET_INVENTORY_LIMITS, ...limits };
   try {
     const project = await realpath(root);
     const digest = createHash('sha256');
@@ -41,7 +55,7 @@ export async function fingerprintBudgetInventory(root: string, artifacts: string
     const hashFile = async (file: string, tool = false, maximum = Infinity) => {
       const before = await ordinaryPath(file);
       const size = Number(before.size);
-      if (size > maximum || (!tool && (++files > 4096 || bytes + size > 64 * 1024 * 1024)) ||
+      if (size > maximum || (!tool && (++files > maxFiles || bytes + size > 64 * 1024 * 1024)) ||
         (tool && toolBytes + size > 256 * 1024 * 1024)) throw Error();
       digest.update(JSON.stringify(['file', file, before.size.toString(), before.ino.toString(), before.mtimeNs.toString(), before.ctimeNs.toString()]));
       const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -62,13 +76,13 @@ export async function fingerprintBudgetInventory(root: string, artifacts: string
       return text ? Buffer.concat(text).toString('utf8') : undefined;
     };
     const walk = async (directory: string): Promise<boolean> => {
-      if (++directories > 4096) throw Error();
+      if (++directories > maxDirectories) throw Error();
       if (await realpath(directory) !== directory) throw Error();
       const before = await lstat(directory, { bigint: true });
       if (!before.isDirectory() || before.isSymbolicLink()) throw Error();
       const entries = await readdir(directory);
       entriesSeen += entries.length;
-      if (entriesSeen > 8192) throw Error();
+      if (entriesSeen > maxEntries) throw Error();
       const populated: string[] = [];
       for (const entry of entries) {
         const file = path.join(directory, entry); const stat = await lstat(file);

@@ -30,30 +30,36 @@ function hasSystemChrome(): boolean {
 const chromeChannel = hasSystemChrome() ? { channel: 'chrome' as const } : {};
 
 /**
- * The SSG preview server is opt-in: it builds the entire app with SSG before
- * starting a preview server, which is too slow for normal e2e iteration.
+ * Server modes
  *
- * When COSSACK_TEST_SSG=1 is set, the config swaps the global webServer from
- * `pnpm dev` (5173) to `pnpm run build:ssg && vite preview` (4173) and points
- * the default project's baseURL at the preview server. This way there is only
- * one webServer in effect at a time (Playwright does not reliably merge
- * project-level webServer configs with the top-level one).
+ * By default the suite runs against a production build: `vite build` followed
+ * by `vite preview`. With `@cloudflare/vite-plugin`, `vite preview` serves the
+ * built Worker inside workerd (Miniflare), so RPC, SSE, WebSockets, Durable
+ * Objects and the SSG output all run exactly as they would after deploy.
  *
- *   pnpm run test:e2e:ssg
- *   # or: COSSACK_TEST_SSG=1 pnpm exec playwright test e2e/pages/ssg.spec.ts
+ *   pnpm run test:e2e          # build + preview (production-like, default)
+ *   pnpm run test:e2e:dev      # `pnpm dev` (5173) for fast local iteration
+ *   pnpm run test:e2e:ssg      # only the SSG suite, against build + preview
+ *
+ * COSSACK_E2E_SERVER=dev selects the dev server; COSSACK_TEST_SSG=1 restricts
+ * the run to e2e/pages/ssg.spec.ts (which needs the built SSG output and is
+ * therefore skipped in dev mode).
  */
 const ssgMode = !!process.env.COSSACK_TEST_SSG;
+const devMode = process.env.COSSACK_E2E_SERVER === 'dev' && !ssgMode;
 // Dedicated release runs must not reuse an unrelated generated-app listener.
 const requestedPort = process.env.COSSACK_E2E_PORT;
-const port = requestedPort === undefined ? (ssgMode ? 4173 : 5173) : Number(requestedPort);
+const port = requestedPort === undefined ? (devMode ? 5173 : 4173) : Number(requestedPort);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('COSSACK_E2E_PORT must be an integer between 1 and 65535');
 }
 const host = requestedPort === undefined ? 'localhost' : '127.0.0.1';
 const address = `http://${host}:${port}`;
-const command = ssgMode
-  ? `pnpm run build:ssg && pnpm exec vite preview --host ${host} --port ${port} --strictPort`
-  : `pnpm dev --host ${host} --port ${port} --strictPort`;
+// `vite build` (not `pnpm build`) skips declaration emit, which e2e does not
+// need and which would rewrite dist/esm underneath other workspace consumers.
+const command = devMode
+  ? `pnpm dev --host ${host} --port ${port} --strictPort`
+  : `pnpm exec vite build && pnpm exec vite preview --host ${host} --port ${port} --strictPort`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -80,17 +86,21 @@ export default defineConfig({
       // preinstalled. When system Chrome is absent (e.g. a minimal WSL setup),
       // fall back to Playwright's bundled Chromium.
       use: { ...devices['Desktop Chrome'], ...chromeChannel },
-      // In SSG mode, only the SSG suite is relevant; in dev mode, skip the
-      // SSG suite (it needs the preview server, not `pnpm dev`).
+      // SSG mode runs only the SSG suite; dev mode skips it because the SSG
+      // output only exists after `vite build`.
       testMatch: ssgMode ? '**/e2e/pages/ssg.spec.ts' : '**/e2e/**/*.spec.ts',
-      testIgnore: ssgMode ? [] : ['**/e2e/pages/ssg.spec.ts'],
+      testIgnore: devMode ? ['**/e2e/pages/ssg.spec.ts'] : [],
     },
   ],
   webServer: {
     command,
     url: address,
-    reuseExistingServer: !process.env.CI && requestedPort === undefined,
-    timeout: ssgMode ? 240 * 1000 : 180 * 1000,
+    // Only the dev server is reused by default: a leftover preview server
+    // would serve a stale build. COSSACK_E2E_REUSE=1 opts in for iteration
+    // against a preview server you started yourself.
+    reuseExistingServer: !process.env.CI && requestedPort === undefined
+      && (devMode || process.env.COSSACK_E2E_REUSE === '1'),
+    timeout: devMode ? 180 * 1000 : 240 * 1000,
     cwd: __dirname,
   },
 });

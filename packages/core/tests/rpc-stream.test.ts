@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sendRpcFrame, createRpcCall, rpc$, readRpcStream, RPC_STREAM_CONTENT_TYPE, RPC_STREAM_MAX_FRAME_BYTES } from '../src/shared/rpc-stream';

@@ -93,6 +93,9 @@ jobs:
       - name: Run all unit tests
         run: pnpm run test:unit
 
+      - name: Run integration tests
+        run: pnpm run test:integration
+
       - name: Check Deno web adapter
         run: |
           deno check packages/deno-adapter/src/index.ts
@@ -111,10 +114,9 @@ jobs:
         env:
           CI: true
 
-      - name: Run Framework SSG tests
-        run: |
-          pnpm --filter @cossackframework/framework run test:e2e:ssg
-          pnpm --filter @cossackframework/framework exec vitest run tests/ssg-build.test.ts
+      # The default e2e run builds the app and includes the SSG spec; this checks the emitted files.
+      - name: Check Framework SSG output
+        run: pnpm --filter @cossackframework/framework exec vitest run tests/ssg-build.test.ts
         env:
           CI: true
 

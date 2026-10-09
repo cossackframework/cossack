@@ -1,8 +1,8 @@
-import { test, expect } from '../fixtures';
-import type { Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 async function navigationLink(page: Page, href: string) {
-  await page.waitForFunction(() => (window as any).__cossackReady === true);
+  await waitForHydration(page);
   const sidebar = page.getByTestId('desktop-sidebar');
   const link = sidebar.locator(`a[href="${href}"]`);
   const group = link.locator('xpath=ancestor::details[1]');
@@ -66,22 +66,27 @@ test.describe('Navigation', () => {
     await expect(page).toHaveURL(/\/lifecycle/);
   });
 
-  test('should prefetch on hover', async ({ page }) => {
+  test('should prefetch on hover and reuse the prefetched document on click', async ({ page }) => {
     const link = await navigationLink(page, '/contact');
+    const documentRequests: string[] = [];
+    page.on('request', request => {
+      if (new URL(request.url()).pathname === '/contact') documentRequests.push(request.url());
+    });
+
+    const prefetch = page.waitForResponse(r => new URL(r.url()).pathname === '/contact');
     await link.hover();
+    expect((await prefetch).ok()).toBe(true);
 
-    // Wait a moment for prefetch to potentially trigger
-    await page.waitForTimeout(100);
     await link.click();
-
-    // Wait for navigation to complete
     await page.waitForURL(/\/contact/, { timeout: 10000 });
-    await expect(page).toHaveURL(/\/contact/);
+    await expect(page.getByText('Contact page')).toBeVisible();
+    // The click is served from the hover prefetch cache.
+    expect(documentRequests).toHaveLength(1);
   });
 
   test('hover prefetch navigates without RPC or a document reload and caches revisits', async ({ page }) => {
     await page.goto('/validation');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
 
     const requests: Array<{ pathname: string; type: string }> = [];
     page.on('request', (request) => {
@@ -129,7 +134,7 @@ test.describe('Navigation', () => {
 
   test('a newer link wins when an earlier page response arrives late', async ({ page }) => {
     await page.goto('/');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
     let held = false;
@@ -166,7 +171,7 @@ test.describe('Navigation', () => {
 
   test('successful mutation clears cached redirect destinations before soft navigation', async ({ page }) => {
     await page.goto('/cache-regression/detail');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     const initial = Number(
       (await page.locator('[data-cache-version]').textContent())?.match(/\d+/)?.[0],
     );

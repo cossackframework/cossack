@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 const execute = promisify(execFile);
 
 it('builds and smokes a generated secret-requiring application without leaking preview secrets', async () => {
@@ -12,15 +13,10 @@ it('builds and smokes a generated secret-requiring application without leaking p
  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-preview-generated-'));
  const root = path.join(parent, 'app'); let harness;
  try {
-  if (gate) await execute(process.execPath, [path.join(gate, 'node_modules/cossack/bin/cossack.js'), 'create', 'app', '--adapter', 'cloudflare', '--preset', 'minimal', '--yes', '--json'], { cwd: parent, timeout: 30000 });
-  else { const { createApp } = await import('@cossackframework/scaffold'); await createApp('app', { cwd: parent, adapter: 'cloudflare', preset: 'minimal', interactive: false }); }
-  if (gate) await fs.symlink(path.join(gate, 'node_modules'), path.join(root, 'node_modules'), 'junction');
-  else {
-   const modules = path.join(root, 'node_modules'); const repository = path.resolve('../..'); await fs.mkdir(modules);
-   for (const name of await fs.readdir(path.join(repository, 'node_modules'))) if (!name.startsWith('.') && name !== '@cossackframework') await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
-   await fs.mkdir(path.join(modules, '@cossackframework'));
-   for (const name of ['framework', 'core', 'renderer', 'scaffold']) await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
-  }
+  if (gate) {
+   await execute(process.execPath, [path.join(gate, 'node_modules/cossack/bin/cossack.js'), 'create', 'app', '--adapter', 'cloudflare', '--preset', 'minimal', '--yes', '--json'], { cwd: parent, timeout: 30000 });
+   await fs.symlink(path.join(gate, 'node_modules'), path.join(root, 'node_modules'), 'junction');
+  } else await scaffoldLinkedApp(parent, { adapter: 'cloudflare', packages: ['framework', 'core', 'renderer', 'scaffold'] });
   const source = path.join(root, 'wrangler.jsonc');
   const original = await fs.readFile(source, 'utf8');
   await fs.writeFile(source, original.replace(/"name":/, '"previews": {"vars": {"APP_URL": "https://preview.example.test", "APP_LOCALE": "en"}},\n  "name":').replace('https://example.com', 'https://production.example.test'));

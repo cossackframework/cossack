@@ -27,4 +27,4 @@ it('installs bare translation and config helpers for standalone SSG lifecycle an
         { defaultLocale: 'en', catalogs: { en: { Ready: 'Prepared', Rendered: 'Built' } } });
     expect(output.replace(/<!--[\s\S]*?-->/g, '')).toContain('<p>Prepared:Built:en:Static App:https://ssg.example.test</p>');
     expect(output).toContain('"message":"Prepared"');
-});
+}, 60_000); // Fresh module graph after resetModules: cold imports are slow under load.

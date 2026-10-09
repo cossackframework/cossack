@@ -1,11 +1,10 @@
-import { expect, test } from '../fixtures';
+import { expect, test } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Renderer directives demo', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/renderer/directives');
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
   });
 
   test('uses UI buttons for directive controls', async ({ page }) => {

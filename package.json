@@ -13,6 +13,7 @@
     "test:deno": "node scripts/test-deno-runtime.mjs",
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:production-bundles": "node scripts/test-local-scaffold.mjs",
+    "test:integration": "pnpm --filter cossack run test:integration && pnpm --filter @cossackframework/ui run test:browser",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e",
     "bump": "node scripts/bump.mjs",
     "test:desktop": "node scripts/test-desktop-runtime.mjs"

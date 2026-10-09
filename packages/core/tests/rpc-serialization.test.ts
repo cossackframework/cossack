@@ -46,7 +46,7 @@ describe('RPC JSON value contract', () => {
         [new Blob(['hello']), 'binary value'], [/pattern/, 'native object'],
         [new Error('private'), 'native object'], [Promise.resolve(1), 'native object'],
         [new URLSearchParams('a=1'), 'native object'], [new Number(1), 'native object'],
-    ])('rejects lossy or opaque value %s with its path', (value, reason) => {
+    ].map(([value, reason]) => ({ value, reason })))('rejects lossy or opaque value #%# ($reason) with its path', ({ value, reason }) => {
         expect(describeUnsupportedValue({ nested: value }, 'payload')).toBe(`payload.nested (${reason})`);
         expect(() => snapshotRpcValue({ nested: value }, 'payload')).toThrow(expect.objectContaining({
             code: 'COSSACK_RPC_SERIALIZATION_FAILED', message: expect.stringContaining(`payload.nested (${reason})`),

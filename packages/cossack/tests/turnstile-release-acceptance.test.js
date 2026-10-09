@@ -3,34 +3,30 @@ import { chromium } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { parseSync } from 'vite';
 import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { createTestHarness } from 'wrangler';
 import { writeTurnstileAcceptance, checkTurnstileAcceptance, TURNSTILE_ENV, TURNSTILE_SECRET_SENTINEL, TURNSTILE_PROVIDER_SENTINEL } from './fixtures/turnstile-acceptance.js';
-const repository=fileURLToPath(new URL('../../../',import.meta.url));const execute=promisify(execFile);
+const execute=promisify(execFile);
 async function project(adapter) {
   const parent=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-turnstile-'));
   try {
-    const {projectDir:root}=await createApp('app',{cwd:parent,adapter,preset:'minimal',features:['turnstile'],interactive:false});
+    let root;
     const installedRoot=process.env.COSSACK_TURNSTILE_INSTALLED_ROOT;
     if(installedRoot){
+      ({projectDir:root}=await createApp('app',{cwd:parent,adapter,preset:'minimal',features:['turnstile'],interactive:false}));
       const gate=JSON.parse(await fs.readFile(path.join(installedRoot,'package.json'),'utf8'));
       const overrides=Object.fromEntries(Object.entries({...gate.dependencies,...gate.devDependencies}).filter(([name,value])=>(name.startsWith('@cossackframework/')||name==='cossack')&&typeof value==='string'&&value.startsWith('file:')));
       const manifestFile=path.join(root,'package.json');const manifest=JSON.parse(await fs.readFile(manifestFile,'utf8'));manifest.pnpm={...manifest.pnpm,overrides};await fs.writeFile(manifestFile,JSON.stringify(manifest,null,2)+'\n');
       await fs.writeFile(path.join(root,'pnpm-workspace.yaml'),'overrides:\n'+Object.entries(overrides).map(([name,value])=>`  ${JSON.stringify(name)}: ${JSON.stringify(value)}`).join('\n')+'\n');
       await execute('pnpm',['install','--ignore-scripts','--config.strict-dep-builds=false'],{cwd:root,timeout:120000,maxBuffer:8*1024*1024});
       for(const name of ['core','renderer','framework','auth','ui'])expect((await fs.realpath(path.join(root,'node_modules/@cossackframework',name))).startsWith(root+path.sep)).toBe(true);
-    }else{
-      const modules=path.join(root,'node_modules');await fs.mkdir(modules);
-      for(const name of await fs.readdir(path.join(repository,'node_modules'))){if(name.startsWith('.')||name==='@cossackframework')continue;await fs.symlink(path.join(repository,'node_modules',name),path.join(modules,name),'junction');}
-      await fs.mkdir(path.join(modules,'@cossackframework'));
-      for(const name of ['framework','core','renderer','node-adapter','auth','database','ui'])await fs.symlink(path.join(repository,'packages',name),path.join(modules,'@cossackframework',name),'junction');
-    }
+    }else root=await scaffoldLinkedApp(parent,{adapter,features:['turnstile'],packages:['framework','core','renderer','node-adapter','auth','database','ui']});
     await writeTurnstileAcceptance(root);return{root,parent};
   }catch(error){await fs.rm(parent,{recursive:true,force:true});throw error;}
 }

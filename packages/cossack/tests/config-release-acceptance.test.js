@@ -5,7 +5,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { writeConfigReleaseAcceptance, checkConfigReleaseTooling, startConfigReleaseServer,
   checkConfigReleaseAcceptance, CONFIG_RELEASE_MARKERS } from './fixtures/config-release-acceptance.js';
 
@@ -15,16 +15,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root
 async function generatedProject(adapter) {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-config-release-'));
   roots.push(parent);
-  const { projectDir: root } = await createApp('app', { cwd: parent, adapter, preset: 'minimal', interactive: false });
-  const modules = path.join(root, 'node_modules'); await fs.mkdir(modules);
-  for (const name of await fs.readdir(path.join(repository, 'node_modules'))) {
-    if (name.startsWith('.') || name === '@cossackframework') continue;
-    await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
-  }
-  await fs.mkdir(path.join(modules, '@cossackframework'));
-  for (const name of ['framework', 'core', 'renderer', 'scaffold', 'node-adapter', 'deno-adapter']) {
-    await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
-  }
+  const root = await scaffoldLinkedApp(parent, { adapter, packages: ['framework', 'core', 'renderer', 'scaffold', 'node-adapter', 'deno-adapter'] });
   await writeConfigReleaseAcceptance(root);
   // This deliberately invalid development file must never be read by config inspection
   // or production request preparation. The harness supplies values explicitly.

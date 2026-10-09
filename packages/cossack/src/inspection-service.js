@@ -1,12 +1,7 @@
-import { inspectWorkflows } from '@cossackframework/framework/workflows-inspection';
-import { inspectSchedules } from '@cossackframework/framework/schedules-inspection';
 /** Shared, output-free inspection used by CLI commands and local agent tools. */
-import { buildEffectiveRouteModel } from './scan-routes.js';
-import { inspectConfigurationRequirements } from './config-inspection.js';
-import { inspectDeployment } from './deployment.js';
-import { inspectProviders } from './providers-inspection.js';
-import { inspectLocalization } from './localization-service.js';
-
+// Each inspection target imports its implementation lazily: localization loads
+// the TypeScript compiler API, and the others pull in framework/provider
+// modules that a single `inspect <target>` request never needs.
 /** Explain one route's effective behavior with reasons and source locations. */
 export function explainRoute(effective, route) {
   const sourcePage = effective.pages.find(candidate => candidate.filePath === route);
@@ -129,7 +124,7 @@ export function checkRouteModel(effective) {
 /** Inspection performs no project-module execution, build, or remote operation. */
 export async function inspectProject(root, { scope, environment = process.env.CLOUDFLARE_ENV, route, locale, check = false }) {
   if (scope === 'routes') {
-    const effective = await buildEffectiveRouteModel(root, { environment });
+    const effective = await (await import('./scan-routes.js')).buildEffectiveRouteModel(root, { environment });
     if (check) return checkRouteModel(effective);
     if (route !== undefined) {
       const explanation = explainRoute(effective, route);
@@ -139,27 +134,27 @@ export async function inspectProject(root, { scope, environment = process.env.CL
     return { ok: true, data: { scope, routes: effective.pages, layouts: effective.layouts, scaffold: effective.scaffold, runtime: effective.runtime }, diagnostics: [] };
   }
   if (scope === 'cloudflare') {
-    const { summary, diagnostics } = await inspectDeployment(root, environment);
-    const configurationRequirements = await inspectConfigurationRequirements(root, { environment, check: true });
+    const { summary, diagnostics } = await (await import('./deployment.js')).inspectDeployment(root, environment);
+    const configurationRequirements = await (await import('./config-inspection.js')).inspectConfigurationRequirements(root, { environment, check: true });
     diagnostics.push(...configurationRequirements.diagnostics);
     const valid = !diagnostics.some(item => item.severity === 'error');
     return { ok: !check || valid, diagnostics, data: { scope, ...summary, configurationRequirements,
       readiness: { configuration: valid ? 'valid' : 'invalid', build: 'not-checked', remote: 'not-checked' } } };
   }
   if (scope === 'localization') {
-    const report = await inspectLocalization(root, { locale });
+    const report = await (await import('./localization-service.js')).inspectLocalization(root, { locale });
     return { ok: !check || report.valid, data: { scope, ...report }, diagnostics: report.diagnostics };
   }
   if (scope === 'workflows') {
-    const { diagnostics, ...data } = await inspectWorkflows(root, environment);
+    const { diagnostics, ...data } = await (await import('@cossackframework/framework/workflows-inspection')).inspectWorkflows(root, environment);
     return { ok: diagnostics.length === 0, data, diagnostics };
   }
   if (scope === 'schedules') {
-    const { diagnostics, ...data } = await inspectSchedules(root, environment);
+    const { diagnostics, ...data } = await (await import('@cossackframework/framework/schedules-inspection')).inspectSchedules(root, environment);
     return { ok: diagnostics.length === 0, data, diagnostics };
   }
   if (scope === 'providers') {
-    const { diagnostics, ...data } = await inspectProviders(root, environment);
+    const { diagnostics, ...data } = await (await import('./providers-inspection.js')).inspectProviders(root, environment);
     return { ok: !check || !diagnostics.some(item => item.severity === 'error'), data, diagnostics };
   }
   throw Object.assign(new Error('Unknown inspection scope.'), { code: 'COSSACK_INSPECTION_SCOPE_UNKNOWN' });

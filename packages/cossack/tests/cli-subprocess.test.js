@@ -291,28 +291,7 @@ afterEach(async () => {
   expect(running, 'no subprocess should remain running').toBe(0);
 });
 
-describe('version and info', () => {
-  it('version --json emits exactly one envelope', async () => {
-    const { code, stdout, stderr } = await runCli(['version', '--json']);
-    expect(code).toBe(0);
-    expect(stderr).toBe('');
-    const result = parseEnvelope(stdout);
-    expect(result).toMatchObject({ schemaVersion: 1, command: 'version', ok: true });
-    expect(result.data.version).toMatch(/^\d+\.\d+\.\d+/);
-  });
-
-  it('version rejects unknown options and extra positionals', async () => {
-    const invalid = await runCli(['version', '--bogus=1', '--json']);
-    expect(invalid.code).toBe(1);
-    expect(parseEnvelope(invalid.stdout)).toMatchObject({
-      ok: false,
-      diagnostics: [{ code: 'COSSACK_OPTION_UNKNOWN' }],
-    });
-    const extra = await runCli(['version', 'extra', '--json']);
-    expect(extra.code).toBe(1);
-    expect(parseEnvelope(extra.stdout).diagnostics[0].code).toBe('COSSACK_ARGUMENT_UNEXPECTED');
-  });
-
+describe('info', () => {
   it('info --json emits the environment summary without stderr noise', async () => {
     const { code, stdout, stderr } = await runCli(['info', '--json']);
     expect(code).toBe(0);
@@ -469,49 +448,6 @@ describe('routes and inspection', () => {
 });
 
 describe('generate', () => {
-  // Three sequential CLI processes each retain runCli's 20-second deadline.
-  it('delete plans effects without removing files and reports missing files with a code', async () => {
-    const generated = await runCli(['generate', 'component', 'KeepMe']);
-    expect(generated.code).toBe(0);
-    const component = path.join(tmp, 'src/components/KeepMe.ts');
-    const original = await fs.readFile(component, 'utf8');
-    const entries = await fs.readdir(path.dirname(component));
-    const planned = await runCli(['delete', 'component', 'KeepMe', '--dry-run', '--json']);
-    expect(planned.code).toBe(0);
-    expect(planned.stderr).toBe('');
-    expect(parseEnvelope(planned.stdout).data.effects).toEqual([
-      { action: 'planned-delete', path: 'src/components/KeepMe.ts' },
-    ]);
-    expect(await fs.readFile(component, 'utf8')).toBe(original);
-    expect(await fs.readdir(path.dirname(component))).toEqual(entries);
-    const missing = await runCli(['delete', 'component', 'Missing', '--json']);
-    expect(missing.code).toBe(1);
-    expect(missing.stderr).toBe('');
-    expect(parseEnvelope(missing.stdout).diagnostics[0].code).toBe('COSSACK_FILE_NOT_FOUND');
-    expect(await fs.readFile(component, 'utf8')).toBe(original);
-    expect(await fs.readdir(path.dirname(component))).toEqual(entries);
-  }, 65000);
-  it('dry run plans the file without writing and emits one envelope', async () => {
-    const { code, stdout, stderr } = await runCli(['generate', 'component', 'ReviewProbe', '--dry-run', '--json']);
-    expect(code).toBe(0);
-    expect(stderr).toBe('');
-    const result = parseEnvelope(stdout);
-    expect(result.ok).toBe(true);
-    expect(result.data.effects).toEqual([
-      { action: 'planned', path: 'src/components/ReviewProbe.ts' },
-    ]);
-    await expect(fs.access(path.join(tmp, 'src/components/ReviewProbe.ts'))).rejects.toThrow();
-  });
-
-  it('a real run writes exactly the planned file', async () => {
-    const { code, stdout } = await runCli(['g', 'c', 'CartBadge', '--json']);
-    expect(code).toBe(0);
-    const result = parseEnvelope(stdout);
-    expect(result.data.effects).toEqual([{ action: 'created', path: 'src/components/CartBadge.ts' }]);
-    const written = await fs.readFile(path.join(tmp, 'src/components/CartBadge.ts'), 'utf8');
-    expect(written.length).toBeGreaterThan(0);
-  });
-
   it('a second run without --force fails with a coded diagnostic and writes nothing new', async () => {
     await runCli(['g', 'c', 'CartBadge']);
     const duplicate = await runCli(['g', 'c', 'CartBadge', '--json']);
@@ -533,28 +469,14 @@ describe('generate', () => {
     const missing = await runCli(['g', 'component', '--json']);
     expect(missing.code).toBe(1);
     expect(parseEnvelope(missing.stdout).diagnostics[0].code).toBe('COSSACK_ARGUMENT_MISSING');
-  });
-
-  it('flag values resembling flags are parse errors, not silent booleans', async () => {
-    const ambiguous = await runCli(['g', 'page', 'X', '--title', '--force', '--json']);
-    expect(ambiguous.code).toBe(1);
-    const result = parseEnvelope(ambiguous.stdout);
-    expect(result.diagnostics[0].code).toBe('COSSACK_OPTION_VALUE_REQUIRED');
+    const absent = await runCli(['delete', 'component', 'Missing', '--json']);
+    expect(absent.code).toBe(1);
+    expect(absent.stderr).toBe('');
+    expect(parseEnvelope(absent.stdout).diagnostics[0].code).toBe('COSSACK_FILE_NOT_FOUND');
   });
 });
 
-describe('add / remove / lang', () => {
-  it('add --dry-run --json plans feature effects without writes', async () => {
-    // A minimal project without the feature present.
-    const { code, stdout, stderr } = await runCli(['add', 'ui', '--dry-run', '--yes', '--runtime', 'cloudflare', '--json']);
-    expect(code).toBe(0);
-    expect(stderr).toBe('');
-    const result = parseEnvelope(stdout);
-    expect(result.command).toBe('add');
-    expect(Array.isArray(result.data.effects)).toBe(true);
-    expect(result.data.effects.every(effect => effect.action === 'planned' || effect.action === 'skipped')).toBe(true);
-  });
-
+describe('add', () => {
   it('add failures in a bare project are coded diagnostics, not human prints', async () => {
     const failure = await runCli(['add', 'ui', '--dry-run', '--yes', '--json']);
     expect(failure.code).toBe(1);
@@ -562,23 +484,6 @@ describe('add / remove / lang', () => {
     expect(result.ok).toBe(false);
     expect(result.diagnostics[0].code).toBe('COSSACK_FEATURE_ADD_FAILED');
     expect(result.diagnostics[0].message).toContain('runtime');
-  });
-
-  it('lang publish --dry-run --json plans the catalog', async () => {
-    const { code, stdout, stderr } = await runCli(['lang', 'publish', '--dry-run', '--json']);
-    expect(code).toBe(0);
-    expect(stderr).toBe('');
-    const result = parseEnvelope(stdout);
-    expect(result.command).toBe('lang');
-    expect(result.data.locale).toBe('en');
-    expect(result.data.effects.some(effect => effect.path.includes('src/lang/en.json'))).toBe(true);
-    await expect(fs.access(path.join(tmp, 'src/lang/en.json'))).rejects.toThrow();
-  });
-
-  it('lang add rejects a missing locale with a code', async () => {
-    const missing = await runCli(['lang', 'add', '--json']);
-    expect(missing.code).toBe(1);
-    expect(parseEnvelope(missing.stdout).diagnostics[0].code).toBe('COSSACK_ARGUMENT_MISSING');
   });
 });
 

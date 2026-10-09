@@ -1,8 +1,9 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test('opens the composed command palette, selects grouped results and restores focus', async ({ page }) => {
     await page.goto('/blocks/command-palette');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     const trigger = page.getByRole('button', { name: 'Open command palette', exact: true });
     await trigger.focus(); await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Application commands' });

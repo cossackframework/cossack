@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { parseSync } from 'vite';
 import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { writeHydrationDiagnosticsAcceptance, checkHydrationDiagnosticsAcceptance, checkHydrationProductionArtifacts } from './fixtures/hydration-diagnostics-acceptance.js';
 
 const repository=fileURLToPath(new URL('../../../',import.meta.url));
@@ -24,9 +25,10 @@ it('writes parseable TypeScript hydration acceptance fixtures',async()=>{
 
 async function project() {
   const parent=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-hydration-native-'));
-  const {projectDir:root}=await createApp('app',{cwd:parent,adapter:'node',preset:'minimal',features:[],interactive:false});
+  let root;
   const installedRoot=process.env.COSSACK_HYDRATION_INSTALLED_ROOT;
   if(installedRoot) {
+    ({projectDir:root}=await createApp('app',{cwd:parent,adapter:'node',preset:'minimal',features:[],interactive:false}));
     const gate=JSON.parse(await fs.readFile(path.join(installedRoot,'package.json'),'utf8'));
     const overrides=Object.fromEntries(Object.entries({...gate.dependencies,...gate.devDependencies}).filter(([name,value])=>(name.startsWith('@cossackframework/')||name==='cossack')&&value.startsWith('file:')));
     const manifestFile=path.join(root,'package.json');const manifest=JSON.parse(await fs.readFile(manifestFile,'utf8'));
@@ -34,12 +36,7 @@ async function project() {
     await fs.writeFile(path.join(root,'pnpm-workspace.yaml'),'overrides:\n'+Object.entries(overrides).map(([name,value])=>`  ${JSON.stringify(name)}: ${JSON.stringify(value)}`).join('\n')+'\n');
     await promisify(execFile)('pnpm',['install','--ignore-scripts', '--config.strict-dep-builds=false'],{cwd:root,timeout:120000,maxBuffer:8*1024*1024});
     for(const name of ['core','renderer','framework'])expect((await fs.realpath(path.join(root,'node_modules/@cossackframework',name))).startsWith(root+path.sep)).toBe(true);
-  } else {
-  const modules=path.join(root,'node_modules');await fs.mkdir(modules);
-  for(const name of await fs.readdir(path.join(repository,'node_modules'))){if(name.startsWith('.')||name==='@cossackframework')continue;await fs.symlink(path.join(repository,'node_modules',name),path.join(modules,name),'junction');}
-  await fs.mkdir(path.join(modules,'@cossackframework'));
-  for(const name of ['framework','core','renderer','node-adapter','auth','database','ui'])await fs.symlink(path.join(repository,'packages',name),path.join(modules,'@cossackframework',name),'junction');
-  }
+  }else root=await scaffoldLinkedApp(parent,{adapter:'node',features:[],packages:['framework','core','renderer','node-adapter','auth','database','ui']});
   await writeHydrationDiagnosticsAcceptance(root);
   return {root,parent};
 }

@@ -531,9 +531,18 @@ importers:
       '@cossackframework/solar-icons':
         specifier: ^0.7.1
         version: 0.7.1
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

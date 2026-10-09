@@ -10,16 +10,14 @@ import { verifyNodeDevelopmentApplication } from './fixtures/node-development-ac
 import { verifyDevelopmentTraceApplication } from './fixtures/development-trace-acceptance.js';
 import { verifyApplicationGuidance } from './fixtures/application-guidance-acceptance.js';
 import { createDataTableBackend, writeDataTableAcceptance, checkDataTableBrowser } from './fixtures/data-table-acceptance.js';
-import { afterEach, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { execFile, spawn } from 'node:child_process';
 import { WebSocket } from 'ws';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { createApp } from '@cossackframework/scaffold';
 import { chromium, expect as browserExpect } from '@playwright/test';
 import { writeWorkerOptimisticRecovery, checkWorkerOptimisticRecovery } from './fixtures/worker-optimistic-recovery.js';
 import { writeWorkerOptimisticSse, checkWorkerOptimisticSse } from './fixtures/worker-optimistic-sse.js';
@@ -32,36 +30,30 @@ import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } 
 import { createRuntimeProxy, checkRuntimeOwnership } from './fixtures/runtime-owner-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
 
-const repository = fileURLToPath(new URL('../../../', import.meta.url));
+import { createLinkedApp, repository } from './fixtures/linked-app.js';
+
 const roots = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
-async function project(adapter, features = [], options = {}) {
-  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-runtime-build-'));
-  roots.push(parent);
-  const { projectDir } = await createApp('app', { cwd: parent, adapter, preset: 'minimal', features, interactive: false, ...options });
-  const modules = path.join(projectDir, 'node_modules');
-  await fs.mkdir(modules);
-  for (const name of await fs.readdir(path.join(repository, 'node_modules'))) {
-    if (name.startsWith('.') || name === '@cossackframework') continue;
-    await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
-  }
-  await fs.mkdir(path.join(modules, '@cossackframework'));
-  for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold', 'test-utils', 'node-adapter', 'deno-adapter', 'desktop']) {
-    await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
-  }
-  if (features.includes('dashboard')) {
-    const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
-    const iconRoot = path.join(parent, 'icons');
-    await fs.mkdir(iconRoot);
-    await fs.writeFile(path.join(iconRoot, 'package.json'), JSON.stringify({ private: true, dependencies: {
-      '@cossackframework/solar-icons': pkg.dependencies['@cossackframework/solar-icons'],
-    } }));
-    await promisify(execFile)('pnpm', ['install', '--ignore-workspace', '--ignore-scripts'],
-      { cwd: iconRoot, timeout: 30000, maxBuffer: 1024 * 1024 });
-    await fs.symlink(path.join(iconRoot, 'node_modules/@cossackframework/solar-icons'),
-      path.join(modules, '@cossackframework/solar-icons'), 'junction');
-  }
-  return projectDir;
+// Generated apps are copied from a cached scaffold+linked base (see fixtures/linked-app.js).
+// `owner` collects parents to remove: per test by default, or a describe-level list for shared apps.
+async function project(adapter, features = [], options = {}, owner = roots) {
+  const { parent, root } = await createLinkedApp({ adapter, features, options, prefix: 'cossack-runtime-build-',
+    install: features.includes('dashboard') ? ['@cossackframework/solar-icons'] : [] });
+  owner.push(parent);
+  return root;
+}
+// A describe-level generated app built once in beforeAll and shared by several cases.
+function sharedApps() {
+  const parents = [];
+  afterAll(async () => { await Promise.all(parents.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+  return (adapter, features = [], options = {}) => project(adapter, features, options, parents);
+}
+const run = promisify(execFile);
+const cossack = (root, args, options = {}) => run(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), ...args],
+  { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024, ...options });
+async function typecheck(root, label) {
+  try { return await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 60000, maxBuffer: 1024 * 1024 }); }
+  catch (error) { throw new Error(`${label}: ${error.stdout}\n${error.stderr}`); }
 }
 async function vite(root, args) {
   try {
@@ -115,315 +107,49 @@ async function productionServer(root, environment = {}) {
   }
   return { origin: /RECIPE_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close, diagnostics: () => output };
 }
-it('replaces navigation owners when a browser moves between production Node and workerd', async () => {
-  const nodeRoot=await project('node'); const workerRoot=await project('cloudflare');
-  await writeNavigationOwnershipAcceptance(nodeRoot); await writeNavigationOwnershipAcceptance(workerRoot);
-  await vite(nodeRoot,[]); await vite(nodeRoot,['--ssr','src/index.ts','--outDir','dist/server']);
-  await vite(workerRoot,[]);
-  const node=await productionServer(nodeRoot);
-  try {
-    const harness=createTestHarness({root:workerRoot,workers:[{configPath:path.join(workerRoot,'dist/ssr/wrangler.json')}]});
+describe('navigation ownership in generated production Node and workerd apps', () => {
+  const shared = sharedApps();
+  let nodeRoot, workerRoot;
+  beforeAll(async () => {
+    [nodeRoot, workerRoot] = await Promise.all([shared('node'), shared('cloudflare')]);
+    await writeNavigationOwnershipAcceptance(nodeRoot); await writeNavigationOwnershipAcceptance(workerRoot);
+    await vite(nodeRoot, []); await vite(nodeRoot, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+    await vite(workerRoot, []);
+  }, 240000);
+  it('replaces navigation owners when a browser moves between production Node and workerd', async () => {
+    const node=await productionServer(nodeRoot);
     try {
-      const {url}=await harness.listen();
-      const proxy=await createRuntimeProxy(node.origin);
+      const harness=createTestHarness({root:workerRoot,workers:[{configPath:path.join(workerRoot,'dist/ssr/wrangler.json')}]});
       try {
-        const browser=await chromium.launch({headless:true});
-        try { await checkRuntimeOwnership(browser,proxy,node.origin,new URL(url).origin); }
-        finally { await browser.close(); }
-      } finally { await proxy.close(); }
-    } finally { await harness.close(); }
-  } finally { await node.close(); }
-},120000);
-it.each(['node', 'cloudflare'])('isolates navigation ownership in a generated production %s app', async adapter => {
-  const root = await project(adapter); await writeNavigationOwnershipAcceptance(root);
-  await vite(root, []);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const browser = await chromium.launch({ headless: true });
-  try {
-    if (adapter === 'node') {
-      const runtime = await productionServer(root);
-      try { await checkNavigationOwnershipBrowser(browser, runtime.origin); }
-      finally { await runtime.close(); }
-    } else {
-      const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-      try { const { url } = await harness.listen(); await checkNavigationOwnershipBrowser(browser, new URL(url).origin); }
-      finally { await harness.close(); }
-    }
-  } finally { await browser.close(); }
-}, 120000);
-it.each(['node', 'cloudflare'])('parses and navigates typed URL state in a generated production %s app', async adapter => {
-  const backend = await createUrlStateBackend();
-  try {
-    const root = await project(adapter); await writeUrlStateAcceptance(root, backend.origin);
-    await vite(root, []);
-    if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+        const {url}=await harness.listen();
+        const proxy=await createRuntimeProxy(node.origin);
+        try {
+          const browser=await chromium.launch({headless:true});
+          try { await checkRuntimeOwnership(browser,proxy,node.origin,new URL(url).origin); }
+          finally { await browser.close(); }
+        } finally { await proxy.close(); }
+      } finally { await harness.close(); }
+    } finally { await node.close(); }
+  },120000);
+  it.each(['node', 'cloudflare'])('isolates navigation ownership in a generated production %s app', async adapter => {
+    const root = adapter === 'node' ? nodeRoot : workerRoot;
     const browser = await chromium.launch({ headless: true });
     try {
       if (adapter === 'node') {
         const runtime = await productionServer(root);
-        try { await checkUrlStateBrowser(browser, runtime.origin, backend); await checkSameUrlHistory(browser, runtime.origin, backend); }
+        try { await checkNavigationOwnershipBrowser(browser, runtime.origin); }
         finally { await runtime.close(); }
       } else {
         const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-        try { const { url } = await harness.listen(); await checkUrlStateBrowser(browser, new URL(url).origin, backend); await checkSameUrlHistory(browser, new URL(url).origin, backend); }
+        try { const { url } = await harness.listen(); await checkNavigationOwnershipBrowser(browser, new URL(url).origin); }
         finally { await harness.close(); }
       }
     } finally { await browser.close(); }
-  } finally { await backend.close(); }
-}, 120000);
-it.each(['node', 'cloudflare'])('selects and hydrates source boundaries in a generated production %s app', async adapter => {
-  const root = await project(adapter); await writeRouteBoundaryAcceptance(root);
-  await vite(root, []);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
-  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--json'], { cwd: root, timeout: 30000 });
-  const inspected = JSON.parse(cli.stdout).data;
-  expect(inspected.manifest).toEqual(manifest);
-  const checkInspection = states => {
-    for (const state of states) {
-      expect(manifest.filePathToId[state.componentPath]).toBe(state.componentRouteId);
-      const page = inspected.routes.find(route => route.filePath === state.componentPath);
-      expect(page.routeId).toBe(state.componentRouteId);
-      expect(page.layoutAndPageMiddlewareCount).toBe(state.public.order.split(',').length - 1);
-      expect(page.middlewareStack.map(entry => entry.source.split(':')[0])).toEqual([
-        ...page.layouts, state.componentPath,
-      ]);
-    }
-  };
-  const browser = await chromium.launch({ headless: true });
-  if (adapter === 'node') {
-    const runtime = await productionServer(root);
-    try {
-      const states = await checkRouteBoundaryAcceptance((url, options) => fetch(runtime.origin + url, options));
-      checkInspection(states);
-      await checkRouteBoundaryBrowser(browser, runtime.origin);
-    } finally { await browser.close(); await runtime.close(); }
-  } else {
-    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-    try {
-      const { url } = await harness.listen();
-      const states = await checkRouteBoundaryAcceptance((path, options) => harness.fetch(path, options));
-      checkInspection(states);
-      await checkRouteBoundaryBrowser(browser, new URL(url).origin);
-    } finally { await browser.close(); await harness.close(); }
-  }
-}, 120000);
-it.each(['node', 'cloudflare'])('executes declared API contracts in a generated production %s app', async adapter => {
-  const root = await project(adapter);
-  await writeApiContractAcceptance(root);
-  if (adapter === 'cloudflare') {
-    const configPath = path.join(root, 'wrangler.jsonc');
-    const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
-    config.d1_databases = [{ binding: 'DB', database_name: 'native-api-test' }];
-    await fs.writeFile(configPath, JSON.stringify(config));
-  }
-  await vite(root, []);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  else await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/wrangler/bin/wrangler.js'), 'types'], { cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, timeout: 30000 });
-  await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, timeout: 30000 })
-    .catch(error => { throw new Error(`${error.stdout}\n${error.stderr}`); });
-  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--json'], { cwd: root, timeout: 30000 });
-  const inspected = JSON.parse(cli.stdout).data;
-  expect(inspected.routes.find(route => route.name === '/api/declared/[id]').apiContracts.methods).toEqual([
-    expect.objectContaining({ method: 'POST', declaration: 'defineApi', inputLocations: ['params', 'query', 'body'], output: 'json', authorization: 'declared' }),
-    expect.objectContaining({ method: 'GET', output: 'response', authorization: 'none' }),
-  ]);
-  expect(inspected.routes.find(route => route.name === '/api/native').routeStyle).toBe('http-handlers');
-  await checkApiContractAssets(root);
-  if (adapter === 'node') {
-    const runtime = await productionServer(root);
-    try { await checkApiContractAcceptance((url, options) => fetch(runtime.origin + url, options)); }
-    finally { await runtime.close(); }
-  } else {
-    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-    try { await harness.listen(); await checkApiContractAcceptance((url, options) => harness.fetch(url, options)); }
-    finally { await harness.close(); }
-  }
-}, 120000);
-it('generates typed URLs that execute real grouped, dynamic, catch-all and API handlers in production', async () => {
-  const root = await project('node');
-  const write = async (file, source) => {
-    const absolute = path.join(root, file); await fs.mkdir(path.dirname(absolute), { recursive: true }); await fs.writeFile(absolute, source);
-  };
-  await write('src/pages/index.ts', `
-    import { Cossack, Page as View } from '@cossackframework/core';
-    import { html } from '@cossackframework/renderer';
-    import { routes } from 'virtual:cossack-routes';
-    @View() class Home extends Cossack {
-      render() { return html\`<a id="user-link" href=\${routes('/users/[id]', {id:'雪/a?b#c'})}>User</a>
-        <a id="docs-link" href=\${routes('/docs/[...path]', {path:['intro','雪/?#%']})}>Docs</a>\`; }
-    }
-    export { Home as default };
-  `);
-  // The minimal recipe uses pages/index/index.ts. Keep one resolved owner.
-  await fs.rm(path.join(root, 'src/pages/index'), { recursive: true, force: true });
-  for (const [file, label] of [['layout.ts', 'root'], ['(account)/layout.ts', 'group']]) {
-    await write('src/pages/' + file, `
-      import { Cossack, Page } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
-      @Page({middlewares:[async(c,next)=>{c.set('urlTrace',[...(c.get('urlTrace')??[]),'${label}']);await next();}]})
-      export default class Layout extends Cossack { render(){return html\`<section>\${this.children}</section>\`;} }
-    `);
-  }
-  await write('src/pages/(account)/users/[id]/index.ts', `
-    import { Cossack, Page as View, State } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
-    @View({middlewares:[async(c,next)=>{c.set('urlTrace',[...(c.get('urlTrace')??[]),'page']);await next();}]})
-    class User extends Cossack {
-      @State() id=''; @State() order='';
-      async init(){this.id=this.c.req.param('id')??'';this.order=(this.c.get('urlTrace') as string[]).join(',');if(this.id==='fail')throw new Error('private-url-error');}
-      render(){return html\`<main><p id="user-id">\${this.id}</p><p id="order">\${this.order}</p></main>\`;}
-    }
-    export {User as default};
-  `);
-  await write('src/pages/docs/[...path]/index.ts', `
-    import { Cossack, Page, State } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
-    @Page() export default class Docs extends Cossack {
-      @State() path=''; async init(){this.path=this.c.req.param('path')??'';}
-      render(){return html\`<p id="doc-path">\${this.path}</p>\`;}
-    }
-  `);
-  await write('src/pages/(account)/api/items/[id].ts', `import type {Context} from 'hono';
-    export const GET=(c:Context)=>c.json({handler:'functional',id:c.req.param('id')});
-  `);
-  await write('src/pages/api/init/[id].ts', `import {Cossack,Page} from '@cossackframework/core';
-    @Page() export default class InitApi extends Cossack { async init(){return this.c.json({handler:'class-init',id:this.c.req.param('id')});} }
-  `);
-  for (const [file, marker] of [['(account)/error/index.ts', 'GROUP_ERROR'], ['error/index.ts', 'ROOT_ERROR'], ['404/index.ts', 'ROOT_NOT_FOUND']]) {
-    await write('src/pages/' + file, `import {Cossack,Page} from '@cossackframework/core';import {html} from '@cossackframework/renderer';
-      @Page() export default class Boundary extends Cossack{render(){return html\`<p>${marker}</p>\`;}}
-    `);
-  }
-  // This source is checked through the generated virtual import and published declarations.
-  // It lives outside the route tree so its negative examples never become handlers.
-  await write('src/route-types.ts', `import {routes} from 'virtual:cossack-routes';
-    routes('/users/[id]',{id:'ok'});routes('/docs/[...path]',{path:['intro']});routes('/');
-    // @ts-expect-error required parameter
-    routes('/users/[id]');
-    // @ts-expect-error invalid ordinary parameter
-    routes('/users/[id]',{id:2});
-    const extra={id:'ok',extra:'bad'};
-    // @ts-expect-error extra variable parameter
-    routes('/users/[id]',extra);
-    // @ts-expect-error empty catch-all
-    routes('/docs/[...path]',{path:[]});
-    // @ts-expect-error boundaries do not have addressable routes
-    routes('/error');
-  `);
-  await vite(root, []);
-  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
-  const user = manifest.routes.find(route => route.name === '/users/[id]');
-  expect(user).toMatchObject({ pattern: '/users/:id', layoutPaths: ['/src/pages/layout.ts', '/src/pages/(account)/layout.ts'], errorBoundary: '/src/pages/(account)/error/index.ts' });
-  expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).scripts.typecheck).toBe('cossack routes --generate && tsc --noEmit');
-  await fs.rm(path.join(root, '.cossack/routes.ts'));
-  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--generate', '--json'], { cwd: root, timeout: 30000 });
-  const inspected = JSON.parse(cli.stdout).data;
-  expect(inspected.manifest).toEqual(manifest);
-  expect(inspected.routes.find(route => route.name === '/users/[id]').middlewareStack).toEqual([
-    { source: '/src/pages/layout.ts:3', count: 1 },
-    { source: '/src/pages/(account)/layout.ts:3', count: 1 },
-    { source: '/src/pages/(account)/users/[id]/index.ts:3', count: 1 },
-  ]);
-  expect(inspected.routes.find(route => route.name === '/api/items/[id]').layouts).toEqual([]);
-  const typecheck = await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, timeout: 30000 })
-    .catch(error => { throw new Error(`${error.stdout}\n${error.stderr}`); });
-  expect(typecheck.stderr).toBe('');
-  const runtime = await productionServer(root);
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage(); await page.goto(runtime.origin);
-    const url = await page.locator('#user-link').getAttribute('href');
-    expect(url).toBe('/users/%E9%9B%AA%2Fa%3Fb%23c');
-    await page.locator('#user-link').click();
-    await browserExpect(page.locator('#user-id')).toHaveText('雪/a?b#c');
-    await browserExpect(page.locator('#order')).toHaveText('root,group,page');
-    await page.goto(runtime.origin); await page.locator('#docs-link').click();
-    await browserExpect(page.locator('#doc-path')).toHaveText('intro/雪/?#%');
-    for (const [name, handler] of [['items', 'functional'], ['init', 'class-init']]) {
-      const response = await fetch(runtime.origin + '/api/' + name + '/%E9%9B%AA%2Fa%3Fb%23c');
-      expect(response.status).toBe(200); expect(await response.json()).toEqual({ handler, id: '雪/a?b#c' });
-    }
-    const failed = await fetch(runtime.origin + '/users/fail');
-    expect(failed.status).toBe(500); const body = await failed.text();
-    expect(body).toContain('GROUP_ERROR'); expect(body).not.toContain('ROOT_ERROR'); expect(body).not.toContain('private-url-error');
-    const missing = await fetch(runtime.origin + '/unknown'); expect(missing.status).toBe(404); expect(await missing.text()).toContain('ROOT_NOT_FOUND');
-    const assets = path.join(root, 'dist/client/assets');
-    for (const file of await fs.readdir(assets)) if (file.endsWith('.js')) {
-      const body = await fs.readFile(path.join(assets, file), 'utf8');
-      expect(body).not.toContain('node:fs'); expect(body).not.toContain('private-url-error');
-    }
-  } finally { await browser.close(); await runtime.close(); }
-}, 120000);
-it.each(['node', 'deno'])('builds a generated %s app through its real Vite configuration', async adapter => {
-  const root = await project(adapter);
-  if (adapter === 'node') {
-    await fs.mkdir(path.join(root, 'src/pages/live'), { recursive: true });
-    await fs.writeFile(path.join(root, 'src/pages/live/index.ts'), `import { Cossack, Page, State } from '@cossackframework/core'; @Page({ transport: 'durable-object', stateful: false }) export default class Live extends Cossack { @State() count = 7; }`);
-  }
-  await vite(root, []);
-  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  await assertPortableChunks(path.join(root, 'dist/server'));
-  if (adapter === 'node') {
-    const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
-      `const { app, env } = await import('./dist/server/index.js'); const response = await app.request('/', {}, env); if (response.status !== 200) throw new Error('HTTP ' + response.status); const body = await response.text(); if (!body.includes('<html')) throw new Error('Missing rendered document'); console.log('NODE_SSR_OK');`],
-      { cwd: root, env: { ...process.env, APP_URL: 'http://localhost:3000' }, maxBuffer: 1024 * 1024 });
-    expect(result.stdout).toContain('NODE_SSR_OK');
-    const websocket = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
-      import { createServer } from 'node:http';
-      import { WebSocket } from 'ws';
-      const { app, env, runtime } = await import('./dist/server/index.js');
-      const server = createServer();
-      runtime.attach(server, request => app.fetch(request, env));
-      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-      const origin = 'http://127.0.0.1:' + server.address().port;
-      env.APP_URL = origin;
-      const rendered = await app.request('/live', {}, env);
-      if (rendered.status !== 200 || !(await rendered.text()).includes('user:anonymous')) throw new Error('WebSocket page SSR failed');
-      const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
-      const url = origin.replace('http:', 'ws:') + '/ws/page/user:anonymous?' + query;
-      const rejectUpgrade = (target, requestOrigin) => new Promise((resolve, reject) => {
-        const socket = new WebSocket(target, { headers: { origin: requestOrigin } });
-        socket.on('error', () => {});
-        socket.once('open', () => { socket.terminate(); reject(new Error('Forbidden upgrade accepted')); });
-        socket.once('unexpected-response', (_request, response) => {
-          response.resume(); socket.terminate();
-          if (response.statusCode !== 403) reject(new Error('Expected 403, got ' + response.statusCode));
-          else resolve();
-        });
-      });
-      try {
-        await rejectUpgrade(url, 'https://untrusted.example');
-        await new Promise((resolve, reject) => {
-          const denied = new WebSocket(url.replace('user:anonymous', 'user:other'), { headers: { origin } });
-          const frames = [];
-          denied.on('message', data => frames.push(JSON.parse(String(data))));
-          denied.once('error', reject);
-          denied.once('close', code => {
-            if (code !== 1008 || frames.length !== 1 || frames[0].type !== 'authorization-error'
-              || frames[0].code !== 'COSSACK_REALTIME_AUTH_CHANGED') {
-              reject(new Error('Incorrect scope rejection: ' + JSON.stringify({ code, frames })));
-            } else resolve();
-          });
-        });
-        const socket = new WebSocket(url, { headers: { origin } });
-        const state = await new Promise((resolve, reject) => {
-          socket.once('message', data => resolve(JSON.parse(String(data))));
-          socket.once('close', (code, reason) => reject(new Error('Closed before snapshot: ' + code + ' ' + reason)));
-          socket.once('error', reject);
-        });
-        if (state.type !== 'state-update' || state.state.count !== 7) throw new Error('Incorrect WebSocket snapshot: ' + JSON.stringify(state));
-        console.log('NODE_WS_GUARDS_OK');
-      } finally {
-        await runtime.dispose();
-        await new Promise(resolve => server.close(resolve));
-      }
-    `], { cwd: root, timeout: 20000, maxBuffer: 1024 * 1024 });
-    expect(websocket.stdout).toContain('NODE_WS_GUARDS_OK');
+  }, 120000);
+});
 
-  }
-  expect(await fs.readdir(path.join(root, 'dist/client/assets'))).not.toHaveLength(0);
-}, 120000);
-it('runs inferred client RPC views for HTTP/SSE methods, function fields, and scoped services', async () => {
-  const root = await project('node');
+// Additive fixtures for the shared generated production Node app below.
+async function writeRpcViews(root) {
   const write = async (relative, source) => {
     await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
     await fs.writeFile(path.join(root, relative), source);
@@ -544,83 +270,8 @@ it('runs inferred client RPC views for HTTP/SSE methods, function fields, and sc
       render() { return html\`<main><button @click=\${this.run}>Upload</button><p role="status">\${this.output}</p><p role="alert">\${this.failure}</p></main>\`; }
     }
   `);
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
-  catch (error) { throw new Error(`Generated authored RPC types: ${error.stdout}\n${error.stderr}`); }
-  await vite(root, []);
-  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  await assertPortableChunks(path.join(root, 'dist/server'));
-  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
-    const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
-    expect(code).not.toContain('private-service-generator-marker');
-    expect(code).not.toContain('private-page-generator-marker');
-  }
-  const server = await productionServer(root);
-  let browser;
-  try {
-    browser = await chromium.launch({ headless: true });
-    for (const transport of ['http', 'sse']) {
-      const page = await browser.newPage();
-      const errors = [];
-      const actions = [];
-      page.on('pageerror', error => errors.push(error.message));
-      page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') actions.push(request.postDataJSON()); });
-      await page.goto(server.origin + '/rpc/' + transport);
-      await browserExpect(page.getByRole('heading', { name: 'Typed ' + transport + ' RPC' })).toBeVisible();
-      await page.getByRole('button', { name: 'Run', exact: true }).click();
-      await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report,wire:2026-10-03/null,native:202/page/native page,binary:0/255/128|done:2/3/6/7/3');
-      await browserExpect(page.getByRole('alert')).toHaveText('');
-      expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary', 'serialized', 'native', 'native']);
-      expect(actions[2]).toMatchObject({ service: { slot: '0' }, payload: ['report'] });
-      for (const label of ['Page files', 'Service files']) {
-        await page.getByRole('button', { name: label, exact: true }).click();
-        await browserExpect(page.getByRole('status')).toHaveText('first:привет🙂');
-        await browserExpect(page.getByRole('status')).toHaveText('done:nested.txt/' + (label === 'Page files' ? '100' : 'service'));
-        await browserExpect(page.getByRole('alert')).toHaveText('');
-      }
-      expect(errors).toEqual([]);
-      await page.close();
-    }
-    const uploadPage = await browser.newPage();
-    await uploadPage.goto(server.origin + '/native-upload');
-    await uploadPage.getByRole('button', { name: 'Upload', exact: true }).click();
-    await browserExpect(uploadPage.getByRole('status')).toHaveText('201/application/octet-stream/binary.dat/0/255/128');
-    await browserExpect(uploadPage.getByRole('alert')).toHaveText('');
-    await uploadPage.close();
-  } finally { await browser?.close(); await server.close(); }
-}, 120000);
-it.each(['node', 'cloudflare'])('excludes private old input through native form and RPC redirects on %s', async adapter => {
-  const root = await project(adapter);
-  await writeOldInputAcceptance(root, repository);
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
-  catch (error) { throw new Error(`Generated old-input types: ${error.stdout}\n${error.stderr}`); }
-  await vite(root, []);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
-  const routeId = manifest.filePathToId['/src/pages/old-input-rpc/index.ts'];
-  expect(routeId).toBeTruthy();
-  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
-    expect(await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8')).not.toContain('PRIVATE_OLD_INPUT_FAILED_ACTION');
-  }
-  const environment = { APP_SECRET: 'old-input-native-application-secret' };
-  let close, request, diagnostics;
-  if (adapter === 'node') {
-    const server = await productionServer(root, environment);
-    close = server.close; diagnostics = server.diagnostics;
-    request = (url, options = {}) => fetch(server.origin + url, { redirect: 'manual', ...options });
-  } else {
-    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json'), secrets: environment }] });
-    close = () => harness.close();
-    diagnostics = () => JSON.stringify(harness.getLogs());
-    try { await harness.listen(); } catch (error) { await close(); throw error; }
-    request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
-  }
-  try { await checkOldInputAcceptance(request, routeId); }
-  catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics?.() ?? ''}`); }
-  finally { await close(); }
-}, 120000);
-
-it('preserves native RPC cookies and consumes flash after a real browser redirect', async () => {
-  const root = await project('node');
+}
+async function writeCookieRpc(root) {
   const write = async (relative, source) => {
     await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
     await fs.writeFile(path.join(root, relative), source);
@@ -688,46 +339,684 @@ it('preserves native RPC cookies and consumes flash after a real browser redirec
       render() { return html\`<main><h1>Saved target</h1><p role="status">\${this.notice}:\${this.title}</p></main>\`; }
     }
   `);
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
-  catch (error) { throw new Error(`Generated cookie RPC types: ${error.stdout}\n${error.stderr}`); }
-  await vite(root, []);
-  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const server = await productionServer(root, { APP_SECRET: 'generated-cookie-rpc-test-secret' });
+}
+async function writeOptimisticRollback(root) {
+  for (const transport of ['http', 'sse']) {
+    const directory = path.join(root, 'src/pages/optimistic', transport);
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'index.ts'), `
+      import { Cossack, Page, State, Store, ClientState, ClientStore, Server, Client, Optimistic, optimistic, input } from '@cossackframework/core';
+      import { html } from '@cossackframework/renderer';
+      @Page({ transport: '${transport}' }) export default class OptimisticPage extends Cossack {
+        @State() count = 0;
+        @Store() cart = { rows: [1] };
+        @ClientState() local = 0;
+        @ClientState() accepted = 0;
+        @ClientStore() items: string[] = [];
+        @Optimistic('append') previewAppend(value: { value: number; label: string }) {
+          const edits = optimistic<OptimisticPage>(this); edits.increment('accepted', 1); edits.append('items', value.label);
+        }
+        @Server({ input: input.object({ value: input.number({ min: 0 }), label: input.string(), delay: input.number({ min: 0 }) }) })
+        async append(value: { value: number; label: string; delay: number }) { await new Promise(resolve => setTimeout(resolve, value.delay)); return value.label; }
+        @Optimistic('edit') preview(value: { value: number }) { this.count = value.value; this.cart.rows.push(value.value); this.local = value.value; }
+        @Server({ input: input.object({ value: input.number({ min: 0 }), delay: input.number({ min: 0 }) }) })
+        async edit(value: { value: number; delay: number }) {
+          await new Promise(resolve => setTimeout(resolve, value.delay));
+          this.count = value.value * 10; this.cart.rows.push(this.count); return this.count;
+        }
+        @Client() onMount() { (window as any).__optimistic = this; }
+        @Client() editLocal(value: number) { this.count = value; }
+        render() { return html\`<main><span data-testid="count">\${this.count}</span><span data-testid="rows">\${this.cart.rows.join(',')}</span><span data-testid="local">\${this.local}</span><span data-testid="loading">\${this.loading.edit || 0}</span><span data-testid="accepted">\${this.accepted}</span><span data-testid="items">\${this.items.join(',')}</span><span data-testid="append-loading">\${this.loading.append || 0}</span></main>\`; }
+      }
+    `);
+  }
+}
+async function writeStateExample(root) {
+  const pageFile = path.join(root, 'src/pages/state-example/index.ts');
+  await fs.mkdir(path.dirname(pageFile), { recursive: true });
+  const source = await fs.readFile(path.join(repository, 'docs/examples/state-mechanisms.ts'), 'utf8');
+  await fs.writeFile(pageFile, source.replace('    render() {', `
+    onMount() { (window as any).__stateExample = this; }
+    render() {`));
+}
+async function checkStateExample(mode, server) {
   let browser;
   try {
+    const response = await fetch(server.origin + '/state-example');
+    const body = await response.text();
+    expect(response.status, body).toBe(200);
+    const initial = JSON.parse(body.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
+    const state = initial;
+    expect(state.public).toMatchObject({ count: 1, profile: { name: 'Ada' }, cart: { lines: [{ quantity: 1, price: 3 }], tags: [] } });
+    for (const name of ['selected', 'panelOpen', 'draft', 'total', 'record']) expect(state.public).not.toHaveProperty(name);
+    expect(state.serverResources.record).toEqual({ argsKey: '[1]', value: { id: 1, label: 'Record 1' } });
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext();
-    const page = await context.newPage();
+    const page = await browser.newPage();
+    const warnings = [];
     const errors = [];
+    const requests = [];
+    page.on('console', message => { if (message.type() === 'warning') warnings.push(message.text()); });
     page.on('pageerror', error => errors.push(error.message));
-    for (const label of ['Save page', 'Save service']) {
-      await page.goto(server.origin + '/cookie-rpc');
-      const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname === '/crpc');
-      await page.getByRole('button', { name: label, exact: true }).click();
-      const response = await responsePromise;
-      expect(response.status(), response.status() === 200 ? undefined : await response.text()).toBe(200);
-      const setCookies = (await response.headersArray()).filter(header => header.name.toLowerCase() === 'set-cookie');
-      expect(setCookies.map(header => header.value.split('=')[0]).sort()).toEqual(['context_cookie', 'cossack_flash', 'native_one', 'native_two'].sort());
-      await browserExpect(page).toHaveURL(server.origin + '/cookie-rpc/target');
-      await browserExpect(page.getByRole('status')).toHaveText('Saved:Draft');
-      const cookies = await context.cookies();
-      for (const name of ['context_cookie', 'native_one', 'native_two']) expect(cookies.find(cookie => cookie.name === name)).toMatchObject({ httpOnly: true });
-      expect(cookies.some(cookie => cookie.name === 'cossack_flash')).toBe(false);
-      await page.reload();
-      await browserExpect(page.getByRole('status')).toHaveText(':');
+    page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') requests.push(request.postDataJSON()); });
+    await page.goto(server.origin + '/state-example');
+    await page.waitForFunction(() => window.__stateExample);
+    await browserExpect(page.getByTestId('profile-name')).toHaveText('Ada');
+    await page.getByRole('button', { name: 'Mutate shallow state', exact: true }).click();
+    expect(await page.evaluate(() => window.__stateExample.profile.name)).toBe('Unobserved');
+    await browserExpect(page.getByTestId('profile-name')).toHaveText('Ada');
+    await page.getByRole('button', { name: 'Replace profile', exact: true }).click();
+    await browserExpect(page.getByTestId('profile-name')).toHaveText('Grace');
+    await page.getByRole('button', { name: 'Edit nested cart', exact: true }).click();
+    await browserExpect(page.getByTestId('cart-total')).toHaveText('6');
+    await browserExpect(page.getByTestId('cart-tags')).toHaveText('edited');
+    await page.getByRole('button', { name: 'Edit local draft', exact: true }).click();
+    await browserExpect(page.getByTestId('draft-tags')).toHaveText('first,next');
+    await browserExpect(page.getByTestId('panel-open')).toHaveText('true');
+    await page.getByRole('button', { name: 'Save count', exact: true }).click();
+    await browserExpect(page.getByTestId('state-count')).toHaveText('2');
+    await browserExpect(page.getByTestId('draft-tags')).toHaveText('first,next');
+    await page.getByRole('button', { name: 'Next record', exact: true }).click();
+    await browserExpect(page.getByTestId('record-label')).toHaveText('Record 2');
+    await browserExpect.poll(() => requests.length).toBe(2);
+    for (const request of requests) {
+      expect(request.state).toHaveProperty('cart');
+      for (const name of ['selected', 'panelOpen', 'draft', 'total']) expect(request.state).not.toHaveProperty(name);
     }
-    await page.goto(server.origin + '/cookie-rpc');
-    await page.getByRole('button', { name: 'Late cookie', exact: true }).click();
-    await browserExpect(page.getByRole('alert')).toHaveText('COSSACK_RESPONSE_HEADERS_COMMITTED');
-    await browserExpect(page.getByRole('status')).toHaveText('first');
-    expect((await context.cookies()).some(cookie => cookie.name === 'late_cookie')).toBe(false);
-    await page.getByRole('button', { name: 'Early cookie', exact: true }).click();
-    await browserExpect(page.getByRole('status')).toHaveText('finished');
-    await browserExpect(page.getByRole('alert')).toHaveText('');
-    expect((await context.cookies()).find(cookie => cookie.name === 'early_cookie')).toMatchObject({ value: 'kept', httpOnly: true });
+    await page.evaluate(() => {
+      window.__stateExample.profile.extra = new Map();
+      window.__stateExample.getPublicState();
+    });
+    if (mode === 'development') {
+      expect(warnings.some(message => message.includes("StateMechanisms at profile.name"))).toBe(true);
+      expect(warnings.some(message => message.includes("StateMechanisms field 'profile' during public state: state.profile.extra (Map)"))).toBe(true);
+    } else expect(warnings.filter(message => message.startsWith('[Cossack]'))).toEqual([]);
     expect(errors).toEqual([]);
   } finally { await browser?.close(); await server.close(); }
+}
+async function writeNodeOptimisticRecovery(root) {
+  await writeWorkerOptimisticRecovery(root);
+  // Process-owned records survive the fresh component instances for HTTP RPC.
+  // Native Worker acceptance uses the same UI against actual D1 records.
+  await fs.writeFile(path.join(root, 'src/private-optimistic-recovery.ts'), `
+    const records = new Map<string, {count:number;mutations:number;reads:number}>();
+    function record(scope:string) {
+      let value = records.get(scope);
+      if (!value) { value = {count:0,mutations:0,reads:0}; records.set(scope,value); }
+      return value;
+    }
+    export async function readCounter(scope:string) { const value=record(scope); value.reads++; return {count:value.count}; }
+    export async function incrementCounter(scope:string) { const value=record(scope); value.count++; value.mutations++; return {count:value.count}; }
+    export async function auditCounter(scope:string) { return {...record(scope)}; }
+  `);
+}
+async function writeNodeOptimisticSse(root) {
+  await writeWorkerOptimisticSse(root);
+  await fs.writeFile(path.join(root,'src/private-sse-optimistic.ts'), `
+    let count=0; const operations:Array<{id:string}>=[];
+    export async function read(_db?:unknown) { return {count}; }
+    export async function commit(_db:unknown,id:string) { operations.push({id}); count++; return {count}; }
+    export async function replace(_db:unknown,value:number) { count=value; return count; }
+    export async function waitForRelease(_db:unknown,_id:string) { throw new Error('Node test only uses the failure stream'); }
+    export async function audit(_db?:unknown) { return {count,operations:operations.map(row=>({...row}))}; }
+  `);
+  const pageFile=path.join(root,'src/pages/resource-check/optimistic-sse/index.ts');
+  await fs.writeFile(pageFile,(await fs.readFile(pageFile,'utf8')).replaceAll('this.env.DB','undefined').replace('Cossack<Env>','Cossack'));
+  await fs.writeFile(path.join(root,'src/pages/api/rpc-check/optimistic-sse.ts'), `
+    import type {Context} from 'hono';
+    import {audit} from '../../../private-sse-optimistic';
+    export const GET=async(c:Context)=>c.json(await audit());
+  `);
+}
+async function writeNodeOptimisticStreams(root) {
+  await writeWorkerOptimisticStreams(root);
+  await fs.writeFile(path.join(root,'src/private-optimistic-streams.ts'), `
+    const records=new Map<string,{count:number;mutations:number;released:number}>();
+    function record(scope:string) {
+      let value=records.get(scope);if(!value){value={count:0,mutations:0,released:0};records.set(scope,value);}return value;
+    }
+    export async function audit(scope:string){return {...record(scope)};}
+    export async function commit(scope:string){const value=record(scope);value.count++;value.mutations++;return {count:value.count};}
+    export async function commitBound(_db:unknown,scope:string){return commit(scope);}
+    export async function waitForReleaseBound(_db:unknown,scope:string){return waitForRelease(scope);}
+    export async function release(scope:string){record(scope).released=1;}
+    export async function waitForRelease(scope:string){
+      const deadline=Date.now()+15000;
+      while(!record(scope).released){if(Date.now()>deadline)throw new Error('Test did not release stream');await new Promise(resolve=>setTimeout(resolve,10));}
+    }
+  `);
+  for(const transport of ['http','sse','durable-object']) {
+    const pageFile=path.join(root,'src/pages/resource-check/optimistic-streams',transport,'index.ts');
+    await fs.writeFile(pageFile,(await fs.readFile(pageFile,'utf8')).replaceAll('this.env.DB','undefined').replace('Cossack<Env>','Cossack'));
+  }
+  await fs.writeFile(path.join(root,'src/private/optimistic-stream.server.ts'), `
+    import {audit,commit} from '../private-optimistic-streams';
+    export async function readCounter(){return {count:(await audit('docs-example')).count};}
+    export async function incrementCounter(){return commit('docs-example');}
+  `);
+}
+async function writeNodeLivePage(root) {
+  await fs.mkdir(path.join(root, 'src/pages/live'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src/pages/live/index.ts'), `import { Cossack, Page, State } from '@cossackframework/core'; @Page({ transport: 'durable-object', stateful: false }) export default class Live extends Cossack { @State() count = 7; }`);
+}
+async function checkApiContractRoutes(root) {
+  const cli = await cossack(root, ['routes', '--json']);
+  const inspected = JSON.parse(cli.stdout).data;
+  expect(inspected.routes.find(route => route.name === '/api/declared/[id]').apiContracts.methods).toEqual([
+    expect.objectContaining({ method: 'POST', declaration: 'defineApi', inputLocations: ['params', 'query', 'body'], output: 'json', authorization: 'declared' }),
+    expect.objectContaining({ method: 'GET', output: 'response', authorization: 'none' }),
+  ]);
+  expect(inspected.routes.find(route => route.name === '/api/native').routeStyle).toBe('http-handlers');
+  await checkApiContractAssets(root);
+}
+async function oldInputRouteId(root) {
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const routeId = manifest.filePathToId['/src/pages/old-input-rpc/index.ts'];
+  expect(routeId).toBeTruthy();
+  for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+    expect(await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8')).not.toContain('PRIVATE_OLD_INPUT_FAILED_ACTION');
+  }
+  return routeId;
+}
+const oldInputEnvironment = { APP_SECRET: 'old-input-native-application-secret' };
+
+// One generated Node app carries every additive (non-conflicting) fixture: one
+// scaffold, one Vite build, one typecheck, then a fresh production server per case.
+describe('shared generated production Node app', () => {
+  const shared = sharedApps();
+  let root, urlBackend;
+  beforeAll(async () => {
+    urlBackend = await createUrlStateBackend();
+    root = await shared('node');
+    await writeApiContractAcceptance(root);
+    await writeOldInputAcceptance(root, repository);
+    await writeRpcViews(root);
+    await writeCookieRpc(root);
+    await writeOptimisticRollback(root);
+    await writeStateExample(root);
+    await writeNodeOptimisticRecovery(root);
+    await writeNodeOptimisticSse(root);
+    await writeNodeOptimisticStreams(root);
+    // Same as the generated `typecheck` script: route types first, then tsc.
+    await cossack(root, ['routes', '--generate', '--json']);
+    await typecheck(root, 'Generated shared Node app types');
+    // These fixtures were never part of a typecheck; they join after it.
+    await writeUrlStateAcceptance(root, urlBackend.origin);
+    await writeNodeLivePage(root);
+    await vite(root, []);
+    await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  }, 300000);
+  afterAll(async () => { await urlBackend?.close(); });
+  it('parses and navigates typed URL state in a generated production node app', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const runtime = await productionServer(root);
+      try { await checkUrlStateBrowser(browser, runtime.origin, urlBackend); await checkSameUrlHistory(browser, runtime.origin, urlBackend); }
+      finally { await runtime.close(); }
+    } finally { await browser.close(); }
+  }, 120000);
+  it('executes declared API contracts in a generated production node app', async () => {
+    await checkApiContractRoutes(root);
+    const runtime = await productionServer(root);
+    try { await checkApiContractAcceptance((url, options) => fetch(runtime.origin + url, options)); }
+    finally { await runtime.close(); }
+  }, 120000);
+  it('excludes private old input through native form and RPC redirects on node', async () => {
+    const routeId = await oldInputRouteId(root);
+    const server = await productionServer(root, oldInputEnvironment);
+    const request = (url, options = {}) => fetch(server.origin + url, { redirect: 'manual', ...options });
+    try { await checkOldInputAcceptance(request, routeId); }
+    catch (error) { throw new Error(`${error.stack ?? error}\n${server.diagnostics()}`); }
+    finally { await server.close(); }
+  }, 120000);
+  it('builds a generated node app through its real Vite configuration', async () => {
+    await assertPortableChunks(path.join(root, 'dist/server'));
+    const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
+      `const { app, env } = await import('./dist/server/index.js'); const response = await app.request('/', {}, env); if (response.status !== 200) throw new Error('HTTP ' + response.status); const body = await response.text(); if (!body.includes('<html')) throw new Error('Missing rendered document'); console.log('NODE_SSR_OK');`],
+      { cwd: root, env: { ...process.env, APP_URL: 'http://localhost:3000' }, maxBuffer: 1024 * 1024 });
+    expect(result.stdout).toContain('NODE_SSR_OK');
+    const websocket = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+      import { createServer } from 'node:http';
+      import { WebSocket } from 'ws';
+      const { app, env, runtime } = await import('./dist/server/index.js');
+      const server = createServer();
+      runtime.attach(server, request => app.fetch(request, env));
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const origin = 'http://127.0.0.1:' + server.address().port;
+      env.APP_URL = origin;
+      const rendered = await app.request('/live', {}, env);
+      if (rendered.status !== 200 || !(await rendered.text()).includes('user:anonymous')) throw new Error('WebSocket page SSR failed');
+      const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
+      const url = origin.replace('http:', 'ws:') + '/ws/page/user:anonymous?' + query;
+      const rejectUpgrade = (target, requestOrigin) => new Promise((resolve, reject) => {
+        const socket = new WebSocket(target, { headers: { origin: requestOrigin } });
+        socket.on('error', () => {});
+        socket.once('open', () => { socket.terminate(); reject(new Error('Forbidden upgrade accepted')); });
+        socket.once('unexpected-response', (_request, response) => {
+          response.resume(); socket.terminate();
+          if (response.statusCode !== 403) reject(new Error('Expected 403, got ' + response.statusCode));
+          else resolve();
+        });
+      });
+      try {
+        await rejectUpgrade(url, 'https://untrusted.example');
+        await new Promise((resolve, reject) => {
+          const denied = new WebSocket(url.replace('user:anonymous', 'user:other'), { headers: { origin } });
+          const frames = [];
+          denied.on('message', data => frames.push(JSON.parse(String(data))));
+          denied.once('error', reject);
+          denied.once('close', code => {
+            if (code !== 1008 || frames.length !== 1 || frames[0].type !== 'authorization-error'
+              || frames[0].code !== 'COSSACK_REALTIME_AUTH_CHANGED') {
+              reject(new Error('Incorrect scope rejection: ' + JSON.stringify({ code, frames })));
+            } else resolve();
+          });
+        });
+        const socket = new WebSocket(url, { headers: { origin } });
+        const state = await new Promise((resolve, reject) => {
+          socket.once('message', data => resolve(JSON.parse(String(data))));
+          socket.once('close', (code, reason) => reject(new Error('Closed before snapshot: ' + code + ' ' + reason)));
+          socket.once('error', reject);
+        });
+        if (state.type !== 'state-update' || state.state.count !== 7) throw new Error('Incorrect WebSocket snapshot: ' + JSON.stringify(state));
+        console.log('NODE_WS_GUARDS_OK');
+      } finally {
+        await runtime.dispose();
+        await new Promise(resolve => server.close(resolve));
+      }
+    `], { cwd: root, timeout: 20000, maxBuffer: 1024 * 1024 });
+    expect(websocket.stdout).toContain('NODE_WS_GUARDS_OK');
+    expect(await fs.readdir(path.join(root, 'dist/client/assets'))).not.toHaveLength(0);
+  }, 120000);
+  it('runs inferred client RPC views for HTTP/SSE methods, function fields, and scoped services', async () => {
+    await assertPortableChunks(path.join(root, 'dist/server'));
+    for (const file of (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => file.endsWith('.js'))) {
+      const code = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+      expect(code).not.toContain('private-service-generator-marker');
+      expect(code).not.toContain('private-page-generator-marker');
+    }
+    const server = await productionServer(root);
+    let browser;
+    try {
+      browser = await chromium.launch({ headless: true });
+      for (const transport of ['http', 'sse']) {
+        const page = await browser.newPage();
+        const errors = [];
+        const actions = [];
+        page.on('pageerror', error => errors.push(error.message));
+        page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') actions.push(request.postDataJSON()); });
+        await page.goto(server.origin + '/rpc/' + transport);
+        await browserExpect(page.getByRole('heading', { name: 'Typed ' + transport + ' RPC' })).toBeVisible();
+        await page.getByRole('button', { name: 'Run', exact: true }).click();
+        await browserExpect(page.getByRole('status')).toHaveText('step:1,step:2,field:3,service:report,wire:2026-10-03/null,native:202/page/native page,binary:0/255/128|done:2/3/6/7/3');
+        await browserExpect(page.getByRole('alert')).toHaveText('');
+        expect(actions.map(action => action.action)).toEqual(['steps', 'field', 'report', 'ordinary', 'serialized', 'native', 'native']);
+        expect(actions[2]).toMatchObject({ service: { slot: '0' }, payload: ['report'] });
+        for (const label of ['Page files', 'Service files']) {
+          await page.getByRole('button', { name: label, exact: true }).click();
+          await browserExpect(page.getByRole('status')).toHaveText('first:привет🙂');
+          await browserExpect(page.getByRole('status')).toHaveText('done:nested.txt/' + (label === 'Page files' ? '100' : 'service'));
+          await browserExpect(page.getByRole('alert')).toHaveText('');
+        }
+        expect(errors).toEqual([]);
+        await page.close();
+      }
+      const uploadPage = await browser.newPage();
+      await uploadPage.goto(server.origin + '/native-upload');
+      await uploadPage.getByRole('button', { name: 'Upload', exact: true }).click();
+      await browserExpect(uploadPage.getByRole('status')).toHaveText('201/application/octet-stream/binary.dat/0/255/128');
+      await browserExpect(uploadPage.getByRole('alert')).toHaveText('');
+      await uploadPage.close();
+    } finally { await browser?.close(); await server.close(); }
+  }, 120000);
+  it('preserves native RPC cookies and consumes flash after a real browser redirect', async () => {
+    const server = await productionServer(root, { APP_SECRET: 'generated-cookie-rpc-test-secret' });
+    let browser;
+    try {
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      for (const label of ['Save page', 'Save service']) {
+        await page.goto(server.origin + '/cookie-rpc');
+        const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname === '/crpc');
+        await page.getByRole('button', { name: label, exact: true }).click();
+        const response = await responsePromise;
+        expect(response.status(), response.status() === 200 ? undefined : await response.text()).toBe(200);
+        const setCookies = (await response.headersArray()).filter(header => header.name.toLowerCase() === 'set-cookie');
+        expect(setCookies.map(header => header.value.split('=')[0]).sort()).toEqual(['context_cookie', 'cossack_flash', 'native_one', 'native_two'].sort());
+        await browserExpect(page).toHaveURL(server.origin + '/cookie-rpc/target');
+        await browserExpect(page.getByRole('status')).toHaveText('Saved:Draft');
+        const cookies = await context.cookies();
+        for (const name of ['context_cookie', 'native_one', 'native_two']) expect(cookies.find(cookie => cookie.name === name)).toMatchObject({ httpOnly: true });
+        expect(cookies.some(cookie => cookie.name === 'cossack_flash')).toBe(false);
+        await page.reload();
+        await browserExpect(page.getByRole('status')).toHaveText(':');
+      }
+      await page.goto(server.origin + '/cookie-rpc');
+      await page.getByRole('button', { name: 'Late cookie', exact: true }).click();
+      await browserExpect(page.getByRole('alert')).toHaveText('COSSACK_RESPONSE_HEADERS_COMMITTED');
+      await browserExpect(page.getByRole('status')).toHaveText('first');
+      expect((await context.cookies()).some(cookie => cookie.name === 'late_cookie')).toBe(false);
+      await page.getByRole('button', { name: 'Early cookie', exact: true }).click();
+      await browserExpect(page.getByRole('status')).toHaveText('finished');
+      await browserExpect(page.getByRole('alert')).toHaveText('');
+      expect((await context.cookies()).find(cookie => cookie.name === 'early_cookie')).toMatchObject({ value: 'kept', httpOnly: true });
+      expect(errors).toEqual([]);
+    } finally { await browser?.close(); await server.close(); }
+  }, 120000);
+  it('owns optimistic rollback across overlapping HTTP/SSE browser calls', async () => {
+    const server = await productionServer(root);
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    try {
+      for (const transport of ['http', 'sse']) {
+        await page.goto(`${server.origin}/optimistic/${transport}`);
+        await page.waitForFunction(() => !!window.__optimistic);
+        if (transport === 'sse') await page.waitForFunction(() => window.__optimistic.realtime.sse.state === 'open');
+        const dispatched = [];
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        await page.route('**/crpc**', async route => {
+          const body = route.request().postDataJSON(); dispatched.push(body);
+          if (body.action === 'edit' && body.payload[0].value < 0) await held;
+          await route.continue();
+        });
+        await page.evaluate(() => {
+          window.__old = window.__optimistic.edit({ value: -1, delay: 0 }).catch(error => { window.__oldError = error.code; });
+          window.__next = window.__optimistic.edit({ value: 2, delay: 30 });
+        });
+        await browserExpect(page.getByTestId('count')).toHaveText('20');
+        await browserExpect(page.getByTestId('loading')).toHaveText('1');
+        expect(dispatched.map(body => body.state.count)).toEqual([0, 0]);
+        for (const body of dispatched) expect(body.state).not.toHaveProperty('local');
+        release();
+        await page.evaluate(async () => { await window.__old; await window.__next; });
+        expect(await page.evaluate(() => window.__oldError)).toBe('COSSACK_VALIDATION_FAILED');
+        await browserExpect(page.getByTestId('count')).toHaveText('20');
+        await browserExpect(page.getByTestId('rows')).toHaveText('1,20');
+        await browserExpect(page.getByTestId('local')).toHaveText('2');
+        await browserExpect(page.getByTestId('loading')).toHaveText('0');
+        await page.unroute('**/crpc**');
+        await page.evaluate(() => {
+          window.__pending = window.__optimistic.edit({ value: 3, delay: 75 });
+          window.__optimistic.editLocal(99);
+        });
+        await page.evaluate(async () => { await window.__pending; });
+        await browserExpect(page.getByTestId('count')).toHaveText('99');
+        await browserExpect(page.getByTestId('loading')).toHaveText('0');
+        for (const [iteration, order] of [['1', 'old-first'], ['2', 'new-first']]) {
+          let releaseOld, releaseNext;
+          const oldHeld = new Promise(resolve => { releaseOld = resolve; });
+          const nextHeld = new Promise(resolve => { releaseNext = resolve; });
+          const sent = [];
+          await page.route('**/crpc**', async route => {
+            const body = route.request().postDataJSON(); sent.push(body);
+            if (body.action === 'append') await (body.payload[0].value < 0 ? oldHeld : nextHeld);
+            await route.continue();
+          });
+          await page.evaluate(() => {
+            window.__oldAppend = window.__optimistic.append({ value: -1, label: 'old', delay: 0 }).catch(error => { window.__appendError = error.code; });
+            window.__nextAppend = window.__optimistic.append({ value: 1, label: 'next', delay: 0 });
+          });
+          await expect.poll(() => sent.length).toBe(2);
+          await browserExpect(page.getByTestId('accepted')).toHaveText(String(Number(iteration) + 1));
+          await browserExpect(page.getByTestId('append-loading')).toHaveText('2');
+          for (const body of sent) { expect(body.state).not.toHaveProperty('accepted'); expect(body.state).not.toHaveProperty('items'); }
+          if (order === 'old-first') {
+            releaseOld(); await page.evaluate(async () => { await window.__oldAppend; });
+            await browserExpect(page.getByTestId('accepted')).toHaveText(iteration);
+            await browserExpect(page.getByTestId('items')).toHaveText('next');
+            await browserExpect(page.getByTestId('append-loading')).toHaveText('1');
+            releaseNext(); await page.evaluate(async () => { await window.__nextAppend; });
+          } else {
+            releaseNext(); await page.evaluate(async () => { await window.__nextAppend; });
+            await browserExpect(page.getByTestId('accepted')).toHaveText('3');
+            await browserExpect(page.getByTestId('append-loading')).toHaveText('1');
+            releaseOld(); await page.evaluate(async () => { await window.__oldAppend; });
+          }
+          expect(await page.evaluate(() => window.__appendError)).toBe('COSSACK_VALIDATION_FAILED');
+          await browserExpect(page.getByTestId('accepted')).toHaveText(iteration);
+          await browserExpect(page.getByTestId('items')).toHaveText(Array(Number(iteration)).fill('next').join(','));
+          await browserExpect(page.getByTestId('append-loading')).toHaveText('0');
+          await page.unroute('**/crpc**');
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally { await browser.close(); await server.close(); }
+  }, 120000);
+  it('runs state documentation examples and diagnostics in a published production app', async () => {
+    await checkStateExample('production', await productionServer(root));
+  }, 120000);
+  it('reconciles component and service mutations after their committed replies are lost', async () => {
+    const server = await productionServer(root);
+    try {
+      await checkWorkerOptimisticRecovery({fetch:(path, init)=>fetch(server.origin+path,init)}, new URL(server.origin), 'session_id=test');
+    } finally { await server.close(); }
+  }, 120000);
+  it('orders SSE action broadcasts and delayed replies against newer server snapshots', async () => {
+    await assertPortableChunks(path.join(root,'dist/server'));
+    await assertPortableChunks(path.join(root,'dist/server'));
+    const server=await productionServer(root);
+    try { await checkWorkerOptimisticSse({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test',{native:false}); }
+    finally { await server.close(); }
+  }, 120000);
+  it('retains confirmed optimistic component and service yields through failures and cancellation', async () => {
+    await assertPortableChunks(path.join(root,'dist/server'));
+    await assertPortableChunks(path.join(root,'dist/server'));
+    const server=await productionServer(root);
+    try {await checkWorkerOptimisticStreams({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test');}
+    finally {await server.close();}
+  }, 120000);
+});
+
+describe('shared generated production Cloudflare app', () => {
+  const shared = sharedApps();
+  let root, urlBackend;
+  beforeAll(async () => {
+    urlBackend = await createUrlStateBackend();
+    root = await shared('cloudflare');
+    await writeApiContractAcceptance(root);
+    const configPath = path.join(root, 'wrangler.jsonc');
+    const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+    config.d1_databases = [{ binding: 'DB', database_name: 'native-api-test' }];
+    await fs.writeFile(configPath, JSON.stringify(config));
+    await writeOldInputAcceptance(root, repository);
+    await run(process.execPath, [path.join(repository, 'node_modules/wrangler/bin/wrangler.js'), 'types'], { cwd: root, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }, timeout: 30000 });
+    // Same as the generated `typecheck` script: route types first, then tsc.
+    await cossack(root, ['routes', '--generate', '--json']);
+    await typecheck(root, 'Generated shared Cloudflare app types');
+    // The URL state fixture was never part of a typecheck; it joins after it.
+    await writeUrlStateAcceptance(root, urlBackend.origin);
+    await vite(root, []);
+  }, 300000);
+  afterAll(async () => { await urlBackend?.close(); });
+  it('parses and navigates typed URL state in a generated production cloudflare app', async () => {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+      try { const { url } = await harness.listen(); await checkUrlStateBrowser(browser, new URL(url).origin, urlBackend); await checkSameUrlHistory(browser, new URL(url).origin, urlBackend); }
+      finally { await harness.close(); }
+    } finally { await browser.close(); }
+  }, 120000);
+  it('executes declared API contracts in a generated production cloudflare app', async () => {
+    await checkApiContractRoutes(root);
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+    try { await harness.listen(); await checkApiContractAcceptance((url, options) => harness.fetch(url, options)); }
+    finally { await harness.close(); }
+  }, 120000);
+  it('excludes private old input through native form and RPC redirects on cloudflare', async () => {
+    const routeId = await oldInputRouteId(root);
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json'), secrets: oldInputEnvironment }] });
+    const close = () => harness.close();
+    try { await harness.listen(); } catch (error) { await close(); throw error; }
+    const request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
+    try { await checkOldInputAcceptance(request, routeId); }
+    catch (error) { throw new Error(`${error.stack ?? error}\n${JSON.stringify(harness.getLogs())}`); }
+    finally { await close(); }
+  }, 120000);
+});
+
+it('builds a generated deno app through its real Vite configuration', async () => {
+  const root = await project('deno');
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  await assertPortableChunks(path.join(root, 'dist/server'));
+  expect(await fs.readdir(path.join(root, 'dist/client/assets'))).not.toHaveLength(0);
 }, 120000);
+
+it.each(['node', 'cloudflare'])('selects and hydrates source boundaries in a generated production %s app', async adapter => {
+  const root = await project(adapter); await writeRouteBoundaryAcceptance(root);
+  await vite(root, []);
+  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--json'], { cwd: root, timeout: 30000 });
+  const inspected = JSON.parse(cli.stdout).data;
+  expect(inspected.manifest).toEqual(manifest);
+  const checkInspection = states => {
+    for (const state of states) {
+      expect(manifest.filePathToId[state.componentPath]).toBe(state.componentRouteId);
+      const page = inspected.routes.find(route => route.filePath === state.componentPath);
+      expect(page.routeId).toBe(state.componentRouteId);
+      expect(page.layoutAndPageMiddlewareCount).toBe(state.public.order.split(',').length - 1);
+      expect(page.middlewareStack.map(entry => entry.source.split(':')[0])).toEqual([
+        ...page.layouts, state.componentPath,
+      ]);
+    }
+  };
+  const browser = await chromium.launch({ headless: true });
+  if (adapter === 'node') {
+    const runtime = await productionServer(root);
+    try {
+      const states = await checkRouteBoundaryAcceptance((url, options) => fetch(runtime.origin + url, options));
+      checkInspection(states);
+      await checkRouteBoundaryBrowser(browser, runtime.origin);
+    } finally { await browser.close(); await runtime.close(); }
+  } else {
+    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
+    try {
+      const { url } = await harness.listen();
+      const states = await checkRouteBoundaryAcceptance((path, options) => harness.fetch(path, options));
+      checkInspection(states);
+      await checkRouteBoundaryBrowser(browser, new URL(url).origin);
+    } finally { await browser.close(); await harness.close(); }
+  }
+}, 120000);
+it('generates typed URLs that execute real grouped, dynamic, catch-all and API handlers in production', async () => {
+  const root = await project('node');
+  const write = async (file, source) => {
+    const absolute = path.join(root, file); await fs.mkdir(path.dirname(absolute), { recursive: true }); await fs.writeFile(absolute, source);
+  };
+  await write('src/pages/index.ts', `
+    import { Cossack, Page as View } from '@cossackframework/core';
+    import { html } from '@cossackframework/renderer';
+    import { routes } from 'virtual:cossack-routes';
+    @View() class Home extends Cossack {
+      render() { return html\`<a id="user-link" href=\${routes('/users/[id]', {id:'雪/a?b#c'})}>User</a>
+        <a id="docs-link" href=\${routes('/docs/[...path]', {path:['intro','雪/?#%']})}>Docs</a>\`; }
+    }
+    export { Home as default };
+  `);
+  // The minimal recipe uses pages/index/index.ts. Keep one resolved owner.
+  await fs.rm(path.join(root, 'src/pages/index'), { recursive: true, force: true });
+  for (const [file, label] of [['layout.ts', 'root'], ['(account)/layout.ts', 'group']]) {
+    await write('src/pages/' + file, `
+      import { Cossack, Page } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
+      @Page({middlewares:[async(c,next)=>{c.set('urlTrace',[...(c.get('urlTrace')??[]),'${label}']);await next();}]})
+      export default class Layout extends Cossack { render(){return html\`<section>\${this.children}</section>\`;} }
+    `);
+  }
+  await write('src/pages/(account)/users/[id]/index.ts', `
+    import { Cossack, Page as View, State } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
+    @View({middlewares:[async(c,next)=>{c.set('urlTrace',[...(c.get('urlTrace')??[]),'page']);await next();}]})
+    class User extends Cossack {
+      @State() id=''; @State() order='';
+      async init(){this.id=this.c.req.param('id')??'';this.order=(this.c.get('urlTrace') as string[]).join(',');if(this.id==='fail')throw new Error('private-url-error');}
+      render(){return html\`<main><p id="user-id">\${this.id}</p><p id="order">\${this.order}</p></main>\`;}
+    }
+    export {User as default};
+  `);
+  await write('src/pages/docs/[...path]/index.ts', `
+    import { Cossack, Page, State } from '@cossackframework/core'; import { html } from '@cossackframework/renderer';
+    @Page() export default class Docs extends Cossack {
+      @State() path=''; async init(){this.path=this.c.req.param('path')??'';}
+      render(){return html\`<p id="doc-path">\${this.path}</p>\`;}
+    }
+  `);
+  await write('src/pages/(account)/api/items/[id].ts', `import type {Context} from 'hono';
+    export const GET=(c:Context)=>c.json({handler:'functional',id:c.req.param('id')});
+  `);
+  await write('src/pages/api/init/[id].ts', `import {Cossack,Page} from '@cossackframework/core';
+    @Page() export default class InitApi extends Cossack { async init(){return this.c.json({handler:'class-init',id:this.c.req.param('id')});} }
+  `);
+  for (const [file, marker] of [['(account)/error/index.ts', 'GROUP_ERROR'], ['error/index.ts', 'ROOT_ERROR'], ['404/index.ts', 'ROOT_NOT_FOUND']]) {
+    await write('src/pages/' + file, `import {Cossack,Page} from '@cossackframework/core';import {html} from '@cossackframework/renderer';
+      @Page() export default class Boundary extends Cossack{render(){return html\`<p>${marker}</p>\`;}}
+    `);
+  }
+  // This source is checked through the generated virtual import and published declarations.
+  // It lives outside the route tree so its negative examples never become handlers.
+  await write('src/route-types.ts', `import {routes} from 'virtual:cossack-routes';
+    routes('/users/[id]',{id:'ok'});routes('/docs/[...path]',{path:['intro']});routes('/');
+    // @ts-expect-error required parameter
+    routes('/users/[id]');
+    // @ts-expect-error invalid ordinary parameter
+    routes('/users/[id]',{id:2});
+    const extra={id:'ok',extra:'bad'};
+    // @ts-expect-error extra variable parameter
+    routes('/users/[id]',extra);
+    // @ts-expect-error empty catch-all
+    routes('/docs/[...path]',{path:[]});
+    // @ts-expect-error boundaries do not have addressable routes
+    routes('/error');
+  `);
+  await vite(root, []);
+  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  const user = manifest.routes.find(route => route.name === '/users/[id]');
+  expect(user).toMatchObject({ pattern: '/users/:id', layoutPaths: ['/src/pages/layout.ts', '/src/pages/(account)/layout.ts'], errorBoundary: '/src/pages/(account)/error/index.ts' });
+  expect(JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).scripts.typecheck).toBe('cossack routes --generate && tsc --noEmit');
+  await fs.rm(path.join(root, '.cossack/routes.ts'));
+  const cli = await promisify(execFile)(process.execPath, [path.join(repository, 'packages/cossack/bin/cossack.js'), 'routes', '--generate', '--json'], { cwd: root, timeout: 30000 });
+  const inspected = JSON.parse(cli.stdout).data;
+  expect(inspected.manifest).toEqual(manifest);
+  expect(inspected.routes.find(route => route.name === '/users/[id]').middlewareStack).toEqual([
+    { source: '/src/pages/layout.ts:3', count: 1 },
+    { source: '/src/pages/(account)/layout.ts:3', count: 1 },
+    { source: '/src/pages/(account)/users/[id]/index.ts:3', count: 1 },
+  ]);
+  expect(inspected.routes.find(route => route.name === '/api/items/[id]').layouts).toEqual([]);
+  const typecheck = await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, timeout: 30000 })
+    .catch(error => { throw new Error(`${error.stdout}\n${error.stderr}`); });
+  expect(typecheck.stderr).toBe('');
+  const runtime = await productionServer(root);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(); await page.goto(runtime.origin);
+    const url = await page.locator('#user-link').getAttribute('href');
+    expect(url).toBe('/users/%E9%9B%AA%2Fa%3Fb%23c');
+    await page.locator('#user-link').click();
+    await browserExpect(page.locator('#user-id')).toHaveText('雪/a?b#c');
+    await browserExpect(page.locator('#order')).toHaveText('root,group,page');
+    await page.goto(runtime.origin); await page.locator('#docs-link').click();
+    await browserExpect(page.locator('#doc-path')).toHaveText('intro/雪/?#%');
+    for (const [name, handler] of [['items', 'functional'], ['init', 'class-init']]) {
+      const response = await fetch(runtime.origin + '/api/' + name + '/%E9%9B%AA%2Fa%3Fb%23c');
+      expect(response.status).toBe(200); expect(await response.json()).toEqual({ handler, id: '雪/a?b#c' });
+    }
+    const failed = await fetch(runtime.origin + '/users/fail');
+    expect(failed.status).toBe(500); const body = await failed.text();
+    expect(body).toContain('GROUP_ERROR'); expect(body).not.toContain('ROOT_ERROR'); expect(body).not.toContain('private-url-error');
+    const missing = await fetch(runtime.origin + '/unknown'); expect(missing.status).toBe(404); expect(await missing.text()).toContain('ROOT_NOT_FOUND');
+    const assets = path.join(root, 'dist/client/assets');
+    for (const file of await fs.readdir(assets)) if (file.endsWith('.js')) {
+      const body = await fs.readFile(path.join(assets, file), 'utf8');
+      expect(body).not.toContain('node:fs'); expect(body).not.toContain('private-url-error');
+    }
+  } finally { await browser.close(); await runtime.close(); }
+}, 120000);
+
 it('runs the scoped-service recipe across sibling navigation, nested injection, RPC, and disposal', async () => {
   const root = await project('node', ['scoped-service']);
   const serviceFile = path.join(root, 'src/services/scoped-counter.ts');
@@ -987,118 +1276,76 @@ it('runs the protected-route recipe with real sessions, nested guards, forged st
     await server.close();
   }
 }, 120000);
-it.each(['node', 'cloudflare'])('revalidates generated authenticated SSE sessions on %s before delivery', async adapter => {
-  const root = await project(adapter, ['dashboard'], { dashboardModules: ['sessions'] });
-  await writeAuthSseAcceptance(root);
-  const generatedConfig = await promisify(execFile)(process.execPath,
-    [path.join(repository, 'packages/cossack/bin/cossack.js'), 'config', '--generate', '--json'],
-    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-  expect(JSON.parse(generatedConfig.stdout)).toMatchObject({ ok: true, command: 'config' });
-  if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
-    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
-  catch (error) { throw new Error(`Generated auth SSE types: ${error.stdout}\n${error.stderr}`); }
-  let migrationPlan;
-  if (adapter === 'cloudflare') {
-    const plan = await promisify(execFile)(process.execPath,
-      [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'plan', '--local', '--json'],
-      { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-    migrationPlan = JSON.parse(plan.stdout).data.migrations;
-  }
-  await promisify(execFile)(process.execPath,
-    [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'up', '--local', '--json'],
-    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-  await vite(root, ['--sourcemap']);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const clientFiles = (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => /\.(js|map)$/.test(file));
-  expect(clientFiles.some(file => file.endsWith('.map'))).toBe(true);
-  for (const file of clientFiles) {
-    const text = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
-    expect(text, file).not.toContain('Password exceeds its size limit.');
-    expect(text, file).not.toContain('pbkdf2-sha256$');
-    expect(text, file).not.toContain('Session ended before subscription.');
-    expect(text, file).not.toContain('DROP TABLE sessions');
-    expect(text, file).not.toContain('sessionFingerprint');
-  }
-  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+
+// Session-auth dashboard apps carry both the SSE and form fixtures; each case
+// restores the freshly migrated database (Node) or applies the plan to fresh bindings (workerd).
+describe.each(['node', 'cloudflare'])('generated %s dashboard session app', adapter => {
+  const shared = sharedApps();
   const environment = { APP_SECRET: 'fixture-auth-forms-secret-0123456789' };
-  let close, request, origin, diagnostics;
-  if (adapter === 'node') {
-    const server = await productionServer(root, environment);
-    ({ close, origin, diagnostics } = server);
-    request = (url, options = {}) => fetch(origin + url, { redirect: 'manual', ...options });
-  } else {
+  let root, generatedConfig, migrationPlan, manifest, database;
+  beforeAll(async () => {
+    root = await shared(adapter, ['dashboard'], { dashboardModules: ['sessions'] });
+    await writeAuthSseAcceptance(root);
+    await writeAuthFormsAcceptance(root);
+    generatedConfig = await cossack(root, ['config', '--generate', '--json']);
+    if (adapter === 'cloudflare') await run('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
+      { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
+    await typecheck(root, 'Generated auth SSE/form types');
+    if (adapter === 'cloudflare') migrationPlan = JSON.parse((await cossack(root, ['migration', 'plan', '--local', '--json'])).stdout).data.migrations;
+    await cossack(root, ['migration', 'up', '--local', '--json']);
+    if (adapter === 'node') database = await fs.readFile(path.join(root, 'database.sqlite'));
+    await vite(root, ['--sourcemap']);
+    if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+    manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
+  }, 300000);
+  async function clientFiles(privateMarkers) {
+    const files = (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => /\.(js|map)$/.test(file));
+    expect(files.some(file => file.endsWith('.map'))).toBe(true);
+    for (const file of files) {
+      const text = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
+      for (const marker of privateMarkers) expect(text, file).not.toContain(marker);
+    }
+  }
+  async function start() {
+    if (adapter === 'node') {
+      for (const suffix of ['-wal', '-shm']) await fs.rm(path.join(root, 'database.sqlite' + suffix), { force: true });
+      await fs.writeFile(path.join(root, 'database.sqlite'), database);
+      const server = await productionServer(root, environment);
+      return { close: server.close, origin: server.origin, diagnostics: server.diagnostics,
+        request: (url, options = {}) => fetch(server.origin + url, { redirect: 'manual', ...options }) };
+    }
     const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json'), secrets: environment }] });
-    close = () => harness.close();
-    diagnostics = () => JSON.stringify(harness.getLogs());
-    request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
+    const close = () => harness.close();
     try {
-      origin = new URL((await harness.listen()).url).origin;
+      const origin = new URL((await harness.listen()).url).origin;
       const bindings = await harness.getWorker().getEnv();
       for (const migration of migrationPlan) for (const statement of migration.statements) {
         expect(statement.parameterCount).toBe(0);
         await bindings.DB.prepare(statement.text).run();
       }
+      return { close, origin, diagnostics: () => JSON.stringify(harness.getLogs()),
+        request: (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options }) };
     } catch (error) { await close(); throw error; }
   }
-  const browser = await chromium.launch({ headless: true });
-  try { await checkAuthSseAcceptance(request, manifest, browser, origin); }
-  catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics()}`); }
-  finally { await browser.close(); await close(); }
-}, 180000);
-it.each(['node', 'cloudflare'])('operates actual generated auth forms and session actions on %s without sharing credentials', async adapter => {
-  const root = await project(adapter, ['dashboard'], { dashboardModules: ['sessions'] });
-  await writeAuthFormsAcceptance(root);
-  if (adapter === 'cloudflare') await promisify(execFile)('pnpm', ['exec', 'wrangler', 'types', '--env-interface', 'CloudflareBindings'],
-    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
-  catch (error) { throw new Error(`Generated auth form types: ${error.stdout}\n${error.stderr}`); }
-  let migrationPlan;
-  if (adapter === 'cloudflare') {
-    const plan = await promisify(execFile)(process.execPath,
-      [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'plan', '--local', '--json'],
-      { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-    migrationPlan = JSON.parse(plan.stdout).data.migrations;
-  }
-  await promisify(execFile)(process.execPath,
-    [path.join(repository, 'packages/cossack/bin/cossack.js'), 'migration', 'up', '--local', '--json'],
-    { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 });
-  await vite(root, ['--sourcemap']);
-  if (adapter === 'node') await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const clientFiles = (await fs.readdir(path.join(root, 'dist/client/assets'))).filter(file => /\.(js|map)$/.test(file));
-  expect(clientFiles.some(file => file.endsWith('.map'))).toBe(true);
-  for (const file of clientFiles) {
-    const text = await fs.readFile(path.join(root, 'dist/client/assets', file), 'utf8');
-    expect(text, file).not.toContain('Password exceeds its size limit.');
-    expect(text, file).not.toContain('pbkdf2-sha256$');
-    expect(text, file).not.toContain('PRIVATE_AUTH_FORM_STORAGE');
-  }
-  const manifest = JSON.parse(await fs.readFile(path.join(root, 'dist/client/cossack-routes.json'), 'utf8'));
-  const environment = { APP_SECRET: 'fixture-auth-forms-secret-0123456789' };
-  let close, request, origin, diagnostics;
-  if (adapter === 'node') {
-    const server = await productionServer(root, environment);
-    ({ close, origin, diagnostics } = server);
-    request = (url, options = {}) => fetch(origin + url, { redirect: 'manual', ...options });
-  } else {
-    const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json'), secrets: environment }] });
-    close = () => harness.close();
-    diagnostics = () => JSON.stringify(harness.getLogs());
-    request = (url, options = {}) => harness.fetch(url, { redirect: 'manual', ...options });
-    try {
-      origin = new URL((await harness.listen()).url).origin;
-      const bindings = await harness.getWorker().getEnv();
-      for (const migration of migrationPlan) for (const statement of migration.statements) {
-        expect(statement.parameterCount).toBe(0);
-        await bindings.DB.prepare(statement.text).run();
-      }
-    } catch (error) { await close(); throw error; }
-  }
-  const browser = await chromium.launch({ headless: true });
-  try { await checkAuthFormsAcceptance(request, manifest, browser, origin); }
-  catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics()}`); }
-  finally { await browser.close(); await close(); }
-}, 180000);
+  it(`revalidates generated authenticated SSE sessions on ${adapter} before delivery`, async () => {
+    expect(JSON.parse(generatedConfig.stdout)).toMatchObject({ ok: true, command: 'config' });
+    await clientFiles(['Password exceeds its size limit.', 'pbkdf2-sha256$', 'Session ended before subscription.', 'DROP TABLE sessions', 'sessionFingerprint']);
+    const { close, request, origin, diagnostics } = await start();
+    const browser = await chromium.launch({ headless: true });
+    try { await checkAuthSseAcceptance(request, manifest, browser, origin); }
+    catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics()}`); }
+    finally { await browser.close(); await close(); }
+  }, 180000);
+  it(`operates actual generated auth forms and session actions on ${adapter} without sharing credentials`, async () => {
+    await clientFiles(['Password exceeds its size limit.', 'pbkdf2-sha256$', 'PRIVATE_AUTH_FORM_STORAGE']);
+    const { close, request, origin, diagnostics } = await start();
+    const browser = await chromium.launch({ headless: true });
+    try { await checkAuthFormsAcceptance(request, manifest, browser, origin); }
+    catch (error) { throw new Error(`${error.stack ?? error}\n${diagnostics()}`); }
+    finally { await browser.close(); await close(); }
+  }, 180000);
+});
+
 it.each(['node', 'cloudflare'])('serves generated authentication primitives and OAuth diagnostics on %s without exposing credentials', async adapter => {
   const root = await project(adapter, ['dashboard'], { oauth: 'github', dashboardModules: ['sessions'] });
   const fixtureProvider = await createOAuthFixtureProvider();
@@ -1603,275 +1850,17 @@ async function developmentServer(root) {
   return { origin: /STATE_DEV_ORIGIN=(http:\/\/127\.0\.0\.1:\d+)/.exec(output)[1], close, output: () => output };
 }
 
-it('owns optimistic rollback across overlapping HTTP/SSE browser calls', async () => {
+
+
+it('runs state documentation examples and diagnostics in a published development app', async () => {
   const root = await project('node');
-  for (const transport of ['http', 'sse']) {
-    const directory = path.join(root, 'src/pages/optimistic', transport);
-    await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'index.ts'), `
-      import { Cossack, Page, State, Store, ClientState, ClientStore, Server, Client, Optimistic, optimistic, input } from '@cossackframework/core';
-      import { html } from '@cossackframework/renderer';
-      @Page({ transport: '${transport}' }) export default class OptimisticPage extends Cossack {
-        @State() count = 0;
-        @Store() cart = { rows: [1] };
-        @ClientState() local = 0;
-        @ClientState() accepted = 0;
-        @ClientStore() items: string[] = [];
-        @Optimistic('append') previewAppend(value: { value: number; label: string }) {
-          const edits = optimistic<OptimisticPage>(this); edits.increment('accepted', 1); edits.append('items', value.label);
-        }
-        @Server({ input: input.object({ value: input.number({ min: 0 }), label: input.string(), delay: input.number({ min: 0 }) }) })
-        async append(value: { value: number; label: string; delay: number }) { await new Promise(resolve => setTimeout(resolve, value.delay)); return value.label; }
-        @Optimistic('edit') preview(value: { value: number }) { this.count = value.value; this.cart.rows.push(value.value); this.local = value.value; }
-        @Server({ input: input.object({ value: input.number({ min: 0 }), delay: input.number({ min: 0 }) }) })
-        async edit(value: { value: number; delay: number }) {
-          await new Promise(resolve => setTimeout(resolve, value.delay));
-          this.count = value.value * 10; this.cart.rows.push(this.count); return this.count;
-        }
-        @Client() onMount() { (window as any).__optimistic = this; }
-        @Client() editLocal(value: number) { this.count = value; }
-        render() { return html\`<main><span data-testid="count">\${this.count}</span><span data-testid="rows">\${this.cart.rows.join(',')}</span><span data-testid="local">\${this.local}</span><span data-testid="loading">\${this.loading.edit || 0}</span><span data-testid="accepted">\${this.accepted}</span><span data-testid="items">\${this.items.join(',')}</span><span data-testid="append-loading">\${this.loading.append || 0}</span></main>\`; }
-      }
-    `);
-  }
-  await promisify(execFile)(process.execPath, [path.join(repository, 'node_modules/typescript/bin/tsc'), '--noEmit'], { cwd: root, maxBuffer: 1024 * 1024 });
-  await vite(root, []); await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  const server = await productionServer(root);
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-  const errors = []; page.on('pageerror', error => errors.push(error.message));
-  try {
-    for (const transport of ['http', 'sse']) {
-      await page.goto(`${server.origin}/optimistic/${transport}`);
-      await page.waitForFunction(() => !!window.__optimistic);
-      if (transport === 'sse') await page.waitForFunction(() => window.__optimistic.realtime.sse.state === 'open');
-      const dispatched = [];
-      let release;
-      const held = new Promise(resolve => { release = resolve; });
-      await page.route('**/crpc**', async route => {
-        const body = route.request().postDataJSON(); dispatched.push(body);
-        if (body.action === 'edit' && body.payload[0].value < 0) await held;
-        await route.continue();
-      });
-      await page.evaluate(() => {
-        window.__old = window.__optimistic.edit({ value: -1, delay: 0 }).catch(error => { window.__oldError = error.code; });
-        window.__next = window.__optimistic.edit({ value: 2, delay: 30 });
-      });
-      await browserExpect(page.getByTestId('count')).toHaveText('20');
-      await browserExpect(page.getByTestId('loading')).toHaveText('1');
-      expect(dispatched.map(body => body.state.count)).toEqual([0, 0]);
-      for (const body of dispatched) expect(body.state).not.toHaveProperty('local');
-      release();
-      await page.evaluate(async () => { await window.__old; await window.__next; });
-      expect(await page.evaluate(() => window.__oldError)).toBe('COSSACK_VALIDATION_FAILED');
-      await browserExpect(page.getByTestId('count')).toHaveText('20');
-      await browserExpect(page.getByTestId('rows')).toHaveText('1,20');
-      await browserExpect(page.getByTestId('local')).toHaveText('2');
-      await browserExpect(page.getByTestId('loading')).toHaveText('0');
-      await page.unroute('**/crpc**');
-      await page.evaluate(() => {
-        window.__pending = window.__optimistic.edit({ value: 3, delay: 75 });
-        window.__optimistic.editLocal(99);
-      });
-      await page.evaluate(async () => { await window.__pending; });
-      await browserExpect(page.getByTestId('count')).toHaveText('99');
-      await browserExpect(page.getByTestId('loading')).toHaveText('0');
-      for (const [iteration, order] of [['1', 'old-first'], ['2', 'new-first']]) {
-        let releaseOld, releaseNext;
-        const oldHeld = new Promise(resolve => { releaseOld = resolve; });
-        const nextHeld = new Promise(resolve => { releaseNext = resolve; });
-        const sent = [];
-        await page.route('**/crpc**', async route => {
-          const body = route.request().postDataJSON(); sent.push(body);
-          if (body.action === 'append') await (body.payload[0].value < 0 ? oldHeld : nextHeld);
-          await route.continue();
-        });
-        await page.evaluate(() => {
-          window.__oldAppend = window.__optimistic.append({ value: -1, label: 'old', delay: 0 }).catch(error => { window.__appendError = error.code; });
-          window.__nextAppend = window.__optimistic.append({ value: 1, label: 'next', delay: 0 });
-        });
-        await expect.poll(() => sent.length).toBe(2);
-        await browserExpect(page.getByTestId('accepted')).toHaveText(String(Number(iteration) + 1));
-        await browserExpect(page.getByTestId('append-loading')).toHaveText('2');
-        for (const body of sent) { expect(body.state).not.toHaveProperty('accepted'); expect(body.state).not.toHaveProperty('items'); }
-        if (order === 'old-first') {
-          releaseOld(); await page.evaluate(async () => { await window.__oldAppend; });
-          await browserExpect(page.getByTestId('accepted')).toHaveText(iteration);
-          await browserExpect(page.getByTestId('items')).toHaveText('next');
-          await browserExpect(page.getByTestId('append-loading')).toHaveText('1');
-          releaseNext(); await page.evaluate(async () => { await window.__nextAppend; });
-        } else {
-          releaseNext(); await page.evaluate(async () => { await window.__nextAppend; });
-          await browserExpect(page.getByTestId('accepted')).toHaveText('3');
-          await browserExpect(page.getByTestId('append-loading')).toHaveText('1');
-          releaseOld(); await page.evaluate(async () => { await window.__oldAppend; });
-        }
-        expect(await page.evaluate(() => window.__appendError)).toBe('COSSACK_VALIDATION_FAILED');
-        await browserExpect(page.getByTestId('accepted')).toHaveText(iteration);
-        await browserExpect(page.getByTestId('items')).toHaveText(Array(Number(iteration)).fill('next').join(','));
-        await browserExpect(page.getByTestId('append-loading')).toHaveText('0');
-        await page.unroute('**/crpc**');
-      }
-    }
-    expect(errors).toEqual([]);
-  } finally { await browser.close(); await server.close(); }
-}, 120000);
-
-it.each(['development', 'production'])('runs state documentation examples and diagnostics in a published %s app', async mode => {
-  const root = await project('node');
-  const pageFile = path.join(root, 'src/pages/state-example/index.ts');
-  await fs.mkdir(path.dirname(pageFile), { recursive: true });
-  const source = await fs.readFile(path.join(repository, 'docs/examples/state-mechanisms.ts'), 'utf8');
-  await fs.writeFile(pageFile, source.replace('    render() {', `
-    onMount() { (window as any).__stateExample = this; }
-    render() {`));
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root, timeout: 30000, maxBuffer: 1024 * 1024 }); }
-  catch (error) { throw new Error(`Generated state types: ${error.stdout}\n${error.stderr}`); }
-  if (mode === 'production') {
-    await vite(root, []);
-    await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  }
-  const server = mode === 'development' ? await developmentServer(root) : await productionServer(root);
-  let browser;
-  try {
-    const response = await fetch(server.origin + '/state-example');
-    const body = await response.text();
-    expect(response.status, body).toBe(200);
-    const initial = JSON.parse(body.match(/window\.__INITIAL_STATE__\s*=\s*(.*?)<\/script>/s)[1]);
-    const state = initial;
-    expect(state.public).toMatchObject({ count: 1, profile: { name: 'Ada' }, cart: { lines: [{ quantity: 1, price: 3 }], tags: [] } });
-    for (const name of ['selected', 'panelOpen', 'draft', 'total', 'record']) expect(state.public).not.toHaveProperty(name);
-    expect(state.serverResources.record).toEqual({ argsKey: '[1]', value: { id: 1, label: 'Record 1' } });
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    const warnings = [];
-    const errors = [];
-    const requests = [];
-    page.on('console', message => { if (message.type() === 'warning') warnings.push(message.text()); });
-    page.on('pageerror', error => errors.push(error.message));
-    page.on('request', request => { if (new URL(request.url()).pathname === '/crpc') requests.push(request.postDataJSON()); });
-    await page.goto(server.origin + '/state-example');
-    await page.waitForFunction(() => window.__stateExample);
-    await browserExpect(page.getByTestId('profile-name')).toHaveText('Ada');
-    await page.getByRole('button', { name: 'Mutate shallow state', exact: true }).click();
-    expect(await page.evaluate(() => window.__stateExample.profile.name)).toBe('Unobserved');
-    await browserExpect(page.getByTestId('profile-name')).toHaveText('Ada');
-    await page.getByRole('button', { name: 'Replace profile', exact: true }).click();
-    await browserExpect(page.getByTestId('profile-name')).toHaveText('Grace');
-    await page.getByRole('button', { name: 'Edit nested cart', exact: true }).click();
-    await browserExpect(page.getByTestId('cart-total')).toHaveText('6');
-    await browserExpect(page.getByTestId('cart-tags')).toHaveText('edited');
-    await page.getByRole('button', { name: 'Edit local draft', exact: true }).click();
-    await browserExpect(page.getByTestId('draft-tags')).toHaveText('first,next');
-    await browserExpect(page.getByTestId('panel-open')).toHaveText('true');
-    await page.getByRole('button', { name: 'Save count', exact: true }).click();
-    await browserExpect(page.getByTestId('state-count')).toHaveText('2');
-    await browserExpect(page.getByTestId('draft-tags')).toHaveText('first,next');
-    await page.getByRole('button', { name: 'Next record', exact: true }).click();
-    await browserExpect(page.getByTestId('record-label')).toHaveText('Record 2');
-    await browserExpect.poll(() => requests.length).toBe(2);
-    for (const request of requests) {
-      expect(request.state).toHaveProperty('cart');
-      for (const name of ['selected', 'panelOpen', 'draft', 'total']) expect(request.state).not.toHaveProperty(name);
-    }
-    await page.evaluate(() => {
-      window.__stateExample.profile.extra = new Map();
-      window.__stateExample.getPublicState();
-    });
-    if (mode === 'development') {
-      expect(warnings.some(message => message.includes("StateMechanisms at profile.name"))).toBe(true);
-      expect(warnings.some(message => message.includes("StateMechanisms field 'profile' during public state: state.profile.extra (Map)"))).toBe(true);
-    } else expect(warnings.filter(message => message.startsWith('[Cossack]'))).toEqual([]);
-    expect(errors).toEqual([]);
-  } finally { await browser?.close(); await server.close(); }
+  await writeStateExample(root);
+  await typecheck(root, 'Generated state types');
+  await checkStateExample('development', await developmentServer(root));
 }, 120000);
 
 
-it('reconciles component and service mutations after their committed replies are lost', async () => {
-  const root = await project('node'); await writeWorkerOptimisticRecovery(root);
-  // Process-owned records survive the fresh component instances for HTTP RPC.
-  // Native Worker acceptance uses the same UI against actual D1 records.
-  await fs.writeFile(path.join(root, 'src/private-optimistic-recovery.ts'), `
-    const records = new Map<string, {count:number;mutations:number;reads:number}>();
-    function record(scope:string) {
-      let value = records.get(scope);
-      if (!value) { value = {count:0,mutations:0,reads:0}; records.set(scope,value); }
-      return value;
-    }
-    export async function readCounter(scope:string) { const value=record(scope); value.reads++; return {count:value.count}; }
-    export async function incrementCounter(scope:string) { const value=record(scope); value.count++; value.mutations++; return {count:value.count}; }
-    export async function auditCounter(scope:string) { return {...record(scope)}; }
-  `);
-  try { await promisify(execFile)('pnpm', ['exec','tsc','--noEmit'], {cwd:root,timeout:30000,maxBuffer:1024*1024}); }
-  catch(error) { throw new Error(error.stdout + '\n' + error.stderr); }
-  await vite(root, []); await vite(root, ['--ssr','src/index.ts','--outDir','dist/server']);
-  const server = await productionServer(root);
-  try {
-    await checkWorkerOptimisticRecovery({fetch:(path, init)=>fetch(server.origin+path,init)}, new URL(server.origin), 'session_id=test');
-  } finally { await server.close(); }
-}, 120000);
 
-it('orders SSE action broadcasts and delayed replies against newer server snapshots', async () => {
-  const root=await project('node'); await writeWorkerOptimisticSse(root);
-  await fs.writeFile(path.join(root,'src/private-sse-optimistic.ts'), `
-    let count=0; const operations:Array<{id:string}>=[];
-    export async function read(_db?:unknown) { return {count}; }
-    export async function commit(_db:unknown,id:string) { operations.push({id}); count++; return {count}; }
-    export async function replace(_db:unknown,value:number) { count=value; return count; }
-    export async function waitForRelease(_db:unknown,_id:string) { throw new Error('Node test only uses the failure stream'); }
-    export async function audit(_db?:unknown) { return {count,operations:operations.map(row=>({...row}))}; }
-  `);
-  const pageFile=path.join(root,'src/pages/resource-check/optimistic-sse/index.ts');
-  await fs.writeFile(pageFile,(await fs.readFile(pageFile,'utf8')).replaceAll('this.env.DB','undefined').replace('Cossack<Env>','Cossack'));
-  await fs.writeFile(path.join(root,'src/pages/api/rpc-check/optimistic-sse.ts'), `
-    import type {Context} from 'hono';
-    import {audit} from '../../../private-sse-optimistic';
-    export const GET=async(c:Context)=>c.json(await audit());
-  `);
-  try { await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024}); }
-  catch(error) { throw new Error(error.stdout+'\n'+error.stderr); }
-  await vite(root,[]); await vite(root,['--ssr','src/index.ts','--outDir','dist/server']);
-  await assertPortableChunks(path.join(root,'dist/server'));
-  const server=await productionServer(root);
-  try { await checkWorkerOptimisticSse({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test',{native:false}); }
-  finally { await server.close(); }
-},120000);
-
-
-it('retains confirmed optimistic component and service yields through failures and cancellation', async () => {
-  const root=await project('node');await writeWorkerOptimisticStreams(root);
-  await fs.writeFile(path.join(root,'src/private-optimistic-streams.ts'), `
-    const records=new Map<string,{count:number;mutations:number;released:number}>();
-    function record(scope:string) {
-      let value=records.get(scope);if(!value){value={count:0,mutations:0,released:0};records.set(scope,value);}return value;
-    }
-    export async function audit(scope:string){return {...record(scope)};}
-    export async function commit(scope:string){const value=record(scope);value.count++;value.mutations++;return {count:value.count};}
-    export async function commitBound(_db:unknown,scope:string){return commit(scope);}
-    export async function waitForReleaseBound(_db:unknown,scope:string){return waitForRelease(scope);}
-    export async function release(scope:string){record(scope).released=1;}
-    export async function waitForRelease(scope:string){
-      const deadline=Date.now()+15000;
-      while(!record(scope).released){if(Date.now()>deadline)throw new Error('Test did not release stream');await new Promise(resolve=>setTimeout(resolve,10));}
-    }
-  `);
-  for(const transport of ['http','sse','durable-object']) {
-    const pageFile=path.join(root,'src/pages/resource-check/optimistic-streams',transport,'index.ts');
-    await fs.writeFile(pageFile,(await fs.readFile(pageFile,'utf8')).replaceAll('this.env.DB','undefined').replace('Cossack<Env>','Cossack'));
-  }
-  await fs.writeFile(path.join(root,'src/private/optimistic-stream.server.ts'), `
-    import {audit,commit} from '../private-optimistic-streams';
-    export async function readCounter(){return {count:(await audit('docs-example')).count};}
-    export async function incrementCounter(){return commit('docs-example');}
-  `);
-  try {await promisify(execFile)('pnpm',['exec','tsc','--noEmit'],{cwd:root,timeout:30000,maxBuffer:1024*1024});}
-  catch(error){throw new Error(error.stdout+'\n'+error.stderr);}
-  await vite(root,[]);await vite(root,['--ssr','src/index.ts','--outDir','dist/server']);
-  await assertPortableChunks(path.join(root,'dist/server'));
-  const server=await productionServer(root);
-  try {await checkWorkerOptimisticStreams({fetch:(route,init)=>fetch(server.origin+route,init)},new URL(server.origin),'session_id=test');}
-  finally {await server.close();}
-},120000);
 
 it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and server resources in generated %s', async adapter => {
   const backend=await createDataTableBackend();

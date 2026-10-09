@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript-api';
@@ -37,13 +38,14 @@ async function publicEntry(specifier, condition) {
   return path.join(directory, target);
 }
 it('all remaining family examples typecheck strictly against declared public entries', async () => {
-  const directory = await fs.mkdtemp(path.join(root, 'packages/cossack/.guide-types-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-guide-types-'));
   try {
     const paths = {}; const files = [];
     for (const {guide} of await guides()) {
       expect(guide.markdown.length).toBeGreaterThan(300);
       for (const specifier of new Set([...guide.imports, ...guide.examples.flatMap(example => importsOf(example.source))])) paths[specifier] = [await publicEntry(specifier, 'types')];
-      paths.hono = [path.join(root, 'packages/framework/node_modules/hono')];
+      // Examples are written to os.tmpdir(), outside any node_modules lookup path.
+      paths.hono = [path.join(externalRequire.resolve('hono'), '../../types/index.d.ts')];
       for (const example of guide.examples) { const file = path.join(directory, example.id + '.ts'); await fs.writeFile(file, example.source); files.push(file); }
     }
     const program = ts.createProgram(files, {strict: true, noEmit: true, skipLibCheck: true, target: ts.ScriptTarget.ES2022,
@@ -54,7 +56,7 @@ it('all remaining family examples typecheck strictly against declared public ent
   } finally { await fs.rm(directory, {recursive: true, force: true}); }
 }, 30000);
 it('portable and Node example assertions execute without cloud credentials or Worker-native imports', async () => {
-  const directory = await fs.mkdtemp(path.join(root, 'packages/cossack/.guide-runtime-'));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-guide-runtime-'));
   try {
     for (const {guide} of await guides()) for (const example of guide.examples) {
       let source = example.source;

@@ -1,14 +1,11 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 import { demoCatalog, demoEntries } from '../../src/demo-catalog';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Demo navigation shell', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await page.waitForFunction(
-      () => (window as any).__cossackReady === true,
-      undefined,
-      { timeout: 15000 },
-    );
+    await waitForHydration(page);
   });
 
   test('renders every catalog group and link on the overview', async ({ page }) => {
@@ -89,8 +86,9 @@ for (const route of ['/', '/config-demo']) {
       observer.observe(document, { childList: true, subtree: true });
     });
     const response = await page.goto(route);
-    expect(await response!.text()).toContain('id="app-wrapper"');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    // Production HTML is minified, so attribute quotes may be dropped.
+    expect(await response!.text()).toMatch(/id="?app-wrapper\b/);
+    await waitForHydration(page);
     expect(await page.evaluate(() => (window as any).__ssrAppShell === document.getElementById('app-wrapper'))).toBe(true);
   });
 }

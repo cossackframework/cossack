@@ -8,13 +8,12 @@ import { createRequire } from 'node:module';
 import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
-import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { parseSync } from 'vite';
 import { writeRpcDisconnectAcceptance } from './fixtures/rpc-disconnect-acceptance.js';
 const execute=promisify(execFile);const repository=fileURLToPath(new URL('../../../',import.meta.url));
-async function project(adapter){const parent=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-rpc-disconnect-'));const {projectDir:root}=await createApp('app',{cwd:parent,adapter,preset:'minimal',interactive:false});
-await fs.mkdir(path.join(root,'node_modules/@cossackframework'),{recursive:true});for(const name of await fs.readdir(path.join(repository,'node_modules')))if(!name.startsWith('.')&&name!=='@cossackframework')await fs.symlink(path.join(repository,'node_modules',name),path.join(root,'node_modules',name),'junction');
-for(const name of ['core','renderer','framework','node-adapter'])await fs.symlink(path.join(repository,'packages',name),path.join(root,'node_modules/@cossackframework',name),'junction');await writeRpcDisconnectAcceptance(root);return{root,parent};}
+async function project(adapter){const parent=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-rpc-disconnect-'));const root=await scaffoldLinkedApp(parent,{adapter,packages:['core','renderer','framework','node-adapter']});
+await writeRpcDisconnectAcceptance(root);return{root,parent};}
 async function build(root,adapter){for(const args of [[],...(adapter==='node'?[['--ssr','src/index.ts','--outDir','dist/server']]:[])])await execute(process.execPath,[path.join(repository,'node_modules/vite/bin/vite.js'),'build',...args],{cwd:root,env:{...process.env,NODE_ENV:'production',VITEST:'',WRANGLER_SEND_METRICS:'false'},timeout:120000,maxBuffer:4*1024*1024});}
 async function serveNode(root){const child=spawn(process.execPath,['--input-type=module','-e',`import{serve}from'@hono/node-server';const{app,env,runtime}=await import('./dist/server/index.js');const server=await new Promise(resolve=>{const server=serve({fetch:request=>app.fetch(request,env),hostname:'127.0.0.1',port:0},()=>resolve(server));});env.APP_URL='http://127.0.0.1:'+server.address().port;runtime.attach(server,request=>app.fetch(request,env));console.log('DISCONNECT_ORIGIN='+env.APP_URL);process.once('message',async()=>{await runtime.dispose();server.close(()=>process.exit(0));});`],{cwd:root,env:{...process.env,NODE_ENV:'production',VITEST:''},stdio:['ignore','pipe','pipe','ipc']});let output='';child.stdout.on('data',data=>output+=data);child.stderr.on('data',data=>output+=data);const exited=once(child,'exit');exited.catch(()=>{});
 const close=async()=>{if(child.exitCode===null)child.send('stop');const timer=setTimeout(()=>child.kill('SIGKILL'),10000);try{await exited;}finally{clearTimeout(timer);}};

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { createApp } from '@cossackframework/scaffold';
+import { scaffoldLinkedApp } from './fixtures/linked-app.js';
 import { deployCommand } from '../src/commands/deploy.js';
 import { createTestHarness } from 'wrangler';
 import { readRpcStream } from '../../core/dist/index.js';
@@ -26,21 +26,9 @@ it('builds a generated staging app and validates deployment without uploading', 
   vi.stubEnv('NODE_ENV', 'production');
   vi.stubEnv('WRANGLER_SEND_METRICS', 'false');
   parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-deploy-integration-'));
-  const { projectDir } = await createApp('app', {
-    cwd: parent, adapter: 'cloudflare', preset: 'minimal', interactive: false,
-  });
   // Keep Vite's temporary config module inside this fixture so package imports
   // resolve from this project, using the installed workspace dependencies.
-  const modules = path.join(projectDir, 'node_modules');
-  await fs.mkdir(modules);
-  for (const name of await fs.readdir(path.join(repository, 'node_modules'))) {
-    if (name.startsWith('.') || name === '@cossackframework') continue;
-    await fs.symlink(path.join(repository, 'node_modules', name), path.join(modules, name), 'junction');
-  }
-  await fs.mkdir(path.join(modules, '@cossackframework'));
-  for (const name of ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold']) {
-    await fs.symlink(path.join(repository, 'packages', name), path.join(modules, '@cossackframework', name), 'junction');
-  }
+  const projectDir = await scaffoldLinkedApp(parent, { adapter: 'cloudflare', packages: ['framework', 'core', 'renderer', 'auth', 'database', 'ui', 'scaffold'] });
   await fs.mkdir(path.join(projectDir, 'src/services'), { recursive: true });
   await fs.writeFile(path.join(projectDir, 'src/services/RenderCounter.ts'), `
     import { CossackService, Service, State } from '@cossackframework/core';
