@@ -64,7 +64,7 @@ remain archived, and the verification log below retains test evidence.
 - [x] [SVC-01](./release-0.9.0-plan.md#svc-01) Typed jobs, delays/retries, fenced durable D1 ownership, deduplication, redacted inspection and deterministic local adapters. Generated/installed actual Queues and Worker reload pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 - [x] [SVC-02](./release-0.9.0-plan.md#svc-02) Named UTC schedules share jobs validation, occurrence deduplication, retries and cleanup; generated/installed Cron, local one-shot, build and CLI/MCP inspection pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
 - [x] [SVC-03](./release-0.9.0-plan.md#svc-03) Typed escaped notifications, scoped preferences/inboxes, durable delivery status and explicit Cloudflare/SMTP providers. Source/installed Queue/D1 and loopback SMTP retry, uncertainty and restart acceptance pass. [Evidence](#codex-svc02-svc03-complete-2026-10-05).
-- [x] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: source/installed native interruption, persisted pause/restart/resume, exact step reuse, retry/event and redacted failure acceptance pass; real provider REST, native binding and public inspection now report literal Waiting after an uninterrupted idle interval. Original criteria close through composite evidence. Strict local Waiting and the expanded hosted end-to-end test remain failing REL-03 gates, not waived. [Acceptance mapping and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
+- [x] [SVC-04](./release-0.9.0-plan.md#svc-04) Durable multi-step Workflows integration. Codex: source/installed native interruption, persisted pause/restart/resume, exact step reuse, retry/event and redacted failure acceptance pass; real provider REST, native binding and public inspection now report literal Waiting after an uninterrupted idle interval. Original criteria close through composite evidence. Strict local Waiting remains a failing REL-03 gate, not waived; expanded hosted lifecycle now passes. [Latest proof](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09). [Acceptance mapping and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
 - [x] [SVC-05](./release-0.9.0-plan.md#svc-05) Typed accessible Turnstile widget, bounded server verification and validated form recipe. Generated/installed Node and Cloudflare browser mutation/lifecycle and secret stripping pass; [evidence](#codex-svc01-svc05-complete-2026-10-05).
 
 ## Cloudflare deployment
@@ -2137,3 +2137,16 @@ behavior is proven by the hosted run. Only changed CLI artifacts were repacked.
 Independent final resource/repository cleanup passes. REL-03 strict local Waiting/
 full CLI stays red; REL-04/05 remain gated. Desktop remains waived.
 [Commands, failed iterations, retained evidence and limits](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
+
+### Codex — hosted Workflow lifecycle and installed agent scenario (2026-10-09)
+
+**55 complete / 3 open; no numbered task closes.** Expanded hosted Workflow
+acceptance passes **5/5**, including pause/resume, both three-channel Waiting
+observations, event/retry effects and terminal failure. Owned Worker/Workflow/D1/DO
+cleanup is independently verified. Installed scenario 4 now proves the full
+inspect/plan/preserve/apply/check/CLI-MCP sequence. Combined local checks:
+**5 passed / 1 hosted opt-in skipped**; that hosted case passes separately. Root
+`pnpm tsc --noEmit` passes. No packages repacked or user files staged.
+Strict local Waiting/full CLI remains blocked by the simulator's missing native
+transition; final versions and cross-feature scenarios 1/2/3/5 remain required.
+Desktop stays waived. [Commands and exact scope](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09).

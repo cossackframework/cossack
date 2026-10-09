@@ -15,6 +15,12 @@ installed hosted preview creation, intentional smoke failure, cleanup retry,
 unchanged production and verified teardown. Earlier CF-08, SVC-04 and Deno
 acceptance remains valid at its documented scope. [Completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
 
+Codex continuation (2026-10-09): full expanded hosted Workflow acceptance and
+installed cross-feature scenario 4 pass. Strict local Waiting remains blocked by
+the upstream simulator, with current stable/alpha sources inspected. Remaining
+cross-feature composition gaps are indexed in the [scenario audit](./release-0.9.0-scenario-audit.md).
+No numbered task closes; unchanged package evidence is retained. [Verified batch](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09).
+
 Continue the open work as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
 
@@ -276,7 +282,8 @@ browser criterion, not the full final-versioned/CLI/hosted runtime gate.
 
 Codex (2026-10-09): previously skipped PostgreSQL/MySQL cases execute against
 isolated real native providers: 6 passed, zero skips; owned processes/data removed.
-Strict local Waiting/full CLI remains red, as does the expanded hosted experiment.
+Strict local Waiting/full CLI remains red. The expanded hosted experiment was
+red at this checkpoint and subsequently passes in the linked latest continuation.
 Hosted Waiting closes SVC-04's original criterion, not those release tests.
 [Batch evidence](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
 
@@ -404,6 +411,12 @@ They supplement each task's tests. They do not introduce separate product scope.
 5. CI builds a staging artifact with staging bindings, applies an explicit
    migration plan to the intended test target, tests protected assets and RPC,
    and cleans preview-owned resources. Production resources remain unchanged.
+
+Codex (2026-10-09): [criterion-level evidence audit](./release-0.9.0-scenario-audit.md)
+records original scopes and exact missing compositions. Scenario 4 now passes
+as one installed CLI/MCP sequence; scenarios 1, 2, 3 and 5 remain combined
+acceptance work. Their feature-level evidence remains valid. Do not claim REL-05
+complete from completed feature boxes alone.
 
 ## How Codex records progress
 

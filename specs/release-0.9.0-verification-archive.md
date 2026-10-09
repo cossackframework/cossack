@@ -10515,6 +10515,7 @@ fixture is not real authentication. RT-12 remains open for runtime
 metadata/lifecycle acceptance and the full CLI/release gates. Release status
 remains **30 complete / 28 open**. No deployment or publication occurred.
 
+<a id="codex-rt24-typed-paths-2026-10-05"></a>
 ### Codex RT-24 typed configuration paths (2026-10-05)
 
 The `config()` overload fallback used to accept any string after an application
@@ -10536,6 +10537,7 @@ registry generation from `src/config/*.ts` was not added. This checkpoint does
 not complete RT-24. No task count changed: 30 complete / 28 open. The complete
 current summary is in the [release checklist](./release-0.9.0.md#codex-rt24-typed-paths-2026-10-05).
 
+<a id="codex-rt12-service-scope-construction-rollback-2026-10-05"></a>
 ### Codex RT-12 service-scope construction rollback (2026-10-05)
 
 If a declared service constructor or hydration step fails after earlier
@@ -10551,6 +10553,7 @@ describes the behavior.
 complete RT-12 runtime metadata/lifecycle acceptance or the CLI/release gates.
 No task count changed: 30 complete / 28 open.
 
+<a id="codex-rt10-typed-headless-form-controller-2026-10-05"></a>
 ### Codex RT-10 typed headless form controller (2026-10-05)
 
 Core now exports a schema-backed `FormController` for DOM-free form state. It
@@ -10571,6 +10574,7 @@ bindings, reactive UI adapters, keyboard submission, labels/error associations,
 focus recovery, nested array-item paths, and file transport have no acceptance
 yet. RT-10 remains open. Release count stays **30 complete / 28 open**.
 
+<a id="codex-cf04-static-resource-plan-2026-10-05"></a>
 ### Codex CF-04 static Cloudflare resource plan (2026-10-05)
 
 Local Cloudflare inspection now classifies each resource reference as configured
@@ -14625,3 +14629,134 @@ The checklist, compact current plan/handoff, changelog and release notes are
 updated once for this verified batch; historical failed checkpoints stay archived.
 All 17 added local documentation links/anchors resolve, and the 58-ID checklist
 count is verified as 55 complete / 3 open.
+
+<a id="codex-workflow-lifecycle-agent-scenario-2026-10-09"></a>
+## Codex — hosted Workflow lifecycle and installed agent scenario (2026-10-09)
+
+**Tasks:** REL-03 acceptance and REL-05 scenario audit. **55 complete / 3 open**;
+no numbered release task closes. REL-03, REL-04 and REL-05 retain their criteria.
+Desktop remains complete by user decision, with remaining platform checks waived.
+
+### Hosted Workflow acceptance
+
+The current repaired harness executes once against the retained installed
+production fixture. Its private copy extends only the event deadline to allow
+native hibernation; it does not patch the provider, infer Waiting or change the
+user-owned local probe. Native Wrangler OAuth is authenticated before deployment;
+the narrow CI token is unset only in this child shell. No credential value is
+printed or passed in command arguments. Fresh random resources have immutable
+ownership receipts before cleanup.
+
+Command, with the shell's existing Wrangler OAuth authentication:
+
+```sh
+COSSACK_WORKFLOW_WAITING_RETAINED_ROOT=/tmp/cossack-hosted-20261009 \
+  pnpm --filter cossack exec vitest run tests/workflow-waiting-resolution.test.js
+```
+
+**5 passed / 0 skipped**, 733.75 seconds, exit 0. Private full output:
+`/tmp/cossack-workflow-hosted-final-20261009.log`; immutable deployment, HTTP,
+provider, timing, effect and cleanup receipts:
+`/tmp/cossack-workflow-waiting-20261009-bLqE3W`.
+
+Observed assertions:
+
+- Retry barrier records first=1 and attempt=2 before the first untouched 330-second
+  interval. Provider REST, native binding and public inspection then report literal
+  `waiting`, with effects unchanged.
+- Pause is sent once. One read reports `WORKFLOW_PROVIDER_UNAVAILABLE`, followed
+  by actual `paused` inspection within the bounded poll. Resume is sent once.
+  Read polling fixes the earlier immediate-failure experiment without replaying
+  any uncertain mutation.
+- After a second untouched 330-second interval, all three channels again report
+  literal `waiting`. Invalid event input rejects; valid input completes the job.
+  Final effects are approved=1, attempt=2, first=1, last=1.
+- A separately invoked permanent-failure instance reaches `failed` with public
+  `WORKFLOW_FAILED`; inspection contains no private payload/output/message.
+- Guarded cleanup removes the receipt-matched Workflow, Worker, D1 database and
+  owned Durable Object namespace. Independent coordinator `cf` inventories confirm
+  all four absent, saved in `coordinator-cleanup-verified.json`.
+
+This closes the expanded hosted experiment's missing lifecycle proof. It does
+not prove strict local Waiting or a green full CLI suite. Original SVC-04 remains
+complete at its already recorded composite scope.
+
+### Installed cross-feature scenario 4
+
+An implementation agent exclusively owns the two new agent-scenario fixture/test
+files. Coordinator review corrects a trailing-separator workspace exclusion guard;
+agent also adds authored-file snapshots around read-only checks and dependency-link
+cleanup even when MCP close fails. Initial fixture assumptions about exported
+package metadata and route/feature shape were corrected; no product defect or API
+change was found. Final agent retest: **1 passed**, 28.74 seconds, evidence
+`/tmp/cossack-agent-scenario-U6X7ai/verified.json`.
+
+The harness resolves CLI, Scaffold, Framework, Core and Renderer from actual file
+tarballs in `/tmp/cossack-preview-ci-20261009-agent/app`, rejects workspace
+consumers/import paths, and creates a fresh private minimal app. It shares the
+retained immutable installed dependency tree without changing the consumer,
+installing packages or repacking artifacts. Seven actual CLI commands and real
+installed MCP stdio execute the complete scenario:
+
+1. Inspect the authored app without executing its deliberate top-level throw.
+2. Obtain a real UI recipe dry-run and prove no authored files changed.
+3. Apply the recipe while preserving an edited scaffold-owned page byte-for-byte
+   and preserving its original owned-template baseline hash.
+4. Run structured checks, verify the added recipe metadata, and compare actual
+   CLI/MCP metadata and diagnostics exactly. Checks do not change authored files.
+5. Add an invalid authored transport, compare matching CLI/MCP failure metadata
+   and codes (`COSSACK_TRANSPORT_UNSUPPORTED`, `COSSACK_ROUTE_TRANSPORT_INVALID`),
+   then remove it and prove matching green recovery. Detach dependencies after
+   closing MCP.
+
+This verifies installed composition/static inspection at **0.8.3**. It does not
+claim UI rendering/browser acceptance, registry publication or final 0.9.0
+artifacts. MCP remains read-only; recipe application uses CLI.
+
+Coordinator combined command:
+
+```sh
+COSSACK_AGENT_SCENARIO_INSTALLED_ROOT=/tmp/cossack-preview-ci-20261009-agent/app \
+  pnpm --filter cossack exec vitest run \
+  tests/agent-release-scenario.test.js tests/workflow-waiting-resolution.test.js
+pnpm tsc --noEmit
+```
+
+**5 passed / 1 hosted opt-in skipped**; the skipped hosted case actually ran and
+passed in the separate hosted invocation above. Root types pass. Full logs:
+`/tmp/cossack-release-workflow-agent-combined-20261009.log` and
+`/tmp/cossack-release-workflow-agent-types-20261009.log`. No unchanged installed
+acceptance, packing, broad unit or browser suites were repeated.
+
+### Remaining scope and upstream blocker
+
+[Criterion-level scenario audit](./release-0.9.0-scenario-audit.md) indexes the
+five original cross-feature scenarios. Scenario 4 now has combined installed
+proof. Scenarios 1, 2, 3 and 5 still need the listed compositions, not new product
+features; individual completed-task evidence remains valid at its named scope.
+Native workerd can prove scenario 2; no additional browser/hosted condition is
+invented. Request-side API dispatch can satisfy scenario 3 without requiring a
+specific decorator or garbage-collection instrumentation.
+
+Strict user-owned local Workflow acceptance expects literal Waiting within
+30 seconds and has a 60-second event timeout. Workspace Miniflare
+4.20260722.0, retained 5.20261006.0-alpha, current stable 4.20260730.0 and latest
+5.20261006.1-alpha distribution/source inspection reveal no path assigning native
+Waiting. Current [upstream grace handler](https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/workflows-shared/src/lib/gracePeriodSemaphore.ts)
+still omits its hibernation abort and uses five minutes. Cloudflare documents that
+[remote Workflow bindings/development are unsupported](https://developers.cloudflare.com/workflows/build/local-development/).
+Newer distributions were inspected, not installed/executed; no dependency upgrade,
+provider patch, status substitution, weakened assertion or waiver is claimed.
+
+Thus REL-03 still lacks a green full CLI/runtime implementation gate. After that
+prerequisite, align versions and prove affected final artifacts before final
+REL-03/04 completion; original REL-03 also requires final package versions.
+REL-05 then audits every task and the remaining combined scenarios. Earlier
+failed hosted checkpoints remain historical; only the current handoff/plan status
+is updated. Unrelated user files remain untouched and unstaged.
+
+Coordinator documentation check repairs four pre-existing historical index links
+by adding explicit IDs to their original archived checkpoints; no historical
+results or task counts are changed. All current checklist/plan/handoff/audit and
+new archive-block local links resolve (514 checked). Numbered checklist count: 58 total,
+55 complete / 3 open.

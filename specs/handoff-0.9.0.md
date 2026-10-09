@@ -2,35 +2,35 @@
 
 ## Current handoff — Codex (2026-10-09)
 
-**55 complete / 3 open. CF-09 and REL-02 complete**, versions 0.8.3.
-[Latest verified batch](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09). Actual installed GitHub CI proves successful
-preview creation, intentional smoke failure and cleanup retry from the saved
-immutable journal. Production settings/deployment/D1 remain unchanged; staging
-D1 visits change 0→2. Provider absence and final Worker/D1/known DO/repository
-cleanup are independently verified. All temporary test infrastructure is removed.
+**55 complete / 3 open**, versions 0.8.3. Latest continuation proves the full
+hosted Workflow lifecycle and installed cross-feature scenario 4; no numbered
+release task closes. [Verified batch](./release-0.9.0-verification-archive.md#codex-workflow-lifecycle-agent-scenario-2026-10-09).
 
-Fixed native deployment normalization: live responses omit repeated preview scope
-fields, and Wrangler emits asset progress before its JSON envelope. Explicit
-foreign identities/tags, malformed or ambiguous output still reject. The portable
-fixture preserves generated build approvals/settings and saves private redacted
-GitHub error/job/log receipts before teardown. One agent exclusively implemented
-the helper/tests, then the provider/tests; Codex reviewed, integrated and verified.
+Actual hosted Workflow acceptance: **5 passed**, including literal provider,
+native binding and public inspection Waiting before/after pause/resume, event
+validation, exact retry effects and redacted terminal failure. Guarded cleanup and
+independent Worker/Workflow/D1/owned DO absence checks pass. The earlier repaired
+read polling tolerates transient unavailability without replaying mutations.
 
-Final combined local checks: **159 passed / 1 hosted opt-in skipped**. Actual
-hosted suite then runs **28 passed**, including that case; root types pass. Two
-installed recipe/empty-preview native checks passed at the first provider repair.
-Final packed CLI bytes match source; its changed behavior passes actual CI.
-Unchanged package/browser/native/doc proofs retain their archived scope; no
-unchanged package repacking or broad suite repeats. Earlier CF-08, SVC-04, Deno
-and native database completions remain in the verification archive.
+Installed agent acceptance proves inspect → recipe plan → apply preserving edits
+and scaffold baseline → structured CLI/MCP checks, matching failure diagnostics
+and recovery on one fresh app. Combined local checks: **5 passed / 1 hosted opt-in
+skipped**; that hosted case passed separately above. Root types pass. No packages
+were repacked and no product APIs changed.
 
-Open: **REL-03, REL-04, REL-05 (3)**. REL-03 still needs a green full CLI/runtime
-gate: strict local Waiting remains red because Miniflare disables hibernation's
-Waiting transition. The expanded hosted lifecycle experiment also remains red.
-Preserve those probes and report their failures; do not invent statuses or waive
-tests. REL-04 follows with versions/ranges/lock/templates and affected rebuilt/
-installed gates; REL-05 audits the final release. Changelog/release notes now
-reflect proven hosted CI, but 0.9.0 is still unreleased.
+Open: **REL-03, REL-04, REL-05 (3)**. REL-03's strict local Waiting/full CLI gate
+remains red: current stable/alpha Miniflare lack a native Waiting transition;
+remote Workflow development is unsupported. Preserve the user-owned baseline
+probe and assertions. After the implementation gate, align versions and rerun
+affected artifact checks before final REL-03/04 completion. REL-05 requires the
+remaining [cross-feature scenario compositions](./release-0.9.0-scenario-audit.md)
+(1, 2, 3, 5), then the final requirement audit. Prefer those independent
+acceptance gaps over repeating unchanged simulator failures or hosted proofs.
+
+CF-09 and REL-02 remain complete. Their three real GitHub runs, production
+isolation and resource/repository cleanup retain their [archived proof](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
+Earlier CF-08, SVC-04, Deno, database and other unchanged verification keep their
+recorded scope. All temporary cloud infrastructure is removed.
 
 Private proof/setup: /tmp/cossack-preview-ci-20261009-agent. The latest repository
 and cloud IDs are deleted; do not rerun its options against deleted resources.
@@ -47,11 +47,13 @@ status; [plan](./release-0.9.0-plan.md) retains open-task context;
 
 ## Active implementation plan — Codex owns remaining work (2026-10-06)
 
-1. Resolve REL-03 strict local Waiting/full CLI and expanded hosted-test failures;
-   SVC-04 original acceptance and CF-09/REL-02 are complete.
-2. Finish the remaining non-Desktop release verification without weakening tests.
-3. Align 0.9.0 versions and verify affected artifacts (REL-04), then audit REL-05.
-4. Use at most three implementation agents with exclusive ownership, targeted
+1. Finish cross-feature acceptance scenarios 1, 2, 3 and 5 using the evidence audit.
+   Scenario 4 and expanded hosted Workflow acceptance pass at current versions.
+2. Resolve REL-03 strict local Waiting/full CLI when upstream supports the required
+   native status; do not patch the simulator or substitute Running for Waiting.
+3. Finish the remaining non-Desktop release verification without weakening tests.
+4. Align 0.9.0 versions and verify affected artifacts (REL-04), then audit REL-05.
+5. Use at most three implementation agents with exclusive ownership, targeted
    checks, coordinator integration, one verified-batch record and explicit staging.
 
 ## Limits to retain
