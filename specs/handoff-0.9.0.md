@@ -32,6 +32,18 @@ ordinary generated builds with newer tools have separate passing proof.
 Only its version metadata changed. Preserve reports.md, .zcodeignore and both
 baseline Workflow probe files; their bytes are unchanged and they are unstaged.
 
+## Latest development follow-up — Codex (2026-10-09)
+
+Normal bootstrap state changes are quiet; state assignments and render guards
+are unchanged. The demo pre-bundles icons and SSR-only AWS dependencies. Final
+cold startup is 13.455 s versus 19.886 s, with no late optimization batches or
+Worker reload; warm startup remains around 12–13 s. 54 targeted tests, Core build,
+root/Core/Framework types and native Worker/Chromium checks pass. This subsequent
+Core diagnostic-only edit has fresh targeted/native evidence; the earlier complete
+release and tarball comparisons retain their `6764a7a1` scope. Further startup
+profiling should examine the roughly 12 s spent creating the Vite server.
+[Receipt](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09).
+
 ## Continuation
 
 No numbered release work remains. Publication, tagging, upstream push or production

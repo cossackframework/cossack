@@ -1,5 +1,11 @@
 # Cossack 0.9.0 cross-feature evidence audit
 
+Receipt scope: the final package/payload comparisons below record release
+preparation at `6764a7a1`. Subsequent demo startup and Core development-logging
+changes have [separate targeted/native evidence](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09);
+they are not claimed as a repeat of the complete packed/hosted release matrix.
+
+
 Author: Codex. Source/evidence review and installed scenarios 1–5 acceptance, 2026-10-09.
 
 This indexes the five exact [cross-feature scenarios](./release-0.9.0-plan.md#cross-feature-acceptance-scenarios).

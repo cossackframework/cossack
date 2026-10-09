@@ -1,7 +1,8 @@
 import 'reflect-metadata';
+import type { Context } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Cossack } from '../src/shared/cossack';
-import { ClientState, ClientStore, Computed, Service, State, Store } from '../src/shared/decorators';
+import { ClientState, ClientStore, Computed, Service, State, Store, Task } from '../src/shared/decorators';
 import { sanitizeClientState } from '../src/shared/method-proxy';
 import { getServiceState, hydrateServiceState, registerServiceState } from '../src/shared/service-bootstrap';
 import { sanitizeServiceState } from '../src/shared/service-scope';
@@ -11,6 +12,30 @@ afterEach(() => { vi.restoreAllMocks(); });
 class CossackSubclass extends Cossack {}
 
 describe('component state mechanisms', () => {
+    it.each([true, false])('initializes local state quietly during bootstrap (server: %s)', async (server) => {
+        class QuietState extends Cossack {
+            protected override isServer = server;
+            @State() input = 1;
+            @ClientState() count = 0;
+            @ClientStore() draft = { count: 0 };
+            @Task({ track: ['input'] })
+            seed() { this.count = 2; this.draft.count = 3; }
+        }
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const page = new QuietState();
+        const update = vi.spyOn(page, 'requestUpdate').mockImplementation(() => Promise.resolve(true));
+        await page.bootstrap({ context: { req: { param: () => ({}) } } as unknown as Context });
+        expect(page.count).toBe(2);
+        expect(page.draft.count).toBe(3);
+        expect(update).not.toHaveBeenCalled();
+        expect(warn).not.toHaveBeenCalled();
+        page.count = 4;
+        page.draft.count = 5;
+        if (!server) expect(update.mock.calls.map(([key]) => key)).toEqual(['count', 'draft']);
+        else expect(update).not.toHaveBeenCalled();
+        await page.destroy();
+    });
+
     it('notifies for replacement/deep stores and computes fresh values without serializing derived state', () => {
         class Choices extends Cossack {
             @State() shallow = { count: 1, rows: [1] };

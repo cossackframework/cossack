@@ -19,7 +19,7 @@ function cossackDevTools(): Plugin {
       const projectRoot = path.resolve(process.cwd());
 
       const server = http.createServer((req, res) => {
-        const parsedUrl = url.parse(req.url, true);
+        const parsedUrl = url.parse(req.url ?? "/", true);
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -70,6 +70,34 @@ function cossackDevTools(): Plugin {
   };
 }
 
+// Pages arrive through a virtual module, so Vite's initial dependency scan can
+// miss their deep icon imports. Pre-bundle only icons used by this demo rather
+// than the entire icon library. Keep server storage SDKs out of client entries.
+const demoIconDependencies = [
+  '@cossackframework/solar-icons/add-circle',
+  '@cossackframework/solar-icons/alt-arrow-down',
+  '@cossackframework/solar-icons/arrow-right',
+  '@cossackframework/solar-icons/cart',
+  '@cossackframework/solar-icons/chart',
+  '@cossackframework/solar-icons/check-circle',
+  '@cossackframework/solar-icons/close-circle',
+  '@cossackframework/solar-icons/database',
+  '@cossackframework/solar-icons/document-text',
+  '@cossackframework/solar-icons/folder',
+  '@cossackframework/solar-icons/hamburger-menu',
+  '@cossackframework/solar-icons/home',
+  '@cossackframework/solar-icons/lock',
+  '@cossackframework/solar-icons/magnifier',
+  '@cossackframework/solar-icons/pen-new-square',
+  '@cossackframework/solar-icons/refresh-circle',
+  '@cossackframework/solar-icons/routing-2',
+  '@cossackframework/solar-icons/server',
+  '@cossackframework/solar-icons/settings',
+  '@cossackframework/solar-icons/trash-bin-minimalistic',
+  '@cossackframework/solar-icons/users-group-rounded',
+  '@cossackframework/solar-icons/widget-2',
+];
+
 export default defineConfig({
   test: {
     // Playwright owns e2e/**/*.spec.ts. Keeping Vitest on the unit-test tree
@@ -113,6 +141,7 @@ export default defineConfig({
   },
   environments: {
     client: {
+      optimizeDeps: { include: demoIconDependencies },
       build: {
         outDir: 'dist/client',
         target: 'esnext',
@@ -141,6 +170,9 @@ export default defineConfig({
       },
     },
     ssr: {
+      optimizeDeps: {
+        include: [...demoIconDependencies, '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
+      },
       // The cloudflare plugin configures the SSR/worker environment
       // with viteEnvironment: { name: 'ssr' }
     },

@@ -15273,3 +15273,65 @@ and whitespace checks pass.
 - `protected-resource-scenario.test.js`: composes a protected typed resource, URL filter and validated durable edit without granting forged RPC authority.
 - `realtime-release-scenario.test.js`: composes permitted concurrent editors, two native Workers, disconnect outcomes and a subscribed private-scope observer.
 - `workflow-waiting-resolution.test.js`: proves literal hosted Waiting after an uninterrupted native idle interval and guarded cleanup.
+
+<a id="codex-development-startup-2026-10-09"></a>
+## Codex — development startup and bootstrap diagnostics (2026-10-09)
+
+Follow-up to release preparation commit `6764a7a1`; numbered task count remains
+58 complete / 0 open. This changes development diagnostics and the repository
+showcase's Vite configuration. It does not claim a new full release matrix or
+relabel the prior packed/hosted/browser receipts.
+
+Core retains its state assignment, bootstrap render suppression and subsequent
+client update guards, but removes the unconditional development warning for
+expected client-only state initialization. Real server/client bootstrap regressions
+prove task-assigned scalar/store values survive, no premature render/warning occurs,
+and client updates still dispatch after bootstrap. Other diagnostics remain tested.
+
+The showcase pre-bundles its 22 authored Solar icon subpaths in both environments.
+AWS S3 SDK/presigner entries are SSR-only. It does not pre-bundle the whole icon
+library or disable discovery. Regression tests discover actual authored icon imports
+and require coverage, preventing future demo imports from reintroducing late batches.
+Those tests now typecheck the demo Vite config, exposing an existing optional
+IncomingMessage.url type error; the editor-launcher parser uses `/` for an absent URL.
+This does not change its path containment, localhost binding or shell-free spawn.
+
+### Measured native development acceptance
+
+Private source clones, isolated Vite caches/local Worker state and Chromium
+exercise the actual Cloudflare dev plugin and `/task-tracker`. User caches, ignored
+secret files and the user's dev-server process are not deleted or stopped. The
+benchmark uses a fixture-only APP_SECRET and no provider deployment. Pre-change
+configuration is retained separately for the comparison. Failed harness setup
+attempts (dependency resolution and Playwright CJS interop) are retained as failures;
+they are not product failures or timing samples.
+
+| Measurement | Before | Final rebuilt Core + configured demo |
+| --- | --- | --- |
+| Cold server ready | 19.886 s | 13.455 s |
+| Warm server ready | 12.967 s | 12.353 s |
+| Cold late optimization batches | 5 | 0 |
+| Cold Worker program reloads | 1 | 0 |
+| Final cold/warm bootstrap warnings | Not counted in baseline receipt | 0 / 0 |
+| Task Tracker HTTP / browser page errors | 200 / 0 for both runs | 200 / 0 for both runs |
+
+Cold startup improves by about 32%. One earlier optimized sample measured 13.161 s;
+it is not substituted for the final rebuilt-Core result. Warm startup has no
+established material improvement from this small sample. Remaining time is mostly
+inside `createServer`: final cold 12.993 s and warm 11.957 s, versus listen
+0.056/0.040 s. This identifies the remaining phase, not a measured attribution
+to a particular plugin. The showcase's remaining startup cost is not fully solved.
+No claim is made about production startup, all applications or cross-machine timings.
+
+Verification:
+
+- `pnpm --filter @cossackframework/core exec vitest run tests/state-mechanisms.test.ts tests/state-bindings.test.ts tests/lifecycle.test.ts`: 52 passed, three files; includes two new bootstrap cases.
+- `pnpm --filter @cossackframework/framework exec vitest run tests/development-dependencies.test.ts --maxWorkers=1`: two passed, one file.
+- `pnpm --filter @cossackframework/core build`: passed; final native run imports this rebuilt public Core output.
+- `pnpm tsc --noEmit`, Core `tsc --noEmit` and Framework `tsc --noEmit`: all pass after integration. The initial Framework check's optional-URL error is retained before its repair.
+- Owned whitespace and syntax checks pass. Four unrelated baseline files retain their bytes and remain unstaged. Desktop is untouched.
+
+Detailed setup, cold/warm logs, timing JSON, failed harness attempts and check logs
+are retained under `/tmp/cossack-dev-startup-improvements`. The unchanged full
+monorepo, production/hosted and installed-pack matrices were not repeated for this
+bounded development-only change; prior release receipts retain their exact scope.

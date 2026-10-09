@@ -1,5 +1,11 @@
 # Cossack 0.9.0 requirement audit
 
+Receipt scope: the final package/payload comparisons below record release
+preparation at `6764a7a1`. Subsequent demo startup and Core development-logging
+changes have [separate targeted/native evidence](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09);
+they are not claimed as a repeat of the complete packed/hosted release matrix.
+
+
 Author: Codex. Historical review baseline: 2026-10-09, commit `6f9639b1`, packages 0.8.3.
 Final coordinator reconciliation: **58 complete / 0 open**, prepared 0.9.0 artifacts.
 [Final execution and payload evidence](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) closes REL-03/04/05.

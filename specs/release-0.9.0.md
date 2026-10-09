@@ -2186,3 +2186,13 @@ stays waived. [Commands, receipts and limits](./release-0.9.0-verification-archi
 The [final archive](./release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09) records terminal checks, failed attempts, exact skips,
 artifact comparisons and retained hosted/browser scope. Desktop remains waived.
 Publication, tagging, upstream push and production promotion were not performed.
+
+## Codex — development startup follow-up (2026-10-09)
+
+Removed normal bootstrap warning noise without changing state/render guards.
+The showcase pre-bundles authored icons and SSR-only storage SDKs: cold startup
+19.886 → 13.455 seconds, five late batches/one Worker reload → zero. Warm startup
+remains about 12–13 seconds; remaining server-creation cost needs deeper profiling.
+54 targeted tests, Core build, root/Core/Framework types and actual Worker/browser
+checks pass. No full release-matrix rerun is claimed; task count remains 58/58.
+[Evidence and limits](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09).

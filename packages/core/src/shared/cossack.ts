@@ -2273,8 +2273,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Client-only state: just trigger re-render on client
             if (!this.isServer && !this.isBootstrapping) {
                 this.requestUpdate(key, oldValue);
-            } else if (import.meta.env?.DEV && this.isBootstrapping) {
-                console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
             }
         }
         // Reference newValue so it is part of the signature for future hooks;
