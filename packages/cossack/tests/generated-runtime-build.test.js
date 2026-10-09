@@ -29,7 +29,7 @@ import { checkSameUrlHistory } from './fixtures/same-url-history-acceptance.js';
 import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } from './fixtures/url-state-acceptance.js';
 import { createRuntimeProxy, checkRuntimeOwnership } from './fixtures/runtime-owner-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
-
+import { skipWithoutDeno } from './fixtures/deno.js';
 import { createLinkedApp, repository } from './fixtures/linked-app.js';
 
 const roots = [];
@@ -1883,7 +1883,7 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-const traceRuntimeCases = ['cloudflare', 'node', 'deno'].flatMap(runtime =>
+const traceRuntimeCases = ['cloudflare', 'node', ...(skipWithoutDeno ? [] : ['deno'])].flatMap(runtime =>
   (runtime === 'deno' ? [false, true] : [false]).flatMap(https =>
     ['http', 'sse', 'durable-object'].map(transport => [runtime, transport, https])));
 it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP (HTTPS: %s)', async (runtime, transport, https) => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { scaffoldLinkedApp } from './fixtures/linked-app.js';
+import { denoBinary, skipWithoutDeno } from './fixtures/deno.js';
 import { writeConfigReleaseAcceptance, checkConfigReleaseTooling, startConfigReleaseServer,
   checkConfigReleaseAcceptance, CONFIG_RELEASE_MARKERS } from './fixtures/config-release-acceptance.js';
 
@@ -30,9 +31,8 @@ async function build(root, args) {
   for (const marker of CONFIG_RELEASE_MARKERS) expect(result.stdout + result.stderr).not.toContain(marker);
 }
 for (const adapter of ['node', 'deno']) {
-  it(`keeps configuration private, typed and isolated in a generated production ${adapter} app`, async () => {
-    const binary = process.env.COSSACK_DENO_BINARY ?? 'deno';
-    if (adapter === 'deno') await promisify(execFile)(binary, ['--version'], { timeout: 10000 });
+  it.skipIf(adapter === 'deno' && skipWithoutDeno)(`keeps configuration private, typed and isolated in a generated production ${adapter} app`, async () => {
+    const binary = denoBinary;
     const root = await generatedProject(adapter);
     await checkConfigReleaseTooling(root, path.join(repository, 'packages/cossack/bin/cossack.js'));
     await build(root, []); await build(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);

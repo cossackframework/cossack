@@ -8,9 +8,10 @@ import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRequire} from 'node:module';
 import {scaffoldLinkedApp} from './fixtures/linked-app.js';
+import {denoBinary,skipWithoutDeno} from './fixtures/deno.js';
 const execute=promisify(execFile);
 
-it('generated production Deno entry drains accepted requests and bounds uncooperative work on real signals',async()=>{
+it.skipIf(skipWithoutDeno)('generated production Deno entry drains accepted requests and bounds uncooperative work on real signals',async()=>{
  const parent=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-deno-drain-'));
  const gate=process.env.COSSACK_DENO_SHUTDOWN_INSTALLED_ROOT;
  let child;
@@ -58,7 +59,7 @@ createDenoAdapter({maxInstances:'wrong'});
   for(const mode of ['finite','stuck']){
    const marker=path.join(parent,mode);await fs.mkdir(marker);
    const reserve=createServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const port=reserve.address().port;await new Promise(resolve=>reserve.close(resolve));
-   child=spawn(process.env.COSSACK_DENO_BINARY || 'deno',['run','--allow-env','--allow-net','--allow-read','--allow-write','dist/server/index.js'],{cwd:root,env:{...process.env,PORT:String(port),DRAIN_MARKER:marker},stdio:['ignore','pipe','pipe']});
+   child=spawn(denoBinary,['run','--allow-env','--allow-net','--allow-read','--allow-write','dist/server/index.js'],{cwd:root,env:{...process.env,PORT:String(port),DRAIN_MARKER:marker},stdio:['ignore','pipe','pipe']});
    let diagnostics='';child.stdout.on('data',data=>diagnostics+=data);child.stderr.on('data',data=>diagnostics+=data);
    const ended=once(child,'exit');
    const origin=`http://127.0.0.1:${port}`;
