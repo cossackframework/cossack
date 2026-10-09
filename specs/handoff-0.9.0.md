@@ -2,95 +2,55 @@
 
 ## Current handoff — Codex (2026-10-09)
 
-**53 complete / 5 open. SVC-04 and CF-08 complete**, versions 0.8.3. [Hosted completion](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
-Real current installed Worker: caller UUID matches native tail and stored Workers
-Logs; safe fields/credential redaction, provider-authored source remapping and
-10 ms native startup pass all eight evidence criteria. Owned temporary Worker,
-Workflow, D1 and DO namespace are confirmed absent after cleanup. No production
-promotion, GitHub write or publication. User authorized temporary Cloudflare
-and Deno hosted acceptance; earlier hosted-approval blocker is superseded.
+**55 complete / 3 open. CF-09 and REL-02 complete**, versions 0.8.3.
+[Latest verified batch](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09). Actual installed GitHub CI proves successful
+preview creation, intentional smoke failure and cleanup retry from the saved
+immutable journal. Production settings/deployment/D1 remain unchanged; staging
+D1 visits change 0→2. Provider absence and final Worker/D1/known DO/repository
+cleanup are independently verified. All temporary test infrastructure is removed.
 
-New hosted evidence assertions: 23 passed. Root/all ten non-Desktop types pass.
-Prior full browser 297 and Framework 2,089 / 120 files remain valid; no repeat
-packing or broad browser/unit runs. Full CLI still lacks a green terminal result.
-Desktop remains completed by user decision; its remaining checks are waived.
+Fixed native deployment normalization: live responses omit repeated preview scope
+fields, and Wrangler emits asset progress before its JSON envelope. Explicit
+foreign identities/tags, malformed or ambiguous output still reject. The portable
+fixture preserves generated build approvals/settings and saves private redacted
+GitHub error/job/log receipts before teardown. One agent exclusively implemented
+the helper/tests, then the provider/tests; Codex reviewed, integrated and verified.
 
-SVC-04 original criteria are complete: retained native interruption/restart,
-exact step reuse, retries/events and failure redaction plus new actual hosted
-REST/native binding/public inspection Waiting. [Audit and limits](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
-Strict local Waiting still fails; Miniflare's hibernation transition is disabled.
-The expanded hosted experiment is also red (pause availability, then inconsistent
-routing/404), not a green hosted lifecycle or full CLI result. All three attempts'
-Worker/Workflow/D1/owned DO namespaces are confirmed absent. Preserve baseline
-probes; do not substitute statuses, waive or claim these release tests passed.
+Final combined local checks: **159 passed / 1 hosted opt-in skipped**. Actual
+hosted suite then runs **28 passed**, including that case; root types pass. Two
+installed recipe/empty-preview native checks passed at the first provider repair.
+Final packed CLI bytes match source; its changed behavior passes actual CI.
+Unchanged package/browser/native/doc proofs retain their archived scope; no
+unchanged package repacking or broad suite repeats. Earlier CF-08, SVC-04, Deno
+and native database completions remain in the verification archive.
 
-Provider acceptance: 6 tests pass, zero skips, including real PostgreSQL 18.6
-and MySQL 8.0.46; four cleanup tests pass.
-Use node scripts/test-database-providers.mjs for disposable POSIX native providers.
-Final root/all ten non-Desktop package types pass. Existing services were untouched.
+Open: **REL-03, REL-04, REL-05 (3)**. REL-03 still needs a green full CLI/runtime
+gate: strict local Waiting remains red because Miniflare disables hibernation's
+Waiting transition. The expanded hosted lifecycle experiment also remains red.
+Preserve those probes and report their failures; do not invent statuses or waive
+tests. REL-04 follows with versions/ranges/lock/templates and affected rebuilt/
+installed gates; REL-05 audits the final release. Changelog/release notes now
+reflect proven hosted CI, but 0.9.0 is still unreleased.
 
-Deno Deploy acceptance now passes using both tokens loaded through interactive
-zsh from ~/.zshrc. Installed compiled artifacts run on provider Deno 2.9.5:
-POST body/two cookies, production assets/hydration and HTTP/SSE/WebSocket
-mutations pass. Exact app UUID ownership was checked before DELETE204; GET404
-and a separate coordinator lookup confirm cleanup. Both Deno harness files are
-verified for this batch. [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
-Private evidence: /tmp/cossack-deno-hosted-mFjtUA. This proves uploaded compiled
-installed artifacts, not provider source builds or final 0.9.0 packages.
+Private proof/setup: /tmp/cossack-preview-ci-20261009-agent. The latest repository
+and cloud IDs are deleted; do not rerun its options against deleted resources.
+Earlier failed attempts and recovered cleanup are retained in private archives.
+The cf-created account token remains intentionally available through interactive
+zsh (~/.zshrc), restricted to the test account and Worker/D1 writes, expires
+2026-10-10T00:52:59Z. Credentials remain outside the repository; never print them.
 
-Open: **CF-09, REL-02, REL-03, REL-04, REL-05 (5)**. CF-09 needs actual
-hosted CI lifecycle/isolation/retry/unchanged-production evidence and portable CI
-credentials; the credential blocker is now resolved. At the user’s request,
-cf created a 24-hour account-owned token with Workers Scripts Write/D1 Write in
-only the test account. Active verification, Workers/D1/account reads and interactive
-shell loading pass; protected token files are outside the repository. Temporary
-private GitHub testing remains authorized. Two actual hosted acceptance attempts
-are red (21 unit checks pass each): first failed without a journal; second dispatch
-failed before a run was recorded. Four setup attempts’ Worker/DO/D1/repository
-cleanup receipts confirm absence. Keep CI open; no success/isolation/retry claim.
-[Token and hosted failures](./release-0.9.0-verification-archive.md#codex-cf-token-bootstrap-2026-10-09).
-Portable installed app/setup: /tmp/cossack-preview-ci-20261009-agent. Private setup
-now verifies account-owned tokens, uses the real test Worker APP_URL and excludes
-.dev.vars.example from upload. Next: retain bounded GitHub error/job/log evidence
-before teardown, identify the failed CI step, then prove the full three-run lifecycle.
-REL-02 remains gated on CF-09, not on a premature 0.9.0 version bump. Current
-retained public APIs/guides match source; Studio asset names/CSS and a build cache
-differ. REL-03 needs its green full CLI/runtime gate. Then REL-04 bumps versions
-and repeats affected artifact/install checks before REL-05 audits the final state.
-[Original order and payload audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
-Unreleased [changelog](../CHANGELOG.md) and [release notes](./release-notes-0.9.0.md)
-are now prepared; coordinator reviewed claims and all 97 local links/anchors.
-Current-API migration coverage now maps all 58 IDs; missing runtime/CLI/scaffold/
-config/DI/DataTable/deployment instructions are filled. All 75 guide links resolve;
-nine previously compiled examples are unchanged. [Audit](./release-0.9.0-verification-archive.md#codex-migration-coverage-2026-10-09).
-REL-04 still needs version alignment and affected build/install proof after its
-dependency gates. No source changes or rerun checks in these documentation batches;
-counts remain 53/5.
-Preserve reports.md/.zcodeignore and the two baseline Workflow probes.
-
-The [release checklist](./release-0.9.0.md) owns task status and a compact evidence index.
-The [verification archive](./release-0.9.0-verification-archive.md) preserves past results and limits.
-The [detailed plan](./release-0.9.0-plan.md) retains full context for open tasks.
-All unchecked tasks remain in scope, subject to the Desktop closure below.
-
-**Desktop: completed for 0.9.0 by user decision (2026-10-05).** Preserve the
-verified implementation. Remaining Desktop-only platform acceptance is waived
-for this release, not a pending task or a claim that those checks passed. Do not
-reopen Desktop work unless requested. Prioritize shared framework behavior,
-CLI/agent tooling and Cloudflare.
-
-Previous completed-task details remain in the [verification archive](./release-0.9.0-verification-archive.md)
-and [plan archive](./release-0.9.0-plan-archive.md#codex-handoff-references-2026-10-06).
-Retain their acceptance evidence without rerunning unchanged matrices.
+**Desktop is complete by user decision; remaining platform checks are waived.**
+Do not reopen it. Preserve unrelated reports.md, .zcodeignore and both baseline
+Workflow probe files; do not stage them. The [checklist](./release-0.9.0.md) owns
+status; [plan](./release-0.9.0-plan.md) retains open-task context;
+[verification archive](./release-0.9.0-verification-archive.md) retains evidence.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-06)
 
-1. Finish CF-09 hosted CI previews; CF-08 and CF-10 acceptance is complete.
-   Local static plans do not prove hosted CI isolation or unchanged production.
-2. Resolve REL-03 strict local Waiting/full CLI and expanded hosted-test failures;
-   SVC-04 original acceptance is complete. Preserve the strict older probes.
-3. Complete REL-02/03 non-Desktop published/generated/build/unit/runtime gates,
-   then versioning and the requirement audit (REL-04/05).
+1. Resolve REL-03 strict local Waiting/full CLI and expanded hosted-test failures;
+   SVC-04 original acceptance and CF-09/REL-02 are complete.
+2. Finish the remaining non-Desktop release verification without weakening tests.
+3. Align 0.9.0 versions and verify affected artifacts (REL-04), then audit REL-05.
 4. Use at most three implementation agents with exclusive ownership, targeted
    checks, coordinator integration, one verified-batch record and explicit staging.
 
@@ -103,7 +63,7 @@ Retain their acceptance evidence without rerunning unchanged matrices.
 - Preserve the [paused-iterator deadline regressions](./release-0.9.0.md#codex-paused-rpc-deadlines-2026-10-04):
   first failure codes, confirmed state, one cancellation request and cleanup without another iterator pull.
 - RT-01 native Node/workerd disconnect and component initialization/restoration acceptance is complete. Cancellation remains cooperative and does not stop ignored application I/O.
-- Initial CLI run: 1,007 passed / 19 failed / 6 skipped, with later targeted fixes. Latest terminal run: 1,112 passed / 2 failed / 9 skipped; MessageScroller is subsequently fixed, Waiting remains unproven and three non-Desktop omissions pass separately. Six Desktop cases are waived. Neither composite proves a green full CLI gate.
+- Initial CLI run: 1,007 passed / 19 failed / 6 skipped, with later targeted fixes. Latest terminal run: 1,112 passed / 2 failed / 9 skipped; MessageScroller is subsequently fixed, strict local Waiting remains red and three non-Desktop omissions pass separately. Six Desktop cases are waived. Neither composite proves a green full CLI gate.
 - Browser ownership acceptance passes its focused generated Node and Cloudflare
   cases, including SSE and WebSocket ownership. The fixture uses a synthetic
   identity provider only; real authentication has separate RT-13 evidence.
@@ -120,7 +80,7 @@ Retain their acceptance evidence without rerunning unchanged matrices.
   Hosted Deno compiled-artifact acceptance passes; the required final non-Desktop
   release matrix remains open.
   Generated Node and Deno standalone draining are verified.
-- Local checks do not prove remote readiness. CF-08 now has actual hosted acceptance and verified cleanup; no production promotion, publication, push or credential rotation occurred.
+- Local checks do not prove remote readiness. CF-08 has actual hosted acceptance and verified cleanup; that earlier batch performed no production promotion, publication, push or credential rotation. The latest CF-09 batch pushed only to its authorized temporary private repository, now deleted.
   Never copy old credential values from Git history.
 
 ## Working rules

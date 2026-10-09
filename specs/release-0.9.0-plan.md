@@ -1,6 +1,6 @@
 # Cossack 0.9.0 implementation plan
 
-Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 53 complete and 5 open.
+Compacted by Codex on 2026-10-04. Updated on 2026-10-09. The release has 58 tasks: 55 complete and 3 open.
 The [release checklist](./release-0.9.0.md) owns completion status and the evidence index.
 The [verification archive](./release-0.9.0-verification-archive.md) retains past test results and review limits.
 The [handoff](./handoff-0.9.0.md) records current work and continuation instructions.
@@ -10,13 +10,10 @@ The [plan archive](./release-0.9.0-plan-archive.md) preserves the previous docum
 including historical checkpoints. Open task sections retain their full context.
 Historical status statements inside task sections do not override the checklist.
 
-Codex hosted batch (2026-10-09): CF-08 is complete with real stored Workers
-Logs, provider-remapped authored stack and native startup evidence, plus verified
-owned-resource cleanup. SVC-04 now closes with actual hosted Waiting plus retained
-native lifecycle evidence ([audit](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09)). Deno hosted
-compiled-artifact acceptance now passes with verified immutable-ID cleanup;
-organization and CLI tokens are available through interactive zsh.
-[Exact evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
+Codex hosted batch (2026-10-09): CF-09 and REL-02 now close with actual
+installed hosted preview creation, intentional smoke failure, cleanup retry,
+unchanged production and verified teardown. Earlier CF-08, SVC-04 and Deno
+acceptance remains valid at its documented scope. [Completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
 
 Continue the open work as described in the handoff. All unchecked tasks
 remain in scope. Versions stay at 0.8.3 until REL-04.
@@ -100,9 +97,9 @@ Add focused tests during each group, and run broader gates after integration.
 
 | Group | Main tasks | Result needed before moving on |
 | --- | --- | --- |
-| 5. Add background application services | SVC-04 | Jobs, schedules, notifications, workflows, and Turnstile have tested adapters. |
-| 7. Finish operations | CF-08 and CF-09 | Complete observability and previews using the verified deployment guide and resource plans. |
-| 8. Audit and prepare release | REL-02 through REL-05 | Every requirement has evidence and the release artifacts match the source. |
+| 1. Finish verification | REL-03 | Resolve strict local Waiting/full CLI and the remaining release matrix. |
+| 2. Prepare versions | REL-04 | Align versions and rebuild/recheck affected release artifacts. |
+| 3. Audit release | REL-05 | Verify every requirement against the final release state. |
 
 Preserve regression coverage for completed prerequisites while closing the open criteria.
 
@@ -185,50 +182,19 @@ All owned hosted resources are confirmed removed. [Completion evidence](./releas
 Full implementation context remains in the [plan archive](./release-0.9.0-plan-archive.md#codex-cf08-completed-context-2026-10-09).
 
 <a id="cf-09"></a>
-### CF-09: Preview and CI resource lifecycle
+### CF-09: Preview and CI resource lifecycle — complete
 
-Purpose: Branch tests need production-like behavior without modifying production
-data. A preview URL identifies code but does not establish resource isolation.
-
-Baseline: Deployment docs explain separate resources and rollback limits.
-Codex now implements native preview creation, same-origin smoke, saved journals,
-account/provider ownership inspection and immutable-ID cleanup through the public
-CLI, with a trusted manual scaffold CI workflow. These are locally verified, not
-hosted acceptance. Required staging secrets and recovery of lost tagged receipts
-now pass native transport and generated-app source/installed smoke acceptance.
-Codex (2026-10-06): native source/installed no-tag cleanup now requires the
-creation ID/name/time saved before native upload and independent latest-deployment
-404. An unknown creation response without saved identity still requires manual
-provider recovery; names never establish ownership. Current Wrangler default-bypass
-flags are negotiated, with real 4.147 acceptance. [Evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
-Promotion remains a separate reviewed production deployment with migration order
-and code/state rollback limits documented in [the guide](../docs/cloudflare-previews.md).
-
-Codex credential bootstrap (2026-10-09): user-requested cf account-owned token
-creation succeeds; scoped Worker/D1 access and protected shell loading are verified.
-Actual hosted CI remains red: missing journal in the first run, dispatch failure
-in the next attempt. Setup and test resources are confirmed removed; the token is
-intentionally retained until its 24-hour expiry. Capture GitHub diagnostics before
-teardown and resolve the observed CI failure before claiming acceptance.
-[Evidence and limits](./release-0.9.0-verification-archive.md#codex-cf-token-bootstrap-2026-10-09).
-
-Approach: Plan code and bound resources together. Identify which D1, KV, R2,
-Durable Object, Queue, Workflow, and service bindings are isolated or shared.
-Use native Worker Previews only after upgrading and testing the pinned tooling.
-The native provider requires compatible Wrangler 4.x >=4.135.0 and checks actual
-preview/create/delete flags and account access; this batch verifies installed
-Wrangler 4.147.0 locally. Recheck provider contracts before changing this boundary.
-Track resource ownership so cleanup deletes only preview-owned resources.
-Define an explicit production build/promotion process and migration order.
-
-Start in CLI deployment services, scaffold CI templates, and CF-04 resource plans.
-Use [Cloudflare preview documentation](https://developers.cloudflare.com/workers/previews/)
-and [rollback documentation](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/).
-
-Done when: CI creates a preview, runs smoke tests, and cleans its owned resources
-without changing production. Failures leave inspectable state and cleanup can
-be retried. Code rollback does not claim to restore database or object data.
-Dependencies: CF-01, CF-02, CF-04, CF-06, and CF-10.
+Codex (2026-10-09): the exact reviewed manual scaffold workflow runs against
+installed tarballs on actual GitHub. Successful create, intentional smoke failure
+and restoration of the failure intent for cleanup retry all pass. Saved immutable
+preview/deployment/tag identities survive cleanup; provider reads confirm absence.
+Production settings/deployment/D1 stay unchanged, while separate staging D1
+records both smokes. Final owned Worker/D1/namespaces/repository teardown is
+independently verified. Native normalization handles omitted scope fields and
+asset progress before JSON without accepting foreign ownership or ambiguous output.
+Promotion and code/state rollback limits remain documented; no production
+promotion occurred. [Evidence and limitations](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
+[Original purpose, approach and full criteria](./release-0.9.0-plan-archive.md#cf-09).
 
 ## Release gates
 
@@ -244,43 +210,18 @@ circular dependency absent from the original plan. Final 0.9.0 artifact checks
 remain required under REL-04. [Original-plan and current-payload audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09).
 
 <a id="rel-02"></a>
-### REL-02: Executable docs and published packages
+### REL-02: Executable docs and published packages — complete
 
-Purpose: Repository aliases and workspace links can hide missing exports,
-undeclared dependencies, and broken examples. A user installs package artifacts,
-not the repository source tree.
-
-Baseline: Several package-contract and generated-app tests exist. The full
-tarball/runtime/recipe matrix and executable documentation coverage remain open.
-
-**Codex verified batch (2026-10-06).** Installed coverage now proves 200 concrete
-export targets, 74 Node imports, strict Bundler/NodeNext declaration imports,
-representative generated compositions, and fresh native D1 migration/model
-acceptance. Templates now declare authoritative operations; existing applied
-callback migration histories still reject changed checksums. CF-09 remains the original outstanding API-changing task dependency for REL-02;
-native Workflow lifecycle criteria now close through retained interruption proof
-and real hosted Waiting. Current retained public API/guide payloads match the
-implementation, with Studio asset/build-cache differences recorded in the
-[artifact audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09). A subsequent source/installed batch compiles all four unchanged
-Workflow guide snippets with generated Cloudflare types, checks NodeNext public
-exports and rejects invalid input/event types. Application-owned operation and
-authorization stubs prove contracts only; they do not implement those services.
-[Workflow evidence](./release-0.9.0-verification-archive.md#codex-workflow-native-lifecycle-2026-10-06).
-[Evidence and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06).
-
-Approach: Pack packages into a temporary local artifact set. Install them into
-fresh generated applications without workspace path aliases. Compile documented
-imports and examples. Build relevant presets for Cloudflare, Node, Deno, and
-Desktop. Exercise optional feature combinations and server-code stripping.
-Keep the matrix representative and document why each fixture exists.
-
-Start in `scripts/test-local-scaffold.mjs`, package exports/files declarations,
-scaffold tests, and examples from CLI-05 and CLI-08.
-
-Done when: Runtime imports and declaration imports resolve from tarballs alone.
-No demo-only module or missing dependency is required accidentally. Published
-test helpers and new provider entries work. Documentation examples use only
-the final public APIs. Dependencies: all API-changing tasks and RT-29.
+Codex (2026-10-09): current public APIs are proven through retained tarball-only
+exports, runtime/declaration imports, published helpers/providers, generated
+compositions and executable guides. Hosted Deno compiled artifacts and the new
+changed-CLI hosted preview lifecycle complete the remaining runtime/feature
+dependencies. No new public declaration or documentation-example API changes
+were introduced by the provider repair. Retained unchanged package evidence is
+linked in the [completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09); Studio asset/cache variation remains
+explicit. Final 0.9.0 versioning, rebuilt payloads and affected install checks
+belong to REL-04; REL-03's full green CLI/runtime gate is still required.
+[Original purpose, approach and full criteria](./release-0.9.0-plan-archive.md#rel-02).
 
 <a id="rel-03"></a>
 ### REL-03: Complete verification run

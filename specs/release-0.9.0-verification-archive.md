@@ -14493,3 +14493,135 @@ not acceptance. Baseline reports/tool settings/two Workflow probes preserved.
 REL-02 retains CF-09 dependency; REL-03 local Waiting/full CLI remains red;
 REL-04/05 versioning/affected artifact checks/final audit remain gated. Desktop
 remains complete with waived platform checks.
+
+## Codex hosted preview CI and public-artifact completion — 2026-10-09
+
+<a id="codex-hosted-ci-complete-2026-10-09"></a>
+
+Author: **Codex**. **55 complete / 3 open. CF-09 and REL-02 complete against
+original criteria; REL-03/04/05 remain open.** Versions remain 0.8.3. Desktop
+remains complete by user decision, with its remaining platform checks waived.
+
+One implementation agent exclusively owned the hosted CI fixture/tests, then
+sequentially the provider/tests. Codex reviewed all changes, caught a malformed
+REST-result regression, integrated fixes, owned cloud/GitHub operations and final
+verification. User baseline reports.md, .zcodeignore and both Workflow probe files
+are preserved and excluded from staging. No production promotion or publication.
+
+### Repairs proven by actual provider behavior
+
+The portable-tarball helper previously replaced pnpm-workspace.yaml and removed
+the generated explicit esbuild/workerd approvals. Actual GitHub installation
+failed with ERR_PNPM_IGNORED_BUILDS. Conversion now changes only owned package
+references/overrides, preserving approvals, denied builds, comments, package
+selection and other workspace settings. It uses scaffold's declared YAML
+dependency, not an undeclared dependency in the CLI package.
+
+Actual Cloudflare deployment bodies omit preview_id/preview_name. Normalization
+now uses the validated paired native preview or immutable REST endpoint context,
+while rejecting explicit foreign/null scope, absent deployment ID/tag and foreign
+ownership tags. Explicit deployment names receive independent preview identity
+verification. Malformed successful REST bodies return fixed diagnostics.
+
+Actual Wrangler 4.148.0 also emits asset progress before --json output. The
+provider accepts one complete trailing own-line object after textual progress;
+competing envelopes, malformed payloads and trailing junk reject. Existing byte
+limits, whitelisted results, exact creation identity, latest deployment/tag checks,
+redirect protection and deletion confirmation remain intact. No raw bindings,
+progress paths or exception values enter public results.
+
+GitHub failures now have real private receipts containing bounded, known-secret-
+redacted stdout/stderr/exit metadata; thrown messages contain only the fixed
+receipt reference. Completed run metadata/jobs/check annotations/logs are captured
+before artifact downloads and teardown. Diagnostic reads are best effort and
+never retry uncertain dispatch POSTs or replace missing acceptance evidence.
+Private directories/files use 0700/0600 permissions.
+
+### CF-09 original criteria
+
+The exact reviewed scaffold manual workflow was compared remotely at both refs.
+All twelve installed tarball blobs, portable package/workspace/lock references and
+private repository identity were verified before dispatch. Only the changed CLI
+was repacked as its behavior changed; other packages were retained unchanged.
+Final installed provider bytes match current source.
+
+| Criterion | Actual hosted evidence |
+| --- | --- |
+| CI creates and smoke-tests preview | GitHub run 37875418537 completes success; intent deployed, final cleaned; independent preview GET404. |
+| Failure preserves inspectable ownership | Run 37875541930 intentionally receives smoke failure; intent smoke-failed retains immutable preview/deployment/tag; final cleaned and GET404. |
+| Cleanup can be retried | Run 37875641680 completes success after restoring the prior failure intent artifact; exact ownership remains in the final cleaned journal. |
+| Separate staging resources | Distinct D1 UUIDs; production scope/visits remain production/0, staging changes staging/0→staging/2 through both hosted smokes. |
+| Production remains unchanged | Before/after parent settings and active deployment are identical; production D1 sentinel/rows are identical. |
+| Owned resources are cleaned | Both preview identities independently return404. Final Worker/two D1/known owned namespaces/private repository are absent; coordinator repeats independent reads. |
+| Promotion and rollback scope | Existing reviewed guidance keeps production deployment/promotion separate and states that code rollback does not restore database/object state. No production promotion was performed. |
+
+Private authoritative evidence: /tmp/cossack-preview-ci-20261009-agent/hosted/
+evidence.json and verification.json (**passed:true, missing:[]**), per-run immutable
+journals, provider snapshots and diagnostic receipts. Final cleanup-verified.json
+records teardown; coordinator-cleanup-verified.json repeats five exact Cloudflare
+404 reads, namespace inventory rejection of known owned IDs/preview references,
+and independent private repository404. This is not a claim to delete unrelated
+account resources. The scoped account token intentionally remains until
+2026-10-10T00:52:59Z, outside the repository; it is not cleaned test infrastructure.
+
+### Commands and results
+
+- `pnpm --filter cossack exec vitest run tests/cloudflare-preview-hosted-ci.test.js tests/preview-service.test.js tests/cloudflare-preview-provider.test.js tests/preview-secrets.test.js`:
+  **4 files / 159 passed / 1 hosted opt-in skipped**. Final log:
+  /tmp/cossack-preview-ci-combined-final-20261009.log. The skipped hosted case is
+  subsequently executed below, not represented as a local pass.
+- Interactive zsh exports COSSACK_PREVIEW_HOSTED_CI_OPTIONS pointing to the private
+  options.json, then `pnpm --filter cossack exec vitest run tests/cloudflare-preview-hosted-ci.test.js`:
+  **28 passed / zero skipped**, actual three-run lifecycle. Log:
+  /tmp/cossack-preview-ci-hosted-seventh-20261009.log. Terminal
+  **ACCEPTANCE_EXIT=0 / DIAGNOSTICS_EXIT=0 / CLEANUP_EXIT=0**.
+- `pnpm tsc --noEmit`: passes after final source changes; final log
+  /tmp/cossack-preview-ci-final-root-types-20261009.log. CLI has no separate package
+  typecheck script; unchanged packages retain their earlier ten-package evidence.
+- At the preceding normalization repair,
+  `COSSACK_PREVIEW_INSTALLED_ROOT=/tmp/cossack-preview-ci-20261009-agent/app pnpm --filter cossack exec vitest run tests/preview-installed-acceptance.test.js tests/preview-creation-native.test.js`:
+  **2 passed**, including real native failed-deployment/empty-preview cleanup retry.
+  Log: /tmp/cossack-preview-provider-fix-installed-20261009.log. Final asset-parser
+  behavior is proven by the later actual hosted run, not retroactively by this run.
+- Owned `git diff --check` passes, excluding unchanged user reports.md whitespace.
+  No unchanged full browser/package suite repeats or unchanged package repacking.
+
+Failed iterations remain failures: hosted-third fails on lost build approvals;
+hosted-fourth exposes missing native scope fields and initially blocks safe
+cleanup. After fixing normalization, source public cleanup independently recovers
+exact latest ownership and confirms both previews absent before final teardown.
+Hosted-fifth stops before dispatch because pnpm update normalized the private
+manifest's required file:./ prefix; the private manifest is corrected and verified
+before reprovisioning. Hosted-sixth exposes asset-progress text before JSON;
+cleanup succeeds but acceptance remains red. A separately owned diagnostic
+preview captures actual native output and is confirmed cleaned by the public
+service. Their logs/private archived receipts remain under the same /tmp root;
+all owned resources are absent. No assertion, ownership rule or requirement was
+weakened to obtain the final green run.
+
+### REL-02 original acceptance audit and remaining gates
+
+REL-02's last API-changing feature dependency CF-09 now closes. Retained current
+public import/example evidence remains valid: 200 export targets, 90 Bundler/88
+NodeNext declaration imports, 74 Node imports, published helpers/providers,
+representative generated applications and executable guides. Native database,
+Workflow composite and hosted Deno installed compiled-artifact results retain
+[their scope](#codex-svc04-waiting-provider-ci-2026-10-09). The changed CLI source is
+now freshly packed, installed and exercised through actual CI; provider repairs
+introduce no public declaration/example API changes. Other runtime/declaration/
+guide payloads match the prior [artifact audit](#codex-release-gate-order-audit-2026-10-09),
+with its explicitly recorded Studio CSS/asset names and build-cache variation.
+This is not a claim of byte-identical Studio output or final 0.9.0 artifacts.
+
+The original order permits REL-02 against current completed public APIs; REL-04
+then aligns versions/ranges/lock/templates, rebuilds and reruns affected artifact/
+install gates. REL-03 still lacks a green full CLI/runtime gate: strict local
+Waiting remains red because Miniflare disables the native hibernation transition;
+the expanded hosted Workflow experiment also remains red. Those baseline probes,
+provider statuses and required assertions are preserved. REL-04/05 remain gated
+on verification and final-version evidence. No complete release readiness claim.
+
+The checklist, compact current plan/handoff, changelog and release notes are
+updated once for this verified batch; historical failed checkpoints stay archived.
+All 17 added local documentation links/anchors resolve, and the 58-ID checklist
+count is verified as 55 complete / 3 open.

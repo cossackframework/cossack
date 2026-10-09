@@ -24,8 +24,14 @@ function previewRecord(value) {
 }
 function deploymentRecord(value, previewId, name) {
   const id = data(value, 'id'), tag = data(data(value, 'annotations'), 'workers/tag');
+  // Native output pairs this body with a validated preview; REST reads are
+  // scoped to its immutable ID. The provider does not always repeat scope
+  // fields, but any explicit field must agree with that trusted context.
+  const hasPreviewId = value && Object.hasOwn(value, 'preview_id');
+  const hasPreviewName = value && Object.hasOwn(value, 'preview_name');
   if (!valid(id) || typeof tag !== 'string' || tag.length < 1 || tag.length > 128 || /[^\x20-\x7e]/.test(tag)
-    || data(value, 'preview_id') !== previewId || (name !== undefined && data(value, 'preview_name') !== name)) return undefined;
+    || (hasPreviewId && data(value, 'preview_id') !== previewId)
+    || (hasPreviewName && (name === undefined || data(value, 'preview_name') !== name))) return undefined;
   return { id, tag };
 }
 function providerUrl(preview, deployment) {
@@ -41,6 +47,16 @@ function providerUrl(preview, deployment) {
     urls.push(url.origin);
   }
   return urls.find(url => new URL(url).hostname.endsWith('.workers.dev')) ?? urls[0];
+}
+
+function nativeDeploymentOutput(stdout) {
+  try { return JSON.parse(stdout); } catch { /* Asset-upload progress can precede --json output. */ }
+  // Only a complete trailing object on its own line is accepted. Reject an
+  // earlier object/array start in the prefix rather than choosing between
+  // competing envelopes. Parsing the whole suffix also rejects trailing junk.
+  const match = /^[\t ]*\{/m.exec(stdout);
+  if (!match || /^[\t ]*\[/m.test(stdout.slice(0, match.index))) return undefined;
+  try { return JSON.parse(stdout.slice(match.index)); } catch { return undefined; }
 }
 
 function nativeRunner(binary) {
@@ -255,7 +271,18 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
     async inspectDeployment(worker, previewId, deploymentId, { signal } = {}) {
       const value = await read(worker, [previewId, deploymentId], signal);
       if (value.status !== 'ok') return value;
-      const deployment = deploymentRecord(value.result, previewId);
+      if (!value.result || typeof value.result !== 'object' || Array.isArray(value.result)) return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
+      let name;
+      if (Object.hasOwn(value.result, 'preview_name')) {
+        // An explicit name needs independent identity proof as this entry
+        // point receives only the saved immutable preview ID.
+        const current = await read(worker, [previewId], signal);
+        if (current.status !== 'ok') return current.status === 'absent' ? unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID') : current;
+        const preview = previewRecord(current.result);
+        if (!preview || preview.id !== previewId) return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
+        name = preview.name;
+      }
+      const deployment = deploymentRecord(value.result, previewId, name);
       return deployment && deployment.id === deploymentId ? { status: 'present', deployment } : unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID');
     },
     async recoverDeployment(worker, previewName, ownershipTag, { signal } = {}) {
@@ -282,8 +309,7 @@ export function createWranglerPreviewProvider(projectRoot, options = {}) {
       const config = await configuration(configPath); if (config.status !== 'ok') return config;
       const value = await run(['preview', '--name', name, '--worker-name', worker, '--tag', tag, '--json', ignoreConfigurationFlag, '--config', config.filename], signal);
       if (value.status !== 'ok') return value;
-      let result;
-      try { result = JSON.parse(value.stdout); } catch { return unknown('COSSACK_CF_PREVIEW_OUTPUT_INVALID'); }
+      const result = nativeDeploymentOutput(value.stdout);
       const rawPreview = data(result, 'preview'), rawDeployment = data(result, 'deployment');
       const preview = previewRecord(rawPreview), deployment = preview && deploymentRecord(rawDeployment, preview.id, name);
       const url = providerUrl(rawPreview, rawDeployment);

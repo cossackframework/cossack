@@ -7,8 +7,8 @@ in scope. Package versions change only after implementation and verification.
 - [x] **Desktop scope is complete for 0.9.0 by user decision (2026-10-05).**
   Remaining Desktop-only platform checks are waived, not reported as passed.
   Do not reopen Desktop unless requested. Focus on shared framework, CLI/agent
-  tooling and Cloudflare. REL-02/REL-03 remain open for their non-Desktop
-  acceptance; the numbered release task count is 53 complete / 5 open.
+  tooling and Cloudflare. REL-03 remains open for its non-Desktop
+  acceptance; the numbered release task count is 55 complete / 3 open.
 
 Read [the detailed implementation plan](./release-0.9.0-plan.md) for each task's
 purpose, baseline, approach, dependencies, and acceptance criteria. The task IDs
@@ -77,14 +77,14 @@ remain archived, and the verification log below retains test evidence.
 - [x] [CF-06](./release-0.9.0-plan.md#cf-06) Built artifact/workerd tests for authentication, RPC, assets, SSG, bindings, migrations, and realtime.
 - [x] [CF-07](./release-0.9.0-plan.md#cf-07) Public-only SSG and correct Worker-first routing for protected assets.
 - [x] [CF-08](./release-0.9.0-plan.md#cf-08) Structured redacted failures, correlation, server source maps and artifact/startup budgets. Codex (2026-10-09): current installed production Worker proves caller UUID correlation in native tail and stored Workers Logs, redaction, provider-remapped authored source and native provider startup measurement. Prior source/installed compiler, browser and measured budget-regression acceptance retained. Owned Worker/Workflow/D1/DO resources are confirmed removed. [Completion evidence](./release-0.9.0-verification-archive.md#codex-hosted-cf08-complete-2026-10-09).
-- [ ] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance. Codex: native preview CLI/CI, explicit staging secrets, latest-tag receipt recovery and ownership-verified cleanup pass source/installed local acceptance, including generated-app workerd smoke. Codex (2026-10-06): no-tag cleanup with saved creation identity, independent absent-latest proof and retry now passes real Wrangler 4.147 source/installed loopback acceptance; current/legacy default-bypass flags are negotiated from actual help. Hosted account/CI isolation remains open; lost creation identity still requires manual recovery. Codex (2026-10-09): cf-created temporary account token is verified; two real hosted attempts fail and are not counted as passing. All setup/test resources are confirmed removed. [Credential/CI evidence](./release-0.9.0-verification-archive.md#codex-cf-token-bootstrap-2026-10-09). [Current evidence](./release-0.9.0-verification-archive.md#codex-preview-creation-release-build-2026-10-06). [Evidence](./release-0.9.0-verification-archive.md#codex-preview-secrets-recovery-2026-10-06).
+- [x] [CF-09](./release-0.9.0-plan.md#cf-09) Isolated preview/CI resources, smoke checks, promotion, cleanup, and accurate code/state rollback guidance. Codex (2026-10-09): actual hosted installed CLI proves successful creation, intentional smoke failure, saved immutable journals and cleanup retry. Production settings/deployment/D1 remain unchanged; staging D1 receives both smokes. Preview and final test-resource absence are independently verified. Promotion remains a separate reviewed deployment; code rollback does not restore state. [Completion and limits](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
 - [x] [CF-10](./release-0.9.0-plan.md#cf-10) Executable public installation/deployment guide, custom domains, named environments, SSG and tested compatibility. [Codex installed acceptance and limits](./release-0.9.0-verification-archive.md#codex-cf10-release-batch-2026-10-06); remote preview/resource readiness remains separate.
 - [x] [CF-11](./release-0.9.0-plan.md#cf-11) Remove tracked credential values; report any required external credential rotation without exposing values.
 
 ## Release gates
 
 - [x] [REL-01](./release-0.9.0-plan.md#rel-01) Fix reports.md issues and verify package/SSG regressions.
-- [ ] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex: hosted Deno compiled installed-artifact acceptance passes; current retained public APIs/guides match source; CF-09 remains its original API-changing task dependency. Native Workflow lifecycle criteria are complete. Version bump and affected artifact rechecks follow in REL-04. [Gate-order audit](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09). [Evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
+- [x] [REL-02](./release-0.9.0-plan.md#rel-02) Compile documentation examples and validate generated applications and published tarballs. Codex (2026-10-09): retained tarball-only imports/declarations/helpers/providers/generated applications and public-API examples, hosted Deno and new changed-CLI hosted acceptance satisfy the original criteria; CF-09 closes its last feature dependency. Final version alignment and affected artifact rechecks remain REL-04. [Completion audit](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).
 - [ ] [REL-03](./release-0.9.0-plan.md#rel-03) Run build, root TypeScript command, package type checks, unit tests, and relevant end-to-end/runtime tests. Codex: standalone Deno draining and hosted Deploy HTTP/SSE/WebSocket acceptance pass; external PostgreSQL/MySQL omissions now pass, while strict local Waiting/full CLI and the final matrix remain. [Hosted evidence](./release-0.9.0-verification-archive.md#codex-deno-deploy-hosted-2026-10-09).
 - [ ] [REL-04](./release-0.9.0-plan.md#rel-04) Update all release versions to 0.9.0, lockfile, changelog, migration guide, and release notes. Codex: Unreleased changelog/release notes and current-API migration coverage are reviewed; all 58 IDs map to upgrade guidance, with nine compiled examples unchanged. Versioning and affected artifact checks remain gated. [Migration audit](./release-0.9.0-verification-archive.md#codex-migration-coverage-2026-10-09). [Prose and gate-order review](./release-0.9.0-verification-archive.md#codex-release-gate-order-audit-2026-10-09). [Evidence](./release-0.9.0-verification-archive.md#codex-production-source-maps-release-gates-2026-10-06).
 - [ ] [REL-05](./release-0.9.0-plan.md#rel-05) Audit every checklist item against implementation and verification evidence before marking the goal complete.
@@ -2122,3 +2122,18 @@ zero skips; cleanup regressions4 pass. CI preparation/evidence assertions are
 verified locally; hosted CI awaits the promised portable token. Final root/all
 ten non-Desktop types pass. Versions0.8.3; Desktop waived.
 [Commands, failed attempts and exact remaining gates](./release-0.9.0-verification-archive.md#codex-svc04-waiting-provider-ci-2026-10-09).
+
+### Codex — hosted preview CI and public-artifact gates complete (2026-10-09)
+
+**55 complete / 3 open. CF-09 and REL-02 complete.** Fixed actual native
+deployment response parsing and preserved generated pnpm build approvals in the
+portable CI fixture. Three real GitHub runs prove successful create, intentional
+smoke failure and cleanup retry; immutable journals/provider absence, staging
+isolation and unchanged production all pass. Hosted suite: **28 passed**. Combined
+local checks: **159 passed / 1 hosted opt-in skipped**; the hosted case subsequently
+ran and passed. Root `pnpm tsc --noEmit` passes. Two installed recipe/native-empty
+cleanup checks passed at the preceding normalization repair; final changed-CLI
+behavior is proven by the hosted run. Only changed CLI artifacts were repacked.
+Independent final resource/repository cleanup passes. REL-03 strict local Waiting/
+full CLI stays red; REL-04/05 remain gated. Desktop remains waived.
+[Commands, failed iterations, retained evidence and limits](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09).

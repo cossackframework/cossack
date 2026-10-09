@@ -210,8 +210,10 @@ proof plus real hosted literal Waiting observations. Strict local Waiting and
 the full CLI gate remain unresolved. The broader hosted lifecycle experiment also
 failed and is not counted as passing evidence; it does not reopen the original
 SVC-04 criteria closed by the composite evidence. A full green CLI result and
-complete final release matrix are not claimed. Hosted preview CI still
-needs its portable deployment token and completed real runs. Package version,
+complete final release matrix are not claimed. Hosted preview CI now proves
+creation, intentional smoke failure, immutable-journal cleanup retry, staging
+isolation and unchanged production. Owned test resources and repository are
+confirmed absent. The current public-artifact gate REL-02 is complete. Package version,
 lockfile, template references and affected installed checks remain REL-04 work;
 the final requirement audit remains REL-05 work.
 

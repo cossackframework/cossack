@@ -4,7 +4,7 @@
 
 This entry describes the implemented 0.9.0 work. It is a release candidate
 record, not an announcement that 0.9.0 is available. Package versions remain
-0.8.3. Hosted preview CI, complete release verification, version alignment and
+0.8.3. Complete release verification, version alignment and
 the final requirement audit remain open in the [release checklist](specs/release-0.9.0.md).
 See the [release notes](specs/release-notes-0.9.0.md) and
 [migration guide](specs/migration-0.9.0.md) before upgrading.
@@ -42,8 +42,8 @@ See the [release notes](specs/release-notes-0.9.0.md) and
 - Cloudflare environment/target validation, resource selection plans, required
   secrets, distributed SSE, private server source maps, correlated failure events
   and build/startup budget checks. Native preview CLI and a trusted manual CI
-  template include staging secrets and ownership journals; hosted CI acceptance
-  remains pending. [Deployment](docs/deployment.md),
+  template include staging secrets and ownership journals. Actual hosted CI proves
+  creation, failed-smoke cleanup, cleanup retry and unchanged production. [Deployment](docs/deployment.md),
   [resources](docs/cloudflare-resources.md), [SSE](docs/sse.md),
   [logging](docs/server-logging.md), [budgets](docs/build-budgets.md),
   [previews](docs/cloudflare-previews.md).

@@ -8,6 +8,8 @@ const accountId = 'a'.repeat(32), token = 'PRIVATE_PROVIDER_TOKEN';
 const repository = path.resolve(import.meta.dirname, '../../..');
 const preview = { id: 'preview-id', name: 'pr-42', created_on: '2026-10-06T00:00:00.000Z', urls: ['https://pr-42.worker.example.workers.dev'], env: { PRIVATE_TOKEN: token } };
 const deployment = { id: 'deployment-id', preview_id: 'preview-id', preview_name: 'pr-42', annotations: { 'workers/tag': 'cossack-owner-id' }, env: { PRIVATE_TOKEN: token } };
+// Actual Wrangler 4.148 and scoped REST bodies omit preview_id/preview_name.
+const nativeDeployment = { id: deployment.id, annotations: deployment.annotations, urls: preview.urls, env: deployment.env };
 const folders = [];
 afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(folders.splice(0).map(folder => fs.rm(folder, { recursive: true, force: true }))); });
 const ok = value => ({ exitCode: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
@@ -32,6 +34,83 @@ async function config(account = accountId) {
 const response = value => new Response(JSON.stringify({ success: true, result: value }));
 
 describe('Wrangler preview provider transport', () => {
+  it('normalizes actual field-absent native deployment output without losing immutable preview identity or tag', async () => {
+    const { provider } = fixture({ runner: async args => args.includes('--help') ? ok('--name --worker-name --json --ignore-base-config --tag --skip-confirmation')
+      : args[0] === '--version' ? ok('4.148.0') : args[0] === 'whoami' ? ok({ loggedIn: true, accounts: [{ id: accountId }] })
+        : ok({ preview, deployment: nativeDeployment }) });
+    await provider.verify();
+    expect(await provider.deploy(await config(), 'worker', 'pr-42', 'cossack-owner-id')).toEqual({
+      status: 'deployed', preview: { id: preview.id, name: preview.name, createdOn: preview.created_on },
+      deployment: { id: deployment.id, tag: 'cossack-owner-id' }, url: preview.urls[0],
+    });
+  });
+  it('accepts actual native asset progress followed by one trailing JSON envelope without exposing progress or bindings', async () => {
+    const prefix = '🌀 Building list of assets...\n✨ Read 19 files from the assets directory /private/app/dist/client\n🌀 Starting asset upload...\nNo updated asset files to upload. Proceeding with deployment...\n';
+    const output = prefix + JSON.stringify({ preview, deployment: nativeDeployment }, null, 2) + '\n';
+    const { provider } = fixture({ runner: async args => args.includes('--help') ? ok('--name --worker-name --json --ignore-base-config --tag --skip-confirmation')
+      : args[0] === '--version' ? ok('4.148.0') : args[0] === 'whoami' ? ok({ loggedIn: true, accounts: [{ id: accountId }] }) : ok(output) });
+    await provider.verify();
+    const result = await provider.deploy(await config(), 'worker', 'pr-42', 'cossack-owner-id');
+    expect(result).toEqual({ status: 'deployed', preview: { id: preview.id, name: preview.name, createdOn: preview.created_on },
+      deployment: { id: deployment.id, tag: 'cossack-owner-id' }, url: preview.urls[0] });
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(JSON.stringify(result)).not.toContain('/private/app');
+  });
+  it.each([
+    'progress\n' + JSON.stringify({ preview, deployment: nativeDeployment }) + '\ntrailing junk',
+    'progress ' + JSON.stringify({ preview, deployment: nativeDeployment }),
+    '{}\n' + JSON.stringify({ preview, deployment: nativeDeployment }),
+    'progress\n[]\n' + JSON.stringify({ preview, deployment: nativeDeployment }),
+    'progress\n{malformed\n' + JSON.stringify({ preview, deployment: nativeDeployment }),
+    'progress\n' + JSON.stringify({ preview, deployment: nativeDeployment }) + '\n' + JSON.stringify({ preview, deployment: nativeDeployment }),
+    'progress\n' + JSON.stringify({ preview, deployment: { ...nativeDeployment, annotations: { 'workers/tag': 'foreign' } } }),
+  ])('rejects ambiguous, malformed, non-line-start, trailing or foreign-owner native envelopes', async output => {
+    const { provider } = fixture({ runner: async args => args.includes('--help') ? ok('--name --worker-name --json --ignore-base-config --tag --skip-confirmation')
+      : args[0] === '--version' ? ok('4.148.0') : args[0] === 'whoami' ? ok({ loggedIn: true, accounts: [{ id: accountId }] }) : ok(output) });
+    await provider.verify();
+    expect(await provider.deploy(await config(), 'worker', 'pr-42', 'cossack-owner-id'))
+      .toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OUTPUT_INVALID' });
+  });
+  it('recovers actual latest deployment shape only through independent immutable-ID scope and matching tag', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response(nativeDeployment));
+    const { provider } = fixture({ fetch: fetcher });
+    expect((await provider.recoverDeployment('worker', 'pr-42', 'cossack-owner-id')).status).toBe('recovered');
+    expect(fetcher.mock.calls[1][0]).toContain('/previews/preview-id/deployments/latest');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it('inspects actual field-absent deployment shape with no invented preview scope fields or extra requests', async () => {
+    const fetcher = vi.fn(async () => response(nativeDeployment));
+    expect(await fixture({ fetch: fetcher }).provider.inspectDeployment('worker', preview.id, deployment.id)).toEqual({
+      status: 'present', deployment: { id: deployment.id, tag: 'cossack-owner-id' },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toContain('/previews/preview-id/deployments/deployment-id');
+  });
+  it.each([null, undefined, [], 'malformed', 42, { preview_name: null }])('rejects malformed successful deployment REST payload without throwing', async result => {
+    const fetcher = vi.fn(async () => response(result));
+    expect(await fixture({ fetch: fetcher }).provider.inspectDeployment('worker', preview.id, deployment.id))
+      .toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OUTPUT_INVALID' });
+  });
+  it.each([
+    { ...nativeDeployment, preview_id: 'foreign' }, { ...nativeDeployment, preview_name: 'foreign' },
+    { ...nativeDeployment, preview_id: null }, { ...nativeDeployment, preview_name: null },
+    { ...nativeDeployment, id: '' }, { ...nativeDeployment, annotations: {} },
+    { ...nativeDeployment, annotations: { 'workers/tag': 'foreign-tag' } },
+  ])('rejects explicit foreign scope, missing ownership or mismatched tag from native paired output', async bad => {
+    const { provider } = fixture({ runner: async args => args.includes('--help') ? ok('--name --worker-name --json --ignore-base-config --tag --skip-confirmation')
+      : args[0] === '--version' ? ok('4.148.0') : args[0] === 'whoami' ? ok({ loggedIn: true, accounts: [{ id: accountId }] })
+        : ok({ preview, deployment: bad }) });
+    await provider.verify();
+    expect(await provider.deploy(await config(), 'worker', 'pr-42', 'cossack-owner-id')).toEqual({ status: 'unknown', code: 'COSSACK_CF_PREVIEW_OUTPUT_INVALID' });
+  });
+  it.each([
+    response({ ...preview, id: 'foreign' }), response({ ...preview, name: 'foreign' }),
+    new Response('', { status: 403 }), new Response('', { status: 404 }),
+  ])('fails closed when explicit deployment name cannot be independently matched to immutable preview identity', async current => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(deployment)).mockResolvedValueOnce(current);
+    expect((await fixture({ fetch: fetcher }).provider.inspectDeployment('worker', preview.id, deployment.id)).status).toBe('unknown');
+    expect(fetcher.mock.calls[1][0]).toMatch(/\/previews\/preview-id$/);
+  });
   it('isolates every native run in a fresh mode-700 private log directory and removes logs on success', async () => {
     const logPaths = [];
     const runner = async (args, context) => {
@@ -146,13 +225,14 @@ describe('Wrangler preview provider transport', () => {
     expect(calls).toHaveLength(5);
   });
   it('reads exact account-scoped provider paths without following redirects or exposing auth', async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response(deployment));
+    const fetcher = vi.fn().mockResolvedValueOnce(response(preview)).mockResolvedValueOnce(response(deployment)).mockResolvedValueOnce(response(preview));
     const { provider } = fixture({ fetch: fetcher });
     expect(await provider.inspect('worker', 'pr-42')).toEqual({ status: 'present', preview: { id: 'preview-id', name: 'pr-42', createdOn: preview.created_on } });
     expect(await provider.inspectDeployment('worker', 'preview-id', 'deployment-id')).toEqual({ status: 'present', deployment: { id: 'deployment-id', tag: 'cossack-owner-id' } });
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews/pr-42`,
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews/preview-id/deployments/deployment-id`,
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/workers/worker/previews/preview-id`,
     ]);
     expect(fetcher.mock.calls[0][1]).toMatchObject({ method: 'GET', redirect: 'error', headers: { authorization: 'Bearer ' + token } });
   });
