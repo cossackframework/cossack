@@ -2164,3 +2164,17 @@ No product changes, repacks, installations or cloud writes. Scenarios 1–4 now
 pass at current versions; hosted scenario 5, strict local Waiting/full CLI,
 final versions/artifacts and requirement audit remain. Desktop stays waived.
 [Commands, observations and limits](./release-0.9.0-verification-archive.md#codex-cross-feature-scenarios-123-2026-10-09).
+
+### Codex — hosted staging scenario 5 complete (2026-10-09)
+
+**55 complete / 3 open; no numbered task closes.** All five original cross-feature
+compositions now pass at current versions. Actual GitHub CI plans/applies the exact
+staging migration, checks persisted checksum/no pending work, builds with staging
+bindings, tests anonymous/authorized protected assets and decorated RPC, preserves
+production and cleans owned resources. Combined: **24 passed / 0 skipped**; root
+`pnpm tsc --noEmit` and installed app local types/build/native smoke pass. Separate
+coordinator reads confirm production fixture rows and final cloud/repository absence.
+The initial setup guard failure and recovered deletion are retained in the archive.
+No original workflow template/product API changes or repacks. Strict local Waiting/
+full CLI, final versions/artifacts and final requirement audit remain open; Desktop
+stays waived. [Commands, receipts and limits](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09).

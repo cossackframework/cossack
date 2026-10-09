@@ -1,11 +1,11 @@
 # Cossack 0.9.0 cross-feature evidence audit
 
-Author: Codex. Source/evidence review and installed scenarios 1–4 acceptance, 2026-10-09.
+Author: Codex. Source/evidence review and installed scenarios 1–5 acceptance, 2026-10-09.
 
 This indexes the five exact [cross-feature scenarios](./release-0.9.0-plan.md#cross-feature-acceptance-scenarios).
 It does not close REL-03 or REL-05. The initial review performed no tests, builds,
-packing or provider writes; the follow-ups below execute installed native/browser
-and CLI/MCP acceptance. Package versions remain 0.8.3. Desktop's remaining
+packing or provider writes; the follow-ups below execute installed native/browser,
+CLI/MCP and hosted CI acceptance. Package versions remain 0.8.3. Desktop's remaining
 checks are waived by the user and outside this audit.
 
 “Proven” below means the stated assertion has execution evidence at the named
@@ -111,28 +111,28 @@ The [new installed sequence](./release-0.9.0-verification-archive.md#codex-workf
 
 | Criterion | Evidence and scope | Result |
 | --- | --- | --- |
-| Actual CI builds staging artifact with staging bindings | [Hosted CI runner](../packages/cossack/tests/fixtures/cloudflare-preview-hosted-ci.js) verifies immutable private repository identity, exact authored workflow bytes, portable tarball blobs/lock and actual completed GitHub workflow runs. Staging and production have distinct D1 IDs. | Proven actual hosted CI; not a mocked job result. |
-| Explicit migration plan applied to intended test target | [Generated migration verifier](../scripts/verify-generated-migration-plans.mjs), [migration tests](../packages/database/test/tooling.test.ts) and installed recipe matrix verify authoritative plans/apply/rollback locally. The hosted preview smoke uses a prepared sentinel table; it does not invoke the public migration planner/apply command in CI. | Proven local/generated migration acceptance. Missing combined hosted CI plan/apply proof with intended target receipt. |
-| Protected assets and authenticated RPC tested in CI | [Hosted CI acceptance test](../packages/cossack/tests/cloudflare-preview-hosted-ci.test.js) and runner prove smoke outcomes/D1 visits, not authentication/assets/RPC behavior. Generated protected-route and policy tests cover that behavior separately. | Missing combined hosted preview checks for protected assets and authorized/unauthorized RPC. Smoke success alone is insufficient. |
-| Preview-owned resources cleaned | Actual success/failure/retry journals retain exact preview/deployment/tag ownership; independent GET404 and final cleanup inventories confirm absence. Existing staging resources are retained by preview cleanup and removed separately by their setup owner. | Proven hosted cleanup, including deliberate smoke failure and later journal restoration. |
-| Production remains unchanged | Independent before/after parent settings, active deployment and production D1 sentinel remain identical; staging visits change 0→2. | Proven for the owned acceptance parent/production D1, not the user's unrelated production services. |
+| Actual CI builds staging artifact with staging bindings | [Hosted composition runner](../packages/cossack/tests/fixtures/hosted-staging-scenario-ci.js) verifies the manual workflow with bounded acceptance additions, immutable private repository/run identity and retained tarball blobs/lock. The [app script](../packages/cossack/tests/fixtures/hosted-staging-scenario-app.js) invokes public `deploy --dry-run --env staging` and verifies artifact account, D1 UUID and staging mode. | Proven in actual GitHub run 37880536071. This explicit staging build is separate from the preview CLI's build; native preview overrides independently select the same staging D1. |
+| Explicit migration plan applied to intended test target | CI invokes installed public `migration plan/up/status/plan --remote --env staging`. It checks exact account, binding and UUID before apply, then verifies the planned checksum in applied history and no pending migrations. | Proven together in hosted CI against fresh staging D1. |
+| Protected assets and authenticated RPC tested in CI | Actual preview HTTP checks reject anonymous asset/RPC with 401, verify protected asset contents with authorized 200, and invoke a decorated RPC using actual Cossack hydration. Forged anonymous state leaves zero effects; authorized RPC creates one row, independently read through D1 API. | Proven together in the same hosted preview. Server-owned synthetic cookie identity; no real login claim. |
+| Preview-owned resources cleaned | Deployed/cleaned journals preserve exact immutable preview/deployment/tag ownership and independent GET404. Existing staging D1 is retained by preview cleanup; setup-owner teardown then removes its Worker/D1 pair/known DO namespaces and private repository, with separate coordinator absence reads. | Proven, including independent final cleanup. Earlier CF-09 success/failure/retry matrix remains separate valid evidence. |
+| Production remains unchanged | Before/after parent settings, active deployment and full D1 schema/sentinel match; staging visits change 0→1 and effects are exactly 1. A separate coordinator read after CI confirms every production fixture row matches its owned bootstrap. | Proven for the owned acceptance parent/production database; no unrelated production resources were touched. |
 
-Recorded execution: [hosted CI completion](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09)
-records actual GitHub runs **37875418537** (success), **37875541930** (intentional
-smoke failure) and **37875641680** (cleanup retry), hosted suite **28 passed**,
-and independent Worker/D1/DO/repository cleanup. The private repository is deleted;
-retained private receipts, not a live repository URL, are authoritative.
-[Migration acceptance](./release-0.9.0-verification-archive.md#codex-rt16-rt22-complete-2026-10-05)
-and installed/native release acceptance retain local plan/apply/rollback coverage.
-CF-08 hosted logging evidence does not supply the missing CI migration/RPC checks.
+Recorded execution: [hosted staging composition](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09) records actual
+run **37880536071**, combined **24 passed / 0 skipped**, root types and independent
+teardown. Private receipts remain under /tmp/cossack-hosted-staging-20261009;
+its temporary repository and cloud resources are deleted. Initial setup's missing
+request-signal flag failed the existing guard and both created databases were
+verified deleted before retrying with fresh resources.
+The earlier [CF-09 matrix](./release-0.9.0-verification-archive.md#codex-hosted-ci-complete-2026-10-09)
+retains its three-run failure/retry coverage; it was not repeated unchanged.
 
 ## Integration follow-up
 
-Scenarios 1–4 now have combined installed acceptance at current 0.8.3 versions.
-Scenario 5 retains its explicit hosted migration/protected asset/RPC gaps above.
+Scenarios 1–5 now have combined installed acceptance at current 0.8.3 versions,
+including actual hosted CI for scenario 5.
 These are acceptance obligations, not new feature requests.
-The coordinator should decide the smallest existing fixture extension per missing
-scope and record actual execution before claiming REL-05 complete. Original task
+Retain the recorded scopes and rerun affected installed acceptance at final
+versions before claiming REL-05 complete. Original task
 completion remains governed by each task's own acceptance criteria. REL-03 still
 requires its full implementation gate and affected final-version evidence;
 REL-04 owns version alignment, builds and installed artifact checks. None of those

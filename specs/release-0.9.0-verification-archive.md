@@ -14921,3 +14921,117 @@ Coordinator documentation validation: **523 local links/anchors resolve**, all
 58 numbered checklist rows account for 55 complete / 3 open, and owned-file
 syntax/whitespace checks pass. Only the six new acceptance fixture/test files and
 five release-record files belong to this batch; unrelated user files are excluded.
+
+
+<a id="codex-hosted-staging-scenario-2026-10-09"></a>
+## Codex — hosted staging scenario (2026-10-09)
+
+Tasks: closes original cross-feature acceptance **scenario 5** within REL-03/05.
+No numbered task closes: **55 complete / 3 open**, REL-03/04/05. All five original
+compositions now have current-version proof; packages remain 0.8.3.
+
+Two implementation agents exclusively own the new app and CI fixture/test pairs:
+`hosted-staging-scenario-app.js` / its test and `hosted-staging-scenario-ci.js` /
+its test. Coordinator reviews/integrates both, strengthens exact preview URL,
+binding and applied-name verification, and owns temporary infrastructure, hosted
+execution, independent reads, cleanup and this single record update. Product APIs
+and the original scaffold manual workflow template remain unchanged.
+
+The app uses a protected static file and a real decorated HTTP server method with
+server-owned synthetic cookie identity. Its declarative SQLFragment migration and
+`createD1ToolingAdapter` use installed public ORM APIs. The acceptance-only workflow
+adds migration/staging-build, HTTP smoke and receipt upload around the reviewed
+manual workflow's existing create/cleanup/journal steps. Existing steps, input
+validation, manual invocation, permissions and trust gates remain unchanged;
+deployment token is scoped to migration/create/cleanup and absent from HTTP smoke.
+
+Actual GitHub run **37880536071** concludes **success** at immutable head
+`b7292fb` (full SHA retained privately). Hosted dependencies use the retained file
+tarballs, including the latest previously verified CLI CI artifact; remote git blob
+hashes and portable locked dependency metadata match. No packages were repacked.
+
+Observed acceptance:
+
+- Public `migration plan --remote --env staging` identifies exact test account,
+  binding DB and staging D1 UUID `3b1b022f-f00c-42ff-b924-a34ab6767a82` before apply.
+  Exactly one planned CREATE TABLE statement applies through public `migration up`.
+  Public status retains checksum
+  `6b3d4cbd499436e445f0b05ed568ca02dfd658b53ce32b5c69e1dd053fbc9ad6`;
+  a subsequent public plan has zero pending migrations.
+- Public `deploy --dry-run --env staging` explicitly builds an artifact with the
+  intended account, same staging UUID and MODE=staging. This build is distinct
+  from preview CLI's base build; the actual native preview uses staging overrides.
+  Do not claim the exact earlier staging artifact was deployed unchanged.
+- Actual hosted preview network requests reject anonymous protected asset and
+  forged direct RPC with 401. Authorized asset contents and actual decorated RPC
+  return pass with 200. Hydration supplies real route/scope identifiers. D1 effects
+  stay 0 after denial, become 1 after acceptance, and an independent D1 API read
+  confirms exactly one row. Staging sentinel visits become 1.
+- Before/after production Worker settings, active deployments and full D1 schema/
+  sentinel match. Separate coordinator read after successful CI confirms all
+  production fixture rows equal the owned bootstrap `id=1, scope=production,
+  visits=0`. This asserts the owned test resources, not unrelated production.
+- Actual deployed and cleaned journals retain identical preview/deployment/tag
+  ownership; independent provider GET404 confirms the preview is absent. Preview
+  cleanup retains the existing staging D1. Guarded setup-owner cleanup removes
+  the parent Worker, both D1 databases, known DO namespaces and temporary private
+  repository. A separate coordinator read independently reconfirms their absence.
+
+Verification commands/results:
+
+```text
+pnpm --filter cossack exec vitest run tests/hosted-staging-scenario-app.test.js tests/hosted-staging-scenario-ci.test.js
+  during integration: 23 passed / 1 hosted opt-in skipped
+COSSACK_HOSTED_STAGING_OPTIONS=/tmp/cossack-hosted-staging-20261009/options.json pnpm --filter cossack exec vitest run tests/hosted-staging-scenario-app.test.js tests/hosted-staging-scenario-ci.test.js
+  actual combined batch: 24 passed / 0 skipped, 154.09 seconds
+pnpm tsc --noEmit
+  coordinator integrated root check: passed
+node --check on all four owned JS files; owned-file git diff --check
+  passed
+```
+
+The actual batch shell loads the existing private account credential through
+interactive zsh; no credentials appear in argv, repository or receipts. The
+fixture's deterministic verifier/loopback tests are regression tests, not hosted
+provider evidence. The opt-in case above actually runs hosted CI once. No unchanged
+CF-09 three-run matrix, broad units, installed artifact matrix or packs are repeated.
+
+Agent local evidence: **5 app tests passed**. Actual independently installed app
+`pnpm exec tsc --noEmit`, production Vite build and full native network smoke pass
+in /tmp/cossack-hosted-staging-20261009/app; final native record is
+/tmp/cossack-staging-app-KMIPZl, owner closes its harness. Public local migration
+plan/up passes against tooling's local D1; the separate native smoke harness applies
+authoritative planned statements to its fresh D1. Those two local scopes are not
+represented as the hosted plan/apply proof, which the GitHub run supplies.
+
+Failed setup/recovery: first cloud setup reaches the unchanged deploy guard and
+fails `COSSACK_REQUEST_SIGNAL_REQUIRED` because the temporary configuration omitted
+`enable_request_signal`. No parent/repository/preview is created in that attempt;
+both D1 UUIDs are verified deleted. Corrected configuration uses fresh resources.
+The local native smoke receipt was removed from the private repository before
+hosted dispatch; CI must generate its own receipts. No requirement/assertion is
+weakened and no provider status is inferred.
+
+Private evidence root: /tmp/cossack-hosted-staging-20261009. Relevant files:
+`combined.log`, `root-types.log`, `batch-result.json`,
+`hosted/staging-evidence.json`, `hosted/staging-verification.json`,
+`hosted/37880536071/scenario/`, run diagnostics/immutable journals,
+`production-full-rows-verified.json`, `cleanup-verified.json`,
+`coordinator-cleanup-verified.json`, plus `owned-preflight-failed.json` and
+`cleanup-preflight-failed.json`. Final batch reports passed=true, cleaned=true;
+coordinator Worker/D1/repository reads return 404 and owned namespace IDs are absent.
+Cloud/repository IDs in options are deleted; do not rerun those options.
+
+Limits: identity is fixture-owned synthetic cookie authorization, not real login;
+no external email, production promotion or package publication. Current-version
+acceptance does not establish final 0.9.0 artifacts. Strict user-owned local
+Workflow Waiting/full CLI remains red because the upstream simulator lacks its
+native Waiting transition. Preserve the baseline probe and requirements; REL-04
+version/artifact alignment and REL-05 final audit remain gated. Desktop remains
+completed by user decision with remaining checks waived. Unrelated user changes
+stay untouched and unstaged.
+
+Coordinator record validation: **627 local links/anchors resolve**; all 58 numbered
+rows reconcile to 55 complete / 3 open. Owned-file syntax/whitespace checks pass.
+Only four new acceptance helper/test files and five release-record files belong
+to this batch. User reports/tool settings/baseline Workflow probes remain excluded.

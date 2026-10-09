@@ -2,60 +2,52 @@
 
 ## Current handoff — Codex (2026-10-09)
 
-**55 complete / 3 open**, versions 0.8.3. Latest batch completes cross-feature
-acceptance scenarios **1, 2 and 3**, following scenario 4 and hosted Workflow
-completion. No numbered release task closes. [Evidence](./release-0.9.0-verification-archive.md#codex-cross-feature-scenarios-123-2026-10-09).
+**55 complete / 3 open**, versions 0.8.3. All five original cross-feature
+acceptance scenarios now pass at current versions. Latest batch finishes
+**scenario 5** through actual hosted CI; no numbered release task closes.
+[Evidence](./release-0.9.0-verification-archive.md#codex-hosted-staging-scenario-2026-10-09).
 
-Three independently owned fixture/test pairs use retained installed file tarballs
-in fresh private apps. Actual workerd/D1/Chromium proves the protected typed
-resource/URL filter/validated edit, preserved failed input and anonymous forged
-RPC denial without effects. Two native Workers/shared DO prove concurrent
-permitted edits, converged subscriptions, explicit TCP cancellation and live
-other-scope isolation. Native Queue/D1 proves response-before-consumer ordering,
-transient retry, delivery or changed-preference suppression, JSON-only envelopes
-and four consumer cleanup receipts. Test identities are synthetic; no real login,
-email delivery, hosted execution or cancellation rollback is claimed.
+GitHub run **37880536071** installs retained tarballs, plans/applies the public
+remote migration to the exact staging account/D1 UUID, verifies its persisted
+checksum and zero pending migrations, and explicitly builds with staging bindings.
+The native preview uses staging overrides. Anonymous protected asset/RPC requests
+return 401 with no effects; authorized asset/RPC checks return 200 and create
+exactly one D1 row. Identity is a server-owned synthetic cookie, not a real login.
+Production Worker settings/active deployments and D1 schema/sentinel stay unchanged;
+a separate coordinator read confirms all production fixture rows match bootstrap.
 
-Final combined acceptance: **3 passed / 0 skipped**, 31.29 seconds. Each generated
-application's types/build pass; background bindings are generated with Wrangler.
-Root `pnpm tsc --noEmit` passes. Coordinator reviews provenance, isolates Vite
-caches, corrects truthful teardown receipts and avoids mixed-time D1 observations.
-All native owners close; realtime/background private apps are removed and the
-protected app's private dependencies are detached. No product APIs changed,
-packages repacked, installations performed or cloud resources written.
+Combined acceptance: **24 passed / 0 skipped**, 154.09 seconds. Installed app
+local types/build/native smoke and public local migration plan/up also pass;
+root `pnpm tsc --noEmit` passes. Preview, temporary parent Worker/D1 pair,
+known DO namespaces and private repository are independently confirmed absent.
+An initial missing request-signal setup flag failed the existing deploy guard;
+both first-attempt databases were deleted before the corrected fresh setup.
+No product APIs, package versions or original workflow template changed; no repacks.
 
-Open: **REL-03, REL-04, REL-05 (3)**. Next independent work is [scenario 5](./release-0.9.0-scenario-audit.md#5-hosted-staging-ci-explicit-migrations-and-protected-rpc):
-actual hosted CI must apply an explicit migration plan to its staging target and
-test protected assets plus authorized/unauthorized RPC while preserving production
-and cleaning preview-owned resources. Retained CF-09 CI proves preview lifecycle,
-cleanup and production isolation; its simple smoke does not prove those additions.
+Open: **REL-03, REL-04, REL-05 (3)**. The exact remaining implementation gate
+is strict local Workflow Waiting/full CLI: current Miniflare lacks the native
+Waiting transition. Preserve the user-owned probe; do not patch the simulator,
+substitute Running, weaken assertions or waive this gate. All five compositions
+now have current-version proof. After the implementation gate passes, align 0.9.0
+versions and rebuild/recheck affected artifacts, then finish the requirement audit.
+Earlier unchanged hosted Workflow, CF-09/REL-02, CF-08, Deno and database evidence
+retains its archived scope; final-version acceptance remains unproven.
 
-REL-03's strict local Waiting/full CLI gate remains red: current Miniflare lacks
-native Waiting. Preserve the user-owned probe; do not patch the simulator or
-substitute Running. After the implementation gate, align versions and rerun
-affected artifacts before final REL-03/04 completion. REL-05 then audits every
-requirement. Scenarios 1–4 retain current-version proof, not final 0.9.0 proof.
-Earlier hosted Workflow, CF-09/REL-02, CF-08, SVC-04, Deno, database and other
-unchanged acceptance retain their archived scope. Temporary cloud resources from
-those batches are confirmed absent; do not rerun their deleted resource options.
-
-Private proof/setup: /tmp/cossack-preview-ci-20261009-agent. The latest repository
-and cloud IDs are deleted; do not rerun its options against deleted resources.
-Earlier failed attempts and recovered cleanup are retained in private archives.
-The cf-created account token remains intentionally available through interactive
-zsh (~/.zshrc), restricted to the test account and Worker/D1 writes, expires
-2026-10-10T00:52:59Z. Credentials remain outside the repository; never print them.
+Private latest proof/setup: /tmp/cossack-hosted-staging-20261009. Its cloud IDs
+and repository are deleted; do not rerun its options. Earlier preview setup is
+/tmp/cossack-preview-ci-20261009-agent, also deleted. Credentials remain outside
+the repository. The scoped cf-created Worker/D1 token remains available through
+interactive zsh and expires 2026-10-10T00:52:59Z; never print it.
 
 **Desktop is complete by user decision; remaining platform checks are waived.**
 Do not reopen it. Preserve unrelated reports.md, .zcodeignore and both baseline
 Workflow probe files; do not stage them. The [checklist](./release-0.9.0.md) owns
-status; [plan](./release-0.9.0-plan.md) retains open-task context;
-[verification archive](./release-0.9.0-verification-archive.md) retains evidence.
+status; the [plan](./release-0.9.0-plan.md) retains open-task criteria.
 
 ## Active implementation plan — Codex owns remaining work (2026-10-06)
 
-1. Finish cross-feature scenario 5 using a fresh owned hosted CI acceptance app.
-   Scenarios 1–4 and expanded hosted Workflow acceptance pass at current versions.
+1. Retain all five verified cross-feature compositions and hosted Workflow proof.
+   These pass at current versions and do not establish final 0.9.0 artifacts.
 2. Resolve REL-03 strict local Waiting/full CLI when upstream supports the required
    native status; do not patch the simulator or substitute Running for Waiting.
 3. Finish the remaining non-Desktop release verification without weakening tests.
