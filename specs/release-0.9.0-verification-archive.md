@@ -15335,3 +15335,93 @@ Detailed setup, cold/warm logs, timing JSON, failed harness attempts and check l
 are retained under `/tmp/cossack-dev-startup-improvements`. The unchanged full
 monorepo, production/hosted and installed-pack matrices were not repeated for this
 bounded development-only change; prior release receipts retain their exact scope.
+
+<a id="codex-cold-warm-startup-2026-10-09"></a>
+## Codex — cold and warm development startup (2026-10-09)
+
+Goal: reduce actual cold and cached restart time without moving all work to the
+first request, weakening compiler/security checks or breaking workspace rebuilds.
+This follows `e78c5637`; numbered release tasks remain 58 complete / 0 open.
+
+Hook profiling locates approximately 10 seconds in Cloudflare's development
+initialization; configuration resolution was around 2–3 seconds. The prior server
+loaded 368 SSR modules before readiness. Explicit dependency entries reduce the
+unoptimized graph: an exploratory optimized run had 127 SSR modules. These are
+local profiling observations, not universal Cloudflare overhead guarantees.
+
+Implementation:
+
+- Optimize linked Core, renderer, UI and their actually used subentries together.
+  Optimizing UI alone embeds a duplicate renderer; rejected exploratory trials
+  produced browser update recursion. The final shared entries preserve template
+  identity, hydration and server actions. Include the UI's eye icons up front and
+  Hono runtime subentries on SSR. Storage SDKs and renderer/server remain SSR-only;
+  discovery and compiler checks remain enabled.
+- The Node-only demo helper fingerprints compiled library content in its Vite
+  plugin name, which Vite 8 includes in optimizer cache keys. Identical rebuilt
+  files retain the key. Changed output invalidates cached dependencies. Watched
+  config dependencies trigger restart after a live rebuild. An actual linked
+  fixture proves both new-process cache invalidation and live restart refresh.
+- Register SSG with `apply: 'build'`. Vite also calls closeBundle on development
+  shutdown/restart; it previously attempted static rendering there. Actual Vite
+  configuration tests prove serve exclusion and build registration; existing
+  native SSG render and failure cases still pass.
+- Move the editor launcher into a private development helper and release its
+  listener when Vite's HTTP server closes. A lifecycle test closes and reopens
+  the same port. Preserve localhost binding, containment and shell-free spawn.
+
+### Native timing and interactions
+
+Private source/public/dev-helper clones use isolated Vite caches and Worker state,
+fixture APP_SECRET and actual Cloudflare plugin 1.47.0/Vite 8.1.4. No deployment,
+user-cache deletion or user-server termination occurs. Cold means fresh Vite cache;
+warm means a new server process reusing that clone's cache. All listed runs check
+Task Tracker, hydrated HTTP increment, reload reset and Command Palette UI blocks.
+
+| Receipt | Cold ready | Warm ready | Cold browser load/settle | Warm browser load/settle |
+| --- | --- | --- | --- | --- |
+| Prior config, startup-before-1 | 14.265 s | 13.770 s | 9.805 s | 10.360 s |
+| Prior config, startup-before-2 | 13.767 s | 13.563 s | 10.525 s | 10.339 s |
+| Optimized, startup-final-2 | 10.663 s | 10.754 s | 6.174 s | 6.276 s |
+| Optimized, startup-final-3 | 12.648 s | 11.370 s | 6.230 s | 6.156 s |
+| Final with actual DevTools, startup-final-devtools | 9.945 s | 9.940 s | 6.286 s | 5.988 s |
+
+The final run enables the editor launcher on an OS-selected port to preserve the
+user's port 3333. Earlier timing probes omit that listener. Prior-config clones
+use the pre-batch Vite configuration with current SSG source; the SSG serve gate
+changes shutdown behavior, not startup graph work. All table runs return HTTP 200,
+zero browser/page-console errors, zero late dependency batches/Worker reloads and
+zero bootstrap warnings. Final native shutdown does not attempt SSG.
+
+Small samples show improvement in both readiness and first-page work; variation
+is retained instead of claiming a fixed speedup. Browser timing includes Chromium
+launch, network-idle and a fixed 1.5-second settle interval; it is not LCP or a
+production performance measurement. The private clone does not copy the sibling
+UI source directory used by Tailwind source scanning, so it does not prove full
+CSS rendering. Existing navigation text hydration warnings appear in both baseline
+and optimized runs. The editor test also retains the existing url.parse Node
+DeprecationWarning. No claim is made that all diagnostics are absent or that eager
+SSR route-loading cost is fully solved. Full directory-removal rebuild storms and
+other operating systems were not stress-tested; Desktop remains waived.
+
+Verification:
+
+- Framework Vitest: development-devtools, development-dependencies,
+  workspace-dependencies, vite-ssg-plugin, package-contract and
+  vite-security-plugin: **223 passed / 0 failed, six files**.
+- Framework `tsc -p tsconfig.declarations.json`: rebuilt public JavaScript/types;
+  public SSG self-import confirms build-only scope. Root `pnpm tsc --noEmit` and
+  Framework `pnpm --filter @cossackframework/framework exec tsc --noEmit`: pass
+  after the final helper extraction.
+- Final native Worker/browser acceptance passes as described above. Packed,
+  hosted and unchanged monorepo matrices are not repeated or relabeled.
+- Four unrelated baseline files retain their hashes and remain unstaged. Owned
+  whitespace checks and release record/link validation pass.
+
+Receipts and harnesses: `/tmp/cossack-dev-startup-improvements`. Failed exploratory
+UI optimization is retained. The cache watcher test first fetched before restart
+finished listening; its corrected readiness poll passes. Public-import attempts
+from the root failed package resolution, and a framework-directory attempt lacked
+Node on PATH; the explicit Node executable in framework context passes. These
+harness failures are not counted as passing acceptance. Earlier profile/probe
+runs and the pre-fingerprint final-1 trial remain available separately.

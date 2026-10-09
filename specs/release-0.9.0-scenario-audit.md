@@ -2,7 +2,7 @@
 
 Receipt scope: the final package/payload comparisons below record release
 preparation at `6764a7a1`. Subsequent demo startup and Core development-logging
-changes have [separate targeted/native evidence](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09);
+changes and build-only SSG hook scoping have [separate targeted/native evidence](./release-0.9.0-verification-archive.md#codex-cold-warm-startup-2026-10-09);
 they are not claimed as a repeat of the complete packed/hosted release matrix.
 
 

@@ -34,15 +34,18 @@ baseline Workflow probe files; their bytes are unchanged and they are unstaged.
 
 ## Latest development follow-up — Codex (2026-10-09)
 
-Normal bootstrap state changes are quiet; state assignments and render guards
-are unchanged. The demo pre-bundles icons and SSR-only AWS dependencies. Final
-cold startup is 13.455 s versus 19.886 s, with no late optimization batches or
-Worker reload; warm startup remains around 12–13 s. 54 targeted tests, Core build,
-root/Core/Framework types and native Worker/Chromium checks pass. This subsequent
-Core diagnostic-only edit has fresh targeted/native evidence; the earlier complete
-release and tarball comparisons retain their `6764a7a1` scope. Further startup
-profiling should examine the roughly 12 s spent creating the Vite server.
-[Receipt](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09).
+Linked Core/renderer/UI dependencies share optimized entries with safe rebuild
+invalidation; SSR Hono is optimized too. Cold/warm startup measures 9.945/9.940 s
+in the final native run, versus 13.767/13.563 s in its prior-config comparison.
+Local final samples range 9.9–12.6 s cold and 9.9–11.4 s warm. Browser load/settle
+also improves; hydration, HTTP actions and UI blocks pass. SSG is build-only and
+DevTools releases its port on close. 223 tests, root/Framework types, declaration
+build and rebuilt public SSG import pass. Earlier release/packed/hosted receipts
+retain their exact scope; task count remains 58 complete / 0 open, Desktop waived.
+[Current receipt](./release-0.9.0-verification-archive.md#codex-cold-warm-startup-2026-10-09) and
+[earlier bootstrap follow-up](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09).
+Remaining startup time still includes eager server route loading; this batch makes
+no claim about production cold starts, full CSS performance or other machines.
 
 ## Continuation
 

@@ -1,3 +1,4 @@
+import { resolveConfig } from 'vite';
 // @vitest-environment node
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
@@ -14,6 +15,19 @@ const OUT = path.resolve(PROJECT_ROOT, 'dist', 'client');
 // ---------------------------------------------------------------------------
 
 describe('cossackSsg() plugin', () => {
+  it('is absent from development server hooks, including shutdown and restart', async () => {
+    const config = await resolveConfig({ configFile: false, plugins: [cossackSsg()] }, 'serve');
+    expect(config.plugins.some(plugin => plugin.name === 'cossack-ssg')).toBe(false);
+  });
+
+  it('remains registered for production builds', async () => {
+    const compilerNames = ['cossack-security', 'cossack-pages', 'cossack-lang',
+      'cossack-middlewares', 'cossack-config'];
+    const config = await resolveConfig({ configFile: false,
+      plugins: [...compilerNames.map(name => ({ name })), cossackSsg()] }, 'build');
+    expect(config.plugins.some(plugin => plugin.name === 'cossack-ssg')).toBe(true);
+  });
+
   const required = ['cossack-security', 'cossack-pages', 'cossack-lang', 'cossack-middlewares', 'cossack-config'];
   it.each(required)('rejects missing %s before compiling with configuration context', name => {
     const plugin = cossackSsg();

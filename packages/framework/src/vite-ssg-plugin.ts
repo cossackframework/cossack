@@ -98,6 +98,8 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
 
   return {
     name: 'cossack-ssg',
+    // Dev server shutdown/restart also calls closeBundle. SSG owns builds only.
+    apply: 'build',
 
     configResolved(config) {
       buildMode = config.mode;

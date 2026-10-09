@@ -26,6 +26,19 @@ describe('demo development dependency discovery', () => {
       expect(included).not.toContain('@cossackframework/solar-icons');
     }
   });
+  it('optimizes linked UI and renderer entry points together in both environments', () => {
+    const shared = ['@cossackframework/core', '@cossackframework/core/devtools',
+      '@cossackframework/core/routes', '@cossackframework/renderer',
+      '@cossackframework/ui', '@cossackframework/ui/blocks'];
+    for (const environment of ['client', 'ssr']) {
+      const included = config.environments?.[environment]?.optimizeDeps?.include ?? [];
+      for (const specifier of shared) expect(included).toContain(specifier);
+      expect(included).toContain('@cossackframework/solar-icons/eye');
+      expect(included).toContain('@cossackframework/solar-icons/eye-closed');
+    }
+    expect(config.environments?.ssr?.optimizeDeps?.include).toContain('@cossackframework/renderer/server');
+    expect(config.environments?.client?.optimizeDeps?.include).not.toContain('@cossackframework/renderer/server');
+  });
   it('pre-bundles storage SDKs only on the server without disabling discovery', () => {
     const sdks = ['@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'];
     for (const sdk of sdks) {

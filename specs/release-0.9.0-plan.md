@@ -747,3 +747,16 @@ remains about 12–13 seconds; remaining server-creation cost needs deeper profi
 54 targeted tests, Core build, root/Core/Framework types and actual Worker/browser
 checks pass. No full release-matrix rerun is claimed; task count remains 58/58.
 [Evidence and limits](./release-0.9.0-verification-archive.md#codex-development-startup-2026-10-09).
+
+## Codex — cold and warm startup improvement (2026-10-09)
+
+Pre-bundle linked Core/renderer/UI entry points together and SSR Hono dependencies.
+A content fingerprint preserves warm caches for identical builds and invalidates
+changed library output; a real Vite test proves live rebuild/restart refresh.
+SSG now runs only for builds, and the editor launcher releases its port on close.
+Final native cold/warm startup: 9.945/9.940 s versus 13.767/13.563 s in the paired
+prior-config run. Final browser load/settle: 6.286/5.988 s; HTTP actions, hydration
+and UI blocks pass without browser errors or late optimization/reloads.
+223 tests, Framework declaration build/public import and root/Framework typechecks
+pass. Small local samples retain their range and limits; release count stays 58/58.
+[Evidence](./release-0.9.0-verification-archive.md#codex-cold-warm-startup-2026-10-09).
