@@ -85,9 +85,9 @@ export async function checkLocalWorkflowsAcceptance(makeRuntime) {
   // The retry's durable effects prove readiness. No synthetic provider status.
   await expect.poll(() => effects(identity), {timeout:30000}).toEqual(before);
   nativeStatuses.push((await inspect(identity)).status);
+  // Reusing a key is rejected without starting or touching the existing run.
   const repeated = await call('invoke', {key:'approval-one'});
-  expect(repeated.status).toBe(200);
-  expect(repeated.value).toEqual(identity);
+  expect(repeated).toEqual({status:400, value:{code:'WORKFLOW_DUPLICATE'}});
   expect(await effects(identity)).toEqual(before);
   expect((await call('pause', {identity})).status).toBe(200);
   await expect.poll(async () => (await inspect(identity)).status, {timeout:10000}).toBe('paused');

@@ -28,3 +28,20 @@ it('invokes native RPC methods directly without Function.prototype call/apply/bi
  let calls=0;const native={do:new Proxy(async(_name:string,_config:unknown,callback:()=>Promise<unknown>)=>{calls++;return callback();},{get(target,key,receiver){if(['call','apply','bind'].includes(String(key)))throw new Error('Remote RPC method has no Function prototype');return Reflect.get(target,key,receiver);}}),sleep:vi.fn(),waitForEvent:vi.fn()};
  expect(await entry.run({instanceId:identity.id,payload:envelope} as never,native as never)).toBe(9);expect(calls).toBe(1);
 });
+it('rejects a duplicate invocation key even when the native runtime accepts the create',async()=>{
+ const definition=defineWorkflow({name:'duplicate',version:1,schema,events:{},async run(value){return value;}});
+ const created=new Set<string>();
+ const binding={create:vi.fn(async({id}:{id:string})=>{created.add(id);}),get:vi.fn(async(id:string)=>{if(!created.has(id))throw new Error('instance.not_found');return {status:async()=>({status:'running'})};})};
+ const client=createWorkflowClient(definition,createCloudflareWorkflowProvider(binding as never),{namespace:'app'});
+ await client.invoke(1,{key:'one'});
+ await expect(client.invoke(1,{key:'one'})).rejects.toMatchObject({code:'WORKFLOW_DUPLICATE'});
+ expect(binding.create).toHaveBeenCalledOnce();
+ await client.invoke(1,{key:'two'});expect(binding.create).toHaveBeenCalledTimes(2);
+});
+it('reports a create that lost a race to the same key as a duplicate',async()=>{
+ const definition=defineWorkflow({name:'race',version:1,schema,events:{},async run(value){return value;}});
+ let exists=false;
+ const binding={create:vi.fn(async()=>{exists=true;throw new Error('PRIVATE_ALREADY_EXISTS');}),get:vi.fn(async()=>{if(!exists)throw new Error('instance.not_found');return {status:async()=>({status:'queued'})};})};
+ const client=createWorkflowClient(definition,createCloudflareWorkflowProvider(binding as never),{namespace:'app'});
+ await expect(client.invoke(1,{key:'one'})).rejects.toMatchObject({code:'WORKFLOW_DUPLICATE'});
+});

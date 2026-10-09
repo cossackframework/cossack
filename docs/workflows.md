@@ -94,8 +94,9 @@ step names and control flow stable for existing instances. A version change crea
 new invocation identities; coordinate it with your deployment and retention policy.
 Invocation hashes include namespace, definition name/version, tenant, actor and
 logical key. Reusing a key does not authorize another caller or promise a different
-payload will replace the original run. Duplicate creation is provider-owned and
-rejected; inspection does not start or recreate an instance.
+payload will replace the original run. Invoking an existing key fails with
+`WORKFLOW_DUPLICATE` (checked by the framework, since local workerd accepts a
+duplicate create); inspection does not start or recreate an instance.
 
 All invocation, inspection, events and administrative pause/resume/terminate
 operations belong on the server. Derive scope and keys from trusted application

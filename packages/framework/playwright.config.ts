@@ -55,11 +55,11 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 const host = requestedPort === undefined ? 'localhost' : '127.0.0.1';
 const address = `http://${host}:${port}`;
-// `vite build` (not `pnpm build`) skips declaration emit, which e2e does not
-// need and which would rewrite dist/esm underneath other workspace consumers.
+// scripts/e2e-build.mjs runs `vite build` (not `pnpm build`, whose declaration
+// emit e2e does not need) and skips it when an identical build already exists.
 const command = devMode
   ? `pnpm dev --host ${host} --port ${port} --strictPort`
-  : `pnpm exec vite build && pnpm exec vite preview --host ${host} --port ${port} --strictPort`;
+  : `node scripts/e2e-build.mjs && pnpm exec vite preview --host ${host} --port ${port} --strictPort`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -67,7 +67,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : 4,
-  reporter: 'html',
+  // Live progress in the terminal; the HTML report is written but never auto-served,
+  // which would otherwise block the run after a failure until Ctrl+C.
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: address,
     trace: 'on-first-retry',
