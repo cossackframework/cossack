@@ -7,7 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  integration:
+    if: github.event_name == 'release' || github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/integration-tests.yml
+
   publish:
+    needs: integration
     if: github.event_name == 'release' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     # Must exactly match the environment in each npm trusted publisher.
@@ -53,7 +58,6 @@ jobs:
           pnpm --filter @cossackframework/studio test
           pnpm --filter @cossackframework/scaffold test
           pnpm --filter cossack test
-          pnpm run test:integration
 
       - name: Test generated app with local package tarballs
         run: pnpm run test:scaffold:local

@@ -93,9 +93,6 @@ jobs:
       - name: Run all unit tests
         run: pnpm run test:unit
 
-      - name: Run integration tests
-        run: pnpm run test:integration
-
       - name: Check Deno web adapter
         run: |
           deno check packages/deno-adapter/src/index.ts

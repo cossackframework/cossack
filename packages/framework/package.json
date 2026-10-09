@@ -211,7 +211,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "pnpm run build:types && vite build",
-    "build:types": "node -e \"const fs=require('node:fs');fs.rmSync('dist/esm',{recursive:true,force:true});fs.mkdirSync('.cossack',{recursive:true})\" && wrangler types .cossack/library-worker-configuration.d.ts --config wrangler.library.jsonc --env-interface CloudflareBindings && tsc -p tsconfig.declarations.json",
+    "build:types": "node -e \"require('node:fs').mkdirSync('.cossack',{recursive:true})\" && wrangler types .cossack/library-worker-configuration.d.ts --config wrangler.library.jsonc --env-interface CloudflareBindings && node scripts/build-declarations.mjs",
     "build:ssg": "pnpm run build:types && vite build",
     "build:all": "pnpm run build:types && pnpm run build",
     "preview": "pnpm run build:ssg && vite preview",
