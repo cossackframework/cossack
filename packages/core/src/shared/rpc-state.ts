@@ -70,8 +70,21 @@ export function applyStateToComponent(
         } else {
             if (typeof component.setProperty === 'function') component.setProperty(key, data[key]);
             else component[key] = data[key];
+            // A publication correlated to an in-flight call (no request
+            // snapshot: SSE/broadcast path) is server state for that call.
+            if (call && !requestState) recordPublished(call, component, key);
         }
     }
+}
+
+function transportForm(value: unknown, key: string): string | undefined {
+    try { return JSON.stringify(snapshotTransportState({ [key]: value })[key]); } catch { return undefined; }
+}
+
+function recordPublished(call: OptimisticCall, component: any, key: string): void {
+    const form = transportForm(component[key], key);
+    if (form === undefined) return;
+    (call.published ??= new Map()).set(key, form);
 }
 
 /** Clone state exactly as JSON transport will represent it. */
@@ -97,6 +110,20 @@ function transportValuesEqual(liveValue: unknown, sentValue: unknown, key: strin
  */
 export function createStateApplier(component: any, requestState: Record<string, any>, call: OptimisticCall, onReconciled?: () => void) {
     return (state: Record<string, unknown>) => {
+        // The call's own publication may reach the component before its reply
+        // frames. A field still holding that published value changed on the
+        // server for this call, not locally, so advance the request snapshot
+        // before the frame is judged stale (otherwise the final frame is
+        // skipped as a local edit and its deduplicated publication is lost).
+        if (call.published) {
+            for (const key of Object.keys(state)) {
+                const published = call.published.get(key);
+                if (published === undefined || !Object.prototype.hasOwnProperty.call(requestState, key)) continue;
+                if (transportForm(component[key], key) === published) {
+                    requestState[key] = snapshotTransportState({ [key]: component[key] })[key];
+                }
+            }
+        }
         // Advance the snapshot only for fields this response can apply. This
         // lets later stream frames update the same field without clobbering
         // edits made locally while the request was in flight.

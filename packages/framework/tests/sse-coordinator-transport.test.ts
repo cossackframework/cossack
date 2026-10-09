@@ -16,9 +16,16 @@ class FakeSseScope {
     snapshot: FakeSnapshot | null = null;
     events: FakeEvent[] = [];
     executed = 0;
+    waiters = new Map<string, () => void>();
+    cancelledWaits: string[] = [];
     #tail: Promise<void> = Promise.resolve();
 
     async cancel(_operationId: string) {}
+
+    async cancelWait(waiterId: string) {
+        this.cancelledWaits.push(waiterId);
+        this.waiters.get(waiterId)?.();
+    }
 
     async initialize(state: string) {
         if (!this.snapshot) {
@@ -32,7 +39,19 @@ class FakeSseScope {
         return this.snapshot ? { ...this.snapshot } : null;
     }
 
-    async updates(after: number) {
+    // Long-poll like the coordinator: hold until an append, cancelWait, or the wait.
+    async updates(after: number, waitMs = 0, waiterId: string = crypto.randomUUID()) {
+        const first = this.#read(after);
+        if (!waitMs || first.resync || first.events.length) return first;
+        await new Promise<void>(resolve => {
+            const wake = () => { clearTimeout(timer); this.waiters.delete(waiterId); resolve(); };
+            const timer = setTimeout(wake, waitMs);
+            this.waiters.set(waiterId, wake);
+        });
+        return this.#read(after);
+    }
+
+    #read(after: number) {
         const snapshot = this.snapshot!;
         const resync = after > snapshot.cursor;
         return {
@@ -88,6 +107,7 @@ class FakeSseScope {
             state: replacesState ? data : this.snapshot!.state,
             cursor,
         };
+        for (const wake of [...this.waiters.values()]) wake();
         return { ...this.snapshot };
     }
 }
@@ -335,17 +355,72 @@ describe('SSE coordinator subscription endpoint', () => {
         expect((await reader.read()).done).toBe(true);
     });
 
-    it('rechecks between replay frames rather than trusting the initial decision', async () => {
+    it('authorizes once per delivered batch and stops the next batch after revocation', async () => {
         await page(); await call('increment'); await call('increment');
         let allowed = true; let checks = 0;
         middlewares.push(async (c, next) => { checks++; if (!allowed) return c.json({ denied: true }, 403); await next(); });
         const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, { headers: { 'Last-Event-ID': '0' } }, env() as any);
         const reader = response.body!.getReader();
+        const opened = checks;
+        // Replay batch: two events + snapshot + connected, one authorization.
+        const replay = await readSseUntil(reader, events => events.some(event => event.event === 'connected'));
+        expect(replay.map(event => event.event)).toEqual(['state-update', 'state-update', 'state-update', 'connected']);
+        expect(checks - opened).toBe(1);
+
+        await call('increment');
+        const live = await readSseUntil(reader, events => events.some(event => JSON.parse(event.data).count === 3));
+        expect(live).toHaveLength(1);
+        allowed = false;
+        // The publishing /crpc call also runs the middleware; only count stream checks.
+        const beforeNext = checks;
+        await scope().publish(JSON.stringify({ count: 99 }));
+        const terminal = new TextDecoder().decode((await reader.read()).value);
+        expect(terminal).toContain('event: authorization-error'); expect(terminal).not.toContain('"count":99');
+        expect(checks - beforeNext).toBe(1);
+        expect((await reader.read()).done).toBe(true);
+    });
+
+    it('re-authorizes a batch that is still draining after the auth max age', async () => {
+        await page(); await call('increment'); await call('increment');
+        vi.useFakeTimers();
+        let allowed = true;
+        middlewares.push(async (c, next) => { if (!allowed) return c.json({ denied: true }, 403); await next(); });
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, { headers: { 'Last-Event-ID': '0' } }, env() as any);
+        const reader = response.body!.getReader();
         expect(new TextDecoder().decode((await reader.read()).value)).toContain('"count":1');
         allowed = false;
+        await vi.advanceTimersByTimeAsync(5000);
         const terminal = new TextDecoder().decode((await reader.read()).value);
         expect(terminal).toContain('event: authorization-error'); expect(terminal).not.toContain('"count":2');
-        expect(checks).toBe(3); expect((await reader.read()).done).toBe(true);
+        expect((await reader.read()).done).toBe(true);
+    });
+
+    it('long-polls the coordinator once per wait instead of a fixed-interval poll', async () => {
+        await page();
+        const updates = vi.spyOn(scope(), 'updates');
+        const response = await createApp().request(`/sse/${id}?scopeKey=user:anonymous`, {}, env() as any);
+        const reader = response.body!.getReader();
+        await readSseUntil(reader, events => events.some(event => event.event === 'connected'));
+        const idle = reader.read();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        // One held long-poll (plus the setup call), not one per 200 ms.
+        expect(updates).toHaveBeenCalledTimes(2);
+        const [, waitMs, waiterId] = updates.mock.calls[1];
+        expect(waitMs).toBeGreaterThan(14000);
+        expect(scope().waiters.has(waiterId!)).toBe(true);
+
+        await call('increment');
+        expect(new TextDecoder().decode((await idle).value)).toContain('"count":1');
+        expect(scope().waiters.size).toBe(0);
+
+        // Cancelling releases the held waiter at the coordinator.
+        const next = reader.read();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        const held = updates.mock.calls.at(-1)![2]!;
+        expect(scope().waiters.has(held)).toBe(true);
+        await reader.cancel(); await next;
+        expect(scope().cancelledWaits).toContain(held);
+        expect(scope().waiters.size).toBe(0);
     });
 
     it('revalidates an idle stream before its heartbeat and awaits scope cleanup', async () => {

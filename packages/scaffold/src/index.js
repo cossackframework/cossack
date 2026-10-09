@@ -924,6 +924,7 @@ function nodeEntry(providers = []) {
   return `import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { setClientAddress } from '@cossackframework/core';
 import { createApp } from '@cossackframework/framework/router';
 import { createNodeAdapter, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
 import { App } from './App';
@@ -967,7 +968,11 @@ export async function createEnv(variables: Record<string, string | undefined> = 
 export const env: Record<string, unknown> = import.meta.env?.DEV ? {} : await createEnv();
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const fetch = (request: Request) => app.fetch(request, env);
+  // Record the socket peer so rate limits never trust client-supplied IP headers.
+  const fetch = (request: Request, node?: { incoming?: { socket?: { remoteAddress?: string } } }) => {
+    setClientAddress(request, node?.incoming?.socket?.remoteAddress);
+    return app.fetch(request, env);
+  };
   const server = serve({ fetch, port: Number(process.env.PORT) || 3000 });
   runtime.attach(server, fetch);
   installNodeShutdown(server, {

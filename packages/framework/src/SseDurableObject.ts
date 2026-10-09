@@ -5,12 +5,21 @@ const MAX_PENDING = 32;
 const MAX_EVENTS = 128;
 const MAX_LOG_BYTES = RPC_STREAM_MAX_FRAME_BYTES;
 const MAX_EVENT_NAME = 64;
+/**
+ * Long-poll bounds. A subscription holds one `updates()` call open until an
+ * event is appended or the wait elapses. The wait stays far below Workers RPC
+ * and request limits; waiters are bounded per scope so a crowd of viewers
+ * cannot pin unbounded memory in this single-threaded object.
+ */
+export const SSE_MAX_WAIT_MS = 25_000;
+export const SSE_MAX_WAITERS = 2048;
+const SSE_BUSY_RETRY_MS = 1000;
 const encoder = new TextEncoder();
 
 export type SseSnapshot = { state: string; cursor: number };
 export type SseInitResult = SseSnapshot & { fresh: boolean };
 export type SseUpdate = { cursor: number; event: string; data: string };
-export interface SseUpdates { snapshot: SseSnapshot; resync: boolean; events: SseUpdate[] }
+export interface SseUpdates { snapshot: SseSnapshot; resync: boolean; events: SseUpdate[]; retryAfterMs?: number }
 type Action = (state: string) => Promise<Response>;
 type CancelAction = () => Promise<void>;
 interface PendingAction {
@@ -32,6 +41,7 @@ export class SseDurableObject extends DurableObject {
     #actions = new Map<string, PendingAction>();
     #queue: PendingAction[] = [];
     #active?: PendingAction;
+    #waiters = new Map<string, { wake: () => void }>();
 
     constructor(ctx: DurableObjectState, env: Cloudflare.Env) {
         super(ctx, env);
@@ -87,8 +97,50 @@ export class SseDurableObject extends DurableObject {
         return row ?? null;
     }
 
-    updates(after: number): SseUpdates {
+    /**
+     * Events after `after`. With `waitMs > 0` and nothing new, the call is held
+     * open (long-poll) until an event is appended, `cancelWait(waiterId)` is
+     * called, or the wait (capped at SSE_MAX_WAIT_MS) elapses. Pending RPC
+     * promises are allowed in Durable Objects; the input gate stays open while
+     * waiting, so other calls (including the publish that wakes it) proceed.
+     */
+    async updates(after: number, waitMs = 0, waiterId?: string): Promise<SseUpdates> {
         if (!Number.isSafeInteger(after) || after < 0) throw new Error('Invalid SSE cursor');
+        if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) throw new Error('Invalid SSE wait');
+        if (waiterId !== undefined && (typeof waiterId !== 'string' || !waiterId.trim() || waiterId.length > 128)) {
+            throw new Error('Invalid SSE waiter ID');
+        }
+        const first = this.#readUpdates(after);
+        if (waitMs === 0 || first.resync || first.events.length) return first;
+        if (this.#waiters.size >= SSE_MAX_WAITERS) return { ...first, retryAfterMs: SSE_BUSY_RETRY_MS };
+        const id = waiterId ?? crypto.randomUUID();
+        this.#waiters.get(id)?.wake();
+        await new Promise<void>(resolve => {
+            const timer = setTimeout(() => waiter.wake(), Math.min(waitMs, SSE_MAX_WAIT_MS));
+            const waiter = {
+                wake: () => {
+                    clearTimeout(timer);
+                    if (this.#waiters.get(id) === waiter) this.#waiters.delete(id);
+                    resolve();
+                },
+            };
+            this.#waiters.set(id, waiter);
+        });
+        return this.#readUpdates(after);
+    }
+
+    /** Release a held long-poll (the subscriber disconnected). Unknown IDs are ignored. */
+    cancelWait(waiterId: string): void {
+        if (typeof waiterId !== 'string') return;
+        this.#waiters.get(waiterId)?.wake();
+    }
+
+    /** Scope-local long-poll diagnostics. */
+    waiterCount(): number {
+        return this.#waiters.size;
+    }
+
+    #readUpdates(after: number): SseUpdates {
         const snapshot = this.#snapshot();
         const oldest = this.ctx.storage.sql.exec<{ cursor: number }>(
             'SELECT cursor FROM events ORDER BY cursor LIMIT 1').toArray()[0]?.cursor;
@@ -300,6 +352,9 @@ export class SseDurableObject extends DurableObject {
                 ) WHERE total <= ? ORDER BY cursor DESC LIMIT ?
             )`, MAX_LOG_BYTES, MAX_EVENTS);
         });
+        // Wake every held long-poll; each re-reads committed events (the output
+        // gate holds their replies until this write is durable).
+        for (const waiter of [...this.#waiters.values()]) waiter.wake();
         return this.#snapshot();
     }
 

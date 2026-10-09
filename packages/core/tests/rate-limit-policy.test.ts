@@ -36,14 +36,17 @@ describe.each(['memory', 'kv', 'durable-object', 'redis'])('%s limiter key polic
 it.each([0, -1, 1.5, NaN, Infinity, null, 100001])('rejects invalid memory limiter capacities (%#)', value => {
     expect(() => new InMemoryRateLimitStore(value as any)).toThrow(/maxEntries/);
 });
-it('bounds memory buckets without restoring spent live quotas and reuses expired capacity', () => {
+it('bounds memory buckets by pruning expiry first, then evicting the oldest window', () => {
     const store = new InMemoryRateLimitStore(2);
     expect(store.hit('a', 60000).count).toBe(1); expect(store.hit('b', 1001).count).toBe(1);
-    expect(() => store.hit('c', 60000)).toThrow(/capacity/);
     expect(store.hit('a', 60000).count).toBe(2); expect(store.hit('b', 1001).count).toBe(2);
     vi.setSystemTime(2001001);
+    // b expired: pruned, so live a keeps its quota.
     expect(store.hit('c', 60000).count).toBe(1); expect(store.hit('a', 60000).count).toBe(3);
-    expect(() => store.hit('d', 60000)).toThrow(/capacity/);
+    // Full with live windows: the oldest (a) is evicted, the new caller is admitted.
+    expect(store.hit('d', 60000).count).toBe(1);
+    expect(store.hit('c', 60000).count).toBe(2);
+    expect(store.hit('a', 60000).count).toBe(1);
 });
 describe.each(['kv', 'redis'])('%s namespace policy', name => {
     it('frames namespace/key pairs so distinct quotas never collide', async () => {

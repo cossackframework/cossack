@@ -26,7 +26,41 @@ interface SseStoreEntry {
  * This state is neither durable nor shared across processes or machines.
  */
 const SSE_STORE_MAX = 500;
+/**
+ * Entries without a live connection expire after this grace period. SSR
+ * registers an entry before the browser opens its EventSource, and
+ * EventSource reconnects after a short delay, so the grace covers both.
+ */
+export const SSE_STORE_IDLE_TTL_MS = 60_000;
 const sseStateStore = new Map<string, SseStoreEntry>();
+/** Process-local long-poll waiters per store key, woken on SSR replacement and sync. */
+const localSseWaiters = new Map<string, Set<() => void>>();
+
+function notifyLocalSse(storeKey: string): void {
+    const waiters = localSseWaiters.get(storeKey);
+    if (!waiters) return;
+    localSseWaiters.delete(storeKey);
+    for (const wake of waiters) wake();
+}
+
+/** Resolve after a local change to storeKey, the wait elapsing, or abort. */
+function waitForLocalSse(storeKey: string, waitMs: number, signal: AbortSignal): Promise<void> {
+    return new Promise(resolve => {
+        if (signal.aborted) return resolve();
+        let waiters = localSseWaiters.get(storeKey);
+        if (!waiters) localSseWaiters.set(storeKey, waiters = new Set());
+        const wake = () => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', wake);
+            const current = localSseWaiters.get(storeKey);
+            if (current?.delete(wake) && current.size === 0) localSseWaiters.delete(storeKey);
+            resolve();
+        };
+        const timer = setTimeout(wake, waitMs);
+        signal.addEventListener('abort', wake, { once: true });
+        waiters.add(wake);
+    });
+}
 // Process-local publication order survives replacement/eviction of an entry.
 // This contains no request facilities, identity or user state. Workers use the
 // persisted coordinator cursor instead and never call this backend.
@@ -36,15 +70,26 @@ function nextLocalSseCursor(): number {
     return ++localSseCursor;
 }
 
-/** Evict the oldest entry when the store exceeds its bound. */
-function enforceSseStoreBound(): void {
+/**
+ * Drop entries idle (no live connection) past the TTL, then evict the least
+ * recently active entry — preferring ones without connections — while the
+ * store exceeds its bound. Runs on every insert and disconnect.
+ */
+function enforceSseStoreBound(now = Date.now(), keep?: string): void {
+    for (const [key, entry] of sseStateStore) {
+        if (entry.connectionCount === 0 && now - entry.lastActive >= SSE_STORE_IDLE_TTL_MS) sseStateStore.delete(key);
+    }
     while (sseStateStore.size > SSE_STORE_MAX) {
         let oldestKey: string | undefined;
         let oldestTime = Infinity;
+        let oldestIdle = false;
         for (const [k, v] of sseStateStore) {
-            if (v.lastActive < oldestTime) {
+            if (k === keep) continue;
+            const idle = v.connectionCount === 0;
+            if ((idle && !oldestIdle) || (idle === oldestIdle && v.lastActive < oldestTime)) {
                 oldestTime = v.lastActive;
                 oldestKey = k;
+                oldestIdle = idle;
             }
         }
         if (oldestKey === undefined) break;
@@ -55,6 +100,17 @@ function enforceSseStoreBound(): void {
 /** @internal Test seam: current number of entries in the SSE store. */
 export function __sseStoreSize(): number {
     return sseStateStore.size;
+}
+
+/** @internal Test seam: run the idle-TTL sweep and bound at a given time. */
+export function __sweepSseStore(now = Date.now()): number {
+    enforceSseStoreBound(now);
+    return sseStateStore.size;
+}
+
+/** @internal Test seam: clear the process-local SSE store. */
+export function __resetSseStore(): void {
+    sseStateStore.clear();
 }
 
 function sseStoreKey(componentRouteId: string, scopeKey: string): string {
@@ -83,11 +139,20 @@ export interface SseCoordinatorNamespace {
 export interface SseCoordinatorStub {
     initialize(state: string): Promise<{ state: string; cursor: number; fresh: boolean }>;
     currentState(): Promise<{ state: string; cursor: number } | null>;
-    updates(after: number): Promise<{
+    /**
+     * Long-poll: with `waitMs > 0` and no newer events, the coordinator holds
+     * the call until an event is appended, `cancelWait(waiterId)`, or the wait
+     * (capped by the coordinator) elapses. `retryAfterMs` signals a full
+     * waiter table.
+     */
+    updates(after: number, waitMs?: number, waiterId?: string): Promise<{
         snapshot: { state: string; cursor: number };
         resync: boolean;
         events: Array<{ cursor: number; event: string; data: string }>;
+        retryAfterMs?: number;
     }>;
+    /** Release a held long-poll after the subscriber disconnected. */
+    cancelWait(waiterId: string): Promise<void>;
     publish(state: string, requestId?: string): Promise<{ state: string; cursor: number }>;
     broadcast(event: string, data: string): Promise<unknown>;
     execute(action: (state: string) => Promise<Response>, operationId?: string, abort?: () => Promise<void>): Promise<Response>;
@@ -224,6 +289,8 @@ export function registerSseStoreEntry(
             connectionCount: sseStateStore.get(storeKey)?.connectionCount ?? 0,
             lastActive: Date.now(),
         });
+        enforceSseStoreBound(Date.now(), storeKey);
+        notifyLocalSse(storeKey);
     }
 }
 
@@ -318,7 +385,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
             const runtime = new SseRuntime(componentInstance);
             entry = { componentInstance, runtime, stateVersion: nextLocalSseCursor(), connectionCount: 0, lastActive: Date.now() };
             sseStateStore.set(storeKey, entry);
-            enforceSseStoreBound();
+            enforceSseStoreBound(Date.now(), storeKey);
         }
 
         // Track this connection against the entry so the store can be trimmed
@@ -328,17 +395,23 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         const { componentInstance } = entry;
 
-        const pending = [
+        const pending: SseFrame[] = [
             { event: 'state-update', data: JSON.stringify(componentInstance.getPublicState()), cursor: entry.stateVersion },
             { event: 'connected', data: '{}' },
         ];
         let lastVersion = entry.stateVersion;
-        const poll = async () => {
+        const read = (): SseFrame[] => {
             const current = sseStateStore.get(storeKey);
             if (!current || current.stateVersion === lastVersion) return [];
             lastVersion = current.stateVersion;
             return [{ event: 'state-update', cursor: lastVersion, data: JSON.stringify({ ...current.componentInstance.getPublicState(),
                 ...(current.requestId === undefined ? {} : { _cossack_request_id: current.requestId }) }) }];
+        };
+        const poll: SsePoll = async (waitMs, pollSignal) => {
+            const events = read();
+            if (events.length || waitMs <= 0) return events;
+            await waitForLocalSse(storeKey, waitMs, pollSignal);
+            return read();
         };
         const cleanup = () => {
             const e = sseStateStore.get(storeKey);
@@ -346,6 +419,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
                 e.connectionCount = Math.max(0, e.connectionCount - 1);
                 e.lastActive = Date.now();
             }
+            enforceSseStoreBound();
         };
         return new Response(authorizedSseStream(c.req.raw.signal, pending, poll, authorize, cleanup), { headers: SSE_HEADERS });
     };
@@ -407,15 +481,33 @@ async function handleCoordinatorSubscription(
     // Replay in increasing cursor order before advancing to the latest
     // snapshot. Advertising its cursor first would acknowledge broadcasts
     // the browser has not received if it disconnects during the replay.
-    const pending: Array<{ event: string; data: string; cursor?: number }> = [];
+    const pending: SseFrame[] = [];
     if (initial.resync) pending.push({ event: 'resync', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
     else pending.push(...initial.events);
     pending.push({ event: 'state-update', data: initial.snapshot.state, cursor: initial.snapshot.cursor });
     pending.push({ event: 'connected', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
     after = initial.snapshot.cursor;
 
-    const poll = async () => {
-        const updates = await stub.updates(after);
+    const poll: SsePoll = async (waitMs, pollSignal) => {
+        if (pollSignal.aborted) return [];
+        // One long-poll per subscriber: the coordinator holds the call until a
+        // new event or the wait elapses, instead of a fixed-interval poll.
+        const waiterId = crypto.randomUUID();
+        const call = stub.updates(after, waitMs, waiterId);
+        let release: (() => void) | undefined;
+        const aborted = new Promise<null>(resolve => {
+            release = () => {
+                resolve(null);
+                // Best effort: free the coordinator's waiter slot now rather
+                // than at its timeout.
+                try { void stub.cancelWait(waiterId).catch(() => {}); } catch { /* stub gone */ }
+            };
+            pollSignal.addEventListener('abort', release, { once: true });
+        });
+        let updates: Awaited<typeof call> | null;
+        try { updates = await Promise.race([call, aborted]); }
+        finally { pollSignal.removeEventListener('abort', release!); }
+        if (!updates) { void call.catch(() => {}); return []; }
         if (updates.resync) {
             after = updates.snapshot.cursor;
             return [{ event: 'resync', data: JSON.stringify({ cursor: updates.snapshot.cursor }) },
@@ -427,33 +519,55 @@ async function handleCoordinatorSubscription(
     return new Response(authorizedSseStream(signal, pending, poll, authorize), { headers: SSE_HEADERS });
 }
 
-/** No delivery, including replay and heartbeat, bypasses the live middleware check. */
+type SseFrame = { event: string; data: string; cursor?: number };
+/** Return frames after the current cursor, waiting up to waitMs for new ones. */
+type SsePoll = (waitMs: number, signal: AbortSignal) => Promise<SseFrame[]>;
+
+/** Idle interval after which a heartbeat (and its authorization check) is sent. */
+export const SSE_HEARTBEAT_MS = 15_000;
+/** A batch drained slowly by its reader is re-authorized after this age. */
+export const SSE_AUTH_MAX_AGE_MS = 5_000;
+/** Minimum spacing of polls that returned nothing before their wait elapsed. */
+const SSE_EMPTY_POLL_BACKOFF_MS = 1_000;
+
+/**
+ * No delivery, including replay and heartbeat, bypasses the live middleware
+ * check. Authorization runs once per delivered batch (the initial replay or
+ * one poll result), once per heartbeat, and again when a batch is still
+ * draining after SSE_AUTH_MAX_AGE_MS.
+ */
 function authorizedSseStream(
     signal: AbortSignal,
-    pending: Array<{ event: string; data: string; cursor?: number }>,
-    poll: () => Promise<Array<{ event: string; data: string; cursor?: number }>>,
+    pending: SseFrame[],
+    poll: SsePoll,
     authorize: () => Promise<boolean>,
     onClose: () => void = () => {},
 ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
+    const local = new AbortController();
     let closed = false;
     let lastWrite = Date.now();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let wake: (() => void) | undefined;
+    let lastAuth = 0;
+    let batchAuthorized = false;
     let streamController: ReadableStreamDefaultController<Uint8Array>;
     const cleanup = () => {
         if (closed) return;
         closed = true;
-        onClose();
         signal.removeEventListener('abort', abort);
-        if (timer !== undefined) clearTimeout(timer);
-        wake?.();
+        local.abort();
+        onClose();
     };
     const abort = () => {
         if (closed) return;
         cleanup();
         streamController.close();
     };
+    const sleep = (ms: number) => new Promise<void>(resolve => {
+        if (local.signal.aborted) return resolve();
+        const done = () => { clearTimeout(timer); local.signal.removeEventListener('abort', done); resolve(); };
+        const timer = setTimeout(done, ms);
+        local.signal.addEventListener('abort', done, { once: true });
+    });
     return new ReadableStream<Uint8Array>({
         start(controller) {
             streamController = controller;
@@ -463,28 +577,39 @@ function authorizedSseStream(
         async pull(controller) {
             try {
                 while (!closed) {
-                    const event = pending.shift();
-                    const heartbeat = Date.now() - lastWrite >= 15000;
-                    if (event || heartbeat) {
-                        const allowed = await authorize();
-                        if (closed) return;
-                        if (!allowed) {
-                            controller.enqueue(encoder.encode('event: authorization-error\ndata: {"code":"COSSACK_REALTIME_AUTH_CHANGED"}\n\n'));
-                            cleanup(); controller.close(); return;
+                    const heartbeat = Date.now() - lastWrite >= SSE_HEARTBEAT_MS;
+                    if (pending.length || heartbeat) {
+                        if (!batchAuthorized || heartbeat || Date.now() - lastAuth >= SSE_AUTH_MAX_AGE_MS) {
+                            const allowed = await authorize();
+                            if (closed) return;
+                            if (!allowed) {
+                                controller.enqueue(encoder.encode('event: authorization-error\ndata: {"code":"COSSACK_REALTIME_AUTH_CHANGED"}\n\n'));
+                                cleanup(); controller.close(); return;
+                            }
+                            lastAuth = Date.now();
+                            batchAuthorized = true;
                         }
+                        const event = pending.shift();
                         controller.enqueue(encoder.encode(event
                             ? `event: ${event.event}\n${event.cursor === undefined ? '' : `id: ${event.cursor}\n`}data: ${event.data}\n\n`
                             : ': heartbeat\n\n'));
                         lastWrite = Date.now();
                         return;
                     }
-                    await new Promise<void>(resolve => { wake = resolve; timer = setTimeout(resolve, 200); });
-                    wake = undefined;
-                    timer = undefined;
+                    // Long-poll until the next heartbeat is due.
+                    const waitMs = Math.max(0, SSE_HEARTBEAT_MS - (Date.now() - lastWrite));
+                    const started = Date.now();
+                    const events = await poll(waitMs, local.signal);
                     if (closed) return;
-                    const events = await poll();
-                    if (closed) return;
-                    pending.push(...events);
+                    if (events.length) {
+                        pending.push(...events);
+                        batchAuthorized = false;
+                        continue;
+                    }
+                    // An empty answer before the wait elapsed (busy coordinator,
+                    // a non-blocking backend) must not become a hot loop.
+                    const backoff = Math.min(waitMs, SSE_EMPTY_POLL_BACKOFF_MS) - (Date.now() - started);
+                    if (backoff > 0) await sleep(backoff);
                 }
             } catch (error) {
                 if (closed) return;
@@ -512,6 +637,8 @@ export function syncSseState(
         }
         entry.stateVersion = cursor;
         entry.requestId = requestId;
+        entry.lastActive = Date.now();
+        notifyLocalSse(storeKey);
         return entry.stateVersion;
     }
 }

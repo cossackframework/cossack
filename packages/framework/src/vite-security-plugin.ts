@@ -188,6 +188,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       if (!shouldProcessFile(id)) {
         return { code, map: null };
       }
+      const original = code;
 
       // server$ is a compiler macro in both environments. On the server its
       // generated method retains the loader; the normal client pass below
@@ -218,15 +219,34 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       try {
         const stripped = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
         const transformed = stripClientServerOnlyImports(stripped, id);
-        if (transformed !== code) {
-          return { code: transformed, map: null };
-        }
+        // Never return `map: null` for rewritten client modules: the bundler
+        // would then fill `sourcesContent` from the ORIGINAL file and ship
+        // stripped @Server bodies / server$ loaders inside client `.map` files.
+        if (transformed !== original) return { code: transformed, map: strippedSourceMap(id, transformed) };
       } catch (error) {
         throw error;
       }
 
       return { code, map: null };
     },
+  };
+}
+
+/**
+ * Line-identity source map whose only source content is the STRIPPED module.
+ * Rollup/Rolldown take the root `sourcesContent` from the first transform map
+ * in the chain, so this map becomes the client-visible "original" and the
+ * server-only source never reaches emitted `.map` files.
+ */
+export function strippedSourceMap(id: string, code: string) {
+  const lines = code.split('\n').length;
+  return {
+    version: 3 as const,
+    file: id.split('?')[0],
+    sources: [id.split('?')[0]],
+    sourcesContent: [code],
+    names: [] as string[],
+    mappings: 'AAAA' + ';AACA'.repeat(lines - 1),
   };
 }
 
@@ -833,14 +853,57 @@ function* findClasses(program: any): Generator<any> {
   }
 }
 
-/** Statically authored aliases of core's typed State/Server decorator factory. */
+const TYPED_DECORATOR_NAMES = new Set(['Server', 'State']);
+
+/** Strip parentheses and TS-only wrappers around a decorator expression. */
+function unwrapExpression(node: any): any {
+  while (node && ['ParenthesizedExpression', 'TSAsExpression', 'TSNonNullExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSInstantiationExpression'].includes(node.type)) node = node.expression;
+  return node;
+}
+
+/** Callee of a decorator (`@x(...)` → `x`, `@x` → `x`), unwrapped. */
+function decoratorCallee(decorator: any): any {
+  const expression = unwrapExpression(decorator?.expression);
+  return unwrapExpression(expression?.type === 'CallExpression' ? expression.callee : expression);
+}
+
+/** Static property name of a member expression (`a.b`, `a['b']`), or null. */
+function memberPropertyName(node: any): string | null {
+  if (node?.type !== 'MemberExpression') return null;
+  if (!node.computed) return node.property?.type === 'Identifier' ? node.property.name : null;
+  return node.property?.type === 'Literal' && typeof node.property.value === 'string' ? node.property.value : null;
+}
+
+/**
+ * Fail-closed typed decorator detection: ANY `<expr>.Server` / `<expr>.State`
+ * member decorator is treated as the core decorator, wherever the namespace
+ * came from (a same-file `createTypedDecorators()`, a shared `./rpc` module,
+ * a re-export, ...). Misclassifying a client helper as Server only stubs it;
+ * missing a Server method would ship its body and validators to the client.
+ */
+function typedMemberDecorator(callee: any): string | null {
+  const name = memberPropertyName(unwrapExpression(callee));
+  return name && TYPED_DECORATOR_NAMES.has(name) ? name : null;
+}
+
+/**
+ * Statically authored aliases of core's typed State/Server decorators.
+ * Fail-closed: any value import named `Server`/`State` (from core, a local
+ * `./rpc` module, or a re-export) and any `const S = x.Server` /
+ * `const { Server: S } = x` binding is an alias, regardless of origin.
+ */
 function typedDecoratorBindings(program: any): { aliases: Map<string, string>; namespaces: Set<string> } {
   const factories = new Set<string>(), coreNamespaces = new Set<string>();
   const aliases = new Map<string, string>(), namespaces = new Set<string>();
   for (const node of program.body ?? []) {
-    if (node.type !== 'ImportDeclaration' || node.source?.value !== '@cossackframework/core' || node.importKind === 'type') continue;
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
+    const fromCore = node.source?.value === '@cossackframework/core';
     for (const specifier of node.specifiers ?? []) {
-      if (specifier.imported?.name === 'createTypedDecorators') factories.add(specifier.local.name);
+      if (specifier.importKind === 'type') continue;
+      const imported = specifier.imported?.name ?? specifier.imported?.value;
+      if (TYPED_DECORATOR_NAMES.has(imported)) aliases.set(specifier.local.name, imported);
+      if (!fromCore) continue;
+      if (imported === 'createTypedDecorators') factories.add(specifier.local.name);
       if (specifier.type === 'ImportNamespaceSpecifier') coreNamespaces.add(specifier.local.name);
     }
   }
@@ -853,17 +916,17 @@ function typedDecoratorBindings(program: any): { aliases: Map<string, string>; n
     const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
     if (declaration?.type !== 'VariableDeclaration') continue;
     for (const binding of declaration.declarations) {
-      if (factoryCall(binding.init)) {
-        if (binding.id.type === 'Identifier') namespaces.add(binding.id.name);
-        if (binding.id.type === 'ObjectPattern') {
-          for (const property of binding.id.properties) {
-            const name = !property.computed && memberKeyName(property.key);
-            if (property.type === 'Property' && typeof name === 'string' && ['Server', 'State'].includes(name) && property.value?.type === 'Identifier') aliases.set(property.value.name, name);
-          }
+      const init = unwrapExpression(binding.init);
+      if (factoryCall(init) && binding.id.type === 'Identifier') namespaces.add(binding.id.name);
+      if (binding.id.type === 'ObjectPattern' && init) {
+        for (const property of binding.id.properties) {
+          const name = !property.computed && memberKeyName(property.key);
+          const value = property.value?.type === 'AssignmentPattern' ? property.value.left : property.value;
+          if (property.type === 'Property' && typeof name === 'string' && TYPED_DECORATOR_NAMES.has(name) && value?.type === 'Identifier') aliases.set(value.name, name);
         }
-      } else if (binding.id.type === 'Identifier' && binding.init?.type === 'MemberExpression' && !binding.init.computed && factoryCall(binding.init.object)) {
-        const name = memberKeyName(binding.init.property);
-        if (name && ['Server', 'State'].includes(name)) aliases.set(binding.id.name, name);
+      } else if (binding.id.type === 'Identifier') {
+        const name = typedMemberDecorator(init);
+        if (name) aliases.set(binding.id.name, name);
       }
     }
   }
@@ -893,6 +956,10 @@ function frameworkClasses(program: any): Set<any> {
     node?.type === 'Identifier' ? names.has(node.name) :
     node?.type === 'MemberExpression' && !node.computed &&
       namespaces.has(node.object?.name) && names.has(node.property?.name);
+  const isServerDecorator = (decorator: any) => {
+    const callee = decoratorCallee(decorator);
+    return matches(callee, serverDecorators) || typedMemberDecorator(callee) === 'Server';
+  };
   const selected = new Set<any>();
   const classes = [...findClasses(program)];
   let changed = true;
@@ -903,7 +970,7 @@ function frameworkClasses(program: any): Set<any> {
       const decorated = (cls.decorators ?? []).some((d: any) =>
         matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, decorators));
       const serverMember = (cls.body?.body ?? []).some((member: any) =>
-        (member.decorators ?? []).some((d: any) => matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, serverDecorators)));
+        (member.decorators ?? []).some(isServerDecorator));
       if (matches(cls.superClass, bases) || decorated || serverMember) {
         selected.add(cls);
         if (cls.id?.name) bases.add(cls.id.name);
@@ -992,8 +1059,7 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
   typed.aliases.forEach((name, alias) => aliases.set(alias, name));
   typed.namespaces.forEach(name => namespaces.add(name));
   const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) => {
-    const expression = d.expression;
-    const callee = expression?.type === 'CallExpression' ? expression.callee : expression;
+    const callee = decoratorCallee(d);
     let canonical: string | undefined;
     if (callee?.type === 'Identifier') canonical = aliases.get(callee.name);
     if (callee?.type === 'MemberExpression' && namespaces.has(callee.object?.name)) {
@@ -1001,6 +1067,8 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         ? callee.property.name
         : undefined;
     }
+    // Fail closed: `@anything.Server(...)` is Server regardless of origin.
+    canonical ??= typedMemberDecorator(callee) ?? undefined;
     return canonical ? `@${canonical}${code.slice(callee.end, d.end)}` : sourceSlice(code, d);
   });
   for (const member of cls?.body?.body ?? []) {
@@ -1866,11 +1934,12 @@ function stripServerActionInput(code: string): {code:string;bindings:Set<string>
   for (const cls of frameworkClasses(program)) {
     for (const member of cls.body.body) {
       for (const decorator of member.decorators ?? []) {
-        const call = decorator.expression;
+        const call = unwrapExpression(decorator.expression);
         if (call?.type !== 'CallExpression') continue;
-        const callee = call.callee;
+        const callee = unwrapExpression(call.callee);
         if (!(callee.type === 'Identifier' && aliases.has(callee.name)) &&
-            !(callee.type === 'MemberExpression' && namespaces.has(callee.object?.name) && !callee.computed && callee.property?.name === 'Server')) continue;
+            !(callee.type === 'MemberExpression' && namespaces.has(callee.object?.name) && !callee.computed && callee.property?.name === 'Server') &&
+            typedMemberDecorator(callee) !== 'Server') continue;
         const argument = call.arguments[0];
         if (!argument) continue;
         if (argument.type !== 'ObjectExpression' || argument.properties.some((p: any) => p.type !== 'Property' || p.computed)) {

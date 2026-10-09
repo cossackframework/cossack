@@ -1,7 +1,7 @@
 import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import { Hono, type Context } from 'hono';
 import { serveStatic, upgradeWebSocket } from 'hono/deno';
-import { closeUnauthorizedSocket, InMemoryWebSocketRuntime } from '@cossackframework/core';
+import { closeUnauthorizedSocket, InMemoryWebSocketRuntime, setClientAddress } from '@cossackframework/core';
 import type { CossackRuntimeAdapter, RuntimeWebSocketUpgrade } from '@cossackframework/core';
 
 export interface DenoAdapterOptions {
@@ -269,7 +269,11 @@ export function createDenoAdapter(options: DenoAdapterOptions = {}): CossackDeno
         ...(options.hostname ? { hostname: options.hostname } : {}),
         ...(options.port !== undefined ? { port: options.port } : {}),
       };
-      const server = deno.serve(serveOptions, (request: Request) => getFetchHandler(app)(request));
+      const server = deno.serve(serveOptions, (request: Request, info?: { remoteAddr?: { hostname?: string } }) => {
+        // Rate limits bucket anonymous callers by the socket peer, not spoofable headers.
+        setClientAddress(request, info?.remoteAddr?.hostname);
+        return getFetchHandler(app)(request);
+      });
       let shutdown: Promise<void> | undefined;
       const finished = server.finished?.then(
         () => dispose(),

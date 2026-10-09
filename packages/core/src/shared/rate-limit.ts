@@ -104,8 +104,11 @@ function readCounter(value: unknown): RateLimitCounter {
 }
 
 /**
- * Simple in-memory fixed-window counter. New buckets reject at
- * `maxEntries` (default 10 000), after pruning expiry. Live quotas are never evicted.
+ * Simple in-memory fixed-window counter holding at most `maxEntries` buckets
+ * (default 10 000). When full, expired buckets are pruned first, then the
+ * buckets whose window started earliest are evicted to admit the new caller.
+ * Eviction forgets those callers' spent quota, so size `maxEntries` above the
+ * expected live caller count or use a shared provider for strict limits.
  */
 export class InMemoryRateLimitStore implements RateLimitStore {
     readonly capabilities = storageCapabilities('rate-limit', 'memory');
@@ -127,11 +130,19 @@ export class InMemoryRateLimitStore implements RateLimitStore {
         const now = Date.now();
         const existing = this.entries.get(key);
         if (!existing || now >= existing.resetAt) {
-            if (!existing && this.entries.size >= this.maxEntries) {
+            if (existing) this.entries.delete(key);
+            else if (this.entries.size >= this.maxEntries) {
                 this.prune(now);
-                if (this.entries.size >= this.maxEntries) throw new Error('[Cossack] Memory rate-limit capacity exceeded; use a shared provider or increase maxEntries.');
+                // Evict the oldest live windows rather than rejecting new callers:
+                // throwing here would let a flood of distinct keys deny service to
+                // every rate-limited endpoint until those windows expire.
+                for (const oldest of this.entries.keys()) {
+                    if (this.entries.size < this.maxEntries) break;
+                    this.entries.delete(oldest);
+                }
             }
             const resetAt = now + windowMs;
+            // Re-insert so Map order tracks window start (oldest first).
             this.entries.set(key, { count: 1, resetAt });
             return { count: 1, resetAt };
         }
@@ -560,18 +571,72 @@ export function configureRateLimitFromEnv(env: Record<string, unknown> | undefin
     return store;
 }
 
+const clientAddresses = new WeakMap<Request, string>();
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9a-z-]+$/;
+
 /**
- * Best-effort client IP extraction. Checks Cloudflare (`cf-connecting-ip`),
- * the conventional `x-real-ip`, then the first hop of `x-forwarded-for`.
- * Falls back to `'anonymous'` when no proxy header is present (e.g. local dev).
+ * Record the transport peer address for `request` (the TCP socket's remote
+ * address). Runtime adapters call this before dispatching so
+ * {@link getClientIp} can bucket anonymous callers without trusting
+ * client-controlled headers. `createDenoAdapter().serve()` does this
+ * automatically; Node entries pass `incoming.socket.remoteAddress`.
+ */
+export function setClientAddress(request: Request, address: string | undefined | null): void {
+    if (typeof address === 'string' && address) clientAddresses.set(request, address);
+}
+
+function isCloudflareWorkers(): boolean {
+    return (globalThis as { navigator?: { userAgent?: unknown } }).navigator?.userAgent === 'Cloudflare-Workers';
+}
+
+function trustedProxyHeader(env: Record<string, unknown> | undefined): string | undefined {
+    if (!env || typeof env !== 'object') return undefined;
+    const raw = env.rateLimitTrustProxy === undefined ? env.RATE_LIMIT_TRUST_PROXY : env.rateLimitTrustProxy;
+    if (raw === undefined || raw === '') return undefined;
+    const header = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    if (!HEADER_NAME.test(header)) {
+        throw new Error('[Cossack] RATE_LIMIT_TRUST_PROXY must name the single header set by your trusted proxy (e.g. x-forwarded-for).');
+    }
+    return header;
+}
+
+function socketAddress(c: Context): string | undefined {
+    const raw = c.req?.raw;
+    const recorded = raw ? clientAddresses.get(raw) : undefined;
+    if (recorded) return recorded;
+    // @hono/node-server's default bindings: `{ incoming }` (or `{ server: { incoming } }`).
+    const env = (c as unknown as { env?: Record<string, any> }).env;
+    const incoming = env?.incoming ?? env?.server?.incoming;
+    const address = incoming?.socket?.remoteAddress;
+    return typeof address === 'string' && address ? address : undefined;
+}
+
+/**
+ * Client IP used for anonymous rate-limit buckets. Client-supplied proxy
+ * headers are ignored unless the deployment says who sets them:
+ *
+ * - `RATE_LIMIT_TRUST_PROXY` (or `rateLimitTrustProxy`) in the request
+ *   environment names the one header your reverse proxy overwrites. For
+ *   `x-forwarded-for` the right-most hop (appended by that proxy) is used.
+ * - On Cloudflare Workers, `cf-connecting-ip` is set by Cloudflare and trusted.
+ * - Otherwise the transport peer address recorded by the adapter
+ *   ({@link setClientAddress}) or `@hono/node-server`'s `incoming` binding.
+ *
+ * Falls back to `'anonymous'` (one shared bucket) when none is available.
  */
 export function getClientIp(c: Context): string {
-    return (
-        c.req.header?.('cf-connecting-ip') ||
-        c.req.header?.('x-real-ip') ||
-        (c.req.header?.('x-forwarded-for') || '').split(',')[0].trim() ||
-        'anonymous'
-    );
+    const header = (name: string) => (c.req.header?.(name) as string | undefined | null) || '';
+    const trusted = trustedProxyHeader((c as unknown as { env?: Record<string, unknown> }).env);
+    if (trusted) {
+        const value = trusted === 'x-forwarded-for'
+            ? header(trusted).split(',').map(part => part.trim()).filter(Boolean).pop()
+            : header(trusted).trim();
+        if (value) return value;
+    } else if (isCloudflareWorkers()) {
+        const value = header('cf-connecting-ip').trim();
+        if (value) return value;
+    }
+    return socketAddress(c) || 'anonymous';
 }
 
 /**

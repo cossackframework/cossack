@@ -6,11 +6,15 @@ import applicationRegistry from 'virtual:cossack-pages';
 import { resolveLayoutPaths } from './route-ids.js';
 import { resolveRealtimeScopeKey } from './realtime-scope.js';
 import { withRealtimeAuthorization, type RealtimeIdentity, type RealtimeRequestSnapshot } from './realtime-context.js';
+import { ensureRequestContextAlsWired } from './request-context-als.js';
 import type { SocketPeerAttachment } from '@cossackframework/core';
 
 export class AppDurableObject extends CossackDurableObject {
     constructor(state: DurableObjectState, env: any) {
         super(state, env);
+        // A Durable Object isolate may serve socket actions before any HTTP
+        // request runs the request-context middleware.
+        ensureRequestContextAlsWired();
     }
 
     async getComponentRegistry(): Promise<Map<string, new () => Cossack>> {

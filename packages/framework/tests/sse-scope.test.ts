@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
 import { Context } from 'hono';
-import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, syncSseState, __sseStoreSize } from '../src/transports/sse';
+import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, syncSseState, __sseStoreSize, __sweepSseStore, __resetSseStore, SSE_STORE_IDLE_TTL_MS } from '../src/transports/sse';
 import type { RouterContext } from '../src/route-ids';
 vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 
@@ -156,5 +156,74 @@ describe('SSE store bounding (connection counting)', () => {
             await reader.cancel();
             vi.useRealTimers();
         }
+    });
+
+    const ssrPage = '/src/pages/sse/index.ts';
+    const instance = (count = 0) => ({ count, getPublicState() { return { count: this.count }; } }) as any;
+
+    it('bounds the store on SSR registration', () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        for (let i = 0; i < 520; i++) registerSseStoreEntry(ctx, ssrPage, `user:bound-${i}`, instance());
+        expect(__sseStoreSize()).toBe(500);
+        __resetSseStore();
+    });
+
+    it('expires SSR entries that never get a connection after the idle TTL', () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        registerSseStoreEntry(ctx, ssrPage, 'user:never-connected', instance());
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS - 1000)).toBe(1);
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS + 1)).toBe(0);
+    });
+
+    it('keeps entries with live connections and expires them after the last disconnect', async () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        const scopeKey = 'user:ttl';
+        registerSseStoreEntry(ctx, ssrPage, scopeKey, instance());
+        const controller = new AbortController();
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'ttl' }, scopeKey, controller));
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS * 10)).toBe(1);
+        controller.abort();
+        await response.body?.cancel().catch(() => {});
+        // Grace period after the last disconnect, then removal.
+        expect(__sweepSseStore(Date.now() + 1000)).toBe(1);
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS + 1)).toBe(0);
+    });
+
+    it('evicts idle entries before entries with live connections when full', async () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        const controller = new AbortController();
+        // The oldest entry has a live connection; later idle ones go first.
+        registerSseStoreEntry(ctx, ssrPage, 'user:live', instance(1));
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'live' }, 'user:live', controller));
+        for (let i = 0; i < 510; i++) registerSseStoreEntry(ctx, ssrPage, `user:idle-${i}`, instance());
+        expect(__sseStoreSize()).toBe(500);
+        expect(syncSseState('sse_page:user:live', { count: 2 })).toBeTypeOf('number');
+        controller.abort();
+        await response.body?.cancel().catch(() => {});
+        __resetSseStore();
+    });
+
+    it('wakes a waiting Node subscriber on sync without a polling interval', async () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        const scopeKey = 'user:wake';
+        registerSseStoreEntry(ctx, ssrPage, scopeKey, instance());
+        const controller = new AbortController();
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'wake' }, scopeKey, controller));
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        await reader.read(); await reader.read();
+        const next = reader.read();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        const started = Date.now();
+        syncSseState(`sse_page:${scopeKey}`, { count: 5 });
+        expect(decoder.decode((await next).value)).toContain('data: {"count":5}');
+        expect(Date.now() - started).toBeLessThan(150);
+        controller.abort();
+        await reader.cancel();
     });
 });

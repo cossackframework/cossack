@@ -3,7 +3,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { Context } from 'hono';
-import { closeUnauthorizedSocket, InMemoryWebSocketRuntime, type Cossack } from '@cossackframework/core';
+import { closeUnauthorizedSocket, InMemoryWebSocketRuntime, setClientAddress, type Cossack } from '@cossackframework/core';
 
 /** Structural router contract: the Node library does not import the framework. */
 export interface NodeWebSocketUpgrade {
@@ -197,6 +197,7 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
           const protocol = (request.socket as { encrypted?: boolean }).encrypted ? 'https' : 'http';
           const webRequest = new Request(new URL(request.url!, `${protocol}://${request.headers.host}`), { headers });
           const state = { token: crypto.randomUUID(), upgrade: undefined as NodeWebSocketUpgrade | undefined };
+          setClientAddress(webRequest, request.socket.remoteAddress);
           requests.set(webRequest, state);
           let response: Response;
           try { response = await fetch(webRequest); }

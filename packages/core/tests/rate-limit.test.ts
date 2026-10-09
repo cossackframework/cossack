@@ -14,6 +14,7 @@ import {
     configureRateLimitFromEnv,
     __resetRateLimitForTests,
     getClientIp,
+    setClientAddress,
     defaultRateLimitKey,
     enforceRateLimit,
     enforceMethodRateLimit,
@@ -26,11 +27,17 @@ import {
 } from '../src/shared/rate-limit';
 
 // Build a minimal fake Hono Context.
-function makeContext(opts: { ip?: string; user?: { id: string }; path?: string; method?: string } = {}): any {
+function makeContext(opts: { ip?: string; user?: { id: string }; path?: string; method?: string;
+    headers?: Record<string, string>; env?: Record<string, unknown> } = {}): any {
     const headers: Record<string, string> = {};
-    if (opts.ip) headers['cf-connecting-ip'] = opts.ip;
+    for (const [name, value] of Object.entries(opts.headers ?? {})) headers[name.toLowerCase()] = value;
+    const raw = new Request('http://localhost/');
+    // `ip` is the transport peer address an adapter records for the request.
+    if (opts.ip) setClientAddress(raw, opts.ip);
     return {
+        ...(opts.env ? { env: opts.env } : {}),
         req: {
+            raw,
             method: opts.method ?? 'GET',
             path: opts.path ?? '/api/test',
             header: (name: string) => headers[name.toLowerCase()] ?? null,
@@ -74,10 +81,20 @@ describe('InMemoryRateLimitStore', () => {
         const s = new InMemoryRateLimitStore(5);
         s.hit('k1', 10);
         await new Promise((r) => setTimeout(r, 20));
-        // Fill the hard capacity, pruning the expired bucket before admitting the last.
+        // Fill the capacity, pruning the expired bucket before admitting the last.
         for (let i = 0; i < 5; i++) s.hit(`fresh${i}`, 10_000);
-        expect(() => s.hit('overflow', 10_000)).toThrow(/capacity/);
         expect((s as any).entries.has('k1')).toBe(false);
+        expect((s as any).entries.size).toBe(5);
+    });
+
+    it('evicts the oldest live buckets instead of rejecting new callers when full', () => {
+        const s = new InMemoryRateLimitStore(3);
+        s.hit('a', 60_000); s.hit('b', 60_000); s.hit('c', 60_000);
+        s.hit('a', 60_000); // a's count rises but its window still started first
+        for (let i = 0; i < 100; i++) expect(s.hit(`flood${i}`, 60_000).count).toBe(1);
+        expect((s as any).entries.size).toBe(3);
+        expect(s.hit('victim', 60_000).count).toBe(1);
+        expect(s.hit('victim', 60_000).count).toBe(2);
     });
 });
 
@@ -237,8 +254,38 @@ describe('enforceRateLimit', () => {
 });
 
 describe('key extraction', () => {
-    it('reads cf-connecting-ip first', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('uses the adapter-recorded socket address', () => {
         expect(getClientIp(makeContext({ ip: '5.5.5.5' }))).toBe('5.5.5.5');
+    });
+
+    it('ignores spoofable proxy headers outside Cloudflare without opt-in', () => {
+        const headers = { 'cf-connecting-ip': '6.6.6.6', 'x-real-ip': '7.7.7.7', 'x-forwarded-for': '8.8.8.8' };
+        expect(getClientIp(makeContext({ ip: '5.5.5.5', headers }))).toBe('5.5.5.5');
+        expect(getClientIp(makeContext({ headers }))).toBe('anonymous');
+    });
+
+    it('reads the @hono/node-server incoming socket binding', () => {
+        const incoming = { socket: { remoteAddress: '::1' } };
+        expect(getClientIp(makeContext({ env: { incoming }, headers: { 'x-forwarded-for': '1.1.1.1' } }))).toBe('::1');
+        expect(getClientIp(makeContext({ env: { server: { incoming } } }))).toBe('::1');
+    });
+
+    it('trusts cf-connecting-ip only on Cloudflare Workers', () => {
+        vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+        expect(getClientIp(makeContext({ ip: '5.5.5.5', headers: { 'cf-connecting-ip': '6.6.6.6', 'x-forwarded-for': '8.8.8.8' } }))).toBe('6.6.6.6');
+        expect(getClientIp(makeContext({ headers: { 'x-real-ip': '7.7.7.7' } }))).toBe('anonymous');
+    });
+
+    it('trusts only the explicitly configured proxy header', () => {
+        const headers = { 'x-real-ip': '7.7.7.7', 'x-forwarded-for': 'spoofed, 10.0.0.1 , 9.9.9.9' };
+        expect(getClientIp(makeContext({ ip: '127.0.0.1', headers, env: { RATE_LIMIT_TRUST_PROXY: 'X-Real-IP' } }))).toBe('7.7.7.7');
+        // The right-most hop is the one appended by the trusted proxy.
+        expect(getClientIp(makeContext({ ip: '127.0.0.1', headers, env: { rateLimitTrustProxy: 'x-forwarded-for' } }))).toBe('9.9.9.9');
+        // Missing header falls back to the socket address.
+        expect(getClientIp(makeContext({ ip: '127.0.0.1', env: { RATE_LIMIT_TRUST_PROXY: 'x-real-ip' } }))).toBe('127.0.0.1');
+        expect(() => getClientIp(makeContext({ env: { RATE_LIMIT_TRUST_PROXY: 'bad header' } }))).toThrow(/RATE_LIMIT_TRUST_PROXY/);
     });
 
     it('falls back to anonymous', () => {

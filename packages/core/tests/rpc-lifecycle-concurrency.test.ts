@@ -160,3 +160,29 @@ it('retires a terminal socket and cancels its owned RPC even when reciprocal clo
     expect(cancel).toHaveBeenCalledOnce(); expect(rpcCancellations(ws).size).toBe(0);
     expect(retire).toHaveBeenCalledExactlyOnceWith(ws);
 });
+it('runs a fresh create after a concurrent restore instead of adopting the restore promise', async () => {
+    const restore = gate(); let inits = 0, gets = 0, parked = false;
+    @Page({ transport: 'durable-object', stateful: true })
+    class Live extends Cossack { @State() count = 0; async init() { inits++; } }
+    const f = objectFixture(Live);
+    const originalGet = f.state.storage.get.getMockImplementation()!;
+    // The second restore (from another socket's message) parks on the gate.
+    f.state.storage.get.mockImplementation(async (key: string | string[]) => { if (Array.isArray(key) && ++gets === 2) await restore.wait; return originalGet(key); });
+    const object = f.object as any;
+    const ensure = object.ensureComponentInstance.bind(object);
+    let other: Promise<unknown> | undefined;
+    // Interleave: right after this join's restore check, another peer's message
+    // starts its own restore before this join reaches its create operation.
+    object.ensureComponentInstance = async () => {
+        await ensure();
+        if (!other) { other = f.object.webSocketMessage(socket() as unknown as WebSocket, '{}'); await vi.waitFor(() => expect(gets).toBe(2)); parked = true; }
+    };
+    const join = f.object.fetch(new Request('https://fixture.test/global?pathname=/live&params={}', { headers: { 'X-Component-Path': '/src/pages/live/index.ts', 'X-Provider-Name': 'page' } }));
+    await vi.waitFor(() => expect(parked).toBe(true));
+    await new Promise(resolve => setTimeout(resolve, 0)); // the join now waits on the pending restore
+    expect(inits).toBe(0);
+    restore.release();
+    expect((await join).status).toBe(101);
+    await other;
+    expect(inits).toBe(1); expect(f.peers).toHaveLength(1); expect(f.object.componentInstance).toBeDefined();
+});

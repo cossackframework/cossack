@@ -149,7 +149,13 @@ export default class SearchPage extends Cossack {
 
 ## How callers are identified
 
-By default a caller is bucketed by the authenticated user id, falling back to the client IP (`cf-connecting-ip` → `x-real-ip` → `x-forwarded-for`). Bucket by anything else with `key`:
+By default a caller is bucketed by the authenticated user id, falling back to the client IP. Client-supplied proxy headers are not trusted by default:
+
+- **Cloudflare Workers**: `cf-connecting-ip`, which Cloudflare sets and clients cannot forge.
+- **Node.js / Deno**: the TCP peer address. `createDenoAdapter().serve()` records it automatically. A custom Node entry records it with `setClientAddress(request, incoming.socket.remoteAddress)`, or passes `@hono/node-server`'s `{ incoming }` bindings through as `env`.
+- **Behind a reverse proxy**: set `RATE_LIMIT_TRUST_PROXY` (or `rateLimitTrustProxy`) in the environment to the one header your proxy overwrites, e.g. `x-real-ip` or `x-forwarded-for`. For `x-forwarded-for` the right-most entry (appended by your proxy) is used. Only enable this when the app is reachable exclusively through that proxy.
+
+Without any of these, anonymous callers share one `ip:anonymous` bucket. Bucket by anything else with `key`:
 
 ```typescript
 RateLimit({ window: 60_000, max: 100, key: (c) => `tenant:${c.get('user').tenantId}` }, handler);
@@ -364,10 +370,11 @@ explicit null is invalid. Framework scope/caller keys use JSON tuples too, so
 separators in identifiers cannot merge distinct budgets.
 
 `InMemoryRateLimitStore(maxEntries)` defaults to 10,000 entries and accepts
-integers from 1 to 100,000. At capacity it removes expired buckets and rejects a
-new key if every bucket is live. It never evicts a spent live budget to grant
-fresh quota. Existing buckets still increment. Capacity errors are backend
-failures, not 429 quota denials; no retry or fallback is performed.
+integers from 1 to 100,000. At capacity it removes expired buckets, then evicts
+the buckets whose window started earliest so new callers are still admitted.
+A flood of distinct keys therefore cannot block every caller, but evicted
+callers lose their spent budget. Size `maxEntries` above the expected number of
+live callers, or use a shared store for strict limits.
 
 Redis requires an explicit HTTPS REST URL, at most 2048 UTF-8 bytes, without
 embedded credentials, query, fragment, whitespace, controls or backslashes.

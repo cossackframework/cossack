@@ -99,6 +99,7 @@ import type { ServiceScope } from './service-scope';
 // It binds resource getters without dispatching unrelated read operations.
 let rpcReconstructionDepth = 0;
 import { TaskCommitError, type TaskContext } from './task';
+import { getActionIdentityScope, type ActionIdentity } from './action-identity-scope';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
@@ -436,17 +437,62 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _runtimeInfo?: CossackRuntimeInfo;
 
     protected get c(): Context & CossackContext {
+        if (!this._scopedIdentity()) this._assertUnambiguousIdentity('c');
+        return this._ambientContext();
+    }
+    /** The identity of the action call whose async context is running, when the framework wired a scope. */
+    private _scopedIdentity(): ActionIdentity | undefined {
+        const identity = getActionIdentityScope()?.get();
+        return identity?.owner === this ? identity : undefined;
+    }
+    /** @internal Framework-owned read of the current context, bypassing the stream identity guard. */
+    private _ambientContext(): Context & CossackContext {
         // The context is wrapped by `createCossackContext`, whose proxy adds
         // `getFormData` at runtime. Cast through to the augmented type so
         // `this.c.getFormData` type-checks for developers.
-        return (this._actionIdentity?.context || this._c || this.consume(RequestContext)) as Context & CossackContext;
+        const scoped = this._scopedIdentity();
+        return ((scoped ? scoped.context : this._actionIdentity?.context) || this._c || this.consume(RequestContext)) as Context & CossackContext;
     }
     protected set c(val: Context) {
         this._c = val;
     }
 
     protected get user(): User | undefined {
-        return this._actionIdentity ? this._actionIdentity.user : this._user || this.consume(UserContext);
+        if (!this._scopedIdentity()) this._assertUnambiguousIdentity('user');
+        return this._ambientUser();
+    }
+    /** @internal Framework-owned read of the current user, bypassing the stream identity guard. */
+    private _ambientUser(): User | undefined {
+        const identity = this._scopedIdentity() ?? this._actionIdentity;
+        return identity ? identity.user : this._user || this.consume(UserContext);
+    }
+
+    /**
+     * Number of streaming actions that left the action queue and are still
+     * running, and the depth of synchronous segments whose identity is known.
+     * See `_runAction` for the streaming identity semantics.
+     */
+    private _detachedStreams = 0;
+    private _identityWindow = 0;
+
+    /**
+     * Defense in depth for reads outside any action-identity scope (e.g. a
+     * callback that escaped async context) while a detached stream runs: the
+     * reader cannot be determined, so refuse rather than return the identity
+     * of whichever queued action currently owns the instance slots.
+     */
+    private _assertUnambiguousIdentity(name: string): void {
+        if (this._detachedStreams > 0 && this._identityWindow === 0) {
+            throw new Error(`[Cossack] this.${name} is ambiguous here: a streaming @Server action on ${this.constructor.name} `
+                + 'is still running, so the caller cannot be determined after an await. Read this.user/this.c '
+                + 'synchronously (before the first await of the action, or of each stream step) and keep it in a local variable.');
+        }
+    }
+
+    private _withIdentityWindow<T>(step: () => T): T {
+        this._identityWindow++;
+        try { return step(); }
+        finally { this._identityWindow--; }
     }
     protected set user(val: User | undefined) { this._user = val; }
 
@@ -1085,11 +1131,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Provide Contexts (After initialization)
         this.provide(RootContext, this);
         this.provide(EnvContext, this.env);
-        this.provide(UserContext, this.user);
-        this.provide(RequestContext, this.c);
+        this.provide(UserContext, this._ambientUser());
+        this.provide(RequestContext, this._ambientContext());
         this.provide(RuntimeContext, this.runtime);
 
-        if (!stageNavigation) this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        if (!stageNavigation) this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
 
         this.initializeState(initialState);
         this._navigationClientDraft = undefined;
@@ -1185,7 +1231,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     /** @internal Activate a prepared browser owner once, after publishing its tree. */
     public _frameworkActivateNavigation(): void {
         if (this.isServer || this.isMounted || this.isInPhase(LifecyclePhase.Destroyed)) return;
-        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
         this.isMounted = true;
         this._frameworkMount();
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
@@ -1201,7 +1247,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public async _frameworkPublishNavigation(): Promise<void> {
         if (this.isServer || this.isMounted || this._navigationPublished || this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._navigationPublished = true;
-        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
         await this.runTasks();
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._frameworkConnectClientTransport();
@@ -1354,7 +1400,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const path = this._cossack_path;
         const url = this._cossack_url;
         const params = this._cossack_params;
-        const user = this.user;
+        const user = this._ambientUser();
         const children = this._childrenStateRegistry;
         const scope = this._serviceScope;
         const request = scope?.getRequestContext();
@@ -1392,7 +1438,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         const user = state.metadata?.user as User | undefined;
         this.user = user;
         this.provide(UserContext, user);
-        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
         this._childrenStateRegistry = state.children ?? {};
     }
     private _urlStateCache = new WeakMap<object, { url: string; values: unknown }>();
@@ -1435,7 +1481,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Logging must not turn a partial/synthetic context into a lifecycle failure.
         if (this.isServer) {
             try {
-                const request = context ?? this.c;
+                const request = context ?? this._ambientContext();
                 header = request?.res?.headers?.get('X-Cossack-Request-Id') ?? undefined;
                 runtime = typeof request?.get === 'function' ? request.get('cossack.configContext')?.runtime : undefined;
             } catch { /* Unavailable metadata is represented by the fixed fallback. */ }
@@ -1474,20 +1520,28 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
             hooks.set(requestId, () => { cancellation.cancelled = true; cancellation.controller.abort(); cancellation.close?.(); });
         }
+        // The queue turn ends when the action settles or, for a streaming
+        // action, as soon as its first `next()` has been invoked (`release`).
+        // The returned promise still settles only when the whole call ends.
+        let release!: () => void;
+        const turn = new Promise<void>((resolve) => { release = resolve; });
         const run = async () => {
             try {
                 if (cancellation.cancelled) return;
-                await this._runAction(action, payload, user, clientContext, requestId, cancellation, requestContext, development);
+                await this._runAction(action, payload, user, clientContext, requestId, cancellation, requestContext, development, release);
             } finally {
+                release();
                 if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
             }
         };
-        this._actionQueue = this._actionQueue.then(run, run);
-        return this._actionQueue;
+        const done = this._actionQueue.then(run, run);
+        this._actionQueue = turn;
+        return done;
     }
 
     private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
-        requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context, development?: DevelopmentSocketDispatch): Promise<void> {
+        requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context, development?: DevelopmentSocketDispatch,
+        releaseQueue?: () => void): Promise<void> {
         const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {
@@ -1496,7 +1550,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return;
         }
         this._cossack_ws_context = clientContext;
-        const context = requestContext ? createCossackContext(requestContext, true) : this.c;
+        const context = requestContext ? createCossackContext(requestContext, true) : this._ambientContext();
         this._actionIdentity = {
             user,
             context: context && new Proxy(context, {
@@ -1509,6 +1563,22 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
         const failureContext = this._failureContext(action, requestId, requestContext);
         let iterator: AsyncIterator<unknown> | undefined;
+        let detached = false;
+        const identity = this._actionIdentity;
+        const scope = getActionIdentityScope();
+        const callIdentity: ActionIdentity = { owner: this, user, context: identity?.context, socket: clientContext };
+        // Enters this call's async identity scope (when wired) so continuations
+        // after `await` inside the method/generator keep resolving this caller.
+        const scoped = <T>(step: () => T): T => scope ? scope.run(callIdentity, step) : step();
+        // Runs `step` synchronously with this call's identity, then restores
+        // whatever identity (another queued action's, or none) was current.
+        const withIdentity = <T>(step: () => T): T => {
+            const previous = this._actionIdentity, previousSocket = this._cossack_ws_context;
+            this._actionIdentity = identity;
+            this._cossack_ws_context = clientContext;
+            try { return this._withIdentityWindow(() => scoped(step)); }
+            finally { this._actionIdentity = previous; this._cossack_ws_context = previousSocket; }
+        };
         try {
             const actionClass = getForwardedServerMethodClass(this, action) ?? this.constructor;
             const limit = getRateLimitForAction(actionClass, action);
@@ -1554,7 +1624,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Inherited prototype actions may not have been auto-bound by the
             // most-derived constructor. Preserve the component receiver here.
             if (import.meta.env?.DEV) development?.invoked();
-            const result = await (actionMethod as any).apply(this, validatedPayload as any[]);
+            const result = await this._withIdentityWindow(() => scoped(() => (actionMethod as any).apply(this, validatedPayload as any[])));
             if (requestId !== undefined && result instanceof Response) {
                 if (import.meta.env?.DEV) development?.returned('native');
                 await result.body?.cancel().catch(() => {});
@@ -1563,18 +1633,42 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
             if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
                 if (import.meta.env?.DEV) development?.returned('stream');
-                iterator = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
-                cancellation.close = () => { void iterator!.return?.(undefined).catch(() => {}); };
-                while (!cancellation.cancelled) {
-                    const next = await iterator.next();
-                    if (cancellation.cancelled) break;
-                    if (next.done) {
-                        send({ v: 1, type: 'done', requestId,
-                            value: next.value, state: this.getPublicState() });
-                        break;
+                const stream = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+                iterator = stream;
+                cancellation.close = () => { withIdentity(() => { void stream.return?.(undefined)?.catch(() => {}); }); };
+                // Streaming semantics: with an async action-identity scope wired
+                // (the framework wires AsyncLocalStorage), the stream holds the
+                // per-component action queue only until its first `next()` has
+                // been invoked, so a long-lived stream cannot block other callers'
+                // actions. Every `next()`/`return()` runs inside this call's
+                // scope, so `this.user`/`this.c`/@Client calls resolve to the
+                // stream caller even after `await`, while other actions resolve
+                // their own. Unscoped reads while a detached stream runs throw
+                // instead of guessing. Without a wired scope (core used alone),
+                // the stream keeps the queue until it ends: identity stays
+                // correct, but one stream serializes the component's actions.
+                if (!cancellation.cancelled) {
+                    let step = withIdentity(() => stream.next());
+                    if (scope) {
+                        detached = true;
+                        this._detachedStreams++;
+                        this._actionIdentity = undefined;
+                        this._cossack_ws_context = undefined;
+                        releaseQueue?.();
                     }
-                    send({ v: 1, type: 'yield', requestId,
-                        value: next.value, state: this.getPublicState() });
+                    while (true) {
+                        const next = await step;
+                        if (cancellation.cancelled) break;
+                        if (next.done) {
+                            send({ v: 1, type: 'done', requestId,
+                                value: next.value, state: this.getPublicState() });
+                            break;
+                        }
+                        send({ v: 1, type: 'yield', requestId,
+                            value: next.value, state: this.getPublicState() });
+                        if (cancellation.cancelled) break;
+                        step = withIdentity(() => stream.next());
+                    }
                 }
             } else if (requestId !== undefined && !cancellation.cancelled) {
                 if (import.meta.env?.DEV) development?.returned('value');
@@ -1595,11 +1689,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
         } finally {
             if (iterator) {
-                try { await iterator.return?.(undefined); }
+                const stream = iterator;
+                try { await (detached ? withIdentity(() => stream.return?.(undefined)) : stream.return?.(undefined)); }
                 catch { logRuntimeFailure(failureContext, 'action-cleanup', 'COSSACK_RPC_CLEANUP_FAILED'); }
             }
-            this._actionIdentity = undefined;
-            this._cossack_ws_context = undefined;
+            // A detached stream no longer owns the shared identity slots; a
+            // queued action may be using them now.
+            if (detached) this._detachedStreams--;
+            else {
+                this._actionIdentity = undefined;
+                this._cossack_ws_context = undefined;
+            }
             // Legacy completion signal for callers without a request id. The
             // correlated protocol manages its own call lifecycle.
             if (requestId === undefined) {
@@ -2330,11 +2430,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     console.warn(`[Cossack] Client method '${String(key)}' cannot be called from the client.`);
                     return;
                 }
-                if (!this._cossack_ws_context) {
+                // The socket slot has the same ambiguity as this.user while a
+                // detached stream runs; never deliver to another caller's socket.
+                const scoped = this._scopedIdentity();
+                if (!scoped) this._assertUnambiguousIdentity(`${String(key)}()`);
+                const socket = scoped ? scoped.socket : this._cossack_ws_context;
+                if (!socket) {
                     console.warn(`[Cossack] Client method '${String(key)}' was called from a non-WebSocket context and could not be sent.`);
                     return;
                 }
-                this._runtime?.sendClientAction(this._cossack_ws_context, key, args);
+                this._runtime?.sendClientAction(socket, key, args);
             });
         }
     }
@@ -2915,8 +3020,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Returns a unified SerializedComponentState containing public state, metadata, and children.
      */
     public getInitialState(): SerializedComponentState {
-        const params = (this.c as Context)?.req.param() || {};
-        const requestUrl = this.c?.req.url;
+        const ambient = this._ambientContext() as Context | undefined;
+        const params = ambient?.req.param() || {};
+        const requestUrl = ambient?.req.url;
         const destination = typeof requestUrl === 'string' ? new URL(requestUrl, 'https://cossack.invalid') : undefined;
 
         // Build the serialized state object
@@ -2924,10 +3030,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             public: this._readPublicState('initial state'),
             metadata: {
                 componentId: this.constructor.name,
-                pathname: (this.c as Context)?.req.path,
+                pathname: ambient?.req.path,
                 url: destination ? destination.pathname + destination.search : undefined,
                 params,
-                user: this.user,
+                user: this._ambientUser(),
             },
         };
         if (this._ownsServiceScope) {

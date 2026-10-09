@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -120,6 +121,30 @@ async function smoke(url, route, request) {
   return { status, path: target.pathname };
 }
 
+const pathFields = [['main'], ['base_dir'], ['tsconfig'], ['assets', 'directory'], ['site', 'bucket']];
+/** Wrangler resolves these relative to the config file; pin them to the artifact directory. */
+function absolutizeConfigPaths(config, directory) {
+  for (const keys of pathFields) {
+    const parent = keys.slice(0, -1).reduce((value, key) => value && typeof value === 'object' ? value[key] : undefined, config);
+    const key = keys.at(-1);
+    if (parent && typeof parent === 'object' && typeof parent[key] === 'string' && parent[key] && !path.isAbsolute(parent[key])) parent[key] = path.resolve(directory, parent[key]);
+  }
+}
+/** Remove the private directory on completion, process exit or a termination signal. */
+function trackPrivateDirectory(directory) {
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  const removeSync = () => { try { fsSync.rmSync(directory, { recursive: true, force: true }); } catch {} };
+  const onSignal = signal => {
+    removeSync(); detach();
+    // Preserve default termination unless the CLI installed its own handler.
+    if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+  };
+  const detach = () => { process.off('exit', removeSync); for (const signal of signals) process.off(signal, onSignal); };
+  process.once('exit', removeSync);
+  for (const signal of signals) process.once(signal, onSignal);
+  return async () => { detach(); await fs.rm(directory, { recursive: true, force: true }); };
+}
+
 export async function createPreview(root, options, dependencies = {}) {
   const { name, state, dryRun = false, smokePath = '/' } = options;
   const accountId = options.accountId?.toLowerCase();
@@ -147,9 +172,16 @@ export async function createPreview(root, options, dependencies = {}) {
     if (artifactConfig.name !== journal.worker || artifactConfig.account_id && artifactConfig.account_id.toLowerCase() !== accountId.toLowerCase()) throw error('ARTIFACT_MISMATCH');
     const prepared = { ...artifactConfig, account_id: accountId, previews: { ...preview, ...(secretBindings.length ? { unsafe: { bindings: secretBindings } } : {}) } };
     delete prepared.env;
-    const configPath = path.join(path.dirname(artifact), `cossack-preview-${nonce}.json`);
-    await fs.writeFile(configPath, JSON.stringify(prepared), { flag: 'wx', mode: 0o600 });
+    // Wrangler has no preview secrets-file flag, so the prepared config carries
+    // secret values. Keep it in a private temporary directory outside the
+    // project (never the build output) and resolve artifact-relative paths.
+    absolutizeConfigPaths(prepared, path.dirname(path.resolve(root, artifact)));
+    const privateDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-preview-'));
+    const removePrivate = trackPrivateDirectory(privateDirectory);
+    const configPath = path.join(privateDirectory, 'wrangler.json');
     try {
+      await fs.chmod(privateDirectory, 0o700);
+      await fs.writeFile(configPath, JSON.stringify(prepared), { flag: 'wx', mode: 0o600 });
       if ((await provider.inspect(journal.worker, journal.name)).status !== 'absent') throw error('NAME_NOT_AVAILABLE');
       await save(filename, journal);
       if (provider.createEmptyPreview) {
@@ -172,7 +204,7 @@ export async function createPreview(root, options, dependencies = {}) {
       catch (caught) { journal.status = 'smoke-failed'; await save(filename, journal); throw caught; }
       await save(filename, journal);
       return journal;
-    } finally { await fs.rm(configPath, { force: true }); }
+    } finally { await removePrivate(); }
   } finally { await lock.close(); await fs.rm(`${filename}.lock`, { force: true }); }
 }
 

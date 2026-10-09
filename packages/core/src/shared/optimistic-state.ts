@@ -5,7 +5,15 @@ import { collectReactiveMetadata } from './reactive-metadata';
 export type OptimisticOperation = { kind: 'increment'; amount: number } | { kind: 'append' | 'remove'; value: unknown };
 type Change = { sequence: number; value: unknown; operations?: OptimisticOperation[] };
 type Field = { base: unknown; sequence: number; changes: Map<object, Change>; displayed: unknown; local?: Change };
-export type OptimisticCall = { owner: object; sequence: number; name: string; fields: Set<string>; requestId?: string };
+export type OptimisticCall = {
+    owner: object; sequence: number; name: string; fields: Set<string>; requestId?: string;
+    /**
+     * Values this call's own correlated publications wrote directly (JSON
+     * transport form). A field still holding one is server-owned, not a local
+     * edit made while the request was in flight.
+     */
+    published?: Map<string, string>;
+};
 type Capture = { call: OptimisticCall; before: Map<string, unknown>; operations: Map<string, OptimisticOperation[]> };
 type Ledger = { clock: number; calls: Set<OptimisticCall>; fields: Map<string, Field>; writing: boolean; capturing: boolean; capture?: Capture };
 const ledgers = new WeakMap<object, Ledger>();

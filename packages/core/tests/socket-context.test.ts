@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { snapshotSocketRequest, socketRequestContext } from '../src/shared/socket-context';
 import { defaultRateLimitKey } from '../src/shared/rate-limit';
 
@@ -25,7 +25,11 @@ describe('socket upgrade context', () => {
         expect(context.req.url).toBe(snapshot.url);
         expect(context.env).toBe(env);
         expect(context.get('user')).toBeUndefined();
-        expect(defaultRateLimitKey(context)).toBe('ip:192.0.2.1');
+        // Off Cloudflare the header is client-controlled and ignored.
+        expect(defaultRateLimitKey(context)).toBe('ip:anonymous');
+        vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+        try { expect(defaultRateLimitKey(context)).toBe('ip:192.0.2.1'); }
+        finally { vi.unstubAllGlobals(); }
         expect(JSON.stringify(snapshot)).not.toContain('PRIVATE');
     });
 

@@ -140,10 +140,14 @@ it('rejects extra fields in restored resource records before public output or de
 it('passes explicit staging secrets only in private prepared native deployment config', async () => {
  const secretsFile = path.join(root, 'secrets.json'); await fs.writeFile(secretsFile, JSON.stringify({ APP_SECRET: 'private staging value' }), { mode: 0o600 });
  dependencies.inspect = async () => ({ config: { ...config, secrets: { required: ['APP_SECRET'] } } });
- const prior = provider.deploy.getMockImplementation(); let preparedPath;
+ const prior = provider.deploy.getMockImplementation(); let preparedPath; const signalListeners = process.listenerCount('SIGTERM');
  provider.deploy.mockImplementation(async (filename, ...args) => {
   preparedPath = filename; expect((await fs.stat(filename)).mode & 0o777).toBe(0o600);
+  // Secrets never land in the project or build output, even if the process is killed.
+  expect(path.relative(root, filename).startsWith('..')).toBe(true);
+  expect((await fs.stat(path.dirname(filename))).mode & 0o777).toBe(0o700);
   const prepared = JSON.parse(await fs.readFile(filename, 'utf8'));
+  expect(prepared.main).toBe(path.join(root, 'index.js'));
   expect(prepared.previews.unsafe.bindings).toEqual([{ name: 'APP_SECRET', type: 'secret_text', text: 'private staging value' }]);
   return prior(filename, ...args);
  });
@@ -151,6 +155,8 @@ it('passes explicit staging secrets only in private prepared native deployment c
  expect(JSON.stringify(result)).not.toContain('private staging value');
  expect(await fs.readFile(path.join(root, '.cossack/preview.json'), 'utf8')).not.toContain('private staging value');
  await expect(fs.access(preparedPath)).rejects.toThrow();
+ await expect(fs.access(path.dirname(preparedPath))).rejects.toThrow();
+ expect(process.listenerCount('SIGTERM')).toBe(signalListeners);
 });
 it('recovers a provider-tagged lost receipt read-only, then persists before immutable-ID cleanup', async () => {
  provider.deploy.mockResolvedValue({ status: 'unknown' });

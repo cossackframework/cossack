@@ -129,4 +129,86 @@ describe('SSE optimistic snapshot ordering', () => {
         await expect(call).rejects.toMatchObject({ code: 'COSSACK_RPC_RESPONSE_INVALID', requestId: id });
         expect(f.target.count).toBe(5); expect(f.target.loading).toEqual({});
     });
+
+    describe('publications that arrive before their stream reply frames', () => {
+        function plainFixture() {
+            const requests: Array<{ id: string; resolve: (response: Response) => void }> = [];
+            vi.stubGlobal('EventSource', Source);
+            vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise<Response>(resolve => {
+                requests.push({ id: new Headers(init.headers).get('X-Cossack-Request-Id')!, resolve });
+            })));
+            class Plain {}
+            const target: any = { constructor: Plain, count: 0, loading: {},
+                _optimisticLockedKeys: {}, _optimisticPendingState: {}, __cossack_proxies: new Map(), requestUpdate: vi.fn(),
+                getInitialStateFromWindow: () => ({ componentRouteId: 'plain', scopeKey: 'one', transport: 'sse' }),
+                getPublicState() { return { count: this.count }; },
+                getMethod: () => undefined, hasMethod: () => false,
+                setProperty(key: string, value: unknown) { this[key] = value; noteOptimisticWrite(this, key); },
+                _isOptimisticLocked: () => false,
+            };
+            Reflect.defineMetadata('cossack:state', { count: {} }, Plain);
+            proxyHttpMethods(target, [{ name: 'stream' }]); connectSSE(target); Source.latest.onopen?.();
+            const stream = (index: number, frames: Array<[type: 'yield' | 'done', count: number, cursor: number]>) => {
+                const id = requests[index].id;
+                const encoder = new TextEncoder();
+                let controller!: ReadableStreamDefaultController<Uint8Array>;
+                requests[index].resolve(new Response(new ReadableStream<Uint8Array>({ start: c => { controller = c; } }), {
+                    headers: { 'Content-Type': RPC_STREAM_CONTENT_TYPE, 'X-Cossack-Request-Id': id },
+                }));
+                return {
+                    send(at: number) {
+                        const [type, count, cursor] = frames[at];
+                        controller.enqueue(encoder.encode(JSON.stringify({ v: 1, type, requestId: id,
+                            state: { count, _cossack_sse_cursor: cursor }, value: count }) + '\n'));
+                        if (type === 'done') controller.close();
+                    },
+                };
+            };
+            return { target, requests, source: Source.latest, stream };
+        }
+        const drain = async (call: any) => { const values = []; for await (const value of call) values.push(value); return values; };
+        const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+        it('keeps the final state when every publication precedes the reply', async () => {
+            const f = plainFixture(); const call = f.target.stream(); const id = f.requests[0].id;
+            f.source.state(1, 1, id); f.source.state(2, 2, id);
+            expect(f.target.count).toBe(2);
+            const reply = f.stream(0, [['yield', 1, 1], ['done', 2, 2]]);
+            const values = drain(call); reply.send(0); reply.send(1);
+            expect(await values).toEqual([1]);
+            expect(f.target.count).toBe(2); expect(f.target.loading).toEqual({});
+        });
+
+        it('keeps the final state when its own publication precedes the yield frame (browser order)', async () => {
+            // Observed in workerd dev: SSE c1 -> yield c1 (deduped) -> done c2 -> SSE c2 (deduped).
+            const f = plainFixture(); const call = f.target.stream(); const id = f.requests[0].id;
+            const reply = f.stream(0, [['yield', 1, 1], ['done', 2, 2]]);
+            const values = drain(call);
+            f.source.state(1, 1, id); await tick();
+            expect(f.target.count).toBe(1);
+            reply.send(0); await tick();
+            reply.send(1); await values;
+            f.source.state(2, 2, id);
+            expect(f.target.count).toBe(2); expect(f.target.loading).toEqual({});
+        });
+
+        it('keeps the final frame after an own publication even when no frame repeats it', async () => {
+            const f = plainFixture(); const call = f.target.stream(); const id = f.requests[0].id;
+            const reply = f.stream(0, [['done', 2, 2]]);
+            const values = drain(call);
+            f.source.state(1, 1, id); await tick();
+            reply.send(0); await values;
+            expect(f.target.count).toBe(2);
+        });
+
+        it('still preserves a local edit made after its own publication', async () => {
+            const f = plainFixture(); const call = f.target.stream(); const id = f.requests[0].id;
+            const reply = f.stream(0, [['yield', 1, 1], ['done', 2, 2]]);
+            const values = drain(call);
+            f.source.state(1, 1, id); await tick();
+            f.target.setProperty('count', 50);
+            reply.send(0); await tick(); reply.send(1); await values;
+            expect(f.target.count).toBe(50);
+        });
+    });
 });

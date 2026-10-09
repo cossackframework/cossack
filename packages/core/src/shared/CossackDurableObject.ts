@@ -23,9 +23,15 @@ export abstract class CossackDurableObject {
         this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     }
 
-    /** One unpublished component owns bootstrap/restoration until it is ready. */
+    /**
+     * One unpublished component owns bootstrap/restoration until it is ready.
+     * Callers wait for any pending operation, then run their own: operations
+     * differ (restore vs. create+accept), so a caller must never adopt another
+     * caller's promise. Each operation re-checks `componentInstance` itself.
+     * A failed pending operation rejects its waiters too (no retry storm).
+     */
     private async initializeComponent(operation: () => Promise<void>): Promise<void> {
-        if (this.componentInitialization) return this.componentInitialization;
+        while (this.componentInitialization) await this.componentInitialization;
         const pending = Promise.resolve().then(operation);
         this.componentInitialization = pending;
         try { await pending; }
@@ -61,7 +67,6 @@ export abstract class CossackDurableObject {
     }
 
     private async ensureComponentInstance(): Promise<void> {
-        if (this.componentInitialization) await this.componentInitialization;
         if (this.componentInstance) return;
         await this.initializeComponent(async () => {
             if (this.componentInstance) return;

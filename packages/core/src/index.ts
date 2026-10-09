@@ -25,6 +25,7 @@ export * from './shared/server-resource';
 export * from './shared/task';
 export { optimistic, OptimisticEditError, type OptimisticEdits } from './shared/optimistic';
 export * from './shared/request-context';
+export { setActionIdentityScope, type ActionIdentity, type ActionIdentityScope } from './shared/action-identity-scope';
 export { cookie } from './shared/cookie';
 export type { CookieOptions } from './shared/cookie';
 export { createCossackContext } from './shared/context';

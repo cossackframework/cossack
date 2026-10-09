@@ -44,10 +44,15 @@ and closes. Core retires that EventSource before handling any later callback,
 sets fixed closed feedback and stops retries. Explicit reload uses the current
 cookie. Missing authenticated capture support returns coded HTTP 409 at open.
 
-Initial and queued frames are checked again at emission. Checks and revocation
-are not one transaction: a validated frame can be in flight after revocation.
-Idle checks occur before the 15-second heartbeat with reader demand; backpressure
-and slow storage prevent a strict elapsed-time guarantee. An action that already
+Authorization runs once per delivered batch, not per frame: the initial
+replay (events + snapshot + `connected`) is one batch and each poll result is
+one batch. A batch still draining (slow reader) 5 s after its check is checked
+again before the next frame, and every heartbeat is checked. So replaying 128
+events costs one middleware pass, and a revocation stops delivery at the next
+batch, heartbeat, or 5 s boundary. Checks and revocation are not one
+transaction: frames of an already-validated batch can be in flight after
+revocation. Idle checks occur before the 15-second heartbeat with reader
+demand; backpressure and slow storage prevent a strict elapsed-time guarantee. An action that already
 started can also retain its request identity. WebSocket delivery/action freshness
 is still open RT-11 work. See the [provider and migration contract](../docs/sse.md#session-changes-on-an-open-subscription).
 
@@ -91,7 +96,8 @@ RPC surface:
 | --- | --- |
 | `initialize(state)` | `INSERT OR IGNORE`; returns `{state, cursor, fresh}`. First initialization wins; later SSR never resets shared state. |
 | `currentState()` | Snapshot or `null` before initialization (used by the subscription's cold start). |
-| `updates(after)` | Events after a cursor plus a `resync` flag (`after` ahead of the snapshot or behind the pruned history). |
+| `updates(after, waitMs?, waiterId?)` | Events after a cursor plus a `resync` flag (`after` ahead of the snapshot or behind the pruned history). With `waitMs > 0` and nothing new, the call is a long-poll: it is held until an event is appended, `cancelWait(waiterId)`, or the wait (capped at 25 s) elapses, then returns. Waiters are bounded (2,048 per scope); overflow returns at once with `retryAfterMs`. A duplicate `waiterId` releases the previous waiter. |
+| `cancelWait(waiterId)` | Releases a held long-poll when its subscriber disconnects. |
 | `publish(state, requestId?)` | Appends a correlated `state-update` event and replaces the plain public snapshot. The optional request ID is event metadata only. |
 | `broadcast(event, data)` | Appends an `event`/`client-action` event without changing the snapshot. Reserved `state-update` entries replace the snapshot; the runtime does not send partial state through this method. |
 | `execute(action)` | Serializes actions per scope; see below. |
@@ -175,13 +181,26 @@ request (a mismatched `scopeKey` is rejected with 403), then:
    then sends the current `state-update` snapshot and `connected`. Sending the
    latest snapshot ID first would acknowledge broadcasts before delivery.
 4. Delivers one frame per reader pull. While reader demand is pending and the
-   batch is empty, it waits 200 ms before polling `updates(cursor)` again.
-   Persisted history bounds each batch; a slow reader does not accumulate an
-   unbounded writer queue or keep polling without demand.
+   batch is empty, it long-polls `updates(cursor, waitMs, waiterId)` with
+   `waitMs` = time left until the next heartbeat (≤ 15 s), and calls again as
+   soon as a response arrives. An idle subscriber therefore makes about one
+   coordinator RPC per heartbeat instead of five per second; publishes wake
+   every waiter at once. An empty response that returns before its wait
+   (busy waiter table, non-blocking backend) is followed by a backoff of up to
+   1 s, so it never becomes a hot loop. Persisted history bounds each batch;
+   a slow reader does not accumulate an unbounded writer queue or poll
+   without demand.
 5. Sends resync plus an authoritative snapshot for expired/invalid history,
    and heartbeats after 15 s when the reader is waiting. Body cancellation and
-   request abort remove the wait timer/listener; poll failure errors the stream
+   request abort abandon the held poll locally and call `cancelWait` (best
+   effort; the 25 s cap bounds a lost cancel). Poll failure errors the stream
    so EventSource can reconnect with `Last-Event-ID`.
+
+Durable Object RPC permits a method to await a pending promise; the object's
+input gate stays open while it waits (no storage I/O is pending), so the
+publish that wakes waiters is processed normally, and the output gate holds
+the woken replies until that write is durable. Held calls bill wall-clock
+duration on the object; the 25 s cap keeps each call far below RPC limits.
 
 ## Node and Deno backend contract
 
@@ -189,15 +208,19 @@ The process-local backend is a **development convenience with the same endpoint
 contracts**:
 
 - The store is an in-memory `Map` keyed by `componentRouteId:scopeKey` with LRU
-  bounding (500 entries). State is per-process: not shared across machine
-  boundaries, not persisted across restarts, and reset by SSR (each SSR
-  replaces the stored entry).
+  bounding (500 entries), enforced on every insert (SSR registration and
+  subscription cold start) and disconnect. Eviction prefers entries without
+  live connections. Entries with no live connection expire 60 s after their
+  last activity (SSR, connect, disconnect, or sync), so SSR renders that never
+  open a subscription do not retain component instances and request contexts.
+  State is per-process: not shared across machine boundaries, not persisted
+  across restarts, and reset by SSR (each SSR replaces the stored entry).
 - `/crpc` constructs a per-request component and applies the **client-sent**
   state (sanitized), because there is no authoritative server-side snapshot.
   Streams sync frames to the stored entry through the version counter.
-- The `/sse` endpoint uses the earlier timer/writer polling implementation and
-  event names. It does not yet have the coordinator subscription's demand-driven
-  buffering/cancellation guarantees. Broadcasts use process-local `SseRuntime`.
+- The `/sse` endpoint shares the coordinator's demand-driven stream, batch
+  authorization and heartbeat. Instead of polling, a waiting subscriber is
+  woken by SSR replacement or `syncSseState` through a process-local notifier. Broadcasts use process-local `SseRuntime`.
   RT-19/RT-25 follow-ups must verify adapter parity explicitly.
 - Flash cookies are signed and server-expiring, but Node/Deno have no durable
   replay store. A copied cookie can be consumed repeatedly until its signed
