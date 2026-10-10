@@ -88,3 +88,12 @@ and the release workflow independently passed their required gates.
 
 This record is finalized after publication; the immutable 0.9.0 tag retains the
 pre-publication checklist. No tag or published artifact was moved or replaced.
+
+## Dependency follow-up
+
+After merge, GitHub reported [eight open Dependabot alerts](https://github.com/cossackframework/cossack/security/dependabot)
+(seven high, one moderate). Dependency paths include Desktop packaging,
+Cloudflare development tooling and renderer's css-tree → source-map-js dependency.
+These alerts were not remediated by this release. Passing release acceptance
+does not claim that dependency vulnerabilities are resolved. Desktop platform
+work remains waived; no platform check was reopened.
