@@ -79,7 +79,13 @@ window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;windo
     await page.locator('#editable').focus();await page.keyboard.press('Control+k');await browserExpect(dialog).not.toBeVisible();
     await page.evaluate(()=>window.updateSecond({shortcut:true,shortcutInEditable:true}));
     await page.locator('#editor').focus();await page.keyboard.press('Control+k');await browserExpect(second).toBeVisible();await browserExpect(dialog).not.toBeVisible();
-    await page.keyboard.press('Escape');await browserExpect(second).not.toBeVisible();await page.evaluate(()=>window.updateSecond({shortcut:false}));
+    await page.keyboard.press('Escape');await browserExpect(second).not.toBeVisible();
+    await page.evaluate(async()=>{
+      window.updateSecond({shortcut:false});
+      // Disabling a nested Command shortcut renders through its palette owner.
+      // Wait for that update before sending the next keyboard event.
+      await Promise.all(window.instances.map(instance=>instance.updateComplete));
+    });
     await outside.focus();await page.keyboard.press('Control+Shift+k');await browserExpect(dialog).not.toBeVisible();
     await outside.dispatchEvent('keydown',{key:'k',ctrlKey:true,repeat:true});await browserExpect(dialog).not.toBeVisible();
     await outside.focus();await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();await browserExpect(second).not.toBeVisible();await browserExpect(input).toBeFocused();
