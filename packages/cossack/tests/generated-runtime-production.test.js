@@ -711,7 +711,9 @@ describe('shared generated production Cloudflare app', () => {
   it('executes declared API contracts in a generated production cloudflare app', async () => {
     await checkApiContractRoutes(root);
     const harness = createTestHarness({ root, workers: [{ configPath: path.join(root, 'dist/ssr/wrangler.json') }] });
-    try { await harness.listen(); await checkApiContractAcceptance((url, options) => harness.fetch(url, options)); }
+    // Exercise the same HTTP listener browsers use, including rejected bodies
+    // followed by fresh requests, rather than Miniflare's synthetic dispatch.
+    try { const { url: origin } = await harness.listen(); await checkApiContractAcceptance((url, options) => fetch(new URL(url, origin), options)); }
     finally { await harness.close(); }
   }, 120000);
   it('excludes private old input through native form and RPC redirects on cloudflare', async () => {
