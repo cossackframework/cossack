@@ -80,6 +80,13 @@ export class MessageScroller extends Cossack {
             '@keydown': scrollerListener(viewportProps?.['@keydown'], event => {
                 const key = event as KeyboardEvent;
                 if (key.target === this.viewport && !key.altKey && !key.ctrlKey && !key.metaKey && ['Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', ' '].includes(key.key)) {
+                    if (key.key === 'Home') {
+                        key.preventDefault();
+                        this.following = false;
+                        this.viewport.scrollTo({ top: 0, behavior: 'instant' });
+                        this.remember(); this.updateJump();
+                        return;
+                    }
                     if (['Home', 'PageUp', 'ArrowUp'].includes(key.key) || (key.key === ' ' && key.shiftKey)) this.following = false;
                     this.remember();
                 }

@@ -64,23 +64,28 @@ export async function writeApiContractAcceptance(root) {
 }
 
 export async function checkApiContractAcceptance(send) {
+  const json = async response => {
+    const body = await response.text();
+    expect(response.headers.get('Content-Type'), `API response ${response.status} ${response.url}: ${body}`).toContain('application/json');
+    return JSON.parse(body);
+  };
   const url = '/api/declared/%E9%9B%AA%2Fa?page=2&tags=one&tags=%E9%9B%AA';
   const call = (body, options = {}) => send(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-access': 'yes' }, body: JSON.stringify(body), ...options });
   const error = async (response, status, code) => {
-    expect(response.status).toBe(status); const data = await response.json();
+    expect(response.status).toBe(status); const data = await json(response);
     expect(data.code).toBe(code); expect(data.requestId).toBe(response.headers.get('X-Cossack-Request-Id')); return data;
   };
-  expect(await (await send(url)).json()).toEqual({ runs: 0 });
+  expect(await json(await send(url))).toEqual({ runs: 0 });
   const invalid = await error(await call({ amount: '3' }), 400, 'COSSACK_VALIDATION_FAILED');
   expect(invalid.fieldErrors.body.amount).toBeTruthy();
   await error(await call({ amount: 3 }, { headers: { 'Content-Type': 'application/json' } }), 403, 'COSSACK_AUTH_FORBIDDEN');
   await error(await call({ amount: 3 }, { body: '{broken' }), 400, 'COSSACK_API_JSON_INVALID');
   await error(await call({ amount: 3 }, { headers: { 'Content-Type': 'text/plain' } }), 415, 'COSSACK_API_MEDIA_TYPE');
-  expect(await (await send(url)).json()).toEqual({ runs: 0 });
+  expect(await json(await send(url))).toEqual({ runs: 0 });
   const success = await call({ amount: 3 }); expect(success.status).toBe(200);
   expect(success.headers.getSetCookie()).toEqual(['declared=ok; HttpOnly']);
-  expect(await success.json()).toEqual({ id: '雪/a', total: 5, tags: ['one', '雪'], runs: 1, at: '2026-01-01T00:00:00.000Z' });
-  expect(await (await send(url)).json()).toEqual({ runs: 1 });
+  expect(await json(success)).toEqual({ id: '雪/a', total: 5, tags: ['one', '雪'], runs: 1, at: '2026-01-01T00:00:00.000Z' });
+  expect(await json(await send(url))).toEqual({ runs: 1 });
   const native = await send('/api/native', { redirect: 'manual' }); expect(native.status).toBe(303);
   expect(native.headers.get('Location')).toBe('/signed-in'); expect(native.headers.getSetCookie()).toEqual(['native=ok; HttpOnly']);
   const output = await error(await send('/api/output-error', { method: 'POST' }), 500, 'COSSACK_API_INTERNAL');
