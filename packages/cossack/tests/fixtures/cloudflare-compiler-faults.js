@@ -10,6 +10,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 /** A real malformed authored page compiled by Vite's Cloudflare environment. */
 export async function verifyCloudflareCompilerFaults(root, { allowedPaths = [] } = {}) {
   const filename = path.join(root, 'src/pages/compiler-fault.ts');
+  // Match an editor's atomic save. A truncate/write exposes an empty page to
+  // the route watcher and tests a different failure than malformed source.
+  const savePage = async source => {
+    const temporary = filename + '.tmp';
+    await fs.writeFile(temporary, source);
+    await fs.rename(temporary, filename);
+  };
   const valid = `import {Cossack,Page,Server} from '@cossackframework/core';
 import {html} from '@cossackframework/renderer';
 @Page({transport:'http'}) export default class CompilerPage extends Cossack {
@@ -42,7 +49,7 @@ process.on('message',async()=>{await server.close();process.exit(0);});
     const healthy=await fetch(`${origin}/compiler-fault`,{signal:AbortSignal.timeout(20000)});
     expect(healthy.status).toBe(200);
     expect(await healthy.text()).toContain('Compiler native recovery passed');
-    await fs.writeFile(filename,malformed);
+    await savePage(malformed);
     let response;
     await expect.poll(async()=>{response=await fetch(`${origin}/compiler-fault`,{signal:AbortSignal.timeout(10000)});if(response.status!==500)await response.text();return response.status;},{timeout:20000}).toBe(500);
     const body=await response.text();
@@ -72,7 +79,7 @@ process.on('message',async()=>{await server.close();process.exit(0);});
     expect(output).toMatch(/(Unexpected|Expression expected|Parse error|Expected|Transform failed)/i);
     // Trusted developer compiler diagnostics intentionally retain the authored source.
     expect(output.replace(/\u001b\[[0-9;]*m/g,'')).toContain(PRIVATE);
-    await fs.writeFile(filename,valid);
+    await savePage(valid);
     await expect.poll(async()=>{
       const recovered=await fetch(`${origin}/compiler-fault`,{signal:AbortSignal.timeout(5000)});
       return recovered.status===200&&(await recovered.text()).includes('Compiler native recovery passed');
