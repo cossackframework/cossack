@@ -123,7 +123,10 @@ export class MessageScroller extends Cossack {
         // Geometry can clamp scrollTop without a user choosing to follow.
         // Pointer/key/focus intent records current geometry before native scrolling.
         if (Math.abs(Math.max(0, vp.scrollHeight - vp.clientHeight) - this.lastMaximum) > 0.5) { this.schedule(); return; }
-        this.following = this.distance() <= (this.props.threshold ?? 80);
+        // An explicit upward scroll pauses following even inside the threshold.
+        // Resume near the bottom only when the reader scrolls toward it.
+        this.following = this.distance() <= (this.props.threshold ?? 80)
+            && (this.following || vp.scrollTop > this.lastTop || this.distance() < 0.5);
         this.remember(); this.updateJump();
     }
     private schedule() {

@@ -139,6 +139,15 @@ hydrate(template(current()),container);window.retained=initial.every(element=>el
     await browserExpect(vp).toHaveCount(0);await browserExpect.poll(()=>page.evaluate(()=>[...window.liveObservers].filter(observer=>observer.scroller).length)).toBe(0);
     await page.evaluate(()=>window.fresh());await bottom();await browserExpect.poll(()=>page.evaluate(()=>[...window.liveObservers].filter(observer=>observer.scroller).length)).toBe(2);await page.evaluate(()=>window.unmount());await browserExpect.poll(()=>page.evaluate(()=>[...window.liveObservers].filter(observer=>observer.scroller).length)).toBe(0);
     await page.evaluate(()=>{window.fresh();window.unmount();});await browserExpect.poll(()=>page.evaluate(()=>[...window.liveObservers].filter(observer=>observer.scroller).length)).toBe(0);
+    // A short transcript still honors upward keyboard intent inside the
+    // default following threshold. Geometry reconciliation must not undo Home.
+    await page.evaluate(()=>window.fresh({ids:[0,1,2],threshold:80,height:'280px'}));await bottom();
+    await vp.evaluate(el=>{el.closest('.cs-message-scroller').style.height=(el.scrollHeight-50)+'px';});
+    await bottom();await vp.focus();await page.keyboard.press('Home');
+    await browserExpect.poll(()=>vp.evaluate(el=>el.scrollTop)).toBeLessThan(1);
+    await page.evaluate(()=>window.update({text:'Updated'}));await page.evaluate(()=>window.settle());
+    await browserExpect.poll(()=>vp.evaluate(el=>el.scrollTop)).toBeLessThan(1);
+    await page.keyboard.press('End');await bottom();
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();
