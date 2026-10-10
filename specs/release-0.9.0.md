@@ -38,7 +38,7 @@ counts and receipts are not substituted for verification of the reviewed source.
 - [x] Non-Desktop release build (`pnpm run build:release`) and database bundle audit (32 neutral modules; Workers-safe entry).
 - [x] Root `pnpm tsc --noEmit` and `pnpm run typecheck -- --exclude-desktop`.
 - [x] Non-Desktop unit suites: 6,393 passed, five skipped; includes the CLI unit project (809 passed, three skipped).
-- [x] Local installed-package/scaffold acceptance with current 0.9.0 tarballs: declaration/runtime imports, offline CLI/MCP, configuration secrecy, budgets, native D1 migrations, generated recipes and bidirectional Node RPC. This includes private test-utils as a local artifact and excludes Desktop platform checks.
+- [ ] Final installed-package/scaffold acceptance after the MultiSelect runtime fix (the earlier artifact set passed): declaration/runtime imports, offline CLI/MCP, configuration secrecy, budgets, native D1 migrations, generated recipes and bidirectional Node RPC. This includes private test-utils as a local artifact and excludes Desktop platform checks.
 - [ ] GitHub PR checks: CLI integration shards, UI browser and framework E2E.
 - [ ] PR merged into master and 0.9.0 release created at the verified revision.
 - [ ] npm publication verified for all eleven public workspace packages.
@@ -52,6 +52,11 @@ a complete frame across arbitrary network chunks; example checks allow only
 Node 22's exact built-in SQLite warning; Command fixtures await accepted
 controlled close state before subsequent prop changes and keyboard events.
 Focused deployment, palette, Command browser and warning-filter tests passed.
+MessageScroller now requires a fresh scroll event before capturing an anchor.
+A real MultiSelect race is fixed: an already-closed popup's queued toggle cannot
+clear newly reported validation. Its deterministic browser regression, 13
+component tests, root and non-Desktop typechecks passed; final artifact and
+hosted checks must verify this runtime fix before release.
 
 ## Publishing
 

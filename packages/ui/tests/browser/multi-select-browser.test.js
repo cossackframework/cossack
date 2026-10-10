@@ -87,7 +87,12 @@ window.fresh=()=>{window.unmount();props={};draw();};
     expect(await formValues()).toEqual(['Rust']);
     await input.focus();await input.press('Backspace');
     await browserExpect(page.locator('.cs-multiselect__tag')).toHaveCount(0);
-    expect(await input.evaluate(el=>el.checkValidity())).toBe(false);
+    expect(await input.evaluate(el=>{
+      const valid=el.checkValidity();
+      // Reproduce a queued native close arriving after required validation.
+      document.querySelector('#skills-listbox').dispatchEvent(new ToggleEvent('toggle',{oldState:'open',newState:'closed'}));
+      return valid;
+    })).toBe(false);
     await browserExpect(page.getByRole('alert')).toHaveText('Select at least one value.');
     await input.fill('Go');expect(await input.evaluate(el=>el.checkValidity())).toBe(false);
     await page.evaluate(()=>{window.reject='Go';});

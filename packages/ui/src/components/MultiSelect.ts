@@ -134,7 +134,11 @@ export class MultiSelect extends Cossack {
             <div ref=${(element: Element) => { this.popup = element as HTMLElement; }} id=${`${id}-listbox`} role="listbox" popover="auto"
                 class="cs-multiselect__dropdown bg-popover text-popover-foreground border rounded-md shadow-lg p-1 overflow-y-auto"
                 style="position:fixed;margin:0;max-height:200px;"
-                @toggle=${(event: Event) => { if ((event as ToggleEvent).newState === 'closed' && this.popup && !this.popup.matches(':popover-open')) this.close(); }}>
+                @toggle=${(event: Event) => {
+                    // A programmatic close queues its toggle event. Do not let
+                    // that older event clear validation set after the close.
+                    if ((event as ToggleEvent).newState === 'closed' && this.open && this.popup && !this.popup.matches(':popover-open')) this.close();
+                }}>
                 ${!candidates.length || this.atMax ? html`<div role="status" class="px-3 py-2 text-sm text-muted-foreground">${this.atMax ? this.limitMessage : emptyLabel}</div>`
                 : repeat(candidates, item => item.value, item => html`<div id=${item.id} role="option" aria-selected=${String(item.value === active?.value)}
                     class=${classMap({ 'cs-multiselect__option w-full text-left px-3 py-1.5 text-sm rounded-sm cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground': true,
