@@ -150,7 +150,7 @@ for confirmation and history ownership.
 Navigation has a 30-second completion budget and restores framework-owned state
 on failure before history commit. Broader ownership changes, interrupted history
 and the resource-read audit remain open in the
-[implementation plan](../specs/release-0.9.0-plan.md#rt-08).
+[framework architecture](../specs/architecture.md).
 
 Same-owner page replacements restore focus for a control with a unique DOM `id`.
 The replacement must keep its tag, type and name. Text selection is restored only

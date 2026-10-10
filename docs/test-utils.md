@@ -1,12 +1,13 @@
 ---
 title: "Test utilities"
-description: "Exercise real request dispatch, component hydration and cleanup with public test helpers."
+description: "Internal workspace helpers for request dispatch, component hydration and cleanup."
 ---
 
 # Test utilities
 
-Install `@cossackframework/test-utils` alongside your application's framework
-packages. Its server entry requires Node.js. The browser entry uses the DOM and
+`@cossackframework/test-utils` is a private workspace package used by this
+repository's tests. It is not published to npm in 0.9.0. The examples below
+describe internal usage. Its server entry requires Node.js. The browser entry uses the DOM and
 can run in Vitest's jsdom environment or a real browser.
 
 ## Test the production request handler

@@ -1,10 +1,10 @@
 # Cossack 0.9.0 migration guide
 
-This guide covers verified prepared 0.9.0 APIs and runtime contracts. Root/package
+This guide covers 0.9.0 APIs and runtime contracts. Root/package
 versions and internal/template references are aligned; affected installed checks
-and the requirement audit pass. Packages remain unpublished. All nine TypeScript
+and the requirement audit pass. All nine TypeScript
 examples compile against installed public 0.9.0 APIs and remain byte-identical.
-The [final acceptance](release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09)
+The [final acceptance](release-0.9.0.md)
 records execution scope, failures and the user's Desktop waiver.
 
 ## Upgrade order and scaffold ownership
@@ -178,8 +178,9 @@ consumer abandoning a stream must release it. Application I/O still needs cooper
 cancellation. Follow the [service lifetime guide](../docs/services.md#scope-and-lifetime)
 for owner declarations and cleanup hooks.
 
-Replace hand-built router/auth doubles when the test needs production behavior
-with the published [test helpers](../docs/test-utils.md). Supply the actual production
+For tests inside the Cossack repository, replace hand-built router/auth doubles
+with the internal [test helpers](../docs/test-utils.md). This private package is
+not available from npm. Supply the actual production
 fetch handler and explicit credential fixtures for request/RPC checks; the helper
 does not invent authentication or bypass authorization. Browser hydration helpers
 accept the production envelope, retain DI/bootstrap ownership and provide awaitable
@@ -1204,7 +1205,7 @@ read. Do not depend on render-triggered resource I/O running before an RPC guard
 or mutation. SSR discovery and browser resource rendering keep their behavior.
 Actual native socket loss/reconnect and SSE resync/late-snapshot acceptance now pass.
 The remaining optimistic stream/service matrix and RT-06 criterion audit now pass.
-Read the [completion review](./release-0.9.0.md#codex-optimistic-completion-2026-10-03).
+Read the [completion review](./release-0.9.0.md).
 
 ## Default Durable Object application registry
 

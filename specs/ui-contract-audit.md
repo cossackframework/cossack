@@ -1,6 +1,6 @@
 # UI contract audit for 0.9.0
 
-Author: Codex. Updated 2026-10-04. RT-23 passed its [original acceptance audit](./release-0.9.0.md#codex-rt23-complete-2026-10-04). Broader release gates remain open.
+Author: Codex. Updated 2026-10-04. RT-23 passed its [original acceptance audit](./release-0.9.0.md). Final verification is recorded in the release record.
 
 Every component needs declared native attribute ownership, typed events, label guidance,
 keyboard/focus review and appropriate browser evidence. Existing tests remain useful,
@@ -135,14 +135,13 @@ All 65 rows above have reviewed foundations. Icon and all four blocks also have 
 | [DashboardStat](../packages/ui/src/blocks/DashboardStat/index.ts) | Reviewed foundation | Native list/definition semantics and props, stable readonly metrics, explicit direction/tone, visible localized meaning, responsive wrapping, published/ejected Chromium, real demo and installed guidance. |
 | [SettingsPanel](../packages/ui/src/blocks/SettingsPanel/index.ts) | Reviewed foundation | Readonly row schema, explicit controlled/default values, native labels/names/reset, safe actions, callback snapshots, keyed focus, published/ejected Chromium, actual demo and installed guidance. |
 
-## Regression coverage and remaining release gates
+## Regression coverage and release scope
 
 RT-23's original generated-app, type, keyboard/focus and installed catalog criteria
-pass. See the [completion audit](./release-0.9.0.md#codex-rt23-complete-2026-10-04)
+pass. See the [completion audit](./release-0.9.0.md)
 for the requirement-to-evidence table and fresh Node/workerd results.
 
 Preserve the published/ejected browser, native form, SSR/hydration, public-type
 and installed-guidance coverage listed above. Other browser engines, assistive
-technologies, complete compatibility/contrast checks and the full runtime release
-matrix remain broader release work. Historical foundation records retain their
-exact scope and limits in the [verification archive](./release-0.9.0-verification-archive.md).
+technologies and complete compatibility/contrast checks are not implied by those
+tests. Final release verification is recorded in the [release record](./release-0.9.0.md).

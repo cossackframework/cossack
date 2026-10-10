@@ -1,16 +1,9 @@
 name: Desktop installers
 
+# Remaining Desktop platform acceptance is waived for 0.9.0.
+# Run installers explicitly when platform work is requested again.
 on:
-  push:
-    branches: [master, main]
-    paths:
-      - 'examples/desktop-counter/**'
-      - 'packages/desktop/**'
-  pull_request:
-    branches: [master, main]
-    paths:
-      - 'examples/desktop-counter/**'
-      - 'packages/desktop/**'
+  workflow_dispatch:
 
 jobs:
   desktop:

@@ -39,9 +39,6 @@ jobs:
       - name: Build packages with dist output
         run: pnpm run build
 
-      - name: Build framework types
-        run: pnpm --filter @cossackframework/framework build:types
-
       - name: Install generated-app test browser
         run: pnpm --filter cossack exec playwright install chromium --with-deps
 
@@ -49,7 +46,6 @@ jobs:
         run: |
           pnpm --filter @cossackframework/core test -- --run
           pnpm --filter @cossackframework/renderer test -- --run
-          pnpm --filter @cossackframework/desktop test
           pnpm --filter @cossackframework/ui test -- --run
           pnpm --filter @cossackframework/database test
           pnpm --filter @cossackframework/database audit:bundle

@@ -73,23 +73,22 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build workspace libraries
         run: pnpm run build
 
       - name: Check package types
-        run: pnpm run typecheck
+        run: pnpm run typecheck -- --exclude-desktop
 
       - name: Install Playwright browsers
         run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
 
       - name: Run all unit tests
-        run: pnpm run test:unit
+        run: pnpm --workspace-concurrency=1 --filter "./packages/*" --filter "!@cossackframework/desktop" run test --watch=false
 
-      - name: Build Desktop counter web target
-        if: steps.changes.outputs.desktop == 'true'
-        run: pnpm --filter @cossackframework/example-desktop-counter build
+      - name: Record Desktop release waiver
+        run: echo "Desktop platform acceptance is waived for 0.9.0; installer jobs are manual."
 
       - name: Test generated app with local package tarballs
         if: steps.changes.outputs.generated_app == 'true'

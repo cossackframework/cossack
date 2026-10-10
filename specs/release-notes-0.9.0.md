@@ -2,11 +2,11 @@
 
 0.9.0 brings typed application contracts, safer runtime ownership, offline agent
 tooling and Cloudflare deployment checks into one release. This document is the
-verified release preparation record. Root and package versions are **0.9.0**;
-all 58 release tasks are complete within their recorded scope. Packages remain unpublished.
+the 0.9.0 release record. Root and package versions are **0.9.0**;
+all 58 release tasks are complete within their recorded scope.
 
 Read the [migration guide](migration-0.9.0.md) before applying scaffold upgrades.
-The [checklist](release-0.9.0.md) and [verification archive](release-0.9.0-verification-archive.md)
+The [checklist](release-0.9.0.md) and [verification archive](release-0.9.0.md)
 are the source of truth for acceptance; these notes do not replace them.
 
 ## Developer and AI-agent workflows
@@ -93,7 +93,7 @@ require explicit unique ordering. Unsupported provider operations fail before
 execution. Migration/seeder planning reads authoritative declarations without
 running callbacks, and live plans reject changed target/history/definitions.
 Studio and CLI share read-only schema/model/relationship and migration-history
-inspection. Published test helpers cover production-fetch/RPC, credentials,
+inspection. Internal workspace test helpers cover production-fetch/RPC, credentials,
 browser hydration/DI and awaitable cleanup.
 
 Read [auth primitives](../docs/auth-primitives.md), [sessions](../docs/session-concurrency.md),
@@ -203,33 +203,19 @@ Read [deployment](../docs/deployment.md), [resource planning](../docs/cloudflare
 
 ## Release status and verification
 
-The implementation includes source, installed-consumer, generated-application,
-native runtime and browser evidence. Actual hosted Worker acceptance establishes
-failure correlation in native tail/stored Logs, authored-source remapping and
-provider startup.
+The [release record](release-0.9.0.md) lists verification of the final reviewed
+source and publication status. CLI integration, UI browser tests and framework
+E2E run as separate CI gates. Installed-consumer acceptance uses current local
+0.9.0 tarballs rather than relying on an older registry release.
 
-Workflow completion uses the [user-approved scope](release-0.9.0-workflow-acceptance.md):
-native local interruption/restart/step reuse/retry/events/failure and real hosted
-literal Waiting plus lifecycle checks. The revised full CLI gate passes: 1,267
-passed, zero failed, 18 skipped (six Desktop waivers and twelve scoped opt-ins).
-Final 0.9.0 builds/types/package units/providers, installed imports/examples,
-generated applications/configuration/migrations and affected runtime checks pass.
-REL-03/04/05 are complete. [Final verification](release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09).
+Earlier hosted Workflow, preview, staging and logging checks remain historical
+evidence with their original versions and scope. Workflow literal Waiting was
+verified on hosted Cloudflare; interruption, restart, step reuse, retries, events
+and failure were also checked locally. These are separate scopes, not a claim
+that local literal Waiting passed or that hosted acceptance was rerun after every
+subsequent source change.
 
-Earlier hosted Workflow/preview/staging/logging and 297-case browser receipts
-retain their original versions and scope through reviewed unchanged runtime graphs;
-they are not claimed as fresh 0.9.0 hosted runs. Owned hosted resources/repositories
-were independently confirmed absent. Changed database tooling now activates its
-TypeScript loader only on configuration load; guarded import, configuration and
-installed migration acceptance pass. Native Cloudflare acceptance uses Wrangler
-4.114.0 / plugin 1.47.0 / Vite 8.1.4; the newer 4.148.0 native Workflow failure is
-not passing evidence. Ordinary newer-tool generated builds pass separately.
-
-Desktop scope is closed for this release by user decision. Its remaining platform
-checks are waived, not passing evidence. Node component/SSE locality and
-provider-specific storage/transaction limits remain documented contracts, not
-new distributed guarantees.
-
-Current facts and later changes belong in the
-[checklist](release-0.9.0.md), [handoff](handoff-0.9.0.md) and
-[verification archive](release-0.9.0-verification-archive.md). Release preparation is not approval to publish packages or promote production.
+Desktop's remaining platform checks are waived by the user's release decision.
+Node component/SSE locality, cooperative cancellation and provider-specific
+storage/transaction limits remain documented contracts. Deno is no longer a
+supported runtime; follow the [migration guide](migration-0.9.0.md#deno-support-removed).

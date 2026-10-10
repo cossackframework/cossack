@@ -1,11 +1,11 @@
 # Changelog
 
-## 0.9.0 — Unreleased
+## 0.9.0 — 2026-10-10
 
-This entry describes verified release preparation for 0.9.0. Root and all package
-versions are 0.9.0; final non-Desktop artifacts, release checks and the 58-task
-audit are complete. Packages remain unpublished. The [release checklist](specs/release-0.9.0.md)
-records acceptance and the user's Desktop waiver.
+This release introduces the 0.9.0 framework and developer tooling contracts.
+Workspace packages use version 0.9.0; external Solar Icons keeps its existing
+version. The [release record](specs/release-0.9.0.md) lists final verification
+and the user's Desktop platform waiver.
 See the [release notes](specs/release-notes-0.9.0.md) and
 [migration guide](specs/migration-0.9.0.md) before upgrading.
 

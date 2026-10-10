@@ -39,5 +39,6 @@
     "dist",
     "agent-docs.json"
   ],
-  "type": "module"
+  "type": "module",
+  "private": true
 }

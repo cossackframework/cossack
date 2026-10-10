@@ -3,8 +3,8 @@
 This document describes the SSE transport backends, the coordinator Durable
 Object, shared-state semantics, and the runtime contract for Node.
 It was written by GLM on 2026-10-02 and updated by Codex after reviewing the
-implementation. See the [Codex review](./release-0.9.0.md#codex-review-2026-10-02)
-for fixes, verification, and remaining release acceptance work.
+implementation. See the [Codex review](./release-0.9.0.md)
+for final verification and release scope.
 
 Related documents: [docs/sse.md](../docs/sse.md) (user-facing guide),
 [specs/architecture.md](./architecture.md), [specs/service.md](./service.md).
@@ -300,4 +300,4 @@ publications exceed retained history, receives resync and converges without repl
 a mutation. Post-yield client-visible failure and cancellation settle once. The
 response-close wrapper exists only in the private test application. Production Node
 acceptance covers ordinary ordering and post-yield failure with its actual SSE backend.
-Read the [release evidence](./release-0.9.0.md#codex-optimistic-sse-ordering-2026-10-03).
+Read the [release evidence](./release-0.9.0.md).
