@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Blocks Pages', () => {
   test('blocks index renders category cards', async ({ page }) => {
@@ -11,7 +12,8 @@ test.describe('Blocks Pages', () => {
   });
 
   test('login blocks render all 4 variations', async ({ page }) => {
-    await page.goto('/blocks/login', { waitUntil: 'networkidle' });
+    await page.goto('/blocks/login');
+    await waitForHydration(page);
     // Tab 0: Simple Card — visible by default.
     await expect(page.getByText('Login to your account')).toBeVisible();
     // Tab 1: Split Screen.
@@ -26,7 +28,8 @@ test.describe('Blocks Pages', () => {
   });
 
   test('dashboard blocks render all 4 variations', async ({ page }) => {
-    await page.goto('/blocks/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/blocks/dashboard');
+    await waitForHydration(page);
     // Tab 0: Stats + Table.
     await expect(page.getByText('Recent Orders')).toBeVisible();
     await expect(page.getByText('INV-001')).toBeVisible();
@@ -42,7 +45,8 @@ test.describe('Blocks Pages', () => {
   });
 
   test('dashboard table filters via search (bind + Store)', async ({ page }) => {
-    await page.goto('/blocks/dashboard', { waitUntil: 'networkidle' });
+    await page.goto('/blocks/dashboard');
+    await waitForHydration(page);
     // All 5 orders visible initially.
     await expect(page.getByText('5 transactions')).toBeVisible();
     // Type in search → filters the reactive store.
@@ -57,7 +61,8 @@ test.describe('Blocks Pages', () => {
   });
 
   test('login form validates and submits (bind + preventDefault + @Validate)', async ({ page }) => {
-    await page.goto('/blocks/login', { waitUntil: 'networkidle' });
+    await page.goto('/blocks/login');
+    await waitForHydration(page);
     // Submit empty → validation errors appear.
     await page.getByRole('button', { name: 'Login', exact: true }).click();
     await expect(page.getByText('Enter a valid email')).toBeVisible({ timeout: 15000 });

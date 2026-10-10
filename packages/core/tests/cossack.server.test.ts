@@ -104,7 +104,7 @@ describe('Cossack Core: Server-Side', () => {
     const mockContext = { req: { param: vi.fn() } } as unknown as Context;
     await component.bootstrap({
       context: mockContext,
-      runtime: { adapter: 'deno', platform: 'desktop' },
+      runtime: { adapter: 'node', platform: 'desktop' },
     });
 
     expect(component.runtimePlatform()).toBe('desktop');
@@ -176,5 +176,35 @@ describe('Cossack Core: Server-Side', () => {
       await expect(Promise.all(component.__serverResourcePending())).rejects.toThrow(
           '[Cossack server$:users] result is not transport-safe: circular dependency',
       );
+  });
+
+  it('serializes only settled resources with their exact dependency identity', async () => {
+      await component.bootstrap({ context: { req: { param: vi.fn() } } as unknown as Context });
+      const pending = new Promise<number>(() => {});
+      component.__serverResource('pending', () => pending, { initial: 0 });
+      component.__serverResource('resolved', (id: number) => id * 10, { deps: () => [7] as const });
+      await Promise.all(component.__serverResourcePending().slice(1));
+      expect(component.getInitialState().serverResources).toEqual({ resolved: { argsKey: '[7]', value: 70 } });
+      await component.destroyAsync();
+  });
+
+  it('ignores superseded and disposed failures during an SSR resource pass', async () => {
+      let reject!: (error: unknown) => void;
+      const old = new Promise<number>((_, no) => { reject = no; });
+      component.__serverResource('item', (_id: number) => old, { deps: () => [1] as const });
+      const oldPending = component.__serverResourcePending();
+      component.__serverResource('item', (id: number) => id, { deps: () => [2] as const });
+      await Promise.all(component.__serverResourcePending());
+      reject(new Error('obsolete failure'));
+      await expect(Promise.all(oldPending)).resolves.toEqual([undefined]);
+      expect(component.resourceStatus$('item')).toMatchObject({ state: 'ready', value: 2 });
+
+      let fail!: (error: unknown) => void;
+      component.__serverResource('disposed', () => new Promise<number>((_, no) => { fail = no; }));
+      const disposedPending = component.__serverResourcePending();
+      await Promise.resolve();
+      await component.destroyAsync();
+      fail(new Error('after disposal'));
+      await expect(Promise.all(disposedPending)).resolves.toEqual([undefined]);
   });
 });

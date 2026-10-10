@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "production-server-fixtures",
+      "title": "Test real runtime auth, policy, RPC and hydration",
+      "summary": "Inject production app.fetch or the generated Worker fetch into createServerApp. The helper sends real Request objects through that handler; it does not implement alternate routing, authorization, DI or cleanup. authFixture supplies headers/cookies only. Authentication middleware and policy must decide whether credentials are valid.",
+      "imports": [
+        "@cossackframework/test-utils/server"
+      ],
+      "markdown": "Inject production app.fetch or the generated Worker fetch into createServerApp. The helper sends real Request objects through that handler; it does not implement alternate routing, authorization, DI or cleanup. authFixture supplies headers/cookies only. Authentication middleware and policy must decide whether credentials are valid.\n\ncomponentRpc sends the production /crpc envelope. serviceRpc identifies the declaring owner and service slot. Public state remains untrusted input. Use authorized and denied fixtures and assert actual effects/cleanup, not only HTTP status. readHydrationState parses the JSON assignment without evaluating JavaScript. Generated Node/workerd/browser acceptance verifies the compiler, real auth/policy, service cleanup, hydration and server-code stripping; a synthetic fetch closure cannot prove those behaviors.\n\nThis reusable contract test accepts the real generated fetch handler and fixture route IDs. Run it against an application whose protected /account route and ping RPC use the supplied test session.",
+      "examples": [
+        {
+          "id": "production-server-fixtures-example",
+          "language": "typescript",
+          "source": "import { createServerApp, authFixture, readHydrationState, type ComponentRpcRequest } from '@cossackframework/test-utils/server';\nexport async function assertProtectedApp<Env>(fetch: (request: Request, env: Env) => Response | Promise<Response>, env: Env, rpc: ComponentRpcRequest) {\n  const app = createServerApp({fetch, env, baseUrl: 'https://app.example.test'});\n  const anonymous = await app.request('/account');\n  if (anonymous.status !== 403) throw Error('Anonymous route must be denied');\n  const credentials = authFixture({cookies: {session: 'valid-test-session'}});\n  const allowed = await app.request('/account', credentials);\n  if (allowed.status !== 200 || !readHydrationState(await allowed.text())) throw Error('Missing authorized SSR state');\n  const response = await app.componentRpc(rpc, credentials);\n  if (response.status !== 200) throw Error('Authorized RPC failed');\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "request-scope-async-fixtures",
+      "title": "Control concurrent request scopes and cleanup",
+      "summary": "withRequestScope binds the core request/DI facilities and awaits scope disposal in finally. It does not scope the framework configuration store; inject the production fetch handler for config middleware acceptance. Declare service ownership rather than resolving arbitrary globals.",
+      "imports": [
+        "@cossackframework/test-utils/server"
+      ],
+      "markdown": "withRequestScope binds the core request/DI facilities and awaits scope disposal in finally. It does not scope the framework configuration store; inject the production fetch handler for config middleware acceptance. Declare service ownership rather than resolving arbitrary globals.\n\ncontrolledAsync gives tests deterministic resolve/reject/cancel controls and a finite timeout option. Attach the promise to the operation before cancelling it. This controls test scheduling, not an incoming TCP disconnect. Native disconnect acceptance must use the host's incoming Request.signal.\n\nThe example overlaps two explicit user scopes without real timers and waits for both finalizers.",
+      "examples": [
+        {
+          "id": "request-scope-async-fixtures-example",
+          "language": "typescript",
+          "source": "import { withRequestScope, controlledAsync } from '@cossackframework/test-utils/server';\nconst ready = controlledAsync<string>();\nconst first = withRequestScope({user: {id: 'alice'}}, async ({serviceScope}) => {\n  if (!serviceScope) throw Error('Missing request DI scope');\n  return ready.promise;\n});\nconst second = withRequestScope({user: {id: 'bob'}}, async () => {ready.resolve('finished'); return 'bob';});\nconst results = await Promise.all([first, second]);\nif (results.join(',') !== 'finished,bob') throw Error('Unexpected request results');\n"
+        }
+      ]
+    },
+    {
+      "id": "browser-component-fixtures",
+      "title": "Render browser components and await asynchronous teardown",
+      "summary": "Use render in a browser or DOM test environment. Helpers click/type wait for component updates; unmount awaits destroyAsync and removes the container even on failed cleanup. Pass public hydration state and props explicitly. A service scope supplied without ownsServiceScope stays caller-owned.",
+      "imports": [
+        "@cossackframework/test-utils/browser"
+      ],
+      "markdown": "Use render in a browser or DOM test environment. Helpers click/type wait for component updates; unmount awaits destroyAsync and removes the container even on failed cleanup. Pass public hydration state and props explicitly. A service scope supplied without ownsServiceScope stays caller-owned.\n\nDOM simulations cover component behavior, not keyboard/native file controls, real navigation, hydration node identity, or compiler stripping. Use actual generated browser acceptance for those criteria. Keep the browser entry separate from the Node-only server helpers. The exported example function runs only when called in a DOM environment.",
+      "examples": [
+        {
+          "id": "browser-component-fixtures-example",
+          "language": "typescript",
+          "source": "import { render } from '@cossackframework/test-utils/browser';\nimport { Cossack } from '@cossackframework/core';\nimport { html } from '@cossackframework/renderer';\nclass Greeting extends Cossack {\n  render() { return html`<p>hello</p>`; }\n}\nexport async function assertGreetingInBrowser() {\n  const view = await render(Greeting);\n  try { if (!view.container.querySelector('p') || !view.html().includes('hello')) throw Error('Missing greeting'); }\n  finally { await view.unmount(); }\n  if (view.container.isConnected) throw Error('Unmount did not remove container');\n}\n"
+        }
+      ]
+    }
+  ]
+}

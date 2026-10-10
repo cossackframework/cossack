@@ -64,7 +64,7 @@ afterEach(async () => {
 
 describe('adapter switching', () => {
   it('keeps the independent Electron Desktop target while switching web adapters', async () => {
-    const project = await create('deno');
+    const project = await create('cloudflare');
     const added = await addFeature(project.projectDir, 'desktop', {
       interactive: false,
     });
@@ -74,7 +74,6 @@ describe('adapter switching', () => {
     const switched = await switchAdapter(project.projectDir, 'node', { interactive: false });
     expect(switched.status).toBe('changed');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).resolves.toBeUndefined();
-    await expect(fs.access(path.join(project.projectDir, 'deno.json'))).rejects.toThrow();
     expect(JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'))
       .dependencies['@cossackframework/desktop']).toBeDefined();
 
@@ -84,12 +83,12 @@ describe('adapter switching', () => {
     expect(removed.status).toBe('removed');
     await expect(fs.access(path.join(project.projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
     await expect(fs.access(path.join(project.projectDir, 'forge.config.ts'))).rejects.toThrow();
-    expect((await switchAdapter(project.projectDir, 'deno', { interactive: false })).status)
+    expect((await switchAdapter(project.projectDir, 'cloudflare', { interactive: false })).status)
       .toBe('changed');
   });
 
   it('generates stable Desktop identifiers for direct creation, later addition, and unusual names', async () => {
-    const direct = await create('deno', 'minimal', { features: 'desktop' });
+    const direct = await create('node', 'minimal', { features: 'desktop' });
     expect(await fs.readFile(path.join(direct.projectDir, 'forge.config.ts'), 'utf8'))
       .toContain("appBundleId: 'dev.cossack.app'");
 
@@ -323,7 +322,7 @@ describe('adapter switching', () => {
     const project = await create('node');
     await expect(switchAdapter(project.projectDir, 'bun', {
       interactive: false,
-    })).rejects.toThrow('Supported values: cloudflare, node, deno');
+    })).rejects.toThrow('Supported values: cloudflare, node');
     const root = await temporaryDirectory();
     await fs.writeFile(path.join(root, 'package.json'), '{}\n');
     await expect(switchAdapter(root, 'node', {

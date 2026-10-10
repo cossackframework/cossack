@@ -106,3 +106,18 @@ describe('ifDefined directive', () => {
     });
   });
 });
+
+it('merges optional spread classes without replacing template classes', () => {
+  const template = (value: string | undefined) => html`<div class="base" ...=${{ class: ifDefined(value) }}>x</div>`;
+  expect(renderToString(template('custom')).trim()).toBe('<div class="base custom">x</div>');
+  const container = document.createElement('div');
+  render(template('custom'), container);
+  const element = container.firstElementChild!;
+  expect(element.getAttribute('class')).toBe('base custom');
+  render(template('next'), container);
+  expect(element.getAttribute('class')).toBe('base next');
+  render(template(undefined), container);
+  expect(element.getAttribute('class')).toBe('base');
+  render(template(''), container);
+  expect(element.getAttribute('class')).toBe('base');
+});

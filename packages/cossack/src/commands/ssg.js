@@ -1,4 +1,8 @@
-import { run } from '../spawn.js';
+import { commandSpecs } from '../command-specs.js';
+import { run, runCaptured } from '../spawn.js';
+import { runWithSpec } from '../command-spec.js';
+
+const spec = commandSpecs.ssg;
 
 /**
  * Legacy SSG CLI flags that mapped to `buildSsg()` options. SSG now runs inside
@@ -27,12 +31,13 @@ const LEGACY_FLAGS = new Set([
  * directory) are configured on the `cossackSsg()` plugin in `vite.config.ts`.
  */
 export async function ssgCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const { viteArgs, legacy } = splitArgs(args);
   if (legacy.length > 0) {
     const hasConfigurable = legacy.some((f) =>
       ['--base-url', '--baseUrl', '--out-dir', '--outDir'].includes(f.flag),
     );
-    console.warn(
+    if (ctx.flags.json !== true) console.warn(
       '[cossack/ssg] The following flags are no longer supported and were ignored:\n' +
         legacy.map((f) => `  ${f.flag}${f.value !== undefined ? ` ${f.value}` : ''}`).join('\n') +
         '\nSSG now runs inside `vite build` via the `cossackSsg()` plugin.' +
@@ -47,8 +52,26 @@ export async function ssgCommand(args, ctx) {
         'and the project root is the current working directory.',
     );
   }
-  console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
-  return run('vite', ['build', ...viteArgs]);
+  if (!ctx.flags.json) console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
+  const selectedEnvironment = ctx.flags.env ?? (process.env.CLOUDFLARE_ENV || undefined);
+  const environment = ctx.flags.env === undefined ? undefined : { CLOUDFLARE_ENV: ctx.flags.env };
+  if (ctx.flags.json === true) {
+    const { code } = await runCaptured('vite', ['build', ...viteArgs], {
+      ...(environment ? { env: environment } : {}), discardOutput: true,
+    });
+    return { exitCode: code, data: { exitCode: code,
+      ...(selectedEnvironment ? { environment: selectedEnvironment } : {}),
+      legacyFlags: legacy.map(item => item.flag),
+      ...(code ? { nextActions: ['cossack ssg'] } : {}) },
+      diagnostics: [...(legacy.length ? [{ code: 'COSSACK_SSG_LEGACY_OPTION_IGNORED', severity: 'warning',
+        message: 'Legacy SSG options were ignored. Configure cossackSsg() in vite.config.ts.' }] : []),
+      ...(code ? [{ code: 'COSSACK_SSG_BUILD_FAILED', severity: 'error',
+        message: 'SSG build failed. Run cossack ssg without --json for tool diagnostics.' }] : [])] };
+  }
+  return environment
+    ? run('vite', ['build', ...viteArgs], { env: environment })
+    : run('vite', ['build', ...viteArgs]);
+  });
 }
 
 /**
@@ -77,13 +100,15 @@ export function splitArgs(args) {
 }
 
 export function ssgHelp() {
-  return `cossack ssg [options]
+  return commandSpecs.ssg.help(`cossack ssg [options]
 
 Pre-render pages marked with \`ssg: true\` (and all \`.md\`/\`.mdx\` pages) to
 static HTML.
 
 SSG runs as part of \`vite build\` (via the \`cossackSsg\` plugin), so this
 command delegates to \`vite build\`. Extra args are forwarded to vite.
+--env selects a Cloudflare environment before Vite loads project config. Vite
+--mode remains an independent choice.
 
 SSG options are configured on the \`cossackSsg\` plugin in \`vite.config.ts\`:
 
@@ -95,5 +120,5 @@ SSG options are configured on the \`cossackSsg\` plugin in \`vite.config.ts\`:
         outDir: 'dist/client',           // default: <root>/dist/client
         enabled: true,                   // default: true; false skips SSG
       })],
-    });`;
+    });`);
 }

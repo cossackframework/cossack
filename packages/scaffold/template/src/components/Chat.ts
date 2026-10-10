@@ -32,8 +32,9 @@ export class Chat extends Cossack {
                 <p class="mt-1 text-sm text-muted-foreground">${__('Send a message and watch the shared server response arrive incrementally.')}</p>
             `)}
             ${component(CardBody, { class: 'space-y-4' }, html`
-                <div class="h-80 overflow-hidden rounded-lg border border-border bg-muted/20" aria-live="polite">
-                    ${component(MessageScroller, {}, html`
+                <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">${isStreaming ? __('Receiving response') : messages.length ? __('Conversation updated') : ''}</p>
+                <div class="h-80 overflow-hidden rounded-lg border border-border bg-muted/20">
+                    ${component(MessageScroller, { id: 'chat-messages', label: __('Conversation'), viewportProps: { 'aria-busy': isStreaming } }, html`
                         ${messages.length === 0 ? html`<p class="py-24 text-center text-sm text-muted-foreground">${__('No messages yet. Ask the suggested question!')}</p>` : ''}
                         ${messages.map((message) => component(
                             Message,

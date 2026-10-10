@@ -1,217 +1,162 @@
-console.log('[Cossack] DevTools module loaded');
+import { recordDevelopmentNativeEvidence, startDevelopmentTrace, type DevelopmentTraceSession, type DevelopmentTraceSnapshot,
+  type DevelopmentComponentSnapshot, type DevelopmentInspectionOptions } from '@cossackframework/core/devtools';
 
-// Component instance registry for state inspection
-const devToolsInstances = new Map<string, any>();
+const instances = new Map<string, WeakRef<object>>();
+let current: BrowserDevTools | undefined;
+const validFile = (file: unknown): file is string => typeof file === 'string' && file.length > 0 && file.length <= 4096 && !/[\u0000-\u001f\u007f]/.test(file);
 
-export function registerDevToolsInstance(sourceFilePath: string, instance: any) {
-  devToolsInstances.set(sourceFilePath, instance);
+/** Register the most recent instance for a source marker. Registration is weak and bounded. */
+export function registerDevToolsInstance(file: string, instance: object): () => void {
+  if (!import.meta.env.DEV || !validFile(file) || typeof WeakRef !== 'function') return () => {};
+  const reference = new WeakRef(instance);
+  instances.delete(file);
+  if (instances.size >= 128) instances.delete(instances.keys().next().value!);
+  instances.set(file, reference);
+  return () => { if (instances.get(file) === reference) instances.delete(file); };
 }
 
-export function enableDevTools() {
-  if (!import.meta.env.DEV) {
-      console.log('[Cossack] DevTools disabled (not in DEV mode)');
-      return;
-  }
+export interface BrowserDevTools {
+  recordNativeEvidence(json: unknown): void;
+  startCapture(options?: { capacity?: number }): DevelopmentTraceSession;
+  stopCapture(): void;
+  snapshot(): DevelopmentTraceSnapshot | null;
+  inspect(file: string, options?: DevelopmentInspectionOptions): DevelopmentComponentSnapshot | null;
+  dispose(): void;
+}
 
-  console.log('[Cossack] DevTools enabled (Hold Alt to inspect)');
-
-  let activeComponent: { file: string, startNode: Comment, endNode: Comment } | null = null;
-  let lastMouseX = 0;
-  let lastMouseY = 0;
-
+/** Install one development inspector. Collection starts only through an explicit control or inspection gesture. */
+export function enableDevTools(): BrowserDevTools | undefined {
+  if (!import.meta.env.DEV || typeof document === 'undefined') return;
+  if (current) return current;
+  let capture: DevelopmentTraceSession | undefined;
+  let disposed = false;
+  let active: { file: string; start: Comment } | undefined;
+  let lastX = 0, lastY = 0, cursorOwned = false, previousCursor = '';
   const overlay = document.createElement('div');
-  Object.assign(overlay.style, {
-      position: 'fixed',
-      pointerEvents: 'none',
-      background: 'rgba(59, 130, 246, 0.3)',
-      border: '2px solid #3b82f6',
-      zIndex: '999999',
-      display: 'none',
-      borderRadius: '4px'
-  });
-  document.body.appendChild(overlay);
-
+  overlay.dataset.cossackDevtools = 'highlight';
+  Object.assign(overlay.style, { position: 'fixed', pointerEvents: 'none', background: 'rgba(59,130,246,.2)',
+    border: '2px solid #3b82f6', zIndex: '999999', display: 'none', borderRadius: '4px' });
   const label = document.createElement('div');
-  Object.assign(label.style, {
-      position: 'absolute',
-      top: '0',
-      left: '0',
-      transform: 'translateY(-100%)',
-      background: '#3b82f6',
-      color: 'white',
-      padding: '2px 6px',
-      fontSize: '10px',
-      fontFamily: 'monospace',
-      borderTopLeftRadius: '2px',
-      borderTopRightRadius: '2px',
-      whiteSpace: 'nowrap'
-  });
+  Object.assign(label.style, { position: 'absolute', top: '0', transform: 'translateY(-100%)', background: '#3b82f6',
+    color: 'white', padding: '2px 6px', fontSize: '12px', whiteSpace: 'nowrap' });
   overlay.appendChild(label);
+  const toolbar = document.createElement('div');
+  toolbar.dataset.cossackDevtools = 'toolbar'; toolbar.setAttribute('role', 'toolbar');
+  toolbar.setAttribute('aria-label', 'Cossack developer tools');
+  toolbar.title = 'Ctrl-click opens source. Ctrl-Shift-click inspects a component.';
+  Object.assign(toolbar.style, { position: 'fixed', bottom: '8px', right: '8px', zIndex: '1000000',
+    display: 'flex', gap: '6px', padding: '6px', background: '#fff', color: '#111', border: '1px solid #777', borderRadius: '6px' });
+  const record = document.createElement('button'), snapshot = document.createElement('button');
+  record.type = snapshot.type = 'button'; record.textContent = 'Record trace'; snapshot.textContent = 'Log snapshot'; snapshot.disabled = true;
+  record.setAttribute('aria-pressed', 'false'); toolbar.appendChild(record); toolbar.appendChild(snapshot); document.body.appendChild(overlay); document.body.appendChild(toolbar);
 
-  function isStartMarker(node: Node): boolean {
-      return node.nodeType === Node.COMMENT_NODE && (node.textContent?.startsWith('cossack-start:') ?? false);
-  }
-  
-  function getMarkerData(node: Node) {
-      if (!node.textContent) return null;
-      try {
-          const json = node.textContent.replace('cossack-start:', '');
-          return JSON.parse(json);
-      } catch (e) {
-          return null;
-      }
-  }
-
-  function findComponent(target: Node) {
-      let node: Node | null = target;
-      while (node) {
-          let sibling = node.previousSibling;
-          while (sibling) {
-              if (isStartMarker(sibling)) {
-                  return sibling as Comment;
-              }
-              sibling = sibling.previousSibling;
-          }
-          node = node.parentNode;
-      }
-      return null;
-  }
-
-  function findEndMarker(startNode: Comment): Comment | null {
-      let current: Node | null = startNode.nextSibling;
+  const hide = () => {
+    overlay.style.display = 'none'; active = undefined;
+    if (cursorOwned && document.body.style.cursor === 'crosshair') document.body.style.cursor = previousCursor;
+    cursorOwned = false;
+  };
+  const marker = (node: Node, prefix: string) => node.nodeType === Node.COMMENT_NODE && node.textContent?.startsWith(prefix);
+  const findStart = (target: Node): Comment | undefined => {
+    for (let node: Node | null = target; node; node = node.parentNode) {
       let depth = 0;
-      const startContent = startNode.textContent!;
-      const expectedEndContent = startContent.replace('cossack-start:', 'cossack-end:');
-
-      while (current) {
-          if (current.nodeType === Node.COMMENT_NODE) {
-             if (current.textContent === startContent) {
-                 depth++;
-             } else if (current.textContent === expectedEndContent) {
-                 if (depth === 0) return current as Comment;
-                 depth--;
-             }
-          }
-          current = current.nextSibling;
+      for (let sibling = node.previousSibling; sibling; sibling = sibling.previousSibling) {
+        if (marker(sibling, 'cossack-end:')) depth++;
+        else if (marker(sibling, 'cossack-start:')) {
+          if (depth === 0) return sibling as Comment;
+          depth--;
+        }
       }
-      return null;
-  }
-
-  const inspectAt = (target: Node | null) => {
-      if (!target) return;
-      
-      const startNode = findComponent(target);
-      
-      if (startNode) {
-          const endNode = findEndMarker(startNode);
-          if (endNode) {
-              const data = getMarkerData(startNode);
-              if (data) {
-                  // Optimization: Don't recalculate if same component
-                  if (activeComponent && activeComponent.startNode === startNode) return;
-
-                  activeComponent = { file: data.file, startNode, endNode };
-                  
-                  const range = document.createRange();
-                  range.setStartAfter(startNode);
-                  range.setEndBefore(endNode);
-                  const rect = range.getBoundingClientRect();
-                  
-                  if (rect.width > 0 && rect.height > 0) {
-                      overlay.style.display = 'block';
-                      overlay.style.width = rect.width + 'px';
-                      overlay.style.height = rect.height + 'px';
-                      overlay.style.top = (rect.top + window.scrollY) + 'px';
-                      overlay.style.left = (rect.left + window.scrollX) + 'px';
-                      
-                      const parts = data.file.split('/');
-                      const fileName = parts.pop();
-                      const parentDir = parts.pop();
-                      label.textContent = parentDir ? `${parentDir}/${fileName}` : fileName;
-                  }
-                  return;
-              }
-          }
-      }
-      
-      overlay.style.display = 'none';
-      activeComponent = null;
-  }
-
-  const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Ctrl') {
-          document.body.style.cursor = 'crosshair';
-          // Check what's under the mouse immediately
-          const target = document.elementFromPoint(lastMouseX, lastMouseY);
-          inspectAt(target);
-      }
+    }
   };
-
-  const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Ctrl') {
-          document.body.style.cursor = '';
-          overlay.style.display = 'none';
-          activeComponent = null;
+  const findEnd = (start: Comment): Comment | undefined => {
+    let depth = 0;
+    for (let node = start.nextSibling; node; node = node.nextSibling) {
+      if (marker(node, 'cossack-start:')) depth++;
+      else if (marker(node, 'cossack-end:')) {
+        if (depth === 0) return node as Comment;
+        depth--;
       }
+    }
   };
-
-  const onMouseMove = (e: MouseEvent) => {
-      lastMouseX = e.clientX;
-      lastMouseY = e.clientY;
-
-      if (e.ctrlKey) {
-          inspectAt(e.target as Node);
-      } else if (activeComponent) {
-          // If Ctrl is released but we are moving, hide the overlay
-          // This handles cases where keyup might have been missed or order of events
-          overlay.style.display = 'none';
-          activeComponent = null;
-          document.body.style.cursor = '';
-      }
+  const fileFor = (start: Comment): string | undefined => {
+    try { const data = JSON.parse(start.data.slice('cossack-start:'.length)); return validFile(data?.file) ? data.file : undefined; }
+    catch { return; }
   };
-
-  const onClick = (e: MouseEvent) => {
-      if (e.ctrlKey && activeComponent) {
-          e.preventDefault();
-          e.stopPropagation();
-          const { file } = activeComponent;
-          console.log('[Cossack] Opening file:', file);
-          fetch(`http://localhost:3333/open?file=${encodeURIComponent(file)}`)
-            .catch(err => console.error('[Cossack] Failed to open file via dev-tools server:', err));
-      }
+  const locate = (target: Node | null) => {
+    if (!target || toolbar.contains(target)) return;
+    const start = findStart(target), end = start && findEnd(start), file = start && fileFor(start);
+    return start && end && file ? { start, end, file } : undefined;
   };
-
-  window.addEventListener('keydown', onKeyDown);
-  window.addEventListener('keyup', onKeyUp);
-  window.addEventListener('mousemove', onMouseMove);
-  window.addEventListener('click', onClick, true); // Capture phase
-
-  // Double-click state inspector (Ctrl + double-click)
-  document.addEventListener('dblclick', (e: MouseEvent) => {
-      if (!e.ctrlKey) return;
-
-      const startNode = findComponent(e.target as Node);
-      if (!startNode) return;
-
-      const data = getMarkerData(startNode);
-      if (!data?.file) return;
-
-      const instance = devToolsInstances.get(data.file);
-      if (!instance) {
-          console.warn(`[Cossack DevTools] No registered instance for: ${data.file}`);
-          return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Log component state
-      const publicState = (instance as any)._stateContainer?.getPublicState?.() || {};
-      console.group(`%c[Cossack DevTools] State: ${data.file}`, 'color: #3b82f6; font-weight: bold;');
-      console.log('Instance:', instance);
-      console.log('Public State:', publicState);
-      console.log('Path:', (instance as any)._cossack_path || 'N/A');
-      console.log('Mounted:', (instance as any).isMounted);
-      console.groupEnd();
-  }, true); // Capture phase
+  const highlight = (target: Node | null) => {
+    const found = locate(target); if (!found) { hide(); return; }
+    const range = document.createRange(); range.setStartAfter(found.start); range.setEndBefore(found.end);
+    const rect = range.getBoundingClientRect();
+    active = { file: found.file, start: found.start };
+    if (!cursorOwned) { previousCursor = document.body.style.cursor; cursorOwned = true; }
+    document.body.style.cursor = 'crosshair';
+    // A fixed overlay uses viewport coordinates, without document scroll offsets.
+    Object.assign(overlay.style, { display: rect.width && rect.height ? 'block' : 'none', width: `${rect.width}px`,
+      height: `${rect.height}px`, top: `${rect.top}px`, left: `${rect.left}px` });
+    label.textContent = found.file.split('/').slice(-2).join('/');
+  };
+  const refreshControls = () => {
+    const collecting = !!capture?.snapshot().collecting;
+    record.textContent = collecting ? 'Stop trace' : 'Record trace'; record.setAttribute('aria-pressed', String(collecting));
+    snapshot.disabled = !capture;
+  };
+  const tools: BrowserDevTools = {
+    recordNativeEvidence(json) { if (!disposed) recordDevelopmentNativeEvidence(json); },
+    startCapture(options) {
+      if (disposed) throw new Error('This development inspector has been disposed.');
+      capture = startDevelopmentTrace(options); refreshControls(); return capture;
+    },
+    stopCapture() { capture?.stop(); refreshControls(); },
+    snapshot() { return disposed ? null : capture?.snapshot() ?? null; },
+    inspect(file, options) {
+      if (disposed || !capture || !validFile(file)) return null;
+      const reference = instances.get(file), instance = reference?.deref();
+      if (!instance) { instances.delete(file); return null; }
+      return capture.inspect(instance, options);
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true; capture?.stop(); capture = undefined; hide(); overlay.remove(); toolbar.remove();
+      window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('click', onClick, true);
+      window.removeEventListener('blur', hide); window.removeEventListener('pagehide', onPageHide);
+      record.removeEventListener('click', onRecord); snapshot.removeEventListener('click', onSnapshot);
+      instances.clear(); if (current === tools) current = undefined;
+    },
+  };
+  const onRecord = () => { if (capture?.snapshot().collecting) tools.stopCapture(); else tools.startCapture(); };
+  const onSnapshot = () => { console.info('[Cossack DevTools] Trace snapshot', tools.snapshot()); refreshControls(); };
+  const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Control') highlight(document.elementFromPoint(lastX, lastY)); };
+  const onKeyUp = (event: KeyboardEvent) => { if (event.key === 'Control') hide(); };
+  const onMouseMove = (event: MouseEvent) => {
+    lastX = event.clientX; lastY = event.clientY;
+    if (event.ctrlKey) highlight(event.target as Node); else if (active) hide();
+  };
+  const onClick = (event: MouseEvent) => {
+    if (!event.ctrlKey) return;
+    const found = locate(event.target as Node); if (!found) return;
+    event.preventDefault(); event.stopPropagation();
+    if (event.shiftKey) {
+      if (!capture?.snapshot().collecting) tools.startCapture();
+      const result = tools.inspect(found.file);
+      if (result) console.info('[Cossack DevTools] Component snapshot', result);
+      else console.info('[Cossack DevTools] No registered component for this source marker.');
+    } else {
+      void fetch(`http://localhost:3333/open?file=${encodeURIComponent(found.file)}`)
+        .catch(() => console.warn('[Cossack DevTools] Source editor service is unavailable.'));
+    }
+  };
+  const onPageHide = (event: PageTransitionEvent) => { if (!event.persisted) tools.dispose(); else hide(); };
+  record.addEventListener('click', onRecord); snapshot.addEventListener('click', onSnapshot);
+  window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('mousemove', onMouseMove); window.addEventListener('click', onClick, true);
+  window.addEventListener('blur', hide); window.addEventListener('pagehide', onPageHide);
+  current = tools;
+  return tools;
 }
+
+if (import.meta.hot) import.meta.hot.dispose(() => current?.dispose());

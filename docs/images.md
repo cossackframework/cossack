@@ -46,7 +46,7 @@ The `Image` helper accepts these properties:
 | `height` | `number` | The desired height in pixels. |
 | `fit` | `'cover' \| 'contain' \| ...` | The method used to resize the image to the requested dimensions. |
 | `quality` | `number` | The quality of the image (1-100). |
-| `format` | `'webp' \| 'avif' \| 'json'` | The output format. |
+| `format` | `'webp' \| 'avif'` | The output format. |
 | `alt` | `string` | The alt text for accessibility. |
 | `class` | `string` | CSS class names. |
 | `loading` | `'lazy' \| 'eager'` | Native browser loading behavior (default: 'lazy'). |
@@ -118,3 +118,18 @@ If the binary is missing, the command prints these instructions and exits with a
 > **Cloudflare deployments:** prefer runtime resizing via `/cdn-cgi/image/...` (set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`) : it generates variants on demand at the edge with no build step. Use `cossack image optimize` for the Node.js adapter or when you want the files committed to your repository.
 
 See the [Cossack CLI reference](/docs/cossack-cli.md#image-optimization) for the full `image optimize` options.
+
+## Diagnose unsupported transforms
+
+Import `imageDiagnostics` from `@cossackframework/core`. It returns fixed codes,
+messages and next actions without including the source URL. Pass the selected
+`provider` and `development` mode when inspecting a configuration. `Image` rejects
+invalid sources, dimensions, quality, fit and output format. Local development
+warns when transform options cannot apply; production with provider `none` still
+renders the original image. Intrinsic width/height remain valid without a provider.
+
+Cloudflare configuration does not enable Image Resizing on your account or zone.
+Enable the provider service and allowed remote sources separately. A local URL
+rewrite does not prove those settings. JSON metadata is not a renderable `img`
+format; use `webp` or `avif` for this helper. Supported fit values are `cover`,
+`contain`, `scale-down`, `crop` and `pad`. See the [provider fit options](https://developers.cloudflare.com/images/optimization/features/#fit).

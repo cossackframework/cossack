@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "my-cossack-app",
   "compatibility_flags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "enable_request_signal"
   ],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
@@ -14,46 +15,48 @@
       "name": "EMAIL"
     }
   ],
-  // Cloudflare D1 binding. Local development uses preview_database_id and
-  // `pnpm dev` applies pending migrations before Vite starts. Replace the
-  // production database_id with `pnpm exec wrangler d1 create <name>` output.
+  // Remote D1 deployment requires database_id. Use the ID of an existing database, or run:
+  // pnpm exec wrangler d1 create app-db --update-config --binding DB
+  // This command creates a Cloudflare resource. Local development uses a separate local database.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "app-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
       "preview_database_id": "app-local"
     }
   ],
-  // "durable_objects": {
-  //   "bindings": [
-  //     {
-  //       "name": "COSSACK_OBJECT",
-  //       "class_name": "AppDurableObject"
-  //     }
-  //   ]
-  // },
-  // "migrations": [
-  //   {
-  //     "tag": "v1",
-  //     "new_classes": [
-  //       "AppDurableObject"
-  //     ]
-  //   }
-  // ],
+  // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
+  // SseDurableObject is SQLite-backed: add new_sqlite_classes (not new_classes).
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COSSACK_SSE",
+        "class_name": "SseDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SseDurableObject"
+      ]
+    }
+  ],
   "assets": {
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": true
   },
   // Replace with your production domain. Used for sitemap generation, canonical
   // URLs, and OG tags. Also exposed to the Worker at runtime as env.APP_URL
   // (read via config('app.url')).
   //
   // APP_LOCALE sets the default locale for `__()`. See `cossack lang publish`.
-  // APP_SECRET signs flash-data cookies (min 16 chars); set a real secret.
+  // APP_SECRET signs flash-data cookies. Set it with wrangler secret put.
+  "secrets": { "required": ["APP_SECRET"] },
   "vars": {
     "APP_URL": "https://example.com",
     "APP_LOCALE": "en",
-    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET",
     "CORS_ENABLED": "true",
     "CORS_ORIGINS": "",
     "CORS_METHODS": "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS",

@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/database",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "description": "Serverless-first Active Record ORM for Cossack",
   "type": "module",
   "license": "MIT",
@@ -23,6 +23,7 @@
   "files": [
     "dist",
     "docs",
+    "agent-docs.json",
     "README.md",
     "LICENSE"
   ],
@@ -47,9 +48,9 @@
       "types": "./dist/runtime/cloudflare.d.ts",
       "import": "./dist/runtime/cloudflare.js"
     },
-    "./deno": {
-      "types": "./dist/runtime/deno.d.ts",
-      "import": "./dist/runtime/deno.js"
+    "./cloudflare-turso": {
+      "types": "./dist/runtime/cloudflare-turso.d.ts",
+      "import": "./dist/runtime/cloudflare-turso.js"
     },
     "./cossack": {
       "types": "./dist/cossack/index.d.ts",

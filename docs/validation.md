@@ -7,6 +7,158 @@ description: "Form validation using the @Validate decorator that runs on both cl
 
 The `@Validate` decorator provides form validation that runs on both client and server. It integrates with `@State`, `@ClientState`, `@Store`, and `@ClientStore` decorators.
 
+## Validated server actions
+
+Declare a server contract with `input` from `@cossackframework/core`. Use
+`InputOf<typeof contract>` for the method parameter. The server parses incoming
+data before calling the method. This applies to component actions, forwarded
+services and explicit service RPC, including multipart uploads.
+
+For standalone parsing, import the helpers from `@cossackframework/core/input`.
+This entry exports `input`, its types, `parseFormData`, `ActionValidationError`
+and `isActionValidationError` without component or runtime imports.
+Use `pnpm exec cossack docs --package @cossackframework/core --json` to read
+installed examples for schemas, nested forms and validation cancellation.
+
+```typescript
+import { input, Server, type InputOf, type RawInputOf } from '@cossackframework/core';
+
+const saveInput = input.object({
+    title: input.string({ required: true, minLength: 3, maxLength: 200 }),
+    count: input.number({ coerce: true, integer: true, min: 1 }),
+    profile: input.object({ email: input.string({ email: true }) }),
+    tags: input.array(input.enum(['draft', 'published']), { maxItems: 8 }),
+    note: input.string().optional(),
+});
+
+type SaveInput = InputOf<typeof saveInput>;
+type IncomingSaveInput = RawInputOf<typeof saveInput>;
+
+// Inside a Cossack component or service:
+@Server({ input: saveInput })
+async save(data: SaveInput) {
+    // data.count is a number. No unlisted field reaches this method.
+    return { title: data.title, count: data.count };
+}
+```
+
+Noncoercing schemas keep the same raw and parsed types. String fields accept
+strings, enums accept their declared choices, and file arrays accept files.
+Optional fields add `undefined`; nullable fields add `null`. Coercing schemas
+explicitly include their supported incoming types.
+
+`InputOf` describes parsed values. `RawInputOf` describes supported incoming
+values, so the coercing count accepts a number or string at the boundary.
+Authored native method parameters keep the parsed type; ordinary direct server
+calls do not run decorator validation. Normalize client form values before
+calling the authored method. Validation metadata is not a wrapper around native
+JavaScript calls.
+
+For example, pass `Number(form.count)` and an explicitly parsed boolean to
+`this.save(...)`, then handle server field errors if those values are invalid.
+`RawInputOf` does not widen a browser proxy or native method's parameter type.
+For API handlers and other native entrypoints, explicitly call
+`await contract.parse(raw, { signal })` before using the parsed value.
+Native entrypoints own their error response mapping as well as parsing.
+Keep private server contracts separate from shared browser form rules.
+
+Schemas also check public function fields, including arrow functions and async
+generator functions, with both `Server` and `createTypedDecorators().Server`:
+
+```typescript
+@Server({ input: saveInput })
+save = async (data: SaveInput) => ({ title: data.title, count: data.count });
+```
+
+The decorator does not change the field's native return type. Private/protected
+field inference is not supported; expose the RPC action as a public member.
+
+Compose input parsing with `@Server({ input: contract, authorize })` for record
+access. The authorizer receives parsed values, trusted server context and the
+owned action signal; it must return boolean `true` to allow mutation. Use
+the resource kit's `policy.action(...)` for a typed record lookup and decision.
+See [resource policies](./authorization.md#typed-resource-policies). Neither
+input validity nor public permission state establishes ownership. Both direct
+and typed-channel Server decorators retain authorizer input inference.
+
+| Builder | Incoming values and behavior |
+| :--- | :--- |
+| `input.string(rules)` | Strings only. Empty strings are valid unless constrained; `required` also rejects whitespace. Existing length, pattern, email and URL rules apply. |
+| `input.number({ coerce, integer, min, max })` | Finite numbers; explicit coercion also accepts nonempty decimal/scientific strings. Booleans, hex strings and empty strings fail. `integer` requires a safe integer. |
+| `input.boolean({ coerce })` | Booleans; explicit coercion accepts trimmed, case-insensitive `true/1/on/yes` and `false/0/off/no`. Other values fail. |
+| `input.literal(value)` / `input.enum(['draft', 'published'])` | Exact literals; enum choices retain their TypeScript union. |
+| `input.date({ coerce })` | Valid Date instances are copied. Explicit coercion accepts canonical UTC ISO strings such as `2026-10-03T00:00:00.000Z`. Dates with offsets, omitted milliseconds or invalid calendar values fail. |
+| `input.object(shape)` | Plain objects, with unknown keys rejected at every declared object. `{ unknownKeys: 'strip' }` explicitly removes them at that object only. The parsed object is a new object with no prototype. |
+| `input.array(item, { minItems, maxItems })` | Dense arrays; each item is parsed. Holes, accessor properties and extra array properties fail. Default maximum: 1,024 items. |
+| `input.file({ maxBytes, mediaTypes })` | Actual uploaded File instances, with optional byte limit and exact declared media type checks. File-shaped JSON objects fail. The media type is upload metadata, not a content inspection. |
+
+JSON RPC serializes a Date as a string. Use `input.date({ coerce: true })` for
+such fields, even when the authored client argument is a Date. Strict
+`input.date()` accepts actual Date instances in imperative parsing and rejects
+date strings received over JSON.
+
+Fields are required by their type unless marked `.optional()`. That permits
+`undefined` and omits absent object fields. `.nullable()` permits `null`; it does
+not make a field optional. Typed action contracts accept at most one argument.
+A missing argument is parsed as `undefined`. An extra positional argument fails.
+Object schemas allow at most 1,024 fields. Parsing limits depth to 32, visited
+nodes to 4,096, and reported errors to 128. Cycles and prototype/accessor inputs
+are rejected. Parsing does not mutate incoming objects or arrays.
+
+RPC HTTP validation failures return status 400 and `COSSACK_VALIDATION_FAILED`.
+Socket calls use the same code in their correlated error frame. Client proxies
+expose `RpcError.fieldErrors`, with nested object keys and numeric array indices:
+
+```typescript
+// { profile: { email: 'Invalid email address' }, items: { 0: { count: 'Minimum value is 1' } } }
+const emailError = error.fieldErrors?.profile;
+// Container and form errors use the reserved `_` key.
+```
+
+Use `.refine()` for application validation. A `false` result creates a field
+error; a thrown/rejected callback or a nonboolean result is an internal failure.
+Its private message is not sent to the caller, including when it throws a
+`ClientVisibleError`, `ActionValidationError` or HTTP exception. The original
+exception remains the internal error's `cause` for server diagnostics. Return
+`false` to produce a field error. Use read-only validation here;
+a mutation belongs in the action after all checks succeed.
+
+```typescript
+const nameInput = input.string().refine(async (name, { signal }) => {
+    return await isAvailable(name, signal); // Application-supplied lookup.
+}, 'That name is already taken.');
+```
+
+When a transport request is cancelled, parsing stops owning pending refinements
+and no later validator/action starts. Callbacks receive the request signal for
+cooperative I/O cancellation. A callback that ignores cancellation may continue
+its own work; there is no side-effect rollback. This does not introduce a
+server execution deadline for arbitrary application code.
+
+Use a static object literal for `@Server` options. The client compiler removes
+`input`, its inline callbacks and private module declarations that become unused.
+A local contract that remains reachable from client code or an export fails the
+client build. Type-only uses such as `InputOf<typeof saveInput>` do not retain its
+runtime code. Imported contract modules must not also supply runtime client
+exports; use separate modules so their private initializers can be removed.
+Destructured contracts are removed as one declaration; client use of a sibling
+binding fails the build. Private runtime TypeScript enum/namespace dependencies
+fail the build rather than leaving their initializers in client code. Use plain
+const/function declarations or a separate contract module.
+Keep separate shared `storeRules` maps for client form validation;
+the mutation recipe demonstrates this composition. Dynamic option objects and
+spreads fail the client build because they can hide server validation code.
+
+In 0.9, plain rule maps are no longer action contracts. Replace
+`@Server({ input: { count: { coerce: 'number' } } })` with
+`@Server({ input: input.object({ count: input.number({ coerce: true }) }) })`.
+Declare every accepted key and nested/file shape, and use one input argument.
+TypeScript rejects maps; stale JavaScript metadata fails before validation
+callbacks or mutation and logs a migration error on the server. The client gets
+a correlated internal failure. Existing form validation, `@Validate` and
+`storeRules` continue to accept their rule maps. See the
+[migration guide](../specs/migration-0.9.0.md#typed-server-input-contracts).
+
 ## Usage
 
 ```typescript

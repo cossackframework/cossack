@@ -7,7 +7,7 @@ const { constructed, registry } = vi.hoisted(() => ({
 }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
-vi.mock('virtual:cossack-config', () => ({ default: {} }));
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
 
 const pagePath = '/src/pages/private/index.ts';
 const layoutPath = '/src/pages/layout.ts';
@@ -21,8 +21,9 @@ Reflect.defineMetadata('page:options', { middlewares: [async (c: any, next: any)
   if (!c.req.header('x-test-role')) return c.text('layout guard', 401);
   await next();
 }] }, RootLayout);
-registry.pages[pagePath] = { default: PrivatePage };
-registry.layouts[layoutPath] = { default: RootLayout };
+class NamedHelper { constructor() { throw new Error('wrong component export'); } }
+registry.pages[pagePath] = { AHelper: NamedHelper, default: PrivatePage };
+registry.layouts[layoutPath] = { AHelper: NamedHelper, default: RootLayout };
 const { createApp } = await import('../src/router');
 const ids = computeRouteIds([pagePath], [layoutPath]).routePathToIdMap;
 
@@ -63,8 +64,9 @@ it('rejects service-name collisions with internal component methods', async () =
   class CollisionPage {
     activeComponents = new Map();
     bootstrap = bootstrap;
-    _render() {}
+    __renderRpcTarget() {}
     getPublicState() { return {}; }
+    async destroyAsync() {}
   }
   Reflect.defineMetadata('design:paramtypes', [CollisionService], CollisionPage);
   registry.pages[pagePath] = { default: CollisionPage };
@@ -77,6 +79,7 @@ it('rejects service-name collisions with internal component methods', async () =
     expect((await response.json() as { error: string }).error).toContain('not a callable server method');
     expect(bootstrap).toHaveBeenCalledOnce();
   } finally {
-    registry.pages[pagePath] = { default: PrivatePage };
+    class NamedHelper { constructor() { throw new Error('wrong component export'); } }
+registry.pages[pagePath] = { AHelper: NamedHelper, default: PrivatePage };
   }
 });

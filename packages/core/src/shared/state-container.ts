@@ -1,3 +1,4 @@
+import { developmentName, developmentValueReader, type DevelopmentStateSnapshot } from './development-inspection';
 // src/shared/state-container.ts
 
 /**
@@ -8,6 +9,28 @@ export class StateContainer {
     private _publicState = new Map<string, unknown>();
     private _internalState = new Map<string, unknown>();
     private _initializedKeys = new Set<string>();
+
+    /** @internal Reads stored values, never component getters or serialization hooks. */
+    developmentSnapshot(selected: ReadonlySet<string>, clientKeys: ReadonlySet<string>): DevelopmentStateSnapshot {
+        if (!import.meta.env?.DEV) return { fields: [], truncated: false };
+        const fields: DevelopmentStateSnapshot['fields'] = [], seen = new Set<string>();
+        const read = developmentValueReader();
+        let truncated = false;
+        const append = (name: string, value: unknown, visibility: 'public' | 'client') => {
+            if (seen.has(name)) return;
+            if (fields.length >= 64) { truncated = true; return; }
+            seen.add(name); fields.push({ name: developmentName(name), visibility,
+                value: selected.has(name) ? read(value, name) : { type: 'omitted' } });
+        };
+        // Selected fields take precedence over the bounded default inventory.
+        for (const name of selected) {
+            if (this._publicState.has(name)) append(name, this._publicState.get(name), 'public');
+            else if (clientKeys.has(name) && this._internalState.has(name)) append(name, this._internalState.get(name), 'client');
+        }
+        for (const [name, value] of this._publicState) { append(name, value, 'public'); if (truncated) break; }
+        for (const name of clientKeys) { if (truncated) break; if (this._internalState.has(name)) append(name, this._internalState.get(name), 'client'); }
+        return { fields, truncated };
+    }
 
     /** Get all public state as a plain object */
     getPublicState(): Record<string, unknown> {

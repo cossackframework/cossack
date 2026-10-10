@@ -1,28 +1,33 @@
+import { commandSpecs } from '../command-specs.js';
 import { addFeature, FEATURES, parseList } from '@cossackframework/scaffold';
 import path from 'node:path';
 import { findProjectRoot, writeFile } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { UI_COMPONENTS } from '../templates.js';
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
+
+const spec = commandSpecs.add;
 
 export async function addCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
+    ctx.out = createCommandOutput(ctx);
   const [feature, componentName] = args;
   if (!feature || !FEATURES.includes(feature)) {
-    console.error(
-      `Unknown feature: ${feature || '(none)'}.\nAvailable features: ${FEATURES.join(', ')}`,
+    throw Object.assign(
+      new Error(`Unknown feature: ${feature}. Available features: ${FEATURES.join(', ')}`),
+      { code: 'COSSACK_FEATURE_UNKNOWN' },
     );
-    return 1;
   }
   if (componentName && feature !== 'ui') {
-    console.error('A component name is only supported by `cossack add ui`.');
-    return 1;
+    throw Object.assign(
+      new Error('A component name is only supported by `cossack add ui`.'),
+      { code: 'COSSACK_ARGUMENT_UNEXPECTED' },
+    );
   }
   const uiComponent = componentName ? UI_COMPONENTS[componentName] : undefined;
   if (componentName && !uiComponent) {
-    console.error(
-      `Unknown UI component: ${componentName}.\n` +
-      `Available components: ${Object.keys(UI_COMPONENTS).join(', ')}`,
-    );
-    return 1;
+    throw Object.assign(new Error(`Unknown UI component: ${componentName}. Available components: ${Object.keys(UI_COMPONENTS).join(', ')}`),
+      { code: 'COSSACK_UI_COMPONENT_UNKNOWN' });
   }
 
   try {
@@ -39,15 +44,16 @@ export async function addCommand(args, ctx) {
       force: ctx.force,
       dryRun: ctx.dryRun,
       yes: ctx.flags.yes === true || ctx.flags.y === true,
-      interactive: ctx.flags.yes !== true && ctx.flags.y !== true && !ctx.dryRun,
+      interactive: ctx.flags.json !== true && Boolean(process.stdin.isTTY) &&
+        ctx.flags.yes !== true && ctx.flags.y !== true && !ctx.dryRun,
     });
 
     if (result.status === 'present') {
-      console.log(`  present  ${feature} is already installed`);
+      ctx.out.line(`  present  ${feature} is already installed`);
     }
     if (result.status === 'cancelled') {
-      console.log('Cancelled. No files were changed.');
-      return 0;
+      ctx.out.line('Cancelled. No files were changed.');
+      return ctx.out.data({ feature, status: result.status });
     }
     if (uiComponent) {
       const target = path.join(
@@ -56,58 +62,59 @@ export async function addCommand(args, ctx) {
         `${uiComponent.className}.ts`,
       );
       const status = await writeFile(target, uiComponent.template(), ctx);
-      if (status === 'skipped') {
-        console.error(
-          `  exists   ${path.relative(root, target)} ` +
-          '(use --force to overwrite)',
-        );
-        return 1;
-      }
-      console.log(
-        `  ${status === 'dry-run' ? 'would eject' : 'ejected'}  ` +
-        `${path.relative(root, target)}`,
-      );
+      if (status === 'skipped') throw Object.assign(new Error(`File already exists: ${target}. Use --force to overwrite.`),
+        { code: 'COSSACK_FILE_EXISTS' });
+      ctx.out.file(status === 'dry-run' ? 'planned' : 'created', target);
     }
-    if (result.status === 'present') return 0;
+    if (result.status === 'present') return ctx.out.data({ feature, status: result.status });
 
     const automaticallyAdded = result.addedFeatures.filter(
       (item) => item !== feature,
     );
-    console.log(
+    for (const change of result.changes.writes) {
+      ctx.out.file(result.status === 'dry-run' ? 'planned' : (change.overwrite ? 'overwritten' : 'created'),
+        path.join(root, change.path));
+    }
+    for (const change of result.changes.deletes) {
+      ctx.out.file(result.status === 'dry-run' ? 'planned-delete' : 'deleted', path.join(root, change.path));
+    }
+    ctx.out.line(
       `${result.status === 'dry-run' ? 'Would apply' : 'Applied'} ${result.changes.writes.length} write(s)` +
       (result.changes.deletes.length ? ` and ${result.changes.deletes.length} deletion(s)` : '') +
       `. Resolved features: ${result.recipe.resolvedFeatures.join(', ') || 'minimal'}.`,
     );
     if (automaticallyAdded.length) {
-      console.log(`Included prerequisites: ${automaticallyAdded.join(', ')}`);
+      ctx.out.line(`Included prerequisites: ${automaticallyAdded.join(', ')}`);
     }
     if (feature === 'dashboard') {
-      console.log(`Dashboard modules: ${result.recipe.dashboardModules.join(', ') || '(none)'}`);
+      ctx.out.line(`Dashboard modules: ${result.recipe.dashboardModules.join(', ') || '(none)'}`);
     }
     if (result.status !== 'dry-run') {
-      console.log('\nNext: run `pnpm install`.' +
+      ctx.out.line('\nNext: run `pnpm install`.' +
         (result.recipe.resolvedFeatures.includes('database')
           ? '\nThen apply migrations with `cossack migration up`.'
           : ''));
     }
-    return 0;
+    return ctx.out.data({
+      feature,
+      status: result.status,
+      resolvedFeatures: result.recipe.resolvedFeatures,
+      prerequisites: automaticallyAdded,
+      nextActions: result.status === 'dry-run' ? [] : ['pnpm install',
+        ...(result.recipe.resolvedFeatures.includes('database') ? ['cossack migration up'] : [])],
+    });
   } catch (error) {
     if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
-    console.error(`  error   ${error.message}`);
-    return 1;
+    throw Object.assign(
+      new Error(error.message),
+      { code: error.code ?? 'COSSACK_FEATURE_ADD_FAILED' },
+    );
   }
+  });
 }
 
 export function addHelp() {
-  return `cossack add <ui|database|studio|auth|dashboard|markdown|examples|desktop> [component]
-
-Options:
-  component                         Eject a UI component for customization
-  --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
-  --runtime <cloudflare|node|deno>
-  --auth-methods <credentials,oauth>
-  --oauth <github,google,gitlab,facebook,microsoft>
-  --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
-  --features <users,sessions,settings,roles>  Dashboard modules
-  --yes                                      Apply without confirmation`;
+  return commandSpecs.add.help(`cossack add <${FEATURES.join('|')}> [component]`);
 }
+
+/* wrapper closed below */

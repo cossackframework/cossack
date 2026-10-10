@@ -1,32 +1,16 @@
+import { inspectRuntimeMetadata } from './runtime-metadata.js';
+import { resolveDeclarationDispatch } from './member-dispatch.js';
+import { resolveImportedInheritance } from './inheritance.js';
+import { inspectScaffoldMetadata } from './project-metadata.js';
+import { inspectServiceOwnership } from './service-ownership.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { extractMethodClassificationsFromAst } from './page-options-ast.js';
+import { extractPageOptionsFromAst, inspectDefaultClassExport, isHttpHandlerModule, inspectApiContractsFromAst } from './page-options-ast.js';
+import { filePathToHttpRoute, classifyRoute, resolveLayoutPaths, resolveNearestSpecialPage, routeParameters } from '@cossackframework/framework/route-ids';
+import { discoverRoutes, scanPagesDir } from '@cossackframework/framework/route-codegen';
+export { filePathToHttpRoute, classifyRoute, scanPagesDir };
 
-/**
- * Pure route derivation replicated from the framework router
- * (packages/framework/src/router.ts, route-registration loop):
- *
- *   route = filePath
- *     .replace('/src/pages', '')
- *     .replace(/\.(ts|js|md|mdx)$/, '')
- *     .replace(/\/index$/, '')
- *     .replace(/\/\([^)]+\)/g, '')     // strip route groups (auth)
- *     .replace(/\[([^\]]+)\]/g, ':$1') // [name] -> :name
- *     || '/'
- *
- * This is the single place the CLI derives URLs so `cossack routes` always
- * matches what the running app actually registers.
- */
-export function filePathToHttpRoute(filePath) {
-  let route = filePath
-    .replace('/src/pages', '')
-    .replace(/\.(ts|js|md|mdx)$/, '')
-    .replace(/\/index$/, '')
-    .replace(/\/\([^)]+\)/g, '')
-    .replace(/\[([^\]]+)\]/g, ':$1');
-  if (!route) route = '/';
-  if (route === '/index') route = '/';
-  return route;
-}
 
 /** Directory scope of a path, e.g. /src/pages/(auth)/login/index.ts -> /(auth)/login */
 function dirScope(filePath) {
@@ -36,89 +20,219 @@ function dirScope(filePath) {
   return '/src/pages/' + parts.join('/');
 }
 
-export function classifyRoute(routePath) {
-  if (routePath.endsWith('/404') || routePath === '/404') return '404';
-  if (routePath.endsWith('/error') || routePath === '/error') return 'error';
-  if (routePath.includes('/api/') || routePath === '/api' || routePath.startsWith('/api')) return 'api';
-  return 'page';
-}
-
-/**
- * Walk `src/pages` reproducing the Vite glob key set:
- *   pages   = *.ts/*.mdx excluding layout.ts/loading.ts
- *   layouts = layout.ts
- *
- * Returns sorted { pageKeys, layoutKeys } in `/src/pages/<rel>` form
- * (forward slashes), exactly like the framework's scanPagesDir.
- */
-export function scanPagesDir(pagesDir) {
-  const pageKeys = [];
-  const layoutKeys = [];
-  if (!fs.existsSync(pagesDir)) return { pageKeys, layoutKeys };
-
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (entry.isFile()) {
-        const rel = path.relative(pagesDir, full).split(path.sep).join('/');
-        const key = `/src/pages/${rel}`;
-        if (entry.name === 'layout.ts') {
-          layoutKeys.push(key);
-        } else if (entry.name === 'loading.ts') {
-          // excluded, matches glob negation
-        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.mdx')) {
-          pageKeys.push(key);
-        }
-      }
-    }
-  };
-  walk(pagesDir);
-  pageKeys.sort();
-  layoutKeys.sort();
-  return { pageKeys, layoutKeys };
-}
-
 /**
  * Build the route model used by `cossack routes`.
  * pages:  [{ filePath, route, kind }]
  * layouts: [{ filePath, scope }]
  */
-export function buildRouteModel(projectRoot) {
-  const pagesDir = path.join(projectRoot, 'src', 'pages');
-  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir);
-
-  const pages = pageKeys.map((filePath) => {
-    const route = filePathToHttpRoute(filePath);
-    return { filePath, route, kind: classifyRoute(route) };
-  });
-
-  const layouts = layoutKeys.map((filePath) => ({
-    filePath,
-    scope: dirScope(filePath),
+export function buildRouteModel(projectRoot, options = {}) {
+  const manifest = discoverRoutes(projectRoot, options.includeMarkdown ?? false);
+  const pages = manifest.routes.map(descriptor => ({
+    filePath: descriptor.filePath, route: descriptor.pattern, kind: descriptor.kind,
+    name: descriptor.name, routeId: descriptor.routeId, params: descriptor.parameters,
+    layoutPaths: descriptor.layoutPaths, errorBoundary: descriptor.errorBoundary,
+    notFoundBoundary: descriptor.notFoundBoundary, addressable: descriptor.addressable,
   }));
+  const layouts = manifest.layoutKeys.map(filePath => ({ filePath, scope: dirScope(filePath), routeId: manifest.filePathToId[filePath] }));
+  return { pages, layouts, manifest };
+}
 
-  return { pages, layouts };
+export const layoutStackForPage = resolveLayoutPaths;
+export const extractRouteParams = routeParameters;
+
+
+/**
+ * Source-level @Page option extraction WITHOUT executing the module: reads
+ * the decorator call text only. Transport, SSG, and middleware count are the
+ * facts inspection needs; middleware identities live in code, not metadata.
+ */
+export function extractPageOptions(source) {
+  if (!source) return { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+  const decorator = source.match(/@Page\(\s*\{([\s\S]*?)\}\s*\)/);
+  if (!decorator) return { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+  const body = decorator[1];
+  const transport = body.match(/transport\s*:\s*['"](http|sse|durable-object)['"]/);
+  const ssg = body.match(/ssg\s*:\s*(true|false)/);
+  const middlewares = body.match(/middlewares\s*:\s*\[([\s\S]*?)\]/);
+  const services = body.match(/services\s*:\s*\[([^\]]*)\]/);
+  return {
+    transport: transport ? transport[1] : null,
+    ssg: ssg ? ssg[1] === 'true' : null,
+    middlewares: middlewares ? countTopLevelEntries(middlewares[1]) : 0,
+    // Declared service class names — the ownership facts DI resolution uses.
+    services: services
+      ? services[1].split(',').map(name => name.trim()).filter(name => /^[A-Za-z_$][\w$]*$/.test(name))
+      : [],
+    decoratorLine: source.slice(0, decorator.index).split('\n').length,
+  };
+}
+
+/** Count comma-separated entries at one depth (middleware array members). */
+function countTopLevelEntries(text) {
+  let depth = 0;
+  let entries = 0;
+  let inString = null;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (char === inString && text[i - 1] !== '\\') inString = null;
+      continue;
+    }
+    if (char === '\'' || char === '"' || char === '`') { inString = char; continue; }
+    if (char === '[' || char === '(' || char === '{') depth++;
+    else if (char === ']' || char === ')' || char === '}') depth--;
+    else if (char === ',' && depth === 0) entries++;
+  }
+  return /\S/.test(text) ? entries + 1 : 0;
 }
 
 /**
- * Return the layout stack (filePaths) that wrap a given page, root-first.
- * Replicates router.getLayoutStack: walk parent dirs collecting layout.ts.
+ * Nearest special-page boundary (404 / error) for a page, mirroring the
+ * router's findNearestSpecialPage: walk from the page's directory upward,
+ * preferring deeper boundaries.
  */
-export function layoutStackForPage(pageFilePath, layoutKeys) {
-  const rel = pageFilePath.replace('/src/pages/', '');
-  const parts = rel.split('/');
-  const stack = [];
-  let current = '/src/pages';
-  // root layout
-  if (layoutKeys.includes(`${current}/layout.ts`)) {
-    stack.push(`${current}/layout.ts`);
+export function nearestSpecialPage(pageFilePath, pages, type) {
+  return resolveNearestSpecialPage(pageFilePath, pages.map(page => page.filePath), type);
+}
+
+/**
+ * Effective route metadata model (RT-07): per page, the URL, stable route id
+ * (same index-based computation as the runtime's computeRouteIds), dynamic
+ * parameters, layout ancestry, nearest 404/error boundaries, and source-level
+ * @Page options. Inspection reads facts; it never executes components.
+ */
+export async function buildEffectiveRouteModel(projectRoot, options = {}) {
+  const scaffold = await inspectScaffoldMetadata(projectRoot);
+  const includeMarkdown = options.includeMarkdown ?? scaffold.recipe?.features?.some(feature => feature.name === 'markdown') ?? false;
+  const model = buildRouteModel(projectRoot, { includeMarkdown });
+  const layoutKeys = model.layouts.map((layout) => layout.filePath);
+  const idFor = filePath => model.manifest.filePathToId[filePath] ?? null;
+  const pages = [];
+  for (const page of model.pages) {
+    let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    let moduleExport = { status: 'unknown', reason: 'The source could not be read.' };
+    let method = 'unknown';
+    let reason = null;
+    let methods = { methods: [] };
+    let routeStyle = 'component';
+    let apiContracts = null;
+    try {
+      const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
+      const source = fs.readFileSync(absolute, 'utf8');
+      if (page.kind === 'api' && await isHttpHandlerModule(source)) {
+        routeStyle = 'http-handlers';
+        apiContracts = await inspectApiContractsFromAst(source, page.filePath);
+      }
+      moduleExport = await inspectDefaultClassExport(source);
+      const ast = await extractPageOptionsFromAst(source);
+      if (ast === null) {
+        reason = 'The TypeScript parser is unavailable; route options are unknown.';
+      } else if (ast.method === 'ast') {
+        options = { services: [], middlewares: 0, transport: null, ssg: null, ...ast.options,
+          decoratorLine: ast.decoratorLine ?? null };
+        method = 'ast';
+      } else {
+        method = 'unknown';
+        reason = ast.reason ?? 'The @Page options could not be resolved statically.';
+      }
+      methods = await extractMethodClassificationsFromAst(source, page.filePath, absolute) ?? { methods: [], reason: 'The TypeScript parser is unavailable.' };
+      methods = await resolveImportedInheritance(source, absolute, page.filePath, methods);
+    } catch { /* unreadable source keeps null options; the route still lists */
+      method = 'unknown';
+      reason = 'The page source could not be read.';
+    }
+    if (routeStyle === 'http-handlers') {
+      options = { transport: 'http', ssg: null, middlewares: 0, services: [], decoratorLine: null };
+      method = 'ast';
+      reason = 'Functional HTTP handler module; component metadata does not apply.';
+      methods = { methods: [], method: 'not-applicable', reason, inheritance: { status: 'not-applicable', bases: [] } };
+    }
+    pages.push({
+      ...page,
+      routeStyle,
+      ...(apiContracts ? { apiContracts } : {}),
+      routeId: idFor(page.filePath),
+      params: page.params,
+      layouts: routeStyle === 'http-handlers' ? [] : layoutStackForPage(page.filePath, layoutKeys),
+      errorBoundary: page.errorBoundary,
+      notFoundBoundary: page.notFoundBoundary,
+      transport: options.transport,
+      stateful: options.stateful ?? null,
+      ssg: options.ssg,
+      middlewares: options.middlewares,
+      services: options.services,
+      serverMethods: methods.methods?.filter(entry => entry.kind === 'server') ?? [],
+      clientMethods: methods.methods?.filter(entry => entry.kind === 'client') ?? [],
+      strippedMethods: methods.methods?.filter(entry => entry.kind === 'stripped') ?? [],
+      declarationDispatch: routeStyle === 'http-handlers'
+        ? { status: 'not-applicable', scope: 'Functional HTTP handlers do not use component dispatch.', members: [] }
+        : resolveDeclarationDispatch(methods, page.filePath),
+      members: methods.members ?? [],
+      inheritance: methods.inheritance ?? { status: 'unresolved', bases: [] },
+      inheritedDeclarations: methods.inheritedDeclarations ?? [],
+      methodExtraction: { method: methods.method ?? 'unknown', reason: methods.reason ?? null },
+      moduleExport,
+      extraction: { method, reason },
+      // Source location of the @Page decorator for inspection output.
+      source: options.decoratorLine
+        ? `${page.filePath}:${options.decoratorLine}`
+        : page.filePath,
+    });
   }
-  for (let i = 0; i < parts.length - 1; i++) {
-    current += `/${parts[i]}`;
-    const lp = `${current}/layout.ts`;
-    if (layoutKeys.includes(lp)) stack.push(lp);
+  // Layouts declare service ownership for their subtrees. Keep source
+  // expressions here; equal names do not prove equal runtime service tokens.
+  const layouts = [];
+  for (const layout of model.layouts) {
+    let options = { transport: null, ssg: null, middlewares: 0, services: [], decoratorLine: null };
+    let moduleExport = { status: 'unknown', reason: 'The source could not be read.' };
+    let method = 'unknown';
+    let reason = null;
+    try {
+      const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
+      const source = fs.readFileSync(absolute, 'utf8');
+      moduleExport = await inspectDefaultClassExport(source);
+      const ast = await extractPageOptionsFromAst(source);
+      if (ast === null) {
+        reason = 'The TypeScript parser is unavailable; route options are unknown.';
+      } else if (ast.method === 'ast') {
+        options = { services: [], middlewares: 0, transport: null, ssg: null, ...ast.options,
+          decoratorLine: ast.decoratorLine ?? null };
+        method = 'ast';
+      } else {
+        method = 'unknown';
+        reason = ast.reason ?? 'The @Page options could not be resolved statically.';
+      }
+    } catch {
+      method = 'unknown';
+      reason = 'The layout source could not be read.';
+    }
+    layouts.push({
+      ...layout,
+      middlewares: method === 'ast' ? options.middlewares : null,
+      services: options.services,
+      moduleExport,
+      extraction: { method, reason },
+      source: options.decoratorLine ? `${layout.filePath}:${options.decoratorLine}` : layout.filePath,
+    });
   }
-  return stack;
+  const serviceOwnership = await inspectServiceOwnership(projectRoot, layouts.map(layout => layout.filePath));
+  for (const layout of layouts) {
+    layout.serviceOwnership = serviceOwnership.get(layout.filePath) ?? {
+      method: 'typescript-source', status: 'unknown', services: [],
+      reason: 'The TypeScript source resolver did not return ownership facts for this layout.',
+    };
+  }
+  for (const page of pages) {
+    page.middlewareStack = [
+      ...page.layouts.map(filePath => {
+        const layout = layouts.find(candidate => candidate.filePath === filePath);
+        return { source: layout?.source ?? filePath, count: layout?.middlewares ?? null };
+      }),
+      { source: page.source, count: page.extraction.method === 'ast' ? page.middlewares : null },
+    ];
+    page.layoutAndPageMiddlewareCount = page.middlewareStack.every(entry => entry.count !== null)
+      ? page.middlewareStack.reduce((total, entry) => total + entry.count, 0) : null;
+  }
+  return { pages, layouts, scaffold, manifest: model.manifest, discovery: { includeMarkdown }, runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment,
+    scaffold.recipe?.capabilityRequirements?.web ?? []) };
 }

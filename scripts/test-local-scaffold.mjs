@@ -1,3 +1,15 @@
+import { verifyAuxiliaryBuildBudgets } from './verify-auxiliary-build-budgets.mjs';
+import { verifyBudgetBuildModes } from './verify-budget-build-modes.mjs';
+import { verifyBuildBudgets } from './verify-build-budgets.mjs';
+import { verifyConfigHydration } from './verify-config-hydration.mjs';
+import { verifyDesktopTraceReaders } from '../packages/cossack/tests/fixtures/desktop-trace-readers.js';
+import { writeDesktopRuntimeAcceptance, verifyDesktopRuntimeApplication, verifyDesktopDevelopmentApplication } from '../packages/cossack/tests/fixtures/desktop-runtime-acceptance.js';
+import { verifyDesktopPackage } from './verify-desktop-package.mjs';
+import { verifyPublishedRelease } from './verify-published-release.mjs';
+import { verifyDeploymentGuide } from './verify-deployment-guide.mjs';
+import { verifyGeneratedMigrationPlans } from './verify-generated-migration-plans.mjs';
+import { verifyAgentDocumentation } from './verify-agent-documentation.mjs';
+import { verifyConfigTypes } from './verify-config-types.mjs';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
@@ -5,6 +17,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { parseDocument } from 'yaml';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
@@ -13,7 +26,6 @@ const packageDirectories = [
   'renderer',
   'core',
   'node-adapter',
-  'deno-adapter',
   'desktop',
   'auth',
   'ui',
@@ -21,6 +33,7 @@ const packageDirectories = [
   'database',
   'studio',
   'scaffold',
+  'test-utils',
   'cossack',
 ];
 
@@ -34,21 +47,21 @@ async function run(command, args, options = {}) {
   if (result.stderr) process.stderr.write(result.stderr);
 }
 
-async function buildPublishablePackages() {
+async function buildPublishablePackages({ includeDesktop = false } = {}) {
   await run('pnpm', ['--filter', '@cossackframework/renderer', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/core', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/node-adapter', 'build']);
-  await run('pnpm', ['--filter', '@cossackframework/deno-adapter', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/ui', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/framework', 'build:types']);
-  await run('pnpm', ['--filter', '@cossackframework/desktop', 'build']);
+  if (includeDesktop) await run('pnpm', ['--filter', '@cossackframework/desktop', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
+  await run('pnpm', ['--filter', '@cossackframework/test-utils', 'build']);
 }
 
-async function packPackages(destination) {
+async function packPackages(destination, { includeDesktop = false } = {}) {
   const tarballs = new Map();
-  for (const directory of packageDirectories) {
+  for (const directory of packageDirectories.filter(name => includeDesktop || name !== 'desktop')) {
     const packageRoot = path.join(repositoryRoot, 'packages', directory);
     const pkg = JSON.parse(await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8'));
     const before = new Set(await fs.readdir(destination));
@@ -67,7 +80,7 @@ async function packPackages(destination) {
   return tarballs;
 }
 
-async function useTarballs(projectDir, tarballs) {
+async function useTarballs(projectDir, tarballs, { documentation = false } = {}) {
   const packagePath = path.join(projectDir, 'package.json');
   const workspacePath = path.join(projectDir, 'pnpm-workspace.yaml');
   const pkg = JSON.parse(await fs.readFile(packagePath, 'utf8'));
@@ -84,22 +97,24 @@ async function useTarballs(projectDir, tarballs) {
     ...(pkg.devDependencies ?? {}),
     '@cossackframework/scaffold': `file:${tarballs.get('@cossackframework/scaffold')}`,
   };
+  // Guidance fixtures need directly resolvable packages, without composing
+  // their features into the minimal application.
+  if (documentation) for (const name of [
+    '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
+    '@cossackframework/node-adapter',
+    '@cossackframework/studio', '@cossackframework/test-utils',
+  ]) {
+    if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
+  }
   await fs.writeFile(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 
   // pnpm 11 moved overrides out of package.json's `pnpm` field. Keep the
   // tarball acceptance project compatible with both pnpm 10 and 11 by writing
   // the workspace setting used by current generated applications.
-  const workspace = await fs.readFile(workspacePath, 'utf8');
-  if (/^overrides:\s*$/m.test(workspace)) {
-    throw new Error('Local tarball smoke test expected no existing workspace overrides');
-  }
-  const renderedOverrides = Object.entries(overrides)
-    .map(([name, target]) => `  ${JSON.stringify(name)}: ${JSON.stringify(target)}`)
-    .join('\n');
-  await fs.writeFile(
-    workspacePath,
-    `${workspace.trimEnd()}\n\noverrides:\n${renderedOverrides}\n`,
-  );
+  const workspace = parseDocument(await fs.readFile(workspacePath, 'utf8'));
+  if (workspace.errors.length) throw workspace.errors[0];
+  for (const [name, target] of Object.entries(overrides)) workspace.setIn(['overrides', name], target);
+  await fs.writeFile(workspacePath, workspace.toString());
 }
 
 async function installGeneratedProject(projectDir) {
@@ -248,7 +263,7 @@ try {
     if (!assignment) throw new Error('Seeder did not create the admin role assignment');
 
     const cache = createDatabaseCacheStore(orm);
-    await cache.set('acceptance', { ok: true }, 60);
+    await cache.set('acceptance', { ok: true }, 60_000);
     const cached = await cache.get<{ ok: boolean }>('acceptance');
     if (!cached?.ok) throw new Error('ORM cache store round-trip failed');
     await cache.delete('acceptance');
@@ -371,59 +386,44 @@ async function verifyNodeProductionAssets(projectDir) {
   }
 }
 
-const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
-const keep = process.env.COSSACK_KEEP_SMOKE === '1';
+// Representative release matrix: portable resources, validated mutations and
+// scoped services on every web target; auth/database/dashboard on Node and
+// its bidirectional D1 switch. Native Workflow lifecycle is a separate gate.
+async function writeReleaseComposition(projectDir) {
+  for (const feature of ['resource', 'mutation', 'scoped-service']) {
+    await run('pnpm', ['exec', 'cossack', 'add', feature, '--yes'], { cwd: projectDir });
+  }
+  const directory = path.join(projectDir, 'src/pages/release-stripping');
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, 'index.ts'), `import { Cossack, Page, Server } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+@Page({transport:'http'})
+export default class ReleaseStrippingPage extends Cossack {
+  @Server() async serverSecret() { return 'COSSACK_RELEASE_SERVER_ONLY_SENTINEL_090'; }
+  render() { return html\`<main>Release stripping acceptance</main>\`; }
+}
+`);
+}
 
-try {
-  const tarballDirectory = path.join(temporaryRoot, 'tarballs');
-  await fs.mkdir(tarballDirectory);
-  await buildPublishablePackages();
-  const tarballs = await packPackages(tarballDirectory);
+async function verifyReleaseStripping(projectDir) {
+  const browser = await listFilesRecursive(path.join(projectDir, 'dist/client'), file => file.endsWith('.js'));
+  const server = [];
+  for (const target of ['server', 'ssr']) {
+    const directory = path.join(projectDir, 'dist', target);
+    if ((await fs.stat(directory).catch(() => null))?.isDirectory()) {
+      server.push(...await listFilesRecursive(directory, file => file.endsWith('.js')));
+    }
+  }
+  const marker = 'COSSACK_RELEASE_SERVER_ONLY_SENTINEL_090';
+  await assertBundlesExclude(browser, [marker]);
+  const sources = await Promise.all(server.map(file => fs.readFile(file, 'utf8')));
+  if (!sources.some(source => source.includes(marker))) throw new Error('Server-only fixture was not present in production server artifacts');
+}
 
-  await run(process.execPath, [
-    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
-    'create',
-    'minimal-production',
-    '--adapter=cloudflare',
-    '--preset=minimal',
-    '--yes',
-  ], { cwd: temporaryRoot });
-  const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
-  await useTarballs(minimalProjectDir, tarballs);
-  await installGeneratedProject(minimalProjectDir);
+async function verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs) {
   await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
   await verifyMinimalProductionBundles(minimalProjectDir);
   await assertStarterBundleBudgets(minimalProjectDir);
-
-  await run(process.execPath, [
-    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
-    'create',
-    'deno-production',
-    '--adapter=deno',
-    '--preset=minimal',
-    '--yes',
-  ], { cwd: temporaryRoot });
-  const denoProjectDir = path.join(temporaryRoot, 'deno-production');
-  await useTarballs(denoProjectDir, tarballs);
-  await installGeneratedProject(denoProjectDir);
-  await run('pnpm', ['run', 'build'], { cwd: denoProjectDir });
-  await fs.access(path.join(denoProjectDir, 'dist', 'server', 'index.js'));
-  const denoPackage = JSON.parse(await fs.readFile(
-    path.join(denoProjectDir, 'package.json'),
-    'utf8',
-  ));
-  if (!String(denoPackage.dependencies?.['@cossackframework/deno-adapter'])
-    .startsWith('file:')) {
-    throw new Error('Deno scaffold did not consume the locally packed adapter');
-  }
-  const denoConfig = JSON.parse(await fs.readFile(
-    path.join(denoProjectDir, 'deno.json'),
-    'utf8',
-  ));
-  if (denoConfig.tasks?.start !==
-      'deno run --allow-env --allow-net --allow-read dist/server/index.js') {
-    throw new Error('Deno scaffold did not emit the production start task');
-  }
 
   await run('pnpm', [
     'exec',
@@ -433,6 +433,8 @@ try {
     '--yes',
   ], { cwd: minimalProjectDir });
   await installGeneratedProject(minimalProjectDir);
+  await writeReleaseComposition(minimalProjectDir);
+  await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
   const ssgPageDirectory = path.join(
     minimalProjectDir,
     'src',
@@ -465,6 +467,7 @@ export default class PackagingSsgPage extends Cossack {
 `,
   );
   await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
+  await verifyReleaseStripping(minimalProjectDir);
   await fs.access(path.join(
     minimalProjectDir,
     'dist',
@@ -497,7 +500,7 @@ export default class PackagingSsgPage extends Cossack {
   );
 
   await run(process.execPath, [
-    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
+    path.join(minimalProjectDir, 'node_modules/cossack/bin/cossack.js'),
     'create',
     'app',
     '--adapter=node',
@@ -508,6 +511,7 @@ export default class PackagingSsgPage extends Cossack {
   const projectDir = path.join(temporaryRoot, 'app');
   await useTarballs(projectDir, tarballs);
   await installGeneratedProject(projectDir);
+  await writeReleaseComposition(projectDir);
   await run('pnpm', [
     'exec',
     'cossack',
@@ -555,6 +559,9 @@ export default class PackagingSsgPage extends Cossack {
   if (!ejectedButton.includes('export class Button')) {
     throw new Error('UI component ejection did not use the packaged source');
   }
+  // Auth/session middleware runs while SSG renders the example pages. Apply
+  // the generated schema before the first build, as the starter instructs.
+  await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
   await fs.access(path.join(
     projectDir,
@@ -567,11 +574,15 @@ export default class PackagingSsgPage extends Cossack {
     'adapter',
     'cloudflare',
     '--database=d1',
+    // The harness deliberately changed published semver pins to local tarballs.
+    '--force',
     '--yes',
   ], { cwd: projectDir });
+  await useTarballs(projectDir, tarballs);
   await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
+  await verifyGeneratedMigrationPlans(projectDir);
   const cloudflareManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
     'utf8',
@@ -587,8 +598,10 @@ export default class PackagingSsgPage extends Cossack {
     'adapter',
     'node',
     '--database=sqlite',
+    '--force',
     '--yes',
   ], { cwd: projectDir });
+  await useTarballs(projectDir, tarballs);
   await installGeneratedProject(projectDir);
   await run('pnpm', ['run', 'migrate'], { cwd: projectDir });
   await run('pnpm', ['exec', 'cossack', 'seeder', 'run'], { cwd: projectDir });
@@ -596,6 +609,8 @@ export default class PackagingSsgPage extends Cossack {
   await verifyGeneratedORMApplication(projectDir);
   await verifyGeneratedStudio(projectDir);
   await run('pnpm', ['run', 'build'], { cwd: projectDir });
+  await verifyReleaseStripping(projectDir);
+  await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: projectDir });
   await verifyNodeProductionAssets(projectDir);
   const nodeManifest = JSON.parse(await fs.readFile(
     path.join(projectDir, '.cossack/scaffold.json'),
@@ -606,6 +621,95 @@ export default class PackagingSsgPage extends Cossack {
   }
   await fs.access(path.join(projectDir, 'dist/server/index.js'));
   console.log(`Bidirectional local package smoke test passed: ${projectDir}`);
+}
+
+// Resume only the checks invalidated by a final generated Node repair. The
+// caller must install the repaired artifact set and reconcile its generated
+// sources first; this never republishes or silently regenerates the project.
+const resumeNodeProject = process.argv.find(argument => argument.startsWith('--resume-node-acceptance='))?.slice('--resume-node-acceptance='.length);
+if (resumeNodeProject) {
+  const projectDir = path.resolve(resumeNodeProject);
+  await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: projectDir });
+  await run('pnpm', ['run', 'build'], { cwd: projectDir });
+  await verifyReleaseStripping(projectDir);
+  await verifyNodeProductionAssets(projectDir);
+  console.log(`Resumed generated Node typecheck, production build, stripping and asset acceptance passed: ${projectDir}`);
+  process.exit(0);
+}
+
+const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-local-pack-'));
+const keep = process.env.COSSACK_KEEP_SMOKE === '1';
+const nodeDevelopmentOnly = process.argv.includes('--node-dev-only');
+const desktopRuntimeOnly = process.argv.includes('--desktop-runtime-only');
+const agentDocsOnly = process.argv.includes('--agent-docs-only');
+const publishedReleaseOnly = process.argv.includes('--published-release-only');
+const deploymentGuideOnly = process.argv.includes('--deployment-guide-only');
+const scaffoldOnly = process.argv.includes('--scaffold-only');
+const reuseDirectory = process.argv.find(argument => argument.startsWith('--reuse-artifacts='))?.slice('--reuse-artifacts='.length);
+const includeDesktop = desktopRuntimeOnly;
+
+try {
+  const tarballDirectory = path.join(temporaryRoot, 'tarballs');
+  await fs.mkdir(tarballDirectory);
+  let tarballs;
+  if (reuseDirectory) {
+    tarballs = new Map();
+    for (const directory of packageDirectories.filter(name => includeDesktop || name !== 'desktop')) {
+      const pkg = JSON.parse(await fs.readFile(path.join(repositoryRoot, 'packages', directory, 'package.json'), 'utf8'));
+      const filename = `${pkg.name.replace(/^@/, '').replaceAll('/', '-')}-${pkg.version}.tgz`;
+      const tarball = path.resolve(reuseDirectory, filename);
+      await fs.access(tarball);
+      tarballs.set(pkg.name, tarball);
+    }
+    console.log(`Reusing artifact set: ${path.resolve(reuseDirectory)}`);
+  } else {
+    await buildPublishablePackages({ includeDesktop });
+    tarballs = await packPackages(tarballDirectory, { includeDesktop });
+  }
+
+  await run(process.execPath, [
+    path.join(repositoryRoot, 'packages/cossack/bin/cossack.js'),
+    'create',
+    'minimal-production',
+    (nodeDevelopmentOnly || desktopRuntimeOnly) ? '--adapter=node' : '--adapter=cloudflare',
+    '--preset=minimal',
+    ...(desktopRuntimeOnly ? ['--features=desktop'] : []),
+    '--yes',
+  ], { cwd: temporaryRoot });
+  const minimalProjectDir = path.join(temporaryRoot, 'minimal-production');
+  await useTarballs(minimalProjectDir, tarballs, { documentation: !desktopRuntimeOnly });
+  await installGeneratedProject(minimalProjectDir);
+  if (deploymentGuideOnly) {
+    console.log(JSON.stringify(await verifyDeploymentGuide(minimalProjectDir), null, 2));
+  } else if (publishedReleaseOnly) {
+    await verifyPublishedRelease(minimalProjectDir);
+  } else if (scaffoldOnly) {
+    await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
+  } else if (desktopRuntimeOnly) {
+    await writeDesktopRuntimeAcceptance(minimalProjectDir);
+    const configFile = path.join(minimalProjectDir, 'vite.config.ts');
+    await fs.writeFile(configFile, (await fs.readFile(configFile, 'utf8')).replace('cossackPages({', 'cossackPages({ developmentTraces:true,'));
+    await run('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: minimalProjectDir });
+    await run('pnpm', ['run', 'build:desktop'], { cwd: minimalProjectDir });
+    await verifyDesktopRuntimeApplication(minimalProjectDir);
+    await verifyDesktopPackage(minimalProjectDir);
+    await verifyDesktopDevelopmentApplication(minimalProjectDir, { launcher: true, startupError: true,
+      onRecorded: record => verifyDesktopTraceReaders(minimalProjectDir, record) });
+  } else {
+    if (!nodeDevelopmentOnly && !agentDocsOnly) console.log(JSON.stringify(await verifyDeploymentGuide(minimalProjectDir), null, 2));
+    await verifyPublishedRelease(minimalProjectDir);
+    await verifyConfigTypes(minimalProjectDir);
+    await verifyAgentDocumentation(minimalProjectDir, { runtime: nodeDevelopmentOnly ? 'node' : 'cloudflare' });
+    if (!nodeDevelopmentOnly) {
+      await verifyConfigHydration(minimalProjectDir);
+      await verifyBuildBudgets(minimalProjectDir);
+      await verifyBudgetBuildModes(minimalProjectDir);
+      await verifyAuxiliaryBuildBudgets(minimalProjectDir);
+    }
+  }
+  if (!deploymentGuideOnly && !publishedReleaseOnly && !scaffoldOnly && !desktopRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
+    await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
+  }
 } finally {
   if (keep) {
     console.log(`COSSACK_KEEP_SMOKE=1; retained ${temporaryRoot}`);

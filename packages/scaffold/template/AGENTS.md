@@ -1,4 +1,18 @@
-You are a developer working with Cossack Framework. Get started by installing Cossack skills.
+# Cossack Framework application guidance
 
-## Installation
-npx skills add https://github.com/cossackframework/skills
+Use pnpm for package commands. Read the installed framework before editing:
+
+```sh
+pnpm exec cossack docs --json
+pnpm exec cossack inspect routes --json
+pnpm exec cossack check routes --json
+```
+
+The offline catalog identifies installed versions, public export targets and CLI
+schemas. It reports gaps such as unverified runtime support and missing symbol
+indexes. Read installed declarations for exact API signatures. Keep server logic
+behind the framework's server boundary and use declared scopes for request data.
+Run the project's type checks and relevant tests after code changes.
+
+For local agent tools, use `cossack-mcp --project /absolute/path/to/app`.
+Remote skills can supplement this guide, but must match the installed APIs.

@@ -1,6 +1,9 @@
+import { resolveConfig } from 'vite';
 // @vitest-environment node
 import 'reflect-metadata';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { cossackSsg, getOutputFilePath, type CossackSsgOptions } from '../src/vite-ssg-plugin';
 
@@ -12,6 +15,139 @@ const OUT = path.resolve(PROJECT_ROOT, 'dist', 'client');
 // ---------------------------------------------------------------------------
 
 describe('cossackSsg() plugin', () => {
+  it('is absent from development server hooks, including shutdown and restart', async () => {
+    const config = await resolveConfig({ configFile: false, plugins: [cossackSsg()] }, 'serve');
+    expect(config.plugins.some(plugin => plugin.name === 'cossack-ssg')).toBe(false);
+  });
+
+  it('remains registered for production builds', async () => {
+    const compilerNames = ['cossack-security', 'cossack-pages', 'cossack-lang',
+      'cossack-middlewares', 'cossack-config'];
+    const config = await resolveConfig({ configFile: false,
+      plugins: [...compilerNames.map(name => ({ name })), cossackSsg()] }, 'build');
+    expect(config.plugins.some(plugin => plugin.name === 'cossack-ssg')).toBe(true);
+  });
+
+  const required = ['cossack-security', 'cossack-pages', 'cossack-lang', 'cossack-middlewares', 'cossack-config'];
+  it.each(required)('rejects missing %s before compiling with configuration context', name => {
+    const plugin = cossackSsg();
+    const config = { command: 'build', root: PROJECT_ROOT, mode: 'production', configFile: '/app/vite.config.ts',
+      plugins: [...required.filter(candidate => candidate !== name).map(name => ({ name })), plugin] };
+    expect(() => (plugin.configResolved as Function)(config)).toThrow(`Missing required plugin ${name}`);
+    expect(() => (plugin.configResolved as Function)(config)).toThrow('/app/vite.config.ts');
+  });
+  it('rejects required plugins that execute after SSG', () => {
+    const plugin = cossackSsg();
+    expect(() => (plugin.configResolved as Function)({ command: 'build', root: PROJECT_ROOT, mode: 'production',
+      plugins: [plugin, ...required.map(name => ({ name }))] })).toThrow('must run before cossack-ssg');
+  });
+  it('accepts the supported compiler order and does not require it when disabled or serving', () => {
+    const plugin = cossackSsg();
+    expect(() => (plugin.configResolved as Function)({ command: 'build', root: PROJECT_ROOT, mode: 'production',
+      plugins: [...required.map(name => ({ name })), plugin] })).not.toThrow();
+    expect(() => (cossackSsg({ enabled: false }).configResolved as Function)({ command: 'build', mode: 'production', plugins: [] })).not.toThrow();
+    expect(() => (plugin.configResolved as Function)({ command: 'serve', mode: 'development', plugins: [] })).not.toThrow();
+  });
+  it('fails clearly when the required compiler did not emit its manifest', async () => {
+    const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-missing-manifest-'));
+    try {
+      vi.stubEnv('VITEST', '');
+      const plugin = cossackSsg({ outDir: fixture, baseUrl: 'https://site.example.test' });
+      await expect((plugin.closeBundle as Function).call({ environment: { name: 'client' } }))
+        .rejects.toThrow(`COSSACK_SSG_MANIFEST_MISSING: ${path.join(fixture, 'cossack-routes.json')}`);
+      expect(existsSync(path.join(fixture, 'sitemap.xml'))).toBe(false);
+    } finally { vi.unstubAllEnvs(); rmSync(fixture, { recursive: true, force: true }); }
+  });
+  it.each(['failed render', 'path traversal', 'duplicate output'])('publishes no SSG files after %s', async failure => {
+    const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-publication-'));
+    const outDir = path.join(fixture, 'dist');
+    mkdirSync(outDir);
+    writeFileSync(path.join(outDir, 'cossack-routes.json'), '{}');
+    const pages = [{ routePath: '/public', html: '<main>public</main>' },
+      ...(failure === 'path traversal' ? [{ routePath: '/../../outside', html: 'invalid' }] : []),
+      ...(failure === 'duplicate output' ? [{ routePath: '/public/', html: 'duplicate' }] : [])];
+    const failed = failure === 'failed render' ? [{ routePath: '/private', error: 'COSSACK_SSG_NOT_PUBLIC' }] : [];
+    writeFileSync(path.join(fixture, 'entry.ts'), `
+      export async function runSsg() { return { rendered: ['/public'], failed: ${JSON.stringify(failed)} }; }
+      export function drainRenderedHtml() { return ${JSON.stringify(pages)}; }
+    `);
+    try {
+      vi.stubEnv('VITEST', '');
+      const plugin = cossackSsg({ outDir, baseUrl: 'https://site.example.test', plugins: [{
+        name: 'ssg-publication-fixture', enforce: 'pre',
+        resolveId(id) { if (id === 'virtual:cossack-ssg-entry') return path.join(fixture, 'entry.ts'); },
+      }] });
+      await expect((plugin.closeBundle as Function).call({ environment: { name: 'client' } })).rejects.toThrow();
+      expect(existsSync(path.join(outDir, 'public/index.html'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'sitemap.xml'))).toBe(false);
+      expect(existsSync(path.join(outDir, 'routes.json'))).toBe(false);
+      expect(readFileSync(path.join(outDir, 'cossack-routes.json'), 'utf8')).toBe('{}');
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('renders with UI JavaScript importing Solar Icons TypeScript from node_modules', async () => {
+    const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-icons-'));
+    const outDir = path.join(fixture, 'dist');
+    const write = (file: string, content: string) => {
+      const target = path.join(fixture, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    };
+
+    try {
+      // Model the published dependency chain, not workspace symlinks: Node
+      // refuses the .ts export only when it lives under node_modules.
+      write('node_modules/@cossackframework/ui/package.json', JSON.stringify({
+        name: '@cossackframework/ui', type: 'module', exports: './index.js',
+      }));
+      write('node_modules/@cossackframework/ui/index.js',
+        "export { icon } from '@cossackframework/solar-icons/info-circle';");
+      write('node_modules/@cossackframework/solar-icons/package.json', JSON.stringify({
+        name: '@cossackframework/solar-icons', version: '0.7.2', type: 'module',
+        exports: { './info-circle': './src/info-circle/index.ts' },
+      }));
+      write('node_modules/@cossackframework/solar-icons/src/info-circle/index.ts',
+        'export const icon: string = \'<svg data-icon="info-circle"></svg>\';');
+      write('entry.ts', `
+        import { icon } from '@cossackframework/ui';
+        export async function runSsg() {
+          return { rendered: ['/icons'], failed: [] };
+        }
+        export function drainRenderedHtml() {
+          return [{ routePath: '/icons', html: '<main>' + icon + '</main>' }];
+        }
+      `);
+      write('dist/cossack-routes.json', '{}');
+
+      const plugin = cossackSsg({
+        outDir,
+        baseUrl: 'https://example.com',
+        plugins: [{
+          name: 'ssg-icons-fixture-entry',
+          enforce: 'pre',
+          resolveId(id) {
+            if (id === 'virtual:cossack-ssg-entry') return path.join(fixture, 'entry.ts');
+          },
+        }],
+      });
+      // Exercise the real closeBundle -> loadEntry -> runnerImport path,
+      // replacing only the entry to keep this regression fixture minimal.
+      vi.stubEnv('VITEST', '');
+      await (plugin.closeBundle as Function).call({ environment: { name: 'client' } });
+
+      expect(readFileSync(path.join(outDir, 'icons/index.html'), 'utf8'))
+        .toBe('<main><svg data-icon="info-circle"></svg></main>');
+      expect(JSON.parse(readFileSync(path.join(outDir, 'routes.json'), 'utf8')))
+        .toEqual(['/icons']);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('returns a Vite plugin named "cossack-ssg"', () => {
     const plugin = cossackSsg();
     expect(plugin.name).toBe('cossack-ssg');
@@ -120,5 +256,22 @@ describe('CossackSsgOptions', () => {
   it('accepts an empty object (all fields optional)', () => {
     const plugin = cossackSsg({});
     expect(plugin.name).toBe('cossack-ssg');
+  });
+});
+
+describe('failed build cleanup', () => {
+  it('does not render SSG from stale manifests after build or render errors', async () => {
+    const plugin = cossackSsg() as any;
+    const context = { environment: { name: 'client' } };
+    const log = vi.spyOn(console, 'log');
+    try {
+      vi.stubEnv('VITEST', '');
+      plugin.buildStart.call(context); plugin.buildEnd.call(context, new Error('preflight failed'));
+      await expect(plugin.closeBundle.call(context)).resolves.toBeUndefined();
+      expect(log).not.toHaveBeenCalled();
+      plugin.buildStart.call(context); plugin.renderError.call(context, new Error('output failed'));
+      await expect(plugin.closeBundle.call(context)).resolves.toBeUndefined();
+      expect(log).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); vi.unstubAllEnvs(); }
   });
 });

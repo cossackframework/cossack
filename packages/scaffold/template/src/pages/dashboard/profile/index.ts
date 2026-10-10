@@ -82,10 +82,10 @@ export default class ProfilePage extends Cossack {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
                             <div class="flex flex-col space-y-4">
-                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name') },
-                                component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}
-                            ${component(Field, { label: __('Avatar URL'), for: 'avatar', hint: __('A link to your profile picture.') },
-                                component(Input, { id: 'avatar', type: 'url', placeholder: 'https://...', '.value': bind(this.form, 'avatar') }))}
+                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name'),
+                                control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
+                            ${component(Field, { label: __('Avatar URL'), for: 'avatar', hint: __('A link to your profile picture.'),
+                                control: attributes => component(Input, { ...attributes, type: 'url', placeholder: 'https://...', '.value': bind(this.form, 'avatar') }) })}
                             ${component(Button, { type: 'submit' }, __('Save changes'))}
                             </div>
                         `)}

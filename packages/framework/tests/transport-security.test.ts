@@ -30,7 +30,7 @@ describe('transport security boundary', () => {
     it.each(['https://evil.example', 'null', undefined])('rejects RPC and form CSRF from %s before dispatch', async (origin) => {
         const { app, action } = appFor();
         for (const route of ['/crpc', '/upload']) {
-            const body = route === '/crpc' ? JSON.stringify(rpc) : new URLSearchParams(rpc as any);
+            const body = route === '/crpc' ? JSON.stringify(rpc) : new URLSearchParams({ ...rpc, payload: JSON.stringify(rpc.payload) });
             const response = await app.request(route, {
                 method: 'POST', body,
                 headers: { ...(origin ? { origin } : {}), 'content-type': route === '/crpc' ? 'text/plain' : 'application/x-www-form-urlencoded' },
@@ -38,6 +38,26 @@ describe('transport security boundary', () => {
             expect(response.status).toBe(403);
         }
         expect(action).not.toHaveBeenCalled();
+    });
+
+    it.each(['/crpc', '/upload'])('retains a supplied UUID correlation ID on %s without bypassing guards', async route => {
+        const id = crypto.randomUUID();
+        const guard = vi.fn((c: any) => c.json({ error: 'Forbidden' }, 403));
+        const { app, action } = appFor({ ...ctx, getMiddlewares: () => [guard] });
+        const body = route === '/crpc' ? JSON.stringify(rpc) : new URLSearchParams({ ...rpc, payload: JSON.stringify(rpc.payload) });
+        const response = await app.request(route, { method: 'POST', body, headers: {
+            origin: 'http://localhost', 'X-Cossack-Request-Id': id,
+            'Content-Type': route === '/crpc' ? 'application/json' : 'application/x-www-form-urlencoded',
+        } });
+        expect(response.status).toBe(403); expect(response.headers.get('X-Cossack-Request-Id')).toBe(id);
+        expect(guard).toHaveBeenCalledOnce(); expect(action).not.toHaveBeenCalled();
+    });
+    it.each(['arbitrary', '', 'x'.repeat(10000), '00000000-0000-1000-8000-000000000000'])('replaces unsupported correlation ID (%#)', async id => {
+        const { app } = appFor();
+        const response = await app.request('/crpc', { method: 'POST', body: JSON.stringify(rpc),
+            headers: { origin: 'http://localhost', 'X-Cossack-Request-Id': id } });
+        expect(response.headers.get('X-Cossack-Request-Id')).toMatch(/^[0-9a-f-]{36}$/);
+        expect(response.headers.get('X-Cossack-Request-Id')).not.toBe(id);
     });
 
     it('allows same-origin RPC and explicit allowed origins', async () => {
@@ -94,7 +114,13 @@ describe('transport security boundary', () => {
     it.each([undefined, { id: 'real-user', role: 'member' }])('replaces forged Durable Object identity headers with trusted context (%j)', async (user) => {
         const forward = vi.fn(async () => new Response('forwarded'));
         const app = new Hono();
-        app.use('*', async (c, next) => { c.set('user' as never, user as never); await next(); });
+        app.use('*', async (c, next) => {
+            c.set('user' as never, user as never);
+            if (user) c.set('cossack.captureRealtimeIdentity' as never, (async () => ({
+                version: 1, provider: 'fixture.session', data: { reference: 'opaque', fingerprint: 'digest' },
+            })) as never);
+            await next();
+        });
         app.get('/ws/:provider/:id', handleWebSocketProxy(ctx));
         const response = await app.request('/ws/page/target?routePath=/private', { headers: {
             origin: 'http://localhost', 'X-User-ID': 'admin', 'X-User-Data': '{"id":"admin","role":"admin"}',
@@ -103,5 +129,38 @@ describe('transport security boundary', () => {
         const headers = (forward.mock.calls[0] as unknown as [Request])[0].headers;
         expect(headers.get('X-User-ID')).toBe(user?.id ?? null);
         expect(headers.get('X-User-Data')).toBe(user ? JSON.stringify(user) : null);
+        expect(headers.get('X-Cossack-Realtime-Scope')).toBe(user ? 'user:real-user' : 'user:anonymous');
+        expect(headers.get('X-Cossack-Realtime-Identity')).toBe(user ? JSON.stringify({
+            version: 1, provider: 'fixture.session', data: { reference: 'opaque', fingerprint: 'digest' },
+        }) : null);
+        expect(headers.get('Cookie')).toBeNull();
+    });
+
+    it('forwards a terminal rejection when a custom-scope socket targets another Durable Object', async () => {
+        class TeamPage {}
+        Reflect.defineMetadata('page:options', { scope: (c: any) => `team:${c.req.param('team')}` }, TeamPage);
+        const teamContext: RouterContext = {
+            ...ctx,
+            pages: { [path]: { default: TeamPage } },
+            routePathToFilePathMap: new Map([['/private', path]]),
+        };
+        const forward = vi.fn(async () => new Response('upgraded'));
+        const app = new Hono();
+        app.use('*', async (c, next) => {
+            c.set('user' as never, { id: 'member' } as never);
+            c.set('cossack.captureRealtimeIdentity' as never, (async () => ({ version: 1, provider: 'fixture.session', data: {} })) as never);
+            await next();
+        });
+        app.get('/ws/:provider/:id', handleWebSocketProxy(teamContext));
+        const params = JSON.stringify({ team: 'alpha' });
+        const response = await app.request(`/ws/page/stale?${new URLSearchParams({ routePath: '/private', params })}`, {
+            headers: { origin: 'http://localhost' },
+        }, { COSSACK_OBJECT: {
+            idFromString: () => 'stale', idFromName: () => ({ toString: () => 'current' }), get: () => ({ fetch: forward }),
+        } });
+        expect(response.status).toBe(200);
+        const forwarded = (forward.mock.calls[0] as unknown as [Request])[0];
+        expect(forwarded.headers.get('X-Cossack-Realtime-Target-Valid')).toBe('false');
+        expect(forwarded.headers.get('X-Cossack-Realtime-Scope')).toBe('team:alpha');
     });
 });

@@ -73,9 +73,8 @@ export class Greeting extends Cossack {
                     <div class="buttons flex gap-2.5">
                         ${component(Button, {
                             '@click': this.incrementFeed,
-                            disabled: !!isFeedLoading,
-                            children: isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds'
-                        }, 'Increment Feeds')}
+                            disabled: !!isFeedLoading
+                        }, isFeedLoading ? 'Updating Feeds...' : 'Increment Feeds')}
 
                         ${component(Button, {
                             '@click': this.incrementNotifications,
@@ -86,3 +85,5 @@ export class Greeting extends Cossack {
         `;
     }
 }
+
+export default Greeting;

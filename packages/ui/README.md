@@ -74,6 +74,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|---|
 | **Card** | `<div>` | Surface container with optional header/body/footer slots |
 | **Separator** | `<hr>` / `<div>` | Horizontal or vertical divider |
+| **DataTable** | `<table>` | Controlled server paging, filtering, sorting and stable row-ID selection |
 | **Table** | `<table>` | Token-styled table with sub-components (TableHeader, TableBody, TableRow, TableHead, TableCell) |
 | **Avatar** | `<img>` / `<span>` | Image with initials fallback, circle/square |
 | **AvatarGroup** | `<div>` | Stacked avatar set with "+N" overflow counter |
@@ -92,7 +93,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|---|
 | **Bubble** | `<div>` | Chat message bubble (sent/received variants, tail, timestamp) |
 | **Message** | `<div>` | Chat message wrapper (avatar + name + bubble grouping) |
-| **MessageScroller** | `<div>` | Auto-stick-to-bottom scroll container with "new messages" affordance |
+| **MessageScroller** | `<div>` | Named keyboard-scrollable viewport with history anchoring and a latest-message action |
 | **Marker** | `<div>` | Date/section divider inside a message list ("Today", "New messages") |
 | **Attachment** | `<div>` | Chat file-attachment card with auto-detected type icon + status |
 
@@ -130,7 +131,7 @@ import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 html`
   ${component(Button, { variant: "default", "@click": this.save }, "Save")}
   ${component(Input, { type: "email", placeholder: "you@ex.com" })}
-  ${component(Icon, { entry: ArrowRightIcon, style: "duotone", size: 20 })}
+  ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
 `;
 ```
 
@@ -232,7 +233,7 @@ import { Icon } from "@cossackframework/ui";
 import { component } from "@cossackframework/renderer";
 import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 
-html`${component(Icon, { entry: ArrowRightIcon, style: "duotone", size: 20 })}`;
+html`${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}`;
 ```
 
 For maximum tree-shaking, import a single style instead of the full entry:
@@ -304,3 +305,116 @@ Available component names (kebab-case, passed to `cossack add ui <name>`):
 `carousel`, `resizable`, `scroll-area`, `sidebar`, `breadcrumb`, `pagination`,
 `button-group`, `toaster`, `bubble`, `message`, `message-scroller`,
 `attachment`.
+
+
+## Controlled DataTable
+
+Import `DataTable`, `DataTableProps<Row>` and `DataTableColumn<Row>` from
+`@cossackframework/ui`. Compose with `component(DataTable<Row>, props)`.
+Provide a unique `id` to preserve query-control focus across same-page URL navigation.
+Provide a caption, typed columns, a stable `getRowId`, current-page rows,
+`rowCount`, query `state` and `onStateChange`. Columns use either a row `key` or
+an `accessor` function. A `cell` callback can render custom content from the row.
+
+The parent fetches each requested state and rejects stale responses. The table
+does not fetch or transform rows. Sort, filter and page-size changes reset page
+to 1. Selection is controlled through `selection` and `onSelectionChange` and
+preserves off-page IDs. Reconcile selection and out-of-range pages in the parent
+when filters, permissions or the underlying records change.
+
+Use `loading`, `error` and `onRetry` for request states. Native controls provide
+keyboard behavior, headers expose sort state and row labels name checkboxes.
+Paging uses focusable `aria-disabled` buttons that ignore inactive actions.
+Retry returns focus to the filter before its callback. The table accepts only
+its declared props, with no general HTML-attribute forwarding.
+
+Run `pnpm exec cossack docs --package @cossackframework/ui --symbols --json` for
+the installed prop contracts and package-owned DataTable guide. The guide also
+explains selection policy, labels and status behavior.
+
+## Typed native controls
+
+Button, Input, Label, Checkbox, Switch and Form use typed native attributes and
+`@event` listeners. Unknown props, string boolean values and React-style `onClick`
+are rejected. Pass children as the third argument to `component()`. Listener
+`currentTarget` is typed as the native control; `target` can be a descendant.
+Capture the control before awaiting, because native events clear currentTarget after dispatch.
+Use `disabled: !!loading` for loading counts and an explicit Button `type` in forms.
+Input's visual `size` is `default`, `sm` or `lg`, not a numeric HTML size.
+
+Use `Label` with matching `for`/`id`, or provide `aria-label`. Checkbox's `label`
+prop takes precedence over children. Switch renders children inside its label.
+Both accept controlled `checked` and emit native `@change` events. Update the
+parent from `event.currentTarget.checked`. Their input type, role and checked
+property are component-owned. Input supports `.value`, `.checked`, `bind()` and
+`live()` for direct property binding. Choose names and values for native FormData.
+Form's `submit` callback prevents navigation and defaults to `novalidate`.
+Set `novalidate: false` to keep browser validation, or omit `submit` for native POST.
+
+The installed `native-controls` guide documents attributes, event types and
+labeling requirements. The rest of the catalog remains under
+[contract audit](../../specs/ui-contract-audit.md).
+
+## Radio groups and sliders
+
+RadioGroup uses a distinct nonempty `name` per logical group and unique string item
+values. Provide `aria-label` or `aria-labelledby` for the group. `onValueChange(value,
+event)` receives an input event with `HTMLInputElement` currentTarget. A native
+`@change` listener receives the bubbled event on the root div. Update parent `value`
+from the callback. Items retain DOM identity by value when reordered. `disabled`,
+`required` and `form` apply to the inputs; other global attributes apply to the div.
+
+Slider owns a finite numeric `value`, `min`, `max` and positive `step`. The browser
+clamps and rounds values. Constraints apply before value, and widened bounds restore
+a previously clamped requested value. Read `event.currentTarget.valueAsNumber` in
+`@input` to update parent state. Supply `label`, an external Label, or ARIA naming.
+Use Input with `type: 'range'` for direct native property-binding behavior.
+
+Checkbox, Switch and RadioGroup wrappers follow the child's native disabled state.
+Slider styles its own native disabled state. This includes disabled fieldsets.
+The installed `radio-and-range` guide describes attributes, events and accessibility.
+
+### AuthForm block
+
+```ts
+import { component } from '@cossackframework/renderer';
+import { AuthForm } from '@cossackframework/ui/blocks';
+
+component(AuthForm, {
+  id: 'account-login',
+  defaultMode: 'login',
+  onSubmit: async (data, { signal }) => {
+    // Call your authentication service. Validate credentials on the server.
+    // Return safe { error, fieldErrors } text when needed.
+  },
+});
+```
+
+Use `mode` with `onModeChange` for controlled state. Native credentials remain in
+fields; submission reads current FormData, including autofill. Provider actions
+require explicit `providers` and `onSocial`. Localize text with `labels`.
+The block owns UI behavior, not authentication or session creation. Actions need
+JavaScript; fields remain editable before hydration. `cossack add ui auth-form`
+ejects the block using public UI imports.
+
+### CommandPalette block
+
+```ts
+import { component } from '@cossackframework/renderer';
+import { CommandPalette } from '@cossackframework/ui/blocks';
+
+component(CommandPalette, {
+  id: 'app-commands',
+  label: 'Application commands',
+  shortcut: true,
+  commands: [{ id: 'home', label: 'Go home', group: 'Navigation' }],
+  onSelect: id => { /* Run the application action for this ID. */ },
+});
+```
+
+Use `open` with `onOpenChange` for parent ownership, or `defaultOpen` for local
+state. `setOpen()` and `toggle()` request changes. Native props target the dialog.
+Command owns search, grouping, active options, focus and shortcut arbitration.
+Global shortcuts are opt-in and ignore unrelated editable controls by default.
+Item `shortcut` strings are hints, not registered bindings. `icon` accepts trusted
+Solar artwork. `cossack add ui command-palette` ejects the composed block.

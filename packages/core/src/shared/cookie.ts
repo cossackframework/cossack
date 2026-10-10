@@ -21,7 +21,7 @@ import {
     setCookie,
     deleteCookie,
 } from 'hono/cookie';
-import { getRequestContext } from './request-context';
+import { assertResponseHeadersMutable, getRequestContext } from './request-context';
 
 /** Cookie options as Hono accepts them (re-exported for ergonomics). */
 export type CookieOptions = Parameters<typeof setCookie>[3];
@@ -67,10 +67,12 @@ export function cookie() {
         },
         /** Set a cookie on the response. */
         set(name: string, value: string, options?: CookieOptions): void {
+            assertResponseHeadersMutable(c, 'set a cookie');
             setCookie(c, name, value, options);
         },
         /** Delete a cookie (sets an expired empty value). */
         delete(name: string, options?: Pick<NonNullable<CookieOptions>, 'path' | 'domain' | 'secure' | 'sameSite' | 'prefix'>): void {
+            assertResponseHeadersMutable(c, 'delete a cookie');
             deleteCookie(c, name, options);
         },
     };

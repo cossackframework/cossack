@@ -1,9 +1,8 @@
+import type { GlobalAttributes } from '../native-attributes';
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface KbdProps {
-    [key: string]: any;
-}
+export type KbdProps = GlobalAttributes<HTMLElement>;
 
 /**
  * Cossack UI Kbd — keyboard key indicator (e.g. ⌘ + K).

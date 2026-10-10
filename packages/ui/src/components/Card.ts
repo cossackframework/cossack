@@ -1,13 +1,12 @@
+import type { GlobalAttributes } from '../native-attributes';
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface CardProps {
+export type CardProps = GlobalAttributes<HTMLDivElement> & {
     /** Adds a hover lift effect (shadow + slight translate). */
-    interactive?: boolean;
-    /** Optional padding modifier for the body slot. */
+    hoverable?: boolean;
+    /** Padding on the Card root only; slots retain their own padding. */
     padding?: "none" | "sm" | "default" | "lg";
-    /** Allow arbitrary HTML attributes to spread onto the root. */
-    [key: string]: any;
 }
 
 const PADDINGS: Record<NonNullable<CardProps["padding"]>, string> = {
@@ -21,19 +20,20 @@ const PADDINGS: Record<NonNullable<CardProps["padding"]>, string> = {
  * Cossack UI Card — surface container with optional header/footer slots.
  *
  * Compose with `CardHeader`, `CardBody`, `CardFooter`, or just pass content:
- *   `component(Card, { interactive: true }, html\`<h3>Title</h3><p>Body</p>\`)`.
+ *   `component(Card, { hoverable: true }, html\`<h3>Title</h3><p>Body</p>\`)`.
  */
 @Component()
 export class Card extends Cossack {
     declare props: CardProps;
 
     render() {
-        const { interactive = false, padding = "default", ...rest } = this.props;
+        const { hoverable = false, padding = "default", ...rest } = this.props;
+        if (!Object.hasOwn(PADDINGS, padding)) throw new Error("Card padding must be none, sm, default or lg.");
 
         const classes = classMap({
             "cs-card": true,
             "rounded-xl border bg-card text-card-foreground shadow-xs": true,
-            "transition-shadow transition-transform duration-150 hover:shadow-md hover:-translate-y-0.5 cursor-pointer": interactive,
+            "transition-[box-shadow,translate] duration-150 hover:shadow-md hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0": hoverable,
             [PADDINGS[padding]]: !!PADDINGS[padding],
         });
 
@@ -45,10 +45,14 @@ export class Card extends Cossack {
     }
 }
 
+export type CardHeaderProps = GlobalAttributes<HTMLDivElement>;
+export type CardBodyProps = GlobalAttributes<HTMLDivElement>;
+export type CardFooterProps = GlobalAttributes<HTMLDivElement>;
+
 /** Optional header slot. */
 @Component()
 export class CardHeader extends Cossack {
-    declare props: { [key: string]: any };
+    declare props: CardHeaderProps;
 
     render() {
         return html`
@@ -62,7 +66,7 @@ export class CardHeader extends Cossack {
 /** Optional body slot with consistent padding. */
 @Component()
 export class CardBody extends Cossack {
-    declare props: { [key: string]: any };
+    declare props: CardBodyProps;
 
     render() {
         return html`
@@ -76,7 +80,7 @@ export class CardBody extends Cossack {
 /** Optional footer slot. */
 @Component()
 export class CardFooter extends Cossack {
-    declare props: { [key: string]: any };
+    declare props: CardFooterProps;
 
     render() {
         return html`

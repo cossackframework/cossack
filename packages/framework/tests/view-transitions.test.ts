@@ -12,29 +12,12 @@
  * requires mocking `virtual:cossack-pages`, `fetch`, `DOMParser`, and the
  * entire renderer, which provides little value over the browser test.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { transformCossackClass } from '../src/vite-security-plugin';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { BUILTIN_METHODS, isClientSafeMethod, transformCossackClass } from '../src/vite-security-plugin';
 
 describe('View Transitions: security plugin', () => {
-  const BUILTIN_METHODS = new Set([
-    'render', 'head', 'onMount', 'onCleanup', 'escapeHtml', 'loadingTemplate',
-    'toString', 'valueOf', 'clientInit',
-    'getError', 'hasError', 'validateProperty', 'validateAll', 'clearErrors',
-    'onNavigateComplete',
-    'startViewTransition',
-  ]);
-
-  function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-    const hasClientDecorator = decorators.some((d) =>
-      /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d)
-    );
-    if (hasClientDecorator) return true;
-    if (builtinMethods.has(methodName)) return true;
-    if (decorators.some((d) => /@Server\b/.test(d))) return false;
-    return false;
-  }
-
   it('startViewTransition is classified as client-safe (not stripped)', () => {
+    expect(BUILTIN_METHODS.has('startViewTransition')).toBe(true);
     expect(isClientSafeMethod([], 'startViewTransition', BUILTIN_METHODS)).toBe(true);
   });
 
@@ -58,10 +41,16 @@ describe('View Transitions: data-transition-types click interception', () => {
   type TestNavigateOptions = {
     types?: string[];
     scroll?: 'auto' | 'top' | 'preserve';
-    navigationType?: 'push' | 'traverse';
+    navigationType?: 'push' | 'replace' | 'traverse';
   };
   let onNavigateCalls: { url: string; options?: TestNavigateOptions }[];
   let cleanupNavigation: (() => void) | undefined;
+  let enableClientNavigation: typeof import('@cossackframework/core').enableClientNavigation;
+
+  // Cold-importing core can exceed the default 5s test timeout under load.
+  beforeAll(async () => {
+    ({ enableClientNavigation } = await import('@cossackframework/core'));
+  }, 60_000);
 
   beforeEach(() => {
     onNavigateCalls = [];
@@ -75,8 +64,6 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   it('reads data-transition-types from clicked <a> and forwards as { types }', async () => {
-    const { enableClientNavigation } = await import('@cossackframework/core');
-
     const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
@@ -102,8 +89,6 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   it('passes undefined options when no data-transition-types attribute', async () => {
-    const { enableClientNavigation } = await import('@cossackframework/core');
-
     const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
@@ -125,8 +110,6 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   it('passes undefined options when data-transition-types is empty', async () => {
-    const { enableClientNavigation } = await import('@cossackframework/core');
-
     const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
@@ -148,8 +131,6 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   it('reads data-scroll from clicked <a> and combines it with transition types', async () => {
-    const { enableClientNavigation } = await import('@cossackframework/core');
-
     const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
@@ -173,8 +154,6 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   it('marks popstate navigation as history traversal', async () => {
-    const { enableClientNavigation } = await import('@cossackframework/core');
-
     const onNavigate = vi.fn(async (url: string, options?: TestNavigateOptions) => {
       onNavigateCalls.push({ url, options });
       return true;
@@ -192,7 +171,6 @@ describe('View Transitions: data-transition-types click interception', () => {
   });
 
   it('does not navigate a link already handled by a component', async () => {
-    const { enableClientNavigation } = await import('@cossackframework/core');
     const onNavigate = vi.fn(async () => true);
 
     cleanupNavigation = enableClientNavigation(onNavigate);

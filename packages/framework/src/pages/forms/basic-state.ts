@@ -45,15 +45,15 @@ export default class BasicState extends Cossack {
           html`
             <div>
               <label for="name">Name:</label>
-              ${component(Input, { name: 'name', '.value': bind(this, 'name') })}
+              ${component(Input, { id: 'name', name: 'name', '.value': bind(this, 'name') })}
             </div>
             <div>
               <label for="street">Street:</label>
-              ${component(Input, { name: 'street', '.value': bind(this, 'address.street') })}
+              ${component(Input, { id: 'street', name: 'street', '.value': bind(this, 'address.street') })}
             </div>
             ${component(
               Button,
-              { type: 'submit', '?disabled': this.loading['serverHandle'] },
+              { type: 'submit', '?disabled': !!this.loading['serverHandle'] },
               this.loading['serverHandle'] ? 'Submitting...' : 'Submit',
             )}
           `,

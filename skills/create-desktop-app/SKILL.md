@@ -1,6 +1,6 @@
 ---
 name: create-desktop-app
-description: Add a secure Electron Desktop side target to a Cossack application while preserving its Cloudflare Workers, Node.js, or Deno web runtime. Use for shared web/Desktop pages, local server-method RPC, Electron native APIs, persistence, Electron Forge packaging, icons, lifecycle, and verification.
+description: Add a secure Electron Desktop side target to a Cossack application while preserving its Cloudflare Workers or Node.js web runtime. Use for shared web/Desktop pages, local server-method RPC, Electron native APIs, persistence, Electron Forge packaging, icons, lifecycle, and verification.
 ---
 
 # Create Desktop App
@@ -19,9 +19,7 @@ pnpm install
 ```
 
 The scaffold owns `src/desktop/index.ts`, `forge.config.ts`, Desktop assets,
-Electron/Forge dependencies, and Desktop scripts. Do not create a Desktop
-section in `deno.json`, use `--desktop-backend`, or add Desktop-only
-`@types/deno`.
+Electron/Forge dependencies, and Desktop scripts. Do not use `--desktop-backend`.
 
 ## Runtime structure
 

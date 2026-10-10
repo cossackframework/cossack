@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // tests/view-transitions.test.ts
 import 'reflect-metadata';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';

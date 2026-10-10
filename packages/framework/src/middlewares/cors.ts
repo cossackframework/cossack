@@ -77,7 +77,9 @@ function resolvedConfig(value: Partial<CorsConfig> | undefined): CorsConfig {
 
 /** Built-in CORS for convention-based API routes (`/api` and `/api/*`). */
 export function createCorsMiddleware(
-  getConfig: () => Partial<CorsConfig> | undefined = () => config<Partial<CorsConfig>>('cors'),
+  getConfig: () => Partial<CorsConfig> | undefined = () =>
+    // Optional middleware config need not exist in the application's typed registry.
+    (config as (key: string) => unknown)('cors') as Partial<CorsConfig> | undefined,
 ): MiddlewareHandler {
   return async (c, next) => {
     if (c.req.path !== '/api' && !c.req.path.startsWith('/api/')) return next();

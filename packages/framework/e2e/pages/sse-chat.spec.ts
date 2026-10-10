@@ -1,5 +1,6 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('SSE Chat Page', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,20 +13,18 @@ test.describe('SSE Chat Page', () => {
     });
 
     await page.goto(`/sse-chat?room=${room}`);
-    await page.waitForFunction(
-      () => (window as typeof window & { __cossackReady?: boolean }).__cossackReady === true,
-    );
+    await waitForHydration(page);
     await sseResponse;
   });
 
   test('should render chat UI', async ({ page }) => {
     await expect(page.locator('h1')).toHaveText('SSE Chat');
-    await expect(page.locator('input[type="text"]')).toBeVisible();
+    await expect(page.getByPlaceholder('Type a message...', { exact: true })).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toBeVisible();
   });
 
   test('should send a message and show user bubble', async ({ page }) => {
-    const input = page.locator('input[type="text"]');
+    const input = page.getByPlaceholder('Type a message...', { exact: true });
     // Use the locator API (auto-waits, resilient to reactive re-renders on the
     // controlled input) and submit via Enter to avoid a click/fill race.
     await input.fill('Hello SSE!');
@@ -41,7 +40,7 @@ test.describe('SSE Chat Page', () => {
   });
 
   test('should stream bot response via SSE', async ({ page }) => {
-    const input = page.locator('input[type="text"]');
+    const input = page.getByPlaceholder('Type a message...', { exact: true });
     await input.fill('Hello');
     await expect(input).toHaveValue('Hello');
     await input.press('Enter');
@@ -62,20 +61,20 @@ test.describe('SSE Chat Page', () => {
   });
 
   test('should disable input while streaming', async ({ page }) => {
-    const input = page.locator('input[type="text"]');
+    const input = page.getByPlaceholder('Type a message...', { exact: true });
     await input.fill('Hello');
     await expect(input).toHaveValue('Hello');
     await input.press('Enter');
 
     // Input and button should be disabled during streaming
-    await expect(page.locator('input[type="text"]')).toBeDisabled();
+    await expect(page.getByPlaceholder('Type a message...', { exact: true })).toBeDisabled();
     await expect(page.locator('button[type="submit"]')).toBeDisabled();
 
     // Wait for streaming to finish
     await expect(page.locator('.msg.assistant.streaming')).toBeHidden({ timeout: 15000 });
 
     // Input and button should be re-enabled
-    await expect(page.locator('input[type="text"]')).toBeEnabled();
+    await expect(page.getByPlaceholder('Type a message...', { exact: true })).toBeEnabled();
     await expect(page.locator('button[type="submit"]')).toBeEnabled();
   });
 });

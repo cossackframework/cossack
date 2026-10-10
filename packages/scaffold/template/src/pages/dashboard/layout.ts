@@ -9,6 +9,7 @@ import { AltArrowRightIcon as chevronIconSvg } from '@cossackframework/solar-ico
 import { Logout3Icon as logoutIconSvg } from '@cossackframework/solar-icons/logout-3/line';
 import { dashboardModules } from '../../dashboard/registry';
 import { logout } from '../../auth';
+import { requireDashboardUser } from '../../middlewares/auth';
 import { themeStore } from '@/stores.client';
 
 const dashboardIcon = { line: dashboardIconSvg };
@@ -27,7 +28,7 @@ const logoutIcon = { line: logoutIconSvg };
  * `<html>.dark` class + cookie, so the toggle stays consistent
  * regardless of which one rendered it.
  */
-@Page({ transport: 'http' })
+@Page({ transport: 'http', middlewares: [requireDashboardUser] })
 export default class DashboardLayout extends Cossack {
     appName = server$(() => config('app.name'), { initial: 'My App' });
     @State() theme: 'light' | 'dark' = 'dark';
@@ -35,6 +36,7 @@ export default class DashboardLayout extends Cossack {
      *  re-read client-side in onMount; persists across client navigations. */
     @State() sidebarCollapsed = false;
     @State() isAdmin = false;
+    @State() logoutError = '';
     @State() account: { name: string; email: string; avatar: string | null } = {
         name: '',
         email: '',
@@ -75,9 +77,14 @@ export default class DashboardLayout extends Cossack {
 
     @Server()
     async doLogout() {
-        const { headers } = await logout(this.c);
-        headers.forEach((value, key) => this.c.header(key, value));
-        this.redirect(config('auth.redirectAfterLogout'));
+        this.logoutError = '';
+        try {
+            const { headers } = await logout(this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(config('auth.redirectAfterLogout'));
+        } catch {
+            this.logoutError = 'Could not sign out. Try again.';
+        }
     }
 
     async init() {
@@ -115,27 +122,34 @@ export default class DashboardLayout extends Cossack {
         );
         const items: SidebarItem[] = [
             {
+                value: 'dashboard',
                 label: __('Dashboard'),
                 href: '/dashboard',
                 icon: dashboardIcon,
                 active: this.isActive('/dashboard'),
             },
-            ...navigationModules.map((module) => ({
-                label: __(module.label),
-                href: module.href,
-                icon: module.icon,
-                active: this.isActive(module.href, false),
-                children: module.children?.map((child) => ({
-                    label: __(child.label),
-                    href: child.href,
-                    active: this.isActive(child.href),
-                })),
-            })),
+            ...navigationModules.map((module): SidebarItem => {
+                const item = {
+                    value: `module:${module.id}`,
+                    label: __(module.label), href: module.href, icon: module.icon,
+                    active: this.isActive(module.href),
+                };
+                return module.children?.length ? {
+                    ...item,
+                    children: module.children.map((child) => ({
+                        value: `module:${module.id}:${child.href}`,
+                        label: __(child.label), href: child.href,
+                        active: this.isActive(child.href),
+                    })),
+                } : item;
+            }),
         ];
 
         return html`
             <div class="flex min-h-screen bg-background">
                 ${component(Sidebar, {
+                    id: 'dashboard-navigation', label: __('Dashboard navigation'),
+                    expandLabel: __('Expand navigation'), collapseLabel: __('Collapse navigation'),
                     title: this.appName,
                     brand: html`<a href="/dashboard" class="flex items-center gap-2 no-underline group-[.is-collapsed]:hidden" aria-label=${__('Dashboard')}>
                         ${Image({ src: '/logo.svg', alt: '', width: 24, height: 24, loading: 'eager', class: 'size-6 shrink-0' })}
@@ -168,6 +182,7 @@ export default class DashboardLayout extends Cossack {
                         </div>
                         <div class="h-px bg-border my-1 group-[.is-collapsed]:hidden"></div>
                         ${component(DropdownMenu, {
+                            id: 'dashboard-account-menu',
                             block: true,
                             side: 'right',
                             align: 'end',
@@ -190,14 +205,14 @@ export default class DashboardLayout extends Cossack {
                             </div>
                             ${accountModules.length ? html`<div class="h-px bg-border my-1"></div>` : null}
                             ${accountModules.map((module) => html`
-                                <a href=${module.href} class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted text-foreground no-underline">
+                                <a role="menuitem" tabindex="-1" href=${module.href} class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted text-foreground no-underline">
                                     <span class=${iconClass}>${component(Icon, { entry: module.icon, size: 16 })}</span>
                                     ${__(module.label)}
                                 </a>
                             `)}
                             <div class="h-px bg-border my-1"></div>
                             <button
-                                type="button"
+                                type="button" role="menuitem" tabindex="-1"
                                 @click=${() => this.doLogout()}
                                 class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-sm hover:bg-muted cursor-pointer border-none bg-transparent text-left text-destructive">
                                 <span class=${iconClass}>${component(Icon, { entry: logoutIcon, size: 16 })}</span>
@@ -208,6 +223,7 @@ export default class DashboardLayout extends Cossack {
                 })}
                 <div class="flex-1 min-w-0 flex flex-col overflow-x-hidden">
                     <main class="flex-1 p-6 sm:p-8 overflow-x-hidden">
+                        ${this.logoutError ? html`<p role="alert" class="mb-4 text-sm text-destructive">${this.logoutError}</p>` : null}
                         ${this.children}
                     </main>
                     <footer class="border-t border-border px-6 sm:px-8 py-4 text-xs text-muted-foreground">

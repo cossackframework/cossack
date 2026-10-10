@@ -1,3 +1,6 @@
+import { checkConfigRequirements, ConfigRequirementError, type ConfigRequirementCollection, type ConfigRequirementContext, type VariableType, type VariableValue } from './config-requirements.js';
+export { ConfigRequirementError } from './config-requirements.js';
+export type { ConfigRequirements, VariableRequirement, BindingRequirement } from './config-requirements.js';
 // src/config.ts
 //
 // Application configuration accessors backed by AsyncLocalStorage (ALS),
@@ -51,6 +54,10 @@ export interface ConfigStore {
     env: Record<string, unknown>;
     /** The evaluated config tree, keyed by config file name (sans extension). */
     config: Record<string, unknown>;
+    /** Parsed declared values remain server-only, like raw bindings. */
+    variables?: Record<string, string | number | boolean>;
+    variableTypes?: Record<string, VariableType>;
+    requirementContext?: Pick<ConfigRequirementContext, 'runtime' | 'environment'>;
 }
 
 /**
@@ -110,16 +117,22 @@ export function buildConfig(
  * ```
  */
 export interface CossackConfigRegistry {}
+/** Populated by Node-only tooling; authored entries take precedence. */
+export interface CossackGeneratedConfigRegistry {}
+type ConfigTree = Omit<CossackGeneratedConfigRegistry, keyof CossackConfigRegistry> & CossackConfigRegistry;
+
+/** Permit arbitrary paths only until an application declares its config tree. */
+type UntypedConfigKey = keyof ConfigTree extends never ? string : never;
 
 /**
  * Recursively builds all valid dotted paths through a config tree type.
  * @example
- * type Paths = DottedPaths<{ app: { name: string } }>; // 'app.name'
+ * type Paths = DottedPaths<{ app: { name: string } }>; // 'app' | 'app.name'
  */
 type DottedPaths<T, Prefix extends string = ''> = T extends object
     ? {
           [K in keyof T & string]: T[K] extends object
-              ? DottedPaths<T[K], `${Prefix}${K}.`>
+              ? `${Prefix}${K}` | DottedPaths<T[K], `${Prefix}${K}.`>
               : `${Prefix}${K}`;
       }[keyof T & string]
     : never;
@@ -163,6 +176,31 @@ export function runWithConfig<T>(
     return configAls.run(store, fn as () => T);
 }
 
+/**
+ * Prepare one environment's configuration in a fresh scope before application
+ * middleware runs. Factory accessors see only these bindings, never an outer
+ * request. The completed tree is published after all factories succeed.
+ */
+export function prepareConfigStore(
+    factories: Record<string, unknown>,
+    envBindings: Record<string, unknown> = {},
+    options: { requirements?: ConfigRequirementCollection; context?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } = {},
+): ConfigStore {
+    const context = { runtime: 'cloudflare' as const, ...options.context, mode: 'runtime' as const };
+    const checked = checkConfigRequirements(options.requirements ?? {}, envBindings, context);
+    if (checked.diagnostics.length) throw new ConfigRequirementError(checked.diagnostics[0]);
+    const store: ConfigStore = { env: envBindings, config: {}, variables: checked.variables,
+        variableTypes: checked.variableTypes, requirementContext: context };
+    return configAls.run(store, () => {
+        const envFn: EnvFunction = (key, fallback) => {
+            const value = envBindings[key];
+            return value !== undefined && value !== null ? String(value) : fallback ?? '';
+        };
+        store.config = buildConfig(factories, envFn);
+        return store;
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Accessors
 // ---------------------------------------------------------------------------
@@ -191,11 +229,11 @@ export function runWithConfig<T>(
  * const host = config('database.connections.mysql.host', 'localhost');
  * ```
  */
-export function config<Path extends DottedPaths<CossackConfigRegistry>>(
+export function config<Path extends DottedPaths<ConfigTree>>(
     key: Path,
-    defaultValue?: GetByPath<CossackConfigRegistry, Path>,
-): GetByPath<CossackConfigRegistry, Path>;
-export function config<T = unknown>(key: string, defaultValue?: T): T;
+    defaultValue?: GetByPath<ConfigTree, Path>,
+): GetByPath<ConfigTree, Path>;
+export function config<T = unknown>(key: UntypedConfigKey, defaultValue?: T): T;
 export function config(key: string, defaultValue?: unknown): unknown {
     const store = requestStore();
     if (!store) return defaultValue;
@@ -256,4 +294,91 @@ export function binding<T = unknown>(key: string): T | undefined {
     if (!store) return undefined;
     const value = store.env?.[key];
     return value === undefined || value === null ? undefined : (value as T);
+}
+
+/** Coded, actionable failure for a missing required binding or variable. */
+export class ConfigBindingError extends Error {
+    readonly code = 'COSSACK_BINDING_MISSING';
+    readonly bindingName: string;
+
+    constructor(bindingName: string, message: string) {
+        super(message);
+        this.name = 'ConfigBindingError';
+        this.bindingName = bindingName;
+    }
+}
+
+/**
+ * Names of the active environment's bindings — for diagnostics only. Binding
+ * objects and string values are never surfaced: a diagnostic that echoed a
+ * binding value could leak credentials into logs, hydration payloads, or
+ * catalogs. Secret-looking names (SECRET/TOKEN/PASSWORD/KEY...) are reported
+ * by name only, which is always safe.
+ */
+function availableBindingNames(): string[] {
+    const store = requestStore();
+    return store ? Object.keys(store.env ?? {}).sort() : [];
+}
+
+function describeAvailable(available: string[]): string {
+    return available.length ? `Available bindings: ${available.join(', ')}.` : 'No bindings are present in this environment.';
+}
+
+/**
+ * Read a required raw binding (D1, KV, R2, DO namespace, service binding...).
+ * Unlike {@link binding}, a missing binding is a coded, actionable failure —
+ * it names the binding, lists the available binding NAMES (never values), and
+ * points at the Wrangler configuration. Throwing at first use prevents an
+ * application from silently degrading to undefined behavior deep inside a
+ * request handler.
+ */
+export function requireBinding<T = unknown>(key: string): T {
+    const value = binding<T>(key);
+    if (value === undefined) {
+        throw new ConfigBindingError(key,
+            `[Cossack] Required binding "${key}" is not configured for this environment. ` +
+            `${describeAvailable(availableBindingNames())} ` +
+            'Add it to wrangler.jsonc (bindings are per-environment and are not inherited).');
+    }
+    return value;
+}
+
+/**
+ * Read a required string environment variable. A missing variable fails with
+ * a coded diagnostic naming the variable and the present names, mirroring
+ * {@link requireBinding} for scalar configuration.
+ */
+export function requireEnv(key: string): string {
+    const store = requestStore();
+    const value = store?.env?.[key];
+    if (value === undefined || value === null || String(value) === '') {
+        throw new ConfigBindingError(key,
+            `[Cossack] Required environment variable "${key}" is not set for this environment. ` +
+            `${describeAvailable(availableBindingNames())}`);
+    }
+    return String(value);
+}
+
+/** Read a declared, validated scalar with the requested concrete type. */
+export function configVariable<T extends VariableType>(name: string, type: T): VariableValue<T> | undefined {
+    const store = requestStore();
+    if (!store) return undefined;
+    const context = store.requirementContext ?? { runtime: 'unknown' as const };
+    const declared = store.variableTypes?.[name];
+    if (declared === undefined || declared !== type) {
+        throw new ConfigRequirementError({ code: declared === undefined ? 'COSSACK_CONFIG_REQUIREMENT_UNDECLARED' : 'COSSACK_CONFIG_VARIABLE_TYPE_MISMATCH',
+            severity: 'error', kind: 'variable', name, ...context,
+            message: `Configuration variable "${name}" ${declared === undefined ? 'has no active declaration' : 'does not match the requested type'}.` });
+    }
+    return store.variables?.[name] as VariableValue<T> | undefined;
+}
+/** Require a declared scalar; preparation has already applied strict coercion. */
+export function requireConfigVariable<T extends VariableType>(name: string, type: T): VariableValue<T> {
+    const value = configVariable(name, type);
+    if (value === undefined) {
+        const context = requestStore()?.requirementContext ?? { runtime: 'unknown' as const };
+        throw new ConfigRequirementError({ code: 'COSSACK_CONFIG_REQUIRED_MISSING', severity: 'error', kind: 'variable', name, ...context,
+            message: `Configuration variable "${name}" is required but absent.` });
+    }
+    return value;
 }

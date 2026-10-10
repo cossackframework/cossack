@@ -116,10 +116,10 @@ Values always become parameters. `sql.id()` is the identifier escape hatch,
 builds object/bulk insert tuples. `sql.unsafe()` is the only API that injects
 literal SQL.
 
-`new SQL({ adapter })` creates a standalone Bun-compatible tagged client. In Node,
-`new SQL("postgres://…")`, `new SQL("mysql://…")`, `new SQL("https://….turso.io")`, and
-SQLite paths select an adapter lazily. Workers intentionally require a binding or
-explicit adapter rather than environment URL guessing.
+The neutral `SQL` export accepts an explicit adapter, so it is safe in Workers.
+For lazy Node/Bun adapter selection from a URL or SQLite path, import `SQL` from
+`@cossackframework/database/node`. Workers should pass their D1, Hyperdrive or
+Turso adapter explicitly rather than guess from an environment URL.
 
 ## Relations
 
@@ -142,11 +142,10 @@ are never replayed across an in-memory object graph.
 
 | Runtime entry | Adapters |
 | --- | --- |
-| `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `turso` |
-| `@cossackframework/database/deno` | `deno`, `denoSQLite`, `postgres`, `mysql`, `turso` |
+| `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `turso`, `SQL` |
 | `@cossackframework/database/bun` | `bun` over the documented Bun SQL core API |
 | `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL` |
-| `@cossackframework/database/deno` | `deno` with an injected remote or SQLite driver |
+| `@cossackframework/database/cloudflare-turso` | `turso` (remote Turso on Workers) |
 | `@cossackframework/database/adapter` | public dialect, driver, result, scope, and capability contracts |
 | `@cossackframework/database/cossack` | middleware plus database cache/session stores |
 

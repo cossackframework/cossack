@@ -1,6 +1,6 @@
 import { Cossack, Page, State } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
-import { readVersion } from '../store';
+import { readVersion } from '../../../stores/cache-regression';
 
 @Page({ transport: 'http' })
 export class CacheRegressionDetail extends Cossack {
@@ -21,3 +21,5 @@ export class CacheRegressionDetail extends Cossack {
         `;
     }
 }
+
+export default CacheRegressionDetail;

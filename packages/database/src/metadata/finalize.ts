@@ -154,6 +154,17 @@ export function finalizeMetadata(
       const targetColumnDraft = targetDraft.columns.find(
         (column) => column.propertyName === referencedProperty,
       );
+      if (owner && draft.kind !== "many-to-many" && !targetColumnDraft) {
+        throw new MetadataError(`${item.modelName}.${draft.propertyName} references missing field ${targetItem.modelName}.${referencedProperty ?? "<primary>"}.`);
+      }
+      if (inverse) {
+        const inverseDraft = targetDraft.relations.find(relation => relation.propertyName === inverse)!;
+        let inverseTarget: EntityTarget | undefined;
+        try { inverseTarget = inverseDraft.target(); } catch { /* Report both authored endpoints below. */ }
+        const expectedInverse = { "one-to-one": "one-to-one", "many-to-one": "one-to-many", "one-to-many": "many-to-one", "many-to-many": "many-to-many" } as const;
+        if (inverseDraft.kind !== expectedInverse[draft.kind]) throw new MetadataError(`${item.modelName}.${draft.propertyName} (${draft.kind}) has incompatible inverse ${targetItem.modelName}.${inverse} (${inverseDraft.kind}).`);
+        if (inverseTarget !== target) throw new MetadataError(`${item.modelName}.${draft.propertyName} inverse ${targetItem.modelName}.${inverse} does not target ${item.modelName}.`);
+      }
       const referencedColumn = referencedProperty
         ? (targetColumnDraft?.options.name ?? naming.columnName(referencedProperty))
         : undefined;
@@ -167,9 +178,10 @@ export function finalizeMetadata(
       const inversePrimaryProperty = draft.joinTable?.inverseJoinColumn?.referencedColumnName ??
         inversePrimaryDraft?.propertyName;
       const ownerPrimaryColumn = columns.find((column) => column.propertyName === ownerPrimaryProperty);
-      const inversePrimaryType = inversePrimaryDraft?.options.type ?? inferType(inversePrimaryDraft?.reflectedType);
-      const inversePrimaryColumn = inversePrimaryProperty
-        ? (inversePrimaryDraft?.options.name ?? naming.columnName(inversePrimaryProperty))
+      const inverseColumnDraft = targetDraft.columns.find(column => column.propertyName === inversePrimaryProperty);
+      const inversePrimaryType = inverseColumnDraft?.options.type ?? inferType(inverseColumnDraft?.reflectedType);
+      const inversePrimaryColumn = inversePrimaryProperty && inverseColumnDraft
+        ? (inverseColumnDraft.options.name ?? naming.columnName(inversePrimaryProperty))
         : undefined;
       const joinTable = draft.joinTable &&
         ownerPrimaryColumn &&
@@ -190,7 +202,7 @@ export function finalizeMetadata(
         : undefined;
       if (draft.joinTable && !joinTable) {
         throw new MetadataError(
-          `Cannot resolve primary columns for join table ${item.modelName}.${draft.propertyName}.`,
+          `Cannot resolve join table ${item.modelName}.${draft.propertyName}: referenced fields ${item.modelName}.${ownerPrimaryProperty ?? "<primary>"} and ${targetItem.modelName}.${inversePrimaryProperty ?? "<primary>"} must exist.`,
         );
       }
       return {
@@ -229,7 +241,7 @@ export function finalizeMetadata(
       const logicalType = targetDraft?.options.type ?? inferType(targetDraft?.reflectedType);
       if (!logicalType) {
         throw new MetadataError(
-          `Cannot infer join-column type for ${item.modelName}.${relation.propertyName}; ` +
+          `Cannot infer join-column type for ${item.modelName}.${relation.propertyName} referencing ${relation.targetEntity}.${relation.referencedProperty ?? "<primary>"}; ` +
           "declare the referenced primary column with an explicit type.",
         );
       }

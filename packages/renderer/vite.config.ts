@@ -5,10 +5,13 @@ import { defineConfig } from 'vite';
 const sourceRoot = resolve(import.meta.dirname, 'src');
 
 export default defineConfig({
+  // Let the consuming application select diagnostics instead of erasing them in this library build.
+  define: { 'import.meta.env.DEV': 'import.meta.env?.DEV' },
   build: {
     lib: {
       entry: {
         index: resolve(import.meta.dirname, 'src/index.ts'),
+        browser: resolve(import.meta.dirname, 'src/browser.ts'),
         server: resolve(import.meta.dirname, 'src/server.ts'),
       },
       formats: ['es'],
@@ -18,6 +21,7 @@ export default defineConfig({
       // directly instead of copying its internal node_modules layout into the
       // published renderer package.
       external: [
+        'parse5',
         'css-tree/parser',
         'css-tree/generator',
         'css-tree/walker',

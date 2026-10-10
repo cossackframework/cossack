@@ -11,33 +11,33 @@ import { cache } from '@cossackframework/framework/cache';
 import { Product } from '@/models/Product';
 
 // Read-through cache: compute + store on a miss, return the stored value on a hit.
-const products = await cache.remember('products:featured', 600, () =>
+const products = await cache.remember('products:featured', 600_000, () =>
     Product.find({ where: { featured: true } }),
 );
 
-// Explicit set / get (TTLs are in SECONDS).
-await cache.set<User>('user:1', user, 300);
+// Explicit set / get (TTLs are in MILLISECONDS).
+await cache.set<User>('user:1', user, 300_000);
 const user = await cache.get<User>('user:1'); // Promise<User | undefined>
 
 // Use a specific named store.
-await cache.store('kv').set('key', 'value', 60);
+await cache.store('kv').set('key', 'value', 60_000);
 ```
 
-**TTLs are in seconds throughout.** There is no `cache(...)` function call — `cache` is a facade object; the read-through method is `cache.remember(key, ttl, fn)`.
+**TTLs are in milliseconds throughout.** There is no `cache(...)` function call — `cache` is a facade object; the read-through method is `cache.remember(key, ttl, fn)`.
 
 ## API
 
 | Method | Signature | Description |
 |---|---|---|
 | `get<T>(key)` | `(key: string) => Promise<T \| undefined>` | Read a value. Returns `undefined` on miss. |
-| `set<T>(key, value, ttl?)` | `(key, value, ttlSeconds?) => Promise<void>` | Store a value. TTL in seconds; falls back to the store's default. |
+| `set<T>(key, value, ttl?)` | `(key, value, ttlMs?) => Promise<void>` | Store a value. TTL in integer milliseconds; facade `set()` defaults to 3_600_000 ms. |
 | `has(key)` | `(key: string) => Promise<boolean>` | Check existence. |
 | `delete(key)` / `forget(key)` | `(key: string) => Promise<void>` | Delete a key (`forget` is an alias). |
 | `flush()` | `() => Promise<void>` | Clear the entire current store. |
-| `remember<T>(key, ttl, fn)` | `(key, ttlSeconds, fn) => Promise<T>` | Read-through: return cached hit, or compute `fn()`, store it, and return it. |
-| `getMany<T>(keys)` / `setMany<T>(entries, defaultTtl?)` / `deleteMany(keys)` | — | Batch operations. |
+| `remember<T>(key, ttl, fn)` | `(key, ttlMs, fn) => Promise<T>` | Read-through: return cached hit, or compute `fn()`, store it, and return it. |
+| `getMany<T>(keys)` / `setMany<T>(entries, defaultTtlMs?)` / `deleteMany(keys)` | — | Batch operations. |
 | `store(name)` | `(name: string) => StoreBoundCache` | Switch to a named store. |
-| `setDefaultStore(store)` | `(name: string) => void` | Change the default store. |
+| `setDefaultStore(store)` | `(store: CacheStore) => void` | Change the default store. |
 | `extendCacheDriver(driver, factory)` | `(name, factory) => void` | Register a custom backend. |
 
 ## The constraint: server-only
@@ -48,7 +48,7 @@ await cache.store('kv').set('key', 'value', 60);
 @Server()
 async loadDashboard() {
     // ✅ inside a @Server() method
-    this.stats = await cache.remember('dashboard:stats', 60, () => computeStats());
+    this.stats = await cache.remember('dashboard:stats', 60_000, () => computeStats());
 }
 ```
 
@@ -76,18 +76,16 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
 
 ## Which backend should I use?
 
-For most apps, **KV is the recommended default** — it's the natural fit for read-through caching of expensive results:
+Use KV for recomputable data when stale reads and misses are acceptable. Its logical expiration is checked in milliseconds; native retention cleans up expiring records later. It has no atomic increments and production writes to one key are limited to one per second.
 
-- **Eventual consistency is harmless.** `remember()` is idempotent — if two isolates both miss and recompute, the result is the same. Staleness is already bounded by your TTL.
-- **Native TTL = auto garbage collection.** KV's `expirationTtl` reaps expired keys for you — no unbounded growth, no `purgeExpired()` chore.
-- **It offloads the database.** A KV hit never touches D1/Turso; an ORM-backed cache hit still does.
-- **Globally fast reads** from the edge region nearest the reader.
+`remember()` does not combine concurrent computations or lock a key. Use a side-effect-free function. A cache `get()` followed by `set()` is not an atomic counter, including in the DO backend.
 
-Reach for the others when:
-- **`memory`** — dev/test, or single-isolate ephemeral caches that don't need to survive restarts.
-- **`durable-object`** — you need strong consistency or per-room/per-session cache isolation.
-- **`database`** — co-located cache data, registered with `createDatabaseCacheStore()` in `src/middlewares/orm.ts`.
+- **`memory`**: process-local data, bounded by entry count and serialized bytes.
+- **`durable-object`**: one shared consistent owner; this implementation routes the whole cache to `idFromName('default')`, with no per-room/session isolation option.
+- **`database`**: cache alongside app data; consistency depends on the database and read configuration. Register `createDatabaseCacheStore()` from `src/middlewares/orm.ts`.
 
 ## Real example
 
 The framework's demo at `packages/framework/src/pages/examples/cache/index.ts` shows `cache.set()` / `cache.get()` inside a `@Server()` method, with `this.loading['runCacheTest']` driving the button's disabled state. For the full config reference, custom store implementation (`CacheStore` interface), and backend details, see `docs/cache.md`.
+
+In 0.9.0, cache TTLs use integer milliseconds (`ttlMs`). KV logical expiry is checked separately from native retention; KV reads can still be stale. `remember()` allows duplicate computations and provides no lock. Use side-effect-free computations. Custom factories belong to the current request; use scoped resource ownership. Built-in memory stores are bounded by count and serialized bytes. For limits, binding identity rules and migration details, read `docs/cache.md`.

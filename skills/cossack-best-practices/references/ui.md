@@ -40,12 +40,13 @@ from `@cossackframework/renderer`:
 
 ```ts
 import { html, component } from "@cossackframework/renderer";
+import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 import { Button, Input, Icon, toast } from "@cossackframework/ui";
 
 html`
   ${component(Button, { variant: "default", "@click": this.save }, "Save")}
   ${component(Input, { type: "email", placeholder: "you@ex.com" })}
-  ${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}
+  ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
 `;
 ```
 

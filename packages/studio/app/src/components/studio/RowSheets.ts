@@ -42,6 +42,7 @@ export class RowEditorSheet extends Cossack {
       size: 'min(48rem, 94vw)',
       onClose: this.props.onClose,
       'data-testid': 'row-editor-sheet',
+      'aria-label': 'Edit row',
     }, html`
       <header class="flex shrink-0 items-start justify-between border-b p-5">
         <div>
@@ -118,6 +119,7 @@ export class ExportSheet extends Cossack {
       size: 'min(32rem, 92vw)',
       onClose: this.props.onClose,
       'data-testid': 'export-sheet',
+      'aria-label': 'Export rows',
     }, html`
       <header class="border-b p-5">
         <h2 class="font-semibold">
@@ -146,9 +148,9 @@ export class ExportSheet extends Cossack {
           <legend class="mb-2 text-sm font-medium">Columns</legend>
           ${columns.map((column) => component(Checkbox, {
             checked: state?.columns.includes(column) ?? false,
-            '@change': (event: InputEvent) => this.props.onToggleColumn(
+            '@change': (event) => this.props.onToggleColumn(
               column,
-              (event.target as HTMLInputElement).checked,
+              event.currentTarget.checked,
             ),
           }, column))}
         </fieldset>
@@ -194,6 +196,7 @@ export class BatchUpdateSheet extends Cossack {
       size: 'min(32rem, 92vw)',
       onClose: this.props.onClose,
       'data-testid': 'batch-update-sheet',
+      'aria-label': 'Update rows',
     }, html`
       <header class="border-b p-5">
         <h2 class="font-semibold">Update ${this.props.selectedCount} selected rows</h2>
@@ -220,8 +223,8 @@ export class BatchUpdateSheet extends Cossack {
         </label>
         ${column?.nullable ? component(Checkbox, {
           checked: state?.mode === 'null',
-          '@change': (event: InputEvent) => this.props.onNullChange(
-            (event.target as HTMLInputElement).checked,
+          '@change': (event) => this.props.onNullChange(
+            event.currentTarget.checked,
           ),
         }, 'Set an explicit NULL value') : ''}
         ${component(Textarea, {

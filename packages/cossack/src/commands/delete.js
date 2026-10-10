@@ -1,3 +1,4 @@
+import { commandSpecs } from '../command-specs.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import prompts from 'prompts';
@@ -23,19 +24,32 @@ const TYPE_ALIASES = {
 
 const PAGE_EXTS = ['.ts', '.md', '.mdx'];
 
+import { createCommandOutput, runWithSpec } from '../command-spec.js';
+
+const spec = commandSpecs.delete;
+
 export async function deleteCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, () => {
+    ctx.out = createCommandOutput(ctx);
+    return deleteCommandInner(args, ctx);
+  });
+}
+
+async function deleteCommandInner(args, ctx) {
   const [typeArg, nameArg] = args;
   const type = TYPE_ALIASES[typeArg];
 
   if (!type) {
-    console.error(
-      `Unknown delete type: ${typeArg || '(none)'}.\nValid: page(p) component(c) layout(l) middleware(m) service(s)`,
+    throw Object.assign(
+      new Error(`Unknown delete type: ${typeArg}. Valid: page(p) component(c) layout(l) middleware(m) service(s)`),
+      { code: 'COSSACK_DELETE_TYPE_UNKNOWN' },
     );
-    return 1;
   }
   if (!nameArg) {
-    console.error(`Missing name. Usage: cossack delete ${typeArg} <name>`);
-    return 1;
+    throw Object.assign(
+      new Error(`Missing name. Usage: cossack delete ${typeArg} <name>`),
+      { code: 'COSSACK_ARGUMENT_MISSING' },
+    );
   }
 
   const root = ctx.projectRoot || process.cwd();
@@ -47,12 +61,11 @@ export async function deleteCommand(args, ctx) {
     if (await exists(c)) existing.push(c);
   }
   if (existing.length === 0) {
-    console.error(`  not found  ${type} "${nameArg}"`);
-    return 1;
+    throw Object.assign(new Error(`No ${type} files found for "${nameArg}".`), { code: 'COSSACK_FILE_NOT_FOUND' });
   }
 
   // Confirm unless --force / --dry-run / non-interactive
-  if (!ctx.force && !ctx.dryRun && process.stdin.isTTY) {
+  if (!ctx.force && !ctx.dryRun && ctx.flags.json !== true && process.stdin.isTTY) {
     const { ok } = await prompts({
       type: 'confirm',
       name: 'ok',
@@ -60,26 +73,26 @@ export async function deleteCommand(args, ctx) {
       initial: false,
     });
     if (!ok) {
-      console.log('  cancelled');
-      return 0;
+      ctx.out.line('  cancelled');
+      return ctx.out.data({ status: 'cancelled' });
     }
   }
 
   if (ctx.dryRun) {
-    for (const f of existing) console.log(`  would delete  ${path.relative(process.cwd(), f)}`);
-    return 0;
+    for (const f of existing) ctx.out.file('planned-delete', f);
+    return ctx.out.data({ status: 'dry-run' });
   }
 
   for (const f of existing) {
     await fs.rm(f, { force: true });
-    console.log(`  deleted  ${path.relative(process.cwd(), f)}`);
+    ctx.out.file('deleted', f);
     // try to clean up a now-empty page directory
     const dir = path.dirname(f);
     if (type === 'page' || type === 'layout') {
       await removeIfEmptyDir(dir);
     }
   }
-  return 0;
+  return ctx.out.data({ status: 'deleted' });
 }
 
 function resolveCandidates(type, raw, root) {
@@ -118,12 +131,9 @@ function resolveCandidates(type, raw, root) {
 }
 
 export function deleteHelp() {
-  return `cossack delete <type> <name>   (alias: d)
+  return commandSpecs.delete.help(`cossack delete <type> <name>   (alias: d)
 
 Delete a generated page/component/layout/middleware/service.
 
-Types: page(p) component(c) layout(l) middleware(m) service(s)
-
-Options:
-  --force, -f   Skip the confirmation prompt.`;
+Types: page(p) component(c) layout(l) middleware(m) service(s)`);
 }

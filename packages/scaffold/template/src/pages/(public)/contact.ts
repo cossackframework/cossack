@@ -69,13 +69,13 @@ export default class ContactPage extends Cossack {
                 ${this.success ? html`<p role="status" class="mt-6 rounded-md bg-green-500/10 p-3 text-green-700">${this.success}</p>` : ''}
                 ${this.error ? html`<p role="alert" class="mt-6 rounded-md bg-destructive/10 p-3 text-destructive">${this.error}</p>` : ''}
                 <form @submit=${this.handleSubmit} class="mt-8 space-y-5" novalidate>
-                    ${component(Field, { label: __('Name'), for: 'name', required: true, error: this.getError(field('name')) },
-                        component(Input, { id: 'name', name: 'name', required: true, '.value': this.form.name, '@input': (event: Event) => this.handleInput('name', event), '@blur': () => this.handleBlur('name'), variant: this.hasError(field('name')) ? 'error' : 'default', 'aria-invalid': this.hasError(field('name')) }))}
-                    ${component(Field, { label: __('Email'), for: 'email', required: true, error: this.getError(field('email')) },
-                        component(Input, { id: 'email', name: 'email', type: 'email', required: true, '.value': this.form.email, '@input': (event: Event) => this.handleInput('email', event), '@blur': () => this.handleBlur('email'), variant: this.hasError(field('email')) ? 'error' : 'default', 'aria-invalid': this.hasError(field('email')) }))}
-                    ${component(Field, { label: __('Message'), for: 'message', required: true, error: this.getError(field('message')) },
-                        component(Textarea, { id: 'message', name: 'message', required: true, rows: 6, '.value': this.form.message, '@input': (event: Event) => this.handleInput('message', event), '@blur': () => this.handleBlur('message'), variant: this.hasError(field('message')) ? 'error' : 'default', 'aria-invalid': this.hasError(field('message')) }))}
-                    ${component(Button, { type: 'submit', disabled: this.loading.submitContact }, this.loading.submitContact ? __('Sending…') : __('Send message'))}
+                    ${component(Field, { label: __('Name'), for: 'name', required: true, error: this.getError(field('name')),
+                        control: attributes => component(Input, { ...attributes, name: 'name', '.value': this.form.name, '@input': (event: Event) => this.handleInput('name', event), '@blur': () => this.handleBlur('name'), variant: this.hasError(field('name')) ? 'error' : 'default' }) })}
+                    ${component(Field, { label: __('Email'), for: 'email', required: true, error: this.getError(field('email')),
+                        control: attributes => component(Input, { ...attributes, name: 'email', type: 'email', '.value': this.form.email, '@input': (event: Event) => this.handleInput('email', event), '@blur': () => this.handleBlur('email'), variant: this.hasError(field('email')) ? 'error' : 'default' }) })}
+                    ${component(Field, { label: __('Message'), for: 'message', required: true, error: this.getError(field('message')),
+                        control: attributes => component(Textarea, { ...attributes, name: 'message', rows: 6, '.value': this.form.message, '@input': (event: Event) => this.handleInput('message', event), '@blur': () => this.handleBlur('message'), variant: this.hasError(field('message')) ? 'error' : 'default' }) })}
+                    ${component(Button, { type: 'submit', disabled: this.loading.submitContact > 0 }, this.loading.submitContact ? __('Sending…') : __('Send message'))}
                 </form>
             </section>
         `;

@@ -25,8 +25,13 @@ pnpm test:unit
 
 This runs every package with a unit suite once, including core, renderer,
 auth, UI, adapters, database, Studio, scaffold, CLI, and framework. The
-`test-utils` package has no tests yet and is excluded. For watch mode or a
+`test-utils` package includes browser lifecycle and server request helpers and
+is included. For watch mode or a
 focused test, use `pnpm --filter <package-name> exec vitest <test-file>`.
+
+See [Test utilities](./test-utils.md) for internal browser hydration and awaitable
+cleanup helpers, production fetch/RPC dispatch, credential fixtures, and
+controlled asynchronous work.
 
 The framework's SSG output checks require `pnpm --filter
 @cossackframework/framework build:ssg` first. Without those artifacts, the six

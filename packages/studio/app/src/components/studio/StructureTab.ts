@@ -55,9 +55,10 @@ export class StructureTab extends Cossack {
               <td class="p-2 font-mono">${column.defaultValue ?? '—'}</td>
               <td class="p-2">
                 ${column.primaryKeyPosition ? component(Tooltip, {
+                  id: `structure-${encodeURIComponent(object.name)}-${encodeURIComponent(column.name)}-key-tip`,
                   label: `Primary key position ${column.primaryKeyPosition}${column.autoIncrement ? ' · auto increment' : ''}`,
                 }, html`
-                  <span class="inline-flex items-center gap-1.5 text-primary">
+                  <span tabindex="0" aria-describedby=${`structure-${encodeURIComponent(object.name)}-${encodeURIComponent(column.name)}-key-tip`} class="inline-flex items-center gap-1.5 text-primary">
                     ${component(Icon, { entry: KeyIcon, size: 16 })}
                     <span>PK ${column.primaryKeyPosition}${column.autoIncrement ? ' · auto' : ''}</span>
                   </span>

@@ -2,7 +2,22 @@
  * Navigation options passed from a click interceptor or programmatic
  * navigation through to the framework's navigate() implementation.
  */
+/**
+ * Typed navigation outcome (RT-09). Fetch, guards, and component bootstrap
+ * must settle for the navigation promise to complete.
+ */
+export type NavigateOutcome = 'completed' | 'superseded' | 'canceled' | 'redirected' | 'failed';
+
+export interface NavigateResult {
+    readonly outcome: NavigateOutcome;
+    /** The effective URL (post-redirect for 'redirected'/'completed'). */
+    readonly url: string;
+    readonly error?: unknown;
+}
+
 export interface NavigateOptions {
+    /** Create a new history entry (default) or replace the active entry. */
+    history?: 'push' | 'replace';
     /**
      * View Transition types to apply to the navigation. Corresponds to the
      * `types` field on `document.startViewTransition({ update, types })`.
@@ -20,7 +35,7 @@ export interface NavigateOptions {
 }
 
 export type NavigationScrollBehavior = 'auto' | 'top' | 'preserve';
-export type NavigationType = 'push' | 'traverse';
+export type NavigationType = 'push' | 'replace' | 'traverse';
 
 export interface ScrollPosition {
     x: number;
@@ -32,8 +47,33 @@ const COSSACK_NAVIGATION_STATE = '__cossackNavigation';
 type NavigationHistoryState = Record<string, unknown> & {
     [COSSACK_NAVIGATION_STATE]?: {
         scroll?: ScrollPosition;
+        location?: NavigationHistoryLocation;
     };
 };
+
+/** @internal Positions identify entries created by one active browser app. */
+export interface NavigationHistoryLocation {
+    readonly group: string;
+    readonly position: number;
+}
+
+/** @internal Never infer a position for an entry owned by another document. */
+export function getNavigationHistoryLocation(state: unknown): NavigationHistoryLocation | undefined {
+    if (!isRecord(state)) return undefined;
+    const navigation = state[COSSACK_NAVIGATION_STATE];
+    if (!isRecord(navigation) || !isRecord(navigation.location)) return undefined;
+    const { group, position } = navigation.location;
+    if (typeof group !== 'string' || !group || !Number.isSafeInteger(position) || (position as number) < 0) return undefined;
+    return { group, position: position as number };
+}
+
+/** @internal Preserve application state and scroll while marking an entry. */
+export function navigationHistoryStateAt(state: unknown, location: NavigationHistoryLocation): NavigationHistoryState {
+    const base: NavigationHistoryState = isRecord(state) ? { ...state } : {};
+    const existing = isRecord(base[COSSACK_NAVIGATION_STATE]) ? base[COSSACK_NAVIGATION_STATE] : {};
+    base[COSSACK_NAVIGATION_STATE] = { ...existing, location: { ...location } };
+    return base;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -77,7 +117,7 @@ function scrollToPosition(position: ScrollPosition): void {
     window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' });
 }
 
-function scrollToUrlTarget(url: string): void {
+function scrollToUrlTarget(url: string): 'fragment' | 'fragment-missing' | 'top' {
     const { hash } = new URL(url, window.location.href);
     if (hash) {
         let fragment = hash.slice(1);
@@ -91,11 +131,12 @@ function scrollToUrlTarget(url: string): void {
             ?? document.getElementsByName(fragment)[0];
         if (target) {
             target.scrollIntoView({ block: 'start', behavior: 'instant' });
-            return;
+            return 'fragment';
         }
     }
 
     scrollToPosition({ x: 0, y: 0 });
+    return hash ? 'fragment-missing' : 'top';
 }
 
 /**
@@ -107,23 +148,24 @@ export function applyNavigationScroll(
     url: string,
     behavior: NavigationScrollBehavior,
     navigationType: NavigationType,
-): void {
-    if (typeof window === 'undefined' || behavior === 'preserve') return;
+): 'unavailable' | 'preserve' | 'history' | 'top' | 'fragment' | 'fragment-missing' {
+    if (typeof window === 'undefined') return 'unavailable';
+    if (behavior === 'preserve') return 'preserve';
 
     if (behavior === 'auto' && navigationType === 'traverse') {
         const saved = getSavedScrollPosition(window.history.state);
         if (saved) {
             scrollToPosition(saved);
-            return;
+            return 'history';
         }
     }
 
     if (behavior === 'top') {
         scrollToPosition({ x: 0, y: 0 });
-        return;
+        return 'top';
     }
 
-    scrollToUrlTarget(url);
+    return scrollToUrlTarget(url);
 }
 
 /**
@@ -160,7 +202,7 @@ export function supportsViewTransitionTypes(): boolean {
 }
 
 export function enableClientNavigation(
-    onNavigate: (url: string, options?: NavigateOptions) => Promise<boolean>,
+    onNavigate: (url: string, options?: NavigateOptions) => Promise<boolean | NavigateResult>,
     onPreFetch?: (url: string) => Promise<void>
 ) {
     const isLocalLink = (target: HTMLAnchorElement) => {

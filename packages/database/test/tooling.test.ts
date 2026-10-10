@@ -9,6 +9,132 @@ import {
 } from "../src/tooling/index.js";
 
 describe("ORM tooling API", () => {
+  it("allows CommonJS eval Workers inside isolated JSON adapter factories", async () => {
+    const stdout: string[] = [];
+    expect(await runORMCommand(["migration", "plan", "--json"], {
+      configPath: resolve("test/fixtures/worker.config.ts"), stdout: message => stdout.push(message),
+    })).toBe(0);
+    expect(stdout).toHaveLength(1);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: true, data: {
+      complete: true, migrations: [{ name: "001_queued", complete: true }],
+    } });
+  });
+
+  it("isolates imports, adapters, callbacks, disposal and inherited subprocess output from JSON", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const before = process.env.COSSACK_JSON_ISOLATION_FIXTURE;
+    expect(await runORMCommand(["migration", "plan", "--json"], {
+      configPath: resolve("test/fixtures/noisy.config.ts"),
+      stdout: message => stdout.push(message), stderr: message => stderr.push(message),
+    })).toBe(0);
+    expect(stdout).toHaveLength(1);
+    expect(stderr).toEqual([]);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: true, command: "migration", action: "plan",
+      data: { migrations: [{ name: "001_noisy", complete: true }] } });
+    expect(stdout[0]).not.toContain("sensitive-fixture");
+    expect(stdout[0]).not.toContain("spoof");
+    expect(process.env.COSSACK_JSON_ISOLATION_FIXTURE).toBe(before);
+  });
+
+  it("reports premature process termination without forwarding raw diagnostics", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    expect(await runORMCommand(["migration", "plan", "--json"], {
+      configPath: resolve("test/fixtures/exit.config.ts"),
+      stdout: message => stdout.push(message), stderr: message => stderr.push(message),
+    })).toBe(1);
+    expect(stdout).toHaveLength(1);
+    expect(stderr).toEqual([]);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: false,
+      diagnostics: [{ code: "COSSACK_ORM_PROCESS_FAILED" }] });
+    expect(stdout[0]).not.toContain("sensitive-fixture");
+  });
+  it("passes the selected target/environment to factories and emits one JSON SQL plan", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    expect(await runORMCommand(["migration", "plan", "--target", "remote", "--env", "staging", "--json"], {
+      configPath: resolve("test/fixtures/context.config.ts"),
+      stdout: message => stdout.push(message), stderr: message => stderr.push(message),
+    })).toBe(0);
+    expect(stdout).toHaveLength(1);
+    expect(stderr).toEqual([]);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ schemaVersion: 1, command: "migration", action: "plan", ok: true,
+      data: { target: { environment: "staging", target: "remote", readOnly: true },
+        resolvedTarget: { provider: "context-fixture", accountId: "selected-account",
+          environment: "staging", target: "remote" },
+        complete: true, migrations: [{ name: "001_queued", statements: [{ text: "CREATE TABLE users (id integer primary key)" }] }] } });
+  });
+
+  it("dry-runs seeders without executing their callbacks", async () => {
+    const stdout: string[] = [];
+    expect(await runORMCommand(["seed", "run", "--dry-run", "--json"], {
+      configPath: resolve("test/fixtures/context.config.ts"), stdout: message => stdout.push(message),
+    })).toBe(0);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: true, data: { dryRun: true, complete: false,
+      seeders: [{ name: "fixture" }] } });
+  });
+
+  it.each([
+    ["--local", "--remote"], ["--target=invalid"], ["--env"], ["--env=a", "--env=b"], ["--typo"],
+  ])("reports invalid target options before loading a configuration: %j", async (...flags) => {
+    const stdout: string[] = [];
+    expect(await runORMCommand(["migration", "status", ...flags, "--json"], {
+      configPath: "/does/not/exist.ts", stdout: message => stdout.push(message),
+    })).toBe(1);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: false,
+      diagnostics: [{ code: "COSSACK_ORM_CONFIGURATION_ERROR", severity: "error" }] });
+  });
+
+  it("rejects remote targeting with a static adapter", async () => {
+    const stdout: string[] = [];
+    expect(await runORMCommand(["migration", "status", "--remote", "--json"], {
+      configPath: resolve("test/fixtures/tooling.config.ts"), stdout: message => stdout.push(message),
+    })).toBe(1);
+    expect(JSON.parse(stdout[0]!).diagnostics[0].message).toContain("adapter factory");
+  });
+
+  it("honors the last explicit JSON flag when reporting an error", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    expect(await runORMCommand(["migration", "typo", "--json", "--json=false"], {
+      stdout: message => stdout.push(message), stderr: message => stderr.push(message),
+    })).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr).toHaveLength(1);
+    expect(stderr[0]).toContain("Unknown migration action");
+  });
+
+  it.each([
+    ["migration", "up", "--prune"],
+    ["migration", "plan", "--direction=sideways"],
+    ["migration", "status", "unexpected"],
+    ["migration", "generate", "one", "two"],
+    ["schema", "diff", "--force"],
+    ["seed", "list", "--only=fixture"],
+    ["migration", "typo"],
+  ])("rejects unused options and arguments before opening an adapter: %j", async (...argv) => {
+    const stdout: string[] = [];
+    expect(await runORMCommand([...argv, "--json"], {
+      configPath: "/does/not/exist.ts", stdout: message => stdout.push(message),
+    })).toBe(1);
+    expect(JSON.parse(stdout[0]!)).toMatchObject({ ok: false, diagnostics: [{ code: "COSSACK_ORM_CONFIGURATION_ERROR" }] });
+    expect(stdout[0]).not.toContain("does/not/exist");
+  });
+
+  it("previews snapshot and squash file changes without creating files", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cossack-preview-files-"));
+    try {
+      for (const action of [["snapshot"], ["squash", "baseline"]]) {
+        const stdout: string[] = [];
+        expect(await runORMCommand(["migration", ...action, "--dry-run", "--json"], {
+          cwd, configPath: resolve("test/fixtures/context.config.ts"), stdout: message => stdout.push(message),
+        })).toBe(0);
+        expect(JSON.parse(stdout[0]!).data.dryRun).toBe(true);
+        expect(await readdir(cwd)).toEqual([]);
+      }
+    } finally { await rm(cwd, { recursive: true, force: true }); }
+  });
   it("reports the failing migration, SQL, and underlying Postgres diagnostics", async () => {
     const stderr: string[] = [];
     expect(await runORMCommand(["migration", "up"], {

@@ -59,12 +59,12 @@ export default class NewUserPage extends Cossack {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
                             <div class="flex flex-col space-y-4">
-                            ${component(Field, { label: __('Name'), for: 'name' },
-                                component(Input, { id: 'name', type: 'text', '.value': bind(this.form, 'name') }))}
-                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email') },
-                                component(Input, { id: 'email', type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }))}
-                            ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password') },
-                                component(PasswordInput, { value: this.form.password, onChange: (v: string) => this.form.password = v }))}
+                            ${component(Field, { label: __('Name'), for: 'name',
+                                control: attributes => component(Input, { ...attributes, type: 'text', '.value': bind(this.form, 'name') }) })}
+                            ${component(Field, { label: __('Email'), for: 'email', error: this.getError('form.email'),
+                                control: attributes => component(Input, { ...attributes, type: 'email', placeholder: 'user@example.com', variant: this.hasError('form.email') ? 'error' : 'default', '.value': bind(this.form, 'email') }) })}
+                            ${component(Field, { label: __('Password'), for: 'password', error: this.getError('form.password'),
+                                control: attributes => component(PasswordInput, { ...attributes, value: this.form.password, onChange: (v: string) => this.form.password = v }) })}
                             <div class="flex items-center gap-2">
                                 ${component(Button, { type: 'submit' }, __('Create user'))}
                                 <a href="/dashboard/users"

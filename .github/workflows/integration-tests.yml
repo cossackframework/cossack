@@ -1,0 +1,97 @@
+name: Integration Tests
+
+# Heavy tests that scaffold, build and run generated applications on Node,
+# workerd and Chromium. They run:
+# - on PRs that touch the CLI, scaffold, adapters or UI components,
+# - on every push to master (covers core/framework changes after merge),
+# - nightly (catches drift in Wrangler, workerd and browsers),
+# - before every release (called from publish.yml).
+# Fast checks (typecheck, unit, e2e) run on every PR in e2e-tests.yml.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+    paths:
+      - packages/cossack/**
+      - packages/scaffold/**
+      - packages/node-adapter/**
+      - packages/ui/**
+      - .github/workflows/integration-tests.yml
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  # Superseded PR runs are cancelled; master, nightly and release runs are not.
+  group: integration-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: CLI integration (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace libraries
+        run: pnpm run build
+
+      - name: Install Chromium
+        run: pnpm --filter cossack exec playwright install chromium --with-deps
+
+      - name: Run CLI integration tests
+        run: pnpm --filter cossack run test:integration --shard=${{ matrix.shard }}/4
+        env:
+          CI: true
+
+  ui-browser:
+    name: UI browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace libraries
+        run: pnpm run build
+
+      - name: Install Chromium
+        run: pnpm --filter @cossackframework/ui exec playwright install chromium --with-deps
+
+      - name: Run UI browser tests
+        run: pnpm --filter @cossackframework/ui run test:browser
+        env:
+          CI: true

@@ -29,7 +29,7 @@ src/
 
 The model barrel imports `reflect-metadata` once and exports deterministic
 entity registration. Node recipes create one caller-owned ORM singleton.
-Deno and Workers recipes create an ORM per request from Turso, D1, or
+Workers recipes create an ORM per request from Turso, D1, or
 Hyperdrive bindings. `ormMiddleware` closes factory-created instances after
 downstream work completes.
 
@@ -79,7 +79,6 @@ context through application services.
 | Runtime | Providers |
 |---|---|
 | Node | SQLite (`node:sqlite`), Turso, PostgreSQL, MySQL |
-| Deno | Turso Database (embedded SQLite), remote Turso, PostgreSQL, MySQL |
 | Workers | D1, remote Turso, Hyperdrive PostgreSQL, Hyperdrive MySQL |
 
 Hyperdrive recipes enable `nodejs_compat` and install only the selected

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "resource-recipe",
+      "title": "Read-only resource recipe",
+      "summary": "Add a server resource with pending, error, retry and filter handling.",
+      "imports": [
+        "@cossackframework/scaffold/registry"
+      ],
+      "markdown": "The resource recipe adds /resource with an HTTP page and a server$ loader. The initial data is an in-memory product list. Replace the loader with an application service or database read. Validate filter input on the server.\n\nThe page declares its resource name in the Cossack type argument and uses refresh$ and resourceStatus$ for lifecycle handling. A client-only filter drives the loader dependencies. This recipe does not create durable records.\n\nPreview with `pnpm exec cossack add resource --dry-run --json`. Read conflicts and preserved-file entries before applying `pnpm exec cossack add resource --yes --json`. Run `pnpm install` after reviewing dependency changes. Inspect generated routes with `pnpm exec cossack inspect routes --json`.\n\nThe example uses the pure scaffold registry to inspect the recipe. It writes no files, installs no dependencies and opens no prompts. Capability diagnostics check host support. They do not validate bindings or remote readiness. Use the installed CLI for file planning and changes.",
+      "examples": [
+        {
+          "id": "plan-resource",
+          "language": "typescript",
+          "source": "import { resolveRecipe, recipeCapabilityRequirements, recipeCapabilityDiagnostics } from '@cossackframework/scaffold/registry';\n\nconst recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['resource'] });\nif (!recipe.resolvedFeatures.includes('resource')) throw new Error('Feature was not selected');\nconst requirements = recipeCapabilityRequirements(recipe);\nif (!requirements.some(use => use.feature === 'resource' && use.requires.transports?.includes('http'))) {\n  throw new Error('HTTP recipe requirement is missing');\n}\nif (recipeCapabilityDiagnostics(recipe).length) throw new Error('Unexpected host capability failure');\n"
+        }
+      ]
+    },
+    {
+      "id": "mutation-recipe",
+      "title": "Validated mutation recipe",
+      "summary": "Add a form that validates an explicit submission payload on the server.",
+      "imports": [
+        "@cossackframework/scaffold/registry"
+      ],
+      "markdown": "The mutation recipe adds /mutation with client validation, server input schemas, pending state and field errors. The example server method returns an acknowledgment. It does not save a record.\n\nWhen adapting the method, authorize the action before writing to a service or database. Send an explicit input snapshot. Client validation improves feedback but does not replace server validation. A native method call still requires explicit input parsing and authorization.\n\nPreview with `pnpm exec cossack add mutation --dry-run --json`. Read conflicts and preserved-file entries before applying `pnpm exec cossack add mutation --yes --json`. Run `pnpm install` after reviewing dependency changes. Inspect generated routes with `pnpm exec cossack inspect routes --json`.\n\nThe example uses the pure scaffold registry to inspect the recipe. It writes no files, installs no dependencies and opens no prompts. Capability diagnostics check host support. They do not validate bindings or remote readiness. Use the installed CLI for file planning and changes.",
+      "examples": [
+        {
+          "id": "plan-mutation",
+          "language": "typescript",
+          "source": "import { resolveRecipe, recipeCapabilityRequirements, recipeCapabilityDiagnostics } from '@cossackframework/scaffold/registry';\n\nconst recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['mutation'] });\nif (!recipe.resolvedFeatures.includes('mutation')) throw new Error('Feature was not selected');\nconst requirements = recipeCapabilityRequirements(recipe);\nif (!requirements.some(use => use.feature === 'mutation' && use.requires.transports?.includes('http'))) {\n  throw new Error('HTTP recipe requirement is missing');\n}\nif (recipeCapabilityDiagnostics(recipe).length) throw new Error('Unexpected host capability failure');\n"
+        }
+      ]
+    },
+    {
+      "id": "scoped-service-recipe",
+      "title": "Layout-scoped service recipe",
+      "summary": "Share a service between pages within a layout.",
+      "imports": [
+        "@cossackframework/scaffold/registry"
+      ],
+      "markdown": "The scoped-service recipe declares ScopedCounterService on the /scoped-service layout and injects it into that layout and its pages. Sibling navigation shares the browser layout state. Leaving the layout or reloading resets it.\n\nThis HTTP example uses client-supplied public service state. Do not use its counter for permissions, quotas or durable records. Use a trusted backend for those values. Resolve the service through its declared scope rather than a global container.\n\nPreview with `pnpm exec cossack add scoped-service --dry-run --json`. Read conflicts and preserved-file entries before applying `pnpm exec cossack add scoped-service --yes --json`. Run `pnpm install` after reviewing dependency changes. Inspect generated routes with `pnpm exec cossack inspect routes --json`.\n\nThe example uses the pure scaffold registry to inspect the recipe. It writes no files, installs no dependencies and opens no prompts. Capability diagnostics check host support. They do not validate bindings or remote readiness. Use the installed CLI for file planning and changes.",
+      "examples": [
+        {
+          "id": "plan-scoped-service",
+          "language": "typescript",
+          "source": "import { resolveRecipe, recipeCapabilityRequirements, recipeCapabilityDiagnostics } from '@cossackframework/scaffold/registry';\n\nconst recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['scoped-service'] });\nif (!recipe.resolvedFeatures.includes('scoped-service')) throw new Error('Feature was not selected');\nconst requirements = recipeCapabilityRequirements(recipe);\nif (!requirements.some(use => use.feature === 'scoped-service' && use.requires.transports?.includes('http'))) {\n  throw new Error('HTTP recipe requirement is missing');\n}\nif (recipeCapabilityDiagnostics(recipe).length) throw new Error('Unexpected host capability failure');\n"
+        }
+      ]
+    },
+    {
+      "id": "protected-route-recipe",
+      "title": "Protected-route recipe",
+      "summary": "Add an authenticated layout and its auth, database and UI dependencies.",
+      "imports": [
+        "@cossackframework/scaffold/registry"
+      ],
+      "markdown": "The protected-route recipe adds /protected-route and a nested page behind a layout guard. It also selects auth, database and UI. Cloudflare selects D1 by default. Configure bindings, run migrations and provide the required secrets before relying on the generated login flow.\n\nThe global auth middleware resolves the session. The layout guard requires an authenticated user and returns coded RPC errors for denied calls. Client visibility is not authorization. Add resource-specific policies for application records. The recipe does not verify remote credentials or provision a database.\n\nPreview with `pnpm exec cossack add protected-route --dry-run --json`. Read conflicts and preserved-file entries before applying `pnpm exec cossack add protected-route --yes --json`. Run `pnpm install` after reviewing dependency changes. Inspect generated routes with `pnpm exec cossack inspect routes --json`.\n\nThe example uses the pure scaffold registry to inspect the recipe. It writes no files, installs no dependencies and opens no prompts. Capability diagnostics check host support. They do not validate bindings or remote readiness. Use the installed CLI for file planning and changes.",
+      "examples": [
+        {
+          "id": "plan-protected-route",
+          "language": "typescript",
+          "source": "import { resolveRecipe, recipeCapabilityRequirements, recipeCapabilityDiagnostics } from '@cossackframework/scaffold/registry';\n\nconst recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['protected-route'] });\nif (!recipe.resolvedFeatures.includes('protected-route')) throw new Error('Feature was not selected');\nconst requirements = recipeCapabilityRequirements(recipe);\nif (!requirements.some(use => use.feature === 'protected-route' && use.requires.transports?.includes('http'))) {\n  throw new Error('HTTP recipe requirement is missing');\n}\nif (recipeCapabilityDiagnostics(recipe).length) throw new Error('Unexpected host capability failure');\nfor (const feature of ['auth', 'database', 'ui'] as const) {\n  if (!recipe.resolvedFeatures.includes(feature)) throw new Error('Dependency was not selected');\n}\nif (!requirements.some(use => use.requires.cloudflareBindings?.includes('DB'))) throw new Error('D1 binding requirement is missing');\nlet rejected = false;\ntry { resolveRecipe({ adapter: 'node', database: 'd1', features: ['protected-route'] }); } catch { rejected = true; }\nif (!rejected) throw new Error('Unsupported database selection was accepted');\n"
+        }
+      ]
+    },
+    {
+      "id": "recipe-registry-planning",
+      "title": "Plan coherent presets, providers, and feature composition",
+      "summary": "Resolve the full recipe before generating files. Presets seed features; explicit features expand dependencies. Database/auth/UI/dashboard selections are configuration, not independent ad hoc templates. Choose a provider compatible with the adapter and review capability diagnostics before planning writes.",
+      "imports": [
+        "@cossackframework/scaffold/registry"
+      ],
+      "markdown": "Resolve the full recipe before generating files. Presets seed features; explicit features expand dependencies. Database/auth/UI/dashboard selections are configuration, not independent ad hoc templates. Choose a provider compatible with the adapter and review capability diagnostics before planning writes.\n\nThe registry describes minimal/database/auth/full-stack presets, all feature dependencies, database provider adapters, credential/OAuth methods, OAuth provider names, UI themes, and dashboard modules. Resource, mutation, scoped-service and protected-route recipes demonstrate runtime ownership. Database/Studio/auth/dashboard add persistence and policies. Markdown adds the compiler/SSG. Jobs add a queue ledger; schedules add jobs plus explicit cron declarations. Notifications add jobs plus durable attempt/preferences records and explicit EMAIL binding. Workflows require Cloudflare native execution. Turnstile requires server verification. UI/examples are optional application scaffolding.\n\nUse cossack create or add --dry-run --json to inspect dependency changes, owned files, preserved edits and conflicts. Apply after review, install dependencies, then typecheck and inspect generated routes/config. Provider changes and feature removal must use the same manifest-owned planner. Never overwrite unrelated edits with force as a default. Desktop is out of the 0.9.0 verification scope.\n\nThis pure example plans a coherent Cloudflare application and checks service feature dependency closure. It writes nothing and does not validate secrets or remote bindings.",
+      "examples": [
+        {
+          "id": "recipe-registry-planning-example",
+          "language": "typescript",
+          "source": "import { resolveRecipe, resolveFeatures, recipeCapabilityRequirements, recipeCapabilityDiagnostics,\n  PRESET_REGISTRY, DATABASE_PROVIDERS, AUTH_METHODS, OAUTH_PROVIDERS, UI_THEMES, DASHBOARD_MODULES } from '@cossackframework/scaffold/registry';\nconst recipe = resolveRecipe({adapter: 'cloudflare', preset: 'full-stack', database: 'd1',\n  features: ['schedules', 'notifications', 'workflows'], authMethods: ['credentials', 'oauth'], oauth: ['github'], theme: 'blue', dashboardModules: ['users', 'sessions']});\nif (!DATABASE_PROVIDERS[recipe.config.database].adapters.includes(recipe.adapter)) throw Error('Unsupported provider');\nif (!resolveFeatures(['schedules', 'notifications']).includes('jobs')) throw Error('Missing jobs dependency');\nif (!PRESET_REGISTRY['full-stack'] || !AUTH_METHODS.includes('oauth') || !OAUTH_PROVIDERS.includes('github') || !UI_THEMES.includes('blue') || !DASHBOARD_MODULES.includes('sessions')) throw Error('Missing configuration');\nconst requirements = recipeCapabilityRequirements(recipe);\nif (!requirements.length || recipeCapabilityDiagnostics(recipe).length) throw Error('Invalid coherent recipe');\n"
+        }
+      ]
+    },
+    {
+      "id": "conflict-safe-composition",
+      "title": "Compose and migrate through manifest-owned plans",
+      "summary": "Preview file and dependency changes before application composition.",
+      "imports": [
+        "@cossackframework/scaffold"
+      ],
+      "markdown": "The Node-only scaffold root owns filesystem plans, manifest migration and changes. Use the pure registry for selection without Node ambient types. Creation, add, remove and adapter switching share the resolved recipe and conflict planner.\n\nRead the current manifest and detect its runtime before an incremental operation. planChanges reports writes, deletes, preserved files and conflicts. Do not discard conflicts or overwrite application edits automatically. Dependency baselines distinguish generated ownership from user changes; dependency planning preserves a manually changed package version. Pnpm build settings migrate through the same dry-run review.\n\nUse createApp/addFeature/removeFeatureFromProject/switchAdapter with dryRun first; an application tool decides whether to apply the reviewed result. The reusable helper below reads and plans an existing project only. The executable assertion demonstrates dependency ownership preservation without writing files.",
+      "examples": [
+        {
+          "id": "conflict-safe-composition-example",
+          "language": "typescript",
+          "source": "import { readManifest, resolveManifestRecipe, detectProjectRuntime, planChanges, dependencyBaseline, planDependencyChanges } from '@cossackframework/scaffold';\nexport async function previewExisting(projectDir: string) {\n  const manifest: unknown = await readManifest(projectDir);\n  if (!manifest) throw Error('Existing manifest is required');\n  const recipe = resolveManifestRecipe(manifest);\n  const runtime = await detectProjectRuntime(projectDir, manifest);\n  if (runtime !== recipe.adapter) throw Error('Runtime metadata mismatch');\n  return planChanges(projectDir, recipe, manifest);\n}\nconst previous = dependencyBaseline({dependencies: {'example-package': '1.0.0'}});\nconst result = planDependencyChanges({dependencies: {'example-package': '2.0.0'}}, {dependencies: {'example-package': '3.0.0'}}, previous);\nif (result.next.dependencies?.['example-package'] !== '2.0.0' || !result.preserved.length) throw Error('User package edits must be preserved');\n"
+        }
+      ]
+    }
+  ]
+}

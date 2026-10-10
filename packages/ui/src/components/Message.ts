@@ -1,63 +1,51 @@
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
+import type { GlobalAttributes } from "../native-attributes";
 
-export interface MessageProps {
-    /** Sender display name (shown above received bubbles). */
+export type MessageProps = GlobalAttributes<HTMLDivElement> & {
+    /** Optional sender display name, for either variant. */
     name?: string;
-    /** Timestamp shown next to the name. */
+    /** Display text; without datetime this stays ordinary text. */
     time?: string;
-    /** Which side the message appears on. */
+    /** HTML machine-readable timestamp. Requires nonempty time text. */
+    datetime?: string;
     variant?: "sent" | "received";
-    /** Avatar element (pass a component(Avatar, {...})). Hidden when omitted. */
+    /** Avatar content for either variant. Omit when not needed. */
     avatar?: unknown;
-    [key: string]: any;
-}
+};
 
-/**
- * Cossack UI Message — chat message wrapper (avatar + bubble + metadata).
- *
- * Groups an avatar, sender name, and a Bubble into a complete chat row.
- * For "sent" messages the avatar/name are omitted (right-aligned).
- *
- *   ${component(Message, {
- *       name: 'Alice',
- *       time: '10:32 AM',
- *       variant: 'received',
- *       avatar: component(Avatar, { src: '/alice.png', size: 32 }),
- *   }, component(Bubble, { variant: 'received' }, 'Hello!'))}
- */
+/** A native chat row containing optional sender/time/avatar metadata and child content. */
 @Component()
 export class Message extends Cossack {
     declare props: MessageProps;
 
     render() {
-        const { name, time, variant = "received", avatar } = this.props;
-        const isSent = variant === "sent";
-
+        const { name, time, datetime, variant = "received", avatar, ...rest } = this.props;
+        if (!['sent', 'received'].includes(variant)) throw new Error('Message variant must be sent or received.');
+        if ([name, time].some(value => value !== undefined && typeof value !== 'string')) throw new Error('Message name and time must be strings.');
+        if (datetime !== undefined && (typeof datetime !== 'string' || !datetime.trim() || !time?.trim())) throw new Error('Message datetime requires nonempty time and datetime strings.');
+        const sent = variant === 'sent';
         return html`
             <div class=${classMap({
-                "cs-message": true,
-                "cs-message--sent": isSent,
-                "cs-message--received": !isSent,
-                "flex gap-2.5": true,
-                "flex-row-reverse": isSent,
-            })}>
-                ${avatar != null && !isSent
-                    ? html`<div class="cs-message__avatar shrink-0 self-end">${avatar}</div>`
-                    : null}
+                'cs-message flex gap-2.5 w-full min-w-0': true,
+                'cs-message--sent flex-row-reverse': sent,
+                'cs-message--received': !sent,
+            })} ...=${rest}>
+                ${avatar != null ? html`<div class="cs-message__avatar shrink-0 self-end">${avatar}</div>` : null}
                 <div class=${classMap({
-                    "cs-message__body": true,
-                    "flex flex-col gap-1": true,
-                    "items-end": isSent,
-                    "items-start": !isSent,
-                    "max-w-[80%]": true,
+                    'cs-message__body flex flex-col gap-1 w-full min-w-0 max-w-[80%] [--cs-bubble-max-width:100%]': true,
+                    'items-end': sent,
+                    'items-start': !sent,
                 })}>
-                    ${(name || time) && !isSent
-                        ? html`<div class="cs-message__meta flex items-center gap-2 px-1">
-                              ${name ? html`<span class="text-xs font-medium text-foreground">${name}</span>` : null}
-                              ${time ? html`<span class="text-xs text-muted-foreground">${time}</span>` : null}
-                          </div>`
-                        : null}
+                    ${name || time ? html`<div class=${classMap({
+                        'cs-message__meta flex flex-wrap items-center gap-2 px-1 min-w-0 max-w-full [overflow-wrap:anywhere]': true,
+                        'justify-end': sent,
+                    })}>
+                        ${name ? html`<span class="cs-message__name text-xs font-medium text-foreground min-w-0">${name}</span>` : null}
+                        ${time ? html`<span class="cs-message__time text-xs text-muted-foreground min-w-0">
+                            ${datetime ? html`<time datetime=${datetime}>${time}</time>` : html`<span>${time}</span>`}
+                        </span>` : null}
+                    </div>` : null}
                     ${this.children}
                 </div>
             </div>

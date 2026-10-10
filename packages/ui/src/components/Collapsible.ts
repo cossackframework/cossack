@@ -1,36 +1,22 @@
 import { html } from "@cossackframework/renderer";
 import { Cossack, Component, ClientState, Client, createRef } from "@cossackframework/core";
 
-import { DisclosureController, disclosureStyle } from "../internal/disclosure";
+import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 
-export interface CollapsibleProps {
-    /** Default open state for uncontrolled usage. */
-    defaultOpen?: boolean;
-    /** Controlled open state. */
-    open?: boolean;
-    /** Trigger content (usually a Button) that toggles the collapsible. */
-    trigger?: unknown;
-    /** Callback fired when the open state changes. */
-    onToggle?: (open: boolean) => void;
-    [key: string]: any;
-}
+export type CollapsibleProps = DisclosureProps & {
+    /** Text inside the native trigger button. Style it with triggerProps. */
+    trigger: string;
+};
 
-/**
- * Cossack UI Collapsible — expand/collapse container with smooth animation.
- *
- * Similar to Accordion but without the summary/trigger — the parent controls
- * what triggers the toggle (usually a Button). Uses the same @ClientState +
- * height animation as Accordion, with unclipped content while open.
- *
- *   ${component(Collapsible, { trigger: component(Button, {}, 'Toggle') },
- *       html\`<p>Hidden content</p>\`)}
- */
+/** Native disclosure button with caller-owned content and optional controlled state. */
 @Component()
 export class Collapsible extends Cossack {
     declare props: CollapsibleProps;
 
     @ClientState() private internalOpen = false;
     @ClientState() private userInteracted = false;
+    private initialOpen?: boolean;
+    private triggerButton?: HTMLButtonElement;
     contentRef = createRef<HTMLDivElement>();
     wrapperRef = createRef<HTMLDivElement>();
     private disclosure = new DisclosureController(this, () => ({
@@ -40,21 +26,26 @@ export class Collapsible extends Cossack {
     }));
 
     private get isOpen(): boolean {
+        this.initialOpen ??= !!this.props.defaultOpen;
         return this.props.open !== undefined ? !!this.props.open
-            : this.userInteracted ? this.internalOpen : !!this.props.defaultOpen;
+            : this.userInteracted ? this.internalOpen : this.initialOpen;
     }
 
     render() {
-        const { trigger } = this.props;
+        const { id, trigger, triggerProps = {}, panelProps = {}, disabled,
+            open: _open, defaultOpen: _default, onToggle: _toggle, ...rest } = this.props;
+        validateDisclosure(id, trigger);
 
         const open = this.isOpen;
+        restoreDisclosureFocus(open, this.wrapperRef.value, this.triggerButton);
 
         return html`
-            <div class="cs-collapsible w-full">
-                <div class="cs-collapsible__trigger" @click=${(e: Event) => { e.stopPropagation(); this.toggle(); }}>
-                    ${trigger}
-                </div>
-                <div class="cs-collapsible__content-wrapper" ref=${this.wrapperRef}
+            <div id=${id} class="cs-collapsible w-full" ...=${rest}>
+                <button ref=${(element: Element) => { this.triggerButton = element as HTMLButtonElement; }}
+                    type="button" id=${`${id}-trigger`} ?disabled=${disabled} aria-expanded=${open} aria-controls=${`${id}-panel`}
+                    class="cs-collapsible__trigger inline-flex items-center rounded-md border px-3 py-2 text-sm focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50 disabled:cursor-not-allowed"
+                    ...=${{ ...triggerProps, '@click': disclosureClick(triggerProps['@click'], () => this.toggle()) }}>${trigger}</button>
+                <div id=${`${id}-panel`} ...=${panelProps} class="cs-collapsible__content-wrapper" ref=${this.wrapperRef}
                     style=${disclosureStyle(open)} ?inert=${!open} aria-hidden=${open ? "false" : "true"}>
                     <div class="cs-collapsible__content-wrapper-inner" ref=${this.contentRef} style="display: flow-root;">
                         ${this.children}
@@ -66,6 +57,7 @@ export class Collapsible extends Cossack {
 
     @Client()
     toggle() {
+        if (this.props.disabled || this.triggerButton?.matches(':disabled')) return;
         const currentOpen = this.isOpen;
 
         if (this.props.open !== undefined) {
@@ -83,5 +75,6 @@ export class Collapsible extends Cossack {
 
     onCleanup() {
         this.disclosure.hostDisconnected();
+        this.triggerButton = undefined; this.wrapperRef.value = undefined; this.contentRef.value = undefined;
     }
 }

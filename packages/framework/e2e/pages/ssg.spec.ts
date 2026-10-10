@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 /**
  * End-to-end tests for Static Site Generation (SSG).
@@ -89,7 +90,7 @@ test.describe('SSG serving (preview server)', () => {
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('/ssg-demo/');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     await expect(page).toHaveTitle(/SSG Demo/);
     expect(errors).toEqual([]);
   });

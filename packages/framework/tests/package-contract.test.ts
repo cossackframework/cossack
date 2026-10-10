@@ -9,6 +9,18 @@ const require = createRequire(import.meta.url);
 const fs = require('node:fs') as typeof import('node:fs');
 const packages = ['core', 'framework', 'auth', 'node-adapter', 'database'] as const;
 
+describe('UI Solar Icons package contract', () => {
+  it('allows compatible Solar Icons patch releases for consumers and development', () => {
+    const uiPackage = JSON.parse(fs.readFileSync(
+      path.resolve(process.cwd(), '../ui/package.json'),
+      'utf8',
+    ));
+
+    expect(uiPackage.peerDependencies['@cossackframework/solar-icons']).toBe('^0.7.1');
+    expect(uiPackage.devDependencies['@cossackframework/solar-icons']).toBe('^0.7.1');
+  });
+});
+
 describe('Hono package contract', () => {
   it.each(packages)('%s uses the common Hono peer supplied by the consumer', (packageName) => {
     const packageJson = JSON.parse(fs.readFileSync(
@@ -65,7 +77,11 @@ describe('framework publication contract', () => {
       'vite-ssg-plugin.js',
       'ssg-entry.js',
       'ssg-renderer.js',
+      'ssg-request.js',
+      'assets.js',
       'sitemap-generator.js',
+      'markdown-processor.js',
+      'storage/s3-provider.js',
       'client/devtools.js',
     ]) {
       expect(fs.existsSync(path.join(distDir, relativePath)), relativePath).toBe(true);
@@ -74,7 +90,6 @@ describe('framework publication contract', () => {
       'App.js',
       'index.js',
       'demo-catalog.js',
-      'markdown-processor.js',
       'storage/s3.js',
       'models/user.js',
       'bootstrap/middlewares.js',
@@ -86,19 +101,36 @@ describe('framework publication contract', () => {
     }
   });
 
-  it('keeps only runtime libraries as production dependencies', () => {
+  it('does not compile the demo entry through generated Worker binding types', () => {
+    const types = fs.readFileSync(path.resolve(process.cwd(), '.cossack/library-worker-configuration.d.ts'), 'utf8');
+    expect(types).toContain('ASSETS: Fetcher');
+    expect(types).toContain('COSSACK_OBJECT: DurableObjectNamespace');
+    expect(types).not.toMatch(/import\(["'][^"']*src\/index["']\)/);
+  });
+
+  it('declares portable provider and published Markdown dependencies while excluding demo libraries', () => {
     expect(Object.keys(frameworkPackage.dependencies).sort()).toEqual([
+      '@aws-sdk/client-s3',
       '@cossackframework/core',
       '@cossackframework/renderer',
+      '@types/mdast',
+      'rehype-raw',
+      'rehype-slug',
+      'rehype-stringify',
+      'remark-frontmatter',
+      'remark-gfm',
+      'remark-parse',
+      'remark-rehype',
+      'remark-sugar-high',
+      'remark-toc',
+      'unified',
+      'vfile-matter',
     ]);
     for (const name of [
-      '@aws-sdk/client-s3',
       '@aws-sdk/s3-request-presigner',
       '@cossackframework/solar-icons',
       '@cossackframework/ui',
-      'remark-parse',
       'tsx',
-      'unified',
     ]) {
       expect(frameworkPackage.dependencies).not.toHaveProperty(name);
       expect(frameworkPackage.devDependencies).toHaveProperty(name);

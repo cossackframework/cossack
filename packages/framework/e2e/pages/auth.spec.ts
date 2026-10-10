@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 
 test.describe('Authentication Pages', () => {
   test.describe('Login Page', () => {
@@ -18,18 +18,18 @@ test.describe('Authentication Pages', () => {
       await page.waitForURL('/register');
     });
 
-    test('should submit login form', async ({ page }) => {
-      const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-      const passwordInput = page.locator('input[type="password"]').first();
+    test('should expose labelled fields; Sign In is a non-submitting demo button', async ({ page }) => {
+      await page.getByLabel('Email').fill('test@example.com');
+      await page.getByLabel('Password').fill('password123');
+      await expect(page.getByLabel('Email')).toHaveValue('test@example.com');
+      await expect(page.getByLabel('Password')).toHaveAttribute('type', 'password');
 
-      await emailInput.fill('test@example.com');
-      await passwordInput.fill('password123');
-
-      const submitButton = page.locator('button[type="submit"], button:has-text("Login"), button:has-text("Sign in")');
-      if (await submitButton.isVisible()) {
-        await submitButton.click();
-        await page.waitForTimeout(500);
-      }
+      const signIn = page.getByRole('button', { name: 'Sign In' });
+      await expect(signIn).toHaveAttribute('type', 'button');
+      await signIn.click();
+      // The demo form has no handler: clicking must not submit/navigate.
+      await expect(page).toHaveURL(/\/login$/);
+      await expect(page.getByLabel('Email')).toHaveValue('test@example.com');
     });
   });
 
@@ -50,23 +50,18 @@ test.describe('Authentication Pages', () => {
       await page.waitForURL('/login');
     });
 
-    test('should submit registration form', async ({ page }) => {
-      const nameInput = page.locator('input[name="name"], input[name="fullName"]').first();
-      const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-      const passwordInput = page.locator('input[type="password"]').first();
+    test('should expose labelled fields; Register is a non-submitting demo button', async ({ page }) => {
+      await expect(page.getByRole('heading', { name: 'Create account' })).toBeVisible();
+      await page.getByLabel('Full name').fill('Test User');
+      await page.getByLabel('Email').fill('newuser@example.com');
+      await page.getByLabel('Password').fill('SecurePass123!');
+      await expect(page.getByLabel('Full name')).toHaveValue('Test User');
 
-      if (await nameInput.isVisible()) {
-        await nameInput.fill('Test User');
-      }
-
-      await emailInput.fill('newuser@example.com');
-      await passwordInput.fill('SecurePass123!');
-
-      const submitButton = page.locator('button[type="submit"], button:has-text("Register"), button:has-text("Sign up")');
-      if (await submitButton.isVisible()) {
-        await submitButton.click();
-        await page.waitForTimeout(500);
-      }
+      const register = page.getByRole('main').getByRole('button', { name: 'Register' });
+      await expect(register).toHaveAttribute('type', 'button');
+      await register.click();
+      await expect(page).toHaveURL(/\/register$/);
+      await expect(page.getByLabel('Email')).toHaveValue('newuser@example.com');
     });
   });
 

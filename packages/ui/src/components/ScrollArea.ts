@@ -1,39 +1,30 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, IfDefinedResult } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
+import type { GlobalAttributes } from "../native-attributes";
 
-export interface ScrollAreaProps {
-    /** Fixed height for the scroll area (CSS value). */
-    height?: string;
-    [key: string]: any;
-}
+export type ScrollAreaProps = Omit<GlobalAttributes<HTMLDivElement>, 'role' | 'aria-label' | 'aria-labelledby'> & {
+    /** Accessible name for this scrollable region. */
+    label: string;
+    /** Viewport height. Numbers are nonnegative CSS pixels; strings are CSS lengths. */
+    height?: number | string;
+};
 
-/**
- * Cossack UI ScrollArea — styled scrollable container.
- *
- * Uses native scrolling with custom scrollbar styling via CSS.
- *
- *   ${component(ScrollArea, { height: '300px' }, html\`<p>Long content...</p>\`)}
+/** Native scroll viewport. Attributes, styles and events all target the scrolling div.
+ * Keyboard focus defaults to tabindex=0; callers can set -1 when another control
+ * supplies keyboard access. Keep the region name short and specific.
  */
 @Component()
 export class ScrollArea extends Cossack {
     declare props: ScrollAreaProps;
 
     render() {
-        const { height = "auto", ...rest } = this.props;
-
-        const wrapperClasses = classMap({
-            "cs-scroll-area": true,
-            "relative": true,
-        });
-
-        const viewportStyle = height !== "auto" ? `height:${height};overflow-y:auto;` : "overflow-y:auto;";
-
-        return html`
-            <div class=${wrapperClasses} ...=${rest}>
-                <div class="cs-scroll-area__viewport" style=${viewportStyle}>
-                    ${this.children}
-                </div>
-            </div>
-        `;
+        const { label, height = "auto", style, tabindex = 0, ...rest } = this.props;
+        if (typeof label !== 'string' || !label.trim()) throw new Error('ScrollArea requires a nonempty label.');
+        if (!(typeof height === 'number' && Number.isFinite(height) && height >= 0) && !(typeof height === 'string' && height.trim())) {
+            throw new Error('ScrollArea height must be a nonnegative finite number or nonempty CSS length.');
+        }
+        const suppliedStyle = style instanceof IfDefinedResult ? style.value : style;
+        const viewportStyle = `height:${typeof height === 'number' ? `${height}px` : height};overflow:auto;${typeof suppliedStyle === 'string' ? suppliedStyle : ''}`;
+        return html`<div class="cs-scroll-area cs-scroll-area__viewport relative focus-visible:outline-2 focus-visible:outline-ring" style=${viewportStyle} ...=${rest} role="region" aria-label=${label} tabindex=${tabindex}>${this.children}</div>`;
     }
 }

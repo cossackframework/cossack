@@ -4,56 +4,70 @@
  * Each command module exports `async function run(args, ctx): Promise<number>`
  * where `args` is the remaining argv after the command/subcommand and `ctx`
  * holds shared flags. Returns a process exit code.
+ *
+ * Command modules are imported lazily on dispatch so that cheap commands
+ * (`version`, `--help`, option validation) never pay for loading Vite, the
+ * TypeScript compiler, scaffold recipes or provider SDKs.
  */
-import { versionCommand } from './commands/version.js';
-import { routesCommand } from './commands/routes.js';
-import { generateCommand } from './commands/generate.js';
+import { commandSpecs } from './command-specs.js';
 import { renderBanner } from './banner.js';
-import { deleteCommand } from './commands/delete.js';
-import { createCommand } from './commands/create.js';
-import { ssgCommand } from './commands/ssg.js';
-import { addCommand } from './commands/add.js';
-import { removeCommand } from './commands/remove.js';
-import { langCommand } from './commands/lang.js';
-import { migrationCommand } from './commands/migration.js';
-import { seederCommand } from './commands/seeder.js';
-import { schemaCommand } from './commands/schema.js';
-import { devCommand } from './commands/dev.js';
-import { buildCommand } from './commands/build.js';
-import { startCommand } from './commands/start.js';
-import { infoCommand } from './commands/info.js';
-import { upgradeCommand } from './commands/upgrade.js';
-import { imageCommand } from './commands/image.js';
-import { adapterCommand } from './commands/adapter.js';
-import { studioCommand } from './commands/studio.js';
-import { parseFlags } from './flags.js';
+import { parseFlags, requestsJSON, requestsHelp } from './flags.js';
+import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from './output.js';
 
-const COMMANDS = {
+/** name -> [module loader, run export, help export] */
+const LOADERS = {
   // lifecycle
-  dev: { run: devCommand, aliases: [] },
-  build: { run: buildCommand, aliases: [] },
-  start: { run: startCommand, aliases: [] },
+  dev: [() => import('./commands/dev.js'), 'devCommand', 'devHelp'],
+  build: [() => import('./commands/build.js'), 'buildCommand', 'buildHelp'],
+  start: [() => import('./commands/start.js'), 'startCommand', 'startHelp'],
+  deploy: [() => import('./commands/deploy.js'), 'deployCommand', 'deployHelp'],
+  preview: [() => import('./commands/preview.js'), 'previewCommand', 'previewHelp'],
+  resources: [() => import('./commands/resources.js'), 'resourcesCommand', 'resourcesHelp'],
   // scaffolding
-  create: { run: createCommand, aliases: [] },
-  generate: { run: generateCommand, aliases: ['g'] },
-  delete: { run: deleteCommand, aliases: ['d'] },
-  add: { run: addCommand, aliases: [] },
-  remove: { run: removeCommand, aliases: [] },
-  adapter: { run: adapterCommand, aliases: [] },
-  lang: { run: langCommand, aliases: [] },
-  migration: { run: migrationCommand, aliases: ['migrate'] },
-  seeder: { run: seederCommand, aliases: ['seed'] },
-  schema: { run: schemaCommand, aliases: [] },
-  studio: { run: studioCommand, aliases: [] },
+  create: [() => import('./commands/create.js'), 'createCommand', 'createHelp'],
+  generate: [() => import('./commands/generate.js'), 'generateCommand', 'generateHelp'],
+  delete: [() => import('./commands/delete.js'), 'deleteCommand', 'deleteHelp'],
+  add: [() => import('./commands/add.js'), 'addCommand', 'addHelp'],
+  remove: [() => import('./commands/remove.js'), 'removeCommand', 'removeHelp'],
+  adapter: [() => import('./commands/adapter.js'), 'adapterCommand', 'adapterHelp'],
+  lang: [() => import('./commands/lang.js'), 'langCommand', 'langHelp'],
+  migration: [() => import('./commands/migration.js'), 'migrationCommand', 'migrationHelp'],
+  seeder: [() => import('./commands/seeder.js'), 'seederCommand', 'seederHelp'],
+  schema: [() => import('./commands/schema.js'), 'schemaCommand', 'schemaHelp'],
+  studio: [() => import('./commands/studio.js'), 'studioCommand', 'studioHelp'],
+  docs: [() => import('./commands/docs.js'), 'docsCommand', 'docsHelp'],
+  traces: [() => import('./commands/traces.js'), 'tracesCommand', 'tracesHelp'],
+  'test-results': [() => import('./commands/test-results.js'), 'testResultsCommand', 'testResultsHelp'],
   // introspection
-  routes: { run: routesCommand, aliases: [] },
-  info: { run: infoCommand, aliases: [] },
-  version: { run: versionCommand, aliases: ['v'] },
+  inspect: [() => import('./commands/inspect.js'), 'inspectCommand', 'inspectHelp'],
+  check: [() => import('./commands/inspect.js'), 'checkCommand', 'checkHelp'],
+  routes: [() => import('./commands/routes.js'), 'routesCommand', 'routesHelp'],
+  config: [() => import('./commands/config.js'), 'configCommand', 'configHelp'],
+  info: [() => import('./commands/info.js'), 'infoCommand', 'infoHelp'],
+  version: [() => import('./commands/version.js'), 'versionCommand', 'versionHelp'],
   // engine / maintenance
-  ssg: { run: ssgCommand, aliases: [] },
-  upgrade: { run: upgradeCommand, aliases: [] },
-  image: { run: imageCommand, aliases: [] },
+  ssg: [() => import('./commands/ssg.js'), 'ssgCommand', 'ssgHelp'],
+  upgrade: [() => import('./commands/upgrade.js'), 'upgradeCommand', 'upgradeHelp'],
+  image: [() => import('./commands/image.js'), 'imageCommand', 'imageHelp'],
 };
+
+/**
+ * Registry of commands. `load()` imports the command module once and resolves
+ * to a stable `{ run, help }` object (stable so tests can spy on it).
+ */
+const COMMANDS = {};
+for (const [name, [importModule, runName, helpName]] of Object.entries(LOADERS)) {
+  const spec = commandSpecs[name];
+  let loaded;
+  COMMANDS[name] = {
+    spec,
+    aliases: spec.aliases,
+    load() {
+      loaded ??= importModule().then(mod => ({ run: mod[runName], help: mod[helpName] }));
+      return loaded;
+    },
+  };
+}
 
 function resolveCommand(name) {
   if (!name) return undefined;
@@ -67,11 +81,12 @@ export async function dispatch(argv) {
   let [raw, ...rest] = argv;
 
   if (raw === '--help' || raw === '-h' || raw === 'help' || raw === 'h') {
-    printHelp();
+    if (requestsJSON(rest)) writeResult('cossack', { data: { help: printHelp(true) } });
+    else printHelp();
     return 0;
   }
   if (raw === '--version' || raw === '-V') {
-    return versionCommand([], await buildCtx([]));
+    return dispatch(['version', ...rest]);
   }
 
   // Support colon-joined form for namespaced commands: `cossack image:optimize`
@@ -87,64 +102,132 @@ export async function dispatch(argv) {
 
   const command = resolveCommand(raw);
   if (!command) {
+    if (requestsJSON(rest)) {
+      return commandFailure({ flags: { json: true } }, raw ?? 'cossack', 'COSSACK_COMMAND_UNKNOWN',
+        `Unknown command: ${raw || '(none)'}. Run cossack --help.`);
+    }
     console.error(`Unknown command: ${raw || '(none)'}`);
     printHelp();
     return 1;
   }
 
-  const { args, flags } = parseFlags(rest);
-  const ctx = await buildCtx(flags);
   const def = COMMANDS[command];
-  return def.run(args, ctx);
+  if (requestsHelp(rest)) {
+    const loaded = await def.load();
+    if (requestsJSON(rest)) writeResult(command, { data: { help: loaded.help() } });
+    else console.log(loaded.help());
+    return 0;
+  }
+  // Preserve the downstream tool's argument syntax and ordering verbatim.
+  // Framework parsing otherwise consumes values such as --mode and --port.
+  if (def.spec.forwardsArgs) {
+    const toolArgs = [];
+    let json = false;
+    let forwarding = false;
+    let environment;
+    for (let index = 0; index < rest.length; index++) {
+      const argument = rest[index];
+      if (argument === '--') forwarding = true;
+      if (!forwarding && def.spec.flags?.env && (argument === '--env' || argument.startsWith('--env='))) {
+        const value = argument === '--env' ? rest[++index] : argument.slice('--env='.length);
+        if (value === undefined || !value.trim() || value.startsWith('-')) {
+          return commandFailure({ flags: { json: requestsJSON(rest) } }, command,
+            'COSSACK_OPTION_VALUE_REQUIRED', '--env requires a nonempty Cloudflare environment name.');
+        }
+        if (environment !== undefined) {
+          return commandFailure({ flags: { json: requestsJSON(rest) } }, command,
+            'COSSACK_OPTION_REPEATED', '--env accepts one Cloudflare environment name.');
+        }
+        environment = value;
+        continue;
+      }
+      if (!forwarding && (argument === '--json' || argument === '--json=true')) json = true;
+      else if (!forwarding && argument === '--json=false') json = false;
+      else if (!forwarding && argument.startsWith('--json=')) {
+        return commandFailure({ flags: { json: requestsJSON(rest) } }, command,
+          'COSSACK_OPTION_INVALID', '--json expects true or false.');
+      } else toolArgs.push(argument);
+    }
+    const loaded = await def.load();
+    return loaded.run(toolArgs, await buildCtx({ json, ...(environment === undefined ? {} : { env: environment }) }));
+  }
+  let parsed;
+  try { parsed = parseFlags(rest, def.spec); }
+  catch (error) {
+    if (requestsJSON(rest)) {
+      writeResult(command, { ok: false, diagnostics: error.diagnostics ?? [{
+        code: error.code ?? 'COSSACK_OPTION_INVALID', severity: 'error', message: error.message,
+        ...(error.supported ? { supported: error.supported } : {}),
+      }] });
+      return 1;
+    }
+    return commandFailure({ flags: { json: requestsJSON(rest) } }, command, error.code ?? 'COSSACK_OPTION_INVALID', error.message);
+  }
+  const { args, flags } = parsed;
+  const ctx = await buildCtx(flags);
+  try { return await (await def.load()).run(args, ctx); }
+  catch (error) { return commandFailure(ctx, command, diagnosticCode(error),
+    ctx.flags.json === true ? diagnosticMessage(error) : error.message); }
 }
 
 async function buildCtx(flags) {
   return {
     flags,
     cwd: process.cwd(),
-    force: flags.force === true || flags.f === true,
+    force: flags.force === true,
     dryRun: flags['dry-run'] === true,
   };
 }
 
-function printHelp() {
-  console.log(`${renderBanner()}
+function printHelp(asText = false) {
+  const help = `${renderBanner()}
 
 cossack <command> [args] [options]
 
 Commands:
   create <name>                Scaffold a new Cossack project.
   dev                          Start the dev server (vite dev).
-  build                        Production build (vite build && cossack ssg).
+  build                        Production build, including SSG (vite build).
   start                        Start the production server.
+  deploy                       Build and deploy to Cloudflare (--env, --dry-run, --json).
+  preview <create|inspect|cleanup> Native isolated previews and verified cleanup.
+  resources <plan|apply>        Select account-owned bindings (--account, --env, --select, --verify).
+  inspect cloudflare           Show resolved Cloudflare configuration (--env, --json).
+  check cloudflare             Validate local Cloudflare configuration without writes.
   generate <type> <name> (g)   Generate page/component/layout/middleware/service/model/migration/seeder.
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
   add <feature>                Add a feature (ui, database, studio, auth, dashboard, markdown, examples).
   remove <feature>             Remove a feature and its dependents.
-  adapter <node|cloudflare|deno> Switch the active runtime adapter.
+  adapter <node|cloudflare>    Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,
-                               squash, up, down, status, check, baseline.
-  schema <sub>                 ORM schema commands: pull, diff, check.
+                               squash, up, down, status, check, baseline, plan.
+  schema <sub>                 ORM schema commands: inspect, pull, diff, check.
   seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.
   routes                       List all routes in the project.
+  config                       List configuration factory type origins; --generate emits types.
   upgrade [dir]                Upgrade Cossack deps + report template drift.
   ssg                          Pre-render pages marked ssg:true to static HTML.
   image <subcommand>           Image tooling. Subcommands: optimize.
+  docs                         Read offline installed-version API export and command catalogs.
+  traces                       Read recorded development snapshots and timelines.
+  test-results                 Read recorded test evidence and source freshness.
   info                         Print system/environment info for bug reports.
   version (v)                  Print the CLI version.
 
 Options:
   --force, -f          Overwrite existing files / skip confirmation.
-  --dry-run            Show what would happen without writing.
+  --dry-run            Preview command effects (see command-specific help).
   --help, -h           Show this help.
   --version, -V        Print the CLI version.
 
-Run \`cossack <command> --help\` for command-specific options.`);
+Run \`cossack <command> --help\` for command-specific options.`;
+  if (asText) return help;
+  console.log(help);
 }
 
 export { COMMANDS, printHelp };

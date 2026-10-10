@@ -241,3 +241,14 @@ export const entities = [User, Post, Role, UserProfile] as const;
 
 ORM creation validates missing targets, invalid inverse properties, and
 unresolved join metadata.
+
+## Inspect finalized relationships
+
+`orm.inspectMetadata()` returns a detached, frozen description of registered
+entities, columns, indexes, and resolved relationship fields. It includes both
+ends of relations and physical join names, but excludes constructors, callbacks,
+and default values. Use it for tooling without mutating ORM metadata.
+
+Registration rejects missing referenced fields, missing inverse relations,
+incompatible inverse relation kinds, and inverses that point at another entity.
+These errors identify both entity and field names before database statements run.

@@ -188,7 +188,11 @@ class MySQLDriver implements Driver {
     operation: QueryOperation = "raw",
   ): Promise<QueryResult<Row>> {
     const start = performance.now();
-    const [raw] = await this.connection.execute(query.text, query.parameters);
+    // MySQL does not prepare SAVEPOINT statements. Framework-owned savepoint
+    // control has no parameters and must use the text protocol on this connection.
+    const savepoint = query.parameters.length === 0 && /^\s*(?:SAVEPOINT|RELEASE\s+SAVEPOINT|ROLLBACK\s+TO\s+SAVEPOINT)\b/i.test(query.text);
+    const [raw] = (savepoint ? await this.connection.query(query.text)
+      : await this.connection.execute(query.text, query.parameters)) as [unknown, unknown];
     const object = raw as { affectedRows?: number; insertId?: number };
     return {
       rows: Array.isArray(raw) ? raw as Row[] : [],
@@ -286,3 +290,5 @@ export async function mysql(
 
 export { SQLiteDriver, PostgresDriver, MySQLDriver };
 export { turso, type TursoOptions, type TursoEmbeddedOptions, type TursoRemoteOptions } from "./turso.js";
+export { SQL } from "../sql/node-client.js";
+export type { SQLClient, SQLOptions } from "../sql/client.js";

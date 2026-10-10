@@ -58,6 +58,27 @@ introspection with the logical schema emitted by decorators.
 
 There are no postinstall, dev-start, or request-start migration hooks.
 
+## Environments and plans
+
+```sh
+pnpm exec cossack migration plan --env staging --target remote --json
+pnpm exec cossack migration up --env staging --target remote --dry-run --json
+pnpm exec cossack migration up --env staging --target remote
+```
+
+Targets default to local. Generated D1 tooling selects the requested
+environment with the project's Wrangler and shares local state with Wrangler
+development. Remote D1 commands require a provisioned database ID.
+
+Plans report SQL, destructive operations, parameter counts, and completeness.
+They do not create migration history or apply queued SQL. A callback that needs
+live database queries produces an incomplete plan. `--direction down` previews
+the most recent reversal. Seed dry runs list selected callbacks without running
+them and do not claim to predict their SQL.
+
+JSON commands emit versioned results with target context and diagnostics.
+Migration status and checks read existing history without creating it.
+
 ## Migrating an older application
 
 Back up the database, convert row interfaces and queries to decorated models,

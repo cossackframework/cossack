@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
     base64url,
     constantTimeEqual,
@@ -6,6 +6,8 @@ import {
     signCookieValue,
     verifyCookieValue,
 } from '../src/oauth/state';
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('base64url', () => {
     it('encodes bytes without padding', () => {
@@ -69,12 +71,13 @@ describe('signCookieValue / verifyCookieValue', () => {
     it('round-trips a payload', async () => {
         const token = await signCookieValue(payload, secret);
         const decoded = await verifyCookieValue(token, secret);
-        expect(decoded).toEqual(payload);
+        expect(decoded).toEqual({ ...payload, expiresAt: expect.any(Number) });
+        expect(Object.isFrozen(decoded)).toBe(true);
     });
 
     it('round-trips UTF-8 payloads', async () => {
         const payload = { state: 'café 👋', codeVerifier: '東京' };
-        expect(await verifyCookieValue(await signCookieValue(payload, secret), secret)).toEqual(payload);
+        expect(await verifyCookieValue(await signCookieValue(payload, secret), secret)).toEqual({ ...payload, expiresAt: expect.any(Number) });
     });
 
     it('rejects a tampered payload', async () => {
@@ -116,4 +119,17 @@ describe('signCookieValue / verifyCookieValue', () => {
 it('rejects a correctly signed but expired OAuth state cookie', async () => {
     const token = await signCookieValue({ state: 'nonce', codeVerifier: 'verifier' }, 'a-strong-secret-for-state', -1);
     expect(await verifyCookieValue(token, 'a-strong-secret-for-state')).toBeNull();
+});
+
+it.each([NaN, Infinity, 0, 1.5, 8_640_000_000_000_001])('rejects a signed invalid absolute expiry (%s)', async expiresAt => {
+    const secret = 'a-strong-secret-for-state';
+    const token = await signCookieValue({ state: 'nonce', codeVerifier: 'verifier' }, secret, 600, expiresAt);
+    expect(await verifyCookieValue(token, secret)).toBeNull();
+});
+
+it('rejects oversized cookies and noncanonical signatures before HMAC work', async () => {
+    const sign = vi.spyOn(crypto.subtle, 'sign');
+    expect(await verifyCookieValue('a'.repeat(4097) + '.' + 'a'.repeat(43), 'a-strong-secret-for-state')).toBeNull();
+    expect(await verifyCookieValue('payload.short', 'a-strong-secret-for-state')).toBeNull();
+    expect(sign).not.toHaveBeenCalled();
 });

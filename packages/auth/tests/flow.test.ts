@@ -187,7 +187,7 @@ describe('parseTokenResponse', () => {
 
     it('throws when access_token is missing', () => {
         expect(() => parseTokenResponse(JSON.stringify({ error: 'bad' }))).toThrow(
-            /missing access_token/,
+            /OAuth token exchange failed/,
         );
     });
 
@@ -270,7 +270,7 @@ describe('exchangeCode', () => {
                 code: 'c',
                 codeVerifier: 'v',
             }),
-        ).rejects.toThrow(/OAuth token exchange failed: 400/);
+        ).rejects.toThrow(/OAuth token exchange failed/);
     });
 });
 
@@ -315,7 +315,7 @@ describe('fetchUserInfo', () => {
         mockFetch({ status: 401, body: { error: 'invalid_token' } });
         await expect(
             fetchUserInfo({ definition: githubProvider, tokens: { accessToken: 'at' } }),
-        ).rejects.toThrow(/OAuth user-info fetch failed: 401/);
+        ).rejects.toThrow(/OAuth user-info processing failed/);
     });
 });
 

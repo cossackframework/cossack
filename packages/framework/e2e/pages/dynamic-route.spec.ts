@@ -1,4 +1,5 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Dynamic Route Page', () => {
   test('should display route parameter in page', async ({ page }) => {
@@ -22,7 +23,7 @@ test.describe('Dynamic Route Page', () => {
   test('should update state via WebSocket', async ({ page }) => {
     await page.goto('/hello/World');
 
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     const body = await page.locator('body').textContent();
     expect(body).toContain('World');

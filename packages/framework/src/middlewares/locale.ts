@@ -19,11 +19,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import {
     detectBrowserLocale,
-    registerLocale,
-    getLocaleCatalog,
-    setSupportedLocales,
-    setDefaultLocale,
-    normalizeLocale,
+    type TranslationCatalog,
     LOCALE_COOKIE_NAME,
     DEFAULT_LOCALE,
 } from '@cossackframework/core';
@@ -38,33 +34,20 @@ import { config } from '../config.js';
 export interface LocaleMiddlewareOptions {
     /** Resolve from `Accept-Language` when no cookie is set. Default: false. */
     autoDetectBrowser?: boolean;
+    /** Authored URL/content identity takes precedence over visitor preferences. */
+    resolveLocale?: (context: Context) => string | undefined;
 }
 
-/**
- * One-time synchronization of the build-time locale config into core's i18n
- * runtime. Without this, server-side `getSupportedLocales()` / `getDefaultLocale()`
- * (used by the hydration payload builder and the `__()` fallback chain) would
- * return the hardcoded defaults instead of the real values.
- *
- * Also resolves a **guaranteed-supported** default: the build default is only
- * used when it actually has a catalog; otherwise the first supported locale
- * wins. This prevents scenarios like `cossack lang publish --locale=es` (only
- * `es.json`) from anchoring the fallback chain to a catalog-less `'en'`.
- */
-let coreSeeded = false;
-let resolvedDefaultLocale = DEFAULT_LOCALE;
-function seedCoreI18n(requestedDefault?: string): void {
-    if (coreSeeded) return;
-    coreSeeded = true;
-    setSupportedLocales(supportedLocales);
+/** A request's fallback follows its own environment, never the first request. */
+function resolveDefaultLocale(requested?: string): string {
+    const preferred = normalizeRequestLocale(requested || buildDefaultLocale);
+    return preferred && supportedLocales.includes(preferred) ? preferred : supportedLocales[0] || DEFAULT_LOCALE;
+}
 
-    const envDefault = requestedDefault ? normalizeLocale(requestedDefault) : undefined;
-    const preferred = envDefault || buildDefaultLocale;
-    resolvedDefaultLocale =
-        supportedLocales.includes(preferred)
-            ? preferred
-            : supportedLocales[0] || DEFAULT_LOCALE;
-    setDefaultLocale(resolvedDefaultLocale);
+function normalizeRequestLocale(locale: string): string | undefined {
+    const lower = locale.toLowerCase();
+    return supportedLocales.find(value => value.toLowerCase() === lower)
+        ?? supportedLocales.find(value => value.toLowerCase() === lower.split('-')[0]);
 }
 
 function readCookie(c: Context, name: string): string | undefined {
@@ -87,16 +70,14 @@ function isSupported(locale: string | undefined): locale is string {
     return !!locale && supportedLocales.some((s: string) => s.toLowerCase() === locale!.toLowerCase());
 }
 
-/**
- * Loads and registers a locale catalog into core's catalog Map, skipping the
- * work if the catalog is already registered. This avoids re-merging the same
- * object on every request while ensuring the `__()` fallback chain can reach
- * both the active and the default locale's translations.
- */
-async function ensureCatalogRegistered(locale: string): Promise<void> {
-    if (getLocaleCatalog(locale)) return;
-    const messages = await loadCatalog(locale);
-    if (messages) registerLocale(locale, messages);
+/** Keep catalog references inside the request, including its default fallback. */
+async function requestCatalogs(): Promise<Record<string, TranslationCatalog>> {
+    const result: Record<string, TranslationCatalog> = {};
+    await Promise.all(supportedLocales.map(async locale => {
+        const messages = await loadCatalog(locale);
+        if (messages) result[locale] = messages;
+    }));
+    return result;
 }
 
 /**
@@ -109,21 +90,28 @@ export function createLocaleMiddleware(
     const autoDetect = options.autoDetectBrowser === true;
     return async (c, next) => {
         ensureLocaleAlsWired();
-        seedCoreI18n(config<string>('app.locale', DEFAULT_LOCALE));
+        const resolvedDefaultLocale = resolveDefaultLocale(config('app.locale', DEFAULT_LOCALE));
+
+        const explicitLocale = options.resolveLocale?.(c);
 
         // No `src/lang/` folder → feature is inactive; pass through with the
         // default locale so `getLocale()` still returns something sensible.
         if (supportedLocales.length === 0) {
-            const fallback = config<string>('app.locale', DEFAULT_LOCALE);
-            return runWithLocale({ locale: fallback, messages: {} }, () => next());
+            const fallback = explicitLocale || config('app.locale', DEFAULT_LOCALE);
+            return runWithLocale({ locale: fallback, messages: {}, defaultLocale: fallback, catalogs: {} }, () => next());
         }
 
         let locale: string | undefined;
+        if (explicitLocale) {
+            locale = supportedLocales.find(value => value.toLowerCase() === explicitLocale.toLowerCase());
+            if (!locale) throw Object.assign(new Error('Content locale has no application catalog.'), { code: 'COSSACK_MARKDOWN_LOCALE_UNAVAILABLE' });
+        }
 
         // 1. Explicit user choice via cookie.
         const cookieLocale = readCookie(c, LOCALE_COOKIE_NAME);
-        if (cookieLocale) {
-            locale = normalizeLocale(cookieLocale);
+        if (!locale && cookieLocale) {
+            const normalized = normalizeRequestLocale(cookieLocale);
+            if (isSupported(normalized)) locale = normalized;
         }
 
         // 2. Accept-Language (opt-in).
@@ -139,8 +127,8 @@ export function createLocaleMiddleware(
         // 3. config('app.locale') — the deployment default (reads APP_LOCALE
         //    via src/config/app.ts, but config values can be overridden there).
         if (!locale) {
-            const envLocale = config<string>('app.locale');
-            if (envLocale) locale = normalizeLocale(envLocale);
+            const envLocale = config('app.locale', '');
+            if (envLocale) locale = normalizeRequestLocale(envLocale);
         }
 
         // 4. Guaranteed-supported fallback: the resolved default (which is
@@ -150,17 +138,9 @@ export function createLocaleMiddleware(
             locale = resolvedDefaultLocale;
         }
 
-        // Ensure both the active and the default locale's catalogs are
-        // registered in core's Map so `__()` can fall back from active →
-        // default when a key is missing. `ensureCatalogRegistered` skips the
-        // work when the catalog is already loaded (common on hot paths).
-        await ensureCatalogRegistered(locale);
-        if (resolvedDefaultLocale !== locale) {
-            await ensureCatalogRegistered(resolvedDefaultLocale);
-        }
-
-        const messages = getLocaleCatalog(locale) || {};
-        return runWithLocale({ locale, messages }, () => next());
+        const catalogs = await requestCatalogs();
+        const messages = catalogs[locale] || {};
+        return runWithLocale({ locale, messages, defaultLocale: resolvedDefaultLocale, catalogs }, () => next());
     };
 }
 

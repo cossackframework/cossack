@@ -52,6 +52,8 @@ export interface SerializedComponentState {
         /** Simplified route path (e.g., /hello/[name] instead of /src/pages/hello/[name]/index.ts) */
         routePath?: string;
         pathname?: string;
+        /** Public path and query for destination-owned hydration. */
+        url?: string;
         params?: Record<string, string>;
         user?: unknown;
     };
@@ -70,13 +72,15 @@ export interface SerializedComponentState {
     /** Scope key for SSE/DO transport (computed once during SSR) */
     scopeKey?: string;
     /** Resolved compiler-generated server$ invocations. */
-    serverResources?: Record<string, unknown>;
+    serverResources?: Record<string, { argsKey: string; value: unknown }>;
     /** Runtime-specific, browser-safe metadata contributed by an adapter. */
     runtime?: Record<string, unknown>;
 }
 
 export interface CossackOptions {
   Channels?: string;
+  /** Optional explicit contract for named server$ values and lifecycle methods. */
+  Resources?: string;
 }
 
 export type CossackRuntimePlatform = 'web' | 'desktop';
@@ -108,10 +112,14 @@ export interface BootstrapOptions {
   page?: string;
   /** WebSocket provider name (server only). */
   providerName?: string;
+  /** Server-resolved transport targets, supplied by the runtime router. */
+  providerTargets?: Record<string, string>;
   /** Skip calling `init()` after bootstrap. */
   skipInit?: boolean;
   /** Defer `onMount()`/`clientInit()` to a later manual call. */
   deferMount?: boolean;
+  /** @internal Prepare navigation without binding shared services or activating browser hooks. */
+  stageNavigation?: boolean;
 }
 
 // ========== Internal type helpers (not exported publicly) ==========

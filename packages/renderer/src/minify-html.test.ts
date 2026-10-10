@@ -239,3 +239,10 @@ Line 1
         expect(result).toContain('var x = 1;');
     });
 });
+
+it('preserves whitespace-only textarea values and text that resembles attributes', () => {
+    expect(minifyHtml('<div> </div> <textarea> \n\t </textarea> <p>After</p>'))
+        .toBe('<div></div><textarea> \n\t </textarea><p>After</p>');
+    expect(minifyHtml('<textarea>Keep type="text/javascript" as text</textarea>'))
+        .toBe('<textarea>Keep type="text/javascript" as text</textarea>');
+});

@@ -1,0 +1,277 @@
+import { afterEach, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { readDocumentation } from '../src/documentation-service.js';
+const roots = [];
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, {recursive:true,force:true}))); });
+async function fixture(files) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(),'cossack-declarations-')); roots.push(root);
+  const folder = path.join(root,'node_modules/@cossackframework/core'); await fs.mkdir(folder,{recursive:true});
+  await fs.writeFile(path.join(root,'package.json'),'{}');
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'.':{types:'./index.d.ts',import:'./runtime.js'}}}));
+  await fs.writeFile(path.join(folder,'runtime.js'),'throw new Error("must never execute");');
+  for (const [name,text] of Object.entries(files)) await fs.writeFile(path.join(folder,name),text);
+  const read = () => readDocumentation(root,{package:'@cossackframework/core',symbols:true});
+  return {root,folder,read};
+}
+it('resolves public aliases, star exports, overloads, generic types and class members',async()=>{
+  const {read} = await fixture({
+    'index.d.ts': `export { convert as parse, Thing as Widget } from './details.js'; export type { Options } from './details.js'; export * from './other.js'; export { default } from './default.js';`,
+    'details.d.ts': `/** Convert an input. */
+      export declare function convert(value:string):number;
+      export declare function convert(value:number):string;
+      export interface Options<T=string> { value:T; optional?:boolean; }
+      declare class Parent { inherited():boolean; protected hidden():void; }
+      export declare class Thing extends Parent { constructor(value:string); name:string; private secret; protected internal:string; #private; static build():Thing; run<T>(value:T):T; }
+      declare const notExported: string;`,
+    'other.d.ts': 'export type Result<T> = {value:T} | {error:string};',
+    'default.d.ts': 'export default function make<T>(value:T): {value:T};',
+  });
+  const result=await read(), index=result.data.packages[0].declarations;
+  expect(index.diagnostics).toEqual([]);
+  expect(index).toMatchObject({compilerVersion:'6.0.3',status:'indexed',diagnosticCount:0});
+  const symbols=index.entries[0].symbols;
+  expect(symbols.map(s=>s.name)).toEqual(['default','Options','parse','Result','Widget']);
+  expect(symbols.find(s=>s.name==='parse')).toMatchObject({documentation:'Convert an input.',callSignatures:['(value: string): number','(value: number): string'],source:{file:'details.d.ts'}});
+  expect(symbols.find(s=>s.name==='Options').type).toContain('Options<T>');
+  const widget=symbols.find(s=>s.name==='Widget');
+  expect(widget.constructSignatures).toEqual(['(value: string): Thing']);
+  expect(widget.members.map(s=>s.name)).toEqual(['inherited','name','run']);
+  expect(widget.members.find(s=>s.name==='run').callSignatures).toEqual(['<T>(value: T): T']);
+  expect(widget.staticMembers.map(s=>s.name)).toEqual(['build']);
+  expect(JSON.stringify(index)).not.toContain('notExported');
+},30000);
+it('indexes type-only star and namespace re-exports without claiming runtime availability',async()=>{
+  const {read}=await fixture({'index.d.ts':"export type * from './details.js'; export * as helpers from './details.js';",'details.d.ts':'export declare class Thing { run():void; } export type Value=string;'});
+  const index=(await read()).data.packages[0].declarations;
+  expect(index.status).toBe('indexed');
+  expect(index.entries[0].symbols.map(s=>s.name)).toEqual(['helpers','Thing','Value']);
+  expect(index.entries[0].symbols.every(s=>s.runtime==='not-verified')).toBe(true);
+},30000);
+it('refreshes referenced declarations even when package version and manifest stay unchanged',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':"export * from './details.js';",'details.d.ts':'export declare function before():string;'});
+  const before=await read();
+  await fs.writeFile(path.join(folder,'details.d.ts'),'export declare function after(value:number):boolean;');
+  const after=await read();
+  expect(after.data.packages[0].manifestHash).toBe(before.data.packages[0].manifestHash);
+  expect(after.data.packages[0].declarations.declarationHash).not.toBe(before.data.packages[0].declarations.declarationHash);
+  expect(after.data.packages[0].declarations.entries[0].symbols.map(s=>s.name)).toEqual(['after']);
+},30000);
+it('reports broken declaration graphs as partial instead of certifying inferred any types',async()=>{
+  const {read}=await fixture({'index.d.ts':"export { missing } from './absent.js'; export declare const known: string;"});
+  const result=await read(), index=result.data.packages[0].declarations;
+  expect(index.status).toBe('partial'); expect(index.diagnosticCount).toBeGreaterThan(0);
+  expect(index.entries[0].symbols.find(s=>s.name==='missing').status).toBe('unresolved');
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({code:'COSSACK_DOCS_DECLARATIONS_INCOMPLETE'}));
+  expect(index.diagnostics.some(d=>d.code===2307)).toBe(true);
+},30000);
+it('distinguishes missing type files and non-module declarations',async()=>{
+  const missing=await fixture({});
+  expect((await missing.read()).data.packages[0].declarations.status).toBe('unavailable');
+  const global=await fixture({'index.d.ts':'declare const privateGlobal:string;'});
+  const index=(await global.read()).data.packages[0].declarations;
+  expect(index.status).toBe('partial'); expect(index.entries[0]).toMatchObject({status:'not-a-module',symbols:[]});
+},30000);
+it('requires an explicit package for symbol work',async()=>{
+  await expect(readDocumentation(os.tmpdir(),{symbols:true})).rejects.toMatchObject({code:'COSSACK_DOCS_PACKAGE_REQUIRED'});
+});
+
+it('retains CommonJS export-assignment signatures',async()=>{
+  const {read}=await fixture({'index.d.ts':'declare function main(value:string):number; export = main;'});
+  const index=(await read()).data.packages[0].declarations;
+  expect(index.status).toBe('indexed');
+  expect(index.entries[0].symbols).toContainEqual(expect.objectContaining({name:'export=',callSignatures:['(value: string): number']}));
+},30000);
+
+it('indexes a legacy types entry without fabricating an exports map',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare function legacy():string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',main:'runtime.js',types:'index.d.ts'}));
+  const pkg=(await read()).data.packages[0];
+  expect(pkg.exports).toEqual([]);
+  expect(pkg.declarations.status).toBe('indexed');
+  expect(pkg.declarations.entries[0].symbols[0].name).toBe('legacy');
+},30000);
+
+it('does not advertise inaccessible constructors as public calls',async()=>{
+  const {read}=await fixture({'index.d.ts':`export declare class Locked { private constructor(); static open():Locked; } export declare abstract class Base { protected constructor(value:string); abstract run():void; }`});
+  const symbols=(await read()).data.packages[0].declarations.entries[0].symbols;
+  expect(symbols.find(s=>s.name==='Locked').constructSignatures).toEqual([]);
+  expect(symbols.find(s=>s.name==='Base')).toMatchObject({abstract:true,constructSignatures:[]});
+},30000);
+
+it('indexes object helpers, enum values and namespace APIs without primitive prototype noise',async()=>{
+  const {read}=await fixture({'index.d.ts':`export declare const codec: { parse<T>(value:string):T; readonly name:string }; export declare enum Mode { First, Second } export declare namespace Helpers { function run(value:number):string; } export type Text=string;`});
+  const symbols=(await read()).data.packages[0].declarations.entries[0].symbols;
+  expect(symbols.find(s=>s.name==='codec').valueMembers.map(s=>s.name)).toEqual(['name','parse']);
+  expect(symbols.find(s=>s.name==='codec').valueMembers.find(s=>s.name==='parse').callSignatures).toEqual(['<T>(value: string): T']);
+  expect(symbols.find(s=>s.name==='Mode').valueMembers.map(s=>s.name)).toEqual(['First','Second']);
+  expect(symbols.find(s=>s.name==='Helpers').valueMembers[0].callSignatures).toEqual(['(value: number): string']);
+  expect(symbols.find(s=>s.name==='Text').members).toEqual([]);
+},30000);
+it('discovers adjacent declarations for JS, ESM and CommonJS export targets',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare function js():void;','esm.d.mts':'export declare function esm():void;','common.d.cts':'export declare function common():void;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'.':'./index.js','./esm':'./esm.mjs','./common':'./common.cjs'}}));
+  const index=(await read()).data.packages[0].declarations;
+  expect(index.status).toBe('indexed');
+  expect(index.resolutions.map(item=>[item.target,item.file,item.status])).toEqual([
+    ['./index.js','index.d.ts','declaration'],['./esm.mjs','esm.d.mts','declaration'],['./common.cjs','common.d.cts','declaration'],
+  ]);
+  expect(index.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name))).toEqual(['js','esm','common']);
+},30000);
+it('indexes concrete wildcard entries while respecting private exclusions',async()=>{
+  const {folder,read}=await fixture({'public.d.ts':'export declare const visible:string;','private.d.ts':'export declare const secret:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'./*':'./*.d.ts','./private':null}}));
+  const result=await read();
+  expect(result.data.packages[0].exportDiscovery.status).toBe('complete');
+  const names=result.data.packages[0].declarations.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name));
+  expect(names).toEqual(['visible']);
+},30000);
+it('finds legacy main and default index declarations without explicit types fields',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare const fallback:string;','main.d.ts':'export declare const main:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',main:'main.js'}));
+  expect((await read()).data.packages[0].declarations.entries[0].symbols[0].name).toBe('main');
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2'}));
+  expect((await read()).data.packages[0].declarations.entries[0].symbols[0].name).toBe('fallback');
+},30000);
+it('keeps missing public type coverage explicit when another entry indexes successfully',async()=>{
+  const {folder,read}=await fixture({'index.d.ts':'export declare const known:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'.':'./index.js','./untyped':'./untyped.js'}}));
+  const index=(await read()).data.packages[0].declarations;
+  expect(index.status).toBe('partial');expect(index.unresolvedImports).toEqual(['@cossackframework/core/untyped']);
+},30000);
+
+it('discovers wildcard type-only files while leaving absent runtime files explicit',async()=>{
+  const {folder,read}=await fixture({'only.d.ts':'export declare const typed:string;'});
+  await fs.writeFile(path.join(folder,'package.json'),JSON.stringify({name:'@cossackframework/core',version:'0.1.2',exports:{'./*':'./*.js'}}));
+  const pkg=(await read()).data.packages[0];
+  expect(pkg.exports.find(entry=>entry.subpath==='./only').targets[0]).toMatchObject({target:'./only.js',status:'missing'});
+  expect(pkg.declarations.entries.flatMap(entry=>entry.symbols.map(symbol=>symbol.name))).toContain('typed');
+},30000);
+
+it('preserves prop documentation, optional event signatures and permissive index contracts', async () => {
+  const {read}=await fixture({'index.d.ts': `
+    export interface ButtonProps {
+      /** Button styling. @default outline */
+      variant?: 'outline' | 'solid';
+      /** Activation callback. */
+      '@click'?: (event: MouseEvent) => void;
+      readonly [attribute: string]: any;
+    }
+    declare class Base<T> { props: T; }
+    export declare class Button extends Base<ButtonProps> {}
+    export declare class Unknown { props: any; }
+    export declare class Private { private props; }
+    export declare class Choice { props: {kind:'a'; a:string} | {kind:'b'; b:number}; }
+  `});
+  const index=(await read()).data.packages[0].declarations;
+  const symbols=index.entries[0].symbols;
+  const button=symbols.find(s=>s.name==='Button');
+  expect(button.propsContract).toMatchObject({status:'declared',type:'ButtonProps',indexSignatures:[{keyType:'string',valueType:'any',readonly:true}]});
+  expect(button.propsContract.members.find(s=>s.name==='variant')).toMatchObject({documentation:'Button styling.',tags:[{name:'default',text:'outline'}],optional:true});
+  expect(button.propsContract.members.find(s=>s.name==='@click')).toMatchObject({documentation:'Activation callback.',callSignatures:['(event: MouseEvent): void'],optional:true});
+  expect(symbols.find(s=>s.name==='ButtonProps').indexSignatures).toEqual(button.propsContract.indexSignatures);
+  expect(symbols.find(s=>s.name==='Unknown').propsContract).toMatchObject({status:'unknown',type:'any',members:[]});
+  expect(symbols.find(s=>s.name==='Private').propsContract).toBeNull();
+  expect(symbols.find(s=>s.name==='Choice').propsContract).toMatchObject({status:'partial',members:[{name:'kind'}]});
+  const variants = symbols.find(s=>s.name==='Choice').propsContract.variants;
+  expect(variants).toHaveLength(2);
+  expect(variants[0]).toMatchObject({status:'declared', members:[{name:'a',optional:false,type:'string'},{name:'kind',optional:false,type:'"a"'}],indexSignatures:[]});
+  expect(variants[1]).toMatchObject({status:'declared', members:[{name:'b',optional:false,type:'number'},{name:'kind',optional:false,type:'"b"'}],indexSignatures:[]});
+
+},30000);
+
+it('indexes instantiated remapped props without degrading synthetic members to any', async () => {
+  const {read}=await fixture({'index.d.ts': `
+    type Events<T> = { [K in 'click' | 'input' as \`@\${K}\`]?: (event: {currentTarget:T;kind:K}) => void };
+    type Attributes<T> = { [K in keyof T as \`?\${K & string}\`]?: boolean };
+    export type Props = Events<HTMLButtonElement> & Attributes<{disabled:boolean}> & {label:string};
+    declare class Base<T> { props:T; }
+    export declare class Button extends Base<Props> {}
+  `});
+  const symbols=(await read()).data.packages[0].declarations.entries[0].symbols;
+  for(const members of [symbols.find(s=>s.name==='Props').members, symbols.find(s=>s.name==='Button').propsContract.members]) {
+    const click=members.find(member=>member.name==='@click');
+    expect(click.type).toContain('HTMLButtonElement');expect(click.type).toContain('"click"');
+    expect(click.callSignatures[0]).toContain('HTMLButtonElement');
+    expect(click.source).toBeNull();
+    expect(members.find(member=>member.name==='?disabled').type).toBe('boolean | undefined');
+  }
+},30000);
+
+it('filters by exact exported alias and keeps names available without expanding unrelated contracts', async () => {
+  const { root } = await fixture({
+    'index.d.ts': `export { Control as Textarea } from './control.js'; export interface Other { count:number; }`,
+    'control.d.ts': `export declare class Control { props: { '.value'?: string; }; run():void; }`,
+  });
+  const result = await readDocumentation(root, { package:'@cossackframework/core', symbols:true, symbol:'Textarea' });
+  const index = result.data.packages[0].declarations;
+  expect(index.selection).toEqual({name:'Textarea',matched:true});
+  expect(index.entries[0].availableSymbols).toEqual(['Other','Textarea']);
+  expect(index.entries[0].symbols.map(symbol=>symbol.name)).toEqual(['Textarea']);
+  expect(index.entries[0].symbols[0].propsContract.members).toMatchObject([{name:'.value',optional:true}]);
+  const missing = await readDocumentation(root, { package:'@cossackframework/core', symbols:true, symbol:'Control' });
+  expect(missing.data.packages[0].declarations.selection).toEqual({name:'Control',matched:false});
+  expect(missing.diagnostics).toContainEqual(expect.objectContaining({code:'COSSACK_DOCS_SYMBOL_NOT_FOUND'}));
+  expect(missing.data.packages[0].declarations.entries[0].symbols).toEqual([]);
+  await expect(readDocumentation(root,{package:'@cossackframework/core',symbol:'Textarea'})).rejects.toMatchObject({code:'COSSACK_DOCS_SYMBOL_INVALID'});
+  await expect(readDocumentation(root,{package:'@cossackframework/core',symbols:true,symbol:' '.repeat(257)})).rejects.toMatchObject({code:'COSSACK_DOCS_SYMBOL_INVALID'});
+});
+
+it('preserves mutually exclusive callback requirements and unknown union branches', async () => {
+  const {read}=await fixture({'index.d.ts': `
+    type Base = {label:string; [attribute: \`data-\${string}\`]: string};
+    export declare class Pagination { props: Base & (
+      {onPageChange:(page:number)=>void; href?:never} |
+      {href:(page:number)=>string; onPageChange?:never}
+    ); }
+    export declare class Mixed { props: string | {label:string}; }
+  `});
+  const symbols=(await read()).data.packages[0].declarations.entries[0].symbols;
+  const contract=symbols.find(symbol=>symbol.name==='Pagination').propsContract;
+  expect(contract.status).toBe('partial');
+  expect(contract.variants).toHaveLength(2);
+  for(const [required,forbidden] of [['onPageChange','href'],['href','onPageChange']]) {
+    const branch=contract.variants.find(variant=>variant.members.some(member=>member.name===required&&!member.optional));
+    expect(branch.status).toBe('declared');
+    expect(branch.members.find(member=>member.name===required).callSignatures).toEqual([required==='href'?'(page: number): string':'(page: number): void']);
+    expect(branch.members.find(member=>member.name===forbidden)).toMatchObject({optional:true,type:'undefined'});
+    expect(branch.members.find(member=>member.name==='label')).toMatchObject({optional:false,type:'string'});
+    expect(branch.indexSignatures).toMatchObject([{keyType:'`data-${string}`',valueType:'string'}]);
+  }
+  const mixed=symbols.find(symbol=>symbol.name==='Mixed').propsContract;
+  expect(mixed.status).toBe('partial');
+  expect(mixed.variants.find(variant=>variant.type==='string')).toMatchObject({status:'unknown',members:[],indexSignatures:[]});
+},30000);
+
+it('indexes published TypeScript main aliases without evaluating module bodies', async () => {
+  const { folder, read } = await fixture({
+    'index.ts': `export { parse as normalize, Widget } from './source'; throw new Error('DO_NOT_EVALUATE_SOURCE_MAIN');`,
+    'source.ts': `/** Normalize a label. */
+      export function parse(value: string): string { return value.trim(); }
+      export class Widget { public count = 0; private secret = 'PRIVATE_SOURCE_VALUE'; run(value: number): number { return value + this.count; } }
+      throw new Error('DO_NOT_EVALUATE_SOURCE_DEPENDENCY');`,
+  });
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name: '@cossackframework/core', version: '0.2.0', main: 'index.ts' }));
+  const before = (await read()).data.packages[0];
+  expect(before.exports).toEqual([]);
+  expect(before.implicitEntry).toMatchObject({ import: '@cossackframework/core', origin: 'legacy-manifest', targets: [{ target: './index.ts', status: 'present' }] });
+  expect(before.declarations.resolutions).toContainEqual(expect.objectContaining({ status: 'typescript-source', file: 'index.ts' }));
+  expect(before.declarations.entries[0]).toMatchObject({ sourceKind: 'typescript-source', status: 'indexed' });
+  const symbols = before.declarations.entries[0].symbols;
+  expect(symbols.find(symbol => symbol.name === 'normalize')).toMatchObject({ documentation: 'Normalize a label.', callSignatures: ['(value: string): string'], runtime: 'not-verified' });
+  expect(symbols.find(symbol => symbol.name === 'Widget').members.map(member => member.name)).toEqual(['count', 'run']);
+  expect(JSON.stringify(before)).not.toContain('PRIVATE_SOURCE_VALUE');
+  await fs.writeFile(path.join(folder, 'source.ts'), 'export function parse(value: number): boolean { return value > 0; } export class Widget {}');
+  const after = (await read()).data.packages[0];
+  expect(after.declarations.declarationHash).not.toBe(before.declarations.declarationHash);
+  expect(after.declarations.entries[0].symbols.find(symbol => symbol.name === 'normalize').callSignatures).toEqual(['(value: number): boolean']);
+});
+
+it('does not use a TypeScript main to bypass a blocked explicit root export', async () => {
+  const { folder, read } = await fixture({ 'index.ts': 'export const hidden = 1; throw new Error("DO_NOT_IMPORT");' });
+  await fs.writeFile(path.join(folder, 'package.json'), JSON.stringify({ name: '@cossackframework/core', version: '0.2.0', main: 'index.ts', exports: { '.': null } }));
+  const pkg = (await read()).data.packages[0];
+  expect(pkg.implicitEntry).toBeNull();
+  expect(pkg.declarations.entries).toEqual([]);
+});

@@ -1,5 +1,6 @@
 import { Cossack, Page, ClientState, State, Store, HeadContext, HeadValue } from '@cossackframework/core';
 import { html, component, bind, type TemplateResult } from '@cossackframework/renderer';
+import { DashboardStat, type StatItem } from '@cossackframework/ui/blocks';
 import { Widget2Icon } from '@cossackframework/solar-icons/widget-2';
 import { ChartIcon } from '@cossackframework/solar-icons/chart';
 import { CartIcon } from '@cossackframework/solar-icons/cart';
@@ -41,18 +42,11 @@ const STATUS_VARIANT: Record<string, string> = {
     refunded: 'destructive',
 };
 
-interface StatData {
-    label: string;
-    value: string;
-    change: string;
-    trend: 'up' | 'down';
-}
-
-const STATS: StatData[] = [
-    { label: 'Total Revenue', value: '$45.2K', change: '+12.5%', trend: 'up' },
-    { label: 'Active Users', value: '2,340', change: '+4.3%', trend: 'up' },
-    { label: 'New Orders', value: '189', change: '-2.1%', trend: 'down' },
-    { label: 'Conversion', value: '3.2%', change: '+0.8%', trend: 'up' },
+const STATS: readonly StatItem[] = [
+    { id: 'revenue', label: 'Total Revenue', value: '$45.2K', change: '+12.5% vs last month', trend: 'up', tone: 'positive' },
+    { id: 'users', label: 'Active Users', value: '2,340', change: '+4.3% vs last month', trend: 'up', tone: 'positive' },
+    { id: 'orders', label: 'New Orders', value: '189', change: '-2.1% vs last month', trend: 'down', tone: 'negative' },
+    { id: 'conversion', label: 'Conversion', value: '3.2%', change: '+0.8% vs last month', trend: 'up', tone: 'positive' },
 ];
 
 @Page({ transport: 'http' })
@@ -114,19 +108,7 @@ export default class DashboardBlocks extends Cossack {
 
     // ─── Shared: stat cards grid ───────────────────────────────────
     private statCards(): TemplateResult {
-        return html`
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                ${STATS.map(s => html`
-                    <div class="rounded-lg border border-border bg-background p-4">
-                        <p class="text-sm text-muted-foreground truncate">${s.label}</p>
-                        <p class="text-2xl font-bold text-foreground mt-1">${s.value}</p>
-                        <p class=${`text-xs font-medium mt-1 ${s.trend === 'down' ? 'text-destructive' : 'text-success'}`}>
-                            ${s.change} <span class="text-muted-foreground">vs last month</span>
-                        </p>
-                    </div>
-                `)}
-            </div>
-        `;
+        return html`${component(DashboardStat, { stats: STATS, 'aria-label': 'Overview metrics' })}`;
     }
 
     // ─── dashboard-01: Stats grid + recent orders table ──────────
@@ -195,20 +177,21 @@ export default class DashboardBlocks extends Cossack {
         return html`
             <div class="flex min-h-[600px] border-t border-border">
                 ${component(Sidebar, {
-                    title: 'Acme Inc',
+                    id: 'dashboard-example-sidebar', label: 'Example pages', title: 'Acme Inc',
                     width: '240px',
                     collapsible: 'icon',
                     items: [
-                        { label: 'Dashboard', href: '#', icon: Widget2Icon, active: true },
-                        { label: 'Analytics', href: '#', icon: ChartIcon },
-                        { label: 'Orders', href: '#', icon: CartIcon, children: [
-                            { label: 'All Orders', href: '#' },
-                            { label: 'Refunds', href: '#' },
+                        { value: 'dashboard', label: 'Dashboard', href: '#', icon: Widget2Icon, active: true },
+                        { value: 'analytics', label: 'Analytics', href: '#', icon: ChartIcon },
+                        { value: 'orders', label: 'Orders', href: '#', icon: CartIcon, children: [
+                            { value: 'all-orders', label: 'All Orders', href: '#' },
+                            { value: 'refunds', label: 'Refunds', href: '#' },
                         ]},
-                        { label: 'Customers', href: '#', icon: UsersGroupRoundedIcon },
-                        { label: 'Settings', href: '#', icon: SettingsIcon },
+                        { value: 'customers', label: 'Customers', href: '#', icon: UsersGroupRoundedIcon },
+                        { value: 'settings', label: 'Settings', href: '#', icon: SettingsIcon },
                     ],
                     footer: component(DropdownMenu, {
+                        id: 'dashboard-account-menu',
                         block: true,
                         side: 'right',
                         align: 'end',
@@ -227,10 +210,10 @@ export default class DashboardBlocks extends Cossack {
                             <div class="text-xs text-muted-foreground">hi@tan.ng</div>
                         </div>
                         <div class="h-px bg-border my-1"></div>
-                        ${component(Button, { variant: 'ghost', block: true }, 'Account')}
-                        ${component(Button, { variant: 'ghost', block: true }, 'Settings')}
+                        ${component(Button, { variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, 'Account')}
+                        ${component(Button, { variant: 'ghost', block: true, role: 'menuitem', tabindex: -1 }, 'Settings')}
                         <div class="h-px bg-border my-1"></div>
-                        ${component(Button, { variant: 'destructive', block: true }, 'Log out')}
+                        ${component(Button, { variant: 'destructive', block: true, role: 'menuitem', tabindex: -1 }, 'Log out')}
                     `),
                 })}
                 <div class="flex-1 p-6 space-y-6 overflow-x-hidden">
@@ -304,7 +287,7 @@ export default class DashboardBlocks extends Cossack {
                                         <span class="text-foreground">${s.src}</span>
                                         <span class="text-muted-foreground">${s.pct}%</span>
                                     </div>
-                                    ${component(Progress, { value: s.pct })}
+                                    ${component(Progress, { label: s.src, value: s.pct })}
                                 </div>
                             `)}
                         </div>
@@ -347,6 +330,8 @@ export default class DashboardBlocks extends Cossack {
                                     variant: m.status === 'Active' ? 'success' : m.status === 'Away' ? 'warning' : 'secondary',
                                 }, m.status)}
                                 ${component(DropdownMenu, {
+                                    id: `member-actions-${encodeURIComponent(m.email)}`,
+                                    'aria-label': `Actions for ${m.name}`,
                                     trigger: html`<span class="px-2 py-1 text-muted-foreground hover:text-foreground cursor-pointer inline-flex">⋯</span>`,
                                     side: 'bottom',
                                     align: 'end',

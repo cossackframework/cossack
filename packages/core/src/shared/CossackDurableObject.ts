@@ -4,12 +4,18 @@ import type { User } from './user';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import './metadata';
+import { snapshotSocketRequest, socketRequestContext, type SocketPeerAttachment } from './socket-context';
+import type { Context } from 'hono';
+import { rpcCancellations } from './rpc-stream';
+import { closeUnauthorizedSocket } from './socket-delivery';
+import { logRuntimeFailure } from './server-diagnostics';
 
 export abstract class CossackDurableObject {
     state: DurableObjectState;
     componentInstance?: Cossack;
     runtime?: DurableObjectRuntime;
     env: any;
+    private componentInitialization?: Promise<void>;
 
     constructor(state: DurableObjectState, env: any) {
         this.state = state;
@@ -17,76 +23,70 @@ export abstract class CossackDurableObject {
         this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     }
 
+    /**
+     * One unpublished component owns bootstrap/restoration until it is ready.
+     * Callers wait for any pending operation, then run their own: operations
+     * differ (restore vs. create+accept), so a caller must never adopt another
+     * caller's promise. Each operation re-checks `componentInstance` itself.
+     * A failed pending operation rejects its waiters too (no retry storm).
+     */
+    private async initializeComponent(operation: () => Promise<void>): Promise<void> {
+        while (this.componentInitialization) await this.componentInitialization;
+        const pending = Promise.resolve().then(operation);
+        this.componentInitialization = pending;
+        try { await pending; }
+        finally { if (this.componentInitialization === pending) this.componentInitialization = undefined; }
+    }
+
+    private async disposeComponent(component: Cossack): Promise<void> {
+        try { await component.destroyAsync(); }
+        catch { logRuntimeFailure({ runtime: 'cloudflare' }, 'component-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED'); }
+    }
+
+    private publishComponent(component: Cossack): void {
+        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
+        const runtime = new DurableObjectRuntime(component, this.state, pageOptions?.stateful === true, this.env,
+            (client, attachment, operation) => this.authorizeWebSocketPeer(client, attachment, operation));
+        this.runtime = runtime;
+        this.componentInstance = component;
+    }
+
     private async createAndBootstrapComponent(componentName: string, params: Record<string, string>, page: string, providerName: string): Promise<Cossack | undefined> {
-        const componentRegistry = await this.getComponentRegistry();
-        const PageComponent = componentRegistry.get(componentName);
-
-        if (PageComponent) {
-            const componentInstance = new PageComponent();
-
-            const hydratedContext = {
-                req: { param: (key?: string) => key ? params?.[key] : params }
-            } as any;
-
-            await componentInstance.bootstrap({ context: hydratedContext, env: this.env, page, providerName, skipInit: true });
-
-            // Get stateful option from component metadata
-            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
-            const isStateful = pageOptions?.stateful === true;
-
-            this.runtime = new DurableObjectRuntime(componentInstance, this.state, isStateful);
-
-            return componentInstance;
-        } else {
-            console.error(`[DO] Component '${componentName}' not found in registry.`);
+        const PageComponent = (await this.getComponentRegistry()).get(componentName);
+        if (!PageComponent) {
+            logRuntimeFailure({ runtime: 'cloudflare' }, 'initialization');
             this.state.getWebSockets().forEach(ws => ws.close(1011, 'Component not found'));
             return undefined;
         }
+        const component = new PageComponent();
+        component.__cossack_rpcOwner = componentName;
+        const context = { req: { param: (key?: string) => key ? params[key] : params } } as any;
+        try { await component.bootstrap({ context, env: this.env, page, providerName, skipInit: true }); }
+        catch (error) { await this.disposeComponent(component); throw error; }
+        return component;
     }
 
     private async ensureComponentInstance(): Promise<void> {
-        if (this.componentInstance) {
-            return;
-        }
-
-        // Check if this DO is stateful
-        const storedConfig = await this.state.storage.get(['stateful', 'componentPath', 'url', 'params', 'componentState', 'providerName']);
-        const isStateful = storedConfig.get('stateful') === true;
-
-        if (!isStateful) {
-            // Stateless DOs don't restore from storage
-            return;
-        }
-
-        const componentPath = storedConfig.get('componentPath') as string | undefined;
-        const url = storedConfig.get('url') as string | undefined;
-        const params = storedConfig.get('params') as Record<string, string> | undefined;
-        const componentState = storedConfig.get('componentState') as Record<string, any> | undefined;
-        const providerName = storedConfig.get('providerName') as string | undefined;
-
-        if (!componentPath || !url || !providerName) {
-            return;
-        }
-
-        const componentInstance = await this.createAndBootstrapComponent(componentPath, params || {}, url, providerName);
-        if (componentInstance) {
-            if (componentState) {
-                // Restore children state registry
-                if (componentState.children) {
-                    (componentInstance as any)._childrenStateRegistry = componentState.children;
-                }
-
-                // Restore public state from SerializedComponentState
-                const publicState = componentState.public || {};
-                for (const key in publicState) {
-                    (componentInstance as any)[key] = publicState[key];
-                }
-            }
-            // Rebuild the component tree to populate activeComponents
-            componentInstance._render();
-
-            this.componentInstance = componentInstance;
-        }
+        if (this.componentInstance) return;
+        await this.initializeComponent(async () => {
+            if (this.componentInstance) return;
+            const stored = await this.state.storage.get(['stateful', 'componentPath', 'url', 'params', 'componentState', 'providerName']);
+            if (stored.get('stateful') !== true) return;
+            const componentPath = stored.get('componentPath') as string | undefined;
+            const url = stored.get('url') as string | undefined;
+            const providerName = stored.get('providerName') as string | undefined;
+            if (!componentPath || !url || !providerName) return;
+            const component = await this.createAndBootstrapComponent(componentPath,
+                stored.get('params') as Record<string, string> || {}, url, providerName);
+            if (!component) return;
+            try {
+                const snapshot = stored.get('componentState') as Record<string, any> | undefined;
+                if (snapshot?.children) (component as any)._childrenStateRegistry = snapshot.children;
+                for (const [key, value] of Object.entries(snapshot?.public || {})) (component as any)[key] = value;
+                component._render();
+                this.publishComponent(component);
+            } catch (error) { await this.disposeComponent(component); throw error; }
+        });
     }
 
     async fetch(request: Request) {
@@ -96,8 +96,6 @@ export abstract class CossackDurableObject {
         if (request.method === 'GET' && url.pathname === '/state') {
             return this.handleStateRequest(request);
         }
-
-        await this.ensureComponentInstance();
 
         const componentPath = request.headers.get('X-Component-Path');
         const providerName = request.headers.get('X-Provider-Name');
@@ -123,59 +121,128 @@ export abstract class CossackDurableObject {
             return new Response('pathname query parameter is required for WebSocket connection', { status: 400 });
         }
 
-        // For stateless DOs, discard the in-memory component when the DO is idle
-        // (no other clients connected). This prevents stale in-memory state from
-        // leaking into a new session. Cloudflare keeps idle DOs in memory for
-        // several seconds after the last request, so the old componentInstance
-        // would otherwise persist and serve mutated state to new clients.
-        if (this.componentInstance && !this.runtime?.stateful && this.state.getWebSockets().length === 0) {
-            this.componentInstance = undefined;
-            this.runtime = undefined;
-        }
-
-        if (!this.componentInstance) {
-            const componentInstance = await this.createAndBootstrapComponent(componentPath, params, page, providerName);
-            if (!componentInstance) {
-                return new Response('Failed to initialize component', { status: 500 });
-            }
-            this.componentInstance = componentInstance;
-            // For a brand new DO, run init() to seed the initial state (skipInit was used in bootstrap)
-            await this.componentInstance.init();
-
-            // Only persist to DO storage if stateful
-            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', componentInstance.constructor);
-            const isStateful = pageOptions?.stateful === true;
-
-            if (isStateful) {
-                const initialState = componentInstance.getInitialState();
-                const fullUrl = `${page}${url.search}`;
-                await this.state.storage.put({ componentPath, url: fullUrl, params, componentState: initialState, providerName, stateful: true });
-            }
-        }
-
+        // Identity assertions are supplied by the Worker proxy, never message
+        // payloads. Anonymous peers have no user, so the default key uses IP.
         const userId = request.headers.get('X-User-ID');
         const userData = request.headers.get('X-User-Data');
-        const user: User = userId
-            ? (userData ? JSON.parse(userData) : { id: userId })
-            : { id: 'anonymous' };
-
+        const identityHeader = request.headers.get('X-Cossack-Realtime-Identity');
+        const scopeKey = request.headers.get('X-Cossack-Realtime-Scope') ?? undefined;
+        const targetValidity = request.headers.get('X-Cossack-Realtime-Target-Valid');
+        let targetValid = true;
+        let user: User | undefined;
+        let identity: unknown;
+        try {
+            const value = userData ? JSON.parse(userData) : userId ? { id: userId } : undefined;
+            if (value !== undefined && (!userId || !value || typeof value !== 'object' || Array.isArray(value) || value.id !== userId)) {
+                throw new TypeError('Invalid identity assertion');
+            }
+            user = value;
+            if (identityHeader) {
+                if (new TextEncoder().encode(identityHeader).length > 1024) throw new TypeError('Realtime identity exceeds limits');
+                identity = JSON.parse(identityHeader);
+                if (!identity || typeof identity !== 'object' || Array.isArray(identity) ||
+                    (identity as any).version !== 1 || typeof (identity as any).provider !== 'string' || !('data' in (identity as any))) {
+                    throw new TypeError('Invalid realtime identity');
+                }
+            }
+            if (scopeKey !== undefined && (!scopeKey || scopeKey.length > 2048)) throw new TypeError('Invalid realtime scope');
+            if (targetValidity !== null) {
+                if (targetValidity !== 'true' && targetValidity !== 'false') throw new TypeError('Invalid realtime target status');
+                targetValid = targetValidity === 'true';
+            }
+        } catch {
+            return Response.json({ code: 'COSSACK_WS_CONTEXT_INVALID', error: 'Invalid WebSocket identity context.' }, { status: 400 });
+        }
         const { 0: client, 1: server } = new WebSocketPair();
         const channel = url.pathname.split('/').pop() || 'global';
-        server.serializeAttachment({ channel, user });
-        this.state.acceptWebSocket(server);
+        const peer: SocketPeerAttachment = {
+            channel, user, request: snapshotSocketRequest(request, params), identity, componentPath, scopeKey,
+        };
+        try {
+            // Attachment limits depend on the Workers runtime version. Refuse
+            // an oversized snapshot; silently dropping headers changes budgets.
+            server.serializeAttachment(peer);
+        } catch {
+            // This attachment consists entirely of JSON identity data and
+            // string request metadata. The runtime's capacity exception is a
+            // plain Error on workerd, rather than a RangeError.
+            return Response.json({ code: 'COSSACK_WS_CONTEXT_TOO_LARGE', error: 'WebSocket peer context exceeds the attachment limit.' }, { status: 413 });
+        }
+
+        // Recheck credentials immediately before the DO initializes or joins
+        // component state. Outbound frames and later actions repeat this check.
+        const authorized = targetValid && await this.authorizeWebSocketPeer(server, peer, async () => {});
+        if (!authorized) {
+            // Once upgraded, the browser can distinguish a terminal auth change
+            // from a transient network failure and stop stale reconnect loops.
+            this.state.acceptWebSocket(server);
+            closeUnauthorizedSocket(server);
+            return new Response(null, { status: 101, webSocket: client });
+        }
+
+        await this.ensureComponentInstance();
+        if (this.componentInstance && this.componentInstance.__cossack_rpcOwner !== componentPath) {
+            return Response.json({ code: 'COSSACK_WS_SCOPE_MISMATCH', error: 'WebSocket component does not match its Durable Object scope.' }, { status: 403 });
+        }
+
+        let accepted = false;
+        await this.initializeComponent(async () => {
+            if (this.componentInstance && this.componentInstance.__cossack_rpcOwner !== componentPath) return;
+            // Discard idle stateless state once, inside the same initialization
+            // ownership as its replacement. Cleanup cannot race another join.
+            if (this.componentInstance && !this.runtime?.stateful && this.state.getWebSockets().length === 0) {
+                const previous = this.componentInstance;
+                this.componentInstance = undefined;
+                this.runtime = undefined;
+                await this.disposeComponent(previous);
+            }
+            if (!this.componentInstance) {
+                const component = await this.createAndBootstrapComponent(componentPath, params, page, providerName);
+                if (!component) return;
+                try {
+                    await component.init();
+                    const options: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
+                    if (options?.stateful === true) {
+                        await this.state.storage.put({ componentPath, url: `${page}${url.search}`, params,
+                            componentState: component.getInitialState(), providerName, stateful: true });
+                    }
+                    this.publishComponent(component);
+                } catch (error) { await this.disposeComponent(component); throw error; }
+            }
+            // Accept before releasing ownership: otherwise an overlapping join
+            // can mistake a newly initialized stateless component for idle state.
+            this.state.acceptWebSocket(server);
+            accepted = true;
+        });
+        if (!this.componentInstance) return new Response('Failed to initialize component', { status: 500 });
+        if (this.componentInstance.__cossack_rpcOwner !== componentPath) {
+            return Response.json({ code: 'COSSACK_WS_SCOPE_MISMATCH', error: 'WebSocket component does not match its Durable Object scope.' }, { status: 403 });
+        }
+        if (!accepted) this.state.acceptWebSocket(server);
 
         // For stateful DOs, send the current in-memory state so the client syncs immediately.
         // For stateless DOs, skip this — the client uses SSR-provided defaults and only
         // receives state updates from real-time broadcasts.
         if (this.runtime?.stateful) {
             const currentState = this.componentInstance.getInitialState();
-            server.send(JSON.stringify({ type: 'state-update', state: currentState.public }));
+            await this.runtime.sendToClient(server, { type: 'state-update', state: currentState.public });
         }
 
         return new Response(null, { status: 101, webSocket: client });
     }
 
     abstract getComponentRegistry(): Promise<Map<string, new () => Cossack>>;
+
+    /** Framework runtimes override this to run fresh auth and inherited middleware. */
+    protected async authorizeWebSocketPeer(
+        _client: WebSocket,
+        peer: SocketPeerAttachment,
+        operation: (context: Context) => Promise<void>,
+    ): Promise<boolean> {
+        if (!peer.request) return false;
+        await operation(socketRequestContext(peer.request, this.env, peer.user));
+        return true;
+    }
 
     /**
      * Handle HTTP requests to the DO (for querying state during SSR)
@@ -192,18 +259,8 @@ export abstract class CossackDurableObject {
             });
         }
 
-        // Extract component context from query params for on-demand initialization
-        const componentPath = url.searchParams.get('componentPath');
-        const paramsStr = url.searchParams.get('params');
-        const fullUrl = url.searchParams.get('url');
-        const providerName = url.searchParams.get('providerName');
-
-        // If DO hasn't been initialized yet, create it on-demand with the provided context
-        if (!this.componentInstance && componentPath && fullUrl && providerName) {
-            const params = paramsStr ? JSON.parse(paramsStr) : {};
-            await this.createAndBootstrapComponent(componentPath, params, fullUrl, providerName);
-        }
-
+        // Stored configuration owns restoration. Query metadata cannot create
+        // an unused second component or choose a different restoration target.
         await this.ensureComponentInstance();
         if (!this.componentInstance) {
             return new Response(JSON.stringify({ error: 'Component not initialized' }), { status: 404 });
@@ -229,6 +286,18 @@ export abstract class CossackDurableObject {
         await this.runtime.onClientMessage(ws, message as string);
     }
 
-    async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {}
-    async webSocketError(ws: any) {}
+    async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+        // Complete the reciprocal handshake on runtimes without automatic replies.
+        // Reserved status codes represent local observations, not wire codes.
+        const wireCode = (code >= 1000 && code <= 1014 && ![1004, 1005, 1006].includes(code))
+            || (code >= 3000 && code <= 4999) ? code : wasClean ? 1000 : 1011;
+        try { ws.close(wireCode, code === wireCode ? reason : ''); }
+        catch { /* A terminal socket may already be unavailable; still retire it. */ }
+        for (const cancel of rpcCancellations(ws).values()) cancel();
+        rpcCancellations(ws).clear();
+        this.runtime?.retireClient(ws);
+    }
+    async webSocketError(ws: WebSocket) {
+        await this.webSocketClose(ws, 1011, 'Socket error', false);
+    }
 }

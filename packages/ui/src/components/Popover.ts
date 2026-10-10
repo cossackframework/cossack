@@ -1,174 +1,143 @@
-import { html, classMap } from "@cossackframework/renderer";
-import {
-    Cossack,
-    Component,
-    Client,
-    OnWindow,
-    createRef,
-    type RefObject,
-} from "@cossackframework/core";
+import { html } from "@cossackframework/renderer";
+import { Cossack, Component, Client, createRef, type RefObject } from "@cossackframework/core";
+import type { ButtonAttributes, GlobalAttributes } from "../native-attributes";
 
-export interface PopoverProps {
-    /** Trigger content (a label string or template). Rendered inside the button. */
+/** Native panel attributes/events. Its identity and popover mode belong to Popover. */
+export type PopoverContentProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'aria-modal'>;
+export type PopoverProps = Omit<ButtonAttributes, 'id' | 'type' | 'role' | 'popovertarget' | 'popovertargetaction' | 'aria-expanded' | 'aria-controls'> & {
+    /** Stable, page-unique trigger ID. The content ID is `${id}-content`. */
+    id: string;
+    /** Noninteractive content inside the button. Supply a visible or ARIA name. */
     trigger?: unknown;
-    /** Preferred position of the popover relative to the trigger. */
     side?: "top" | "bottom" | "left" | "right";
-    /** Alignment of the popover relative to the trigger along the cross-axis. */
+    /** Start/end follows the trigger's writing direction on the horizontal axis. */
     align?: "start" | "center" | "end";
-    /** Allow arbitrary HTML attributes to spread onto the trigger wrapper. */
-    [key: string]: any;
-}
+    /** Attributes/events for the content div. Choose semantics appropriate to its content. */
+    contentProps?: PopoverContentProps;
+};
 
-/**
- * Cossack UI Popover — native top-layer popover via the `popover` attribute,
- * with JS-driven positioning anchored to the trigger.
- *
- * The native `popover` attribute gives top-layer rendering + light dismiss.
- * Because top-layer elements are positioned relative to the viewport (not their
- * DOM parent), we compute position from the trigger's `getBoundingClientRect()`
- * on open, on scroll, and on resize.
- *
- *   ${component(Popover, { trigger: 'Open', side: 'bottom' },
- *       html\`<p>Content</p>\`)}
- */
+/** Native nonmodal auto popover. The browser owns toggling, light dismiss and focus. */
 @Component()
 export class Popover extends Cossack {
     declare props: PopoverProps;
-
-    popoverRef: RefObject<HTMLElement> = createRef<HTMLElement>();
-    private popoverId = `cs-popover-${Math.random().toString(36).slice(2, 9)}`;
+    popoverRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
+    private button?: HTMLButtonElement;
+    private cleanup?: () => void;
 
     render() {
-        const { trigger, side = "top", align = "center" } = this.props;
+        const { id, trigger, side = 'top', align = 'center', contentProps = {}, ...rest } = this.props;
+        if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Popover requires a nonempty, whitespace-free id.');
+        if (!['top','bottom','left','right'].includes(side)) throw new Error('Popover side must be top, bottom, left or right.');
+        if (!['start','center','end'].includes(align)) throw new Error('Popover align must be start, center or end.');
+        return html`<span class="cs-popover__wrapper relative inline-flex">
+            <button ref=${(element: Element) => { this.button = element as HTMLButtonElement; }} id=${id} type="button"
+                popovertarget=${`${id}-content`} popovertargetaction="toggle"
+                class="cs-popover__trigger inline-flex items-center justify-center cursor-pointer outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md disabled:opacity-50 disabled:cursor-not-allowed" ...=${rest}>${trigger}</button>
+            <div ref=${(element: Element) => this.connect(element as HTMLDivElement)} id=${`${id}-content`} popover="auto"
+                class="cs-popover bg-popover text-popover-foreground border rounded-lg shadow-lg p-4 outline-none" ...=${contentProps}>${this.children}</div>
+        </span>`;
+    }
 
-        const popoverClasses = classMap({
-            "cs-popover": true,
-            [`cs-popover--${side}`]: true,
-            [`cs-popover--align-${align}`]: true,
-            "bg-popover text-popover-foreground border rounded-lg shadow-lg p-4 outline-none": true,
+    @Client()
+    private connect(panel: HTMLDivElement) {
+        if (this.popoverRef.value !== panel) {
+            this.cleanup?.();
+            this.popoverRef.value = panel;
+            const document = panel.ownerDocument, window = document.defaultView;
+            let active = true;
+            const position = () => this.position();
+            // This listener is separate from the supplied native @toggle callback.
+            panel.addEventListener('toggle', position);
+            document.addEventListener('scroll', position, true);
+            window?.addEventListener('resize', position);
+            window?.visualViewport?.addEventListener('resize', position);
+            window?.visualViewport?.addEventListener('scroll', position);
+            const resize = new ResizeObserver(position);
+            resize.observe(panel);
+            if (this.button) resize.observe(this.button);
+            const disabled = new MutationObserver(() => { if (this.button?.matches(':disabled')) this.hide(); });
+            if (this.button) {
+                disabled.observe(this.button, { attributes: true, attributeFilter: ['disabled'] });
+                for (let ancestor = this.button.parentElement; ancestor; ancestor = ancestor.parentElement) {
+                    if (ancestor.tagName === 'FIELDSET') disabled.observe(ancestor, { attributes: true, attributeFilter: ['disabled'] });
+                }
+            }
+            this.cleanup = () => {
+                active = false;
+                panel.removeEventListener('toggle', position);
+                document.removeEventListener('scroll', position, true);
+                window?.removeEventListener('resize', position);
+                window?.visualViewport?.removeEventListener('resize', position);
+                window?.visualViewport?.removeEventListener('scroll', position);
+                resize.disconnect();
+                disabled.disconnect();
+                if (panel.isConnected && panel.matches(':popover-open')) panel.hidePopover();
+            };
+            queueMicrotask(() => { if (active && panel.isConnected) position(); });
+        }
+        queueMicrotask(() => {
+            if (this.popoverRef.value !== panel || !panel.isConnected) return;
+            if (this.button?.matches(':disabled')) this.hide();
+            else this.position();
         });
-
-        return html`
-            <span class="cs-popover__wrapper relative inline-flex">
-                <button
-                    type="button"
-                    popovertarget=${this.popoverId}
-                    class="cs-popover__trigger inline-flex items-center justify-center cursor-pointer outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] rounded-md"
-                    @click=${() => this.handleToggle()}
-                >
-                    ${trigger}
-                </button>
-                <div
-                    ref=${this.popoverRef}
-                    id=${this.popoverId}
-                    popover="auto"
-                    class=${popoverClasses}
-                    @toggle=${(e: Event) => this.handleToggleEvent(e)}
-                >
-                    ${this.children}
-                </div>
-            </span>
-        `;
-    }
-
-    @Client()
-    private handleToggle() {
-        // After the browser opens/closes the popover, position it.
-        // Use rAF to wait for the top-layer element to be visible.
-        requestAnimationFrame(() => this.position());
-    }
-
-    @Client()
-    private handleToggleEvent(e: Event) {
-        const el = e.target as HTMLElement;
-        if (el.classList.contains("cs-popover") && el.matches(":popover-open")) {
-            this.position();
-        }
-    }
-
-    /** Reposition on scroll/resize while open. */
-    @OnWindow("scroll", { throttle: 100 })
-    @OnWindow("resize")
-    onViewportChange() {
-        const el = this.popoverRef.value;
-        if (el && el.matches(":popover-open")) {
-            this.position();
-        }
     }
 
     @Client()
     show() {
-        const el = this.popoverRef.value as any;
-        el?.showPopover?.();
-        requestAnimationFrame(() => this.position());
+        const panel = this.popoverRef.value, button = this.button;
+        if (!panel?.isConnected || !button?.isConnected || button.matches(':disabled')) return;
+        if (!panel.matches(':popover-open')) panel.showPopover({ source: button });
+        this.position();
     }
-
     @Client()
     hide() {
-        const el = this.popoverRef.value as any;
-        el?.hidePopover?.();
+        const panel = this.popoverRef.value;
+        if (panel?.isConnected && panel.matches(':popover-open')) panel.hidePopover();
     }
-
     @Client()
     toggle() {
-        const el = this.popoverRef.value as any;
-        el?.togglePopover?.();
-        requestAnimationFrame(() => this.position());
+        if (this.popoverRef.value?.matches(':popover-open')) this.hide();
+        else this.show();
     }
 
-    /** Compute position from the trigger button's bounding rect. */
     @Client()
     private position() {
-        const popover = this.popoverRef.value;
-        if (!popover) return;
-        const trigger = popover
-            .closest(".cs-popover__wrapper")
-            ?.querySelector<HTMLElement>(".cs-popover__trigger");
-        if (!trigger) return;
-        if (!popover.matches(":popover-open")) return;
+        const panel = this.popoverRef.value, button = this.button, window = panel?.ownerDocument.defaultView;
+        if (!panel?.isConnected || !button?.isConnected || !window || !panel.matches(':popover-open')) return;
+        const viewport = window.visualViewport;
+        const gap = 8, x = viewport?.offsetLeft ?? 0, y = viewport?.offsetTop ?? 0;
+        const vw = viewport?.width ?? window.innerWidth, vh = viewport?.height ?? window.innerHeight;
+        panel.style.position = 'fixed';
+        panel.style.margin = '0';
+        panel.style.inset = 'auto';
+        panel.style.boxSizing = 'border-box';
+        panel.style.maxWidth = `${Math.max(0, vw - gap * 2)}px`;
+        panel.style.maxHeight = `${Math.max(0, vh - gap * 2)}px`;
+        panel.style.overflow = 'auto';
+        const rect = button.getBoundingClientRect(), width = panel.offsetWidth, height = panel.offsetHeight;
+        let side = this.props.side ?? 'top';
+        const align = this.props.align ?? 'center';
+        const available = { top: rect.top - y - gap, bottom: y + vh - rect.bottom - gap, left: rect.left - x - gap, right: x + vw - rect.right - gap };
+        const opposite = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' } as const;
+        const length = side === 'top' || side === 'bottom' ? height : width;
+        if (available[side] < length && available[opposite[side]] > available[side]) side = opposite[side];
+        const horizontal = side === 'top' || side === 'bottom';
+        const rtl = window.getComputedStyle(button).direction === 'rtl';
+        let left = side === 'left' ? rect.left - width - gap : rect.right + gap;
+        let top = side === 'top' ? rect.top - height - gap : rect.bottom + gap;
+        if (horizontal) {
+            const start = rtl ? rect.right - width : rect.left, end = rtl ? rect.left : rect.right - width;
+            left = align === 'start' ? start : align === 'end' ? end : rect.left + (rect.width - width) / 2;
+        } else top = align === 'start' ? rect.top : align === 'end' ? rect.bottom - height : rect.top + (rect.height - height) / 2;
+        panel.style.left = `${Math.max(x + gap, Math.min(left, x + vw - width - gap))}px`;
+        panel.style.top = `${Math.max(y + gap, Math.min(top, y + vh - height - gap))}px`;
+        panel.dataset.side = side;
+    }
 
-        const rect = trigger.getBoundingClientRect();
-        const side = this.props.side || "top";
-        const align = this.props.align || "center";
-        const gap = 8;
-        const pw = popover.offsetWidth;
-        const ph = popover.offsetHeight;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-
-        let top = 0;
-        let left = 0;
-
-        // Primary axis (side)
-        if (side === "bottom") top = rect.bottom + gap;
-        else if (side === "top") top = rect.top - ph - gap;
-        else if (side === "left") left = rect.left - pw - gap;
-        else left = rect.right + gap; // right
-
-        // Cross axis (align), depends on side
-        if (side === "top" || side === "bottom") {
-            if (align === "start") left = rect.left;
-            else if (align === "end") left = rect.right - pw;
-            else left = rect.left + rect.width / 2 - pw / 2; // center
-            // default top was set above for bottom; set for top already
-            if (side === "top") { /* top already set */ }
-        } else {
-            // left/right: cross axis is vertical
-            if (align === "start") top = rect.top;
-            else if (align === "end") top = rect.bottom - ph;
-            else top = rect.top + rect.height / 2 - ph / 2;
-            if (side === "left") { /* left already set */ }
-        }
-
-        // Collision detection: flip into viewport
-        if (left < gap) left = gap;
-        if (left + pw > vw - gap) left = vw - pw - gap;
-        if (top < gap) top = gap;
-        if (top + ph > vh - gap) top = vh - ph - gap;
-
-        popover.style.position = "fixed";
-        popover.style.top = `${top}px`;
-        popover.style.left = `${left}px`;
-        popover.style.margin = "0";
+    onCleanup() {
+        this.cleanup?.();
+        this.cleanup = undefined;
+        this.popoverRef.value = undefined;
+        this.button = undefined;
     }
 }

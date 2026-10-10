@@ -4,14 +4,13 @@ import fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { ORM, ORMConfig } from '@cossackframework/database';
+import type { ORM, ORMConfig, ORMToolingContext } from '@cossackframework/database';
 import { createLocalConnection } from './lib/local-connection.js';
 import {
   databaseLabelFromEnvironment,
   detectStudioProvider,
   normalizeStudioProvider,
 } from './lib/provider.js';
-import { createRemoteD1Connection } from './lib/remote-d1.js';
 import { StudioDatabase } from './lib/service.js';
 import type { StudioConnection, StudioProvider } from './lib/schema-types.js';
 import { serveStudioAsset, toWebRequest, writeWebResponse } from './server/http.js';
@@ -33,9 +32,13 @@ export interface StudioRunOptions {
   connection?: StudioConnection;
   applicationName?: string;
   provider?: StudioProvider;
+  /** Suppress launch URL/logs when a caller owns the output protocol. */
+  quiet?: boolean;
+  /** Called only after the loopback server is listening; never includes its token. */
+  onReady?: (info: { origin: string; remote: boolean }) => void;
 }
 
-async function loadProjectORM(projectRoot: string): Promise<ORM> {
+async function loadProjectORM(projectRoot: string, options: StudioRunOptions): Promise<{ orm: ORM; config: ORMConfig }> {
   const requireFromProject = createRequire(path.join(projectRoot, 'package.json'));
   let packageJsonPath: string;
   try {
@@ -54,15 +57,19 @@ async function loadProjectORM(projectRoot: string): Promise<ORM> {
   );
   const tooling = await import(pathToFileURL(toolingPath).href) as {
     loadORMConfig?: (path: string) => Promise<ORMConfig>;
-    createORMFromConfig?: (config: ORMConfig) => Promise<ORM>;
+    createORMFromConfig?: (config: ORMConfig, context: ORMToolingContext) => Promise<ORM>;
   };
   if (!tooling.loadORMConfig || !tooling.createORMFromConfig) {
     throw new Error(
-      'Studio requires @cossackframework/database 1.0.0 or newer with tooling exports.',
+      'Studio requires @cossackframework/database 0.9.0 or newer with tooling exports.',
     );
   }
   const config = await tooling.loadORMConfig(path.join(projectRoot, 'orm.config.ts'));
-  return tooling.createORMFromConfig(config);
+  const orm = await tooling.createORMFromConfig(config, { cwd: projectRoot,
+    configPath: path.join(projectRoot, 'orm.config.ts'), target: 'local', readOnly: false,
+    ...(options.env ? { environment: options.env } : {}),
+  });
+  return { orm, config };
 }
 
 async function loadProjectEnvironment(projectRoot: string): Promise<void> {
@@ -122,7 +129,7 @@ async function createProjectConnection(
   options: StudioRunOptions,
 ): Promise<StudioConnection> {
   await loadProjectEnvironment(projectRoot);
-  const orm = await loadProjectORM(projectRoot);
+  const { orm, config } = await loadProjectORM(projectRoot, options);
   const provider = options.provider
     ? normalizeStudioProvider(options.provider)
     : await detectStudioProvider(orm);
@@ -134,7 +141,7 @@ async function createProjectConnection(
     );
   }
   return createLocalConnection({
-    orm,
+    orm, migrations: config.migrations,
     info: {
       provider,
       label: localDatabaseLabel(provider, options.database),
@@ -160,66 +167,89 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid Studio port: ${port}`);
   }
-  const connection = options.connection ?? (options.remote
-    ? await createRemoteD1Connection({
-        projectRoot,
-        binding: options.database,
-        environment: options.env,
-      })
-    : await createProjectConnection(projectRoot, options));
+  let connection = options.connection;
+  if (!connection && options.remote) {
+    const { inspectStudioProject } = await import('./lib/inspection.js');
+    // Remote D1 setup imports database tooling and its TypeScript loader. Keep
+    // that process-level initialization out of ordinary local Studio imports.
+    const { createRemoteD1Connection } = await import('./lib/remote-d1.js');
+    connection = await createRemoteD1Connection({
+      projectRoot,
+      binding: options.database,
+      environment: options.env,
+    });
+    connection.inspect = () => inspectStudioProject({ projectRoot, target: 'remote',
+      ...(options.env ? { environment: options.env } : {}),
+      ...(options.database ? { binding: options.database } : {}) });
+  } else if (!connection) {
+    connection = await createProjectConnection(projectRoot, options);
+  }
   const database = new StudioDatabase(connection, {
     applicationName: options.applicationName ?? await resolveApplicationName(projectRoot),
   });
-  await database.getSchema();
-  setStudioDatabase(database);
+  let server: ReturnType<typeof createServer> | undefined;
+  try {
+    await database.getSchema();
+    setStudioDatabase(database);
 
-  const security = createStudioSecurity(port);
-  const packageRoot = path.dirname(fileURLToPath(import.meta.url));
-  const clientRoot = path.resolve(packageRoot, 'app', 'client');
-  const serverEntry = path.resolve(packageRoot, 'app', 'server', 'entry-server.js');
-  let fetchApp: ((request: Request, env?: Record<string, unknown>) => Promise<Response>) | undefined;
+    const security = createStudioSecurity(port);
+    const packageRoot = path.dirname(fileURLToPath(import.meta.url));
+    const clientRoot = path.resolve(packageRoot, 'app', 'client');
+    const serverEntry = path.resolve(packageRoot, 'app', 'server', 'entry-server.js');
+    let fetchApp: ((request: Request, env?: Record<string, unknown>) => Promise<Response>) | undefined;
 
-  const server = createServer(async (request, response) => {
-    security.applyHeaders(response);
-    try {
-      const authorized = security.authorize(request, response);
-      if (authorized !== true) return;
-      if (await serveStudioAsset(request, response, clientRoot)) return;
-      if (!fetchApp) {
-        const module = await import(pathToFileURL(serverEntry).href);
-        fetchApp = (incoming, env) => module.app.fetch(incoming, env);
+    server = createServer(async (request, response) => {
+      security.applyHeaders(response);
+      try {
+        const authorized = security.authorize(request, response);
+        if (authorized !== true) return;
+        if (await serveStudioAsset(request, response, clientRoot)) return;
+        if (!fetchApp) {
+          const module = await import(pathToFileURL(serverEntry).href);
+          fetchApp = (incoming, env) => module.app.fetch(incoming, env);
+        }
+        const webRequest = await toWebRequest(request, security.origin);
+        await writeWebResponse(await fetchApp(webRequest, {}), response);
+      } catch (error: any) {
+        if (!response.headersSent) response.statusCode = 500;
+        response.end(error?.message ?? String(error));
       }
-      const webRequest = await toWebRequest(request, security.origin);
-      await writeWebResponse(await fetchApp(webRequest, {}), response);
-    } catch (error: any) {
-      if (!response.headersSent) response.statusCode = 500;
-      response.end(error?.message ?? String(error));
-    }
-  });
+    });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(port, '127.0.0.1', resolve);
-  });
-  const launchUrl = `${security.origin}/?token=${security.launchToken}`;
-  console.log(`Cossack Studio: ${launchUrl}`);
-  if (connection.info.remote) {
-    console.warn('WARNING: Studio is connected to remote D1. Changes affect deployed data immediately.');
+    await new Promise<void>((resolve, reject) => {
+      server!.once('error', reject);
+      server!.listen(port, '127.0.0.1', resolve);
+    });
+    const launchUrl = `${security.origin}/?token=${security.launchToken}`;
+    if (!options.quiet) console.log(`Cossack Studio: ${launchUrl}`);
+    if (connection.info.remote && !options.quiet) {
+      console.warn('WARNING: Studio is connected to remote D1. Changes affect deployed data immediately.');
+    }
+    options.onReady?.({ origin: security.origin, remote: connection.info.remote });
+    if (options.open !== false) openBrowser(launchUrl);
+
+    await new Promise<void>((resolve) => {
+      const shutdown = () => {
+        options.signal?.removeEventListener('abort', shutdown);
+        process.removeListener('SIGINT', shutdown);
+        process.removeListener('SIGTERM', shutdown);
+        resolve();
+      };
+      if (options.signal?.aborted) shutdown();
+      else options.signal?.addEventListener('abort', shutdown, { once: true });
+      if (!options.signal) {
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
+      }
+    });
+  } finally {
+    try {
+      if (server?.listening) await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
+    } finally {
+      setStudioDatabase(undefined);
+      await database.close();
+    }
   }
-  if (options.open !== false) openBrowser(launchUrl);
-
-  await new Promise<void>((resolve) => {
-    const shutdown = () => resolve();
-    if (options.signal?.aborted) resolve();
-    else options.signal?.addEventListener('abort', shutdown, { once: true });
-    if (!options.signal) {
-      process.once('SIGINT', shutdown);
-      process.once('SIGTERM', shutdown);
-    }
-  });
-  await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-  setStudioDatabase(undefined);
-  await database.close();
 }
 
 export type {
@@ -254,3 +284,5 @@ export {
   detectStudioProvider,
   normalizeStudioProvider,
 } from './lib/provider.js';
+
+export { inspectStudioDatabase, inspectStudioProject, type StudioInspectionOptions } from './lib/inspection.js';

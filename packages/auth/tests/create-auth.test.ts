@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { Hono } from 'hono';
+import { describe, it, expect, vi } from 'vitest';
+import { Context, Hono } from 'hono';
 import { createAuth } from '../src/session';
 
 interface User {
@@ -19,6 +19,27 @@ function buildApp(kit: ReturnType<typeof createAuth<User>>, loginHandler?: any) 
 }
 
 describe('createAuth — middleware', () => {
+    it.each(['extractSessionId', 'validateSessionId', 'resolveUserById'] as const)('redacts %s failures and continues as guest', async stage => {
+        const privateValue = 'PRIVATE_SESSION_PASSWORD_TOKEN';
+        const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const fail = vi.fn(async () => { throw new Error(privateValue); });
+            const kit = createAuth<User>({
+                extractSessionId: () => privateValue,
+                validateSessionId: async () => 'fixture-user',
+                resolveUserById: async () => ({ id: 'fixture-user', email: 'fixture@example.invalid', name: 'Fixture' }),
+                [stage]: fail,
+            });
+            const response = await buildApp(kit).request('/me');
+            expect(response.status).toBe(200);
+            expect(await response.json()).toEqual({ user: null });
+            expect(fail).toHaveBeenCalledOnce();
+            expect(warning).toHaveBeenCalledOnce();
+            expect(warning.mock.calls[0]).toHaveLength(1);
+            expect(JSON.stringify(warning.mock.calls)).not.toContain(privateValue);
+            expect(warning.mock.calls[0][0]).toMatch(/COSSACK_AUTH_.*_FAILED: continuing as guest/);
+        } finally { warning.mockRestore(); }
+    });
     it('passes through when no session id is present', async () => {
         let extracted = false;
         const kit = createAuth<User>({
@@ -101,6 +122,80 @@ describe('createAuth — middleware', () => {
         const res = await app.request('/me');
         expect(res.status).toBe(200);
         expect(((await res.json()) as { user: unknown }).user).toBeNull();
+    });
+});
+
+describe('createAuth — realtime identity', () => {
+    const user = { id: 'u1', email: 'a@b.io', name: 'Fresh account' };
+    const descriptor = { version: 1, provider: 'fixture.session', data: { reference: 'public-reference' } };
+    const makeProvider = () => ({
+        extractSessionId: vi.fn(() => 'PRIVATE_BEARER'),
+        validateSessionId: vi.fn(async () => 'u1'),
+        resolveUserById: vi.fn(async () => user),
+        realtime: { key: 'fixture.session', capture: vi.fn(async () => descriptor.data), validate: vi.fn(async () => 'u1' as string | null) },
+    });
+
+    it('captures only after successful authentication and keeps the hook server-only', async () => {
+        const provider = makeProvider(); const c = new Context(new Request('http://localhost/'));
+        await createAuth(provider).middleware(c, async () => {});
+        expect(provider.realtime.capture).not.toHaveBeenCalled();
+        expect(await c.get('cossack.captureRealtimeIdentity')()).toEqual(descriptor);
+        expect(provider.realtime.capture).toHaveBeenCalledWith('PRIVATE_BEARER', 'u1', c);
+        expect(JSON.stringify(await c.get('cossack.captureRealtimeIdentity')())).not.toContain('PRIVATE_BEARER');
+        provider.validateSessionId.mockResolvedValue(null as never);
+        await createAuth(provider).middleware(c, async () => {});
+        expect(c.get('user')).toBeUndefined();
+        expect(c.get('cossack.captureRealtimeIdentity')).toBeUndefined();
+    });
+
+    it('checks current storage and resolves fresh user data without extracting a bearer again', async () => {
+        const provider = makeProvider(); const c = new Context(new Request('http://localhost/', { headers: { cookie: 'PRIVATE_BEARER' } }));
+        c.set('user', { ...user, name: 'Stale account' }); c.set('cossack.realtimeIdentity', descriptor);
+        await createAuth(provider).middleware(c, async () => {});
+        expect(provider.realtime.validate).toHaveBeenCalledWith(descriptor.data, c);
+        expect(provider.extractSessionId).not.toHaveBeenCalled(); expect(provider.validateSessionId).not.toHaveBeenCalled();
+        expect(c.get('user')).toEqual(user); expect(c.get('cossack.captureRealtimeIdentity')).toBeUndefined();
+        provider.realtime.validate.mockResolvedValue(null);
+        await createAuth(provider).middleware(c, async () => {});
+        expect(c.get('user')).toBeUndefined(); expect(provider.resolveUserById).toHaveBeenCalledOnce();
+    });
+
+    it.each([null, {}, [], { ...descriptor, version: 2 }, { ...descriptor, provider: 'different.provider' },
+        { version: 1, provider: descriptor.provider }])('rejects a malformed or foreign descriptor without falling back to the cookie: %j', async restored => {
+        const provider = makeProvider(); const c = new Context(new Request('http://localhost/'));
+        c.set('user', user); c.set('cossack.realtimeIdentity', restored);
+        const next = vi.fn(async () => {});
+        await createAuth(provider).middleware(c, next);
+        expect(c.get('user')).toBeUndefined(); expect(next).toHaveBeenCalledOnce();
+        expect(provider.realtime.validate).not.toHaveBeenCalled(); expect(provider.extractSessionId).not.toHaveBeenCalled();
+    });
+
+    it.each(['validate', 'resolve'] as const)('redacts a realtime %s failure and discards the old user', async stage => {
+        const provider = makeProvider(); const c = new Context(new Request('http://localhost/'));
+        c.set('user', user); c.set('cossack.realtimeIdentity', descriptor);
+        const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            (stage === 'validate' ? provider.realtime.validate : provider.resolveUserById).mockRejectedValue(new Error('PRIVATE_STORAGE_CREDENTIAL'));
+            await createAuth(provider).middleware(c, async () => {});
+            expect(c.get('user')).toBeUndefined(); expect(JSON.stringify(warning.mock.calls)).not.toContain('PRIVATE_STORAGE_CREDENTIAL');
+            expect(warning).toHaveBeenCalledWith(expect.stringContaining('COSSACK_AUTH_REALTIME_VALIDATION_FAILED'));
+        } finally { warning.mockRestore(); }
+    });
+
+    it('propagates downstream failures once, including a mismatched provider', async () => {
+        for (const restored of [descriptor, { ...descriptor, provider: 'other.session' }]) {
+            const c = new Context(new Request('http://localhost/')); c.set('cossack.realtimeIdentity', restored);
+            const error = new Error('handler failure'); const next = vi.fn(async () => { throw error; });
+            await expect(createAuth(makeProvider()).middleware(c, next)).rejects.toBe(error);
+            expect(next).toHaveBeenCalledOnce();
+        }
+    });
+
+    it('requires a stable bounded provider key', () => {
+        for (const key of ['', 'Uppercase', 'x'.repeat(65), 'with spaces', null, undefined, 123]) {
+            const provider = makeProvider(); provider.realtime.key = key as string;
+            expect(() => createAuth(provider)).toThrow('stable provider key');
+        }
     });
 });
 

@@ -11,7 +11,7 @@ import { html, component } from '@cossackframework/renderer';
  *   @Page({ ssg: true })
  */
 @Page({ ssg: true, transport: 'http' })
-export class SsgDemo extends Cossack {
+export default class SsgDemo extends Cossack {
   head() {
     return {
       title: 'SSG Demo - Static Page',

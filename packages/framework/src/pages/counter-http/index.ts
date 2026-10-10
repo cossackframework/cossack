@@ -36,7 +36,7 @@ export class CounterHttp extends Cossack {
             <div>
                 <h1>Counter (HTTP)</h1>
                 <p>Count: ${this.count}</p>
-                ${component(ButtonGroup, {}, html`
+                ${component(ButtonGroup, { label: 'Counter actions' }, html`
                     ${component(Button, { variant: 'outline', '@click': this.decrement, 'aria-label': 'Decrement' }, '-')}
                     ${component(Button, { '@click': this.increment, 'aria-label': 'Increment' }, '+')}
                 `)}
@@ -44,3 +44,5 @@ export class CounterHttp extends Cossack {
         `;
     }
 }
+
+export default CounterHttp;

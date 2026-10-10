@@ -10,15 +10,23 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Context } from 'hono';
-import { setRequestContextGetter } from '@cossackframework/core';
+import { setActionIdentityScope, setRequestContextGetter, type ActionIdentity } from '@cossackframework/core';
 
 const ctxAls = new AsyncLocalStorage<Context>();
+// Per-call identity of socket @Server actions. Streaming actions keep running
+// after they release the component's action queue; this scope keeps
+// `this.user`/`this.c` bound to the right caller across their awaits.
+const actionIdentityAls = new AsyncLocalStorage<ActionIdentity>();
 
 let wired = false;
-/** One-time wiring of the ALS store-getter into core's request-context. */
+/** One-time wiring of the ALS stores into core's request-context and action identity. */
 export function ensureRequestContextAlsWired(): void {
     if (wired) return;
     setRequestContextGetter(() => ctxAls.getStore());
+    setActionIdentityScope({
+        run: (identity, fn) => actionIdentityAls.run(identity, fn),
+        get: () => actionIdentityAls.getStore(),
+    });
     wired = true;
 }
 

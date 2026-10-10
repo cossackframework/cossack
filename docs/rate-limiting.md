@@ -11,16 +11,63 @@ It works in three places:
 
 - **Functional API routes** : via the `RateLimit()` handler wrapper.
 - **Class-based API routes** (`get` / `post` / …) : via the `@RateLimit()` decorator.
-- **`@Server` component methods** (HTTP/SSE transport) : via the `@RateLimit()` decorator, enforced at the `/crpc` and `/upload` dispatch boundaries.
+- **`@Server` component and scoped service methods** : via `@RateLimit()`, enforced before mutation at `/crpc`, `/upload`, and correlated WebSocket action dispatch.
 
 ## Options
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `window` | `number` (ms) | `60_000` | Fixed-window duration. |
-| `max` | `number` | `60` | Max requests per window, per key. |
-| `key` | `(c) => string` | user id, else IP | How callers are bucketed. |
+| `window` | `number` (ms) | `60_000` | Positive safe-integer milliseconds. |
+| `max` | `number` | `60` | Non-negative safe integer; zero denies all calls. |
+| `key` | `(c) => string` | user id, else IP | Returns a non-empty string identifying the caller bucket. |
 | `message` | `string` | `'Too Many Requests'` | Body of the `429` response. |
+| `requires` | `StorageRequirements` | `{}` | Required provider guarantees; checked before charging a counter. |
+| `backendTimeoutMs` | `number` (ms) | `5000` | Counter decision deadline, including response EOF. Positive safe integer, at most `2147483647`. |
+
+Invalid runtime options reject before the counter is touched. Counter replies
+must contain a positive safe-integer `count` and a positive safe-integer
+`resetAt` in epoch milliseconds. This applies to custom stores too. Backend
+errors and corrupt counters reject before the application action runs. A failed
+reply can still mean the backend counted the attempt; calls are not retried.
+
+## Backend deadlines and cancellation
+
+Every framework counter decision has a deadline. `backendTimeoutMs` sets it
+independently of the fixed window and the server method's client timeout. A
+stalled provider rejects the decision and releases the call without invoking
+the application action. The framework races custom stores too, even when they
+ignore cancellation. It does not retry or undo an increment already dispatched.
+
+Built-in async stores accept `hit(key, windowMs, { signal, timeoutMs })` for
+direct calls. `timeoutMs` also defaults to 5000. Custom stores receive this
+optional third argument during framework enforcement. Direct calls to a custom
+store must implement their own deadline and cancellation contract.
+
+DO and Redis replies have an 8192-byte maximum (`RATE_LIMIT_RESPONSE_MAX_BYTES`).
+The reader checks actual bytes, decodes strict UTF-8, and requires EOF before
+using the counter. Invalid JSON, producer errors, oversized replies and stalled
+bodies reject. HTTP error bodies and late replies after cancellation are
+cancelled without exposing their contents. Readers release their locks. Cleanup
+requests do not wait forever for a producer's cancellation callback. KV text
+records are checked against the same encoded byte bound before JSON parsing;
+the structural KV API still materializes the returned string.
+
+HTTP decisions observe the request's abort signal; correlated socket decisions observe
+call cancellation and peer close/error events. After an observed abort, a late
+counter result cannot invoke the action. KV skips a write if its preceding read
+finishes after cancellation; a write already dispatched can still commit.
+Cancellation does not stop application work that began before it was observed.
+RPC deadlines reject with `COSSACK_RPC_TIMEOUT`; observed cancellation rejects
+with `COSSACK_RPC_CANCELLED`. HTTP/SSE/service calls now carry their UUID
+correlation ID from dispatch, including errors before response headers. IDs are
+public correlation data and do not bypass authentication or route guards.
+
+Cloudflare client disconnect notifications require
+[`enable_request_signal`](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-requestsignal-for-incoming-requests).
+The deadline still applies when a runtime does not emit an abort. Cancelling a
+local body or passing a signal does not guarantee that a remote producer stops,
+or that a charged counter is rolled back. Native distributed SSE queued-caller
+cancellation remains a separate acceptance gate.
 
 ## Functional API routes (handler wrapper)
 
@@ -40,7 +87,40 @@ export const POST = RateLimit((c) => c.json({ ok: true }));
 
 ## Class-based API routes & `@Server` methods (decorator)
 
-The decorator form works anywhere the framework dispatches server-side: class-based API handlers (`get`/`post`/…) and `@Server` component methods (HTTP/SSE transport). It is enforced at the `/crpc` and API dispatch boundaries.
+The decorator form works on class-based API handlers (`get`/`post`/…) and
+`@Server` component/service methods. Inherited limits and forwarded service
+method limits use the declaring metadata. RPC rejection uses
+`COSSACK_RPC_RATE_LIMITED` and the request ID. HTTP replies also include status
+429 and `Retry-After`; WebSocket calls reject through their correlated error
+frame and release loading. Counter-store failures reject before mutation with
+a sanitized internal error. Backend deadlines and observed cancellation use the
+codes described above. Calls are never retried automatically.
+
+Component budgets belong to the canonical server route, action-owning class,
+method and caller. Changing request IDs, opening another socket, or switching
+between JSON, multipart and WebSocket does not restore the same budget when
+the caller identity and configured store are shared. Child classes have separate
+budgets from the page; siblings of the same class share their action budget.
+Explicit layout services use their owning layout and service slot, so the same
+service shares its budget across pages that use that layout. These budgets do
+not limit direct server-to-server calls to the original local method.
+
+WebSocket identity comes from the runtime's verified upgrade rather than action
+arguments. Anonymous Durable Object peers have no synthetic user ID, so the
+default key uses the captured IP headers. Each socket supplies its own headers,
+query and decoded page route params to actions and custom keys, including after
+component reconstruction. Node also passes the connecting peer context
+when sharing a component; it does not reuse the first connection's headers.
+
+Cloudflare retains a request snapshot in the native WebSocket attachment.
+Cookie/Authorization, common credential headers, handshake noise and internal
+identity assertions are excluded. Custom application headers and query values
+are retained; do not put credentials in those values. Oversized snapshots fail
+the upgrade with `COSSACK_WS_CONTEXT_TOO_LARGE` (413), rather than dropping key
+inputs. Old connections without a snapshot reject actions and close with 1012
+for reconnect. These are upgrade-time facts; session revocation/rotation still
+needs application/session policy. In-memory counters remain process-local;
+shared route namespaces do not make them durable or distributed.
 
 ```typescript
 import { Cossack, Page, Server, State, RateLimit } from '@cossackframework/core';
@@ -69,7 +149,13 @@ export default class SearchPage extends Cossack {
 
 ## How callers are identified
 
-By default a caller is bucketed by the authenticated user id, falling back to the client IP (`cf-connecting-ip` → `x-real-ip` → `x-forwarded-for`). Bucket by anything else with `key`:
+By default a caller is bucketed by the authenticated user id, falling back to the client IP. Client-supplied proxy headers are not trusted by default:
+
+- **Cloudflare Workers**: `cf-connecting-ip`, which Cloudflare sets and clients cannot forge.
+- **Node.js**: the TCP peer address. A custom Node entry records it with `setClientAddress(request, incoming.socket.remoteAddress)`, or passes `@hono/node-server`'s `{ incoming }` bindings through as `env`.
+- **Behind a reverse proxy**: set `RATE_LIMIT_TRUST_PROXY` (or `rateLimitTrustProxy`) in the environment to the one header your proxy overwrites, e.g. `x-real-ip` or `x-forwarded-for`. For `x-forwarded-for` the right-most entry (appended by your proxy) is used. Only enable this when the app is reachable exclusively through that proxy.
+
+Without any of these, anonymous callers share one `ip:anonymous` bucket. Bucket by anything else with `key`:
 
 ```typescript
 RateLimit({ window: 60_000, max: 100, key: (c) => `tenant:${c.get('user').tenantId}` }, handler);
@@ -81,18 +167,18 @@ The default store is **in-memory and per-process**, so it is exact for a single 
 
 | Store | Consistency | Best for |
 | --- | --- | --- |
-| `DurableObjectRateLimitStore` | **Strong** (exact) | Strict/accurate limits on Cloudflare : the recommended option. |
+| `DurableObjectRateLimitStore` | **Strong**, persistent fixed window | Exact counters across Workers and DO reconstruction. |
 | `RedisRateLimitStore` (Upstash) | **Strong** (exact) | Cross-runtime Redis. Works on Workers and Node.js. |
 | `KvRateLimitStore` | **Approximate** | Cheap, global, "good enough" abuse protection. |
 
 ### Zero-code configuration (recommended)
 
-You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework picks the store automatically on first use. (On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.)
+You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.jsonc` plus the relevant binding/credentials, and the framework resolves the store from each request’s environment. (On other runtimes, or for full control, use the manual `setRateLimitStore()` calls shown under each store below.)
 
 | `rateLimit` value | What you also need |
 | --- | --- |
 | `"durable-object"` (alias `"do"`) | a `RATE_LIMIT_DO` DO binding + export the class (see below) |
-| `"redis"` (alias `"upstash"`) | `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` vars |
+| `"redis"` (alias `"upstash"`) | `UPSTASH_REDIS_REST_URL` var + `UPSTASH_REDIS_REST_TOKEN` secret |
 | `"kv"` | a `RATE_LIMITS` KV binding |
 | *(unset)* | the default in-memory store (single instance only) |
 
@@ -103,7 +189,7 @@ You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.j
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMIT_DO", "class_name": "RateLimitDurableObject" }]
   },
-  "migrations": [{ "tag": "v1", "new_classes": ["RateLimitDurableObject"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimitDurableObject"] }]
 }
 ```
 
@@ -116,13 +202,43 @@ You do not need to touch your `index.ts`. Set the `rateLimit` var in `wrangler.j
 > ```
 > (Keep `AppDurableObject`'s existing import from the framework : only `RateLimitDurableObject` comes from core.) `"redis"` and `"kv"` modes need **no code changes at all** : bindings/vars only.
 
-A manual `setRateLimitStore(...)` call, if present, always takes precedence over this var.
+Explicit configuration requires a supported non-empty mode and valid bindings
+or credentials. Missing bindings, unknown modes and invalid values throw; they
+never fall back to memory. A repaired environment can serve its next request.
+Unchanged environment/binding/credential selections reuse a store. Changing a
+selection does not retarget another request's already selected store. An
+unconfigured request uses the process-local memory default and never inherits a
+previous request's configured backend.
+
+`setRateLimitStore(...)` is an intentional process-wide override. Configure it
+once during setup for an application with one fixed backend. It overrides every
+environment selection. Use automatic environment selection when serving multiple
+environments or bindings in one process.
 
 ## Manual configuration
 
 ### Durable Object (strongly consistent : recommended)
 
-Each key is routed to its own Durable Object (`idFromName(key)`), so every bucket is its own single-threaded consistency point : limits are exact across instances and regions. This is Cloudflare's recommended pattern for precise rate limiting.
+Each key is routed to its own Durable Object (`idFromName(key)`). The counter
+and reset deadline commit together in a storage transaction. Eviction and
+reconstruction preserve a spent budget. New hits within the active window keep
+its original deadline, even if the requested duration changes. At the deadline,
+the next hit starts a new window with the requested duration.
+
+An alarm removes the expired record. Delayed alarms cannot erase a newer
+window, and expiry does not depend on alarm delivery. Storage or alarm-write
+failures reject the hit before the application action runs. Persisted records
+and DO replies require positive safe-integer counts and epoch-millisecond reset
+times; corrupt data fails rather than restoring a caller's budget.
+
+Every built-in store requires a positive safe-integer `window` in milliseconds
+that fits the timestamp range. Invalid direct DO requests return 400 with
+`COSSACK_RATE_LIMIT_CONFIG_INVALID`; direct store calls throw before contacting
+the binding. All built-in direct `hit()` calls also reject invalid keys and windows.
+
+The implementation uses the transactional key-value API supported by SQLite
+and existing legacy DO storage. Create new namespaces with SQLite; retain the
+migration history of existing namespaces. See [Cloudflare storage transactions](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/#transaction).
 
 Register the bundled `RateLimitDurableObject` in `wrangler.jsonc`:
 
@@ -131,36 +247,33 @@ Register the bundled `RateLimitDurableObject` in `wrangler.jsonc`:
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMIT_DO", "class_name": "RateLimitDurableObject" }]
   },
-  "migrations": [{ "tag": "v1", "new_classes": ["RateLimitDurableObject"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimitDurableObject"] }]
 }
 ```
 
-Then wire it up and re-export the class from your Worker entry:
+Export the class from the Worker entry as shown above. For a process with one
+fixed namespace, configure an override during application setup:
 
 ```ts
-import { setRateLimitStore, DurableObjectRateLimitStore, RateLimitDurableObject } from '@cossackframework/core';
+import { setRateLimitStore, DurableObjectRateLimitStore, type RateLimitDurableObjectNamespace } from '@cossackframework/core';
 
-export { RateLimitDurableObject };
-
-export default {
-    async fetch(req, env) {
-        setRateLimitStore(new DurableObjectRateLimitStore(env.RATE_LIMIT_DO));
-        return app.fetch(req, env);
-    },
-};
+export function configureLimiter(bindings: { RATE_LIMIT_DO: RateLimitDurableObjectNamespace }) {
+    setRateLimitStore(new DurableObjectRateLimitStore(bindings.RATE_LIMIT_DO));
+}
 ```
 
 ### Redis / Upstash (strongly consistent, cross-runtime)
 
-`RedisRateLimitStore` talks to **Upstash Redis over REST** : the only Redis shape that runs on both Cloudflare Workers (no TCP sockets) and Node.js, with **zero extra dependencies**. Counting uses a single atomic `EVAL` (`INCR` + conditional `EXPIRE`), so it is exact under concurrency.
+`RedisRateLimitStore` uses Upstash Redis over REST on Cloudflare Workers and Node.js with zero extra dependencies. Counting uses a single atomic `EVAL` (`INCR` + conditional `PEXPIRE`), so it is exact under concurrency.
 
-Configure the credentials as env vars (in `wrangler.jsonc` `vars`, or your host's env):
+Set the REST URL in `wrangler.jsonc` and provide the token as a Worker secret:
+`pnpm exec wrangler secret put UPSTASH_REDIS_REST_TOKEN`. Local development can
+read the token from `.dev.vars`. Other runtimes can use their host environment.
 
 ```jsonc
 {
   "vars": {
-    "UPSTASH_REDIS_REST_URL": "https://xxxxx.upstash.io",
-    "UPSTASH_REDIS_REST_TOKEN": "AY...="
+    "UPSTASH_REDIS_REST_URL": "https://xxxxx.upstash.io"
   }
 }
 ```
@@ -168,43 +281,112 @@ Configure the credentials as env vars (in `wrangler.jsonc` `vars`, or your host'
 ```ts
 import { setRateLimitStore, redisRateLimitStoreFromEnv } from '@cossackframework/core';
 
-export default {
-    async fetch(req, env) {
-        setRateLimitStore(redisRateLimitStoreFromEnv(env));
-        return app.fetch(req, env);
-    },
-};
-// or, anywhere: new RedisRateLimitStore({ url, token })
+// One fixed backend, configured once during application setup.
+export function configureLimiter(env: Record<string, string | undefined>) {
+    setRateLimitStore(redisRateLimitStoreFromEnv(env));
+}
+// Or construct a store directly: new RedisRateLimitStore({ url, token }).
 ```
+
+Redis expiry uses milliseconds without rounding to whole seconds. Missing,
+malformed or negative PTTL values reject instead of creating a guessed deadline.
+The explicit `redisRateLimitStoreFromEnv(env)` helper requires credentials from
+that environment; it does not borrow process credentials when they are absent.
+See [Redis PEXPIRE](https://redis.io/docs/latest/commands/pexpire/) and
+[PTTL](https://redis.io/docs/latest/commands/pttl/).
 
 ### Cloudflare KV (approximate)
 
-`KvRateLimitStore` is the cheapest global option. Expired buckets are auto-expired via KV's TTL, so there is no unbounded growth.
+KV is a shared approximate store. Its storage TTL is at least 60 seconds, while
+the record's millisecond deadline controls the logical fixed window. Shorter
+windows reset at that deadline even while the old record remains in storage.
+Corrupt records reject without overwriting them or restoring a caller's budget.
 
 ```ts
-import { setRateLimitStore, KvRateLimitStore } from '@cossackframework/core';
+import { setRateLimitStore, KvRateLimitStore, type RateLimitKvNamespace } from '@cossackframework/core';
 
-export default {
-    async fetch(req, env) {
-        setRateLimitStore(new KvRateLimitStore(env.RATE_LIMITS));
-        return app.fetch(req, env);
-    },
-};
+// One fixed binding, configured once during application setup.
+export function configureLimiter(bindings: { RATE_LIMITS: RateLimitKvNamespace }) {
+    setRateLimitStore(new KvRateLimitStore(bindings.RATE_LIMITS));
+}
 ```
 
-> **KV is approximate, not exact.** KV is *eventually consistent* and has no atomic increment. Two reads can happen before either write during a concurrent burst, which can cause a temporary under-count. The limit can be exceeded by a small amount under load. For exact limits, use the Durable Object or Redis store above.
+KV has eventual consistency and no atomic increment; under-counting across
+regions has no strict bound. It also permits only one write per key per second.
+Write failures reject the action, so this backend is unsuitable for burst
+traffic that needs reliable counting. Use Durable Objects or Redis for that
+workload. See [Cloudflare KV write limits](https://developers.cloudflare.com/kv/api/write-key-value-pairs/).
 
 ### Custom store
 
 Need D1, a self-hosted Redis, or something else? Implement the `RateLimitStore` interface (a single `hit` method) and register it:
 
 ```ts
-import type { RateLimitStore } from '@cossackframework/core';
+import { setRateLimitStore, type RateLimitStore } from '@cossackframework/core';
 
-class MyStore implements RateLimitStore {
-    async hit(key: string, windowMs: number) {
-        // return { count, resetAt }
-    }
+// Supply a store whose hit() increments a real fixed-window counter.
+export function configureLimiter(store: RateLimitStore) {
+    setRateLimitStore(store);
 }
-setRateLimitStore(new MyStore());
 ```
+
+
+## Required storage guarantees
+
+Use `@RateLimit({ requires: { shared: true, atomicIncrement: true } })` on a
+server action, or pass the same options to the functional handler wrapper.
+Unsupported/unknown traits reject before a counter hit or handler invocation.
+Builtin direct calls accept `hit(key, windowMs, { requires })`. Framework
+component, service, HTTP/SSE, multipart and socket enforcement checks the same
+requirements. Client debounce does not spend or protect server quota.
+
+`inspectRateLimitStore(env)` describes the selected manual/configured store
+without consuming quota. `cossack inspect providers --json --env staging` shows
+declared backends and millisecond units without executing project modules or
+exposing Redis credentials. Compiler declarations and selected Wrangler settings
+do not prove process/secret overrides, remote readiness or live consistency.
+
+| Provider | Locality | Persistence | Consistency | Atomic increment |
+| --- | --- | --- | --- | --- |
+| Memory | Process | Ephemeral | Strong within this process | Yes |
+| KV | Shared | Durable | Eventual | No |
+| Durable Object | Shared | Durable | Strong within its owner | Yes |
+| Redis REST | Shared | Unknown | Strong within its EVAL owner | Yes |
+| Undeclared custom | Unknown | Unknown | Unknown | Unknown |
+
+All builtin profiles use logical millisecond expiry and expose `hit` only.
+Requirements support `shared`, `durable`, `strongConsistency`, `atomicIncrement`,
+`millisecondExpiry` and `operations`. Unknown cannot satisfy a requested guarantee.
+Redis persistence depends on the endpoint's configuration and is not assumed.
+A custom store may declare `capabilities`; its author owns the truth of that
+validated declaration. Direct custom calls own their requirement checks too.
+
+## Resource limits and migration
+
+Keys must be nonblank valid UTF-8 strings of at most 512 bytes. KV/Redis frame
+namespace/key pairs as JSON tuples and reject when the final encoded key exceeds
+512 bytes. Namespace is a valid UTF-8 string (empty is allowed), at most 512 bytes;
+explicit null is invalid. Framework scope/caller keys use JSON tuples too, so
+separators in identifiers cannot merge distinct budgets.
+
+`InMemoryRateLimitStore(maxEntries)` defaults to 10,000 entries and accepts
+integers from 1 to 100,000. At capacity it removes expired buckets, then evicts
+the buckets whose window started earliest so new callers are still admitted.
+A flood of distinct keys therefore cannot block every caller, but evicted
+callers lose their spent budget. Size `maxEntries` above the expected number of
+live callers, or use a shared store for strict limits.
+
+Redis requires an explicit HTTPS REST URL, at most 2048 UTF-8 bytes, without
+embedded credentials, query, fragment, whitespace, controls or backslashes.
+The bearer token must be nonempty ASCII without whitespace/controls and at most
+8192 bytes. Authenticated POST requests use manual redirect handling; redirects
+reject rather than forwarding credentials to another origin. Plain HTTP has no
+local-development exception.
+
+The 0.9.0 key framing changes reset existing framework/namespace budgets once
+at deployment. Old Redis/KV windows expire through their existing TTL; old DO
+records retain their previous names until expiry cleanup. Coordinate a rollout
+if a mixed-version deployment must not admit two independent budgets. Ordinary
+requests never reset a live bucket merely to free capacity. `window` retains its
+name and always means integer milliseconds; misspelled/unknown options now reject
+instead of being silently ignored.

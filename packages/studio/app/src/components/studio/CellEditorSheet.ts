@@ -4,6 +4,7 @@ import { RefreshIcon } from '@cossackframework/solar-icons/refresh';
 import {
   Button,
   DatePicker,
+  isCalendarDate,
   Icon,
   Input,
   Sheet,
@@ -80,6 +81,7 @@ export class CellEditorSheet extends Cossack {
       size: 'min(42rem, 92vw)',
       onClose: this.props.onClose,
       'data-testid': 'cell-editor-sheet',
+      'aria-label': 'Edit cell',
     }, html`
       <header class="flex shrink-0 items-start justify-between border-b p-5">
         <div>
@@ -152,13 +154,18 @@ export class CellEditorSheet extends Cossack {
           </div>
           <div class="${activeEditor.kind === 'date' ? 'block' : 'hidden'}">
             <div class="grid max-w-sm gap-2">
-              <label class="text-sm font-medium">Date</label>
-              ${component(DatePicker, {
-                value: activeEditor.kind === 'date'
-                  ? activeEditor.value.slice(0, 10)
-                  : '',
-                onChange: this.props.onValueChange,
-              })}
+              <label class="text-sm font-medium" for="cell-editor-date">Date</label>
+              ${activeEditor.kind !== 'date' || !activeEditor.value || isCalendarDate(activeEditor.value)
+                ? component(DatePicker, {
+                  id: 'cell-editor-date',
+                  value: activeEditor.kind === 'date' ? activeEditor.value : '',
+                  disabled: activeEditor.mode === 'null',
+                  onChange: this.props.onValueChange,
+                }) : component(Input, {
+                  id: 'cell-editor-date', type: 'text', '.value': activeEditor.value,
+                  disabled: activeEditor.mode === 'null',
+                  '@input': event => this.props.onValueChange(event.currentTarget.value),
+                })}
             </div>
           </div>
           <div class="${activeEditor.kind === 'datetime' ? 'block' : 'hidden'}">

@@ -19,6 +19,7 @@ description: 'Documentation for getting started with Cossack and learning its fe
 - [Markdown Pages](/docs/markdown.md)
 - [Header](/docs/header.md)
 - [Components](/docs/components.md)
+- [Server calls and client types](/docs/rpc.md)
 - [States](/docs/states.md)
 - [Layouts](/docs/layouts.md)
 - [Template](/docs/template.md)

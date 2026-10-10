@@ -1,0 +1,16 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { inspectProject } from '../src/inspection-service.js';
+import { inspectCommand, checkCommand } from '../src/commands/inspect.js';
+const roots=[],clients=[];
+afterEach(async()=>{vi.restoreAllMocks();await Promise.all(clients.splice(0).map(client=>client.close()));await Promise.all(roots.splice(0).map(root=>fs.rm(root,{recursive:true,force:true})));});
+async function fixture(){const root=await fs.mkdtemp(path.join(os.tmpdir(),'cossack-workflow-inspection-'));roots.push(root);await fs.mkdir(path.join(root,'src'));await fs.mkdir(path.join(root,'node_modules'));await fs.symlink(path.dirname(createRequire(import.meta.url).resolve('wrangler/package.json')),path.join(root,'node_modules/wrangler'),'junction');await fs.writeFile(path.join(root,'package.json'),JSON.stringify({name:'fixture',cossack:{runtime:'cloudflare'}}));await fs.writeFile(path.join(root,'src/workflows.json'),JSON.stringify([{name:'approval',version:1,binding:'WORKFLOWS',className:'ApprovalWorkflow'}]));await fs.writeFile(path.join(root,'wrangler.jsonc'),JSON.stringify({name:'fixture',main:'src/index.ts',compatibility_date:'2026-06-06',workflows:[{name:'approval',binding:'WORKFLOWS',class_name:'ApprovalWorkflow'}]}));await fs.writeFile(path.join(root,'src/index.ts'),"throw Error('PRIVATE_APP_MUST_NOT_RUN');");return root;}
+it('shares redacted read-only Workflow facts through CLI and MCP',async()=>{const root=await fixture();const expected=await inspectProject(root,{scope:'workflows'});expect(expected).toMatchObject({ok:true,data:{readiness:{entry:'not-checked',remote:'not-checked'}}});const output=[];vi.spyOn(console,'log').mockImplementation(value=>output.push(value));expect(await inspectCommand(['workflows'],{cwd:root,flags:{json:true}})).toBe(0);expect(JSON.parse(output.at(-1)).data).toEqual(expected.data);
+ const client=new Client({name:'workflow-test',version:'1'});clients.push(client);await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../bin/cossack-mcp.js',import.meta.url)),'--project',root],stderr:'pipe'}));const result=await client.callTool({name:'inspect_project',arguments:{scope:'workflows'}});expect(result.structuredContent.data).toEqual(expected.data);expect(JSON.stringify(result)).not.toContain('PRIVATE_APP_MUST_NOT_RUN');},30000);
+it('fails check with a named missing-binding diagnostic',async()=>{const root=await fixture();const file=path.join(root,'wrangler.jsonc');const config=JSON.parse(await fs.readFile(file,'utf8'));config.workflows=[];await fs.writeFile(file,JSON.stringify(config));const output=[];vi.spyOn(console,'log').mockImplementation(value=>output.push(value));expect(await checkCommand(['workflows'],{cwd:root,flags:{json:true}})).toBe(1);expect(JSON.parse(output.at(-1))).toMatchObject({ok:false,diagnostics:[{code:'COSSACK_WORKFLOW_BINDINGS_MISMATCH'}]});});

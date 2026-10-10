@@ -19,6 +19,7 @@ import {
 import { parseFlags } from '../src/flags.js';
 
 let temporaryParent;
+const installedVersion = JSON.parse(await fs.readFile(new URL('../../scaffold/package.json', import.meta.url), 'utf8')).version;
 
 function sha(content) {
   return createHash('sha256').update(content, 'utf8').digest('hex');
@@ -48,7 +49,7 @@ async function seedProject(options = {}) {
 }
 
 function makeContext(root, flags) {
-  const { args, flags: parsed } = parseFlags(flags);
+  const { args, flags: parsed } = parseFlags([`--tag=${installedVersion}`, ...flags]);
   return {
     args,
     context: {
@@ -102,7 +103,6 @@ describe('upgrade package manager detection', () => {
     ['yarn.lock', 'yarn'],
     ['bun.lock', 'bun'],
     ['bun.lockb', 'bun'],
-    ['deno.lock', 'deno'],
     ['package-lock.json', 'npm'],
   ])('detects %s', async (lockfile, manager) => {
     await fs.writeFile(path.join(temporaryParent, lockfile), '');
@@ -126,7 +126,8 @@ describe('classifyFile', () => {
   it.each([
     [{ baseline, current: modified, newHash: upstream, excluded: true }, 'excluded'],
     [{ baseline, current: null, newHash: upstream }, 'missing'],
-    [{ baseline, current: modified, newHash: null }, 'excluded'],
+    [{ baseline, current: modified, newHash: null }, 'modified'],
+    [{ baseline, current: baseline, newHash: null }, 'canDelete'],
     [{ baseline, current: baseline, newHash: upstream }, 'canUpdate'],
     [{ baseline, current: modified, newHash: upstream }, 'modified'],
     [{ baseline, current: upstream, newHash: upstream }, 'upToDate'],
@@ -136,6 +137,24 @@ describe('classifyFile', () => {
 });
 
 describe('schema-v3 recipe upgrades', () => {
+  it.each([false, true])('preserves excluded Wrangler configuration for explicit disconnect-flag migration (%s)', async modified => {
+    const project = await seedProject({ adapter: 'cloudflare' });
+    const relative = 'wrangler.jsonc';
+    const manifest = await readManifest(project.projectDir);
+    const config = JSON.parse(await fs.readFile(path.join(project.projectDir, relative), 'utf8'));
+    config.compatibility_flags = config.compatibility_flags.filter(flag => flag !== 'enable_request_signal');
+    const previous = JSON.stringify(config, null, 2) + '\n';
+    manifest.files[relative].hash = await write(project.projectDir, relative, previous);
+    await fs.writeFile(path.join(project.projectDir, '.cossack/scaffold.json'), JSON.stringify(manifest));
+    if (modified) await write(project.projectDir, relative, previous + '// User environment configuration\n');
+    await runUpgrade(project.projectDir, ['--apply-template']);
+    const after = await fs.readFile(path.join(project.projectDir, relative), 'utf8');
+    if (modified) expect(after).toBe(previous + '// User environment configuration\n');
+    else expect(after).toBe(previous);
+    expect(after).not.toContain('enable_request_signal');
+    expect((await renderRecipe(project.recipe, { projectName: 'app' })).get(relative).content.toString()).toContain('enable_request_signal');
+  });
+
   it('migrates legacy pnpm build approvals before reinstalling', async () => {
     const project = await seedProject();
     const packagePath = path.join(project.projectDir, 'package.json');
@@ -304,7 +323,14 @@ describe('schema-v3 recipe upgrades', () => {
     manifest.schemaVersion = 1;
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 
-    await expect(runUpgrade(project.projectDir, ['--dry-run']))
-      .rejects.toThrow('Unsupported scaffold manifest schema 1');
+    // CLI-03: command failures resolve to exit code 1 with the coded
+    // message instead of throwing out of the command.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(runUpgrade(project.projectDir, ['--dry-run'])).resolves.toBe(1);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unsupported scaffold manifest schema 1'));
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

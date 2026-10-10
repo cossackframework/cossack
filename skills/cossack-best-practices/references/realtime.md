@@ -7,7 +7,7 @@ Cossack supports real-time state synchronization via two transports. **Do not wi
 | Transport | When to use | Persistent state | Bidirectional |
 |---|---|---|---|
 | `http` (default) | Standard request/response. No real-time. | No | No |
-| `sse` | Server-to-client push on plain Workers. Live counters, chat, streaming text. | No (in-memory) | Actions via POST |
+| `sse` | Server-to-client push with a Cloudflare coordinator. Live counters, chat, streaming text. | Coordinator-backed | Actions via POST |
 | `durable-object` | Multi-user coordination, persistent state, bidirectional. | Optional (`stateful: true`) | Yes (WebSocket) |
 
 Rule of thumb: start with `sse`. Reach for `durable-object` only when you need persistent state in the DO itself or full bidirectional comms.
@@ -19,7 +19,7 @@ The `scope` option on `@Page` determines **which state backend** a request conne
 | Transport | Default scope | What `scope` overrides |
 |---|---|---|
 | `sse` | per-user (`user:${user?.id \|\| 'anonymous'}`) | Which SSE store entry is used |
-| `durable-object` | per-URL (`c.req.url`) | Which Durable Object **instance** the page routes to |
+| `durable-object` | per-user (`user:${user?.id \|\| 'anonymous'}`), combined with canonical component identity | Which Durable Object **instance** the page routes to |
 
 ```typescript
 // SSE — per-team
@@ -38,17 +38,15 @@ The `scope` option on `@Page` determines **which state backend** a request conne
 @Page({ transport: 'durable-object', stateful: true, scope: (c) => `room:${c.req.param('roomId')}` })
 ```
 
-The scope function is evaluated **once during SSR** with the full request context (including params and query). The resulting `scopeKey` is:
-- embedded in the page's initial state, and
-- reused by the `/sse` endpoint, `/crpc` handler, **and** as the Durable Object ID name — so all three contexts agree on the same backend even when scope depends on query params not present in later requests.
+Scope is resolved from current authenticated server context for authorized SSR/transport operations. Serialized scope information lets the browser identify a destination; it is not permission to join it. Scope callbacks must be deterministic for the same trusted ownership context. Explicit room/team scope callbacks must verify membership server-side, including revoked access.
 
-For DO transport, `scope` is the mechanism for **multiplayer**: users (or tabs) that resolve to the same scope key land on the same DO instance and share state. Without `scope`, each URL gets its own DO instance.
+Users or tabs resolving to the same component and scope share its backend. The current default is per-user, not the literal URL. Declare an explicit authorized shared scope for multiplayer rooms; client-provided query/route keys alone are not proof of membership.
 
 ---
 
 ## SSE transport
 
-Real-time server-to-client sync on **plain Cloudflare Workers** — no Durable Object binding required. Actions are sent via HTTP POST (`/crpc`); state updates are pushed over a long-lived SSE connection.
+Cloudflare SSE requires the `COSSACK_SSE` Durable Object coordinator and `SseDurableObject` Worker export. Node coordination is process-local. Actions are sent via HTTP POST (`/crpc`); state updates are pushed over a long-lived SSE connection.
 
 ```typescript
 import { Page, State, Server, Cossack } from '@cossackframework/core';
@@ -63,7 +61,7 @@ export class LiveCounter extends Cossack {
         this.count++; // pushed to all connected clients automatically
     }
 
-    protected render() {
+    render() {
         return html`<p>${this.count}</p><button @click=${this.increment}>+</button>`;
     }
 }
@@ -213,3 +211,15 @@ import { AppDurableObject } from './DurableObject';
 export { AppDurableObject };
 export default { fetch: app.fetch };
 ```
+
+## Ownership and authorization limits
+
+Scope keys identify a backend; they do not authorize access. Derive tenant/user
+ownership from trusted context and recheck record access for RPC and delivered
+socket operations. Do not treat browser scope/state or an open socket as authority.
+Cloudflare durable state requires actual bindings and native restart acceptance;
+Node realtime state is process-local and resets with its process. Read the
+installed Core `rpc-streams-and-transport-policy` and
+`server-action-access-policy` guides in `cossack docs --package @cossackframework/core --json`, selecting
+`guidance.guides` by ID. This is offline guidance, not a
+remote readiness probe.

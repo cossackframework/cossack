@@ -103,3 +103,5 @@ export class SecurityDemo extends Cossack {
         `;
     }
 }
+
+export default SecurityDemo;

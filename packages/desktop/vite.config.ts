@@ -7,12 +7,13 @@ export default defineConfig({
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
         dev: path.resolve(__dirname, 'src/dev.ts'),
+        'development-runtime': path.resolve(__dirname, 'src/development-runtime.ts'),
       },
       formats: ['es'],
     },
     outDir: 'dist',
     rolldownOptions: {
-      external: [/^node:/, 'electron', '@cossackframework/framework/runtime-adapter'],
+      external: [/^node:/, 'electron', 'vite'],
       output: { entryFileNames: '[name].js' },
     },
   },

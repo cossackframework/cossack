@@ -1526,16 +1526,17 @@ export default class StudioPage extends Cossack {
   }
 
   iconButton(
+    id: string,
     icon: IconEntry,
     label: string,
     onClick: () => unknown,
     options: Record<string, unknown> = {},
   ) {
-    return component(Tooltip, { label, side: 'bottom' }, component(Button, {
+    return component(Tooltip, { id, label, side: 'bottom' }, component(Button, {
       variant: 'ghost',
       size: 'icon',
       'aria-label': label,
-      title: label,
+      'aria-describedby': id,
       '@click': onClick,
       ...options,
     }, component(Icon, { entry: icon, size: 17 })));
@@ -1571,6 +1572,12 @@ export default class StudioPage extends Cossack {
             </span>
             ${component(Badge, { variant: remote ? 'destructive' : 'secondary' },
               `${schema.connection.label}${remote ? ' · REMOTE D1' : ' · local'}`)}
+            ${schema.inspection ? html`<details data-testid="database-inspection" class="text-xs">
+              <summary>Database capabilities and migrations</summary>
+              <p>Target: ${schema.inspection.target.provider ?? schema.inspection.dialect} · ${schema.inspection.target.target ?? 'unspecified'} ${schema.inspection.target.environment ?? ''}</p>
+              <p>Transactions: ${schema.inspection.capabilities.driver.transactions ? 'supported' : 'unavailable'}; nested savepoints: ${schema.inspection.capabilities.driver.savepoints ? 'supported' : 'unavailable'}</p>
+              <ul>${schema.inspection.migrations.map(item => html`<li>${item.name}: ${item.state}</li>`)}</ul>
+            </details>` : ''}
             ${schema.connection.databaseVersion ? html`
               <span
                 class="hidden shrink-0 text-xs text-muted-foreground md:inline"
@@ -1586,7 +1593,7 @@ export default class StudioPage extends Cossack {
                 Writes affect deployed data immediately
               </div>
             ` : ''}
-            ${this.iconButton(
+            ${this.iconButton('studio-theme-tip',
               this.theme === 'dark' ? SunIcon : MoonIcon,
               this.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
               this.toggleTheme,
@@ -1600,7 +1607,8 @@ export default class StudioPage extends Cossack {
             ${component(Button, {
               variant: 'outline',
               class: 'w-full justify-between gap-3 bg-background',
-              'data-testid': 'open-command-palette',
+              'data-testid': 'open-command-palette', type: 'button',
+              'aria-haspopup': 'dialog', 'aria-controls': 'studio-command-palette', 'aria-expanded': this.paletteOpen,
               '@click': () => { this.paletteOpen = true; },
             }, html`
               <span class="inline-flex min-w-0 items-center gap-2">
@@ -1650,7 +1658,7 @@ export default class StudioPage extends Cossack {
                     : 'text-muted-foreground'}">
                     ${component(Icon, {
                       entry: candidate.kind === 'view' ? EyeIcon : DatabaseIcon,
-                      style: selected ? 'bold-duotone' : candidate.kind === 'view' ? 'line' : 'duotone',
+                      variant: selected ? 'bold' : candidate.kind === 'view' ? 'line' : 'duotone',
                       size: 16,
                     })}
                   </span>
@@ -1685,13 +1693,13 @@ export default class StudioPage extends Cossack {
             </div>
             <div class="flex items-center gap-1">
               ${this.tab === 'browse' && object
-                ? this.iconButton(RefreshIcon, 'Refresh rows', () => this.reloadRows(), {
+                ? this.iconButton('studio-refresh-rows-tip', RefreshIcon, 'Refresh rows', () => this.reloadRows(), {
                     disabled: this.browseLoading,
                     'data-testid': 'refresh-rows',
                   })
                 : ''}
               ${this.tab === 'browse' && object?.editable && !this.customBrowseQuery
-                ? this.iconButton(AddSquareIcon, this.showInsert ? 'Close insert form' : 'Insert row', this.toggleInsert, {
+                ? this.iconButton('studio-insert-row-tip', AddSquareIcon, this.showInsert ? 'Close insert form' : 'Insert row', this.toggleInsert, {
                     'data-testid': 'insert-row',
                     variant: this.showInsert ? 'secondary' : 'ghost',
                   })
@@ -1699,7 +1707,7 @@ export default class StudioPage extends Cossack {
               ${this.tab === 'pragmas' &&
                 ['sqlite', 'turso', 'd1-local', 'd1-remote']
                   .includes(this.activeSchema.connection.provider)
-                ? this.iconButton(RefreshIcon, 'Refresh pragmas', this.refreshPragmas, {
+                ? this.iconButton('studio-refresh-pragmas-tip', RefreshIcon, 'Refresh pragmas', this.refreshPragmas, {
                     disabled: Boolean(this.loading.refreshPragmas),
                     'data-testid': 'refresh-pragmas',
                   })
@@ -1742,6 +1750,7 @@ export default class StudioPage extends Cossack {
         ${this.renderExportSheet(object)}
         ${this.renderBatchUpdateSheet(object)}
         ${component(CommandPalette, {
+          id: 'studio-command-palette', label: 'Database objects', searchLabel: 'Search tables and views', shortcut: true,
           open: this.paletteOpen,
           commands: paletteObjects.map((candidate) => ({
             id: candidate.name,
@@ -1755,11 +1764,13 @@ export default class StudioPage extends Cossack {
           'data-testid': 'studio-command-palette',
         })}
         ${component(AlertDialog, {
+          id: 'studio-delete-dialog',
           open: Boolean(this.deleteTarget),
           title: `Delete ${this.deleteTarget?.keys.length ?? 0} selected row${this.deleteTarget?.keys.length === 1 ? '' : 's'}?`,
           description: `This action runs immediately against ${this.deleteTarget?.table ?? 'the table'} and cannot be undone.`,
           cancelLabel: 'Cancel',
           actionLabel: this.loading.deleteGridRows ? 'Deleting…' : 'Delete',
+          actionDisabled: Boolean(this.loading.deleteGridRows),
           onClose: () => { this.deleteTarget = null; },
           onAction: this.confirmDelete,
           'data-testid': 'delete-dialog',

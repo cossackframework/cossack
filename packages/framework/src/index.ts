@@ -14,6 +14,9 @@ const app = createApp({ AppComponent: App });
 
 // Export the Durable Object and the app fetch handler for the Cloudflare runtime
 export { AppDurableObject };
+// SseDurableObject coordinates distributed SSE scope state (SQLite-backed).
+// Cloudflare requires DO classes in the Worker entry's export graph.
+export { SseDurableObject } from './SseDurableObject.js';
 // CacheDurableObject must be re-exported by apps using the durable-object cache
 // driver (Cloudflare requires DO classes in the Worker entry's export graph).
 export { CacheDurableObject } from './cache.js';

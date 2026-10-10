@@ -34,6 +34,7 @@ import { config } from '@cossackframework/framework/config';
 
 const appName = config('app.name');           // 'My App'
 const appEnv = config('app.env', 'production'); // 'production' (with fallback)
+const app = config('app');                     // whole object, type inferred
 const debug = config('app.debug');             // false (type inferred)
 ```
 
@@ -148,7 +149,8 @@ and `*.example.com` (HTTP or HTTPS). Subdomain patterns exclude the apex.
 Malformed entries never match. `CORS_CREDENTIALS=true` with global `*` is
 rejected because credentialed CORS requires an explicit origin.
 
-For Node.js, put values in `.env`. For local Wrangler development, use `.dev.vars`:
+For Node.js development, put values in `.env`. Production processes must receive
+their variables from the host. For local Wrangler development, use `.dev.vars`:
 
 ```dotenv
 CORS_ENABLED=true
@@ -356,7 +358,12 @@ This mirrors the ALS pattern used by `__()` (locale), application ORM scopes,
 
 ### SSG
 
-During static generation (`cossack ssg`), there are no live request bindings. The SSG build resolves the site URL from `wrangler.jsonc` / `.env` / shell env (see [Sitemap](./sitemap.md#base-url)) and injects it as `APP_URL` into the config env. Other bindings default to empty : config factories use their fallback values.
+During `vite build`, the `cossackSsg()` plugin renders static pages without live
+request bindings. It resolves the site URL from Wrangler configuration, dotenv or
+shell variables (see [Sitemap](./sitemap.md#base-url)) and supplies `APP_URL`.
+Active requirements use runtime `ssg` and are validated before factories run.
+A required live binding fails the static render. Use `runtimes` to apply a rule
+only where it is needed. Other optional bindings use their factory defaults.
 
 ## API reference
 
@@ -371,3 +378,58 @@ All exports come from `@cossackframework/framework/config`.
 | `ConfigStore` | Internal: the per-request store (`{ env, config }`) held in ALS. |
 | `CossackConfigRegistry` | Interface users augment via `declare module` to register typed config shapes for inference. Empty by default. |
 | `runWithConfig(store, fn)` | Internal: runs `fn` inside a config ALS scope. Used by the framework's middleware and SSG renderer. |
+
+### Build-time requirement checks
+
+`cossackConfig()` checks literal factory requirements before generating types or
+writing build output. Cloudflare builds use the selected Wrangler environment.
+Variables and binding declarations are checked locally; remote resources and
+secret existence remain unverified. The check never executes application factories.
+
+Use `cossackConfig({ runtime: 'cloudflare', environment: 'staging' })` to select
+the target explicitly. Otherwise project metadata selects the runtime and
+`CLOUDFLARE_ENV` selects the named environment. Build watch cycles recheck factory
+metadata and Wrangler configuration. Node builds validate metadata,
+conflicting declarations and runtime compatibility, but do not read `.env` or
+process values. Their runtime values remain unchecked until request preparation.
+Development startup allows incomplete values so configuration can be completed.
+
+For Node, the literal `requirements` export is the declaration source.
+There is no Wrangler binding catalog for that runtime. `cossack config --json`
+reports that metadata without executing factories. `cossack config --check`
+returns `COSSACK_CONFIG_CHECK_UNAVAILABLE`; it cannot prove which variables or
+objects a production process will supply. Direct Vite builds still reject invalid
+metadata, conflicting requirements and bindings that the selected runtime cannot
+support. A successful build does not prove that production values are present.
+
+The generated Node entry supplies process variables through `createEnv()`.
+A custom host can pass
+its own binding object to the application. Request preparation checks that object
+against every active requirement before calling any configuration factory or
+application middleware. Required variables, scalar coercion and binding shapes
+are checked together; a failure stops application use. The safe server diagnostic
+names the requirement and its fixed error code. The HTTP response remains a
+generic internal error and does not include a value, exception message or stack.
+
+Configuration inspection does not read arbitrary `.env` files or process values.
+Vite development adapters load their documented dotenv sources; production hosts
+must supply variables themselves. Binding checks prove a local object shape,
+not remote connectivity or secret availability. Async factories are unsupported;
+keep factories synchronous and perform I/O in request-owned services instead.
+
+### Keep private configuration out of hydration
+
+Configuration stores, raw bindings and normalized scalars stay in the server
+request scope. Hydration includes selected public component/service/resource
+state, not the configuration store. A private field can retain a secret for
+server work; expose only the public result that the page needs.
+
+`secret: true` records classification. It does not prevent application code from
+putting the value into public state, HTML, head tags, RPC results or responses.
+Release acceptance exercises private reads across native Node SSR,
+parallel environments, browser hydration and real RPC. It also checks that invalid
+values stop before factory and page use, that named diagnostics omit values, and
+that production client JavaScript and source maps omit the private configuration.
+The separate installed Cloudflare acceptance covers local workerd hydration.
+These checks do not prove remote secret availability. Intentional publication
+through application state or responses remains the application's responsibility.

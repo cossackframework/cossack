@@ -85,8 +85,8 @@ describe('InMemoryCacheStore', () => {
         expect(await store.has('b')).toBe(false);
     });
 
-    it('respects a TTL in seconds', async () => {
-        await store.set('temp', 'x', 0.02); // 20ms
+    it('respects a TTL in milliseconds', async () => {
+        await store.set('temp', 'x', 20); // 20ms
         expect(await store.get('temp')).toBe('x');
         await new Promise((r) => setTimeout(r, 30));
         expect(await store.get('temp')).toBeUndefined();
@@ -113,7 +113,7 @@ describe('InMemoryCacheStore', () => {
 
     it('prunes expired entries lazily once over maxEntries', async () => {
         const s = new InMemoryCacheStore(3);
-        await s.set('expire-me', 'x', 0.01);
+        await s.set('expire-me', 'x', 10);
         await new Promise((r) => setTimeout(r, 20));
         for (let i = 0; i < 5; i++) await s.set(`k${i}`, i);
         expect((s as any).entries.has('expire-me')).toBe(false);
@@ -128,7 +128,7 @@ describe('InMemoryCacheStore', () => {
     it('setMany writes multiple entries', async () => {
         const entries: CacheEntry<number>[] = [
             { key: 'a', value: 1 },
-            { key: 'b', value: 2, ttlSeconds: 0.02 },
+            { key: 'b', value: 2, ttlMs: 20 },
         ];
         await store.setMany(entries);
         expect(await store.get('a')).toBe(1);
@@ -208,16 +208,16 @@ describe('KvCacheStore', () => {
         const kv = new FakeKv();
         const store = new KvCacheStore(kv, { namespace: 'myapp:' });
         await store.set('x', 1);
-        expect(await kv.get('myapp:x')).not.toBeNull();
-        expect(await kv.get('cossack:cache:x')).toBeNull();
+        expect(await kv.get(JSON.stringify(['myapp:', 'x']))).not.toBeNull();
+        expect(await kv.get(JSON.stringify(['cossack:cache:', 'x']))).toBeNull();
     });
 
-    it('survives corrupt stored JSON (deletes it)', async () => {
+    it('treats corrupt KV JSON as a miss without deleting a potentially newer value', async () => {
         const kv = new FakeKv();
-        await kv.put('cossack:cache:bad', '{not json');
+        await kv.put(JSON.stringify(['cossack:cache:', 'bad']), '{not json');
         const store = new KvCacheStore(kv);
         expect(await store.get('bad')).toBeUndefined();
-        expect(await kv.get('cossack:cache:bad')).toBeNull();
+        expect(await kv.get(JSON.stringify(['cossack:cache:', 'bad']))).toBe('{not json');
     });
 
     it('flush() throws (KV has no bulk delete)', async () => {
@@ -228,9 +228,9 @@ describe('KvCacheStore', () => {
     it('uses the KV-side TTL, clamped to the 60s minimum', async () => {
         const kv = new FakeKv();
         const store = new KvCacheStore(kv);
-        await store.set('temp', 'x', 0.02);
-        const raw = await kv.get('cossack:cache:temp');
-        expect(raw).toBe(JSON.stringify('x'));
+        await store.set('temp', 'x', 20);
+        const raw = await kv.get(JSON.stringify(['cossack:cache:', 'temp']));
+        expect(JSON.parse(raw as string)).toMatchObject({ version: 1, value: 'x' });
         expect(await store.get('temp')).toBe('x');
     });
 
@@ -270,34 +270,34 @@ function makeFakeDurableObjectState(): any {
 describe('CacheDurableObject', () => {
     it('PUT then GET round-trips a value', async () => {
         const dobj = new CacheDurableObject(makeFakeDurableObjectState(), {});
-        await dobj.fetch(new Request('https://cache/a', {
+        await dobj.fetch(new Request('https://cache/entry?key=a', {
             method: 'PUT', body: JSON.stringify({ n: 1 }), headers: { 'Content-Type': 'application/json' },
         }));
-        const got = await dobj.fetch(new Request('https://cache/a'));
+        const got = await dobj.fetch(new Request('https://cache/entry?key=a'));
         expect(got.status).toBe(200);
         expect(await got.json()).toEqual({ n: 1 });
     });
 
     it('GET returns 404 for missing keys', async () => {
         const dobj = new CacheDurableObject(makeFakeDurableObjectState(), {});
-        expect((await dobj.fetch(new Request('https://cache/missing'))).status).toBe(404);
+        expect((await dobj.fetch(new Request('https://cache/entry?key=missing'))).status).toBe(404);
     });
 
-    it('honours the ?ttl= query param', async () => {
+    it('honours the ttlMs query param', async () => {
         const dobj = new CacheDurableObject(makeFakeDurableObjectState(), {});
-        await dobj.fetch(new Request('https://cache/temp?ttl=0.02', {
+        await dobj.fetch(new Request('https://cache/entry?key=temp&ttlMs=20', {
             method: 'PUT', body: JSON.stringify('x'), headers: { 'Content-Type': 'application/json' },
         }));
-        expect((await dobj.fetch(new Request('https://cache/temp'))).status).toBe(200);
+        expect((await dobj.fetch(new Request('https://cache/entry?key=temp'))).status).toBe(200);
         await new Promise((r) => setTimeout(r, 30));
-        expect((await dobj.fetch(new Request('https://cache/temp'))).status).toBe(404);
+        expect((await dobj.fetch(new Request('https://cache/entry?key=temp'))).status).toBe(404);
     });
 
     it('flush clears all keys', async () => {
         const dobj = new CacheDurableObject(makeFakeDurableObjectState(), {});
-        await dobj.fetch(new Request('https://cache/a', { method: 'PUT', body: '1', headers: { 'Content-Type': 'application/json' } }));
+        await dobj.fetch(new Request('https://cache/entry?key=a', { method: 'PUT', body: '1', headers: { 'Content-Type': 'application/json' } }));
         await dobj.fetch(new Request('https://cache/flush', { method: 'POST' }));
-        expect((await dobj.fetch(new Request('https://cache/a'))).status).toBe(404);
+        expect((await dobj.fetch(new Request('https://cache/entry?key=a'))).status).toBe(404);
     });
 
     it('batch endpoints (get-many/set-many/delete-many/has)', async () => {
@@ -312,7 +312,7 @@ describe('CacheDurableObject', () => {
         const many = await dobj.fetch(new Request('https://cache/get-many', {
             method: 'POST', body: JSON.stringify(['a', 'b', 'z']), headers: { 'Content-Type': 'application/json' },
         }));
-        expect(await many.json()).toEqual([1, 2, null]);
+        expect(await many.json()).toEqual([{ found: true, value: 1 }, { found: true, value: 2 }, { found: false }]);
     });
 });
 
@@ -417,7 +417,7 @@ describe('cache facade — config-driven resolution', () => {
             await cache.store('kv').set('x', 42);
             expect(await cache.store('kv').get('x')).toBe(42);
             // Raw KV has the namespaced key.
-            expect(await fakeKv.get('cossack:cache:x')).not.toBeNull();
+            expect(await fakeKv.get(JSON.stringify(['cossack:cache:', 'x']))).not.toBeNull();
         });
     });
 
@@ -545,13 +545,13 @@ describe('cache facade — config-driven resolution', () => {
         };
         await withCacheScope(cfg, {}, async () => {
             let calls = 0;
-            const out = await cache.remember('k', 60, () => {
+            const out = await cache.remember('k', 60_000, () => {
                 calls++;
                 return { computed: true };
             });
             expect(out).toEqual({ computed: true });
             expect(calls).toBe(1);
-            const again = await cache.remember('k', 60, () => {
+            const again = await cache.remember('k', 60_000, () => {
                 calls++;
                 return { computed: false };
             });
@@ -597,7 +597,7 @@ describe('cache value typing (compile-time)', () => {
             id: number;
             name: string;
         }
-        await cache.set<User>('user:1', { id: 1, name: 'Ada' }, 60);
+        await cache.set<User>('user:1', { id: 1, name: 'Ada' }, 60_000);
         const u = await cache.get<User>('user:1');
         if (u) expect(typeof u.name).toBe('string');
         // @ts-expect-error — value must match the type parameter

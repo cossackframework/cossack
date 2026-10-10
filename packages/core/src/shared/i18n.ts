@@ -31,10 +31,24 @@ export type TranslationCatalog = Record<string, string>;
 /** Parameter map for placeholder replacement. */
 export type TranslationParams = Record<string, string | number>;
 
+/** Augment this interface with generated key-to-parameter contracts. */
+export interface CossackTranslationRegistry {}
+export type TranslationKey = keyof CossackTranslationRegistry extends never
+    ? string : Extract<keyof CossackTranslationRegistry, string>;
+export type TranslationArguments<K extends TranslationKey> =
+    keyof CossackTranslationRegistry extends never ? [params?: TranslationParams]
+    : K extends keyof CossackTranslationRegistry
+        ? keyof CossackTranslationRegistry[K] extends never ? [params?: TranslationParams]
+            : [params: CossackTranslationRegistry[K]]
+        : never;
+
 /** Per-request store shape used by the framework's AsyncLocalStorage. */
 export interface LocaleStore {
     locale: string;
     messages: TranslationCatalog;
+    /** Complete catalog set for an isolated render/application. */
+    catalogs?: Record<string, TranslationCatalog>;
+    defaultLocale?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +94,8 @@ function requestStore(): LocaleStore | undefined {
 
 /** Reads the catalog for a locale, or undefined if not registered. */
 function catalogFor(locale: string): TranslationCatalog | undefined {
-    return catalogs.get(locale);
+    const scoped = requestStore()?.catalogs;
+    return scoped ? (Object.prototype.hasOwnProperty.call(scoped, locale) ? scoped[locale] : undefined) : catalogs.get(locale);
 }
 
 /**
@@ -229,7 +244,9 @@ export function detectBrowserLocale(
                 quality: Number.isFinite(quality) ? quality : 1,
             };
         })
-        .filter((e) => e.tag.length > 0)
+        // q=0 explicitly marks a range as unacceptable. Ignore it instead of
+        // selecting that locale merely because it appears in the header.
+        .filter((e) => e.tag.length > 0 && e.quality > 0)
         .sort((a, b) => b.quality - a.quality);
 
     let star = false;
@@ -242,8 +259,9 @@ export function detectBrowserLocale(
         const exact = matchAgainst(tag);
         if (exact) return exact;
     }
-    // `*` (or no preference at all) → first supported locale.
-    if (star || entries.length === 0) return supported[0];
+    // A positive wildcard selects the first supported locale. Empty or
+    // explicitly unacceptable ranges use the caller's fallback.
+    if (star) return supported[0];
     return fallback;
 }
 
@@ -273,7 +291,8 @@ export function getLocaleCatalog(locale?: string): TranslationCatalog | undefine
 
 /** Returns the list of locales the app has catalogs for. */
 export function getSupportedLocales(): string[] {
-    return [...supportedLocales];
+    const scoped = requestStore()?.catalogs;
+    return scoped ? Object.keys(scoped) : [...supportedLocales];
 }
 
 /** @internal Framework wires the supported locales from the build. */
@@ -283,7 +302,7 @@ export function setSupportedLocales(locales: string[]): void {
 
 /** Returns the configured default (fallback) locale. */
 export function getDefaultLocale(): string {
-    return defaultLocale;
+    return requestStore()?.defaultLocale ?? defaultLocale;
 }
 
 /** Overrides the default (fallback) locale. Call once at startup. */
@@ -328,7 +347,7 @@ export function getLocale(): string {
 
 /** True if `locale` is a supported locale code. */
 export function isLocale(locale: string): boolean {
-    return supportedLocales.some((s) => s.toLowerCase() === locale.toLowerCase());
+    return getSupportedLocales().some((s) => s.toLowerCase() === locale.toLowerCase());
 }
 
 /**
@@ -366,11 +385,11 @@ export function resolveAutoLocale(locale: string): string | undefined {
 export function normalizeLocale(locale: string): string | undefined {
     if (!locale) return undefined;
     const lower = locale.toLowerCase();
-    const exact = supportedLocales.find((s) => s.toLowerCase() === lower);
+    const exact = getSupportedLocales().find((s) => s.toLowerCase() === lower);
     if (exact) return exact;
     const base = lower.split('-')[0];
     if (base !== lower) {
-        const baseMatch = supportedLocales.find((s) => s.toLowerCase() === base);
+        const baseMatch = getSupportedLocales().find((s) => s.toLowerCase() === base);
         if (baseMatch) return baseMatch;
     }
     return undefined;
@@ -530,6 +549,7 @@ export async function setLocale(locale: string): Promise<void> {
  * __('I love programming.')                   // "Me encanta programar." (es)
  * ```
  */
+export function __<K extends TranslationKey>(key: K, ...args: TranslationArguments<K>): string;
 export function __(
     key: string,
     params?: TranslationParams,
@@ -551,8 +571,9 @@ export function __(
     }
 
     // 2. Fallback to the default locale's catalog (for missing keys).
-    if (template === undefined && activeLocale !== defaultLocale) {
-        const defaultCat = catalogFor(defaultLocale);
+    const fallback = getDefaultLocale();
+    if (template === undefined && activeLocale !== fallback) {
+        const defaultCat = catalogFor(fallback);
         if (defaultCat && Object.prototype.hasOwnProperty.call(defaultCat, key)) {
             template = defaultCat[key];
         }

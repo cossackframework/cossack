@@ -38,5 +38,5 @@ describe('SSR import safety', () => {
         else Reflect.deleteProperty(globalThis, name);
       }
     }
-  });
+  }, 60_000); // Cold import of the precompiled runtime.
 });

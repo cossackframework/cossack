@@ -15,22 +15,483 @@ The framework is built on a strict separation between the **library** (`core`, `
  change sets, and schema-v3 scaffold manifests. Creation and later
  `cossack add` operations render the same resolved recipe, so incremental
  composition has the same owned files as equivalent initial onboarding.
+ The pure `/registry` entry owns recipe metadata and its declarations. It does
+ not import the Node filesystem API declarations or require Node ambient types.
+ The root scaffold entry re-exports those types alongside its Node operations.
  Application runtime packages must not depend on this Node-only package.
 
 This separation makes sure that the framework's core is reusable, maintainable, and decoupled from any single implementation.
+
+Portable failure metadata lives at `@cossackframework/core/server-diagnostics`.
+Core and runtime adapters share fixed events without importing framework,
+exceptions, environment values or actual request URLs. Callers supply authored
+identifiers; missing correlation metadata uses fixed fallback labels.
+
+The pure runtime capability model lives at
+`@cossackframework/core/runtime-capabilities`. It has no filesystem, Node, or
+framework imports. The framework's existing `runtime-capabilities` entry re-exports
+it, and scaffold uses the same checker for planning. This keeps build, inspection,
+and recipe decisions consistent without making a library depend on framework.
+Recipe resolution records structural facts; rendering rejects unsupported targets
+before planning writes. Inspection can therefore report an older unsupported
+selection with its feature, target, and manifest source instead of discarding it.
+
+The shared `CossackRuntimeAdapter` and `RuntimeWebSocketUpgrade` type contracts
+live in core. Framework re-exports them and owns transport policy enforcement.
+Desktop consumes core directly; it does not depend on framework to define
+an adapter.
+
+The storage capability model lives at
+`@cossackframework/core/storage-capabilities`, also re-exported by framework.
+It is independent of platform bindings and application configuration. Profiles
+separate process/shared locality, persistence, consistency, logical expiry,
+atomic increments and supported operations. A common interface does not imply
+distributed guarantees. Unknown traits reject positive requirements; custom
+declarations are their implementer's assertions, not remote verification.
+The database cache adapter declares structural metadata without importing core
+or framework; its deployment/read guarantees remain unknown.
+
+Object storage uses the portable `@cossackframework/core/storage` contract and
+authorization facade. It counts streamed bytes, validates upload metadata and
+signs application URLs without importing a cloud SDK or filesystem code. Local
+files belong to `node-adapter/storage`; R2 and S3 adapters belong to framework's
+explicit storage subpaths. Multipart publication and bounded cleanup are provider
+operations. Cancellation does not promise rollback of a completed object.
+
+Typed Workflow definitions, clients and the process-only test adapter live in
+`core/workflows`. Native Cloudflare step persistence, retries and waits remain
+provider-owned. `framework/workflows` supplies the native Worker entry factory;
+`framework/workflows/provider` supplies the pure binding client for server APIs
+and Node-based static generation. Generated applications keep these module graphs
+separate. Workflow inspection reads authored declarations and selected bindings;
+it does not execute application code or establish remote resource readiness.
+
+Cache facades/config declarations and limiter guards check requirements before
+operations. Cache factories may still construct resources during resolution.
+CLI provider inspection uses the compiler parser and selected Wrangler settings,
+without executing configuration or contacting a backend. Dynamic declarations
+and possible registration overrides remain unknown. The memory limiter prunes
+expired windows, then evicts the oldest live windows at capacity. Eviction forgets
+spent quota; strict limits require a shared provider or enough capacity for all
+live callers. Framed scope/caller and namespace/key tuples keep
+distinct identities separate. See the cache/rate-limiting guides for the
+breaking key migration and precise resource/operation limits.
+
+## Local agent inspection boundary
+
+The Node-only CLI owns `inspection-service.js` and the `cossack-mcp` stdio
+entrypoint. CLI route explanations/checks and MCP calls use the same static models.
+Localization extraction, catalog checks and generated contracts share the CLI
+localization service; read-only MCP inspection reports the same diagnostics.
+Core owns the portable translation registry and scoped catalog contract. The
+framework supplies separate ALS locale scopes for SSR and each SSG render.
+Each MCP request owns an isolated worker with captured stdout/stderr, a deadline
+and termination on cancellation. No application runtime package imports the MCP
+SDK. Tool arguments cannot change the startup project root. Dependency resolution
+can read installed package metadata and imported declarations outside that root.
+This project binding is not a sandbox for untrusted local repositories.
+The CLI and MCP share `documentation-service.js`. It reads fresh manifests for an
+explicit Cossack package allowlist, without executing module entrypoints. Export
+conditions and availability are facts. Optional per-package declaration indexing
+uses the CLI's pinned TypeScript 6 API alias, without replacing the project's
+TypeScript 7 compiler. Programs read installed declaration and published TypeScript
+graphs afresh, resolve
+aliases/re-exports and report public signatures with diagnostics and source hashes.
+Member comments, JSDoc tags and index signatures remain visible. Exported classes
+with public props expose their instantiated declaration shape. Union and unknown
+prop contracts are explicit. No DOM behavior or accessibility is inferred.
+Export discovery expands bounded file/type matches with Node pattern precedence
+and null exclusions, while reporting unsupported or incomplete scans. TypeScript
+extension substitution discovers adjacent declarations without running JavaScript.
+Published TypeScript entries have an explicit source-kind marker. Legacy manifests
+without an exports map expose a separate implicit root entry; blocked exports
+never fall back to main. This reports declared file targets, not full Node legacy
+resolution. Missing type coverage remains explicit. No project tsconfig plugins or module
+entrypoints execute. Type-only declarations
+do not establish runtime value availability. Runtime compatibility is not inferred
+from file presence or from declaration signatures. Command schemas and packaged guidance belong to
+the CLI version. Library usage guidance lives in each package's `agent-docs.json`
+and carries that installed package's version. The CLI validates bounded JSON data,
+omits guides whose public imports are unavailable and never executes examples.
+A separate tarball acceptance harness compiles and executes selected repository-owned
+examples against installed exports. Authored guidance does not establish runtime
+compatibility.
+Application examples require the framework compiler and a running server/browser.
+The separate acceptance harness writes selected packaged page source verbatim,
+checks generated types, executes browser/RPC/resource/task behavior, and builds
+client output to check server stripping. No discovery entrypoint calls this harness.
+
+Stored test evidence uses the Node-only `test-results-service.js` shared by CLI
+and MCP. The opt-in public Vitest 4 reporter writes versioned project-bound records
+with selected-run outcomes and bounded endpoint file snapshots. Readers validate
+UUID-selected records and compute freshness without executing tests. Free-form
+failures and logs are omitted; test metadata is redacted. A successful read does
+not imply a passing, current or complete suite. MCP reads use the same cancellable
+worker boundary. See [storage, scope and privacy limits](../docs/test-results.md).
+Core now owns a portable, opt-in development RPC capture model, exposed through
+`@cossackframework/core/devtools`. Component HTTP/SSE and WebSocket proxies record
+fixed lifecycle phases, opaque identities and terminal outcomes. Framework navigation
+uses the same discriminated event model and bounded sequence. Prepared component
+identities link navigation candidates with their RPC observations; a preparation is
+not a commit or proof of causation. Navigation callbacks retain capture ownership
+across awaits and reject events after their terminal outcome. Bounded sessions
+never retain application payloads or URLs; weak component ownership and detached
+snapshots keep the recorder independent of the application. Production proxy and
+navigation diagnostic bundles strip collection. See [capture semantics](../docs/development-traces.md).
+Framework constructors register weak, development-only inspection providers for
+components and service scopes. Captures track at most 64 component weak references.
+Default snapshots read current lifecycle, initialized public/client field names,
+passive resource records, service ownership/status and transport summaries, with no
+state values. Explicit selections return detached, bounded, redacted values without
+retaining them in the event buffer. Resource getters, service resolution and custom
+serialization hooks are not used. Reflective selection is not a sandbox against
+malicious proxies. Capture timestamps distinguish current status from past events.
+Browser tools, HTTP/WebSocket/native server correlation and shared CLI/MCP trace
+reads are implemented. Other runtime development acceptance remains RT-28 work.
+Test-results reads do not expose traces.
+
+## Server input boundary
+
+Core owns `input` schemas and their inferred parsed/raw types. Schema parsing
+uses Web APIs and has no framework, auth or database dependency. The action
+input gate lives separately from legacy form validation to avoid a schema/form
+import cycle. Action metadata accepts schemas only in 0.9; plain form rule maps
+remain supported by form validation. Public method/function-field decorators
+check parsed parameters without wrapping native calls or widening browser input
+types to RawInputOf. HTTP/SSE/upload component and explicit-service dispatch, plus
+socket/forwarded-service dispatch, call this gate before mutation with the
+request's owned cancellation signal. Native authored method calls keep their
+normal semantics and do not execute decorator guards.
+
+Typed parsing produces new object/array values, rejects unknown fields unless
+stripping is explicit, and bounds depth, visits and errors. Refinement callbacks
+are application-owned read-only validation. Abort releases their framework
+ownership; it does not roll back callback side effects or terminate ignored I/O.
+Unexpected callback exceptions remain private internal errors.
+
+The client compiler removes the contract metadata and private module dependencies
+that become unused, resolving runtime references separately from type uses and
+local bindings. Local contracts retained by runtime client code or exports fail
+closed. Foreign contract imports cannot also keep that module in the client
+graph, because this file cannot strip its initializers. Shared client form rules
+remain separate from the private typed action contract.
+
+## Route generation boundary
+
+Core owns the portable URL constructor at `core/routes`. It encodes declared
+parameters and rejects unsupported patterns. It imports no framework or Node APIs.
+Framework owns the pure route identity and source ancestry model at `route-ids`.
+The Node-only `route-codegen` entry scans the same files as the Vite registry.
+The CLI consumes that entry and keeps its compiler-based inspection facts.
+
+Vite and `cossack routes --generate` emit `.cossack/routes.ts`. The virtual import
+resolves to this real file, so runtime URLs and TypeScript literals share one
+contract. Generated client code contains public patterns and the core helper.
+It contains no application runtime imports. Native API declarations use type-only
+references to actual module exports and the portable framework `/api` type helpers.
+Default function precedence matches native routing; component modules and plain
+handlers do not invent validated contracts. Source layout ancestry in the manifest
+does not assert that functional API modules execute component layouts.
+
+404 and error components retain source identities rather than competing public
+URLs. Unknown-path selection compiles effective source prefixes at application
+construction. Literal specificity and route-group precedence select an owner.
+Equally ranked disjoint owners use their common source ancestor. The selected
+parameter context also scopes request-local helpers. Boundary rendering composes
+layout/page middleware using request-owned source/index tokens. An entered
+declaration runs once when normal routing, asset fallthrough or error rendering
+reuses its scope. This retains short-circuit responses and after-next headers.
+
+SSR sends the selected source path, component ID and reserved boundary marker.
+The browser validates status/type/source identity for error documents before
+navigation commits. It hydrates the source component and excludes boundaries
+from successful page caches. Shared route IDs retain every boundary, while
+public URL maps and generated builders exclude them. CLI explanations select
+boundary source paths explicitly. PageOptions.route is removed because it never
+participated in registration.
+
+Framework's portable `/api` entry owns declared native HTTP contracts. It reuses
+core input schemas and JSON snapshots, with explicit request locations and
+parsed/raw/wire types. Parsing and authorization precede handler execution.
+Output schemas run before JSON serialization; native response mode is explicit.
+The pipeline owns a bounded body reader and linked cancellation/deadline until
+response headers. Late callbacks remain observed and late bodies are cancelled.
+Native streams retain application body ownership after headers. Unexpected
+callback/output failures stay private and have correlated server diagnostics.
+The shared AST classifier resolves canonical factories and local aliases before
+client imports load. CLI inspection reports structural facts and unknown dynamic
+contracts without executing application code.
+
+## Page URL state
+
+Core owns immutable query codecs and declarations at `/url-state`. Request
+parsing and URL construction share defaults, strict encoding, repeated-key rules
+and bounds. They import no framework, Node or renderer APIs. Component readers
+cache immutable parsed values by declaration and request/destination URL.
+SSR metadata carries public path/query only. Browser contexts use their owned
+destination before history commits. Initial application/page hydration uses the
+visible URL, including its fragment. Retained layouts receive each destination.
+
+History replacement runs through the existing navigation owner and retains
+unrelated application history state. URL construction preserves unrelated query
+pairs and fragments. These are page query contracts. RPC methods receive query
+values explicitly because their request URLs identify transport endpoints.
+Typed patches merge with the latest live pending intent in this navigation
+owner. Reads remain committed until a successful transition. Same-path, same-class
+page replacement transfers declared browser ClientState/ClientStore values
+through a single-use local capability. Raw store targets receive fresh proxies.
+Serialized internal fields cannot create this capability. User, transport,
+provider or service ownership changes prevent draft transfer.
+The renderer captures a local checkpoint of its rendered part tree through
+structural component hooks. It imports no core or framework code. Checkpoints
+match template identity, part position or repeat key, class, parent and scope.
+The framework supplies the old-page/new-page pair after checking ownership.
+Core consumes each draft capability before the replacement child initializes
+state and mounts. Separate destination and rollback checkpoints prevent a failed
+publication from consuming rollback values. Publication predicates reject late
+descendant restores. No serialized state can create a draft checkpoint, and no
+destroyed instance is reactivated. Active and inactive cache templates participate.
+Pending inactive branches hold local capabilities instead of live outgoing DOM
+or tasks. Core can fork an unconsumed, class-bound capability into independent
+plain draft graphs without reading its former owner. Renderer recapture rebases
+parent identities and forks those pending trees for another destination/rollback
+pair. A consumed, unknown or wrong-class capability cannot be forked. Cache exit,
+key/owner mismatch, explicit discard and publication revocation prevent restoration.
+The browser App has its own ownership key. A changed user or navigation scope
+prepares a fresh App and root service scope. The App uses its own transport and
+provider metadata rather than the child page's transport. Owned renderer root
+listeners publish only for the active App. Precommit rollback restores the old
+App and listener, while successful retirement detaches it. Null render output
+clears the former DOM. Root scope disposal waits for component cleanup, including
+asynchronous layout hooks, so cleanup retains its original request facilities.
+Declared scoped services follow this lifecycle. Legacy global injection does not.
+Retained layouts keep their service instances and browser drafts. Matching SSR
+resource entries replace the previous map before query dependencies change;
+entry identity rejects late results. This does not abort application I/O.
+Framework-created history entries carry an app group and position. Guarded or
+failed precommit traversals restore the prior owned entry by moving through
+browser history, retaining its metadata. Confirmation resumes the original
+traversal without pushing another entry. Restoration events bypass guards and
+fetches. Unknown history positions fail rather than inventing a replacement.
+Page and layout imports resolve before live context/tree mutation. A sequence
+check rejects superseded modules before publishing SSR state or resources.
+Full staged-commit and ownership-change acceptance remains RT-08 work.
+Bounded completion and navigation diagnostics remain RT-09 work.
+
+## Development navigation diagnostics
+
+Framework emits fixed-field `cossack:navigation-diagnostic` records only in
+development. Per-document IDs correlate navigation decisions without retaining
+URLs, application identifiers, state or errors. Cache invalidation and prefetch
+use a null navigation ID. Core scroll application returns its actual decision,
+so the framework does not duplicate fragment/history selection logic. Layout
+counts describe attempted publication. Animation rejection has an independent
+lifetime and can be reported after navigation finish. Diagnostics do not replace
+runtime acceptance or backend read-count verification.
+
+## Authored route inheritance
+
+Route dispatch searches authored prototypes before the Cossack base prototype.
+An inherited render() selects SSR for an HTTP page. Inherited API methods can
+handle requests, with get() taking precedence over the init() alias. Framework
+no-op methods are not authored handlers. A derived declaration shadows its base
+member, and lookup does not invoke accessor handlers.
+
+## Application socket registry
+
+Framework AppDurableObject reads the same virtual:cossack-pages registry as the
+router. It preserves compiler source keys for eager pages and layouts. Only
+modules with a default Cossack subclass become remote component targets. Named
+helpers and native HTTP handlers are excluded. A library-relative glob cannot
+resolve generated application components and must not serve this registry.
+Core CossackDurableObject remains application-agnostic and calls the framework's
+registry hook during initial connection and durable reconstruction.
+
+The client security load hook also uses the shared source classifier for
+functional HTTP route modules. Their export shapes become throwing stubs before
+any original body or transitive dependency enters the browser graph. This covers
+Web API and binding-only handlers without known server-library imports. Default
+and named exports retain their shapes. Runtime export stars fail closed when the
+shape cannot be determined. SSR and component-class transformations keep their
+existing paths. This does not infer arbitrary non-route module privacy.
+
+## Server resource lifecycle
+
+Core owns resource entries, status snapshots and lifecycle operations. The
+compiler extracts private loaders into existing Server methods, keeps generated
+field getters and emits each class's reserved __cossackResourceFields registry.
+Core uses that registry, including inherited fields, to bind a named getter for
+status/refresh without invoking arbitrary getters. Refresh binds current
+arguments with loading suppressed, then starts one new entry. Inline render
+resources retain stable compiler IDs and their last declared invocation.
+
+Named resource reconciliation uses `reconcile$(failure, ...names)`. The shared
+RpcError classifier selects known uncertain diagnostics. Core binds all targets
+before dispatch and caches one promise per error object, sorted target set and
+current dependency identities. Refresh entries bind synchronously so subsequent
+dependency changes cannot redirect an earlier recovery. Entry identity and
+failure state determine recovered/superseded/failed results. Destruction discards
+the weak cache. Recovery never retries the mutation or changes its error.
+Application-authored failure codes do not establish transactional outcomes.
+
+Framework RPC target reconstruction calls `__renderRpcTarget`. A synchronous
+module depth suppresses incidental resource loader dispatch across nested
+components. The render still builds deterministic child targets. A finally block
+releases the suppression before the selected action executes. SSR and browser
+render discovery retain ordinary resource loading. No asynchronous request state
+or additional resource entry system is introduced.
+
+The optional Cossack Resources name union checks lifecycle targets against public
+fields. Status value types come from those fields without branding or wrapping
+application values. Untyped names still fail at runtime when unknown. Serialized
+resources carry settled values and dependency identity; unresolved initial values
+must not become resolved hydration entries. Client hydration reuses matching
+entries and retains stale data when dependencies differ. Entry identity and the
+destroyed phase gate settlement; obsolete failures cannot fail an active SSR pass.
+
+Resource dependencies are public, JSON-preserving finite/plain values. Validation
+runs before custom serialization hooks and rejects undefined dependencies. Generated methods validate results before RPC JSON as well as SSR
+settlement. Cycle checks track ancestors so shared acyclic references remain valid. Unmount discards
+resource completions and forbids new reads; it does not terminate ignored I/O.
+Task identities remain owned after setup settles, and abort before rerun cleanup
+or component/descendant cleanup. Each execution receives an immutable TaskContext;
+its synchronous commit validates a plain reactive-field patch before writes and
+checks execution ownership before each assignment. Superseded/destroyed commits
+return false. Direct application writes still require cooperative cancellation;
+this is not an I/O termination or transactional rollback mechanism. Task metadata
+is gathered root-to-child, with child declarations replacing the same method's
+kind/dependencies before environment filtering. Typed decorators check declared
+public/dependency-shape paths; reactive runtime metadata remains authoritative.
+
+## Authentication diagnostic boundary
+
+Auth owns `OAuthError` and its fixed code, stage, HTTP status and message
+contracts. OAuth configuration, callback/state, provider exchange/profile and
+application mapping failures discard raw exceptions before reaching `onError`
+or the default JSON response. Failed provider response bodies are cancelled;
+only the numeric provider status can enter the diagnostic. Session middleware
+warnings identify the failed stage without logging session values or exceptions.
+The auth library uses Web APIs and Hono, without framework or database imports.
+Generated applications retain user models, database selection and account writes.
+
+Auth also owns typed password hashing, credential verification and persistent
+session lifecycle contracts. Password encodings include the algorithm and work
+factor. Application callbacks own account lookup, safe user mapping and conditional
+hash upgrades. Session records use an explicit auth purpose, random tokens and
+Unix-millisecond timestamps. Validation rejects exact expiry without refresh.
+Rotation requires an application store to atomically replace the complete active
+record; the generated SQL adapter enforces a single winner. Default cookies are
+Secure, HttpOnly and SameSite=Lax. Returned headers are applied after storage
+success; a later failure does not undo a committed write.
+
+Session management DTOs and ownership rules remain application-owned. Generated
+auth rows have a separate random public reference that survives token rotation.
+Only that reference, timestamps and origin information enter dashboard state.
+Conditional deletes match the trusted request user and auth purpose; single
+deletion also checks expiry and protects the current token/reference. Bulk
+deletion preserves other token purposes and, when requested, the stable current
+reference during rotation. A dashboard layout guard runs before SSR and inbound
+RPC actions. Page catches discard raw storage exceptions. The additive migration
+retains old tokens; conditional backfill assigns legacy public references.
+The auth recipe leaves the separate framework session bag opt-in, so unused
+visitor state does not create rows/cookies or prevent public SSG. Standalone SSG
+initializes bare translation/config helpers before component lifecycle hooks;
+its existing public-response checks still reject visitor cookies.
+
+Generated auth pages keep browser drafts in ClientStore with client-only
+validation. App-owned input contracts accept one explicit submission object;
+server methods parse again because native calls bypass decorator gates. Passwords
+and reset tokens do not enter shared form state. Fixed page messages redact
+storage failures. Session cookies and redirects are applied after storage
+success. The dashboard rotates then redirects before listing with a fresh cookie.
+Registration/reset/session writes and response delivery are not one transaction;
+an error can follow a committed account write or consumed reset token.
+
+Cookie-based OAuth requires an application-owned `OAuthStateStore`. Auth prepares
+a provider-scoped SHA-256 state key with absolute timestamps, registers it before
+issuing the signed cookie, and atomically consumes it before token exchange.
+The generated store uses anonymous state-purpose session rows and one conditional
+SQL delete against provider, purpose and expiry. A read followed by deletion is
+insufficient. State remains consumed after exchange, profile or mapping failure.
+No authorization code, verifier or credential enters the state record. Stateless
+mode owns its CSRF and replay policy. Expired abandoned rows need app cleanup.
+
+Callback handlers also clear browser cookies, including early rejection. This
+does not roll back storage or application writes. Authenticated SSE additionally
+uses a server-only session descriptor to revalidate storage, user/roles, inherited
+guards and scope before each delivery. WebSocket freshness remains separate work.
+
+The Node-only database JSON subprocess isolates project output and communicates
+through IPC. Its bootstrap uses dynamic imports under default CommonJS eval mode.
+It must not set `--input-type=module`: Miniflare's synchronous binding proxy
+inherits that flag in a CommonJS eval Worker and stalls before reporting a result.
+
+## Resource authorization boundary
+
+Auth owns the typed `createResourcePolicy<Resource, User>()(rules)` kit. The
+application owns record lookup and write consistency. Core has no auth/ORM
+dependency: `@Server({ authorize })` takes a structural callback over the parsed
+first argument, trusted Hono context and owned action signal. Both router gates
+and socket dispatch enforce it after input validation and before method invocation.
+Forwarded services use their declaring class metadata. Only a boolean `true`
+grants access. Expected denials have fixed 401/403 messages/codes and request IDs;
+unexpected policy/lookup failures remain internal.
+
+Native API handlers, SSR/resource reads and internal method calls explicitly use
+`policy.authorize` or resource middleware. Metadata does not wrap authored calls.
+`policy.permissions` derives frozen named booleans for UI state; changing those
+client booleans cannot establish resource access. An upstream server authentication
+middleware supplies the actor. Connection freshness/revocation is a separate
+session requirement, not an authorization-kit guarantee.
+
+Policy callbacks/lookups receive cancellation signals; abort releases framework
+ownership, not their underlying I/O or side effects. Check ownership again in a
+conditional write/transaction when records can change between lookup and mutation.
+The compiler removes authorization metadata and dead private policy dependencies,
+including those used only by server read methods. Shared client helpers survive.
+Static core typed-decorator factory aliases use the same classification/stripping.
 
 ## Desktop runtime boundary
 
 `@cossackframework/desktop` is the sole native application runtime. Its
 Electron main process serves renderer assets and framework SSR/RPC through the
 private `cossack://app` protocol and injects `ASSETS` plus a window-scoped
-`COSSACK_DESKTOP` binding. It is a side target independent of the Cloudflare,
-Node, or Deno web adapter and supports HTTP page transport only.
+`COSSACK_DESKTOP` binding. It is a side target independent of the Cloudflare
+or Node web adapter and supports HTTP page transport only.
+
+Managed windows share a Cossack-owned persistent Electron session. The runtime
+verifies native initiator origin and webContents ownership before dispatch,
+then removes private proof headers and supplies the framework's internal HTTPS
+origin. Renderer headers, referrers and query IDs cannot grant native access.
+The session's request hook is reserved to the runtime.
 
 Renderer code has no Electron client entry, preload bridge, Node integration,
 or generic IPC channel. Native calls run in bootstrap modules or server-only
 component methods. The Desktop package may use Node/Electron APIs; core and
 shared library packages remain Web Standard compatible.
+
+### Desktop Vite development boundary
+
+The Node CLI supervises one Electron child. A separate development entry runs
+Vite in Electron's main process, evaluates `frameworkApp` through its SSR module
+runner and invokes `startDesktop(factory)` once. Native bootstrap changes restart
+the child; application source changes invalidate the SSR graph and reload managed
+windows. Configuration and root environment-file changes restart the child too.
+Module replacement resets in-memory state and cannot roll back external effects.
+
+An optional structural asset provider proxies transformed client assets to a
+loopback Vite middleware listener. This listener has no native application
+handler. SSR/RPC still enter through the private protocol's verified request
+ownership path. Custom asset 404 bodies are canceled before router fallback.
+The runner preserves the request-owned `ASSETS` and `COSSACK_DESKTOP` bindings.
+The Desktop library defines the application contract structurally; it does not
+import framework. Production Desktop modules do not import Vite.
+
+The SSR graph includes core/renderer/framework to retain development capture and
+one trace owner. Native response evidence uses the existing environment hot
+channel and shared storage. No renderer IPC bridge or Desktop trace schema is
+introduced. Malformed source may keep a development watcher alive, but module
+transformation still fails; production capability checks remain strict.
 
 ## Request Lifecycle
 
@@ -71,6 +532,13 @@ The lifecycle of a user interaction is split into two main phases: the initial s
 
 ### 3. Server Runtime Interaction & State Synchronization
 
+Authored TypeScript retains a server method's native signature. Client handlers
+can use `rpc$(this.method(...))` to infer `RpcCall<Result, Yield>` from that
+signature without waiting for Vite transformation. This returns the framework's
+existing call by identity; it does not execute another request. Server execution
+keeps native return types. Ordinary calls only return final results; generator
+calls expose yields and completion separately on every transport.
+
 1. When a user performs an action (e.g., clicks a button), they call a client-side **proxy function**.
 2. **Function Binding**: Component methods are automatically bound during bootstrap. Use regular methods for event handlers and mark browser handlers with `@Client()` (or another appropriate client-safe decorator). Arrow-function class fields are unnecessary.
 3. **Optimistic UI**: If the method is decorated with `@Optimistic`, the client executes the handler immediately, updating the local UI state before the request is even sent.
@@ -84,7 +552,7 @@ The lifecycle of a user interaction is split into two main phases: the initial s
     - The Runtime identifies all state properties belonging to the same **channel** as the changed property (e.g., `feeds`).
     - It constructs a **partial state object** containing only the properties for that channel.
     - The Runtime broadcasts this partial state to **all** clients connected to it.
-    - The client-side component receives the partial state, updates its local properties, and automatically re-renders the UI (overwriting any optimistic state).
+    - The client receives partial public state and requests a render. Pending optimistic calls retain their owned field previews until settlement; authoritative values update their confirmed base.
 
  **b) Event-Driven Re-fetch (Manual):**
     - The server method modifies a database or other external source of truth.
@@ -225,8 +693,9 @@ pnpm test:unit
 ```
 
 The root command runs Vitest once (no watch mode), including UI, auth, Node
-adapter, and framework tests. `test-utils` currently has no suite and is
-excluded. Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
+adapter, framework, and test-utils tests. The root command runs package suites
+serially because framework pretest recreates library exports used by CLI tests.
+Use `pnpm --filter <package-name> exec vitest run <test-file>` for a
 focused run. Similar direct-binding and spread-binding renderer tests cover
 different execution paths and should both be retained.
 
@@ -250,6 +719,14 @@ Page and enclosing layout middleware also run before transport handlers create
 components. Layout-service RPC uses the owning layout guard stack. HTTP RPC and
 uploads require an allowed Origin header. SSE scopes are recomputed on the
 server for subscriptions and actions, including custom scopes.
+Authenticated SSE captures a bounded structural identity descriptor, never a
+bearer token. Each snapshot/replay/event/heartbeat re-enters fresh request, config
+and configured ORM scopes before resolving the current user and guards. The
+original owner and scope must still match. Decoded params/bindings and the
+subscription locale remain available; credential/assertion headers are removed
+and response-header changes reject. A fixed terminal event closes EventSource
+and stops retries. In-flight frames and backpressure remain explicit limits;
+see [SSE authorization](./sse.md#live-subscription-authorization).
 
 Durable Object proxy requests replace client-supplied identity headers with the
 trusted authentication context. WebSocket actions expose the caller's identity
@@ -258,3 +735,585 @@ action. Applications still check resource permissions inside server actions.
 
 Client code stripping fails on parse errors. Base aliases, local inheritance,
 and component/service decorators participate in class discovery.
+
+## Streaming component actions
+
+HTTP and SSE component RPC share a response-local async iterable protocol.
+Each action executes once. The client call can be iterated for yields or awaited
+for the final result. Promise consumption drains yields; unobserved event-handler
+calls drain automatically. Iteration has one consumer and cancels on early return.
+Frames include a version, type, request ID, public state, and yield/final value
+or structured error. UTF-8 frames are bounded to 1 MiB on both sides.
+
+The response-local reader correlates frames against the HTTP response ID, or
+learns the first valid frame's ID when no header is available. Parser and reader
+failures retain that ID. Yields remain incremental; done/error frames are held
+until EOF validates that no data follows. Final state is applied only after that
+validation. Abort/deadline ownership continues through EOF. WebSocket terminal
+frames complete their individual pending call; the multiplexed socket remains
+open and ignores foreign or completed request IDs.
+
+RPC action limits use the same counter decision for HTTP and socket dispatch.
+The server assigns a canonical route owner to components; it is internal state,
+not client hydration data. A component budget includes that owner, the action
+class, method and caller, so changing socket/request/child IDs or HTTP encoding
+does not restore a shared budget. Sibling instances of one child class share
+their budget while the page class remains separate. Explicit service budgets
+use the owning layout and slot. Socket evaluation uses authenticated peer
+identity and the originating socket's request context. Cloudflare persists
+upgrade URL/params/filtered headers in native attachments and creates a fresh
+Hono context per action, without HTTP credentials or arbitrary middleware
+variables. Oversized context fails before acceptance; legacy sockets without
+metadata must reconnect. Node retains its own verified upgrade contexts,
+including framework-decoded page params, instead of borrowing the first peer's
+headers. The rate-limit Durable Object persists each bucket's counter and deadline
+in a storage transaction, preserving spent windows through reconstruction.
+Expiry alarms remove old records without erasing a newer window. Memory remains
+process-local and KV approximate. DO counter validation rejects corrupt records
+and replies instead of granting a fresh budget. Store failures
+reject before mutation. Process-local SSE publishes page state after child
+actions, matching distributed page/target snapshot separation.
+
+Server cache durations use integer milliseconds (`ttlMs`), matching limiter
+windows. The facade defaults `set()` to one hour; direct stores/batch entries
+omit expiry unless requested. KV uses framed namespace/key tuples and versioned
+value envelopes with logical millisecond deadlines, plus native retention rounded
+up to at least 60 seconds. Legacy unframed records are intentionally not reused.
+Database/DO epoch timestamp layouts remain compatible.
+
+Cache selection belongs to the current request. Built-in wrappers are memoized
+by actual binding identity and complete named declarations; missing/invalid
+current bindings fail before memo lookup. Named memory stores are process-local
+with LRU count and serialized-byte limits. Custom factories reuse unchanged
+selections within a request only; shallow env descriptors and binding identities
+are tracked, and nested objects must remain stable. Factories retain their own
+resource ownership; the manager cannot infer disposal. `remember()` captures its
+provider before awaiting work and allows duplicate concurrent computations.
+DO cache stubs are obtained inside operations. Their bounded, strict-UTF-8 JSON
+reads require EOF, with a five-second I/O deadline and the current request signal.
+Cleanup never awaits producer cancellation. Dispatched writes can still commit;
+there is no rollback/retry promise. Database and framework validators remain
+independent pure modules so libraries do not depend on the application. Batch
+input validation precedes writes, but storage failures can leave partial batches.
+
+Each limiter evaluation captures its request environment's store. Automatic
+selection caches unchanged environment/binding/credential descriptors without
+changing a global last-selected backend. Invalid explicit configuration rejects;
+unset configuration uses the process memory default. Manual store registration
+is intentionally process-wide and takes precedence. Shared components prefer
+the current action context's environment for limiter evaluation. Runtime options
+and all store replies are validated before mutation. Redis uses atomic millisecond
+PEXPIRE with checked PTTL; KV retains records for at least 60 seconds and uses
+their millisecond logical deadlines. KV remains approximate, with one write per
+key per second and no strict bound on cross-region under-counting.
+
+
+Limiter decisions own a five-second default deadline, independent of window and
+client method timeout. Built-in async providers and framework custom-store
+calls receive an abort signal; even uncooperative custom stores are raced.
+DO/Redis replies use a bounded 8 KiB strict UTF-8 reader through EOF; KV text
+records are bounded before parsing. Non-success and late responses are cancelled
+and reader locks released, without waiting indefinitely for producer cleanup.
+HTTP request abort or socket call cancellation/close suppresses late action
+invocation and releases the decision queue. Backend increments already dispatched
+are not rolled back or retried. Incoming Cloudflare disconnect notifications
+require `enable_request_signal`. Native cross-Worker RPC cancellation removes
+queued callbacks without invoking them or releasing the active slot. The router
+uses a private operation ID and an abort callback to cancel pending counter
+decisions in the originating Worker; response cancellation releases its slot
+without waiting for producer cleanup. Started application work may finish.
+The installed workerd baseline did not report a pre-header TCP disconnect,
+even in a minimal direct-socket Worker; explicit-signal tests do not prove that
+notification. Full application deadlines and native disconnect acceptance remain
+open. HTTP/multipart/service proxies send a bounded UUID v4 correlation ID
+before dispatch, retained by the transport guard without changing authorization.
+
+Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
+from the action request. Components, their descendants, and layout scopes remain
+alive through the stream. SSE subscriptions only receive state updates; they
+never retain or pull an action generator. Distributed SSE scopes use a SQLite
+snapshot and bounded event log in `SseDurableObject`; Node stays process-local.
+
+Request-context middleware exposes a structural response lifetime under
+`cossack:response-lifetime`. A middleware can call
+`deferCleanup(() => Promise<void>)`; a true result transfers cleanup to the
+retained streaming response. A false result leaves cleanup with that middleware.
+The response releases components and services before retained middleware
+resources, and closes every registered resource even if another close fails.
+Database factories use this contract without importing the framework. Ordinary
+responses retain their existing middleware cleanup behavior.
+
+Response header timing is separate from response body ownership. The outer
+request-context middleware exposes core's structural `ResponseHeaderState`
+under `cossack:response-header-state`. It seals headers only after downstream
+middleware finishes, so flash and session middleware can still finalize cookies.
+It guards `c.header`; core cookie and flash helpers use the same structural
+contract without depending on framework. Session rotation/destruction check
+the guard before any storage changes. Retained stream pulls and cleanup cannot
+change headers through these helpers. Direct mutation of raw `Response.headers`
+does not participate in this guard.
+
+Generators remain lazy to preserve backpressure. Authors prepare cookies or
+flash in an ordinary async action before returning a generator. HTTP/SSE RPC
+materializes native redirects as client navigation metadata and preserves
+native, helper, and middleware cookies together. WebSocket results reject native
+HTTP responses explicitly; serialized value trees reject nested HTTP objects.
+Background transport requests preserve valid incoming flash; HTTP error statuses
+discard partial outgoing flash. Stream failures after headers finalize cannot
+roll back cookies or completed mutations.
+
+Core owns public old-input selection before the flash middleware serializes its
+cookie. `flashInput(data, { fields })` copies only selected own scalar leaves or
+scalar arrays, rebuilding nested containers and preserving selected array
+positions. It omits object branches, files, accessors and unsupported values;
+common credential/prototype paths are always excluded. Custom credentials remain
+the application's responsibility to leave outside its server-authored field
+list. `getFormData` defaults to nonempty validation errors only; submitted input
+requires an explicit `flash.input` list. Selection leaves parsed data unchanged.
+Generic `flash()` cannot write the reserved old-input namespace.
+Old-input reads also reject credential/prototype paths and inherited properties.
+Signing authenticates cookie bytes; it does not encrypt data. On Cloudflare,
+flash middleware atomically consumes each signed nonce through the
+`COSSACK_SSE` SQLite Durable Object, with one named object per token and expiry
+cleanup by alarm. A Cloudflare app without that binding fails closed for flash
+reads and writes. Node has no durable replay store, so a copied cookie can
+be read again until its signed expiry. Generic flash/error messages remain
+application-owned.
+
+Core owns the JSON RPC value contract through `snapshotRpcValue` and
+`snapshotRpcFrame`. Transports snapshot data once before encoding. Valid dates
+become ISO strings; undefined object fields disappear and array holes become
+null. Data/model instances contribute own enumerable fields. A typed custom
+`toJSON` supplies its validated representation, with a consistent empty root
+result key across envelopes. Cycles, non-finite numbers, opaque/binary values,
+and excessive nesting reject with paths. Component file arguments retain their
+separate multipart extraction boundary; ordinary multipart results use this
+snapshot contract too. The extraction walker preserves own __proto__ data keys.
+
+Public `RpcSerialized`, `RpcResult`, and `RpcYield` describe JSON results and
+yields. The compiler delegates recognized return annotations to the same types
+used by authored `rpc$` inference, avoiding a second type vocabulary. Native
+server code keeps its authored types; client code receives data without native
+model prototypes. Parameter and hydrated component property annotations still
+need to describe their JSON representation; this does not add native revival.
+
+Core `shared/rpc-json.ts` owns ordinary HTTP/SSE JSON response validation for
+component and explicit-service clients. It consumes the entire body with a
+1 MiB total byte cap, fatal UTF-8 decoding, abort ownership and reader release
+before hydration/completion. Service success requires an object state wrapper;
+component state cannot carry that wrapper. Redirect metadata is an exclusive
+HTTP/HTTPS-or-relative URL branch. HTTP failure fields have structural checks
+and body/header request IDs must agree. Non-JSON middleware/native failure
+bodies remain opaque generic status errors. The component's ordinary state key
+`requestId` is not diagnostic metadata. Decoder failures cannot undo mutations.
+
+Ordinary native HTTP RPC responses use the reserved `X-Cossack-Rpc-Response:
+native` marker. Component/service clients check this before examining MIME types
+or JSON state, so user JSON and NDJSON bodies cannot become protocol metadata.
+Core consumes the native body with a bounded growing byte buffer before resolving
+`RpcCall<Response | undefined, never>` to a local response. The 1 MiB cap,
+deadline, cancellation and server response lifetime apply through consumption;
+unobserved calls also drain and release resources. Native response status/text,
+browser-visible headers and bytes are preserved. Redirects retain navigation
+metadata and undefined completion. Native bodies are not state envelopes and do
+not hydrate action state. Non-success statuses retain RPC error handling. Upload
+XHR uses arraybuffer and copies browser-visible headers. WebSocket rejection
+cancels a native response body; Response values in generators remain invalid.
+
+JSON and multipart actions now share one router dispatcher registered at `/crpc`
+and `/upload`. `readRpcRequest` decodes/caches the body for guards and dispatch,
+restores nested file references using own-property records and validates envelope
+shapes. Malformed/duplicate metadata or missing/duplicate file parts reject before
+construction or mutation. Origin checks remain before parsing, and addressed
+page/layout guards remain before component/service construction. Multipart calls
+therefore inherit JSON RPC's full layout ownership, input validation, scoped
+cleanup, SSE coordination, native response handling and response lifetimes.
+
+Core service proxies encode nested files through the shared multipart helpers.
+Component proxies use Fetch unless a numeric method-progress field selects XHR.
+The XHR bridge resolves a stream at response headers, forwards stable complete
+UTF-8 frames progressively and retains upload progress/native binary metadata.
+Frame sizes are bounded, but native XHR accumulates response text and cannot
+pause the network reader. Fetch remains the default for long replies and download
+backpressure. Both paths feed the same RPC parser and lifetime/cancellation
+contract. `createRpcCall` queries the client's known request ID when cancellation
+closes an iterator parked at a yield, so its synthetic cancellation error retains
+correlation even without another transport read.
+
+### Reactive field contracts and diagnostic ownership
+
+Core collects each class's own State, Store, ClientState and ClientStore metadata
+from root to child. A child declaration replaces the complete contract for that
+field; unrelated parent fields remain. Bootstrap, service snapshots/forwarding,
+request sanitization, optimistic field discovery and channel validation use this
+same collector. Only final public State/Store fields are accepted from request
+overlays. Client-only overrides cannot inherit public input permission.
+
+Public state remains shallow or deep according to its decorator. Computed getters
+calculate on read; rendering follows their reactive inputs rather than a computed
+cache. Standalone createStore owns replacement notifications and subscriptions,
+without component serialization or automatic server synchronization.
+
+Development snapshot diagnostics use a bounded read-only mode of the canonical
+RPC value traversal. They inspect known data descriptors without executing custom
+serialization hooks/getters, and report owner/field/path rather than values.
+Unknown representations remain subject to real serialization. Diagnostics do not
+normalize snapshots or reject state writes. Core library builds retain consuming
+Vite mode selection, with safe optional env access for direct Node imports.
+Production state and serialization semantics are unchanged.
+
+### Optimistic invocation ownership
+
+Core owns a weak per-target ledger of invocations and resulting reactive-field
+values. Handlers execute once and synchronously. Plain field trees are detached
+for capture, without serialization hooks; native values remain scalar references.
+Each call can remove its own preview without restoring an old whole-component
+snapshot. Newer confirmed replies and later local writes have separate ownership.
+This representation does not infer arithmetic/array operations or provide a
+database transaction. Later nested edits protect the complete reactive field.
+
+Component and service setters record local edits. The shared RPC state applier
+combines call-owned fields with the canonical JSON comparison for unrelated
+request fields. Explicit service replies are filtered by their public metadata
+before merging. HTTP/service request state excludes pending previews and includes
+user-authored public edits. Client-only state stays outside that request overlay.
+Uncorrelated completion broadcasts cannot settle correlated calls. Loading counts
+settle once through the owning call lifecycle.
+
+Each service scope records active loading ownership by declared service class
+and invocation. Subscriptions identify the declaration they consume. New consumers
+attach to matching pending invocations. Each invocation records one release per
+consumer, so duplicate injection and unsubscribe/rejoin retain a single count.
+Another declaration or a shadowing scope does not inherit that ownership.
+Exited consumers still release when the call settles, without another render.
+Same-named component and service actions retain independent loading contributions.
+This does not cancel service work when its layout exits or prove server rollback.
+
+Public `optimistic<Host>(target)` helpers bind to the exact synchronous handler
+capture. They record finite increment and detached plain-data append/remove
+operations on reactive fields. Internal replay folds data operations over the
+confirmed base in invocation order; it never reruns application handlers.
+Successful local operations remain in the journal until the last pending call
+settles. An authoritative response advances the field sequence and excludes
+operations that it confirms. This preserves later operations when an older
+failure removes its entry, including a removal that was initially a no-op.
+Later local replacements provide a base for subsequent operations.
+Direct assignments retain absolute whole-field semantics. Mixing operations and
+direct assignment on one field in a handler rejects and restores that capture.
+Saved helpers reject after capture ends, including during a later invocation.
+Field/item types use a concrete Host; polymorphic this needs an explicit class.
+The runtime reactive metadata check remains authoritative.
+
+A weak per-target history retains confirmed values only for fields whose later
+user edit survives settlement. An equal ambient echo is ignored before pending
+field merging, including when another call starts. Changed state and explicit
+RPC reads clear that field's history. Socket/EventSource open and SSE resync clear
+history without discarding active invocation ownership. For sources without cursor
+metadata this remains duplicate-value recognition. SSE page publications correlate
+request ownership and use event cursors to order ambient and action snapshots.
+Older replies remove their own confirmed contribution without replacing newer public
+state. A higher revision restores authority after settlement, even for equal values.
+Child-local replies remain outside the page cursor domain. SQLite persists per-scope
+cursors; Node uses process publication IDs across SSR entry replacement. Reopen
+resets the client baseline; this does not establish cross-process generation ordering.
+Actual native SSE resync and socket reconnect acceptance now pass. Wider optimistic
+stream/service cases remain RT-06 work.
+
+Process runtime connection snapshots contain flat public state, matching normal
+broadcasts and Cloudflare snapshots. SSR hydration remains a separate wrapped
+record. Uncertain errors retain existing transport codes and cannot prove server
+rollback. Mutation replay is forbidden; a record read or resource refresh supplies
+application-specific authority when no realtime snapshot is available.
+
+The Cloudflare SSE coordinator checks `X-Cossack-Rpc-Response: native` before
+its RPC NDJSON MIME-type branch. A native body may contain arbitrary text/JSON/
+binary data and must not be parsed as protocol frames even when its MIME type
+matches. Opaque bodies retain the same serialization slot and response cleanup
+lifetime. Built production Worker/Chromium fixtures cover multipart/public client
+consumption, native bodies, redirect/flash cookies and D1-backed request ownership
+through generator completion and scoped cleanup. Test-only D1 release/audit
+endpoints belong solely to temporary acceptance applications.
+
+## Client response cancellation ownership
+
+Component HTTP/SSE calls and explicit-service calls share an abort-aware response
+waiter. It observes the original request after cancellation, discards late responses
+and releases their bodies. Client deadlines do not depend on a request producer
+honoring abort. This does not terminate external I/O or prove server rollback.
+Service optimistic/loading cleanup is idempotent and runs from explicit cancellation,
+even before its generator first starts. Terminal/finally cleanup cannot release an
+invocation twice. Confirmed yield state remains authoritative when a later frame
+fails; unconfirmed client-only previews roll back. Late scoped consumers keep their
+per-invocation ownership. See the [optimistic guide](../docs/optimistic.md#cancel-a-stream).
+
+
+The shared `createRpcCall` completion owner accepts an optional transport abort
+signal and error factory. Interruption latches settlement before invoking abort,
+detaches its signal listener and closes the generator after outstanding pulls.
+Repeated/reentrant cancellation shares one close operation. A paused iterator's
+next pull observes the interruption once; successful completion wins over later
+abort. HTTP/SSE and explicit services bind their deadline controllers to this owner.
+Stream cleanup does not await an uncooperative producer cancellation hook before
+releasing its reader lock.
+
+WebSocket calls own one deadline timer for their full consumer lifetime, including
+pauses between yields. Their bounded frame queue reports local transport failures to the
+same interruption owner. Application error frames retain ordered delivery after
+earlier yields; they do not interrupt those yields. A disconnect or buffer failure clears pending ownership,
+local loading and unconsumed frames immediately. The call sends at most one
+best-effort cancellation frame for local cancellation/deadline or invalid/overflow
+input. Already reconciled yield state remains; no action is replayed.
+
+## Controlled UI data tables
+
+The UI DataTable consumes a current page and an explicit total. Its parent owns
+queries, server data access and stale-response handling. Query callbacks emit new
+state without modifying rows or sorting/filtering them locally. Columns use typed
+row keys or accessors. Selection is a controlled set of stable string IDs. Updates
+copy the set and change only visible selectable rows, preserving off-page IDs.
+Authorization and selection reconciliation remain application responsibilities.
+
+The component uses native table and form controls. It publishes caption/row-label
+requirements and explicit loading/error/empty semantics. Paging keeps focusable
+aria-disabled controls and guards their handlers. Retry transfers focus before
+its conditional button disappears. The library owns no database or framework
+application dependency. UI declaration builds rewrite relative imports for strict
+ESM consumers, as core and renderer already do.
+
+Same-owner page replacement captures focus immediately before publication. A
+unique DOM ID identifies the replacement control. Tag, type and name must match.
+Text selection transfers only with an unchanged value. Retained nodes and
+intentional focus moves take precedence. The same guarded restoration runs after
+rollback rendering. Cross-owner navigation does not transfer focus. DataTable's
+optional ID supplies stable IDs for its query and paging controls.
+
+## Native UI contracts
+
+Renderer `component()` accepts the instance's declared props without adding an
+arbitrary string index signature. UI native attribute types live in the UI package.
+The reviewed Button/Input/Label/Checkbox/Switch/Form wrappers declare DOM event
+names and exact currentTarget types, native attribute values, ARIA names and data
+attributes. Wrapper-owned props stay separate from native input attributes. Relevant renderer
+directive result classes have declaration-only private brands, matching the runtime's
+instance checks instead of accepting structurally similar plain objects.
+This is a compile-time contract, not runtime validation of JavaScript callers.
+See the [UI contract inventory](./ui-contract-audit.md) for coverage and remaining work.
+A separate `component()` overload for supplied props preserves callback inference
+when a union uses an optional default discriminator. The optional-props overload
+still accepts omitted props and variables that can be undefined. Public declaration
+fixtures exercise default, explicit single and multiple ToggleGroup modes.
+
+
+Choice-control wrappers derive disabled styles from native input state, so disabled
+fieldsets do not need duplicated framework state. RadioGroup props distinguish
+root div attributes/events from input-level form flags and selection callbacks.
+Unique item values key native input identity. Slider owns numeric bounds and value,
+applying constraints before a live value binding so widened bounds can recover a
+previously clamped requested value. Browser-native step/clamping remains authoritative.
+
+
+Renderer SSR serializes `.value` through an HTML parse with source locations, then
+edits only the affected attributes/text. Authored markup and hydration markers are
+preserved. Textarea values become escaped raw text, with an extra leading LF when
+needed by HTML parsing. Select values select the first matching option and remove
+competing selected attributes. Option fallback values follow native whitespace and
+script-exclusion rules. A scalar value selects one option even on a multiple select.
+Hydration treats textarea content as native property state, without child comment
+anchors. Use `.value` rather than interpolated textarea children.
+
+The parser uses parse5 8.0.1 without Node APIs. Its source-location behavior is
+[documented by parse5](https://parse5.js.org/interfaces/parse5.ParserOptions.html).
+Option text semantics follow the [HTML standard](https://html.spec.whatwg.org/multipage/form-elements.html).
+The renderer's browser export replaces root `renderToString` with a diagnostic
+that directs deliberate serialization to `/server`. This lets bundlers remove the
+SSR parser even when core retains its synchronous `_render()` method. Node,
+worker and workerd export conditions retain the full root serializer. The explicit
+`/server` entry remains available in every environment. Unmatched single-select values cannot encode an
+empty selection in static HTML; a matching option is required for SSR parity.
+
+## Project-local development trace records
+
+Core owns browser trace capture and passive component snapshot DTOs. The framework
+owns the opt-in Vite transport and the Node-only `/development-traces` storage
+service. CLI and MCP call that same reader; neither starts browser work or imports
+application modules. No Node filesystem dependency enters core or the client.
+
+`cossackPages({ developmentTraces: true })` injects a development-only publisher
+through the client route registry and Vite HTML transforms. Both load the same
+virtual module URL, avoiding duplicate publishers while supporting Worker-rendered
+HTML that bypasses the HTML transform. Explicit browser capture offers default snapshots
+once per second with one outstanding acknowledgement. Vite admits one disk write
+at a time and rejects overload. The strict parsed-JSON schema accepts only fixed
+trace fields and omitted state values. A project path digest, server identity and
+receipt timestamp accompany atomically replaced, bounded session records.
+
+These are local client/server observations, not authenticated audit logs or
+live queries. The reader exposes receipt age and `live: false`; a recorded collecting
+flag cannot establish current liveness. One Vite recording server owns a project
+directory. Selected field values stay in the browser. See [usage and limits](../docs/development-traces.md#read-captures-from-cli-and-mcp).
+
+
+## Development RPC dispatch evidence
+
+An active client capture adds its opaque call ID to HTTP and multipart RPC headers.
+Development-only router middleware owns one request-local fixed-field record;
+no global request state or application payload is retained. Dispatch records
+invocation and method return around the existing call, reusing stream classification
+without inspecting application iterators again. Response creation publishes a
+bounded header with a separate dispatch ID, correlation IDs, server timestamps,
+result kind and HTTP status. The client validates correlation and fields before
+appending one `server-rpc` event to its original bounded capture. Vite storage,
+CLI and MCP use the same strict event schema. Production removes instrumentation.
+This evidence describes dispatch and response creation, not body completion;
+WebSocket dispatch and native-body cleanup use the separate evidence paths described in the trace guide. See the
+[trace guide](../docs/development-traces.md#server-dispatch-evidence).
+
+
+Opted-in RPC generator terminal frames may carry opaque `developmentTrace`
+metadata. The producing router snapshots application values once, validates their
+encoded size and attempts request cleanup before adding terminal evidence. A done
+record requires completed cleanup; failures distinguish action/encoding outcome
+from cleanup completion. Optional evidence is omitted when it would exceed the
+frame limit, reserving space for coordinator cursor insertion. Cancellation emits
+no invented server terminal. Core only records a matching terminal after normal
+frame and EOF validation; malformed evidence does not alter RPC semantics. It joins
+the earlier dispatch ID as a bounded `server-stream` event. Native bodies report cleanup separately over the Vite server environment hot
+channel. A bounded receipt acknowledgement runs in background work, using the
+execution context’s `waitUntil` where available; it does not delay headers or EOF.
+The opt-in Node bridge validates fixed fields before forwarding to browsers. Native response bytes and headers never carry terminal framing. A
+bounded map of recent call identities accepts matching native dispatch records
+before headers or after local completion, but never after capture stop/replacement.
+The browser inspector supplies the shared capture owner to the bridge. Socket
+terminal evidence describes frame preparation, not post-send cleanup.
+
+### Node Vite development HTTP boundary
+
+The Node adapter's separate `/vite` entry owns the standalone development HTTP
+listener integration. It consumes only structural `app.fetch`, `env`, and runtime
+lifecycle exports; it never imports the framework. It keeps the Node adapter and
+core inside the development SSR graph so installed packages receive the same DEV
+guards as linked workspace packages. Scaffold includes it only in
+Node web Vite configuration. Vite's module runner loads the application after
+Vite's asset handlers, and the Hono Node server bridge preserves request streams
+and repeated cookies. Runtime imports do not load Vite. A dedicated `/ws/` listener
+loads the same entry for cold upgrades. The server hot-update hook replaces its
+module graph and runtime while the client HMR channel stays connected. A revision
+check discards entries superseded during asynchronous binding creation. The
+entry's `createEnv` factory receives server-only environment-file values and
+process overrides; generated production entries use the same factory. The
+script launcher uses this plugin too. Embedded servers retain their own listener
+and lifecycle.
+
+Generated standalone Node entries explicitly install the Node adapter's process
+shutdown owner. SIGTERM/SIGINT share one operation: stop listening, drain accepted
+HTTP responses and HTTP/2 sessions, and dispose the WebSocket runtime. One
+10-second deadline bounds HTTP draining and runtime cleanup together. At the
+deadline remaining sockets are destroyed; ignored application I/O is not claimed
+complete or rolled back. Generated entries exit 1 for forced or failed cleanup.
+Importing the adapter or an embedded application installs no process handlers.
+Hosts may explicitly install/uninstall this owner and choose the completion hook.
+Node declarations use explicit runtime extensions so strict NodeNext consumers
+retain real public types instead of silently resolving re-exports to `any`.
+
+## Configuration generation boundary
+
+The Node-only `framework/config-codegen` entry owns filename discovery and
+`.cossack/config.d.ts` emission. Vite and `cossack config --generate` share it.
+The runtime config accessor imports no generator or filesystem API. Generated
+module references are type-only; factories are evaluated during request
+or SSG configuration preparation. CLI discovery emits source/type origins without
+executing modules or publishing values. Explicit authored registry entries take
+precedence over inferred entries for the same key.
+
+Request and SSG configuration preparation use the same `prepareConfigStore`
+helper. Each synchronous factory evaluates inside a fresh ALS scope containing
+only the selected environment and an initially empty config tree. The completed
+store is then used by downstream request work. This temporary scope restores its
+caller on success or failure; async descendants retain their request's store.
+SSG supplies APP_URL only, so required live bindings fail before rendering.
+
+## HTTP failure metadata
+
+Framework-internal portable server logging supplies fixed API/SSR/request events.
+Native/class API and SSR router catches do not serialize exception data into
+logs. Correlation uses validated outgoing UUIDs and authored route templates;
+internal API/request JSON responses expose the same ID and fixed code. Unknown
+HTTP methods are not retained as labels. Controlled public errors keep their
+existing contract. The global Hono error handler also covers config/middleware
+failures. This does not cover every core/adapter/SSG log, full-request timing or
+remote log ingestion; see [the scoped contract](../docs/server-logging.md).
+
+Installed private-config acceptance exercises real Cloudflare SSR, browser
+hydration/RPC and production client maps. The server ALS configuration store is
+not a hydration field. Classification is metadata, not automatic value tainting;
+application-public state/HTML/results still require deliberate selection.
+
+Cloudflare budget inspection is Node-only build tooling owned by framework.
+The CLI and Vite application hook share literal primary/auxiliary limits and
+independent source-target verification. Auxiliary policies capture source targets
+before building, match fresh redirect artifacts, verify normalized deployment
+fields, and recheck configuration after measurement. They do not upload auxiliary
+Workers. Runtime/core/adapter libraries do not depend on this tooling. Private
+normalized source snapshots must never enter client bundles or result envelopes;
+only authored policy paths and safe metric results are serialized. Configuration
+matching does not authenticate every compiled module graph. Auxiliary redirects
+continue to disable signed receipt reuse until all targets and graphs are bound.
+
+Primary receipt inventories now bind directory membership and bounded regular
+redirect reads. Local startup reuse additionally binds Wrangler-resolved
+Miniflare, its workerd loader and manifests, and the actual native executable,
+including override/autogate settings. Only absolute nonsymlink executable
+overrides are eligible; relative commands may use PATH resolution and decline
+reuse. Artifact/source inventories share 4,096 files/64 MiB, 4,096 directories
+and 8,192 entries. Tool/runtime files have a separate 256 MiB cap. Unsupported
+runtime fallbacks decline reuse rather than accepting incomplete identity.
+This does not authenticate every transitive tool dependency or expand the
+supported compiled module graph.
+
+## Jobs and challenge verification
+
+Portable typed job registries, JSON actor/tenant scope, delivery ownership and
+local/Cloudflare queue adapters live in `core/jobs`. Durable storage remains an
+explicit contract; a Cloudflare producer cannot silently select process memory.
+The focused `framework/jobs` entry owns the structural D1 ledger without importing
+the ORM. Scaffold composes its separate migration and native Queue entry. Persisted
+attempt counts and retry deadlines survive duplicate delivery; fenced ledger
+ownership does not guarantee exactly-once external effects.
+
+The Web API Turnstile verifier lives in `auth/turnstile`, independent of framework
+configuration and UI. It checks server-owned hostname/action with a private secret.
+UI owns browser loading, typed widget events and disposal. Scaffold composes both
+through validated forms and server configuration, hydrating only the public site
+key. Client success events never authorize protected operations.
+
+## Schedules and notifications
+
+`core/schedules` owns portable validated schedule declarations and occurrence
+identity. It dispatches the existing jobs contract; it does not implement a clock
+or a durable scheduler. Scaffold generates Cloudflare Cron configuration and a
+native scheduled entry. Node-only `framework/schedules-inspection` and
+`cossackSchedules()` validate bounded JSON declarations against the selected
+Wrangler environment without evaluating application modules. Their public facts
+omit payload and actor/tenant scope, and do not claim remote readiness.
+
+`core/notifications` separates typed rendering, preferences, persisted intent,
+job dispatch and delivery. Applications supply a store and server-authorized
+recipient scope. Memory is explicit process storage; `framework/notifications`
+provides fenced D1 storage and the structured Cloudflare email adapter.
+`node-adapter/notifications` reuses the existing SMTP sender. Provider acceptance
+is distinct from authenticated delivery evidence. A persisted marker precedes
+external sends; uncertain non-idempotent attempts become `unknown` and never
+silently resend. Stable keys and terminal records must survive application
+restarts. The generated Cloudflare recipe stores scoped opt-in preferences and
+composes the jobs Queue instead of creating a second execution engine.
+
+## Durable Object component readiness
+
+Core's Durable Object wrapper keeps one pending initialization/restoration owner.
+It publishes the component/runtime pair only after bootstrap, initial seed and
+persistence (fresh instances), or public-state/tree restoration (stored instances).
+Concurrent joins, messages and state reads await that owner. Failed unpublished
+components are disposed once; retries start with a fresh component. The first
+socket is accepted before releasing fresh ownership so stateless joins cannot
+mistake pending readiness for idle state. Restored state comes from storage;
+state-query metadata cannot create an unused extra component or replace its owner.

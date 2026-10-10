@@ -21,6 +21,10 @@ The library allows you to create an **Auth Kit** by providing an **Auth Provider
 
 > **Do not want to wire this by hand?** Run `cossack add auth` to generate a complete, working session-auth setup (PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets) in your project.
 
+The generated application uses the shared password, credential and session APIs.
+Read [credential and session primitives](./auth-primitives.md) for typed storage
+callbacks, atomic rotation, cookie policy and the password-format migration.
+
 ## Example: Email/Password with Cookie Sessions
 
 This example demonstrates a standard authentication flow:
@@ -122,45 +126,92 @@ export default middlewares;
 
 ### 4. Login via a `@Server` Method (Recommended)
 
-The cleanest login flow is a `@Server` method on the login page component. Inside a `@Server` method, `this.c` is the live Hono context, so calling `auth.createSession(user, this.c)` writes the `Set-Cookie` header onto the `/crpc` response, and `this.redirect(...)` navigates the browser:
+The generated login page keeps its draft in `ClientStore`. Client validation gives
+feedback without copying passwords into shared page state or validation RPCs.
+The server accepts one object with an input contract from `src/auth-input.ts`.
+It parses the contract again for native calls, which bypass decorator gates.
 
 ```typescript
-// src/pages/(auth)/login/index.ts
-import { Cossack, Page, State, Validate, Client, Server } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
-import { auth } from '../../../auth';
+// src/pages/auth/login/index.ts
+import { Cossack, Page, State, ClientStore, Client, Server } from '@cossackframework/core';
+import { authSessions, loginUser } from '../../../auth';
+import { loginInput, type LoginInput } from '../../../auth-input';
 
 @Page({ transport: 'http' })
 export default class LoginPage extends Cossack {
-    @State() @Validate({ rules: { required: true, email: true } }) email = '';
-    @State() @Validate({ rules: { required: true, minLength: 8 } }) password = '';
+    @ClientStore() form = { email: '', password: '' };
     @State() error = '';
 
     @Client()
-    async handleSubmit(e: Event) {
-        e.preventDefault();
-        if (!(await this.validateAll())) { this.requestUpdate(); return; }
-        await this.login(this.email, this.password);
+    async handleSubmit(event: Event) {
+        event.preventDefault();
+        this.error = '';
+        try {
+            await this.login({ email: this.form.email, password: this.form.password });
+        } catch {
+            this.error = 'Could not sign in. Check your details and try again.';
+        }
     }
 
-    @Server()
-    async login(email: string, password: string) {
-        // Look up the user and verify the password hash (use bcrypt/argon2
-        // or PBKDF2 in production — `cossack add auth` generates this for you).
-        const user = await verifyCredentials(this.c, email, password);
-        if (!user) { this.error = 'Invalid credentials'; this.requestUpdate(); return; }
-        // auth.createSession writes the session row and returns Set-Cookie headers;
-        // copying them onto this.c puts the cookie on the /crpc response.
-        const { headers } = await auth.createSession!(user, this.c);
-        headers.forEach((value, key) => this.c.header(key, value));
-        this.redirect('/dashboard');
+    @Server({ input: loginInput })
+    async login(submitted: LoginInput) {
+        const { email, password } = await loginInput.parse(submitted);
+        this.error = '';
+        try {
+            const user = await loginUser(email, password);
+            if (!user) { this.error = 'Invalid credentials'; return; }
+            const { headers } = await authSessions.create(user.id, this.c);
+            headers.forEach((value, key) => this.c.header(key, value));
+            this.redirect(config('auth.redirectAfterLogin'));
+        } catch {
+            this.error = 'Could not sign in. Try again.';
+        }
     }
 
-    render() { /* a form bound to this.email / this.password */ }
+    render() { /* bind the form controls to this.form */ }
 }
 ```
 
-`verifyCredentials` is your own helper (the generated `src/auth.ts` from `cossack add auth` exports `loginUser`, which does the lookup + PBKDF2 verification against the `users` table).
+The scaffold adds `Validate` with `runOn: 'client'` to the draft. Server schemas
+reject missing, malformed and extra fields. Passwords need at least eight
+characters and at most 1024 UTF-8 bytes. They are not normalized or truncated.
+Keep custom credentials out of public state, old input and arbitrary flash data.
+Explicit submission payloads carry credentials to the server; `ClientStore`
+does not encrypt the network or hide values from browser scripts.
+
+Login, register and reset failures show fixed messages and retain the browser
+draft. The register page also recognizes the exact duplicate-account error.
+The reset-request page shows the same confirmation for known and unknown emails.
+Configure email delivery before expecting a reset email; an absent email binding
+is a no-op. Reset tokens are carried in the link query and explicit action input,
+not a public page field. Treat the reset URL as a credential.
+
+### Generated session actions and partial failures
+
+A dashboard with the sessions module has a **Rotate current session** action.
+Rotation atomically replaces the bearer token while retaining its public
+management reference. The page applies the replacement cookie and redirects to
+`/dashboard/sessions`. The next request lists the new token as current. Two
+rotations using the same token have one winner. An already-started request can
+retain its resolved user; a new HTTP request validates the incoming token again.
+Rotation affects every tab that shares the browser cookie. Authenticated SSE
+checks the old token's server-only descriptor before each delivery, closes the
+old subscription and requires a reload with the new cookie. WebSocket identity
+refresh remains separate work. An already-validated frame can be in flight
+when rotation finishes. Read the [SSE session contract](./sse.md#session-changes-on-an-open-subscription)
+for provider setup, guard checks, idle checks and limits.
+
+The dashboard layout guard also protects its logout RPC. Logout expires the
+cookie and redirects only after storage revocation succeeds. Storage failures
+keep the cookie and show fixed feedback. A lost response can leave a revoked
+session cookie in the browser; the next request must sign in again.
+
+These operations are not a transaction spanning account writes, sessions and
+HTTP delivery. Registration can create an account before session creation fails;
+the user can retry by signing in. A reset consumes its token before hashing,
+updating the account and revoking sessions. Later failures can leave partial
+writes and require a new reset link. A failed response does not establish that
+nothing changed. Do not automatically repeat a mutation based on that assumption.
 
 ### Alternative: Login via a Hono Route
 

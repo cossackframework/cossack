@@ -64,7 +64,7 @@ Key design points of the scaffold (different from rolling it by hand):
 
 ## Step 3: Configure environment / bindings
 
-- **Database (D1):** if `wrangler.jsonc` has a placeholder `<database_id>`, create the database and fill it in: `npx wrangler d1 create <name>`.
+- **Database (D1):** if `wrangler.jsonc` has a placeholder `<database_id>`, create the database and fill it in: `pnpm exec wrangler d1 create <name>`.
 - **Email:** the `send_email` binding (`env.EMAIL.send({ to, from, subject, html, text })`) is used by password reset. Verify the `from` domain in the Cloudflare dashboard, and set `MAIL_FROM` if you want a custom sender. (On the Node adapter this is a polyfill you provide.)
 
 ## Step 4: Run migrations + seed
@@ -156,3 +156,13 @@ The scaffold is a starting point — edit the files freely:
 - [ ] `/register` → `/dashboard` flow works; `this.user` populated
 - [ ] Unauthenticated visit to a protected route redirects to `/login`
 - [ ] `pnpm tsc --noEmit` passes
+
+## Verify installed access policy guidance
+
+Read `cossack docs --package @cossackframework/auth --json` and the Core
+`server-action-access-policy` guide from `cossack docs --package
+@cossackframework/core --json`. These are installed offline catalogs. A login
+session and an open socket are not record permissions: enforce trusted ownership
+for each inbound RPC and delivered realtime operation. Never accept a submitted
+`user` parameter or client State as authentication. Password/reset-token input
+must not be selected into old-input allowlists. Keep provider secrets server-only.

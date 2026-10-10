@@ -37,9 +37,24 @@ jobs:
               examples/desktop-counter \
               packages/desktop || desktop=true
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              packages/core \
+              packages/renderer \
+              packages/framework \
+              packages/node-adapter \
+              packages/auth \
+              packages/database \
+              packages/test-utils \
+              packages/ui \
               packages/scaffold \
               packages/cossack \
-              scripts/test-local-scaffold.mjs || generated_app=true
+              scripts/test-local-scaffold.mjs \
+              scripts/verify-agent-documentation.mjs \
+              scripts/verify-agent-guide-batch.mjs \
+              scripts/verify-published-release.mjs \
+              scripts/verify-deployment-guide.mjs \
+              scripts/verify-generated-migration-plans.mjs \
+              docs/deployment.md \
+              docs/installation.md || generated_app=true
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
               packages/studio || studio=true
           fi
@@ -57,48 +72,36 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
-      - name: Setup Deno 2.9
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.9.x
-
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build workspace libraries
         run: pnpm run build
 
       - name: Check package types
-        run: pnpm run typecheck
+        run: pnpm run typecheck -- --exclude-desktop
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
 
       - name: Run all unit tests
-        run: pnpm run test:unit
+        run: pnpm --workspace-concurrency=1 --filter "./packages/*" --filter "!@cossackframework/desktop" run test --watch=false
 
-      - name: Check Deno web adapter
-        run: |
-          deno check packages/deno-adapter/src/index.ts
-          deno test -A packages/deno-adapter/tests/deno-smoke.test.ts
-
-      - name: Build Desktop counter web target
-        if: steps.changes.outputs.desktop == 'true'
-        run: pnpm --filter @cossackframework/example-desktop-counter build
+      - name: Record Desktop release waiver
+        run: echo "Desktop platform acceptance is waived for 0.9.0; installer jobs are manual."
 
       - name: Test generated app with local package tarballs
         if: steps.changes.outputs.generated_app == 'true'
         run: pnpm run test:scaffold:local
-
-      - name: Install Playwright browsers
-        run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
 
       - name: Run Framework E2E tests
         run: pnpm --filter @cossackframework/framework run test:e2e
         env:
           CI: true
 
-      - name: Run Framework SSG tests
-        run: |
-          pnpm --filter @cossackframework/framework run test:e2e:ssg
-          pnpm --filter @cossackframework/framework exec vitest run tests/ssg-build.test.ts
+      # The default e2e run builds the app and includes the SSG spec; this checks the emitted files.
+      - name: Check Framework SSG output
+        run: pnpm --filter @cossackframework/framework exec vitest run tests/ssg-build.test.ts
         env:
           CI: true
 

@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/ui",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
   "sideEffects": false,
   "description": "UI component library for the Cossack Framework — token-driven, themeable components and Solar icons",
@@ -40,28 +40,34 @@
     "src/blocks",
     "src/components",
     "src/internal",
-    "src/theme"
+    "src/theme",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.declarations.json",
+    "build": "vite build && tsc -p tsconfig.declarations.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "prepublishOnly": "pnpm run build",
     "pretest": "pnpm run build",
     "test": "vitest",
+    "pretest:browser": "pnpm run build",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
     "build:icons": "tsx src/scripts/build-icons.ts"
   },
   "peerDependencies": {
-    "@cossackframework/core": "^0.8.3",
-    "@cossackframework/solar-icons": "0.7.1",
-    "@cossackframework/renderer": "^0.8.3"
+    "@cossackframework/core": "^0.9.0",
+    "@cossackframework/solar-icons": "^0.7.1",
+    "@cossackframework/renderer": "^0.9.0"
   },
   "devDependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/solar-icons": "0.7.1",
     "@cossackframework/renderer": "workspace:*",
+    "@cossackframework/solar-icons": "^0.7.1",
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.19.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.11"

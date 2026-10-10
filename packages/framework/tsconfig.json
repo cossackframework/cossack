@@ -32,6 +32,7 @@
   },
   "include": [
     "src/**/*.ts",
+    ".cossack/config.d.ts",
     "tests/**/*.ts"
   ]
 }

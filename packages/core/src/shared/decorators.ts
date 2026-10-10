@@ -2,11 +2,14 @@
 import './metadata';
 import type { MiddlewareHandler, Context } from 'hono';
 import { isServer } from './environment';
+import { validateServerMethodTimeout } from './server-method-metadata';
 import { CossackOptions } from './cossack';
 import { StateProvider } from './StateProvider';
 import { createRef } from './ref';
 import { ValidationRule, ValidationConfig, ValidationRulesStore, StoreRuleMap, setValidationRules, flattenRuleTree } from './validation';
 import type { ServiceClass } from './container';
+import type { InputSchema, InputOf } from './input-schema';
+import type { ServerActionAuthorizer } from './action-authorization';
 
 export type Middleware = MiddlewareHandler;
 export type CossackTransport = 'durable-object' | 'websocket' | 'http' | 'sse';
@@ -18,7 +21,6 @@ export interface PageOptions {
   /** Services owned by this layout and shared throughout its active subtree. */
   services?: ServiceClass[];
   transport?: CossackTransport;
-  route?: string;
   ssg?: boolean | SsgOptions;
   stateful?: boolean;
   /**
@@ -46,6 +48,10 @@ export interface SsgOptions {
 }
 
 export function Page(options: PageOptions = {}): ClassDecorator {
+  if (Object.prototype.hasOwnProperty.call(options, 'route')) {
+    throw Object.assign(new Error('[Cossack] PageOptions.route is not supported. Define the URL through the component file path under src/pages.'),
+      { code: 'COSSACK_ROUTE_ALIAS_UNSUPPORTED' });
+  }
   return (target: object) => {
     const existingOptions = Reflect.hasOwnMetadata('page:options', target)
       ? Reflect.getOwnMetadata('page:options', target)
@@ -106,6 +112,23 @@ function isValidationRuleMap(rules: Record<string, unknown>): boolean {
 export interface ServerOptions {
   channel?: string;
   provider?: string;
+  /**
+   * Parsed input contract for an inbound action. Typed schemas describe one
+   * argument, clone/normalize input and reject unknown fields by default.
+   * Rule maps must migrate to explicit input.object() schemas in 0.9.
+   * Failures carry `COSSACK_VALIDATION_FAILED` and nested field errors.
+   * Native calls to the authored method do not run decorator validation.
+   */
+  input?: InputSchema<any, any>;
+  /** Server-only, evaluated on parsed input and trusted request context before inbound mutation. */
+  authorize?: ServerActionAuthorizer<any>;
+  /**
+   * Client-side deadline for calls to this method, in milliseconds (integer
+   * from 1 through 2,147,483,647). Exceeding it rejects the call with
+   * `COSSACK_RPC_TIMEOUT`; the server-side mutation may still have completed,
+   * so the outcome is uncertain, never retried.
+   */
+  timeout?: number;
   /** @internal Compiler marker for generated server$ loaders. */
   serverResource?: boolean;
 }
@@ -115,7 +138,19 @@ export interface ServerOptions {
  * This decorator attaches metadata, and the Cossack base class handles the logic
  * of replacing the member with a WebSocket proxy on the client.
  */
+export interface ServerInputDecorator<S extends InputSchema<any, any>> {
+  (target: object, propertyKey: string | symbol, descriptor: TypedPropertyDescriptor<(value: InputOf<S>) => any>): void;
+  <Key extends string | symbol>(target: Record<Key, (value: InputOf<S>) => any>, propertyKey: Key): void;
+}
+
+export function Server<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize'> & { input: S; authorize?: ServerActionAuthorizer<InputOf<S>> }): ServerInputDecorator<S>;
+export function Server(options?: Omit<ServerOptions, 'input'> & { input?: never }): any;
 export function Server(options: ServerOptions = {}): any {
+  return registerServer(options);
+}
+
+function registerServer(options: ServerOptions): any {
+  const timeout = validateServerMethodTimeout(options.timeout);
   return (target: any, propertyKey: string | symbol) => {
     const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
       ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
@@ -124,6 +159,9 @@ export function Server(options: ServerOptions = {}): any {
     serverMethods[propertyKey] = {
       channel: options.channel || 'global',
       provider: options.provider || 'page',
+      ...(Object.hasOwn(options, 'input') ? { input: options.input } : {}),
+      ...(Object.hasOwn(options, 'authorize') ? { authorize: options.authorize } : {}),
+      ...(timeout === undefined ? {} : { timeout }),
       ...(options.serverResource ? { serverResource: true } : {}),
     };
     Reflect.defineMetadata('cossack:server-methods', serverMethods, target.constructor);
@@ -672,7 +710,7 @@ export function Optimistic(actionName: string): MethodDecorator {
 /**
  * Options for `@Task`, `@ServerTask`, and `@ClientTask`.
  */
-export interface TaskOptions {
+export interface TaskOptions<Host = any> {
     /**
      * Restrict this task to run only when one of the listed state/store
      * properties changes. Each entry is a property name (`'user'`) or, for a
@@ -687,7 +725,7 @@ export interface TaskOptions {
      * the legacy behavior. A tracked task also runs once during bootstrap
      * (the mount run), regardless of `track`.
      */
-    track?: (string | symbol)[];
+    track?: readonly import('./task').TaskDependencyPath<Host>[];
 }
 
 /**
@@ -699,7 +737,8 @@ export interface TaskOptions {
  * (via `destroy()` / `onCleanup`). Use it to release timers, subscriptions,
  * observers, etc.
  */
-export type TaskMethod = () => void | Promise<void> | (() => void | Promise<void>);
+export type TaskMethod<Values extends object = Record<string, unknown>> = (signal: AbortSignal, task: import('./task').TaskContext<Values>) =>
+    void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>;
 
 /**
  * Registry entry stored under the `cossack:tasks` / `cossack:server-tasks` /
@@ -708,7 +747,7 @@ export type TaskMethod = () => void | Promise<void> | (() => void | Promise<void
  */
 export interface TaskRegistration {
     propertyKey: string | symbol;
-    track?: (string | symbol)[];
+    track?: readonly (string | symbol)[];
 }
 
 /** Shared registration body for the three task decorators. */
@@ -749,7 +788,7 @@ function registerTask(
  *       return () => clearInterval(id);   // auto cleanup
  *   }
  */
-export function Task(options: TaskOptions = {}): MethodDecorator {
+export function Task<Host = any>(options: TaskOptions<Host> = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     return registerTask('cossack:tasks', target, propertyKey, descriptor, options);
   };
@@ -771,7 +810,7 @@ export function Task(options: TaskOptions = {}): MethodDecorator {
  *       // server-only logic here
  *   }
  */
-export function ServerTask(options: TaskOptions = {}): MethodDecorator {
+export function ServerTask<Host = any>(options: TaskOptions<Host> = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     return registerTask('cossack:server-tasks', target, propertyKey, descriptor, options);
   };
@@ -792,7 +831,7 @@ export function ServerTask(options: TaskOptions = {}): MethodDecorator {
  *       // client-only logic: DOM measurements, event setup, etc.
  *   }
  */
-export function ClientTask(options: TaskOptions = {}): MethodDecorator {
+export function ClientTask<Host = any>(options: TaskOptions<Host> = {}): MethodDecorator {
   return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
     return registerTask('cossack:client-tasks', target, propertyKey, descriptor, options);
   };
@@ -840,9 +879,15 @@ export function PreventNavigation(): MethodDecorator {
  * for channel names.
  */
 export function createTypedDecorators<T extends CossackOptions>() {
+  type Channel = T['Channels'] | 'global';
+  function typedServer<S extends InputSchema<any, any>>(options: Omit<ServerOptions, 'input' | 'authorize' | 'channel'> & {
+    channel?: Channel; input: S; authorize?: ServerActionAuthorizer<InputOf<S>>;
+  }): ServerInputDecorator<S>;
+  function typedServer(options?: Omit<ServerOptions, 'input' | 'channel'> & { channel?: Channel; input?: never }): any;
+  function typedServer(options: ServerOptions = {}): any { return registerServer(options); }
   return {
     State: (options: StateOptions & { channel?: T['Channels'] | 'global' } = {}) => State(options),
-    Server: (options: ServerOptions & { channel?: T['Channels'] | 'global' } = {}) => Server(options),
+    Server: typedServer,
   };
 }
 

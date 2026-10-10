@@ -1,73 +1,53 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
+// loadingTemplate()/clientInit() coverage lives in e2e/pages/lifecycle.spec.ts.
 test.describe('Loading States', () => {
-  test.describe('Automatic Loading States', () => {
-    test('should show loading state during server method call', async ({ page }) => {
-      await page.goto('/tasks');
+  test('this.loading[method] tracks an in-flight server action', async ({ page }) => {
+    await page.goto('/optimistic-counter');
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Show Info', exact: true }).click();
+    const loadingCount = page.getByText(/^Loading count: \d+$/);
+    await expect(loadingCount).toHaveText('Loading count: 0');
 
-      const addButton = page.locator('button:has-text("Add")').first();
-      if (await addButton.isVisible()) {
-        const input = page.locator('input[type="text"]').first();
-        await input.fill('New Task');
-
-        await addButton.click();
-
-        await page.waitForTimeout(500);
-      }
-    });
+    // increment() sleeps 1s on the server, so the flag is observable.
+    await page.getByRole('button', { name: 'Increment (+1)', exact: true }).click();
+    await expect(loadingCount).toHaveText('Loading count: 1');
+    await expect(loadingCount).toHaveText('Loading count: 0', { timeout: 10_000 });
   });
 
-  test.describe('loadingTemplate', () => {
-    test('should show skeleton UI during initial load', async ({ page }) => {
-      await page.goto('/lifecycle');
+  test('SPA navigation shows loading.ts and the progress bar until the page arrives', async ({ page }) => {
+    await page.goto('/');
+    await waitForHydration(page);
 
-      await page.waitForLoadState('domcontentloaded');
-
-      await expect(page.locator('body')).toBeVisible();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let intercepted = false;
+    await page.route(url => url.pathname === '/lifecycle', async route => {
+      intercepted = true;
+      await gate;
+      await route.continue();
     });
 
-    test('should replace skeleton with content after load', async ({ page }) => {
-      await page.goto('/lifecycle');
+    const sidebar = page.getByTestId('desktop-sidebar');
+    const group = sidebar.locator('li[data-sidebar-value="group:Lifecycle & Reactivity"] > details');
+    if (await group.getAttribute('open') === null) {
+      await group.locator(':scope > summary').click();
+    }
+    await sidebar.getByRole('link', { name: 'Lifecycle and loading', exact: true }).click();
 
-      await page.waitForFunction(() => {
-        const body = document.body.textContent || '';
-        return body.length > 50;
-      }, { timeout: 5000 });
-    });
-  });
+    // While the page fetch is held, the loading.ts convention UI and the
+    // progress bar are displayed.
+    await expect.poll(() => intercepted).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Loading Page... (Convention)' })).toBeVisible();
+    const progress = page.locator('#cossack-progress');
+    await expect(progress).toHaveCSS('opacity', '1');
+    await expect(progress).toHaveAttribute('style', /width: 30%/);
 
-  test.describe('this.loading[method]', () => {
-    test('should track loading state per method', async ({ page }) => {
-      await page.goto('/optimistic-counter');
-
-      const incrementButton = page.locator('button:has-text("+")').first();
-      await incrementButton.click();
-
-      await page.waitForTimeout(100);
-    });
-
-    test('should show loading state during server action', async ({ page }) => {
-      await page.goto('/optimistic-counter');
-
-      await page.waitForLoadState('networkidle');
-
-      const incrementButton = page.locator('button:has-text("Increment")').first();
-      await incrementButton.click();
-
-      // Wait for the increment to complete
-      await page.waitForTimeout(600);
-    });
-  });
-
-  test.describe('Progress Indicator', () => {
-    test('should show progress during page navigation', async ({ page }) => {
-      await page.goto('/');
-
-      await page.click('a[href="/lifecycle"]');
-
-      await page.waitForURL(/\/lifecycle/);
-
-      await expect(page.locator('body')).toBeVisible();
-    });
+    release();
+    await page.waitForURL(/\/lifecycle$/);
+    await expect(page.getByRole('heading', { name: 'Loading Page... (Convention)' })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /Loading Data\.\.\.|Data Loaded!/ })).toBeVisible();
+    await expect(progress).toHaveCSS('opacity', '0');
   });
 });

@@ -10,10 +10,12 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSlug from 'rehype-slug';
 import rehypeStringify from 'rehype-stringify';
 import { matter } from 'vfile-matter';
+import { validateMarkdownFrontmatter, MarkdownFrontmatterError, type MarkdownFrontmatter, type MarkdownFrontmatterOptions, type MarkdownFrontmatterExtensions } from './markdown-frontmatter.js';
+export * from './markdown-frontmatter.js';
 
-export interface MarkdownResult {
+export interface MarkdownResult<Extensions extends object = Record<never, never>> {
   html: string;
-  frontmatter: Record<string, unknown>;
+  frontmatter: MarkdownFrontmatter<Extensions>;
 }
 
 interface MarkdownNode {
@@ -84,19 +86,42 @@ export const remarkHighlightDirectives: Plugin<[], Root> = () => {
   };
 };
 
-const parseFrontmatter: Plugin<[], Root> = () =>
-  (_tree, file) => matter(file);
+const parseFrontmatter: Plugin<[MarkdownFrontmatterOptions<any>], Root> = (options) =>
+  (_tree, file) => {
+    try { matter(file); } catch {
+      throw new MarkdownFrontmatterError([{ code: 'COSSACK_MARKDOWN_FRONTMATTER_INVALID', field: '<metadata>',
+        source: { file: options.filename ?? '<markdown>', line: 1, column: 1 }, expected: 'valid YAML metadata' }]);
+    }
+    file.data.matter = validateMarkdownFrontmatter(file.data.matter ?? {}, options);
+  };
 
 // remark-sugar-high's bundled declaration exposes an untyped tree transformer;
 // this adapter preserves unified's mdast input type without a call-site cast.
 const sugarHigh: Plugin<[], Root> = () => remarkSugarHigh();
 
 /** Build-time Markdown-to-HTML pipeline used by the Vite pages plugin. */
-export async function processMarkdown(source: string): Promise<MarkdownResult> {
+export async function processMarkdown(source: string, filename?: string): Promise<MarkdownResult> {
+  return processWithOptions(source, { filename });
+}
+
+export interface ConfiguredMarkdownProcessor<Extensions extends object> {
+  (source: string, filename?: string): Promise<MarkdownResult<Extensions>>;
+  readonly frontmatterExtensions: MarkdownFrontmatterExtensions<Extensions>;
+}
+
+/** Create one reusable processor with explicitly validated application metadata. */
+export function createMarkdownProcessor<Extensions extends object>(options: Omit<MarkdownFrontmatterOptions<Extensions>, 'source' | 'filename'>): ConfiguredMarkdownProcessor<Extensions> {
+  const extensions = Object.freeze(options.extensions ?? {}) as MarkdownFrontmatterExtensions<Extensions>;
+  const processor = (source: string, filename?: string): Promise<MarkdownResult<Extensions>> => processWithOptions(source, { ...options, extensions, filename });
+  Object.defineProperty(processor, 'frontmatterExtensions', { value: extensions, enumerable: true });
+  return processor as ConfiguredMarkdownProcessor<Extensions>;
+}
+
+async function processWithOptions<Extensions extends object = Record<never, never>>(source: string, options: MarkdownFrontmatterOptions<Extensions>): Promise<MarkdownResult<Extensions>> {
   const file = await unified()
     .use(remarkParse)
     .use(remarkFrontmatter, ['yaml'])
-    .use(parseFrontmatter)
+    .use(parseFrontmatter, { ...options, source })
     .use(remarkGfm)
     .use(remarkToc)
     .use(remarkHighlightDirectives)
@@ -109,6 +134,6 @@ export async function processMarkdown(source: string): Promise<MarkdownResult> {
 
   return {
     html: String(file),
-    frontmatter: (file.data.matter ?? {}) as Record<string, unknown>,
+    frontmatter: file.data.matter as MarkdownFrontmatter<Extensions>,
   };
 }

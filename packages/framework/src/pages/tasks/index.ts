@@ -93,3 +93,5 @@ export class Tasks extends Cossack {
         `;
     }
 }
+
+export default Tasks;

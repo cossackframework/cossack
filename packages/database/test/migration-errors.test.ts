@@ -9,10 +9,11 @@ describe("migration errors", () => {
   for (const transactions of [true, false]) {
     it.each(["up", "down"] as const)(`preserves %s failure causes (transactions: ${transactions})`, async (direction) => {
       const cause = new Error("driver failure");
+      let previous = "previous";
       const driver = new MemoryDriver("postgres", (query, operation) => {
         if (query.text.includes("EXTENSION")) throw cause;
         return { rows: operation === "select" && direction === "down" ? [{
-          name: "0000_enable_postgis", checksum: "previous", batch: 1,
+          name: "0000_enable_postgis", checksum: previous, batch: 1,
           applied_at: new Date().toISOString(),
         }] : [] };
       });
@@ -26,6 +27,7 @@ describe("migration errors", () => {
         down({ schema, orm }) { schema.raw(orm.sql.fragment`DROP EXTENSION postgis`); },
       }]);
       try {
+        if (direction === "down") previous = (await orm.run(() => runner.status({ readOnly: true })))[0]!.checksum;
         await expect(orm.run(() => runner[direction]())).rejects.toMatchObject({
           name: "MigrationError",
           message: "Migration 0000_enable_postgis failed",

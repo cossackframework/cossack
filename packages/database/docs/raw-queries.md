@@ -150,10 +150,10 @@ Within a scope, the global tag also exposes `execute()`, `transaction()`,
 
 ## Standalone SQL client
 
-Use `SQL` when models and entity metadata are unnecessary:
+Use the Node runtime's `SQL` client when models and entity metadata are unnecessary:
 
 ```ts
-import { SQL } from "@cossackframework/database";
+import { SQL } from "@cossackframework/database/node";
 
 const client = new SQL("sqlite:app.db");
 
@@ -172,8 +172,9 @@ try {
 ```
 
 In Node.js, URL or path inference supports PostgreSQL, MySQL, Turso HTTPS URLs, and
-SQLite. Bun delegates to native Bun SQL. Workers and Deno require an explicit
-adapter rather than environment guessing:
+SQLite. Bun delegates to native Bun SQL. The package root's `SQL` export accepts
+explicit adapters and remains runtime neutral. Workers should use an
+explicit adapter rather than URL guessing:
 
 ```ts
 const client = new SQL({ adapter });
@@ -181,3 +182,17 @@ const client = new SQL({ adapter });
 
 See [Runtimes](./runtimes.md) for adapter setup and
 [Advanced usage](./advanced.md) for transactions and connection reservation.
+
+## Query diagnostics
+
+The ORM logger receives `sql`, parameter type markers, `durationMs`, `dialect`,
+`provider`, `operation`, and `outcome`. A failed query includes only the fixed
+code `COSSACK_DATABASE_QUERY_FAILED`; the event has no error object or message.
+The SQL field is a bounded structural representation: literals and comments are
+removed, and quoted identifiers are anonymous because some providers interpret
+those tokens as values. It is diagnostic output, not executable SQL.
+
+Parameter values are never included. Markers describe null, dates, binary size,
+and JavaScript types. Logger exceptions are ignored so an observer cannot change
+query or transaction results. Explicit callers still receive a `QueryError` and
+must decide separately whether its private cause is safe to disclose.

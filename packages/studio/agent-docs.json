@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "safe-studio-workflows",
+      "title": "Choose local or remote Studio access deliberately",
+      "summary": "Use the CLI for the authenticated loopback database inspector, understand that remote D1 edits affect deployed data, and own embedded startup and shutdown through runStudio.",
+      "imports": [
+        "@cossackframework/studio"
+      ],
+      "markdown": "# Use Studio deliberately\n\nFor application projects, prefer `cossack add studio`, `pnpm install`, and `cossack studio`. The CLI reads the project's `orm.config.ts`, loads project environment files in server-side Node code, binds the inspector to loopback, and opens its private launch URL. Do not publish that URL or expose the inspector through a public proxy.\n\nThe default command uses the configured local adapter. `cossack studio --remote --database DB --env production` connects directly to remote D1 through Wrangler; edits affect deployed data immediately. Select the intended binding and environment explicitly, and treat arbitrary SQL as a trusted developer operation. `--json` reports only the ready loopback origin and local/remote selection; it does not disclose the launch token.\n\nUse `runStudio()` only when embedding the lifecycle. Pass an explicit connection when the caller owns database setup, set `open: false` and `quiet: true` when another process owns presentation, and stop it through the supplied `AbortSignal`. `onReady` reports the loopback origin and remote flag after the server is listening; Studio closes the connection when the run ends.",
+      "examples": [
+        {
+          "id": "normalize-provider-input",
+          "language": "typescript",
+          "source": "import { normalizeStudioProvider } from '@cossackframework/studio';\n\nif (normalizeStudioProvider(' PostgreSQL ') !== 'postgres') {\n  throw new Error('Provider aliases should normalize before selecting a connection');\n}\nif (normalizeStudioProvider('d1') !== 'd1-local') {\n  throw new Error('The local D1 provider alias should remain explicit');\n}\nif (normalizeStudioProvider('unknown-driver') !== undefined) {\n  throw new Error('Unknown providers must not be guessed');\n}"
+        },
+        {
+          "id": "embedded-loopback-lifecycle",
+          "language": "typescript",
+          "source": "import { createServer } from 'node:http';\nimport { runStudio, type StudioConnection } from '@cossackframework/studio';\n\nasync function availablePort(): Promise<number> {\n  const server = createServer();\n  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));\n  const address = server.address();\n  if (!address || typeof address === 'string') throw new Error('No loopback port was allocated');\n  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));\n  return address.port;\n}\nconst controller = new AbortController();\nlet closed = false;\nlet ready = false;\nconst connection: StudioConnection = {\n  info: { provider: 'sqlite', label: 'offline fixture', remote: false },\n  async execute() { return { rows: [], affectedRows: 0, durationMs: 0 }; },\n  async close() { closed = true; },\n};\nawait runStudio({ connection, port: await availablePort(), quiet: true, open: false,\n  signal: controller.signal, onReady(info) {\n    if (info.remote || !info.origin.startsWith('http://127.0.0.1:')) throw new Error('Expected loopback readiness');\n    ready = true;\n    controller.abort();\n  },\n});\nif (!ready || !closed) throw new Error('Studio must report readiness and close its connection on abort');"
+        }
+      ]
+    }
+  ]
+}

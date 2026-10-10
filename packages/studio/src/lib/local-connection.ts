@@ -1,4 +1,5 @@
-import type { ORM, OrmSchema } from '@cossackframework/database';
+import { inspectDatabase, type DatabaseInspection } from '@cossackframework/database/tooling';
+import type { ORM, ORMConfig, OrmSchema } from '@cossackframework/database';
 import { OperationQueue } from './queue.js';
 import { splitSqlParameters } from './sql.js';
 import type {
@@ -10,6 +11,7 @@ import type {
 export interface LocalConnectionOptions {
   orm: ORM;
   info?: Partial<StudioConnectionInfo>;
+  migrations?: ORMConfig['migrations'];
 }
 
 export class LocalStudioConnection implements StudioConnection {
@@ -17,7 +19,7 @@ export class LocalStudioConnection implements StudioConnection {
   readonly logicalSchema: OrmSchema;
   private readonly queue = new OperationQueue();
 
-  constructor(private readonly orm: ORM, info: Partial<StudioConnectionInfo> = {}) {
+  constructor(private readonly orm: ORM, info: Partial<StudioConnectionInfo> = {}, private readonly migrations: ORMConfig['migrations'] = []) {
     this.logicalSchema = orm.schema();
     this.info = {
       provider: info.provider ?? 'unknown',
@@ -50,11 +52,15 @@ export class LocalStudioConnection implements StudioConnection {
     }));
   }
 
+  inspect(): Promise<DatabaseInspection> {
+    return this.queue.run(() => inspectDatabase(this.orm, this.migrations));
+  }
+
   close(): Promise<void> {
     return this.queue.close(() => this.orm.close());
   }
 }
 
 export function createLocalConnection(options: LocalConnectionOptions): LocalStudioConnection {
-  return new LocalStudioConnection(options.orm, options.info);
+  return new LocalStudioConnection(options.orm, options.info, options.migrations);
 }

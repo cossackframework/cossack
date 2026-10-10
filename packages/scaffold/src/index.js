@@ -1,9 +1,13 @@
+import { workflowsRecipeFiles } from './workflow-recipes.js';
+import { jobsRecipeFiles, turnstileRecipeFiles, schedulesRecipeFiles, notificationsRecipeFiles } from './service-recipes.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import { parseDocument } from 'yaml';
+import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
+export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import {
   ADAPTERS,
   FEATURES,
@@ -19,6 +23,8 @@ import {
   removeFeature,
   resolveDashboardModules,
   resolveRecipe,
+  recipeCapabilityRequirements,
+  recipeCapabilityDiagnostics,
 } from './registry.js';
 
 export {
@@ -36,6 +42,8 @@ export {
   removeFeature,
   resolveDashboardModules,
   resolveRecipe,
+  recipeCapabilityRequirements,
+  recipeCapabilityDiagnostics,
 };
 
 const packageDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -62,9 +70,9 @@ const PNPM_MANAGED_BUILDS = new Set([
   'workerd',
 ]);
 const ADAPTER_PATHS = new Set([
+  '.github/workflows/preview.yml',
   '.env.example',
   '.dev.vars.example',
-  'deno.json',
   'package.json',
   'scripts/dev.js',
   'orm.config.ts',
@@ -227,25 +235,23 @@ const ORM_PATHS = new Set([
   'src/middlewares/orm.ts',
   'src/models/index.ts',
   'src/models/CacheItem.ts',
-  'src/models/OAuthAccount.ts',
-  'src/models/Role.ts',
-  'src/models/Session.ts',
-  'src/models/User.ts',
-  'src/models/UserRole.ts',
   'src/migrations/index.ts',
   'src/seeders/index.ts',
   'src/migrations/0006_create_cache_table.ts',
 ]);
 const AUTH_PATHS = new Set([
+  'src/auth-input.ts',
   'src/auth.ts',
   'src/config/auth.ts',
   'src/lib/uuid.ts',
   'src/middlewares/auth.ts',
   'src/migrations/0001_create_users.ts',
   'src/migrations/0002_create_sessions.ts',
+  'src/migrations/0008_add_session_public_id.ts',
   'src/migrations/0005_create_oauth_accounts.ts',
   'src/models/User.ts',
   'src/models/Session.ts',
+  'src/models/OAuthAccount.ts',
   'src/pages/auth/forgot-password/index.ts',
   'src/pages/auth/layout.ts',
   'src/pages/auth/login/index.ts',
@@ -320,6 +326,15 @@ const DESKTOP_PATHS = new Set([
 ]);
 
 function capabilityFor(rel, recipe) {
+  if (rel === '.github/workflows/preview.yml') return recipe.adapter === 'cloudflare' ? 'base' : null;
+  if (rel === 'src/pages/resource/index.ts') return recipe.resolvedFeatures.includes('resource') ? 'resource' : null;
+  if (rel === 'src/pages/mutation/index.ts') return recipe.resolvedFeatures.includes('mutation') ? 'mutation' : null;
+  if (rel.startsWith('src/pages/scoped-service/') || rel === 'src/services/scoped-counter.ts') {
+    return recipe.resolvedFeatures.includes('scoped-service') ? 'scoped-service' : null;
+  }
+  if (rel.startsWith('src/pages/protected-route/') || rel === 'src/middlewares/protected-route.ts') {
+    return recipe.resolvedFeatures.includes('protected-route') ? 'protected-route' : null;
+  }
   if (BASE_PATHS.has(rel) || rel.startsWith('public/') || rel === 'tsconfig.json') return 'base';
   if (UI_PATHS.has(rel)) return recipe.resolvedFeatures.includes('ui') ? 'ui' : null;
   if (ORM_PATHS.has(rel)) return recipe.resolvedFeatures.includes('database') ? 'database' : null;
@@ -395,13 +410,13 @@ function middlewareRegistry(recipe) {
   const entries = [];
   if (recipe.resolvedFeatures.includes('database')) {
     imports.push(
-      "import { ormRequestMiddleware, sessionMiddleware } from '../middlewares/orm';",
+      "import { ormRequestMiddleware } from '../middlewares/orm';",
     );
     entries.push('  ormRequestMiddleware,');
   }
   if (recipe.resolvedFeatures.includes('auth')) {
     imports.push("import { auth } from '../auth';", "import { authGuard } from '../middlewares/auth';");
-    entries.push('  sessionMiddleware,', '  auth.middleware,', '  authGuard,');
+    entries.push('  auth.middleware,', '  authGuard,');
   }
   return `${imports.join('\n')}\n\nconst middlewares: MiddlewareHandler[] = [\n${entries.join('\n')}\n];\n\nexport default middlewares;\n`;
 }
@@ -409,30 +424,50 @@ function middlewareRegistry(recipe) {
 function wranglerConfig(recipe, projectName) {
   let database = '';
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    database = `,\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "database_id": "00000000-0000-0000-0000-000000000000",\n    "preview_database_id": "${projectName}-local"\n  }]`;
+    database = `,\n  // Remote D1 deployments require database_id. Use the returned ID for an existing database,\n  // or create a remote database and update this config with:\n  // pnpm exec wrangler d1 create ${projectName}-db --update-config --binding DB\n  // This command creates a Cloudflare resource. Local development keeps its separate local DB.\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "preview_database_id": "${projectName}-local"\n  }]`;
   } else if (recipe.resolvedFeatures.includes('database') &&
       recipe.config.database.startsWith('hyperdrive-')) {
-    database = `,\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;
+    database = `,\n  // Replace this placeholder with a real Hyperdrive configuration ID before deploying.\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;
   }
-  const email = recipe.resolvedFeatures.includes('auth') &&
-      recipe.config.authMethods.includes('credentials')
+  const email = recipe.resolvedFeatures.includes('notifications') || (recipe.resolvedFeatures.includes('auth') &&
+      recipe.config.authMethods.includes('credentials'))
     ? `,\n  "send_email": [{ "name": "EMAIL" }]`
     : '';
+  // Distributed SSE coordination for `@Page({ transport: 'sse' })` pages.
+  // SseDurableObject is SQLite-backed: new_sqlite_classes, not new_classes.
+  const sse = `,
+  "durable_objects": {
+    "bindings": [{ "name": "COSSACK_SSE", "class_name": "SseDurableObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SseDurableObject"] }]`;
   const compatibilityFlag = recipe.config.database.startsWith('hyperdrive-')
     ? 'nodejs_compat'
     : 'nodejs_als';
+  const jobDatabase = `{ "binding": "JOB_STATE", "database_name": "${projectName}-job-state", "preview_database_id": "${projectName}-job-state-local", "migrations_dir": "src/jobs/migrations" }`;
+  const hasJobs = recipe.resolvedFeatures.includes('jobs');
+  const jobs = hasJobs ? `,
+  "queues": { "producers": [{ "binding": "JOBS", "queue": "${projectName}-jobs" }], "consumers": [{ "queue": "${projectName}-jobs", "max_batch_size": 10, "max_retries": 5 }] }` : '';
+  if (hasJobs) {
+    if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') database = database.replace(/]$/, `,${jobDatabase}]`);
+    else database += `,\n  "d1_databases": [${jobDatabase}]`;
+  }
+  const workflows = recipe.resolvedFeatures.includes('workflows') ? `,\n  \"workflows\": [{ \"name\": \"${projectName}-approval\", \"binding\": \"WORKFLOWS\", \"class_name\": \"ApprovalWorkflow\" }]` : '';
+  const schedules = recipe.resolvedFeatures.includes('schedules') ? ',\n  "triggers": { "crons": ["0 * * * *"] }' : '';
+  const notifications = recipe.resolvedFeatures.includes('notifications') ? ',\n    "MAIL_FROM": "no-reply@example.com"' : '';
+  const turnstile = recipe.resolvedFeatures.includes('turnstile') ? ',\n    "TURNSTILE_SITE_KEY": "your-site-key",\n    "TURNSTILE_HOSTNAME": "localhost"' : '';
   return `{
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "${projectName}",
-  "compatibility_flags": ["${compatibilityFlag}"],
+  "compatibility_flags": ["${compatibilityFlag}", "enable_request_signal"],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
-  "assets": { "binding": "ASSETS" },
+  "upload_source_maps": true,
+  "assets": { "binding": "ASSETS", "run_worker_first": true },
+  "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",
-    "APP_LOCALE": "en",
-    "APP_SECRET": "PLEASE_CHANGE_THIS_SECRET"
-  }${database}${email}
+    "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": "${projectName}-jobs-default"` : ''}${turnstile}${notifications}
+  }${database}${email}${sse}${jobs}${schedules}${workflows}
 }
 `;
 }
@@ -455,8 +490,6 @@ function packageJson(recipe, projectName) {
     dependencies['reflect-metadata'] = '^0.2.2';
     if (recipe.config.database === 'turso') {
       dependencies['@tursodatabase/serverless'] = dependencyVersion('@tursodatabase/serverless');
-    } else if (recipe.adapter === 'deno' && recipe.config.database === 'sqlite') {
-      dependencies['@tursodatabase/database'] = dependencyVersion('@tursodatabase/database');
     } else if (
       recipe.config.database === 'postgres' ||
       recipe.config.database === 'hyperdrive-postgres'
@@ -469,13 +502,11 @@ function packageJson(recipe, projectName) {
       dependencies.mysql2 = dependencyVersion('mysql2');
     }
   }
-  if (recipe.resolvedFeatures.includes('auth')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
+  if (recipe.resolvedFeatures.includes('auth') || recipe.resolvedFeatures.includes('turnstile')) dependencies['@cossackframework/auth'] = `^${templateVersion}`;
   if (recipe.adapter === 'node') {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
     dependencies['@hono/node-server'] = dependencyVersion('@hono/node-server');
     dependencies.ws = dependencyVersion('ws');
-  } else if (recipe.adapter === 'deno') {
-    dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
     dependencies['@cossackframework/desktop'] = `^${templateVersion}`;
@@ -490,9 +521,6 @@ function packageJson(recipe, projectName) {
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
-  if (recipe.adapter === 'deno') {
-    devDependencies['@types/deno'] = '^2.3.0';
-  }
   if (recipe.resolvedFeatures.includes('desktop')) {
     devDependencies.electron = dependencyVersion('electron');
     for (const name of [
@@ -544,20 +572,14 @@ function packageJson(recipe, projectName) {
         build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
         start: 'node --env-file-if-exists=.env dist/server/index.js',
       }
-    : recipe.adapter === 'deno'
-      ? {
-          dev: 'vite dev',
-          build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
-          start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
-          deploy: 'deno task build && deno deploy',
-        }
-      : {
+    : {
         dev: 'vite dev',
         build: 'vite build',
         'build:ssg': 'vite build',
         'cf-typegen': 'wrangler types --env-interface CloudflareBindings',
-        deploy: 'vite build && wrangler deploy',
+        deploy: 'cossack deploy',
       };
+  scripts.typecheck = 'cossack routes --generate && tsc --noEmit';
   if (recipe.resolvedFeatures.includes('desktop')) {
     scripts['build:desktop'] = 'vite build && vite build --mode desktop --ssr src/desktop/index.ts --outDir dist/desktop --minify false';
     scripts['desktop:dev'] = 'cossack-desktop';
@@ -568,9 +590,7 @@ function packageJson(recipe, projectName) {
   if (recipe.resolvedFeatures.includes('database')) {
     scripts.migrate = recipe.adapter === 'node'
       ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
-      : recipe.adapter === 'deno'
-        ? 'deno run -A npm:cossack migration up'
-        : 'cossack migration up';
+      : 'cossack migration up';
     scripts['schema:check'] = 'cossack schema check';
   }
   if (recipe.resolvedFeatures.includes('studio')) {
@@ -613,47 +633,6 @@ function pnpmWorkspace(recipe) {
 
 function ormFactory(recipe) {
   const provider = recipe.config.database;
-  if (recipe.adapter === 'deno') {
-    const adapterImport = provider === 'sqlite'
-      ? 'denoSQLite'
-      : provider === 'turso'
-        ? 'turso'
-        : provider;
-    const adapterExpression = provider === 'sqlite'
-      ? "denoSQLite({ filename: env.DB_PATH ?? './database.sqlite' })"
-      : provider === 'turso'
-        ? `turso({
-      url: required(env.TURSO_DATABASE_URL, 'TURSO_DATABASE_URL'),
-      authToken: env.TURSO_AUTH_TOKEN,
-    })`
-        : provider === 'postgres'
-          ? "postgres(required(env.DATABASE_URL, 'DATABASE_URL'))"
-          : "mysql(required(env.DATABASE_URL, 'DATABASE_URL'))";
-    return `import { createORM, type ORM } from '@cossackframework/database';
-import { ${adapterImport} } from '@cossackframework/database/deno';
-import { models } from '../models';
-
-export type ORMEnvironment = Record<string, string | undefined>;
-
-function required(value: string | undefined, name: string): string {
-  if (!value) throw new Error(\`\${name} is required\`);
-  return value;
-}
-
-export function createToolingAdapter(env: ORMEnvironment = Deno.env.toObject()) {
-  return ${adapterExpression};
-}
-
-export function createRequestORM(env: ORMEnvironment) {
-  return createToolingAdapter(env).then((adapter) => createORM({ adapter, entities: models }));
-}
-
-let singleton: Promise<ORM> | undefined;
-export function getORM(env: ORMEnvironment = Deno.env.toObject()): Promise<ORM> {
-  return singleton ??= createRequestORM(env);
-}
-`;
-  }
   if (recipe.adapter === 'node') {
     const adapterImport = provider === 'sqlite'
       ? 'nodeSQLite'
@@ -716,8 +695,10 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
     : provider === 'turso'
       ? 'TURSO_DATABASE_URL?: string;\n  TURSO_AUTH_TOKEN?: string;'
       : 'HYPERDRIVE: Hyperdrive;';
-  return `import { createORM } from '@cossackframework/database';
+  return `import { AsyncLocalStorage } from 'node:async_hooks';
+import { createORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
+import { createAsyncLocalScope } from '@cossackframework/database/adapter';
 import { ${runtimeImport} } from '@cossackframework/database/cloudflare';
 import { models } from '../models';
 
@@ -735,21 +716,37 @@ export async function createRuntimeAdapter(env: ORMEnvironment): Promise<Adapter
 }
 
 export async function createRequestORM(env: ORMEnvironment) {
-  return createORM({ adapter: await createRuntimeAdapter(env), entities: models });
+  const adapter = await createRuntimeAdapter(env);
+  return createORM({
+    adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) },
+    entities: models,
+  });
 }
 `;
 }
 
-function ormTooling() {
-  return `import type { Adapter } from '@cossackframework/database';
+function ormTooling(recipe) {
+  if (recipe.config.database === 'd1') {
+    return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
+import { createD1ToolingAdapter } from '@cossackframework/database/tooling';
+
+export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
+  return createD1ToolingAdapter(context, { binding: 'DB' });
+}
+`;
+  }
+  return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
 import { getPlatformProxy } from 'wrangler';
 import {
   createRuntimeAdapter,
   type ORMEnvironment,
 } from './factory';
 
-export async function createToolingAdapter(): Promise<Adapter> {
-  const platform = await getPlatformProxy<ORMEnvironment>({ remoteBindings: false });
+export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
+  const platform = await getPlatformProxy<ORMEnvironment>({
+    environment: context.environment,
+    remoteBindings: context.target === 'remote',
+  });
   const adapter = await createRuntimeAdapter(platform.env);
   const close = adapter.driver.close.bind(adapter.driver);
   adapter.driver.close = async () => {
@@ -765,7 +762,7 @@ export async function createToolingAdapter(): Promise<Adapter> {
 }
 
 function ormConfiguration(recipe) {
-  const toolingImport = recipe.adapter === 'node' || recipe.adapter === 'deno'
+  const toolingImport = recipe.adapter === 'node'
     ? "import { createToolingAdapter } from './src/orm/factory';"
     : "import { createToolingAdapter } from './src/orm/tooling';";
   return `import { defineConfig } from '@cossackframework/database';
@@ -788,10 +785,7 @@ function ormMiddlewareModule(recipe) {
   const runtime = recipe.adapter === 'node'
     ? `const orm = await getORM();
 export const ormRequestMiddleware = ormMiddleware(orm);`
-    : recipe.adapter === 'deno'
-      ? `export const ormRequestMiddleware = ormMiddleware((context) =>
-  createRequestORM(context.env as ORMEnvironment));`
-      : `export const ormRequestMiddleware = ormMiddleware((context) =>
+    : `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
   createRequestORM(context.env as ORMEnvironment));`;
   const factoryImport = recipe.adapter === 'node'
     ? "import { getORM } from '../orm/factory';"
@@ -804,6 +798,7 @@ export const ormRequestMiddleware = ormMiddleware(orm);`
 import { extendCacheDriver } from '@cossackframework/framework/cache';
 import { createSessionMiddleware } from '@cossackframework/framework/session';
 ${factoryImport}
+${recipe.adapter === 'node' ? '' : "import type { Context } from 'hono';\n"}
 
 ${runtime}
 
@@ -868,13 +863,15 @@ function nodeEntry(providers = []) {
   return `import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { setClientAddress } from '@cossackframework/core';
 import { createApp } from '@cossackframework/framework/router';
-import { serveStatic } from '@cossackframework/node-adapter';
+import { createNodeAdapter, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
 
-const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template });
+export const runtime = createNodeAdapter();
+const frameworkApp = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
 ${routes}
 export const app = new Hono();
 app.use('*', serveStatic({
@@ -884,44 +881,43 @@ app.use('*', serveStatic({
     ? 'public, max-age=31536000, immutable'
     : 'public, max-age=0, must-revalidate',
 }));
-app.route('/', frameworkApp);
+// Delegation preserves the framework's custom 404 handler and request scope.
+app.all('*', c => frameworkApp.fetch(c.req.raw, c.env));
 
-export const env: Record<string, unknown> = {
-  ...process.env,
-  DB_PATH: process.env.DB_PATH ?? './database.sqlite',
-};
-
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  serve({ fetch: (request) => app.fetch(request, env), port: Number(process.env.PORT) || 3000 });
+// The same binding factory is used by production and the Node Vite plugin.
+export async function createEnv(variables: Record<string, string | undefined> = process.env): Promise<Record<string, unknown>> {
+  const bindings: Record<string, unknown> = {
+    ...variables,
+    DB_PATH: variables.DB_PATH ?? './database.sqlite',
+  };
+  if (variables.SMTP_HOST) {
+    const { SMTP_USER: user, SMTP_PASS: pass } = variables;
+    if (!user || !pass) throw new Error('SMTP_HOST requires SMTP_USER and SMTP_PASS');
+    const { createNodeEmailSender } = await import('@cossackframework/node-adapter');
+    bindings.EMAIL = createNodeEmailSender({
+      host: variables.SMTP_HOST,
+      port: Number(variables.SMTP_PORT ?? 587),
+      secure: variables.SMTP_SECURE === 'true',
+      auth: { user, pass },
+      from: variables.MAIL_FROM ?? 'no-reply@example.com',
+    });
+  }
+  return bindings;
 }
-`;
-}
+export const env: Record<string, unknown> = import.meta.env?.DEV ? {} : await createEnv();
 
-function denoEntry(providers = []) {
-  const oauthImport = providers.length
-    ? "import { oauth, handleOAuthUser } from './auth';\n"
-    : '';
-  const routes = oauthRouteBlock(providers, 'frameworkApp');
-  return `import { createApp } from '@cossackframework/framework/router';
-import { createDenoAdapter } from '@cossackframework/deno-adapter';
-import { App } from './App';
-import { template } from './root';
-${oauthImport}
-export const env: Record<string, unknown> = Deno.env.toObject();
-export const runtime = createDenoAdapter({ env });
-export const frameworkApp = createApp({
-  AppComponent: App,
-  htmlTemplate: template,
-  runtimeAdapter: runtime,
-});
-${routes}
-export default {
-  fetch: (request: Request, requestEnv?: Record<string, unknown>) =>
-    runtime.fetch(frameworkApp, request, requestEnv),
-};
-
-if (import.meta.main) {
-  runtime.serve(frameworkApp);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Record the socket peer so rate limits never trust client-supplied IP headers.
+  const fetch = (request: Request, node?: { incoming?: { socket?: { remoteAddress?: string } } }) => {
+    setClientAddress(request, node?.incoming?.socket?.remoteAddress);
+    return app.fetch(request, env);
+  };
+  const server = serve({ fetch, port: Number(process.env.PORT) || 3000 });
+  runtime.attach(server, fetch);
+  installNodeShutdown(server, {
+    dispose: () => runtime.dispose(),
+    onComplete: result => process.exit(result.forced || result.cleanupFailed ? 1 : 0),
+  });
 }
 `;
 }
@@ -932,23 +928,6 @@ function desktopIdentifier(projectName) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return `dev.cossack.${slug || 'app'}`;
-}
-
-function denoConfiguration() {
-  const tasks = {
-    dev: 'pnpm run dev',
-    build: 'pnpm run build',
-    start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
-    deploy: 'deno task build && deno deploy',
-  };
-  return JSON.stringify({
-    nodeModulesDir: 'auto',
-    imports: {
-      hono: `npm:hono@${dependencyVersion('hono')}`,
-      vite: `npm:vite@${dependencyVersion('vite')}`,
-    },
-    tasks,
-  }, null, 2) + '\n';
 }
 
 function desktopEntry(projectName) {
@@ -965,8 +944,8 @@ export const frameworkApp = createApp({
   runtimeAdapter: electronRuntimeAdapter,
 });
 
-async function main() {
-  const desktop = await createDesktopApp({
+export async function startDesktop(createApplication = createDesktopApp) {
+  const desktop = await createApplication({
     identifier: '${desktopIdentifier(projectName)}',
     productName: '${projectName.replaceAll("'", "\\'")}',
     assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
@@ -982,9 +961,10 @@ async function main() {
     behavior: 'quit',
     onQuit: () => desktop.quit(),
   });
+  return desktop;
 }
 
-void main().catch((error) => {
+if (!import.meta.env.DEV) void startDesktop().catch((error) => {
   console.error('Cossack Desktop failed to start.', error);
   electronApp.exit(1);
 });
@@ -1005,7 +985,8 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     prune: false,
-    ignore: [/^\\/node_modules(?:\\/|$)/, /^\\/src(?:\\/|$)/, /^\\/public(?:\\/|$)/],
+    // Package only runtime artifacts; never copy project secrets or web-server output.
+    ignore: (file) => file !== '' && !/^\\/(?:package\\.json$|dist$|dist\\/(?:client|desktop)(?:\\/|$)|desktop-assets(?:\\/|$))/.test(file),
     name: '${safeName}',
     executableName: '${executableName}',
     appBundleId: '${identifier}',
@@ -1195,8 +1176,8 @@ function applyOauthToAuth(content, providers) {
   }).join('\n');
   return content
     .replace(
-      "import { createAuth } from '@cossackframework/auth';",
-      "import { createAuth, createOAuth, type OAuthKit, type OAuthUser, type TokenSet } from '@cossackframework/auth';\nimport { OAuthAccount } from '@/models/OAuthAccount';",
+      /^(import \{)([^}]*)(\} from '@cossackframework\/auth';)/m,
+      "$1 createOAuth, OAuthError, type OAuthKit, type OAuthUser, type OAuthStateStore, type TokenSet,$2$3\nimport { OAuthAccount } from '@/models/OAuthAccount';",
     )
     .concat(`
 
@@ -1204,11 +1185,11 @@ const oauthProviderEnvironment = {
 ${providerEnvironment}
 } as const;
 
-function oauthConfigurationError(c: Context, provider: string): string | null {
+function oauthConfigurationError(c: Context, provider: string): OAuthError | null {
   const providerEnvironment =
     oauthProviderEnvironment[provider as keyof typeof oauthProviderEnvironment];
   if (!providerEnvironment) {
-    return \`Provider "\${provider}" is not enabled for this application.\`;
+    return new OAuthError('COSSACK_OAUTH_PROVIDER_UNKNOWN');
   }
 
   const missing = [
@@ -1216,27 +1197,41 @@ function oauthConfigurationError(c: Context, provider: string): string | null {
     providerEnvironment.clientSecret,
   ].filter((name) => !String(c.env[name] ?? '').trim());
   if (missing.length) {
-    return \`Set \${missing.join(' and ')} before using \${provider} OAuth.\`;
+    return new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING');
   }
 
   if (String(c.env.OAUTH_SECRET ?? '').length < 16) {
-    return 'Set OAUTH_SECRET to a random value of at least 16 characters (32+ bytes recommended).';
+    return new OAuthError('COSSACK_OAUTH_SECRET_INVALID');
   }
   return null;
 }
 
-function oauthUnavailable(c: Context, provider: string, message: string): Response {
-  console.warn(\`[Cossack OAuth] \${provider} is unavailable: \${message}\`);
-  return c.json({
-    error: 'OAuth is not configured',
-    provider,
-    message,
-  }, 503);
+function oauthUnavailable(c: Context, error: OAuthError): Response {
+  console.warn('[Cossack OAuth]', error.toJSON());
+  const { message, ...diagnostic } = error.toJSON();
+  return c.json({ error: message, ...diagnostic }, error.status);
 }
+
+export const oauthStateStore: OAuthStateStore = {
+  async create(record) {
+    await Session.insert({ id: record.key, userId: null, data: null,
+      meta: { type: 'oauth_state', provider: record.provider },
+      createdAt: new Date(record.createdAt), expiresAt: new Date(record.expiresAt),
+      location: null, userAgent: null, ipAddress: null });
+  },
+  async consume(key, provider, now) {
+    // One conditional write owns callback replay. Never read then delete.
+    const result = await sql\`DELETE FROM sessions WHERE id = \${key}
+      AND user_id IS NULL AND meta = \${JSON.stringify({ type: 'oauth_state', provider })}
+      AND expires_at > \${new Date(Math.max(now, Date.now())).toISOString()}\`;
+    return result.meta.rowsAffected === 1;
+  },
+};
 
 function createOAuthForRequest(c: Context): OAuthKit {
   return createOAuth({
     secret: String(c.env.OAUTH_SECRET ?? ''),
+    stateStore: oauthStateStore,
     providers: {
 ${providerConfig}
     },
@@ -1246,12 +1241,12 @@ ${providerConfig}
 export const oauth: OAuthKit = {
   redirect: (provider) => async (c, next) => {
     const error = oauthConfigurationError(c, provider);
-    if (error) return oauthUnavailable(c, provider, error);
+    if (error) return oauthUnavailable(c, error);
     return createOAuthForRequest(c).redirect(provider)(c, next);
   },
   callback: (provider, options) => async (c, next) => {
     const error = oauthConfigurationError(c, provider);
-    if (error) return oauthUnavailable(c, provider, error);
+    if (error) return oauthUnavailable(c, error);
     return createOAuthForRequest(c).callback(provider, options)(c, next);
   },
 };
@@ -1369,18 +1364,13 @@ function generateAuthSecret() {
 function ensureEnvironmentSecrets(recipe, existingSecrets) {
   const needsOAuthSecret = recipe.resolvedFeatures.includes('auth') &&
     recipe.config.authMethods.includes('oauth');
-  const needsAppSecret = recipe.adapter === 'node';
   return {
     ...recipe,
     config: {
       ...recipe.config,
-      ...(needsAppSecret
-        ? {
-            appSecret: existingSecrets?.appSecret ??
-              recipe.config.appSecret ??
-              generateAuthSecret(),
-          }
-        : {}),
+      appSecret: existingSecrets?.appSecret ??
+        recipe.config.appSecret ??
+        generateAuthSecret(),
       ...(needsOAuthSecret
         ? {
             authSecret: existingSecrets?.authSecret ??
@@ -1417,7 +1407,7 @@ function mergeEnvironmentContent(existing, values) {
 }
 
 function nodeEnvironmentValues(recipe, projectName, example = false) {
-  const port = recipe.adapter === 'deno' ? '8000' : '3000';
+  const port = '3000';
   const values = [
     ['APP_NAME', projectName],
     ['APP_ENV', 'development'],
@@ -1448,7 +1438,8 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
   }
   if (recipe.resolvedFeatures.includes('auth')) {
     values.push(['AUTH_REDIRECT_AFTER_LOGIN',
-      recipe.resolvedFeatures.includes('dashboard') ? '/dashboard' : '/']);
+      recipe.resolvedFeatures.includes('dashboard') ? '/dashboard'
+        : recipe.resolvedFeatures.includes('protected-route') ? '/protected-route' : '/']);
     values.push(['AUTH_REDIRECT_AFTER_LOGOUT', '/auth/login']);
     if (recipe.config.authMethods.includes('credentials')) {
       values.push(['MAIL_FROM', 'no-reply@localhost']);
@@ -1469,11 +1460,14 @@ function nodeEnvironmentValues(recipe, projectName, example = false) {
       }
     }
   }
+  if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SITE_KEY', 'your-site-key'], ['TURNSTILE_SECRET_KEY', 'your-secret-key'], ['TURNSTILE_HOSTNAME', 'localhost']);
   return values;
 }
 
 function cloudflareEnvironmentValues(recipe, example = false) {
-  const values = [];
+  const values = [['APP_SECRET', example
+    ? 'replace-with-a-random-32-byte-secret'
+    : (recipe.config.appSecret ?? generateAuthSecret())]];
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'turso') {
     values.push(
       ['TURSO_DATABASE_URL', example ? 'https://your-database.turso.io' : ''],
@@ -1484,6 +1478,7 @@ function cloudflareEnvironmentValues(recipe, example = false) {
       recipe.config.authMethods.includes('oauth')) {
     values.push(...oauthEnvironmentValues(recipe, example));
   }
+  if (recipe.resolvedFeatures.includes('turnstile')) values.push(['TURNSTILE_SECRET_KEY', 'your-secret-key']);
   return values;
 }
 
@@ -1530,6 +1525,13 @@ function applyTheme(content, theme) {
 }
 
 export async function renderRecipe(recipe, options = {}) {
+  const diagnostics = recipeCapabilityDiagnostics(recipe);
+  if (diagnostics.length) {
+    const diagnostic = diagnostics[0];
+    throw Object.assign(new Error(`${diagnostic.source.file}: ${diagnostic.message}`), {
+      code: diagnostic.code, diagnostics,
+    });
+  }
   const files = new Map();
   for (const rel of await walk(templateDir)) {
     if (rel === 'package.json') continue;
@@ -1557,8 +1559,15 @@ export async function renderRecipe(recipe, options = {}) {
     if (rel === 'src/config/auth.ts' && !recipe.resolvedFeatures.includes('dashboard')) {
       content = text(content.toString('utf8').replace(
         "env('AUTH_REDIRECT_AFTER_LOGIN', '/dashboard')",
-        "env('AUTH_REDIRECT_AFTER_LOGIN', '/')",
+        `env('AUTH_REDIRECT_AFTER_LOGIN', '${recipe.resolvedFeatures.includes('protected-route') ? '/protected-route' : '/'}')`,
       ));
+    }
+    if (rel === 'src/models/User.ts' && !recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
+      // An entity relation must only target another registered entity. Auth
+      // without RBAC has no Role/UserRole models or corresponding migrations.
+      content = text(content.toString('utf8')
+        .replace("import { UserRole } from './UserRole';\n", '')
+        .replace(/\n  @OneToMany\(\(\) => UserRole, \(assignment\) => assignment.user\)\n  declare roleAssignments: Relation<UserRole\[\]>;\n/, '\n'));
     }
     if (rel === 'src/auth.ts') {
       let authContent = content.toString('utf8');
@@ -1574,7 +1583,7 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods,
       ));
     }
-    if ((recipe.adapter === 'node' || recipe.adapter === 'deno') &&
+    if ((recipe.adapter === 'node') &&
         ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
     if (recipe.adapter !== 'node' && rel === 'scripts/dev.js') continue;
     if (recipe.adapter === 'node' && rel === 'src/index.ts') {
@@ -1582,16 +1591,21 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
       ));
     }
-    if (recipe.adapter === 'deno' && rel === 'src/index.ts') {
-      content = text(denoEntry(
-        recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
-      ));
-    }
-    if ((recipe.adapter === 'node' || recipe.adapter === 'deno') && rel === 'vite.config.ts') {
+    if ((recipe.adapter === 'node') && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
     }
     if (rel === 'vite.config.ts') {
       let viteConfig = content.toString('utf8');
+      if (recipe.adapter === 'node') {
+        viteConfig = "import { cossackNode } from '@cossackframework/node-adapter/vite';\n" + viteConfig;
+        viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackNode()]),");
+      }
+      const webRequirements = JSON.stringify(recipeCapabilityRequirements(recipe));
+      const desktopRequirements = JSON.stringify(recipeCapabilityRequirements(recipe, 'desktop'));
+      const runtimeCapability = `capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${recipe.adapter}', requirements: mode === 'desktop' ? ${desktopRequirements} : ${webRequirements} }`;
+      viteConfig = viteConfig.replace('cossackPages(),', `cossackPages({ ${runtimeCapability} }),`)
+        .replace('cossackPages({ markdownProcessor: processMarkdown }),',
+          `cossackPages({ markdownProcessor: processMarkdown, ${runtimeCapability} }),`);
       if (!recipe.resolvedFeatures.includes('ui')) {
         viteConfig = viteConfig.replace(
           /^\s*exclude: \['@cossackframework\/solar-icons'\],\n/gm,
@@ -1630,17 +1644,11 @@ export async function renderRecipe(recipe, options = {}) {
       ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')),
       compilerOptions: {
         ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')).compilerOptions,
-        types: [
-          ...(recipe.adapter === 'node'
-            ? ['vite/client', 'node']
-            : recipe.adapter === 'deno'
-              ? ['vite/client', 'node']
-              : ['vite/client', 'node']),
-          ...(recipe.adapter === 'deno' ? ['@types/deno'] : []),
-        ],
+        types: ['vite/client', 'node'],
       },
       include: [
         'src/**/*.ts',
+        '.cossack/config.d.ts',
         ...(recipe.adapter === 'cloudflare' ? ['worker-configuration.d.ts'] : []),
       ],
     }, null, 2) + '\n'),
@@ -1651,7 +1659,7 @@ export async function renderRecipe(recipe, options = {}) {
     capability: 'base',
   });
   files.set('.gitignore', {
-    content: text('node_modules/\ndist/\nout/\n.env\n.dev.vars\n'),
+    content: text('node_modules/\ndist/\nout/\n.wrangler/\n.env*\n.dev.vars*\n!.env.example\n!.dev.vars.example\n.cossack/routes.ts\n.cossack/config.d.ts\n.cossack/preview.json\n.cossack/preview-secrets.json\n.cossack/**/*.lock\n'),
     capability: 'base',
   });
 
@@ -1674,7 +1682,7 @@ export async function renderRecipe(recipe, options = {}) {
     });
     if (recipe.adapter === 'cloudflare') {
       files.set('src/orm/tooling.ts', {
-        content: text(ormTooling()),
+        content: text(ormTooling(recipe)),
         capability: 'database',
       });
     }
@@ -1692,6 +1700,7 @@ export async function renderRecipe(recipe, options = {}) {
             '0001_create_users.ts',
             '0002_create_sessions.ts',
             '0005_create_oauth_accounts.ts',
+            '0008_add_session_public_id.ts',
           ]
         : []),
       ...(recipe.dashboardModules.includes('roles') ||
@@ -1709,7 +1718,7 @@ export async function renderRecipe(recipe, options = {}) {
       content: text(registeredBarrel('seeds', seedFiles)),
       capability: 'database',
     });
-    if (!recipe.resolvedFeatures.includes('dashboard')) {
+    if (!recipe.dashboardModules.some(module => module === 'users' || module === 'roles')) {
       files.set('src/seeders/application.seeder.ts', {
         content: text(blankSeeder()),
         capability: 'database',
@@ -1741,11 +1750,33 @@ export async function renderRecipe(recipe, options = {}) {
       capability: 'base',
     });
   }
-  if (recipe.adapter === 'deno') {
-    files.set('deno.json', {
-      content: text(denoConfiguration()),
-      capability: 'base',
-    });
+  for (const [feature, generated] of [['turnstile', turnstileRecipeFiles], ['jobs', jobsRecipeFiles], ['schedules', schedulesRecipeFiles], ['notifications', notificationsRecipeFiles], ['workflows', workflowsRecipeFiles]]) {
+    if (!recipe.resolvedFeatures.includes(feature)) continue;
+    for (const [file, source] of Object.entries(generated({ notifications: recipe.resolvedFeatures.includes('notifications') }))) files.set(file, { content: text(source), capability: feature });
+  }
+  if (recipe.resolvedFeatures.includes('workflows')) {
+    const entry = files.get('src/index.ts');
+    files.set('src/index.ts', { ...entry, content: text(entry.content.toString('utf8') + "\nexport { ApprovalWorkflow } from './workflows/entry';\n") });
+  }
+  if (recipe.resolvedFeatures.includes('workflows')) {
+    const vite = files.get('vite.config.ts');
+    const source = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackWorkflows }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackWorkflows(),');
+    files.set('vite.config.ts', { ...vite, content: text(source) });
+  }
+  if (recipe.resolvedFeatures.includes('jobs')) {
+    const entry = files.get('src/index.ts');
+    const source = entry.content.toString('utf8').replace("import { template } from './root';", "import { template } from './root';\nimport { createJobs } from './jobs';")
+      .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async queue(batch: MessageBatch, env: CloudflareBindings) { await createJobs(env).queue(batch); },");
+    files.set('src/index.ts', { ...entry, content: text(source) });
+  }
+  if (recipe.resolvedFeatures.includes('schedules')) {
+    const entry = files.get('src/index.ts');
+    const source = entry.content.toString('utf8').replace("import { createJobs } from './jobs';", "import { createJobs } from './jobs';\nimport { createSchedules } from './schedules/index';")
+      .replace('fetch: app.fetch,', "fetch: app.fetch,\n  async scheduled(controller: ScheduledController, env: CloudflareBindings) { await createSchedules(env).scheduled(controller); },");
+    files.set('src/index.ts', { ...entry, content: text(source) });
+    const vite = files.get('vite.config.ts');
+    const config = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackSchedules }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackSchedules(),');
+    files.set('vite.config.ts', { ...vite, content: text(config) });
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
     files.set('src/desktop/index.ts', {
@@ -1776,7 +1807,7 @@ export async function renderRecipe(recipe, options = {}) {
       );
     files.set('src/index.ts', { ...entry, content: text(source) });
   }
-  if (recipe.adapter === 'node' || recipe.adapter === 'deno') {
+  if (recipe.adapter === 'node') {
     const projectName = options.projectName ?? 'my-cossack-app';
     const values = nodeEnvironmentValues(recipe, projectName);
     files.set('.env', {
@@ -1844,7 +1875,6 @@ export async function detectProjectRuntime(projectDir, manifest = undefined) {
   const packageRuntime = pkg?.cossack?.runtime;
   if (ADAPTERS.includes(packageRuntime)) return packageRuntime;
   const dependencies = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
-  if (dependencies['@cossackframework/deno-adapter']) return 'deno';
   if (dependencies['@cossackframework/node-adapter']) return 'node';
   if (dependencies['@cloudflare/vite-plugin'] || dependencies.wrangler) return 'cloudflare';
   if (await access(path.join(projectDir, 'wrangler.jsonc'))) return 'cloudflare';
@@ -1956,6 +1986,17 @@ async function mergePackage(
   const previous = previousEntry
     ? JSON.parse(previousEntry.content.toString('utf8'))
     : {};
+  const recorded = await readManifest(projectDir);
+  let ownedDependencies = recorded?.dependencyBaseline ?? previous;
+  if (recorded && !recorded.dependencyBaseline) {
+    if (recorded.templateVersion !== templateVersion) throw Object.assign(new Error(
+      'Run cossack upgrade to record dependency ownership before composing this older scaffold.'),
+    { code: 'COSSACK_SCAFFOLD_DEPENDENCY_BASELINE_MISSING' });
+    // Current-version manifests can be reconstructed locally. Rendering an old
+    // recipe with a different release would silently invent ownership values.
+    ownedDependencies = JSON.parse(packageJson(await inferRecipe(projectDir, recorded), path.basename(projectDir)));
+  }
+  const dependencies = planDependencyChanges(current, desired, ownedDependencies, { force: forceManaged });
   const previouslyManagedBuilds = new Set([
     ...PNPM_MANAGED_BUILDS,
     ...(previous.pnpm?.onlyBuiltDependencies ?? []),
@@ -1972,18 +2013,7 @@ async function mergePackage(
       previous.scripts,
       forceManaged,
     ),
-    dependencies: mergePackageSection(
-      current.dependencies,
-      desired.dependencies,
-      previous.dependencies,
-      forceManaged,
-    ),
-    devDependencies: mergePackageSection(
-      current.devDependencies,
-      desired.devDependencies,
-      previous.devDependencies,
-      forceManaged,
-    ),
+    ...dependencies.next,
   };
   if (current.pnpm) {
     const pnpm = { ...current.pnpm };
@@ -1992,6 +2022,7 @@ async function mergePackage(
     else delete merged.pnpm;
   }
   entry.content = text(JSON.stringify(merged, null, 2) + '\n');
+  entry.dependencyBaseline = dependencies.baseline;
   await mergePnpmWorkspace(
     projectDir,
     rendered,
@@ -2157,6 +2188,10 @@ export async function writeManifest(
     resolvedFeatures: recipe.resolvedFeatures,
     dashboardModules: recipe.dashboardModules,
     config: publicRecipe(recipe).config,
+    dependencyBaseline: rendered.get('package.json')?.dependencyBaseline ??
+      (!written || written.has('package.json')
+        ? dependencyBaseline(JSON.parse(packageJson(recipe, path.basename(projectDir))))
+        : previousManifest?.dependencyBaseline ?? dependencyBaseline({})),
     files,
   };
   const manifestDir = path.join(projectDir, '.cossack');
@@ -2220,7 +2255,6 @@ async function promptCreationOptions(options, previous = {}, startAtLast = false
       choices: [
         { title: 'Cloudflare Workers', value: 'cloudflare' },
         { title: 'Node.js', value: 'node' },
-        { title: 'Deno', value: 'deno' },
       ],
     },
     !options.preset && {
@@ -2305,6 +2339,7 @@ async function confirmPlan(plan, options, summary = undefined) {
 
 export async function createApp(projectName, options = {}) {
   if (!projectName) throw new Error('Please provide a project name');
+  if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};
   let startAtLast = false;
   while (true) {
@@ -2320,6 +2355,13 @@ export async function createApp(projectName, options = {}) {
     });
     const plan = await buildPlan(projectDir, rendered, null, prompted.force);
     if (plan.conflicts.length) throw new Error(`Scaffold conflicts: ${plan.conflicts.join(', ')}`);
+    if (prompted.dryRun) {
+      return {
+        status: 'dry-run', projectDir, adapter: recipe.adapter,
+        manifestPath: path.join(projectDir, '.cossack/scaffold.json'),
+        recipe: publicRecipe(recipe), changes: plan,
+      };
+    }
     const confirmation = await confirmPlan(plan, prompted, {
       requested: `preset:${recipe.preset}`,
       prerequisites: recipe.resolvedFeatures,
@@ -2331,18 +2373,37 @@ export async function createApp(projectName, options = {}) {
       continue;
     }
     if (!confirmation) {
-      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe, status: 'cancelled' };
+      return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe: publicRecipe(recipe), status: 'cancelled' };
     }
     await applyPlan(projectDir, rendered, plan);
     const manifestPath = await writeManifest(projectDir, recipe, rendered, undefined, plan);
     return {
       status: 'created',
+      changes: plan,
       projectDir,
       adapter: recipe.adapter,
       manifestPath,
       recipe: publicRecipe(recipe),
     };
   }
+}
+
+/** Resolve recorded features through the same registry used for composition. */
+export function resolveManifestRecipe(manifest) {
+  if (!manifest || manifest.schemaVersion !== 3 || !ADAPTERS.includes(manifest.runtime ?? manifest.adapter) ||
+      !Array.isArray(manifest.explicitFeatures ?? manifest.resolvedFeatures)) {
+    throw new Error('A schema-v3 scaffold manifest with a runtime and feature list is required.');
+  }
+  return resolveRecipe({
+    adapter: manifest.runtime ?? manifest.adapter,
+    preset: 'minimal',
+    features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
+    database: manifest.config?.database,
+    authMethods: manifest.config?.authMethods,
+    oauth: manifest.config?.oauth,
+    theme: manifest.config?.theme,
+    dashboardModules: manifest.dashboardModules,
+  });
 }
 
 async function inferRecipe(projectDir, manifest) {
@@ -2362,16 +2423,7 @@ async function inferRecipe(projectDir, manifest) {
     );
   }
   if (manifest?.schemaVersion === 3) {
-    return resolveRecipe({
-      adapter: manifest.runtime ?? manifest.adapter,
-      preset: 'minimal',
-      features: manifest.explicitFeatures ?? manifest.resolvedFeatures,
-      database: manifest.config?.database,
-      authMethods: manifest.config?.authMethods,
-      oauth: manifest.config?.oauth,
-      theme: manifest.config?.theme,
-      dashboardModules: manifest.dashboardModules,
-    });
+    return resolveManifestRecipe(manifest);
   }
   const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
   const dependencies = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
@@ -2604,7 +2656,7 @@ export async function switchAdapter(projectDir, target, options = {}) {
   }
 
   const databaseInstalled = current.resolvedFeatures.includes('database');
-  const targetDefault = target === 'cloudflare' ? 'd1' : target === 'deno' ? 'turso' : 'sqlite';
+  const targetDefault = target === 'cloudflare' ? 'd1' : 'sqlite';
   const currentCompatible = DATABASE_PROVIDERS[current.config.database]
     ?.adapters.includes(target);
   const mustSelectDatabase = databaseInstalled &&
@@ -2811,7 +2863,6 @@ async function promptAddOptions(
       choices: [
         { title: 'Cloudflare Workers', value: 'cloudflare' },
         { title: 'Node.js', value: 'node' },
-        { title: 'Deno', value: 'deno' },
       ],
       when: (answers) => {
         const database = options.database ?? answers.database;
@@ -2880,6 +2931,7 @@ export async function addFeature(projectDir, feature, options = {}) {
   const root = path.resolve(projectDir);
   const manifest = await readManifest(root);
   const current = await inferRecipe(root, manifest);
+  if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};
   let startAtLast = false;
   while (true) {

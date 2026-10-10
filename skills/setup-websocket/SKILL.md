@@ -13,7 +13,7 @@ You are setting up real-time features for a Cossack application. First, pick the
 
 | Transport | When | Persistent state | Setup |
 |---|---|---|---|
-| `sse` | Default choice. Live counters, chat, streaming text, multi-tab sync on **plain Workers**. | No (in-memory) | None — no binding required |
+| `sse` | Default choice. Live counters, chat, streaming text, multi-tab sync on Workers. | Coordinator-backed | `COSSACK_SSE` + `SseDurableObject` |
 | `durable-object` | Multi-user coordination across users, persistent state in the DO itself, or full bidirectional comms. | Optional (`stateful: true`) | Requires `COSSACK_OBJECT` binding + `AppDurableObject` export |
 
 **Default to `sse`** unless the user needs cross-user coordination or DO-persisted state. If they only want real-time updates of their own data, multi-tab sync, or streaming, SSE is simpler.
@@ -32,7 +32,7 @@ export class LiveCounter extends Cossack {
 }
 ```
 
-SSE supports per-user / per-team / per-room / shared scoping via `scope: (c) => '...'`, and async-generator streaming methods (`async *`). No wrangler binding or DO export needed. Skip to Step 8 (Verify).
+SSE supports per-user / per-team / per-room / shared scoping via `scope: (c) => '...'`, and async-generator streaming methods (`async *`). Cloudflare requires the generated `COSSACK_SSE` binding and `SseDurableObject` export. Inspect the generated scaffold wiring; SQLite-backed migrations use `new_sqlite_classes`. Node SSE uses process-local coordination. Skip to Step 8 (Verify).
 
 ### If the user chose `durable-object`
 
@@ -302,3 +302,15 @@ export default { fetch: app.fetch };
 7. For events: `@OnEvent('event-name')` handler calls `this.init()` or equivalent
 8. `@Client()` methods are used for client-side-only logic
 9. Run type checks: `pnpm tsc --noEmit`
+
+## Ownership and authorization limits
+
+Scope keys identify a backend; they do not authorize access. Derive tenant/user
+ownership from trusted context and recheck record access for RPC and delivered
+socket operations. Do not treat browser scope/state or an open socket as authority.
+Cloudflare durable state requires actual bindings and native restart acceptance;
+Node realtime state is process-local and resets with its process. Read the
+installed Core `rpc-streams-and-transport-policy` and
+`server-action-access-policy` guides in `cossack docs --package @cossackframework/core --json`, selecting
+`guidance.guides` by ID. This is offline guidance, not a
+remote readiness probe.

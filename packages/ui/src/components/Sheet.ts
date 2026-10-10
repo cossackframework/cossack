@@ -1,28 +1,13 @@
 import { html, classMap } from "@cossackframework/renderer";
-import {
-    Cossack,
-    Component,
-    ClientTask,
-    createRef,
-    type RefObject,
-} from "@cossackframework/core";
+import { Cossack, Component, createRef, type RefObject } from "@cossackframework/core";
+import { DialogController, type DialogControlProps } from "../internal/dialog";
 
-export interface SheetProps {
-    /** Controlled open state. */
-    open?: boolean;
-    /** Which edge the sheet slides in from. */
+export type SheetProps = DialogControlProps & {
     side?: "left" | "right" | "top" | "bottom";
-    /** Panel width for left/right (CSS value). Default "400px". */
+    /** Panel width/height as a CSS length. */
     size?: string;
-    /** Fill the viewport along the sheet's sliding axis. Default false. */
     fullScreen?: boolean;
-    /** Close when the backdrop is clicked. Default true. */
-    closeOnBackdrop?: boolean;
-    /** Callback fired when the sheet closes. */
-    onClose?: () => void;
-    /** Allow arbitrary HTML attributes. */
-    [key: string]: any;
-}
+};
 
 const SIDE_POSITION: Record<string, string> = {
     left: "top:0;left:0;height:100%",
@@ -38,98 +23,26 @@ const SIDE_DIMENSIONS: Record<string, { dim: string; val: string }> = {
     bottom: { dim: "height", val: "300px" },
 };
 
-/**
- * Cossack UI Sheet (Drawer) — slide-in panel built on native `<dialog>`.
- *
- * The panel slides in from the specified edge (right by default) using a CSS
- * transform transition. Uses `dialog.showModal()` for top-layer rendering,
- * focus management, and ESC dismiss — but does NOT manipulate body scroll
- * (the top layer handles that natively, and manual `overflow: hidden` +
- * `paddingRight` compensation causes layout jitter).
- *
- *   ${component(Sheet, {
- *       open: this.showSheet,
- *       side: 'right',
- *       onClose: () => this.showSheet = false,
- *   }, html\`<p>Sheet content</p>\`)}
- */
+/** Edge-attached native modal dialog. Attributes and events target the dialog. */
 @Component()
 export class Sheet extends Cossack {
     declare props: SheetProps;
-
     dialogRef: RefObject<HTMLDialogElement> = createRef<HTMLDialogElement>();
+    private dialog = new DialogController(() => this.props, () => this.requestUpdate());
 
     render() {
-        const {
-            open: _open,
-            side = "right",
-            size,
-            fullScreen = false,
-            closeOnBackdrop = true,
-            onClose: _onClose,
-            ...rest
-        } = this.props;
-
+        const { open: _open, defaultOpen: _default, closeOnBackdrop: _backdrop, closeOnEscape: _escape, onClose: _close,
+            side = 'right', size, fullScreen = false, ...rest } = this.props;
         const dims = SIDE_DIMENSIONS[side];
-        const dimValue = fullScreen
-            ? (dims.dim === "width" ? "100vw" : "100vh")
-            : (size || dims.val);
-        const position = SIDE_POSITION[side];
-        const dimStyle =
-            dims.dim === "width"
-                ? `width:${dimValue};max-width:${fullScreen ? "100vw" : "90vw"};`
-                : `height:${dimValue};max-height:${fullScreen ? "100vh" : "85vh"};`;
-
-        // Transform + transition are managed by base.css (.cs-sheet__panel +
-        // side variant). Inline style only carries position + dimensions.
-        const panelStyle = `${position};${dimStyle}`;
-
-        const panelClasses = classMap({
-            "cs-sheet__panel": true,
-            [`cs-sheet--${side}`]: true,
-            "fixed bg-popover text-popover-foreground shadow-lg border flex flex-col z-[100]": true,
-            "border-r": side === "left",
-            "border-l": side === "right",
-            "border-b": side === "top",
-            "border-t": side === "bottom",
-        });
-
-        return html`
-            <dialog
-                ref=${this.dialogRef}
-                class="cs-sheet"
-                ...=${rest}
-                @close=${() => {
-                    const onClose = this.props.onClose ?? this.props["@close"];
-                    if (typeof onClose === "function") onClose();
-                }}
-                @click=${(e: MouseEvent) => {
-                    if (closeOnBackdrop && e.target === this.dialogRef.value) {
-                        const dlg = this.dialogRef.value;
-                        if (dlg && dlg.open) dlg.close();
-                    }
-                }}
-            >
-                <div class=${panelClasses} style=${panelStyle}>
-                    ${this.children}
-                </div>
-            </dialog>
-        `;
+        if (!dims) throw new Error('Sheet side must be left, right, top or bottom.');
+        const value = fullScreen ? (dims.dim === 'width' ? '100vw' : '100vh') : size || dims.val;
+        const style = `${SIDE_POSITION[side]};${dims.dim}:${value};${dims.dim === 'width' ? 'max-width' : 'max-height'}:${fullScreen ? '100' : dims.dim === 'width' ? '90' : '85'}${dims.dim === 'width' ? 'vw' : 'vh'};`;
+        return html`<dialog ref=${(element: Element) => { this.dialogRef.value = element as HTMLDialogElement; this.dialog.connect(element as HTMLDialogElement); }}
+            class="cs-sheet" ...=${{ ...rest, ...this.dialog.events() }}>
+            <div data-dialog-panel class=${classMap({ 'cs-sheet__panel fixed bg-popover text-popover-foreground shadow-lg border flex flex-col z-[100]': true,
+                [`cs-sheet--${side}`]: true, 'border-r': side === 'left', 'border-l': side === 'right', 'border-b': side === 'top', 'border-t': side === 'bottom' })}
+                style=${style}>${this.children}</div>
+        </dialog>`;
     }
-
-    @ClientTask()
-    syncOpenState() {
-        const dlg = this.dialogRef.value;
-        if (!dlg) return;
-        const wantOpen = !!this.props.open;
-        if (wantOpen && !dlg.open) {
-            try {
-                dlg.showModal();
-            } catch {
-                /* not connected yet */
-            }
-        } else if (!wantOpen && dlg.open) {
-            dlg.close();
-        }
-    }
+    onCleanup() { this.dialog.disconnect(); this.dialogRef.value = undefined; }
 }

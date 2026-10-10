@@ -1,15 +1,14 @@
+import type { CheckControlAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface CheckboxProps {
+export type CheckboxProps = CheckControlAttributes & {
     /** Checked state. */
     checked?: boolean;
     /** Indeterminate visual (sets the native indeterminate property on mount). */
     indeterminate?: boolean;
-    /** Render the control inline with a label passed as children. */
+    /** Visible label. Takes precedence over children; otherwise provide children or aria-label. */
     label?: string;
-    /** Pass-through HTML input attributes (name, value, disabled, ...). */
-    [key: string]: any;
 }
 
 /**
@@ -24,25 +23,24 @@ export class Checkbox extends Cossack {
     declare props: CheckboxProps;
 
     render() {
-        const { checked = false, indeterminate = false, ...rest } = this.props;
+        const { checked = false, indeterminate = false, label, ...rest } = this.props;
 
         const wrapperClasses = classMap({
             "cs-checkbox": true,
             "inline-flex items-center gap-2 text-sm text-foreground": true,
-            "disabled:opacity-50": !!rest.disabled,
+            "has-[>input:disabled]:opacity-50 has-[>input:disabled]:cursor-not-allowed": true,
         });
 
         return html`
             <label class=${wrapperClasses}>
                 <input
                     type="checkbox"
-                    class="cs-checkbox__input size-4 shrink-0 rounded-[4px] border border-input shadow-xs accent-primary outline-none transition-[color,box-shadow] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring"
-                    ?checked=${checked}
+                    class="cs-checkbox__input disabled:cursor-not-allowed size-4 shrink-0 rounded-[4px] border border-input shadow-xs accent-primary outline-none transition-[color,box-shadow] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring"
                     .checked=${checked}
                     .indeterminate=${indeterminate}
                     ...=${rest}
                 />
-                ${this.children}
+                ${label ?? this.children}
             </label>
         `;
     }

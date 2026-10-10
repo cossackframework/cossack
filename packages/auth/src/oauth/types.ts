@@ -155,7 +155,7 @@ export type OAuthUserCallback = (
 ) => Promise<Response | void> | Response | void;
 
 export type OAuthErrorCallback = (
-    err: unknown,
+    err: import('./errors').OAuthError,
     c: Context,
 ) => Promise<Response | void> | Response | void;
 
@@ -168,7 +168,22 @@ export interface OAuthCookieOptions {
     path?: string;
 }
 
-export interface CreateOAuthConfig {
+/** Server-side state identity. Never persist the authorization code or PKCE verifier here. */
+export interface OAuthStateRecord {
+    readonly key: string;
+    readonly provider: string;
+    readonly createdAt: number;
+    readonly expiresAt: number;
+}
+
+export interface OAuthStateStore {
+    /** Insert a new record without overwriting a colliding key. */
+    create(record: OAuthStateRecord, context: Context): Promise<void>;
+    /** Atomically consume the matching, unexpired provider record. Only one caller may return true. */
+    consume(key: string, provider: string, now: number, context: Context): Promise<boolean>;
+}
+
+interface OAuthConfigOptions {
     /**
      * HMAC-SHA256 signing secret for the state/PKCE cookie. Provide a string
      * or a request-scoped resolver for runtimes such as Cloudflare Workers,
@@ -197,10 +212,10 @@ export interface CreateOAuthConfig {
     /** Custom provider definitions keyed by id (use {@link defineOAuthProvider}). */
     customProviders?: Record<string, OAuthProviderDefinition>;
     cookie?: OAuthCookieOptions;
-    /**
-     * Disable the state cookie entirely. The developer then becomes responsible
-     * for CSRF protection of the callback (e.g. via a signed `state` query param
-     * they verify themselves). Not recommended.
-     */
-    stateless?: boolean;
 }
+
+/** Cookie flows require atomic state storage. Stateless flows own their CSRF and replay policy. */
+export type CreateOAuthConfig = OAuthConfigOptions & (
+    { stateless?: false; stateStore: OAuthStateStore } |
+    { stateless: true; stateStore?: never }
+);

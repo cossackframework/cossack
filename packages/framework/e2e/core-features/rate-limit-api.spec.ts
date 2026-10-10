@@ -1,10 +1,11 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('@RateLimit', () => {
   test('functional API route wrapper blocks after max with 429 + Retry-After', async ({ page }) => {
     // Load any page so the browser origin is the dev server.
     await page.goto('/debounce');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     const statuses: number[] = [];
     let last;
@@ -20,7 +21,7 @@ test.describe('@RateLimit', () => {
 
   test('@Server @RateLimit rejects excess /crpc calls server-side', async ({ page }) => {
     await page.goto('/debounce');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     const componentRouteId = await page.evaluate(
       () => (window as any).__INITIAL_STATE__.componentRouteId,

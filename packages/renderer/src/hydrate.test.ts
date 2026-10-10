@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { html, renderToString, render, hydrate, unsafeHTML } from './cossack-html';
 import { repeat, key } from './directives';
 import { CossackElement } from './cossack-element';
@@ -140,6 +140,24 @@ describe('hydrate() — DOM preservation', () => {
     expect(container.querySelector('div')!.getAttribute('class')).toBe('btn active');
   });
 
+  it('reports a typed root mismatch without logging rendered text', () => {
+    const container = document.createElement('div');
+    container.innerHTML = '<div>PRIVATE_HYDRATION_VALUE</div>';
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      hydrate(html`<div>${'client value'}</div>`, container);
+      const diagnostic = warning.mock.calls.map(([value]) => value)
+        .find((value: any) => value?.event === 'cossack.hydration.mismatch');
+      expect(diagnostic).toMatchObject({ event: 'cossack.hydration.mismatch', boundary: 'root',
+        category: 'node-type', path: expect.stringContaining('div[0]'), expected: 'comment', actual: 'text',
+        action: 'full-render-fallback' });
+      expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_HYDRATION_VALUE');
+    } finally {
+      warning.mockRestore();
+    }
+    expect(container.querySelector('div')!.textContent).toBe('client value');
+  });
+
   it('falls back when the existing DOM has extra nodes beyond the template', () => {
     // Correct SSR content, but with an extra trailing element that the
     // template doesn't manage (e.g. injected by a browser extension). The
@@ -218,6 +236,31 @@ describe('hydrate() — components & lists (adoption)', () => {
     // The exact SSR <span> survives hydration (not rebuilt).
     expect(container.querySelector('span.badge')).toBe(ssrSpan);
     expect(ssrSpan.textContent).toBe('new');
+  });
+
+  it('reports nested component fallbacks with component identity and no rendered text', async () => {
+    class AccountSummary extends CossackElement {
+      render() { return html`<span>fresh</span>`; }
+    }
+    const embed = () => html`<section>${{ _type: 'COMPONENT', clazz: AccountSummary, props: {}, children: null } as any}</section>`;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(embed(), { hydrate: true });
+    container.querySelector('span')!.outerHTML = '<p>PRIVATE_COMPONENT_VALUE</p>';
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      hydrate(embed(), container);
+      await Promise.resolve();
+      await Promise.resolve();
+      const diagnostic = warning.mock.calls.map(([value]) => value)
+        .find((value: any) => value?.event === 'cossack.hydration.mismatch' && value.boundary === 'component');
+      expect(diagnostic).toMatchObject({ event: 'cossack.hydration.mismatch', boundary: 'component',
+        component: 'AccountSummary', category: 'element-tag', expected: '<span>', actual: '<p>',
+        action: 'full-render-fallback' });
+      expect(JSON.stringify(diagnostic)).not.toContain('PRIVATE_COMPONENT_VALUE');
+    } finally {
+      warning.mockRestore();
+    }
+    expect(container.querySelector('span')?.textContent).toBe('fresh');
   });
 
   it('adopts array items (preserves each SSR item node)', () => {

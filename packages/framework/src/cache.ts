@@ -4,24 +4,26 @@
 // interface with memory / KV / Durable Object drivers, driven by a Laravel-style
 // config file (`src/config/cache.ts`). The `cache` facade resolves the default
 // store per-request from the config system (`config('cache.default')`), while
-// store instances are memoized per-isolate (bindings are stable per deployment).
+// built-in stores use binding identity and custom stores belong to their request.
 //
 // Lives in `@cossackframework/framework` (not core) because it needs direct
 // access to the config system, which is framework-owned. Bindings (KV/DO
 // namespaces) are resolved from the request env via `getRequestContext().env`
 // (the core injection point the framework wires once at startup).
 //
-// TTLs are expressed in **seconds** throughout (Laravel-compatible). KV's native
-// `expirationTtl` is also seconds, so it maps directly.
+// Public TTLs are integer milliseconds. KV retention converts to whole seconds;
+// a stored epoch timestamp independently enforces logical cache expiration.
 
+import { storageCapabilities, readStorageCapabilities, assertStorageRequirements, storageRequirements, type StorageCapabilities, type StorageRequirements } from '@cossackframework/core/storage-capabilities';
 import { getRequestContext } from '@cossackframework/core';
 import { config } from './config.js';
+import { cacheKey, cacheKeys, cacheExpiry, cacheJson, cacheNamespace, cacheKvKey, prepareCacheEntries, CACHE_MAX_BATCH_BYTES } from './cache-policy.js';
 
-/** Default in-memory store size before lazy pruning kicks in. */
+/** Default maximum live entries in an in-memory store. */
 const DEFAULT_MAX_ENTRIES = 10_000;
 
-/** Default TTL (seconds) when none is given to `set` / `remember`. */
-const DEFAULT_TTL_SECONDS = 3600; // 1 hour
+/** Default TTL (milliseconds) when none is given to facade `set`. */
+const DEFAULT_TTL_MS = 3_600_000; // 1 hour
 
 // ---------------------------------------------------------------------------
 // Store interface
@@ -37,8 +39,9 @@ const DEFAULT_TTL_SECONDS = 3600; // 1 hour
  * `set(key, undefined)` is equivalent to `delete(key)`.
  */
 export interface CacheStore {
+    readonly capabilities?: StorageCapabilities;
     get<T = unknown>(key: string): Promise<T | undefined>;
-    set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void>;
+    set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
     has(key: string): Promise<boolean>;
     delete(key: string): Promise<void>;
     flush(): Promise<void>;
@@ -51,7 +54,7 @@ export interface CacheStore {
 export interface CacheEntry<T = unknown> {
     key: string;
     value: T;
-    ttlSeconds?: number;
+    ttlMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,100 +64,92 @@ export interface CacheEntry<T = unknown> {
 interface MemoryEntry {
     raw: string;
     expiresAt?: number;
+    bytes: number;
 }
 
 /**
- * Simple in-process cache backed by a `Map`. Entries are pruned lazily once the
- * store grows beyond `maxEntries` (default 10 000).
+ * Simple in-process cache backed by a `Map`. Expired entries are pruned before
+ * evicting the least recently used entry at `maxEntries` (default 10 000).
  *
  * Per-process — a single Node.js instance or one Workers isolate. Not shared
  * across instances or regions. For shared/global cache data, use a KV, Durable
  * Object, or database store.
  */
 export class InMemoryCacheStore implements CacheStore {
+    readonly capabilities = storageCapabilities('cache', 'memory');
     private readonly entries = new Map<string, MemoryEntry>();
     private readonly maxEntries: number;
+    private bytes = 0;
 
-    constructor(maxEntries: number = DEFAULT_MAX_ENTRIES) {
+    constructor(maxEntries: number = DEFAULT_MAX_ENTRIES, private readonly maxBytes = 8 * 1024 * 1024) {
+        if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100_000) {
+            throw new Error('[Cossack] Cache maxEntries must be an integer between 1 and 100000.');
+        }
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 64 * 1024 * 1024) {
+            throw new Error('[Cossack] Cache maxBytes must be an integer between 1 and 67108864.');
+        }
         this.maxEntries = maxEntries;
     }
 
     async get<T = unknown>(key: string): Promise<T | undefined> {
-        this.pruneIfLarge();
+        cacheKey(key);
         const entry = this.entries.get(key);
         if (!entry) return undefined;
-        if (isExpired(entry.expiresAt)) {
-            this.entries.delete(key);
-            return undefined;
-        }
+        if (isExpired(entry.expiresAt)) { this.remove(key); return undefined; }
         try {
-            return JSON.parse(entry.raw) as T;
-        } catch {
-            this.entries.delete(key);
-            return undefined;
-        }
+            const value = JSON.parse(entry.raw) as T;
+            // Refresh insertion order for least-recently-used eviction.
+            this.entries.delete(key); this.entries.set(key, entry);
+            return value;
+        } catch { this.remove(key); return undefined; }
     }
 
-    async set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-        if (value === undefined) {
-            this.entries.delete(key);
-            return;
-        }
-        this.entries.set(key, {
-            raw: JSON.stringify(value),
-            expiresAt: expiryMs(ttlSeconds),
-        });
-        this.pruneIfLarge();
+    async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
+        cacheKey(key);
+        const expiresAt = cacheExpiry(ttlMs);
+        const raw = cacheJson(value);
+        this.write({ key, raw, expiresAt });
     }
 
-    async has(key: string): Promise<boolean> {
-        const entry = this.entries.get(key);
-        if (!entry) return false;
-        if (isExpired(entry.expiresAt)) {
-            this.entries.delete(key);
-            return false;
-        }
-        return true;
+    async has(key: string): Promise<boolean> { return (await this.get(key)) !== undefined; }
+    async delete(key: string): Promise<void> { cacheKey(key); this.remove(key); }
+    async flush(): Promise<void> { this.entries.clear(); this.bytes = 0; }
+    async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
+        cacheKeys(keys); return Promise.all(keys.map(key => this.get<T>(key)));
+    }
+    async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
+        const prepared = prepareCacheEntries(entries);
+        for (const entry of prepared) this.entryBytes(entry);
+        for (const entry of prepared) this.write(entry);
+    }
+    async deleteMany(keys: string[]): Promise<void> {
+        cacheKeys(keys); for (const key of keys) this.remove(key);
     }
 
-    async delete(key: string): Promise<void> {
+    private remove(key: string): void {
+        const previous = this.entries.get(key);
+        if (previous) this.bytes -= previous.bytes ?? 0;
         this.entries.delete(key);
     }
 
-    async flush(): Promise<void> {
-        this.entries.clear();
+    private entryBytes(entry: { key: string; raw?: string }): number {
+        if (entry.raw === undefined) return 0;
+        const bytes = new TextEncoder().encode(entry.key).length + new TextEncoder().encode(entry.raw).length;
+        if (bytes > this.maxBytes) throw new Error('[Cossack] Cache value exceeds this store maxBytes budget.');
+        return bytes;
     }
 
-    async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
-        return Promise.all(keys.map((k) => this.get<T>(k)));
-    }
-
-    async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
-        for (const { key, value, ttlSeconds } of entries) {
-            await this.set(key, value, ttlSeconds);
+    private write(entry: { key: string; raw?: string; expiresAt?: number }): void {
+        const bytes = this.entryBytes(entry);
+        this.remove(entry.key);
+        if (entry.raw === undefined || isExpired(entry.expiresAt)) return;
+        if (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
+            for (const [key, value] of this.entries) if (isExpired(value.expiresAt)) this.remove(key);
+            while (this.entries.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) this.remove(this.entries.keys().next().value!);
         }
+        this.entries.set(entry.key, { raw: entry.raw, expiresAt: entry.expiresAt, bytes });
+        this.bytes += bytes;
     }
-
-    async deleteMany(keys: string[]): Promise<void> {
-        for (const k of keys) this.entries.delete(k);
-    }
-
-    private pruneIfLarge(): void {
-        if (this.entries.size <= this.maxEntries) return;
-        const now = Date.now();
-        for (const [k, v] of this.entries) {
-            if (isExpired(v.expiresAt)) this.entries.delete(k);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
-function expiryMs(ttlSeconds?: number): number | undefined {
-    if (ttlSeconds === undefined) return undefined;
-    return Date.now() + Math.max(0, ttlSeconds) * 1000;
 }
 
 function isExpired(expiresAt?: number): boolean {
@@ -172,120 +167,86 @@ function isExpired(expiresAt?: number): boolean {
  */
 export interface CacheKvNamespace {
     get(key: string, options?: { type?: 'text' | 'json' | 'arrayBuffer' | 'stream' }): Promise<unknown>;
-    put(key: string, value: string, options?: { expirationTtl?: number; expirationTime?: number }): Promise<void>;
+    put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
     delete(key: string): Promise<void>;
-    getMany?(
-        keys: string[],
-        options?: { type?: 'text' | 'json' | 'arrayBuffer' | 'stream' },
-    ): Promise<unknown[]>;
-    deleteMany?(keys: string[]): Promise<void>;
+
 }
 
 export interface KvCacheStoreOptions {
-    /** Prefix for KV keys. Default `'cossack:cache:'`. */
+    /** Framed KV namespace. Default `'cossack:cache:'`. */
     namespace?: string;
 }
 
 /**
  * Cache store backed by Cloudflare KV (or any KV-like namespace).
  *
- * Values are stored as JSON. Expiry leans on KV's native `expirationTtl`, so
- * expired keys are garbage-collected by KV automatically — there is no
- * unbounded growth.
+ * Values are JSON envelopes with an expiration timestamp. Native retention
+ * is rounded up to whole seconds (minimum 60); reads enforce logical expiry.
  *
- * > **Eventually consistent.** KV writes take up to ~60s to propagate globally,
+ * > **Eventually consistent.** KV reads can be stale across locations,
  * > and there is no atomic read-modify-write. Fine for most cache use cases; if
  * > you need strict consistency, use a Durable Object store instead.
  */
 export class KvCacheStore implements CacheStore {
+    readonly capabilities = storageCapabilities('cache', 'kv');
     private readonly namespace: string;
 
-    constructor(
-        private readonly kv: CacheKvNamespace,
-        options: KvCacheStoreOptions = {},
-    ) {
-        this.namespace = options.namespace ?? 'cossack:cache:';
+    constructor(private readonly kv: CacheKvNamespace, options: KvCacheStoreOptions = {}) {
+        if (!kv || typeof kv.get !== 'function' || typeof kv.put !== 'function' || typeof kv.delete !== 'function') {
+            throw new Error('[Cossack] Invalid KV cache binding.');
+        }
+        this.namespace = options.namespace === undefined ? 'cossack:cache:' : options.namespace;
+        cacheNamespace(this.namespace);
     }
 
-    private k(key: string): string {
-        return `${this.namespace}${key}`;
-    }
+    private k(key: string): string { return cacheKvKey(this.namespace, key); }
 
     async get<T = unknown>(key: string): Promise<T | undefined> {
-        const raw = (await this.kv.get(this.k(key), { type: 'text' })) as string | null;
-        if (raw === null || raw === undefined) return undefined;
+        const raw = await this.kv.get(this.k(key), { type: 'text' });
+        if (typeof raw !== 'string' || new TextEncoder().encode(raw).length > CACHE_MAX_BATCH_BYTES) return undefined;
         try {
-            return JSON.parse(raw) as T;
-        } catch {
-            await this.kv.delete(this.k(key));
-            return undefined;
-        }
+            const entry = JSON.parse(raw);
+            if (!entry || typeof entry !== 'object' || entry.version !== 1 || !Object.hasOwn(entry, 'value') ||
+                (entry.expiresAt !== undefined && (!Number.isSafeInteger(entry.expiresAt) || entry.expiresAt < 0)) ||
+                isExpired(entry.expiresAt)) return undefined;
+            return entry.value as T;
+        } catch { return undefined; }
+        // KV reads may be stale. Never delete based on an expired/corrupt read:
+        // a newer write could already exist at the owner. Native retention cleans up.
     }
 
-    async set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
         const kvKey = this.k(key);
-        if (value === undefined) {
-            await this.kv.delete(kvKey);
-            return;
-        }
-        const options: { expirationTtl?: number } = {};
-        if (ttlSeconds !== undefined) {
-            // KV requires a minimum TTL of 60s.
-            options.expirationTtl = Math.max(60, Math.ceil(ttlSeconds));
-        }
-        await this.kv.put(kvKey, JSON.stringify(value), options);
+        const expiresAt = cacheExpiry(ttlMs);
+        const raw = cacheJson(value);
+        await this.write(kvKey, raw, expiresAt, ttlMs);
     }
 
-    async has(key: string): Promise<boolean> {
-        const raw = (await this.kv.get(this.k(key), { type: 'text' })) as string | null;
-        return raw !== null && raw !== undefined;
+    private async write(key: string, raw?: string, expiresAt?: number, ttlMs?: number): Promise<void> {
+        if (raw === undefined || isExpired(expiresAt)) { await this.kv.delete(key); return; }
+        const options = ttlMs === undefined ? {} : { expirationTtl: Math.max(60, Math.ceil(ttlMs / 1000)) };
+        await this.kv.put(key, JSON.stringify({ version: 1, value: JSON.parse(raw), expiresAt }), options);
     }
 
-    async delete(key: string): Promise<void> {
-        await this.kv.delete(this.k(key));
-    }
-
+    async has(key: string): Promise<boolean> { return (await this.get(key)) !== undefined; }
+    async delete(key: string): Promise<void> { await this.kv.delete(this.k(key)); }
     async flush(): Promise<void> {
-        throw new Error(
-            '[Cossack] KvCacheStore.flush() is not supported — Cloudflare KV has no bulk-delete-by-prefix. ' +
-                'Use a namespaced binding and recreate the namespace to clear it, or track keys explicitly.',
-        );
+        throw new Error('[Cossack] KvCacheStore.flush() is not supported: KV has no bulk-delete-by-prefix.');
     }
-
     async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
-        if (typeof this.kv.getMany === 'function') {
-            const kvKeys = keys.map((k) => this.k(k));
-            const raws = (await this.kv.getMany(kvKeys, { type: 'text' })) as (
-                | string
-                | null
-                | undefined
-            )[];
-            return Promise.all(
-                raws.map(async (raw, i) => {
-                    if (raw === null || raw === undefined) return undefined;
-                    try {
-                        return JSON.parse(raw) as T;
-                    } catch {
-                        // Corrupt value — delete it so it doesn't keep failing.
-                        await this.kv.delete(kvKeys[i]);
-                        return undefined;
-                    }
-                }),
-            );
-        }
-        return Promise.all(keys.map((k) => this.get<T>(k)));
+        cacheKeys(keys);
+        // Use the documented single-key API. Optional fake bulk methods are not
+        // part of Cloudflare's KV contract and must not change reply semantics.
+        for (const key of keys) this.k(key);
+        return Promise.all(keys.map(key => this.get<T>(key)));
     }
-
     async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
-        await Promise.all(entries.map((e) => this.set(e.key, e.value, e.ttlSeconds)));
+        const prepared = prepareCacheEntries(entries).map(entry => ({ ...entry, key: this.k(entry.key) }));
+        await Promise.all(prepared.map(entry => this.write(entry.key, entry.raw, entry.expiresAt, entry.ttlMs)));
     }
-
     async deleteMany(keys: string[]): Promise<void> {
-        if (typeof this.kv.deleteMany === 'function') {
-            await this.kv.deleteMany(keys.map((k) => this.k(k)));
-            return;
-        }
-        await Promise.all(keys.map((k) => this.delete(k)));
+        cacheKeys(keys); const framed = keys.map(key => this.k(key));
+        await Promise.all(framed.map(key => this.kv.delete(key)));
     }
 }
 
@@ -299,7 +260,6 @@ export class KvCacheStore implements CacheStore {
  */
 export interface CacheDurableObjectNamespace {
     idFromName(name: string): unknown;
-    idFromString(id: string): unknown;
     get(
         id: unknown,
         options?: { locationHint?: string },
@@ -322,205 +282,211 @@ export interface CacheDurableObjectNamespace {
  * ```
  */
 export class CacheDurableObject {
-    state: DurableObjectState;
-    env: any;
-
-    constructor(state: DurableObjectState, env: any) {
-        this.state = state;
-        this.env = env;
-    }
+    constructor(public state: DurableObjectState, public env: unknown) {}
 
     async fetch(request: Request): Promise<Response> {
         const url = new URL(request.url);
-        const path = decodeURIComponent(url.pathname.replace(/^\//, ''));
-
+        let validated = false;
         try {
-            // Special-case RPC endpoints (POST only). These are matched on
-            // method + path so they never collide with cache keys — e.g. a key
-            // named "flush" is still GET/PUT/DELETE-able as a normal key.
             if (request.method === 'POST') {
-                switch (path) {
-                    case 'has': {
-                        const keys = (await request.json()) as string[];
-                        const results = await Promise.all(keys.map((k) => this.exists(k)));
-                        return Response.json(results);
-                    }
-                    case 'get-many': {
-                        const keys = (await request.json()) as string[];
-                        const values = await Promise.all(keys.map((k) => this.read(k)));
+                switch (url.pathname) {
+                    case '/has':
+                    case '/get-many': {
+                        const keys = await cacheIo(signal => readCacheJson(request.body, signal), request.signal);
+                        cacheKeys(keys);
+                        validated = true;
+                        const values: unknown[] = [];
+                        let bytes = 2;
+                        for (const key of keys) {
+                            const value = await this.read(key);
+                            const result = url.pathname === '/has' ? value !== undefined
+                                : value === undefined ? { found: false } : { found: true, value };
+                            bytes += new TextEncoder().encode(JSON.stringify(result)).length + 1;
+                            if (bytes > CACHE_MAX_BATCH_BYTES) throw new Error('Cache batch reply exceeds 2 MiB.');
+                            values.push(result);
+                        }
                         return Response.json(values);
                     }
-                    case 'set-many': {
-                        const entries = (await request.json()) as {
-                            key: string;
-                            value: unknown;
-                            ttlSeconds?: number;
-                        }[];
-                        await Promise.all(
-                            entries.map((e) => this.write(e.key, e.value, e.ttlSeconds)),
-                        );
+                    case '/set-many': {
+                        const entries = prepareCacheEntries(await cacheIo(signal => readCacheJson(request.body, signal), request.signal));
+                        validated = true;
+                        for (const entry of entries) await this.write(entry);
                         return Response.json({ ok: true });
                     }
-                    case 'delete-many': {
-                        const keys = (await request.json()) as string[];
-                        await Promise.all(keys.map((k) => this.state.storage.delete(k)));
+                    case '/delete-many': {
+                        const keys = await cacheIo(signal => readCacheJson(request.body, signal), request.signal);
+                        cacheKeys(keys);
+                        validated = true;
+                        for (const key of keys) await this.state.storage.delete(key);
                         return Response.json({ ok: true });
                     }
-                    case 'flush': {
+                    case '/flush':
+                        validated = true;
                         await this.state.storage.deleteAll();
                         return Response.json({ ok: true });
-                    }
                 }
             }
-
-            if (path === '') {
-                return new Response('Cossack CacheDurableObject', { status: 200 });
-            }
-
-            // Key-level REST: /<key>
+            if (url.pathname !== '/entry' || !url.searchParams.has('key')) return new Response(null, { status: 404 });
+            const key = url.searchParams.get('key')!;
+            cacheKey(key);
             switch (request.method) {
                 case 'GET': {
-                    const value = await this.read(path);
-                    if (value === null) return new Response(null, { status: 404 });
-                    return Response.json(value);
+                    validated = true;
+                    const value = await this.read(key);
+                    return value === undefined ? new Response(null, { status: 404 }) : Response.json(value);
                 }
                 case 'PUT': {
-                    const ttlSeconds = url.searchParams.has('ttl')
-                        ? Number(url.searchParams.get('ttl'))
-                        : undefined;
-                    const value = await request.json();
-                    await this.write(path, value, ttlSeconds);
+                    if (url.searchParams.has('ttl')) throw new Error('Use ttlMs.');
+                    const ttlMs = url.searchParams.has('ttlMs') ? Number(url.searchParams.get('ttlMs')) : undefined;
+                    if (url.searchParams.get('ttlMs') === '') throw new Error('Invalid ttlMs.');
+                    const expiresAt = cacheExpiry(ttlMs);
+                    const raw = cacheJson(await cacheIo(signal => readCacheJson(request.body, signal), request.signal));
+                    validated = true;
+                    await this.write({ key, raw, expiresAt });
                     return Response.json({ ok: true });
                 }
-                case 'DELETE': {
-                    await this.state.storage.delete(path);
+                case 'DELETE':
+                    validated = true;
+                    await this.state.storage.delete(key);
                     return Response.json({ ok: true });
-                }
-                default:
-                    return new Response('Method Not Allowed', { status: 405 });
+                default: return new Response(null, { status: 405 });
             }
-        } catch (err) {
-            return Response.json(
-                { error: err instanceof Error ? err.message : String(err) },
-                { status: 500 },
-            );
+        } catch {
+            // Private wire errors never expose payloads, key values, or storage errors.
+            return Response.json({ error: validated ? 'Cache storage operation failed.' : 'Cache request failed; check keys, JSON and ttlMs.' }, { status: validated ? 500 : 400 });
         }
     }
 
     private async read(key: string): Promise<unknown> {
-        const entry = (await this.state.storage.get<{ value: unknown; expiresAt?: number }>(key));
-        if (!entry) return null;
-        if (entry.expiresAt !== undefined && Date.now() >= entry.expiresAt) {
+        const entry = await this.state.storage.get<{ value: unknown; expiresAt?: number }>(key);
+        if (!entry) return undefined;
+        if (isExpired(entry.expiresAt)) {
             await this.state.storage.delete(key);
-            return null;
+            return undefined;
         }
         return entry.value;
     }
 
-    private async exists(key: string): Promise<boolean> {
-        return (await this.read(key)) !== null;
-    }
-
-    private async write(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
-        if (value === undefined) {
-            await this.state.storage.delete(key);
-            return;
-        }
-        await this.state.storage.put(key, {
-            value,
-            expiresAt: expiryMs(ttlSeconds),
-        });
+    private async write(entry: { key: string; raw?: string; expiresAt?: number }): Promise<void> {
+        if (entry.raw === undefined || isExpired(entry.expiresAt)) { await this.state.storage.delete(entry.key); return; }
+        await this.state.storage.put(entry.key, { value: JSON.parse(entry.raw), expiresAt: entry.expiresAt });
     }
 }
 
-/**
- * Strongly-consistent cache store backed by a {@link CacheDurableObject}.
- * Every key is served by a single DO instance, so writes are linearized.
- */
+/** Strongly consistent storage owned by one Durable Object, with request-owned stubs. */
 export class DurableObjectCacheStore implements CacheStore {
-    private readonly stub: ReturnType<CacheDurableObjectNamespace['get']>;
+    readonly capabilities = storageCapabilities('cache', 'durable-object');
+    constructor(private readonly ns: CacheDurableObjectNamespace) {
+        if (!ns || typeof ns.idFromName !== 'function' || typeof ns.get !== 'function') {
+            throw new Error('[Cossack] Invalid Durable Object cache binding.');
+        }
+    }
 
-    constructor(ns: CacheDurableObjectNamespace) {
-        this.stub = ns.get(ns.idFromName('default'));
+    private url(key: string): string {
+        cacheKey(key);
+        return `https://cache/entry?${new URLSearchParams({ key })}`;
+    }
+
+    private async request(path: string, init: RequestInit, operation: string, json: boolean, missing = false): Promise<unknown> {
+        return cacheIo(async signal => {
+            // Construct a fresh I/O stub in the current request, never in the constructor.
+            const pending = Promise.resolve(this.ns.get(this.ns.idFromName('default')).fetch(path, { ...init, signal }));
+            void pending.then(response => { if (signal.aborted && response instanceof Response) discardCacheBody(response.body); }, () => {}).catch(() => {});
+            const response = await cacheAbortable(pending, signal);
+            if (!(response instanceof Response)) throw new Error('[Cossack] Invalid cache provider response.');
+            if (missing && response.status === 404) { discardCacheBody(response.body); return undefined; }
+            if (!response.ok) {
+                discardCacheBody(response.body);
+                throw new Error(`[Cossack] CacheDurableObject ${operation} returned ${response.status}`);
+            }
+            if (!json) { discardCacheBody(response.body); return undefined; }
+            return readCacheJson(response.body, signal);
+        });
     }
 
     async get<T = unknown>(key: string): Promise<T | undefined> {
-        const res = await this.stub.fetch(`https://cache/${encodeURIComponent(key)}`);
-        if (res.status === 404) return undefined;
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject GET returned ${res.status}`);
-        return (await res.json()) as T;
+        return await this.request(this.url(key), {}, 'GET', true, true) as T | undefined;
     }
-
-    async set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-        const url = `https://cache/${encodeURIComponent(key)}`;
-        // set(key, undefined) === delete(key) — the CacheStore contract. Must
-        // short-circuit here because JSON.stringify(undefined) produces no body,
-        // which would break request.json() in the DO handler.
-        if (value === undefined) {
-            const res = await this.stub.fetch(url, { method: 'DELETE' });
-            await res.body?.cancel();
-            if (!res.ok) throw new Error(`[Cossack] CacheDurableObject DELETE returned ${res.status}`);
-            return;
-        }
-        const fullUrl = ttlSeconds !== undefined ? `${url}?ttl=${ttlSeconds}` : url;
-        const res = await this.stub.fetch(fullUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(value),
-        });
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject PUT returned ${res.status}`);
+    async set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void> {
+        let url = this.url(key);
+        cacheExpiry(ttlMs);
+        const raw = cacheJson(value);
+        if (raw === undefined || ttlMs === 0) { await this.delete(key); return; }
+        if (ttlMs !== undefined) url += `&ttlMs=${ttlMs}`;
+        await this.request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: raw }, 'PUT', false);
     }
-
     async has(key: string): Promise<boolean> {
-        const res = await this.stub.fetch(`https://cache/${encodeURIComponent(key)}`);
-        // Drain the body so the DO-stub connection doesn't linger until GC.
-        await res.body?.cancel();
-        if (res.status === 404) return false;
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject HAS returned ${res.status}`);
-        return true;
+        cacheKey(key);
+        const values = await this.request('https://cache/has', { method: 'POST', body: JSON.stringify([key]) }, 'HAS', true);
+        if (!Array.isArray(values) || values.length !== 1 || typeof values[0] !== 'boolean') throw new Error('[Cossack] Invalid cache has reply.');
+        return values[0];
     }
-
-    async delete(key: string): Promise<void> {
-        const res = await this.stub.fetch(`https://cache/${encodeURIComponent(key)}`, {
-            method: 'DELETE',
-        });
-        await res.body?.cancel();
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject DELETE returned ${res.status}`);
-    }
-
-    async flush(): Promise<void> {
-        const res = await this.stub.fetch('https://cache/flush', { method: 'POST' });
-        await res.body?.cancel();
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject flush returned ${res.status}`);
-    }
-
+    async delete(key: string): Promise<void> { await this.request(this.url(key), { method: 'DELETE' }, 'DELETE', false); }
+    async flush(): Promise<void> { await this.request('https://cache/flush', { method: 'POST' }, 'flush', false); }
     async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
-        const res = await this.stub.fetch('https://cache/get-many', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(keys),
-        });
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject get-many returned ${res.status}`);
-        const values = (await res.json()) as (T | null)[];
-        return values.map((v) => (v === null ? undefined : v));
+        cacheKeys(keys);
+        const values = await this.request('https://cache/get-many', { method: 'POST', body: JSON.stringify(keys) }, 'get-many', true);
+        if (!Array.isArray(values) || values.length !== keys.length || values.some(value => !value || typeof value !== 'object' ||
+            typeof value.found !== 'boolean' || (value.found && !Object.hasOwn(value, 'value')))) throw new Error('[Cossack] Invalid cache batch reply.');
+        return values.map(value => value.found ? value.value as T : undefined);
     }
-
     async setMany<T = unknown>(entries: CacheEntry<T>[]): Promise<void> {
-        const res = await this.stub.fetch('https://cache/set-many', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(entries),
-        });
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject set-many returned ${res.status}`);
+        const prepared = prepareCacheEntries(entries).map(entry => ({ key: entry.key,
+            value: entry.raw === undefined ? undefined : JSON.parse(entry.raw), ttlMs: entry.ttlMs }));
+        const body = JSON.stringify(prepared);
+        if (new TextEncoder().encode(body).length > CACHE_MAX_BATCH_BYTES) throw new Error('[Cossack] Cache batch JSON exceeds 2 MiB.');
+        await this.request('https://cache/set-many', { method: 'POST', body }, 'set-many', false);
     }
-
     async deleteMany(keys: string[]): Promise<void> {
-        const res = await this.stub.fetch('https://cache/delete-many', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(keys),
-        });
-        if (!res.ok) throw new Error(`[Cossack] CacheDurableObject delete-many returned ${res.status}`);
+        cacheKeys(keys);
+        await this.request('https://cache/delete-many', { method: 'POST', body: JSON.stringify(keys) }, 'delete-many', false);
+    }
+}
+
+function discardCacheBody(body: ReadableStream | null): void {
+    if (body) { try { void body.cancel().catch(() => {}); } catch { /* Detached cleanup. */ } }
+}
+
+function cacheAbortable<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+    return new Promise((resolve, reject) => {
+        const abort = () => { signal.removeEventListener('abort', abort); reject(new Error('[Cossack] Cache operation aborted or timed out.')); };
+        if (signal.aborted) { void pending.catch(() => {}); abort(); return; }
+        signal.addEventListener('abort', abort, { once: true });
+        void pending.then(value => { signal.removeEventListener('abort', abort); resolve(value); }, error => { signal.removeEventListener('abort', abort); reject(error); });
+    });
+}
+
+async function cacheIo<T>(operation: (signal: AbortSignal) => Promise<T>, callerSignal?: AbortSignal): Promise<T> {
+    const controller = new AbortController();
+    const caller = callerSignal ?? getRequestContext()?.req?.raw?.signal;
+    const abort = () => controller.abort();
+    caller?.addEventListener('abort', abort, { once: true });
+    if (caller?.aborted) controller.abort();
+    const timer = setTimeout(abort, 5000);
+    try {
+        if (controller.signal.aborted) throw new Error('[Cossack] Cache operation aborted or timed out.');
+        return await cacheAbortable(operation(controller.signal), controller.signal);
+    } finally { clearTimeout(timer); caller?.removeEventListener('abort', abort); }
+}
+
+async function readCacheJson(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<unknown> {
+    if (!body) throw new Error('[Cossack] Cache JSON body is required.');
+    const reader = body.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let bytes = 0, text = '';
+    try {
+        while (true) {
+            const chunk = await cacheAbortable(reader.read(), signal);
+            if (chunk.done) break;
+            bytes += chunk.value.byteLength;
+            if (bytes > CACHE_MAX_BATCH_BYTES) throw new Error('[Cossack] Cache JSON exceeds 2 MiB.');
+            text += decoder.decode(chunk.value, { stream: true });
+        }
+        text += decoder.decode();
+        try { return JSON.parse(text); } catch { throw new Error('[Cossack] Invalid cache JSON reply.'); }
+    } finally {
+        try { void reader.cancel().catch(() => {}); } catch { /* Detached cleanup. */ }
+        try { reader.releaseLock(); } catch { /* Pending producer read owns the lock. */ }
     }
 }
 
@@ -534,10 +500,12 @@ export class DurableObjectCacheStore implements CacheStore {
  * env) for KV/DO stores. Unknown options are passed through to the store.
  */
 export interface CacheStoreSpec {
+    /** Guarantees required before store operations. Unsupported or unknown traits reject. */
+    requires?: StorageRequirements;
     driver: 'memory' | 'kv' | 'durable-object' | 'database' | (string & {});
     /** Name of the Worker binding (KV/DO). Resolved from the request env. */
     binding?: string;
-    /** KV key prefix. Default `'cossack:cache:'`. */
+    /** Framed KV namespace. Default `'cossack:cache:'`. */
     namespace?: string;
     [option: string]: unknown;
 }
@@ -551,161 +519,167 @@ export interface CacheConfig {
 }
 
 // ---------------------------------------------------------------------------
-// CacheManager — per-isolate instance cache + per-request resolution
+// CacheManager — binding-owned built-ins and request-owned custom selections
 // ---------------------------------------------------------------------------
 
 /** Factory that builds a {@link CacheStore} from a spec + env bindings. */
 export type CacheStoreFactory = (spec: CacheStoreSpec, env: Record<string, any>) => CacheStore;
 
+type Selection = { factory: CacheStoreFactory; specKey: string; envFields: [string, unknown][]; store: CacheStore };
 const driverFactories = new Map<string, CacheStoreFactory>();
-const instanceCache = new Map<string, CacheStore>();
+const builtinFactories = new Map<string, CacheStoreFactory>();
+const memoryStores = new Map<string, CacheStore>();
+let bindingStores = new WeakMap<object, Map<string, CacheStore>>();
+let requestStores = new WeakMap<object, Map<string, Selection>>();
 let defaultStoreOverride: CacheStore | null = null;
 
-/**
- * Register a custom driver factory (e.g. for the database driver from
- * `@cossackframework/database/cossack`, Redis, or another backend). Once registered,
- * the driver name can be used in `config/cache.ts` store declarations.
- *
- * The default project template registers the `'database'` driver in
- * `src/middlewares/orm.ts`. If you removed that file or use a different
- * database client, register your own store here.
- *
- * @example
- * ```ts
- * import { extendCacheDriver } from '@cossackframework/framework/cache';
- * import { createDatabaseCacheStore } from '@cossackframework/database/cossack';
- * extendCacheDriver('database', () => createDatabaseCacheStore());
- * // or a custom backend:
- * extendCacheDriver('redis', (spec, env) => new RedisCacheStore(env.REDIS));
- * ```
- */
-export function extendCacheDriver(driver: string, factory: CacheStoreFactory): void {
-    driverFactories.set(driver, factory);
-    // Invalidate any cached instance built from a previous factory for this driver.
-    for (const key of instanceCache.keys()) {
-        if (key.startsWith(`${driver}:`)) instanceCache.delete(key);
+function cacheConfigError(field: string): Error {
+    return new Error(`[Cossack] Invalid cache configuration at ${field}; check config/cache.ts.`);
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === null || proto === Object.prototype;
+}
+function validName(value: unknown): value is string {
+    return typeof value === 'string' && /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
+}
+
+/** Custom options are bounded JSON data, never credentials in diagnostic output. */
+function snapshotSpec(input: unknown): CacheStoreSpec {
+    let nodes = 0;
+    const visit = (value: unknown, depth: number): unknown => {
+        if (++nodes > 4096 || depth > 16) throw cacheConfigError('stores.options');
+        if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (Array.isArray(value)) return Object.freeze(value.map(item => visit(item, depth + 1)));
+        if (!isRecord(value)) throw cacheConfigError('stores.options');
+        const result: Record<string, unknown> = Object.create(null);
+        for (const key of Object.keys(value).sort()) {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+            if (!('value' in descriptor)) throw cacheConfigError('stores.options');
+            if (descriptor.value === undefined) continue;
+            result[key] = visit(descriptor.value, depth + 1);
+        }
+        return Object.freeze(result);
+    };
+    if (!isRecord(input)) throw cacheConfigError('stores');
+    const spec = visit(input, 0) as CacheStoreSpec;
+    if (!validName(spec.driver)) throw cacheConfigError('stores.driver');
+    if (spec.binding !== undefined && !validName(spec.binding)) throw cacheConfigError('stores.binding');
+    if (spec.namespace !== undefined && (typeof spec.namespace !== 'string' ||
+        new TextEncoder().encode(spec.namespace).length > 512)) throw cacheConfigError('stores.namespace');
+    if (new TextEncoder().encode(JSON.stringify(spec)).length > 16384) throw cacheConfigError('stores.options');
+    return spec;
+}
+
+function validateStore(store: CacheStore): CacheStore {
+    for (const method of ['get', 'set', 'has', 'delete', 'flush', 'getMany', 'setMany', 'deleteMany'] as const) {
+        if (!store || typeof store[method] !== 'function') throw new Error('[Cossack] Invalid cache store: all CacheStore methods are required.');
     }
+    return store;
+}
+
+/** Register a custom factory. Custom selections belong to the current request. */
+export function extendCacheDriver(driver: string, factory: CacheStoreFactory): void {
+    if (!validName(driver) || typeof factory !== 'function') throw cacheConfigError('driver factory');
+    driverFactories.set(driver, factory);
+    // Factory identity in a request selection invalidates only that driver.
 }
 
 /** @internal Reset all manager state — tests only. */
 export function __resetCacheForTests(): void {
-    driverFactories.clear();
-    instanceCache.clear();
-    defaultStoreOverride = null;
+    driverFactories.clear(); builtinFactories.clear(); memoryStores.clear();
+    bindingStores = new WeakMap(); requestStores = new WeakMap(); defaultStoreOverride = null;
 }
 
-/** @internal: register built-in driver factories once. */
 function ensureBuiltinDrivers(): void {
-    if (driverFactories.has('memory')) return;
-    driverFactories.set('memory', () => new InMemoryCacheStore());
-    driverFactories.set('kv', (spec, env) => {
-        const binding = resolveBinding(spec.binding ?? 'CACHE', env);
-        if (!binding) throw missingBindingError(spec.binding ?? 'CACHE', 'kv');
-        return new KvCacheStore(binding, spec.namespace ? { namespace: String(spec.namespace) } : {});
-    });
-    driverFactories.set('durable-object', (spec, env) => {
-        const binding = resolveBinding(spec.binding ?? 'CACHE_DO', env);
-        if (!binding) throw missingBindingError(spec.binding ?? 'CACHE_DO', 'durable-object');
-        return new DurableObjectCacheStore(binding);
-    });
-    // The 'database' driver is not wired by the framework (which stays free of
-    // a database-package dependency). It ships as a default in new projects —
-    // `src/middlewares/orm.ts` registers it via `extendCacheDriver('database',
-    // () => createDatabaseCacheStore())`.
-    // Only set the stub if the user hasn't already registered a real driver.
-    if (!driverFactories.has('database')) {
-        driverFactories.set('database', () => {
-            throw new Error(
-                "[Cossack] Cache driver 'database' is not registered. " +
-                    "The default project template registers it in src/middlewares/orm.ts — " +
-                    'make sure that file is imported from src/bootstrap/middlewares.ts and that ' +
-                    "@cossackframework/database is installed. To use a different cache backend, " +
-                    "call extendCacheDriver('database', () => yourStore) or change CACHE_DRIVER.",
-            );
-        });
+    if (builtinFactories.size === 0) {
+        builtinFactories.set('memory', spec => new InMemoryCacheStore(spec.maxEntries as number | undefined, spec.maxBytes as number | undefined));
+        builtinFactories.set('kv', (spec, env) => new KvCacheStore(resolveBinding(spec.binding ?? 'CACHE', env, 'kv') as CacheKvNamespace,
+            spec.namespace === undefined ? {} : { namespace: spec.namespace }));
+        builtinFactories.set('durable-object', (spec, env) => new DurableObjectCacheStore(resolveBinding(spec.binding ?? 'CACHE_DO', env, 'durable-object') as CacheDurableObjectNamespace));
+        builtinFactories.set('database', () => { throw new Error(
+            "[Cossack] Cache driver 'database' is not registered. Register extendCacheDriver('database', () => createDatabaseCacheStore()) in src/middlewares/orm.ts and import it from src/bootstrap/middlewares.ts."); });
     }
+    for (const [driver, factory] of builtinFactories) if (!driverFactories.has(driver)) driverFactories.set(driver, factory);
 }
 
-function resolveBinding(name: string, env: Record<string, any>): any {
-    return env?.[name];
+function resolveBinding(name: string, env: Record<string, any>, driver: 'kv' | 'durable-object'): object {
+    const binding = env[name];
+    const methods = driver === 'kv' ? ['get', 'put', 'delete'] : ['idFromName', 'get'];
+    if (!binding || (typeof binding !== 'object' && typeof binding !== 'function') ||
+        methods.some(method => typeof binding[method] !== 'function')) throw new Error(
+            `[Cossack] Cache driver ${driver} requires a valid ${name} binding in the request env; check wrangler.jsonc.`);
+    return binding;
 }
 
-function missingBindingError(binding: string, driver: string): Error {
-    return new Error(
-        `[Cossack] Cache driver "${driver}" requires a "${binding}" binding, but it was not found in the request env. ` +
-            'Add it to wrangler.jsonc (kv_namespaces / durable_objects.bindings).',
-    );
-}
-
-/**
- * Read `config('cache')` from the active per-request config scope. Returns
- * `undefined` when no config file is present (falls back to in-memory default).
- */
+/** Only a genuinely absent config selects the process-local default. */
 function readCacheConfig(): CacheConfig | undefined {
-    const cfg = config('cache');
-    if (!cfg || typeof cfg !== 'object') return undefined;
-    return cfg as CacheConfig;
+    const cfg: unknown = config('cache');
+    if (cfg === undefined) return undefined;
+    if (!isRecord(cfg) || !validName(cfg.default) || !isRecord(cfg.stores)) throw cacheConfigError('cache');
+    return cfg as unknown as CacheConfig;
 }
 
-/**
- * Build (or fetch from cache) the named store. Instances are memoized per
- * isolate keyed by `driver:binding` (bindings are stable per deployment, so
- * reusing instances across requests is safe and efficient).
- */
 function resolveNamedStore(name: string): CacheStore {
+    if (!validName(name)) throw cacheConfigError('store name');
     const cfg = readCacheConfig();
-    const spec = cfg?.stores?.[name];
-    if (!spec) {
-        throw new Error(
-            `[Cossack] Cache store "${name}" is not defined. Declare it under \`stores\` in config/cache.ts. ` +
-                (cfg ? `Available stores: ${Object.keys(cfg.stores).join(', ')}.` : 'No cache config found — add src/config/cache.ts.'),
-        );
-    }
-    return buildStore(spec);
+    if (!cfg || !Object.hasOwn(cfg.stores, name)) throw new Error(
+        '[Cossack] Cache store is not defined. Declare it under stores in config/cache.ts.');
+    return buildStore(cfg.stores[name], name);
 }
 
-function buildStore(spec: CacheStoreSpec): CacheStore {
-    ensureBuiltinDrivers();
-    // Instance-cache key. Covers driver + binding + namespace — the built-in
-    // fields that change store behavior — so e.g. two KV stores on the same
-    // binding but different prefixes get separate instances. The separator is
-    // always present so extendCacheDriver() invalidation (which keys on
-    // `${driver}:`) works even for unbound drivers.
-    //
-    // NOTE: custom drivers that read additional spec fields (e.g. host, region,
-    // prefix) are not reflected in this key. Two such stores sharing the same
-    // driver/binding/namespace would reuse one instance. Call
-    // `cache.setDefaultStore()` to bypass the cache when that matters, or keep
-    // each distinct config under a different driver name.
-    const cacheKey = `${spec.driver}:${spec.binding ?? ''}:${spec.namespace ?? ''}`;
-    const cached = instanceCache.get(cacheKey);
-    if (cached) return cached;
+function sameEnv(a: [string, unknown][], b: [string, unknown][]): boolean {
+    return a.length === b.length && a.every(([key, value], index) => key === b[index][0] && Object.is(value, b[index][1]));
+}
 
+function buildStore(input: CacheStoreSpec, name: string): CacheStore {
+    ensureBuiltinDrivers();
+    const spec = snapshotSpec(input);
+    const requirements = storageRequirements(spec.requires);
+    const checked = (store: CacheStore) => {
+        assertStorageRequirements(readStorageCapabilities(store.capabilities, 'cache'), requirements);
+        return store;
+    };
     const factory = driverFactories.get(spec.driver);
-    if (!factory) {
-        throw new Error(
-            `[Cossack] Unknown cache driver "${spec.driver}". Registered drivers: ${[...driverFactories.keys()].join(', ')}. ` +
-                'Register custom drivers with extendCacheDriver().',
-        );
+    if (!factory) throw new Error('[Cossack] Unknown cache driver in config/cache.ts. Register it with extendCacheDriver().');
+    const context = getRequestContext();
+    const env = (context?.env ?? {}) as Record<string, any>;
+    const specKey = JSON.stringify(spec);
+    if (factory === builtinFactories.get(spec.driver) && ['memory', 'kv', 'durable-object'].includes(spec.driver)) {
+        let bucket = memoryStores;
+        if (spec.driver !== 'memory') {
+            // Inspect actual binding and its shape BEFORE reading a memoized store.
+            const binding = resolveBinding(spec.binding ?? (spec.driver === 'kv' ? 'CACHE' : 'CACHE_DO'), env, spec.driver as 'kv' | 'durable-object');
+            bucket = bindingStores.get(binding) ?? new Map();
+            bindingStores.set(binding, bucket);
+        }
+        const key = JSON.stringify([name, specKey]);
+        const cached = bucket.get(key);
+        if (cached) return checked(cached);
+        if (bucket.size >= 256) throw new Error('[Cossack] Cache configuration exceeds 256 store selections; use stable store declarations.');
+        const store = checked(validateStore(factory(spec, env)));
+        bucket.set(key, store); return store;
     }
-    const env = getRequestContext()?.env as Record<string, any> | undefined;
-    const store = factory(spec, env ?? {});
-    instanceCache.set(cacheKey, store);
+    // Custom factories may read every spec field and request binding/credential.
+    // Never reuse their constructed store across requests. Same-request mutable
+    // selections rebuild; remember() still captures its provider before await.
+    const fields = Object.keys(env).sort().map(key => [key, env[key]] as [string, unknown]);
+    const bucket = context ? requestStores.get(context) ?? new Map<string, Selection>() : undefined;
+    const cached = bucket?.get(name);
+    if (cached && cached.factory === factory && cached.specKey === specKey && sameEnv(cached.envFields, fields)) return checked(cached.store);
+    const store = checked(validateStore(factory(spec, env)));
+    if (bucket && context) {
+        bucket.set(name, { factory, specKey, envFields: fields, store }); requestStores.set(context, bucket);
+    }
     return store;
 }
 
-/**
- * Resolve the default store for the current request. Reads
- * `config('cache.default')` per-request (so per-request config overrides work),
- * falling back to an in-memory store when no config is present.
- */
 function resolveDefaultStore(): CacheStore {
     if (defaultStoreOverride) return defaultStoreOverride;
     const cfg = readCacheConfig();
-    const defaultName = cfg?.default;
-    if (defaultName) return resolveNamedStore(defaultName);
-    // No config file → in-memory default (zero-config).
-    return buildStore({ driver: 'memory' });
+    return cfg ? resolveNamedStore(cfg.default) : buildStore({ driver: 'memory' }, '__default');
 }
 
 // ---------------------------------------------------------------------------
@@ -714,57 +688,83 @@ function resolveDefaultStore(): CacheStore {
 
 /** A cache facade bound to a single store (the default, or a named one). */
 export interface StoreBoundCache {
+    /** Inspect the current selection; no cache operation is dispatched. */
+    inspect(): StorageCapabilities;
+    /** Add required guarantees; nested requirements cannot weaken existing ones. */
+    require(requirements: StorageRequirements): StoreBoundCache;
     get<T = unknown>(key: string): Promise<T | undefined>;
-    set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void>;
+    set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
     has(key: string): Promise<boolean>;
     delete(key: string): Promise<void>;
     forget(key: string): Promise<void>;
     flush(): Promise<void>;
     getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]>;
-    setMany<T = unknown>(entries: CacheEntry<T>[], defaultTtlSeconds?: number): Promise<void>;
+    setMany<T = unknown>(entries: CacheEntry<T>[], defaultTtlMs?: number): Promise<void>;
     deleteMany(keys: string[]): Promise<void>;
-    remember<T>(key: string, ttlSeconds: number, fn: () => T | Promise<T>): Promise<T>;
+    remember<T>(key: string, ttlMs: number, fn: () => T | Promise<T>): Promise<T>;
 }
 
 function bindToStore(getStore: () => CacheStore): StoreBoundCache {
     return {
+        inspect() { return readStorageCapabilities(getStore().capabilities, 'cache'); },
+        require(input) {
+            const requirements = storageRequirements(input);
+            return bindToStore(() => {
+                const store = getStore();
+                assertStorageRequirements(readStorageCapabilities(store.capabilities, 'cache'), requirements);
+                return store;
+            });
+        },
         async get<T = unknown>(key: string): Promise<T | undefined> {
+            cacheKey(key);
             return getStore().get<T>(key);
         },
-        async set<T = unknown>(key: string, value: T, ttlSeconds: number = DEFAULT_TTL_SECONDS): Promise<void> {
-            await getStore().set(key, value, ttlSeconds);
+        async set<T = unknown>(key: string, value: T, ttlMs: number = DEFAULT_TTL_MS): Promise<void> {
+            cacheKey(key); cacheExpiry(ttlMs);
+            const raw = cacheJson(value);
+            await getStore().set(key, raw === undefined ? undefined : JSON.parse(raw), ttlMs);
         },
         async has(key: string): Promise<boolean> {
+            cacheKey(key);
             return getStore().has(key);
         },
         async delete(key: string): Promise<void> {
+            cacheKey(key);
             await getStore().delete(key);
         },
         async forget(key: string): Promise<void> {
+            cacheKey(key);
             await getStore().delete(key);
         },
         async flush(): Promise<void> {
             await getStore().flush();
         },
         async getMany<T = unknown>(keys: string[]): Promise<(T | undefined)[]> {
+            cacheKeys(keys);
             return getStore().getMany<T>(keys);
         },
-        async setMany<T = unknown>(entries: CacheEntry<T>[], defaultTtlSeconds?: number): Promise<void> {
+        async setMany<T = unknown>(entries: CacheEntry<T>[], defaultTtlMs?: number): Promise<void> {
+            cacheExpiry(defaultTtlMs);
+            if (!Array.isArray(entries)) throw new Error('[Cossack] Cache batches require an array.');
             const withTtl =
-                defaultTtlSeconds === undefined
+                defaultTtlMs === undefined
                     ? entries
-                    : entries.map((e) => ({ ...e, ttlSeconds: e.ttlSeconds ?? defaultTtlSeconds }));
-            await getStore().setMany(withTtl);
+                    : entries.map((e) => ({ ...e, ttlMs: e.ttlMs === undefined ? defaultTtlMs : e.ttlMs }));
+            const prepared = prepareCacheEntries(withTtl);
+            await getStore().setMany(prepared.map(entry => ({ key: entry.key, value: entry.raw === undefined ? undefined : JSON.parse(entry.raw), ttlMs: entry.ttlMs })));
         },
         async deleteMany(keys: string[]): Promise<void> {
+            cacheKeys(keys);
             await getStore().deleteMany(keys);
         },
-        async remember<T>(key: string, ttlSeconds: number, fn: () => T | Promise<T>): Promise<T> {
+        async remember<T>(key: string, ttlMs: number, fn: () => T | Promise<T>): Promise<T> {
+            cacheKey(key); cacheExpiry(ttlMs);
             const store = getStore();
             const hit = await store.get<T>(key);
             if (hit !== undefined) return hit;
             const computed = await fn();
-            await store.set(key, computed, ttlSeconds);
+            const raw = cacheJson(computed);
+            await store.set(key, raw === undefined ? undefined : JSON.parse(raw), ttlMs);
             return computed;
         },
     };
@@ -780,16 +780,16 @@ function bindToStore(getStore: () => CacheStore): StoreBoundCache {
  * {@link cache.store}. Register custom/external drivers via
  * {@link extendCacheDriver}.
  *
- * TTLs are in **seconds**.
+ * TTLs are in **milliseconds**.
  *
  * @example
  * ```ts
  * import { cache } from '@cossackframework/framework/cache';
  *
- * await cache.set<User>('user:1', user, 300);          // default store
+ * await cache.set<User>('user:1', user, 300_000);          // default store
  * const u = await cache.get<User>('user:1');
- * const settings = await cache.remember('settings', 600, () => loadSettings());
- * await cache.store('kv').set('key', 'value', 60);     // named store
+ * const settings = await cache.remember('settings', 600_000, () => loadSettings());
+ * await cache.store('kv').set('key', 'value', 60_000);     // named store
  * ```
  */
 export const cache: StoreBoundCache & {
@@ -803,6 +803,6 @@ export const cache: StoreBoundCache & {
         return bindToStore(() => resolveNamedStore(name));
     },
     setDefaultStore(store: CacheStore): void {
-        defaultStoreOverride = store;
+        defaultStoreOverride = validateStore(store);
     },
 };

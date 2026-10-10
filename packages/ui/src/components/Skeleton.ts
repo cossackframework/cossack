@@ -1,46 +1,30 @@
-import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component } from "@cossackframework/core";
+import { html, IfDefinedResult } from '@cossackframework/renderer';
+import { Cossack, Component } from '@cossackframework/core';
+import type { GlobalAttributes } from '../native-attributes';
 
-export interface SkeletonProps {
-    /** Optional fixed width, e.g. "100%" or "200px". Defaults to 100%. */
-    width?: string;
-    /** Optional fixed height, e.g. "20px" or "1rem". Defaults to 1em line. */
-    height?: string;
-    /** Render as a circle (for avatar skeletons). */
-    circle?: boolean;
-    /** Allow arbitrary HTML attributes to spread onto the root. */
-    [key: string]: any;
+/** Numbers are CSS pixels; strings are nonempty CSS lengths/expressions. */
+export type SkeletonDimension = number | string;
+export type SkeletonProps = Omit<GlobalAttributes<HTMLDivElement>, 'role' | 'tabindex' | 'aria-hidden' | 'autofocus' | '?autofocus' | 'contenteditable'> & (
+    { circle?: false; width?: SkeletonDimension; height?: SkeletonDimension; size?: never } |
+    { circle: true; size?: SkeletonDimension; width?: never; height?: never }
+);
+function skeletonDimension(value: SkeletonDimension, name: string) {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return `${value}px`;
+    if (typeof value === 'string' && value.trim()) return value;
+    throw new Error(`Skeleton ${name} must be a nonnegative finite number or nonempty CSS length.`);
 }
 
-/**
- * Cossack UI Skeleton — placeholder loading indicator.
- *
- * Uses Tailwind's `animate-pulse` keyframes (built-in, no custom CSS).
- *
- *   ${component(Skeleton, { width: '60%', height: '12px' })}
- *   ${component(Skeleton, { circle: true, size: 40 })}
- */
+/** Decorative placeholder. Announce loading on the containing region, not each shape. */
 @Component()
 export class Skeleton extends Cossack {
     declare props: SkeletonProps;
-
     render() {
-        const { width, height, circle = false, ...rest } = this.props;
-
-        const classes = classMap({
-            "cs-skeleton": true,
-            "animate-pulse bg-muted": true,
-            "rounded-md": !circle,
-            "rounded-full": circle,
-        });
-
-        const styleParts: string[] = [];
-        if (width) styleParts.push(`width:${width}`);
-        else styleParts.push("width:100%");
-        if (height) styleParts.push(`height:${height}`);
-        if (circle && !height) styleParts.push("height:1em");
-        const style = styleParts.join(";");
-
-        return html`<div class=${classes} style=${style} aria-hidden="true" ...=${rest}></div>`;
+        const { circle = false, width, height, size, style, ...rest } = this.props;
+        if (typeof circle !== 'boolean' || (circle ? width !== undefined || height !== undefined : size !== undefined)) throw new Error('Skeleton uses size for circles and width/height for rectangles.');
+        const w = skeletonDimension(circle ? size ?? '1em' : width ?? '100%', circle ? 'size' : 'width');
+        const h = circle ? w : skeletonDimension(height ?? '1em', 'height');
+        const suppliedStyle = style instanceof IfDefinedResult ? style.value : style;
+        const dimensions = `width:${w};height:${h};${typeof suppliedStyle === 'string' ? suppliedStyle : ''}`;
+        return html`<div class=${`cs-skeleton animate-pulse motion-reduce:animate-none bg-muted ${circle ? 'rounded-full' : 'rounded-md'}`} style=${dimensions} aria-hidden="true" ...=${rest}></div>`;
     }
 }

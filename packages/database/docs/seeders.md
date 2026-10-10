@@ -182,6 +182,44 @@ Avoid random identifiers for records that must not be duplicated. Keep
 production-only or destructive data policies in the application/framework CLI,
 where environment and confirmation information is available.
 
+## Preview seeders
+
+Preview selected seeders without executing their callbacks:
+
+```sh
+pnpm exec cossack seeder run --only users --env staging --target remote --dry-run --json
+```
+
+The result reports selected seeders, ordered statements, affected objects,
+parameter counts, risk, target identity and transaction limitations. Callbacks are
+never invoked during planning. A callback seeder reports `complete: false`; an
+empty SQL list does not imply that its eventual callback makes no changes.
+
+For a complete plan, declare SQL fragments instead of a callback:
+
+```ts
+import { defineSeeder, sql } from "@cossackframework/database";
+
+export const settings = defineSeeder({
+  name: "settings",
+  transaction: "required",
+  operations: [sql.fragment`INSERT INTO settings (key, value) VALUES (${"theme"}, ${"system"})`],
+});
+```
+
+Declared `operations` are authoritative for execution as well as planning; a
+`run` callback on the same definition is not executed. A required transaction on
+an unsupported provider produces an incomplete plan. Statements without an
+interactive transaction run individually and can leave partial changes on failure.
+Parameter values stay private; raw SQL object discovery remains incomplete.
+
+`await runner.applyPlan(await runner.plan())` applies a plan returned by that
+live runner after rechecking its target and definitions. Plans use detached
+statement/parameter snapshots. A copied or deserialized JSON report is not an
+executable plan. Seeders have no applied-history ledger and remain rerunnable;
+planning does not prove that data-dependent SQL is safe or idempotent.
+`seed list` reads registration metadata without constructing an adapter.
+
 ## Framework integration
 
 A framework should:

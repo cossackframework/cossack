@@ -65,3 +65,5 @@ export class OptimisticCounter extends Cossack {
         `;
     }
 }
+
+export default OptimisticCounter;

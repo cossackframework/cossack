@@ -3,15 +3,19 @@
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
+    "build:release": "node scripts/build-release.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "dev": "pnpm --filter @cossackframework/framework run dev",
-    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run build && pnpm --filter @cossackframework/framework run build:types && pnpm --filter @cossackframework/node-adapter --filter @cossackframework/deno-adapter --filter @cossackframework/desktop --filter @cossackframework/ui --filter @cossackframework/database run build && pnpm --filter @cossackframework/studio run build",
-    "test:unit": "pnpm --filter \"./packages/*\" --filter \"!@cossackframework/test-utils\" run test --watch=false",
+    "build": "pnpm --filter @cossackframework/core --filter @cossackframework/renderer run build && pnpm --filter @cossackframework/framework run build:types && pnpm --filter @cossackframework/node-adapter --filter @cossackframework/desktop --filter @cossackframework/ui --filter @cossackframework/database run build && pnpm --filter @cossackframework/test-utils run build && pnpm --filter @cossackframework/studio run build",
+    "test:unit": "pnpm --workspace-concurrency=1 --filter \"./packages/*\" run test --watch=false",
     "audit:bundle": "pnpm --filter @cossackframework/database run audit:bundle",
+    "test:agent-docs:local": "node scripts/test-local-scaffold.mjs --agent-docs-only",
     "test:scaffold:local": "node scripts/test-local-scaffold.mjs",
     "test:production-bundles": "node scripts/test-local-scaffold.mjs",
+    "test:integration": "pnpm --filter cossack run test:integration && pnpm --filter @cossackframework/ui run test:browser",
     "test:e2e": "pnpm --filter @cossackframework/framework run test:e2e",
-    "bump": "node scripts/bump.mjs"
+    "bump": "node scripts/bump.mjs",
+    "test:desktop": "node scripts/test-desktop-runtime.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
@@ -19,5 +23,5 @@
   "workspaces": [
     "packages/*"
   ],
-  "version": "0.8.3"
+  "version": "0.9.0"
 }

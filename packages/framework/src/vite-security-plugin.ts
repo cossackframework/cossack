@@ -1,10 +1,36 @@
 import type { Plugin } from 'vite';
 import { parseSync } from 'vite';
 import { readFileSync } from 'node:fs';
+import { isHttpHandlerModule } from './page-inspection.js';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
 }
+
+/**
+ * @internal Built-in methods that are always kept in client bundles.
+ * Exported so tests exercise the real list instead of a drifting copy.
+ * Note: init() and get() are intentionally NOT included - they are server-only by default.
+ */
+export const BUILTIN_METHODS: ReadonlySet<string> = new Set([
+  'render',
+  'head',
+  'onMount',
+  'onCleanup',
+  'escapeHtml',
+  'loadingTemplate',
+  'toString',
+  'valueOf',
+  'clientInit', // Client-side initialization method for fake loading
+  // Validation methods
+  'getError',
+  'hasError',
+  'validateProperty',
+  'validateAll',
+  'clearErrors',
+  'onNavigateComplete', // Lifecycle hook (called on the App instance after SPA navigation)
+  'startViewTransition', // View Transitions API wrapper (runs on client)
+]);
 
 /**
  * Vite plugin that strips server-only code from client bundles.
@@ -30,28 +56,6 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   const {
     devWarning = true,
   } = options;
-
-  // Built-in methods that should always be kept in client bundles
-  // Note: init() and get() are intentionally NOT included - they are server-only by default
-  const BUILTIN_METHODS = new Set([
-    'render',
-    'head',
-    'onMount',
-    'onCleanup',
-    'escapeHtml',
-    'loadingTemplate',
-    'toString',
-    'valueOf',
-    'clientInit', // Client-side initialization method for fake loading
-    // Validation methods
-    'getError',
-    'hasError',
-    'validateProperty',
-    'validateAll',
-    'clearErrors',
-    'onNavigateComplete', // Lifecycle hook (called on the App instance after SPA navigation)
-    'startViewTransition', // View Transitions API wrapper (runs on client)
-  ]);
 
   /**
    * Check if the file should be processed.
@@ -99,7 +103,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
      * are stubbed here so the import resolves on the client without leaking
      * server code or Node built-ins.
      */
-    load(id) {
+    async load(id) {
       const isClientEnvironment = this.environment?.name === 'client';
       if (id.includes('node_modules')) return;
 
@@ -119,6 +123,24 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       }
 
       if (!isClientEnvironment) return;
+
+      // Functional HTTP routes are server-only even when they use only Web
+      // APIs or platform bindings, without a known server-library import.
+      // Keep their export interface in the browser route catalog, but never
+      // load their bodies or transitive database/credential dependencies.
+      if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
+        const source = readFileSync(cleanId, 'utf8');
+        if (await isHttpHandlerModule(source)) {
+          const shape = readClientOnlyExports(source, cleanId, 'Server-only HTTP route');
+          const label = JSON.stringify(moduleLabelFromId(cleanId));
+          const lines = [`const __httpOnly = name => () => { throw new Error('HTTP route export ' + name + ' from ' + ${label} + ' is server-only. Call its URL or use a @Server method.'); };`];
+          shape.named.forEach((name, index) => lines.push(
+            `const __httpExport${index} = __httpOnly(${JSON.stringify(name)}); export { __httpExport${index} as ${JSON.stringify(name)} };`,
+          ));
+          if (shape.hasDefault) lines.push(`export default __httpOnly('default');`);
+          return lines.join('\n');
+        }
+      }
 
       // Match files in the project's `src/config/` directory. Anchored to
       // `/src/config/` so it doesn't catch unrelated `/config/` paths in
@@ -169,6 +191,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       if (!shouldProcessFile(id)) {
         return { code, map: null };
       }
+      const original = code;
 
       // server$ is a compiler macro in both environments. On the server its
       // generated method retains the loader; the normal client pass below
@@ -199,15 +222,34 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       try {
         const stripped = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
         const transformed = stripClientServerOnlyImports(stripped, id);
-        if (transformed !== code) {
-          return { code: transformed, map: null };
-        }
+        // Never return `map: null` for rewritten client modules: the bundler
+        // would then fill `sourcesContent` from the ORIGINAL file and ship
+        // stripped @Server bodies / server$ loaders inside client `.map` files.
+        if (transformed !== original) return { code: transformed, map: strippedSourceMap(id, transformed) };
       } catch (error) {
         throw error;
       }
 
       return { code, map: null };
     },
+  };
+}
+
+/**
+ * Line-identity source map whose only source content is the STRIPPED module.
+ * Rollup/Rolldown take the root `sourcesContent` from the first transform map
+ * in the chain, so this map becomes the client-visible "original" and the
+ * server-only source never reaches emitted `.map` files.
+ */
+export function strippedSourceMap(id: string, code: string) {
+  const lines = code.split('\n').length;
+  return {
+    version: 3 as const,
+    file: id.split('?')[0],
+    sources: [id.split('?')[0]],
+    sourcesContent: [code],
+    names: [] as string[],
+    mappings: 'AAAA' + ';AACA'.repeat(lines - 1),
   };
 }
 
@@ -302,7 +344,14 @@ function stableResourceHash(value: string): string {
 }
 
 /** Transform imported server$ bindings into generated @Server RPC methods. */
-export function transformServerResources(code: string, id: string): string {
+interface ResourceSource {
+  className: string;
+  method: string;
+  resource: string;
+  offset: number;
+}
+
+export function transformServerResources(code: string, id: string, sources?: ResourceSource[]): string {
   const program = parseProgram(code);
   if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
   const bindings = new Set<string>();
@@ -323,6 +372,7 @@ export function transformServerResources(code: string, id: string): string {
     const className = cls.id?.name ?? 'Anonymous';
     let inlineOrdinal = 0;
     const generated: string[] = [];
+    const fields: string[] = [];
     const allowedCalls = new Set<number>();
 
     const compileCall = (call: any, name: string): string => {
@@ -334,13 +384,15 @@ export function transformServerResources(code: string, id: string): string {
       if (loader.type !== 'ArrowFunctionExpression' && loader.type !== 'FunctionExpression') {
         throw new Error(`[Cossack server$] ${id}: ${name} loader must be an inline function.`);
       }
+      if (loader.generator) throw new Error(`[Cossack server$] ${id}: ${name} loader must return data; use @Server for generators.`);
       const options = call.arguments[1] ? sourceSlice(code, call.arguments[1]) : '{}';
       const method = `__cossack_server_resource_${stableResourceHash(`${id}:${className}:${name}`)}`;
       const args = (loader.params ?? []).map((p: any) => sourceSlice(code, p)).join(', ');
       const body = loader.body.type === 'BlockStatement'
         ? sourceSlice(code, loader.body)
         : `{ return ${sourceSlice(code, loader.body)}; }`;
-      generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) ${body}\n`);
+      generated.push(`\n    @__CossackServerResource({ serverResource: true })\n    async ${method}(${args}) { return this.__serverResourceResult(${JSON.stringify(name)}, await (async () => ${body})()); }\n`);
+      sources?.push({ className, method, resource: name, offset: loader.body.start });
       hasGeneratedResources = true;
       return `this.__serverResource(${JSON.stringify(name)}, this.${method}.bind(this), ${options})`;
     };
@@ -354,6 +406,7 @@ export function transformServerResources(code: string, id: string): string {
         const hasInitial = optionsNode?.type === 'ObjectExpression' && (optionsNode.properties ?? []).some((p: any) =>
           !p.computed && (p.key?.name ?? p.key?.value) === 'initial');
         if (!hasInitial) throw new Error(`[Cossack server$] ${id}: class field "${name}" requires { initial }.`);
+        fields.push(name);
         const expression = compileCall(member.value, name);
         const type = member.typeAnnotation ? sourceSlice(code, member.typeAnnotation) : '';
         replacements.push({ start: member.start, end: member.end, replacement: `get ${sourceSlice(code, member.key)}()${type} { return ${expression}; }` });
@@ -388,6 +441,12 @@ export function transformServerResources(code: string, id: string): string {
     };
     scan(cls.body);
 
+    if (fields.length) {
+      if ((cls.body?.body ?? []).some((member: any) => memberKeyName(member.key) === '__cossackResourceFields')) {
+        throw new Error(`[Cossack server$] ${id}: __cossackResourceFields is reserved for the resource compiler.`);
+      }
+      generated.push(`\n    static readonly __cossackResourceFields = ${JSON.stringify(fields)};\n`);
+    }
     if (generated.length) replacements.push({ start: cls.body.end - 1, end: cls.body.end - 1, replacement: generated.join('') });
   }
   let result = code;
@@ -459,17 +518,17 @@ export function generateClientOnlyServerStub(id: string, moduleName = moduleLabe
   return prelude + lines.join('');
 }
 
-function readClientOnlyExports(source: string, id: string): ClientOnlyExports {
+function readClientOnlyExports(source: string, id: string, kind = 'Client-only module'): ClientOnlyExports {
   const program = parseProgram(source);
-  if (!program) throw new Error(`[Cossack Security] Could not parse client-only module ${id}.`);
+  if (!program) throw new Error(`[Cossack Security] Could not parse ${kind.toLowerCase()} ${id}.`);
   const named = new Set<string>();
   let hasDefault = false;
   for (const stmt of program.body ?? []) {
     if (stmt.type === 'ExportAllDeclaration') {
       if (stmt.exportKind !== 'type') {
         throw new Error(
-          `[Cossack Security] Client-only module ${id} uses runtime "export *", ` +
-          `whose SSR stub interface cannot be determined locally. Replace it with explicit named exports.`,
+          `[Cossack Security] ${kind} ${id} uses runtime "export *", ` +
+          `whose stub interface cannot be determined locally. Replace it with explicit named exports.`,
         );
       }
       continue;
@@ -797,6 +856,86 @@ function* findClasses(program: any): Generator<any> {
   }
 }
 
+const TYPED_DECORATOR_NAMES = new Set(['Server', 'State']);
+
+/** Strip parentheses and TS-only wrappers around a decorator expression. */
+function unwrapExpression(node: any): any {
+  while (node && ['ParenthesizedExpression', 'TSAsExpression', 'TSNonNullExpression', 'TSSatisfiesExpression', 'TSTypeAssertion', 'TSInstantiationExpression'].includes(node.type)) node = node.expression;
+  return node;
+}
+
+/** Callee of a decorator (`@x(...)` → `x`, `@x` → `x`), unwrapped. */
+function decoratorCallee(decorator: any): any {
+  const expression = unwrapExpression(decorator?.expression);
+  return unwrapExpression(expression?.type === 'CallExpression' ? expression.callee : expression);
+}
+
+/** Static property name of a member expression (`a.b`, `a['b']`), or null. */
+function memberPropertyName(node: any): string | null {
+  if (node?.type !== 'MemberExpression') return null;
+  if (!node.computed) return node.property?.type === 'Identifier' ? node.property.name : null;
+  return node.property?.type === 'Literal' && typeof node.property.value === 'string' ? node.property.value : null;
+}
+
+/**
+ * Fail-closed typed decorator detection: ANY `<expr>.Server` / `<expr>.State`
+ * member decorator is treated as the core decorator, wherever the namespace
+ * came from (a same-file `createTypedDecorators()`, a shared `./rpc` module,
+ * a re-export, ...). Misclassifying a client helper as Server only stubs it;
+ * missing a Server method would ship its body and validators to the client.
+ */
+function typedMemberDecorator(callee: any): string | null {
+  const name = memberPropertyName(unwrapExpression(callee));
+  return name && TYPED_DECORATOR_NAMES.has(name) ? name : null;
+}
+
+/**
+ * Statically authored aliases of core's typed State/Server decorators.
+ * Fail-closed: any value import named `Server`/`State` (from core, a local
+ * `./rpc` module, or a re-export) and any `const S = x.Server` /
+ * `const { Server: S } = x` binding is an alias, regardless of origin.
+ */
+function typedDecoratorBindings(program: any): { aliases: Map<string, string>; namespaces: Set<string> } {
+  const factories = new Set<string>(), coreNamespaces = new Set<string>();
+  const aliases = new Map<string, string>(), namespaces = new Set<string>();
+  for (const node of program.body ?? []) {
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
+    const fromCore = node.source?.value === '@cossackframework/core';
+    for (const specifier of node.specifiers ?? []) {
+      if (specifier.importKind === 'type') continue;
+      const imported = specifier.imported?.name ?? specifier.imported?.value;
+      if (TYPED_DECORATOR_NAMES.has(imported)) aliases.set(specifier.local.name, imported);
+      if (!fromCore) continue;
+      if (imported === 'createTypedDecorators') factories.add(specifier.local.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') coreNamespaces.add(specifier.local.name);
+    }
+  }
+  const factoryCall = (node: any) => node?.type === 'CallExpression' && (
+    node.callee?.type === 'Identifier' && factories.has(node.callee.name) ||
+    node.callee?.type === 'MemberExpression' && !node.callee.computed &&
+      coreNamespaces.has(node.callee.object?.name) && node.callee.property?.name === 'createTypedDecorators'
+  );
+  for (const statement of program.body ?? []) {
+    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+    if (declaration?.type !== 'VariableDeclaration') continue;
+    for (const binding of declaration.declarations) {
+      const init = unwrapExpression(binding.init);
+      if (factoryCall(init) && binding.id.type === 'Identifier') namespaces.add(binding.id.name);
+      if (binding.id.type === 'ObjectPattern' && init) {
+        for (const property of binding.id.properties) {
+          const name = !property.computed && memberKeyName(property.key);
+          const value = property.value?.type === 'AssignmentPattern' ? property.value.left : property.value;
+          if (property.type === 'Property' && typeof name === 'string' && TYPED_DECORATOR_NAMES.has(name) && value?.type === 'Identifier') aliases.set(value.name, name);
+        }
+      } else if (binding.id.type === 'Identifier') {
+        const name = typedMemberDecorator(init);
+        if (name) aliases.set(binding.id.name, name);
+      }
+    }
+  }
+  return { aliases, namespaces };
+}
+
 /** Resolve component aliases and local inheritance before selecting classes. */
 function frameworkClasses(program: any): Set<any> {
   const bases = new Set(['Cossack', 'CossackElement']);
@@ -813,10 +952,17 @@ function frameworkClasses(program: any): Set<any> {
       if (serverDecorators.has(imported)) serverDecorators.add(specifier.local.name);
     }
   }
+  const typed = typedDecoratorBindings(program);
+  for (const [alias, name] of typed.aliases) if (name === 'Server') serverDecorators.add(alias);
+  typed.namespaces.forEach(name => namespaces.add(name));
   const matches = (node: any, names: Set<string>) =>
     node?.type === 'Identifier' ? names.has(node.name) :
     node?.type === 'MemberExpression' && !node.computed &&
       namespaces.has(node.object?.name) && names.has(node.property?.name);
+  const isServerDecorator = (decorator: any) => {
+    const callee = decoratorCallee(decorator);
+    return matches(callee, serverDecorators) || typedMemberDecorator(callee) === 'Server';
+  };
   const selected = new Set<any>();
   const classes = [...findClasses(program)];
   let changed = true;
@@ -827,7 +973,7 @@ function frameworkClasses(program: any): Set<any> {
       const decorated = (cls.decorators ?? []).some((d: any) =>
         matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, decorators));
       const serverMember = (cls.body?.body ?? []).some((member: any) =>
-        (member.decorators ?? []).some((d: any) => matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, serverDecorators)));
+        (member.decorators ?? []).some(isServerDecorator));
       if (matches(cls.superClass, bases) || decorated || serverMember) {
         selected.add(cls);
         if (cls.id?.name) bases.add(cls.id.name);
@@ -884,6 +1030,14 @@ interface AstMethod {
   fieldValueStart?: number;
   fieldKind?: 'arrow' | 'function';
   fieldIsAsync?: boolean;
+  /** Declared return-type annotation text (no colon), for RpcCall rewrites. */
+  returnTypeText?: string;
+  /** Annotation span INCLUDING the leading colon; replaced by the call type. */
+  returnTypeStart?: number;
+  returnTypeEnd?: number;
+  isGenerator?: boolean;
+  modifierStart?: number;
+  modifierEnd?: number;
 }
 
 /**
@@ -896,14 +1050,30 @@ interface AstMethod {
 function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
   const methods: AstMethod[] = [];
   const aliases = new Map<string, string>();
+  const namespaces = new Set<string>();
   for (const statement of program.body ?? []) {
     if (statement.type !== 'ImportDeclaration' || !String(statement.source?.value).startsWith('@cossackframework/')) continue;
     for (const specifier of statement.specifiers ?? []) {
       if (specifier.imported?.name) aliases.set(specifier.local.name, specifier.imported.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
     }
   }
-  const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) =>
-    sourceSlice(code, d).replace(/^@([\w$]+)/, (_match: string, name: string) => `@${aliases.get(name) ?? name}`));
+  const typed = typedDecoratorBindings(program);
+  typed.aliases.forEach((name, alias) => aliases.set(alias, name));
+  typed.namespaces.forEach(name => namespaces.add(name));
+  const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) => {
+    const callee = decoratorCallee(d);
+    let canonical: string | undefined;
+    if (callee?.type === 'Identifier') canonical = aliases.get(callee.name);
+    if (callee?.type === 'MemberExpression' && namespaces.has(callee.object?.name)) {
+      canonical = !callee.computed && callee.property?.type === 'Identifier'
+        ? callee.property.name
+        : undefined;
+    }
+    // Fail closed: `@anything.Server(...)` is Server regardless of origin.
+    canonical ??= typedMemberDecorator(callee) ?? undefined;
+    return canonical ? `@${canonical}${code.slice(callee.end, d.end)}` : sourceSlice(code, d);
+  });
   for (const member of cls?.body?.body ?? []) {
     const decorators = decoratorSources(member);
     const serverOnly = decorators.some((d) => /@(?:Server|__CossackServerResource)\b/.test(d));
@@ -928,6 +1098,14 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         hasServerDecorator: decorators.some((d: string) => /@(?:Server|__CossackServerResource)\b/.test(d)),
         bodyStart: body.start,
         bodyEnd: body.end,
+        // Client-side result typing (RT-01): the original declared return
+        // type's text and span, used to rewrite the signature to RpcCall.
+        returnTypeText: fn.returnType ? typeAnnotationText(code, fn.returnType) : undefined,
+        returnTypeStart: fn.returnType?.start,
+        returnTypeEnd: fn.returnType?.end,
+        isGenerator: !!fn.generator,
+        modifierStart: member.decorators?.at(-1)?.end ?? member.start,
+        modifierEnd: member.key.start,
       });
     } else if (member.type === 'PropertyDefinition') {
       const name = memberKeyName(member.key);
@@ -950,6 +1128,10 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         fieldValueStart: value.start,
         fieldKind: kind,
         fieldIsAsync: !!value.async,
+        returnTypeText: value.returnType ? typeAnnotationText(code, value.returnType) : undefined,
+        returnTypeStart: value.returnType?.start,
+        returnTypeEnd: value.returnType?.end,
+        isGenerator: !!value.generator,
       });
     }
   }
@@ -1085,8 +1267,7 @@ function computeAutomaticRpcSet(
 /**
  * Compute the preserved set: methods that must retain their full implementation
  * in the client bundle. Seeds with client-safe methods (by decorator or builtin
- * name) and then iterates a transitive closure to a fixed point (capped at 3
- * rounds) — any `this.foo(...)` call from a preserved method to another method
+ * name) and then computes the complete transitive closure — any `this.foo(...)` call from a preserved method to another method
  * on the same class preserves `foo` as well.
  *
  * AST-driven: call edges come from {@link collectThisCalls} walking each
@@ -1096,8 +1277,8 @@ function computeAutomaticRpcSet(
 function computePreservedSet(
   cls: any,
   methods: AstMethod[],
-  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
 ): Set<string> {
   const byName = new Map<string, AstMethod>();
   for (const m of methods) {
@@ -1138,25 +1319,170 @@ function computePreservedSet(
     }
   }
 
-  // Fixed-point iteration, capped at 3 rounds. Depth 3 covers the common
-  // onMount -> setupReveal -> wireObserver -> addListener chain.
-  for (let round = 0; round < 3; round++) {
-    const before = preserved.size;
-    for (const name of [...preserved]) {
-      const body = bodyByName.get(name);
-      if (!body) continue;
-      for (const callee of collectThisCalls(body)) {
-        const target = byName.get(callee);
-        // A client-safe method can call an explicit @Server method through its
-        // generated RPC proxy. Keeping that body would ship server-only code
-        // (and any native imports it uses) to the browser.
-        if (target && !target.hasServerDecorator) preserved.add(callee);
+  // Visit each reachable method once. The finite worklist also handles cycles
+  // without imposing an arbitrary limit on valid client helper chains.
+  const pending = [...preserved];
+  for (let index = 0; index < pending.length; index++) {
+    const body = bodyByName.get(pending[index]);
+    if (!body) continue;
+    for (const callee of collectThisCalls(body)) {
+      const target = byName.get(callee);
+      // Explicit server methods remain RPC boundaries, including their callees.
+      if (target && !target.hasServerDecorator && !preserved.has(callee)) {
+        preserved.add(callee);
+        pending.push(callee);
       }
     }
-    if (preserved.size === before) break;
   }
 
   return preserved;
+}
+
+/** Shared classification used by both build environments and inspection. */
+function analyzeClassMethods(
+  cls: any,
+  code: string,
+  program: any,
+  policy: typeof isClientSafeMethod,
+  builtins: ReadonlySet<string>,
+) {
+  const methods = collectAstMethods(cls, code, program);
+  const preserved = computePreservedSet(cls, methods, policy, builtins);
+  const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+  return { methods, preserved, automaticRpc };
+}
+
+export interface CompilerMethodFact {
+  name: string;
+  resource?: string;
+  clientBody: 'retained' | 'stripped';
+  rpc: 'explicit' | 'automatic' | null;
+  reason: string;
+  /** One-based location of the authored method body. */
+  source: { file: string; line: number; column: number };
+}
+
+export interface CompilerMemberFact {
+  name: string | null;
+  kind: 'method' | 'field' | 'get' | 'set';
+  static: boolean;
+  private: boolean;
+}
+
+export interface CompilerClassFacts {
+  name: string;
+  inheritance: { status: 'resolved' | 'unresolved'; bases: string[] };
+  members: CompilerMemberFact[];
+  membersComplete: boolean;
+  /** Own declarations; inheritance lists declaring classes without guessing dispatch. */
+  methods: CompilerMethodFact[];
+}
+
+/**
+ * Inspect authored declarations without importing or executing application code.
+ * This is file-level compiler metadata, not a resolved project/inheritance model.
+ * Resource methods retain the authored loader location through macro expansion.
+ */
+export function inspectCompilerMethods(code: string, id: string): {
+  classes: CompilerClassFacts[];
+  diagnostics: Array<{ code: string; file: string; message: string }>;
+} {
+  const unknown = (message: string) => ({
+    classes: [],
+    diagnostics: [{ code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: id, message }],
+  });
+  const authored = code;
+  const originalProgram = parseProgram(code);
+  if (!originalProgram) return unknown('Source could not be parsed.');
+  const resources: ResourceSource[] = [];
+  try { code = transformServerResources(code, id, resources); }
+  catch { return unknown('Unsupported server resource declaration.'); }
+  const program = parseProgram(code);
+  if (!program) return unknown('Expanded source could not be parsed.');
+  const originalClasses = [...frameworkClasses(originalProgram)];
+  const roots = new Set(['Cossack', 'CossackElement']);
+  const namespaces = new Set<string>();
+  for (const statement of originalProgram.body ?? []) {
+    if (statement.type !== 'ImportDeclaration' || !String(statement.source?.value).startsWith('@cossackframework/')) continue;
+    for (const specifier of statement.specifiers ?? []) {
+      if (['Cossack', 'CossackElement'].includes(specifier.imported?.name)) roots.add(specifier.local.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
+    }
+  }
+  const inheritanceFor = (cls: any): CompilerClassFacts['inheritance'] => {
+    const bases: string[] = [];
+    const seen = new Set<any>([cls]);
+    let current = cls;
+    while (current?.superClass) {
+      const base = current.superClass;
+      if (base.type === 'MemberExpression' && !base.computed && namespaces.has(base.object?.name) &&
+          ['Cossack', 'CossackElement'].includes(base.property?.name)) return { status: 'resolved', bases };
+      if (base.type !== 'Identifier') return { status: 'unresolved', bases };
+      const local = originalClasses.find(candidate => candidate.id?.name === base.name);
+      if (!local) {
+        return { status: roots.has(base.name) ? 'resolved' : 'unresolved', bases: roots.has(base.name) ? bases : [...bases, base.name] };
+      }
+      bases.push(base.name);
+      if (seen.has(local)) return { status: 'unresolved', bases };
+      seen.add(local);
+      current = local;
+    }
+    return { status: 'resolved', bases };
+  };
+  const classes: CompilerClassFacts[] = [];
+  try {
+    for (const cls of frameworkClasses(program)) {
+      const { methods, preserved, automaticRpc } = analyzeClassMethods(
+        cls, code, program, isClientSafeMethod, BUILTIN_METHODS,
+      );
+      const className = cls.id?.name ?? 'Anonymous';
+      const originalClass = originalClasses.find(candidate => (candidate.id?.name ?? 'Anonymous') === className);
+      const originals = originalClass ? collectAstMethods(originalClass, authored, originalProgram) : [];
+      classes.push({
+        name: className,
+        inheritance: inheritanceFor(originalClass),
+        membersComplete: !(cls.body?.body ?? []).some((member: any) => member.kind === 'constructor' && member.value?.params?.some((parameter: any) => parameter.type === 'TSParameterProperty')),
+        members: (cls.body?.body ?? [])
+          .filter((member: any) => ['MethodDefinition', 'PropertyDefinition'].includes(member.type) && member.kind !== 'constructor' && !member.declare)
+          .map((member: any): CompilerMemberFact => ({
+            name: member.computed && member.key?.type !== 'Literal' ? null : memberKeyName(member.key),
+            kind: member.type === 'PropertyDefinition' ? 'field' : member.kind === 'get' ? 'get' : member.kind === 'set' ? 'set' : 'method',
+            static: Boolean(member.static),
+            private: member.key?.type === 'PrivateIdentifier',
+          })),
+        methods: methods.map((method) => {
+          const kept = preserved.has(method.name);
+          const retainedField = Boolean(method.fieldKind && !method.hasServerDecorator);
+          const resource = resources.find(item => item.className === className && item.method === method.name);
+          const original = originals.find(item => item.name === method.name);
+          const offset = resource?.offset ?? original?.bodyStart;
+          if (offset === undefined) throw new Error('Missing authored source mapping');
+          const prefix = authored.slice(0, offset);
+          return {
+            name: method.name,
+            ...(resource ? { resource: resource.resource } : {}),
+            clientBody: kept || retainedField ? 'retained' : 'stripped',
+            rpc: kept ? null : method.hasServerDecorator ? 'explicit' : automaticRpc.has(method.name) ? 'automatic' : null,
+            reason: kept
+              ? isClientSafeMethod(method.decorators, method.name, BUILTIN_METHODS)
+                ? 'Client decorator or built-in method.' : 'Reachable from a preserved client method.'
+              : retainedField ? 'Undecorated function fields retain their client implementation.'
+                : method.hasServerDecorator ? 'Explicit server decorator.'
+                  : automaticRpc.has(method.name) ? 'Template handler registered for automatic RPC.'
+                    : 'Unreachable method stripped without RPC registration.',
+            source: {
+              file: id,
+              line: prefix.split('\n').length,
+              column: prefix.length - prefix.lastIndexOf('\n'),
+            },
+          };
+        }),
+      });
+    }
+  } catch {
+    return unknown('Unsupported framework method declaration.');
+  }
+  return { classes, diagnostics: [] };
 }
 
 // ============================================================================
@@ -1295,11 +1621,22 @@ function createMetadataInjection(
     // Register server-only methods for RPC proxying
     static __registerServerOnlyMethods() {
       if (typeof Reflect === 'undefined' || !Reflect.hasMetadata) return;
+      super.__registerServerOnlyMethods?.();
       const serverMethods = Reflect.getOwnMetadata('cossack:server-methods', this) || {};
       const methods = ${methodList};
       for (const name of methods) {
         if (!serverMethods[name]) {
-          serverMethods[name] = { channel: 'global', provider: 'page', __serverOnly: true };
+          let parent = Object.getPrototypeOf(this);
+          let inherited;
+          while (parent && parent !== Function.prototype) {
+            const own = Reflect.getOwnMetadata('cossack:server-methods', parent);
+            if (own && Object.prototype.hasOwnProperty.call(own, name)) {
+              inherited = own[name];
+              break;
+            }
+            parent = Object.getPrototypeOf(parent);
+          }
+          serverMethods[name] = inherited ? { ...inherited } : { channel: 'global', provider: 'page', __serverOnly: true };
         }
       }
       Reflect.defineMetadata('cossack:server-methods', serverMethods, this);
@@ -1307,9 +1644,10 @@ function createMetadataInjection(
 `;
 }
 
-/** The statement injected into a constructor to register server-only methods. */
+/** Register before super(): new.target is legal before this is initialized,
+ * and base constructors need the full derived RPC registry during bootstrap. */
 const REGISTER_SERVER_METHODS_CALL =
-  '      (this.constructor as any).__registerServerOnlyMethods?.();\n';
+  '      (new.target as any).__registerServerOnlyMethods?.();\n';
 
 function appendMetadataRegistration(
   cls: any,
@@ -1326,12 +1664,12 @@ function appendMetadataRegistration(
     ];
   }
 
-  const superCall = cls.superClass != null ? '      super();\n' : '';
+  const superCall = cls.superClass != null ? '      super(...args);\n' : '';
   return [{
     start: closeBrace,
     end: closeBrace,
-    replacement: metadataInjection + `    constructor() {
-${superCall}${REGISTER_SERVER_METHODS_CALL}    }
+    replacement: metadataInjection + `    constructor(...args: any[]) {
+${REGISTER_SERVER_METHODS_CALL}${superCall}    }
 `,
   }];
 }
@@ -1343,8 +1681,8 @@ ${superCall}${REGISTER_SERVER_METHODS_CALL}    }
 export function injectAutomaticServerMethodMetadata(
   code: string,
   _id: string,
-  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
 ): string {
   const program = parseProgram(code);
   if (!program) return code;
@@ -1353,9 +1691,9 @@ export function injectAutomaticServerMethodMetadata(
   for (const cls of findClasses(program)) {
     if (!frameworkClasses(program).has(cls)) continue;
 
-    const methods = collectAstMethods(cls, code, program);
-    const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
-    const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+    const { methods, preserved, automaticRpc } = analyzeClassMethods(
+      cls, code, program, isClientSafeMethodFn, builtinMethods,
+    );
     if (automaticRpc.size === 0) continue;
     const registrations = [...automaticRpc].map((name) => ({ name, registerForRpc: true }));
     replacements.push(...appendMetadataRegistration(cls, createMetadataInjection(registrations)));
@@ -1381,16 +1719,263 @@ export function injectAutomaticServerMethodMetadata(
  *
  * Exported for unit testing.
  */
+/** Text of a return-type annotation (without the leading colon). */
+function typeAnnotationText(code: string, returnType: any): string | undefined {
+  const annotation = returnType?.typeAnnotation;
+  if (!annotation || annotation.start === undefined || annotation.end === undefined) return undefined;
+  return code.slice(annotation.start, annotation.end);
+}
+
+/**
+ * Map a @Server method's declared return type to the client RPC call type.
+ * Recognizes AsyncGenerator<Y, R[, N]> (any arity via textual prefix),
+ * AsyncIterableIterator<Y>, and Promise<R>. Returns undefined when the
+ * annotation is absent or unrecognized — those keep their declared types.
+ */
+export function clientCallType(method: {
+  returnTypeText?: string;
+  isGenerator?: boolean;
+}): string | undefined {
+  const text = method.returnTypeText?.trim();
+  if (!text) return undefined;
+  const source = `type __Result = ${text};`;
+  const type = parseProgram(source)?.body[0]?.typeAnnotation;
+  if (type?.type !== 'TSTypeReference' || type.typeName?.type !== 'Identifier') return undefined;
+  const args = (type.typeArguments?.params ?? []).map((node: any) => sourceSlice(source, node));
+  const clientType = () => `RpcCall<import('@cossackframework/core').RpcResult<${text}>, import('@cossackframework/core').RpcYield<${text}>>`;
+  if (type.typeName.name === 'AsyncGenerator' && args.length >= 1 && args.length <= 3) {
+    return clientType();
+  }
+  if (type.typeName.name === 'AsyncIterableIterator' && args.length === 1) return clientType();
+  if (type.typeName.name === 'Promise' && args.length === 1) return clientType();
+  return undefined;
+}
+
+function inputBindingNames(node:any, scope=new Set<string>()): Set<string> {
+  const bindings = (node:any) => {
+    if (!node) return;
+    if (node.type === 'Identifier') scope.add(node.name);
+    else if (node.type === 'RestElement') bindings(node.argument);
+    else if (node.type === 'AssignmentPattern') bindings(node.left);
+    else if (node.type === 'ArrayPattern') node.elements.forEach(bindings);
+    else if (node.type === 'ObjectPattern') node.properties.forEach((part:any)=>bindings(part.value ?? part.argument));
+  };
+  bindings(node); return scope;
+}
+
+/** Runtime references only: types and static property names cannot keep private input code alive. */
+function inputRuntimeReferences(root: any): Set<string> {
+  const names = new Set<string>();
+  const bindings=inputBindingNames;
+  const visit = (node: any, parent?: any, key?: string, scope=new Set<string>()) => {
+    if (!node || typeof node.type !== 'string' || node.type === 'ImportDeclaration') return;
+    if (['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSInstantiationExpression'].includes(node.type)) {
+      visit(node.expression, node, 'expression', scope); return;
+    }
+    if (node.type.startsWith('TS')) return;
+    if (node.type === 'Identifier') {
+      const definition = key === 'id' || key === 'params';
+      const staticKey = (key === 'key' && !parent?.computed && !parent?.shorthand)
+        || (parent?.type === 'MemberExpression' && key === 'property' && !parent.computed);
+      if (!definition && !staticKey && !scope.has(node.name)) names.add(node.name);
+      return;
+    }
+    if (['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression','CatchClause','BlockStatement','ForStatement','ForOfStatement','ForInStatement'].includes(node.type)) {
+      scope=new Set(scope);
+      bindings(node.id,scope); bindings(node.param,scope);
+      node.params?.forEach((param:any)=>bindings(param,scope));
+      const declarations=node.type==='BlockStatement'?node.body:[node.init,node.left];
+      for(const declaration of declarations) {
+        if(declaration?.type==='VariableDeclaration') declaration.declarations.forEach((part:any)=>bindings(part.id,scope));
+        else if(['FunctionDeclaration','ClassDeclaration'].includes(declaration?.type)) bindings(declaration.id,scope);
+      }
+    }
+    for (const [childKey, value] of Object.entries(node)) {
+      if (childKey === 'typeAnnotation' || childKey === 'typeArguments' || childKey === 'typeParameters') continue;
+      if (Array.isArray(value)) value.forEach(child => visit(child, node, childKey, scope));
+      else if (value && typeof (value as any).type === 'string') visit(value, node, childKey, scope);
+    }
+  };
+  visit(root); return names;
+}
+
+/** Remove module declarations reachable only through stripped input contracts. */
+function stripInputDependencies(code: string, roots: Set<string>, privateRoots = roots): string {
+  if (!roots.size) return code;
+  const program = parseProgram(code);
+  if (!program) throw new Error('[Cossack Security] Could not validate server input dependencies.');
+  type Definition = {node:any; statement:any; exported:boolean; importSource?:string; typeOnly?:boolean; unsupported?:boolean; dependencies:Set<string>};
+  const definitions = new Map<string, Definition>();
+  for (const statement of program.body) {
+    const exported = statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportDefaultDeclaration';
+    const declaration = exported ? statement.declaration : statement;
+    if (declaration?.type === 'VariableDeclaration') {
+      for (const node of declaration.declarations) {
+        const group=inputBindingNames(node.id);
+        const dependencies=new Set([...inputRuntimeReferences(node.init), ...group]);
+        for (const name of group) definitions.set(name, {node,statement,exported,dependencies});
+      }
+    } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(declaration?.type) && declaration.id) {
+      definitions.set(declaration.id.name, {node:declaration,statement,exported,dependencies:inputRuntimeReferences(declaration)});
+    } else if (declaration?.type === 'ImportDeclaration') {
+      for (const node of declaration.specifiers) {
+        definitions.set(node.local.name, {node,statement,exported:false,importSource:String(declaration.source.value),
+          typeOnly:declaration.importKind==='type'||node.importKind==='type',dependencies:new Set()});
+      }
+    } else if (['TSEnumDeclaration','TSModuleDeclaration','TSImportEqualsDeclaration'].includes(declaration?.type) && declaration.id?.type === 'Identifier') {
+      definitions.set(declaration.id.name,{node:declaration,statement,exported,unsupported:true,dependencies:new Set()});
+    }
+  }
+  const candidates = new Set<string>();
+  const gather = (name:string) => {
+    const definition = definitions.get(name);
+    if (!definition || candidates.has(name)) return;
+    if (definition.unsupported) throw new Error(`[Cossack Security] Server input dependency '${name}' uses a runtime TypeScript declaration that cannot be stripped. Use a private const/function or separate contract module.`);
+    candidates.add(name); definition.dependencies.forEach(gather);
+  };
+  privateRoots.forEach(gather);
+  const privateDependencies = new Set(candidates);
+  roots.forEach(gather);
+  const live = new Set<string>();
+  const keep = (name:string) => {
+    if (!candidates.has(name) || live.has(name)) return;
+    live.add(name); definitions.get(name)!.dependencies.forEach(keep);
+  };
+  // Inspect everything that will remain on the client. Exported bindings are public.
+  for (const [name, definition] of definitions) if (definition.exported) keep(name);
+  for (const statement of program.body) {
+    const declaration = ['ExportNamedDeclaration', 'ExportDefaultDeclaration'].includes(statement.type) ? statement.declaration : statement;
+    if (declaration?.type === 'ImportDeclaration') continue;
+    if (declaration?.type === 'VariableDeclaration') {
+      for (const node of declaration.declarations) {
+        if (![...inputBindingNames(node.id)].some(name=>candidates.has(name))) inputRuntimeReferences(node.init).forEach(keep);
+      }
+    } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(declaration?.type) && candidates.has(declaration.id?.name)) continue;
+    else inputRuntimeReferences(statement).forEach(keep);
+  }
+  for (const name of privateRoots) {
+    const definition = definitions.get(name);
+    // Core builders and deliberately shared storeRules maps can be used by client forms.
+    const sharedRules = definition?.node.init?.type === 'CallExpression'
+      && definition.node.init.callee?.type === 'Identifier'
+      && definitions.get(definition.node.init.callee.name)?.importSource === '@cossackframework/core'
+      && definitions.get(definition.node.init.callee.name)?.node.imported?.name === 'storeRules';
+    if (definition && live.has(name) && !definition.importSource && !sharedRules) {
+      throw new Error(`[Cossack Security] Server input binding '${name}' remains reachable from client code. Keep the contract private and share separate form rules.`);
+    }
+  }
+  const removed = new Set([...candidates].filter(name => !live.has(name)));
+  const privateImportSources = new Set([...removed].filter(name=>privateDependencies.has(name))
+    .map(name=>definitions.get(name)?.importSource).filter((source):source is string=>!!source));
+  // An unused imported contract can still run module-level initializers if a
+  // different export keeps that module in the client graph. Fail closed where
+  // this file cannot inspect/strip the foreign module's private declarations.
+  for (const name of removed) {
+    if (!privateDependencies.has(name)) continue;
+    const source = definitions.get(name)?.importSource;
+    if (!source || source === '@cossackframework/core' || isServerOnlyImportSource(source)) continue;
+    const retained = [...definitions].some(([binding, definition]) => definition.importSource === source && !definition.typeOnly && !removed.has(binding));
+    const sideEffect = program.body.some((statement:any) => statement.type === 'ImportDeclaration'
+      && statement.source.value === source && !statement.specifiers.length);
+    if (retained || sideEffect) {
+      throw new Error(`[Cossack Security] Server input module ${JSON.stringify(source)} is also reachable from client code. Put private contracts in a separate module or declare them locally.`);
+    }
+  }
+  const edits: Array<{start:number;end:number;replacement:string}> = [];
+  for (const statement of program.body) {
+    if (statement.type === 'VariableDeclaration') {
+      const remaining = statement.declarations.filter((node:any) => ![...inputBindingNames(node.id)].some(name=>removed.has(name)));
+      if (remaining.length !== statement.declarations.length) edits.push({start:statement.start,end:statement.end,
+        replacement:remaining.length ? `${statement.kind} ${remaining.map((node:any)=>code.slice(node.start,node.end)).join(', ')};` : ''});
+    } else if (['FunctionDeclaration', 'ClassDeclaration'].includes(statement.type) && removed.has(statement.id?.name)) {
+      edits.push({start:statement.start,end:statement.end,replacement:''});
+    } else if (statement.type === 'ImportDeclaration') {
+      const remaining=statement.specifiers.filter((node:any)=>!removed.has(node.local.name));
+      const typeOnly=statement.importKind==='type'||remaining.every((node:any)=>node.importKind==='type');
+      // Also normalize a separate inline type-only sibling import. Under
+      // verbatimModuleSyntax it otherwise retains an empty runtime import.
+      const privateTypeOnly=remaining.length>0&&typeOnly&&statement.importKind!=='type'
+        &&privateImportSources.has(String(statement.source.value));
+      if (remaining.length !== statement.specifiers.length || privateTypeOnly) {
+        // A mixed import can become type-only after private action dependencies
+        // are stripped. Make that explicit so verbatimModuleSyntax cannot leave
+        // an empty runtime import that executes the private module initializer.
+        const defaults=remaining.filter((node:any)=>node.type==='ImportDefaultSpecifier').map((node:any)=>node.local.name);
+        const namespace=remaining.filter((node:any)=>node.type==='ImportNamespaceSpecifier').map((node:any)=>`* as ${node.local.name}`);
+        const named=remaining.filter((node:any)=>node.type==='ImportSpecifier').map((node:any)=>{
+          if(!typeOnly)return code.slice(node.start,node.end);
+          const imported=code.slice(node.imported.start,node.imported.end),local=code.slice(node.local.start,node.local.end);
+          return imported===local?imported:`${imported} as ${local}`;
+        });
+        const parts=[...defaults,...namespace,...(named.length?[`{ ${named.join(', ')} }`]:[])];
+        edits.push({start:statement.start,end:statement.end,replacement:remaining.length?`import ${typeOnly?'type ':''}${parts.join(', ')} from ${JSON.stringify(statement.source.value)};`:''});
+      }
+    }
+  }
+  for (const edit of edits.sort((a,b)=>b.start-a.start)) code=code.slice(0,edit.start)+edit.replacement+code.slice(edit.end);
+  return code;
+}
+
+/** Remove server validation closures before analyzing client dependencies. */
+function stripServerActionInput(code: string): {code:string;bindings:Set<string>} {
+  const bindings=new Set<string>();
+  const program = parseProgram(code);
+  if (!program) return {code,bindings};
+  const aliases = new Set(['Server']);
+  const namespaces = new Set<string>();
+  for (const statement of program.body) {
+    if (statement.type !== 'ImportDeclaration' || statement.source?.value !== '@cossackframework/core') continue;
+    for (const specifier of statement.specifiers) {
+      if (specifier.imported?.name === 'Server') aliases.add(specifier.local.name);
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(specifier.local.name);
+    }
+  }
+  const typed = typedDecoratorBindings(program);
+  for (const [alias, name] of typed.aliases) if (name === 'Server') aliases.add(alias);
+  typed.namespaces.forEach(name => namespaces.add(name));
+  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
+  for (const cls of frameworkClasses(program)) {
+    for (const member of cls.body.body) {
+      for (const decorator of member.decorators ?? []) {
+        const call = unwrapExpression(decorator.expression);
+        if (call?.type !== 'CallExpression') continue;
+        const callee = unwrapExpression(call.callee);
+        if (!(callee.type === 'Identifier' && aliases.has(callee.name)) &&
+            !(callee.type === 'MemberExpression' && namespaces.has(callee.object?.name) && !callee.computed && callee.property?.name === 'Server') &&
+            typedMemberDecorator(callee) !== 'Server') continue;
+        const argument = call.arguments[0];
+        if (!argument) continue;
+        if (argument.type !== 'ObjectExpression' || argument.properties.some((p: any) => p.type !== 'Property' || p.computed)) {
+          throw new Error('[Cossack Security] @Server options must be a static object literal so input validators can be removed from the client.');
+        }
+        for (const property of argument.properties) {
+          if (['input', 'authorize'].includes(memberKeyName(property.key) ?? '')) {
+            inputRuntimeReferences(property.value).forEach(name=>bindings.add(name));
+            replacements.push({ start: property.start, end: property.end, replacement: `${memberKeyName(property.key)}: undefined` });
+          }
+        }
+      }
+    }
+  }
+  for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
+    code = code.slice(0, replacement.start) + replacement.replacement + code.slice(replacement.end);
+  }
+  return {code,bindings};
+}
+
 export function transformCossackClass(
   code: string,
   id: string,
-  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: Set<string>) => boolean,
-  builtinMethods: Set<string>,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
   devWarning: boolean
 ): string {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
   code = stripSsgGenerateStaticParams(code);
+  const serverInput = stripServerActionInput(code);
+  code = serverInput.code;
+  const bodyDependencies = new Set(serverInput.bindings);
 
   const program = parseProgram(code);
   if (!program) {
@@ -1401,21 +1986,50 @@ export function transformCossackClass(
   // file-relative offsets and apply them in reverse order at the end.
   type Replacement = { start: number; end: number; replacement: string };
   const replacements: Replacement[] = [];
+  let rpcTypeName = 'RpcCall';
+  const existingRpcImport = program.body.flatMap((s: any) => s.type === 'ImportDeclaration' &&
+    s.source?.value === '@cossackframework/core' ? s.specifiers : [])
+    .find((s: any) => s.imported?.name === 'RpcCall');
+  if (existingRpcImport) rpcTypeName = existingRpcImport.local.name;
+  else {
+    // Pick an unused identifier even when an application declares its own RpcCall.
+    let suffix = 0;
+    while (new RegExp(`\\b${rpcTypeName}\\b`).test(code)) rpcTypeName = `__CossackRpcCall${++suffix}`;
+  }
+  let needsRpcType = false;
 
   for (const cls of findClasses(program)) {
     if (!frameworkClasses(program).has(cls)) continue;
 
     const className = cls.id?.name ?? 'Anonymous';
 
-    const methods = collectAstMethods(cls, code, program);
-    const preserved = computePreservedSet(cls, methods, isClientSafeMethodFn, builtinMethods);
-    const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+    const { methods, preserved, automaticRpc } = analyzeClassMethods(
+      cls, code, program, isClientSafeMethodFn, builtinMethods,
+    );
     const serverOnlyMethods = extractServerOnlyMethodNames(methods, preserved, automaticRpc);
 
     // 1. Stub the body of every non-preserved method, and the value of every
     //    non-preserved @Server function field.
     for (const m of methods) {
       if (preserved.has(m.name)) continue;
+
+      // Rewrite the declared return type to the client call contract:
+      // Use core's RpcResult/RpcYield so compiler types agree with authored
+      // rpc$ inference and JSON representations (dates, models, custom hooks).
+      // Methods without an explicit,
+      // recognized annotation keep their original signature.
+      const callType = m.hasServerDecorator && m.fieldValueStart === undefined
+        ? clientCallType(m)?.replace(/^RpcCall/, rpcTypeName) : undefined;
+      if (callType && m.returnTypeStart !== undefined && m.returnTypeEnd !== undefined) {
+        needsRpcType = true;
+        replacements.push({ start: m.returnTypeStart, end: m.returnTypeEnd, replacement: `: ${callType}` });
+        // A proxy returns RpcCall directly; retaining async/* would wrap it or
+        // yield nothing, as well as making the TypeScript annotation invalid.
+        const prefix = code.slice(m.modifierStart, m.modifierEnd);
+        replacements.push({ start: m.modifierStart!, end: m.modifierEnd!,
+          replacement: prefix.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|\basync\b|\*/g,
+            token => token.startsWith('/') ? token : '') });
+      }
 
       if (m.fieldValueStart !== undefined) {
         // Class field with a function value. Only strip fields explicitly
@@ -1424,10 +2038,14 @@ export function transformCossackClass(
         // pass can't see bare template references, so stripping them by default
         // would break apps.
         if (!m.hasServerDecorator) continue;
+        const member = cls.body.body.find((node:any) => memberKeyName(node.key) === m.name);
+        inputRuntimeReferences(member?.value).forEach(name=>bodyDependencies.add(name));
         const stub = createFieldStub(m.name, className, devWarning, !!m.fieldIsAsync, m.fieldKind === 'function');
         replacements.push({ start: m.fieldValueStart, end: m.bodyEnd, replacement: stub });
       } else {
         const stub = createStub(m.name, className, devWarning);
+        const member = cls.body.body.find((node:any) => memberKeyName(node.key) === m.name);
+        inputRuntimeReferences(member?.value).forEach(name=>bodyDependencies.add(name));
         // Splice the stub between the body braces (exclusive of the braces).
         replacements.push({
           start: m.bodyStart + 1,
@@ -1450,14 +2068,23 @@ export function transformCossackClass(
     }
   }
 
-  if (replacements.length === 0) return code;
+  if (replacements.length === 0) return stripInputDependencies(code, serverInput.bindings);
+
+  // The rewritten signatures reference RpcCall; ensure the emitted module has
+  // a type-only import available (the bundler erases it in production).
+  if (needsRpcType && !existingRpcImport) {
+    const firstImport = program.body.find((s: any) => s.type === 'ImportDeclaration');
+    const anchor = firstImport ? firstImport.end : 0;
+    const importText = `\nimport type { RpcCall${rpcTypeName === 'RpcCall' ? '' : ` as ${rpcTypeName}`} } from '@cossackframework/core';\n`;
+    replacements.push({ start: anchor, end: anchor, replacement: importText });
+  }
 
   // Apply in reverse offset order so earlier offsets stay valid.
   let result = code;
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
   }
-  return result;
+  return stripInputDependencies(result, bodyDependencies, serverInput.bindings);
 }
 
 /**
@@ -1513,6 +2140,7 @@ export function stripSsgGenerateStaticParams(code: string): string {
   }
 
   if (replacements.length === 0) return code;
+
   let result = code;
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
@@ -1554,13 +2182,13 @@ function findGenerateStaticParamsValueNode(decoratorNode: any, code: string): an
 // ============================================================================
 
 /**
- * Check if a method is decorated with a client-safe decorator.
+ * @internal Check if a method is decorated with a client-safe decorator or is a built-in.
  * Exported for testing purposes.
  */
 export function isClientSafeMethod(
   decorators: string[],
   methodName: string,
-  builtinMethods: Set<string>
+  builtinMethods: ReadonlySet<string>
 ): boolean {
   // Check for client-safe decorators
   const hasClientDecorator = decorators.some((d) =>

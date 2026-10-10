@@ -145,6 +145,36 @@ describe('generic session middleware', () => {
     expect(cookieValue(deleted, 'cossack_sid')).toBe('');
   });
 
+  it('keeps request sessions separate while concurrent handlers overlap', async () => {
+    const store = new MemorySessionStore();
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store }));
+    let arrivals = 0;
+    let release!: () => void;
+    const bothArrived = new Promise<void>(resolve => { release = resolve; });
+    app.post('/parallel/:owner', async context => {
+      const owner = context.req.param('owner');
+      const id = session().id();
+      if (++arrivals === 2) release();
+      await bothArrived;
+      await session().set('owner', owner);
+      return context.json({ id, owner: await session().get('owner') });
+    });
+
+    const [aliceResponse, bobResponse] = await Promise.all([
+      app.request('/parallel/alice', { method: 'POST' }),
+      app.request('/parallel/bob', { method: 'POST' }),
+    ]);
+    const alice = await aliceResponse.json() as { id: string; owner: string };
+    const bob = await bobResponse.json() as { id: string; owner: string };
+    expect(alice.owner).toBe('alice');
+    expect(bob.owner).toBe('bob');
+    expect(alice.id).not.toBe(bob.id);
+    expect(await store.get(alice.id, 'owner')).toBe('alice');
+    expect(await store.get(bob.id, 'owner')).toBe('bob');
+  });
+
   it('replaces unknown and expired cookie IDs before writes', async () => {
     const store = new MemorySessionStore();
     const expired = await store.create(-1000);
@@ -160,6 +190,26 @@ describe('generic session middleware', () => {
     }
     expect(store.rows.has('attacker-chosen')).toBe(false);
     expect(store.rows.get(expired)?.data).toEqual({});
+  });
+
+  it.each(['bindUser', 'destroy'] as const)('rejects late session %s before changing the persisted store', async action => {
+    const store = new MemorySessionStore();
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store }));
+    app.get('/', () => {
+      const handle = session();
+      return new Response(new ReadableStream({ async pull(controller) {
+        try { if (action === 'bindUser') await handle.bindUser('late-user'); else await handle.destroy(); }
+        catch (error: any) { controller.enqueue(new TextEncoder().encode(error.code)); }
+        controller.close();
+      } }, { highWaterMark: 0 }));
+    });
+    const response = await app.request('/');
+    const id = cookieValue(response, 'cossack_sid')!;
+    expect(await response.text()).toBe('COSSACK_RESPONSE_HEADERS_COMMITTED');
+    expect([...store.rows.keys()]).toEqual([id]);
+    expect(store.rows.get(id)?.userId).toBeUndefined();
   });
 
   it('throws a clear error without a configured store or request session', async () => {

@@ -134,15 +134,34 @@ declare it.
 Every declaration creates one instance for that layout scope, regardless of
 how many descendants inject it. All consumers rerender when one of the
 service's `@State` fields or nested `@Store` values changes.
+If a later declared service fails during construction or hydration, the
+partially built scope disposes services that were already created; async
+cleanup remains tracked by its parent scope.
 
 - Each SSR request gets a fresh root scope, so requests cannot share service
  state or user data.
+- Each SSG render gets its own anonymous request scope. Layout services,
+ constructor injection, and service hydration use the same hierarchy as SSR.
 - Each service RPC request reconstructs the applicable layout hierarchy in a
  fresh request scope.
+- Component RPC also resolves services from a fresh layout hierarchy. A streamed
+ action keeps its components and services alive until completion or cancellation.
 - In the browser, a reused layout keeps its scope across navigation between
  pages in the same subtree.
 - Leaving the subtree disposes the scope. Returning later creates a new service
  instance with fresh or newly hydrated state.
+
+Each pending browser service action contributes to `loading[action]` on consumers
+that inject that service. A new consumer inherits the count when it joins the
+retained scope during an action. This includes sibling pages and nested components.
+Consumers of another service do not inherit that action's loading count.
+Duplicate subscriptions and unsubscribe/rejoin count once per invocation.
+
+Each invocation releases its count once when it settles. A consumer that already
+exited also releases its count, without another render. Independent component
+calls and services with the same action name contribute separate counts.
+Navigation within the retained layout does not repeat the mutation. Loading is
+client invocation ownership and does not establish whether a server write committed.
 
 Services can define an optional cleanup hook:
 
@@ -157,9 +176,27 @@ export class SearchService {
 }
 ```
 
-`onDispose()` runs once when the owning scope is destroyed. Cleanup that must
-finish before navigation continues must be synchronous: Promise-returning
-hooks are started and rejection-logged, but are not awaited.
+`onDispose()` runs once when the owning scope is destroyed. `dispose()` starts
+cleanup without waiting; `await scope.disposeAsync()` waits for child scopes
+and Promise-returning hooks, and rejects with an `AggregateError` if any fail.
+It also waits for cleanup already started by `dispose()`.
+If a hook throws, rejects, or fails while its property is read, disposal still
+attempts every other service hook and child scope.
+
+Components have the equivalent `destroy()` and `destroyAsync()` methods.
+Destruction releases renderer-created descendants, subscriptions, and owned
+services even when `onCleanup()` fails. Async component hooks finish before
+their owned services are disposed. Use `await component.destroyAsync()` when
+the caller needs to wait for cleanup.
+
+SSG waits for component and scoped-service cleanup before publishing a render.
+Cleanup failures fail generation; a preceding render failure is retained as
+the error's `cause`. SSR and ordinary component/service RPC await cleanup before
+completing their response. Streamed and native-body RPC responses keep services
+until the response body completes, fails, or is cancelled. SSR logs cleanup
+failures with the request ID; it still attempts the remaining cleanup.
+Browser callers using `destroy()` start cleanup without waiting. Use
+`destroyAsync()` when an explicit caller needs to wait for completion.
 
 ## Nested Layouts and Shadowing
 
@@ -242,6 +279,11 @@ slot, the action, arguments, and current public service state. The server then:
 Undecorated helpers, `@Shared()` methods, `@Client()` methods, internal members,
 and forged action names are not RPC-callable. The Vite security transform also
 strips server-only method bodies from client bundles.
+
+Use `rpc$(this.service.action(...))` in a client handler when you need typed
+generator yields, final results, or cancellation. It returns the same service
+proxy call and infers its types from the authored method. See
+[server calls and client types](./rpc.md).
 
 ## Service Dependencies
 
@@ -331,3 +373,18 @@ src/
 
 There is no service auto-discovery. This keeps ownership visible and prevents a
 consumer from silently creating a new scope.
+
+## Cancel an optimistic service stream
+
+Use rpc$(service.method(...)) to iterate and cancel the same invocation.
+The service proxy uses HTTP on HTTP, SSE and socket pages. Each subscribed consumer
+owns one loading contribution. Late consumers inherit it; duplicate injection does
+not add a second count. Cancellation also releases ownership before iteration starts.
+A request producer that ignores abort cannot hold the client response wait open.
+Its late body is released and cannot hydrate service state.
+
+A confirmed yield supplies public state. A later malformed frame, error or cancellation
+keeps that state, removes only unconfirmed previews and settles each consumer once.
+ClientState/ClientStore drafts remain local. Canceling does not roll back a server
+write or terminate ignored application I/O. Use an application-chosen authoritative
+read after uncertain completion. See the [optimistic guide](./optimistic.md#cancel-a-stream).

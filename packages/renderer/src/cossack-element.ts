@@ -1,4 +1,4 @@
-import { TemplateResult, render, hydrate, html, isTemplateResult } from './cossack-html';
+import { TemplateResult, render, hydrate, html, isTemplateResult, type HydrationDiagnosticMetadata } from './cossack-html';
 import { Context } from './context';
 import { getFinalizedStyles } from './css';
 import type { CSSResultGroup, FinalizedStyles } from './css';
@@ -64,6 +64,8 @@ const styleTemplateFor = (componentClass: Function, styles: FinalizedStyles): Te
 const wrapStyledOutput = (styles: TemplateResult, output: unknown): TemplateResult => html`${styles}${output}`;
 
 export class CossackElement implements ReactiveControllerHost {
+  /** Development-only boundary hints; override to mark intentional client differences. */
+  public get hydrationMetadata(): HydrationDiagnosticMetadata | undefined { return undefined; }
   static properties: PropertyDeclarations = {};
   static readonly _isCossackElement = true;
   static components: Record<string, typeof CossackElement> = {};
@@ -264,23 +266,27 @@ export class CossackElement implements ReactiveControllerHost {
   }
 
   mount(container: HTMLElement, hydrateFirst = false) {
-      let firstRender = hydrateFirst;
-      this.addRenderListener((template) => {
-          if (template) {
-              const result = isTemplateResult(template) ? template : html`${template}`;
-              // On the very first render after a server-side render, hydrate
-              // the existing DOM in place (preserving the SSR nodes) instead
-              // of wiping and rebuilding. Subsequent updates use the normal
-              // render() path, which reconciles via the container cache.
-              if (firstRender) {
-                  firstRender = false;
-                  hydrate(result, container);
-              } else {
-                  render(result, container);
-              }
-          }
-      });
+      this._frameworkAttachRenderRoot(container, () => true, hydrateFirst);
       this.requestUpdate();
+  }
+
+  /** @internal Attach an owned root without scheduling an unowned initial render. */
+  _frameworkAttachRenderRoot(container: HTMLElement, isCurrent: () => boolean, hydrateFirst = false): () => void {
+      let firstRender = hydrateFirst;
+      const listener = (template: TemplateResult | unknown | null) => {
+          if (!isCurrent()) return;
+          const result = isTemplateResult(template) ? template : html`${template}`;
+          // Empty output must retire the previous owner's DOM too.
+          // Hydrate once, then reconcile through the container cache.
+          if (firstRender) {
+              firstRender = false;
+              hydrate(result, container, (import.meta as any).env?.DEV ? this.hydrationMetadata : undefined);
+          } else {
+              render(result, container);
+          }
+      };
+      this.addRenderListener(listener);
+      return () => this.removeRenderListener(listener);
   }
 
   addEventListener(type: string, callback: EventListenerOrEventListenerObject | null, _options?: boolean | AddEventListenerOptions) {

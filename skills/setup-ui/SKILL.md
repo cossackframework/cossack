@@ -63,6 +63,7 @@ Components are imported from `@cossackframework/ui` and rendered with
 
 ```ts
 import { html, component } from "@cossackframework/renderer";
+import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right";
 import { Button, Input, Label, Card, Icon, toast } from "@cossackframework/ui";
 
 @Page()
@@ -76,7 +77,7 @@ export default class DemoPage extends Cossack {
                     ${component(Label, { for: "email" }, "Email")}
                     ${component(Input, { id: "email", type: "email", placeholder: "you@ex.com" })}
                     ${component(Button, { variant: "default", "@click": this.save }, "Save")}
-                    ${component(Icon, { name: "arrow-right", style: "duotone", size: 20 })}
+                    ${component(Icon, { entry: ArrowRightIcon, variant: "duotone", size: 20 })}
                 `
             )}
         `;
@@ -180,3 +181,14 @@ user wants a toggle, toggle the class on `document.documentElement`.
 - [ ] (If used) custom overlay uses `focusTrap` from `@cossackframework/core`; Modal/Sheet left to native `<dialog>`
 - [ ] (If used) `Toaster` mounted once in App; `toast.success(...)` callable from a `@Server` method
 - [ ] `pnpm tsc --noEmit` passes
+
+## Use typed accessible bindings
+
+Read installed UI/Core guides with `cossack docs --package
+@cossackframework/ui --json` and `cossack docs --package
+@cossackframework/core --json`. `createUiFormBindings` adapts Core
+`createFormController` values and native bindings to UI controls. Preserve labels,
+error/description IDs, focusInvalid and owned refs; dispose subscriptions/bindings
+with the component. File inputs use the framework multipart action path and reset
+clears the selected file. Browser keyboard/focus/hydration requires actual
+application acceptance, not standalone Node template construction.

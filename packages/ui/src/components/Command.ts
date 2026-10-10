@@ -1,138 +1,157 @@
-import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component, Client, ClientState, OnDocument } from "@cossackframework/core";
+import { html, classMap, live, repeat, ifDefined } from '@cossackframework/renderer';
+import { Cossack, Component, Client, ClientState } from '@cossackframework/core';
+import { DialogController, type DialogControlProps } from '../internal/dialog';
 
-export interface CommandProps {
-    /** Command items: [{ id, label, group? }]. */
-    items?: Array<{ id: string; label: string; group?: string }>;
-    /** Called when an item is selected. */
-    onSelect?: (id: string) => void;
-    /** Placeholder text. Default "Search...". */
+const shortcutOwners = new WeakMap<Document, Map<HTMLDialogElement, Command>>();
+
+export type CommandItem = { readonly id: string; readonly label: string; readonly group?: string; readonly disabled?: boolean; readonly description?: string };
+export type CommandProps = Omit<DialogControlProps, 'id' | 'aria-label' | 'aria-labelledby' | 'onClose'> & {
+    id: string;
+    /** Accessible name of the modal palette. */
+    label: string;
+    items?: readonly CommandItem[];
+    onSelect?: (id: string) => unknown;
+    onOpenChange?: (open: boolean) => unknown;
+    /** Opt in to Ctrl/Meta+K. The first eligible owner in document order handles the event. */
+    shortcut?: boolean;
+    /** Allow the global shortcut in unrelated editable controls. Default false. */
+    shortcutInEditable?: boolean;
+    /** Group matching items by first group appearance; keyboard order follows visible order. */
+    grouped?: boolean;
+    /** Presentational item content only. The item label still owns search and accessible naming. */
+    renderItem?: (item: Readonly<CommandItem>) => unknown;
     placeholder?: string;
-    [key: string]: any;
-}
+    searchLabel?: string;
+    emptyLabel?: string;
+    closeLabel?: string;
+};
 
-/**
- * Cossack UI Command — ⌘K command palette with fuzzy search.
- *
- * Listens for ⌘K / Ctrl+K globally to toggle visibility. Type to filter items,
- * Arrow Up/Down to navigate, Enter to select, Escape to close.
- *
- *   ${component(Command, {
- *       items: [
- *           { id: 'home', label: 'Go Home', group: 'Navigation' },
- *           { id: 'settings', label: 'Settings', group: 'Navigation' },
- *       ],
- *       onSelect: (id) => this.handleCommand(id),
- *   })}
- */
+/** Modal command search with application-owned selection and optional global shortcut. */
 @Component()
 export class Command extends Cossack {
     declare props: CommandProps;
+    @ClientState() private localOpened: boolean | undefined;
+    @ClientState() private searchText = '';
+    @ClientState() private activeId: string | undefined;
+    private initialOpened?: boolean;
+    private previousOpened?: boolean;
+    private element?: HTMLDialogElement;
+    private removeShortcut?: () => void;
+    private generation = 0;
+    private dialog = new DialogController(() => ({ ...this.props, open: this.isOpen, onClose: () => this.setOpen(false) }), () => this.requestUpdate());
 
-    @ClientState() private open = false;
-    @ClientState() private query = "";
-    @ClientState() private activeIndex = 0;
-
-    get isOpen(): boolean {
-        return this.props.open === undefined ? this.open : !!this.props.open;
+    get isOpen() { return this.props.open ?? this.localOpened ?? this.initialOpened ?? !!this.props.defaultOpen; }
+    getFiltered() {
+        const query = this.searchText.trim().toLowerCase();
+        const items = (this.props.items ?? []).filter(item => item.label.toLowerCase().includes(query));
+        return this.props.grouped ? this.groups(items).flatMap(group => group.items) : items;
     }
-
-    @OnDocument("keydown")
-    @Client()
-    onGlobalKeydown(e: KeyboardEvent) {
-        if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-            e.preventDefault();
-            this.open = !this.open;
-            if (!this.open) { this.query = ""; this.activeIndex = 0; }
+    private groups(items: readonly CommandItem[]) {
+        const groups = new Map<string, CommandItem[]>();
+        for (const item of items) {
+            const name = item.group?.trim() ?? '';
+            if (!groups.has(name)) groups.set(name, []);
+            groups.get(name)!.push(item);
         }
-        if (e.key === "Escape" && this.open) {
-            this.open = false;
-            this.query = "";
-            this.activeIndex = 0;
-        }
+        return Array.from(groups, ([name, items]) => ({ name, items }));
     }
-
-    getFiltered(): Array<{ id: string; label: string; group?: string }> {
-        const { items = [] } = this.props;
-        if (!this.query) return items;
-        const q = this.query.toLowerCase();
-        return items.filter((item) => item.label.toLowerCase().includes(q));
-    }
-
-    render() {
-        const { placeholder = "Search..." } = this.props;
-
-        if (!this.isOpen) return null;
-
-        const filtered = this.getFiltered();
-
-        return html`
-            <div
-                class="cs-command fixed inset-0 z-[200] flex items-start justify-center pt-[15vh]"
-                @click=${(e: MouseEvent) => { if (e.target === e.currentTarget) this.setOpen(false); }}
-            >
-                <div class="absolute inset-0 bg-black/50"></div>
-                <div class="cs-command__panel relative w-full max-w-xl mx-4 bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-hidden">
-                    <input
-                        class="cs-command__input w-full px-4 py-3 text-sm bg-transparent border-none outline-none border-b border placeholder:text-muted-foreground"
-                        placeholder=${placeholder}
-                        .value=${this.query}
-                        @input=${(e: Event) => { this.query = (e.target as HTMLInputElement).value; this.activeIndex = 0; }}
-                        @keydown=${(e: KeyboardEvent) => this.handleKeydown(e, filtered)}
-                        autofocus
-                    />
-                    <div class="cs-command__list max-h-[300px] overflow-y-auto p-2">
-                        ${filtered.length === 0
-                            ? html`<div class="px-3 py-6 text-center text-sm text-muted-foreground">No results found.</div>`
-                            : filtered.map((item, i) => html`
-                                <button
-                                    type="button"
-                                    class=${classMap({
-                                        "cs-command__item": true,
-                                        "w-full flex items-center px-3 py-2 text-sm rounded-md cursor-pointer border-none transition-colors text-left": true,
-                                        "bg-accent text-accent-foreground": i === this.activeIndex,
-                                        "bg-transparent hover:bg-accent hover:text-accent-foreground": i !== this.activeIndex,
-                                    })}
-                                    @click=${() => this.selectItem(item.id)}
-                                    @mouseenter=${() => { this.activeIndex = i; }}
-                                >
-                                    ${item.group ? html`<span class="text-xs text-muted-foreground mr-2">${item.group}</span>` : null}
-                                    ${item.label}
-                                </button>
-                            `)}
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    @Client()
-    private handleKeydown(e: KeyboardEvent, filtered: Array<{ id: string }>) {
-        if (e.key === "ArrowDown") {
-            e.preventDefault();
-            this.activeIndex = Math.min(this.activeIndex + 1, filtered.length - 1);
-        } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            this.activeIndex = Math.max(this.activeIndex - 1, 0);
-        } else if (e.key === "Enter") {
-            e.preventDefault();
-            if (filtered[this.activeIndex]) {
-                this.selectItem(filtered[this.activeIndex].id);
+    private active(items = this.getFiltered()) { return items.find(item => item.id === this.activeId && !item.disabled) ?? items.find(item => !item.disabled); }
+    private optionId(id: string) { return `${this.props.id}-option-${encodeURIComponent(id)}`; }
+    private connect(element: HTMLDialogElement) {
+        this.dialog.connect(element);
+        const generation = this.generation;
+        queueMicrotask(() => {
+            if (generation !== this.generation || !element.isConnected) return;
+            if (this.element !== element) {
+                this.removeShortcut?.(); this.element = element;
+                const document = element.ownerDocument;
+                let owners = shortcutOwners.get(document);
+                if (!owners) { owners = new Map(); shortcutOwners.set(document, owners); }
+                owners.set(element, this);
+                const shortcut = (event: KeyboardEvent) => {
+                    if (!this.props.shortcut || event.defaultPrevented || event.repeat || event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return;
+                    const modal = document.activeElement?.closest('dialog:modal') ?? document.querySelector(':modal');
+                    const target = event.composedPath().find(node => node instanceof HTMLElement) as HTMLElement | undefined;
+                    const editable = !!target && (target.isContentEditable || !!target.closest('input, textarea, select'));
+                    const eligible = Array.from(owners!.entries()).filter(([dialog, owner]) => dialog.isConnected && owner.props.shortcut
+                        && (!modal || modal === dialog) && (!editable || owner.isOpen || owner.props.shortcutInEditable));
+                    eligible.sort(([left], [right]) => left === right ? 0 : left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+                    if (eligible[0]?.[0] !== element) return;
+                    event.preventDefault(); this.setOpen(!this.isOpen);
+                };
+                document.addEventListener('keydown', shortcut);
+                this.removeShortcut = () => { document.removeEventListener('keydown', shortcut); owners!.delete(element); };
             }
-        }
+            const active = this.active();
+            if (active && element.open) element.ownerDocument.getElementById(this.optionId(active.id))?.scrollIntoView({ block: 'nearest' });
+        });
     }
-
-    @Client()
-    private selectItem(id: string) {
+    @Client() setOpen(open: boolean) {
+        if (this.isOpen === open) return;
+        if (this.props.open === undefined) this.localOpened = open;
+        this.props.onOpenChange?.(open);
+        void this.requestUpdate();
+    }
+    @Client() private selectItem(id: string) {
+        if (!this.getFiltered().some(item => item.id === id && !item.disabled)) return;
         this.props.onSelect?.(id);
         this.setOpen(false);
-        this.query = "";
-        this.activeIndex = 0;
     }
-
-    @Client()
-    private setOpen(open: boolean) {
-        this.open = open;
-        this.props.onOpenChange?.(open);
+    @Client() private keydown(event: KeyboardEvent) {
+        if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.altKey || event.ctrlKey || event.metaKey) return;
+        const items = this.getFiltered().filter(item => !item.disabled), active = this.active(items);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!items.length) return;
+            const index = items.findIndex(item => item.id === active?.id);
+            this.activeId = items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].id;
+        } else if (event.key === 'Enter' && active) { event.preventDefault(); this.selectItem(active.id); }
     }
+    render() {
+        const { id, label, items = [], onSelect: _select, onOpenChange: _change, shortcut: _shortcut, shortcutInEditable: _editable, grouped = false, renderItem,
+            open: _open, defaultOpen: _default, closeOnEscape: _escape, closeOnBackdrop: _backdrop,
+            placeholder = 'Search...', searchLabel = 'Search commands', emptyLabel = 'No results found.', closeLabel = 'Close commands', ...rest } = this.props;
+        if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Command requires a nonempty, whitespace-free id.');
+        for (const [name,value] of [['label',label],['searchLabel',searchLabel],['emptyLabel',emptyLabel],['closeLabel',closeLabel]]) {
+            if (typeof value !== 'string' || !value.trim()) throw new Error(`Command requires a nonempty ${name}.`);
+        }
+        const ids = new Set<string>();
+        for (const item of items) {
+            if (typeof item.id !== 'string' || !item.id || ids.has(item.id) || typeof item.label !== 'string' || !item.label.trim()) throw new Error('Command items require unique nonempty IDs and labels.');
+            if ((item.group !== undefined && typeof item.group !== 'string') || (item.description !== undefined && typeof item.description !== 'string')) throw new Error('Command group and description must be text.');
+            ids.add(item.id);
+        }
+        this.initialOpened ??= !!this.props.defaultOpen;
+        if (this.previousOpened !== this.isOpen) { this.searchText = ''; this.activeId = undefined; this.previousOpened = this.isOpen; }
+        const filtered = this.getFiltered(), active = this.active(filtered);
+        const option = (item: CommandItem) => html`<div id=${this.optionId(item.id)} role="option" aria-label=${item.label} aria-description=${ifDefined(item.description)} aria-selected=${item.id === active?.id} aria-disabled=${!!item.disabled}
+            class=${classMap({ 'cs-command__item flex items-center gap-2 px-3 py-2 text-sm rounded-md': true, 'bg-accent text-accent-foreground': item.id === active?.id, 'opacity-50 cursor-not-allowed': !!item.disabled, 'cursor-pointer': !item.disabled })}
+            @pointerdown=${(event: PointerEvent) => event.preventDefault()}
+            @pointermove=${() => { if (!item.disabled) this.activeId = item.id; }} @click=${() => this.selectItem(item.id)}>
+            ${!grouped && item.group ? html`<span class="text-xs text-muted-foreground mr-2">${item.group}</span>` : null}${renderItem ? renderItem(item) : item.label}
+        </div>`;
+        return html`<dialog ref=${(element: Element) => this.connect(element as HTMLDialogElement)} id=${id} aria-label=${label}
+            class="cs-command m-auto p-0 w-full max-w-xl max-h-[calc(100dvh-2rem)] bg-popover text-popover-foreground rounded-lg border shadow-xl overflow-auto"
+            ...=${{ ...rest, ...this.dialog.events() }}>
+            <div data-dialog-panel class="cs-command__panel">
+                <div class="flex items-center border-b">
+                    <input id=${`${id}-search`} class="cs-command__input min-w-0 flex-1 px-4 py-3 text-sm bg-transparent outline-none"
+                        type="text" role="combobox" aria-label=${searchLabel} aria-autocomplete="list" aria-haspopup="listbox"
+                        aria-expanded=${this.isOpen} aria-controls=${`${id}-list`} aria-activedescendant=${active ? this.optionId(active.id) : undefined}
+                        autocomplete="off" placeholder=${placeholder} .value=${live(this.searchText)} autofocus
+                        @input=${(event: Event) => { this.searchText = (event.target as HTMLInputElement).value; this.activeId = undefined; }}
+                        @keydown=${(event: KeyboardEvent) => this.keydown(event)}>
+                    <button type="button" class="px-3 py-2" aria-label=${closeLabel} @click=${() => this.setOpen(false)}>×</button>
+                </div>
+                <div id=${`${id}-list`} role="listbox" aria-label=${label} class="cs-command__list max-h-[300px] overflow-y-auto p-2">
+                    ${grouped ? repeat(this.groups(filtered), group => group.name, group => html`<div role=${ifDefined(group.name ? 'group' : undefined)} aria-label=${ifDefined(group.name || undefined)}>
+                        ${group.name ? html`<div aria-hidden="true" class="px-3 py-1 text-xs text-muted-foreground">${group.name}</div>` : null}
+                        ${repeat(group.items, item => item.id, option)}
+                    </div>`) : repeat(filtered, item => item.id, option)}
+                </div>
+                ${filtered.length ? null : html`<p role="status" class="px-3 py-6 text-center text-sm text-muted-foreground">${emptyLabel}</p>`}
+            </div>
+        </dialog>`;
+    }
+    onCleanup() { this.generation++; this.removeShortcut?.(); this.removeShortcut = undefined; this.element = undefined; this.dialog.disconnect(); }
 }

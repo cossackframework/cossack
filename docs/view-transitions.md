@@ -277,3 +277,8 @@ Using the built-in event decorator and lifecycle hook keeps the listeners scoped
 ## Graceful Fallback
 
 If the browser does not support the View Transitions API, everything still works : navigation and state changes happen normally, just without animation. No errors are thrown, and no degraded behavior occurs.
+
+Development builds report the selected transition path through the
+[navigation diagnostic stream](./prevent-navigation.md#development-diagnostics).
+Unsupported transition types use the callback form. An animation-only rejection
+reports `animation-skipped` and does not change navigation success.

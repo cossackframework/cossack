@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // tests/i18n.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
@@ -165,6 +166,11 @@ describe('detectBrowserLocale', () => {
         expect(
             detectBrowserLocale('en,fr;q=0.9', ['en', 'fr'], 'es'),
         ).toBe('en');
+    });
+
+    it('does not select a language explicitly marked unacceptable', () => {
+        expect(detectBrowserLocale('fr;q=0', ['fr', 'en'], 'en')).toBe('en');
+        expect(detectBrowserLocale('*;q=0', ['en', 'fr'], 'fr')).toBe('fr');
     });
 
     it('falls back when nothing matches', () => {

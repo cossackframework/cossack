@@ -1,180 +1,162 @@
-import { html, classMap, component } from "@cossackframework/renderer";
+import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
-import { Icon } from "../icons/Icon";
-import { AltArrowLeftIcon as altArrowLeftIcon } from "@cossackframework/solar-icons/alt-arrow-left";
-import { AltArrowRightIcon as altArrowRightIcon } from "@cossackframework/solar-icons/alt-arrow-right";
+import type { GlobalAttributes, ControlEvent } from "../native-attributes";
+import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths, dateLabel } from "../internal/date";
 
-export interface CalendarProps {
-    /** Selected date (ISO yyyy-mm-dd). */
+export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'> & {
+    /** Stable page-unique ID for the calendar and month heading. */
+    id: string;
+    /** Controlled selected date, yyyy-mm-dd or empty. */
     value?: string;
-    /** Earliest selectable date (ISO). */
+    defaultValue?: string;
     min?: string;
-    /** Latest selectable date (ISO). */
     max?: string;
-    /** Called when a date is selected. */
-    onChange?: (iso: string) => void;
-    [key: string]: any;
-}
+    disabled?: boolean;
+    /** Allow navigation but prevent selection. */
+    readonly?: boolean;
+    onChange?: (iso: string) => unknown;
+    /** Every accepted user pick, including the already selected date. */
+    onSelect?: (iso: string) => unknown;
+    /** Explicit Gregorian locale. Default en-US. */
+    locale?: string;
+    /** Sunday=0 through Saturday=6. Default Sunday. */
+    weekStartsOn?: number;
+    /** Reference day for initial focus/today marker. Default current UTC day; provide for deterministic SSR. */
+    today?: string;
+    previousLabel?: string;
+    nextLabel?: string;
+};
 
-const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const MONTHS = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-];
-
-/** Parse an ISO date (yyyy-mm-dd) into local Date at midnight. */
-function parseISO(iso?: string): Date | null {
-    if (!iso) return null;
-    const [y, m, d] = iso.split("-").map(Number);
-    if (!y || !m || !d) return null;
-    return new Date(y, m - 1, d);
-}
-
-/** Format a Date to ISO yyyy-mm-dd (local). */
-function toISO(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-}
-
-/** True if two dates are the same calendar day. */
-function isSameDay(a: Date, b: Date): boolean {
-    return (
-        a.getFullYear() === b.getFullYear() &&
-        a.getMonth() === b.getMonth() &&
-        a.getDate() === b.getDate()
-    );
-}
-
-/**
- * Cossack UI Calendar — month-grid date picker.
- *
- * A pure-CSS grid (no external date library). Renders one month at a time with
- * prev/next navigation. Supports `value`, `min`, `max` range bounds, and a
- * `onChange` callback that fires an ISO `yyyy-mm-dd` string.
- *
- *   ${component(Calendar, {
- *       value: this.startDate,
- *       onChange: (iso) => { this.startDate = iso; },
- *   })}
- */
+/** A Gregorian date grid with one day in the tab order and bounded keyboard navigation. */
 @Component()
 export class Calendar extends Cossack {
     declare props: CalendarProps;
-
-    /** The currently-viewed month (1st of that month). */
-    @ClientState() private viewYear: number = new Date().getFullYear();
-    @ClientState() private viewMonth: number = new Date().getMonth();
+    @ClientState() private draft: string | undefined;
+    @ClientState() private cursor: string | undefined;
+    private initialValue: string | undefined;
+    private cursorOwner: string | undefined;
+    private root?: HTMLDivElement;
+    private get selected() { this.initialValue ??= this.props.defaultValue ?? ''; return this.props.value ?? this.draft ?? this.initialValue; }
+    private get referenceDay() { return this.props.today || new Date().toISOString().slice(0, 10); }
+    private get contextKey() { return JSON.stringify([this.selected, this.props.min, this.props.max, this.referenceDay]); }
+    private get focusedDate() {
+        const range = dateRange(this.props.min, this.props.max);
+        return clampDate(this.cursorOwner === this.contextKey && this.cursor ? this.cursor : this.selected || this.referenceDay, range.first, range.last);
+    }
 
     render() {
-        const selected = parseISO(this.props.value);
-        const min = parseISO(this.props.min);
-        const max = parseISO(this.props.max);
-
-        const firstOfMonth = new Date(this.viewYear, this.viewMonth, 1);
-        const startWeekday = firstOfMonth.getDay();
-        const daysInMonth = new Date(this.viewYear, this.viewMonth + 1, 0).getDate();
-
-        // Leading blanks for the grid (Su-first week).
-        const cells: Array<{ day: number; date: Date } | null> = [];
-        for (let i = 0; i < startWeekday; i++) cells.push(null);
-        for (let d = 1; d <= daysInMonth; d++) {
-            cells.push({ day: d, date: new Date(this.viewYear, this.viewMonth, d) });
-        }
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        return html`
-            <div class="cs-calendar inline-block rounded-lg border bg-popover text-popover-foreground p-3 select-none">
-                <div class="cs-calendar__header flex items-center justify-between mb-3">
-                    <button
-                        type="button"
-                        class="cs-calendar__prev inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent"
-                        aria-label="Previous month"
-                        @click=${() => this.prevMonth()}
-                    >
-                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: altArrowLeftIcon, size: 16 })}</span>
-                    </button>
-                    <span class="cs-calendar__title text-sm font-medium text-foreground">
-                        ${MONTHS[this.viewMonth]} ${this.viewYear}
-                    </span>
-                    <button
-                        type="button"
-                        class="cs-calendar__next inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent"
-                        aria-label="Next month"
-                        @click=${() => this.nextMonth()}
-                    >
-                        <span class="inline-flex items-center justify-center [&_svg]:size-4">${component(Icon, { entry: altArrowRightIcon, size: 16 })}</span>
-                    </button>
-                </div>
-                <div class="cs-calendar__weekdays grid grid-cols-7 gap-1 mb-1">
-                    ${WEEKDAYS.map((d) => html`
-                        <span class="text-xs font-medium text-muted-foreground text-center w-8 h-8 flex items-center justify-center">${d}</span>
-                    `)}
-                </div>
-                <div class="cs-calendar__grid grid grid-cols-7 gap-1">
-                    ${cells.map((cell) => {
-                        if (!cell) return html`<span class="w-8 h-8"></span>`;
-                        const isSelected = !!(selected && isSameDay(cell.date, selected));
-                        const isToday = isSameDay(cell.date, today);
-                        const isDisabled = !!(
-                            (min && cell.date < min) || (max && cell.date > max)
-                        );
-                        return html`
-                            <button
-                                type="button"
-                                class=${classMap({
-                                    "cs-calendar__day": true,
-                                    "w-8 h-8 rounded-md text-sm cursor-pointer border-none transition-colors": true,
-                                    "bg-primary text-primary-foreground": !!isSelected,
-                                    "bg-accent text-accent-foreground": !isSelected && isToday,
-                                    "hover:bg-accent hover:text-accent-foreground": !isSelected && !isToday && !isDisabled,
-                                    "text-muted-foreground/40 cursor-not-allowed": isDisabled,
-                                })}
-                                ?disabled=${!!isDisabled}
-                                @click=${() => this.selectDay(cell.date)}
-                            >${cell.day}</button>
-                        `;
-                    })}
-                </div>
+        const { id, value: _value, defaultValue: _default, min, max, disabled = false, readonly = false, onChange: _change, onSelect: _select,
+            locale = 'en-US', weekStartsOn = 0, today: _today, previousLabel = 'Previous month', nextLabel = 'Next month', ...rest } = this.props;
+        if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Calendar requires a nonempty, whitespace-free id.');
+        if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('Calendar weekStartsOn must be an integer from 0 to 6.');
+        parseDate(this.selected, 'value'); parseDate(this.referenceDay, 'today');
+        const range = dateRange(min, max), focus = this.focusedDate, date = parseDate(focus)!;
+        const year = date.getUTCFullYear(), month = date.getUTCMonth() + 1, first = dateFromParts(year, month, 1);
+        const padding = (first.getUTCDay() - weekStartsOn + 7) % 7, count = monthDays(year, month);
+        const cells = Array.from({ length: Math.ceil((padding + count) / 7) * 7 }, (_, i) => i < padding || i >= padding + count ? undefined : isoDate(dateFromParts(year, month, i - padding + 1)));
+        const dayNumber = new Intl.NumberFormat(locale);
+        const fullDate = new Intl.DateTimeFormat(locale, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
+        const longWeekday = new Intl.DateTimeFormat(locale, { weekday: 'long', calendar: 'gregory', timeZone: 'UTC' });
+        const shortWeekday = new Intl.DateTimeFormat(locale, { weekday: 'short', calendar: 'gregory', timeZone: 'UTC' });
+        const rows = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
+        const previous = clampDate(shiftMonths(focus, -1), range.first, range.last), next = clampDate(shiftMonths(focus, 1), range.first, range.last);
+        return html`<div ref=${(element: Element) => this.connect(element as HTMLDivElement)} id=${id} role="group" aria-label="Calendar"
+            class="cs-calendar inline-block rounded-lg border bg-popover text-popover-foreground p-3 select-none" ...=${rest}>
+            <div class="cs-calendar__header flex items-center justify-between mb-3 gap-2">
+                <button type="button" aria-label=${previousLabel} ?disabled=${disabled || previous.slice(0, 7) === focus.slice(0, 7)}
+                    class="cs-calendar__prev size-8 rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
+                    @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.move(previous, event.currentTarget, false)}><span aria-hidden="true">‹</span></button>
+                <span id=${`${id}-month`} aria-live="polite" aria-atomic="true" class="cs-calendar__title text-sm font-medium">${dateLabel(focus, locale, { year: 'numeric', month: 'long' })}</span>
+                <button type="button" aria-label=${nextLabel} ?disabled=${disabled || next.slice(0, 7) === focus.slice(0, 7)}
+                    class="cs-calendar__next size-8 rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
+                    @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.move(next, event.currentTarget, false)}><span aria-hidden="true">›</span></button>
             </div>
-        `;
-    }
-
-    onMount() {
-        // Initialize the view month to the selected date if provided.
-        const sel = parseISO(this.props.value);
-        if (sel) {
-            this.viewYear = sel.getFullYear();
-            this.viewMonth = sel.getMonth();
-        }
-    }
-
-    @Client()
-    private prevMonth() {
-        if (this.viewMonth === 0) {
-            this.viewMonth = 11;
-            this.viewYear -= 1;
-        } else {
-            this.viewMonth -= 1;
-        }
-    }
-
-    @Client()
-    private nextMonth() {
-        if (this.viewMonth === 11) {
-            this.viewMonth = 0;
-            this.viewYear += 1;
-        } else {
-            this.viewMonth += 1;
-        }
+            <table role="grid" aria-labelledby=${`${id}-month`} aria-readonly=${String(readonly)} class="cs-calendar__grid border-separate border-spacing-1">
+                <thead><tr>${Array.from({ length: 7 }, (_, i) => {
+                    const weekday = dateFromParts(2024, 1, 7 + (weekStartsOn + i) % 7);
+                    return html`<th scope="col" abbr=${longWeekday.format(weekday)} class="text-xs font-medium text-muted-foreground size-8">${shortWeekday.format(weekday)}</th>`;
+                })}</tr></thead>
+                <tbody>${rows.map(row => html`<tr>${row.map(iso => iso ? html`<td aria-selected=${iso === this.selected ? 'true' : undefined}>
+                    <button type="button" data-date=${iso} tabindex=${iso === focus ? 0 : -1} aria-label=${fullDate.format(parseDate(iso)!)} aria-current=${iso === this.referenceDay ? 'date' : undefined}
+                        ?disabled=${disabled || iso < range.first || iso > range.last}
+                        class=${classMap({ 'cs-calendar__day size-8 rounded-md text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 disabled:cursor-not-allowed': true,
+                            'bg-primary text-primary-foreground': iso === this.selected,
+                            'bg-accent text-accent-foreground': iso !== this.selected && iso === this.referenceDay,
+                            'hover:bg-accent hover:text-accent-foreground': iso !== this.selected && iso !== this.referenceDay })}
+                        @focus=${() => { this.cursorOwner = this.contextKey; this.cursor = iso; }}
+                        @keydown=${(event: ControlEvent<HTMLButtonElement, KeyboardEvent>) => this.keydown(event)}
+                        @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.select(iso, event.currentTarget)}>${dayNumber.format(parseDate(iso)!.getUTCDate())}</button>
+                </td>` : html`<td></td>`)}</tr>`)}</tbody>
+            </table>
+        </div>`;
     }
 
     @Client()
-    private selectDay(date: Date) {
-        const iso = toISO(date);
-        this.props.onChange?.(iso);
+    private connect(root: HTMLDivElement) {
+        this.root = root;
+        const previous = root.ownerDocument.activeElement;
+        const ownedFocus = previous instanceof HTMLButtonElement && root.contains(previous) && !!previous.dataset.date;
+        queueMicrotask(() => {
+            if (this.root !== root || !root.isConnected || this.props.disabled) return;
+            const active = root.ownerDocument.activeElement;
+            const changedDay = active instanceof HTMLButtonElement && root.contains(active) && active.dataset.date && active.dataset.date !== this.focusedDate;
+            if (changedDay || (ownedFocus && active === root.ownerDocument.body)) {
+                root.querySelector<HTMLButtonElement>(`button[data-date="${this.focusedDate}"]:not(:disabled)`)?.focus();
+            }
+        });
     }
+
+    @Client()
+    private async move(iso: string, source: HTMLButtonElement, focus: boolean) {
+        if (this.props.disabled || source.matches(':disabled')) return;
+        const range = dateRange(this.props.min, this.props.max), root = this.root;
+        const ownedFocus = source.ownerDocument.activeElement === source;
+        this.cursorOwner = this.contextKey;
+        this.cursor = clampDate(iso, range.first, range.last);
+        await this.requestUpdate();
+        if (!root?.isConnected || this.root !== root || this.props.disabled) return;
+        const document = root.ownerDocument;
+        if (document.activeElement !== source && !(document.activeElement === document.body && ownedFocus)) return;
+        if (focus || source.matches(':disabled')) root.querySelector<HTMLButtonElement>(`button[data-date="${this.focusedDate}"]:not(:disabled)`)?.focus();
+    }
+    @Client()
+    private keydown(event: ControlEvent<HTMLButtonElement, KeyboardEvent>) {
+        if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.currentTarget.matches(':disabled')) return;
+        // Repeated keys can arrive before the previous render commits its DOM focus.
+        const current = this.focusedDate;
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            this.select(current, event.currentTarget);
+            return;
+        }
+        const weekday = (parseDate(current)!.getUTCDay() - (this.props.weekStartsOn ?? 0) + 7) % 7;
+        const rtl = getComputedStyle(event.currentTarget).direction === 'rtl';
+        let next: string;
+        switch (event.key) {
+            case 'ArrowLeft': next = shiftDays(current, rtl ? 1 : -1); break;
+            case 'ArrowRight': next = shiftDays(current, rtl ? -1 : 1); break;
+            case 'ArrowUp': next = shiftDays(current, -7); break;
+            case 'ArrowDown': next = shiftDays(current, 7); break;
+            case 'Home': next = shiftDays(current, -weekday); break;
+            case 'End': next = shiftDays(current, 6 - weekday); break;
+            case 'PageUp': next = shiftMonths(current, event.shiftKey ? -12 : -1); break;
+            case 'PageDown': next = shiftMonths(current, event.shiftKey ? 12 : 1); break;
+            default: return;
+        }
+        event.preventDefault();
+        void this.move(next, event.currentTarget, true);
+    }
+    @Client()
+    private select(iso: string, source: HTMLButtonElement) {
+        const range = dateRange(this.props.min, this.props.max);
+        if (this.props.disabled || this.props.readonly || source.matches(':disabled') || iso < range.first || iso > range.last) return;
+        const previous = this.selected;
+        this.draft = iso;
+        if (iso !== previous) this.props.onChange?.(iso);
+        this.props.onSelect?.(iso);
+        this.cursorOwner = this.contextKey;
+        this.cursor = iso;
+        void this.requestUpdate();
+    }
+    onCleanup() { this.root = undefined; }
 }

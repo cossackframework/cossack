@@ -1,3 +1,6 @@
+import { collectReactiveMetadata } from './reactive-metadata';
+import { noteOptimisticWrite } from './optimistic-state';
+import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/service-bootstrap.ts
 import './metadata';
 import { isService } from './container';
@@ -35,8 +38,7 @@ export function bootstrapService(
     instance: any,
 ): void {
     if (serviceRuntimes.has(instance)) return;
-    const stateProperties = Reflect.getMetadata('cossack:state', instance.constructor) || {};
-    const storeProperties = Reflect.getMetadata('cossack:store', instance.constructor) || {};
+    const { state: stateProperties, store: storeProperties } = collectReactiveMetadata(instance.constructor);
     const stateKeys = [...new Set([...Object.keys(stateProperties), ...Object.keys(storeProperties)])];
 
     const runtime: ServiceRuntime = {
@@ -71,6 +73,7 @@ export function bootstrapService(
                         value as Record<PropertyKey, unknown>,
                         key,
                         () => {
+                            noteOptimisticWrite(instance, key);
                             const current = runtime.values.get(key);
                             for (const listener of runtime.listeners) listener(key, current);
                         },
@@ -84,6 +87,7 @@ export function bootstrapService(
                 if (oldValue === newValue) return;
                 runtime.values.set(key, newValue);
                 runtime.proxies.delete(key);
+                noteOptimisticWrite(instance, key);
                 for (const listener of runtime.listeners) listener(key, newValue);
             },
             enumerable: true,
@@ -171,7 +175,7 @@ export function bootstrapServices(component: any): void {
  * syncs it to the service, and getPublicState() returns the service's values.
  */
 export function registerServiceState(component: any, serviceInstance: any): void {
-    const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
+    const serviceStateMeta = getServiceState(serviceInstance);
     const stateContainer = component._stateContainer;
 
     for (const key of Object.keys(serviceStateMeta)) {
@@ -204,9 +208,9 @@ export function registerServiceState(component: any, serviceInstance: any): void
  * back to the component's state container after execution.
  */
 export function forwardServiceMethods(component: any, serviceInstance: any): void {
-    const serverMethods = Reflect.getMetadata('cossack:server-methods', serviceInstance.constructor) || {};
+    const serverMethods = collectServerMethodMetadata(serviceInstance.constructor);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
-    const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
+    const serviceStateMeta = getServiceState(serviceInstance);
     const serviceStateKeys = Object.keys(serviceStateMeta);
     const stateContainer = component._stateContainer;
 
@@ -239,9 +243,9 @@ export function forwardServiceMethods(component: any, serviceInstance: any): voi
  * Uses the same /crpc endpoint as the component's own proxies.
  */
 export function proxyServiceMethods(component: any, serviceInstance: any): void {
-    const serverMethods = Reflect.getMetadata('cossack:server-methods', serviceInstance.constructor) || {};
+    const serverMethods = collectServerMethodMetadata(serviceInstance.constructor);
     const clientMethods = Reflect.getMetadata('cossack:client-methods', serviceInstance.constructor) || {};
-    const serviceStateMeta = Reflect.getMetadata('cossack:state', serviceInstance.constructor) || {};
+    const serviceStateMeta = getServiceState(serviceInstance);
     const serviceStateKeys = Object.keys(serviceStateMeta);
 
     // Only proxy methods that are @Server-only (not @Shared, not @Client)

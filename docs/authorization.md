@@ -58,10 +58,10 @@ SSE subscriptions, and WebSocket upgrades. Service RPC runs the owning layout's
 guards. Global authentication middleware runs first.
 
 Transport guards receive the transport request (`/crpc`, `/upload`, `/sse`, or
-`/ws`). For resource permissions, validate the requested resource inside the
-server method. Public state, method arguments, query values, and scope names
-are client input. A connection guard does not recheck permissions on each
-WebSocket message.
+`/ws`). Check resource access through `@Server({ authorize })` or an explicit
+policy check inside the server method. Public state, method arguments, query
+values, and scope names are client input. A connection guard does not recheck
+permissions on each WebSocket message; an action authorizer runs for each call.
 
 Pass guards to `@Page({ middlewares })`:
 
@@ -82,6 +82,103 @@ export class NewPost extends Cossack {}
 @Page({ middlewares: [guard.requireUser, guard.requireRole('editor')] })
 export class EditorDashboard extends Cossack {}
 ```
+
+## Typed resource policies
+
+Use a resource policy when access depends on a particular record. The application
+supplies its user/resource types, named actions, and record lookup. Authentication
+middleware must populate `c.get('user')` from a trusted server source first.
+
+```ts
+import { createResourcePolicy } from '@cossackframework/auth';
+import { input, Server, type InputOf } from '@cossackframework/core';
+import { loadPost, updateOwnedPost } from './post-repository'; // Application-owned database operations.
+
+interface User { id: string; tenantId: string; }
+interface Post { id: number; ownerId: string; tenantId: string; title: string; }
+
+const posts = createResourcePolicy<Post, User>()({
+    read: ({ user, resource }) => user.tenantId === resource.tenantId,
+    edit: ({ user, resource }) =>
+        user.tenantId === resource.tenantId && user.id === resource.ownerId,
+});
+const editInput = input.object({
+    id: input.number({ integer: true, min: 1 }),
+    title: input.string({ required: true, maxLength: 200 }),
+});
+type EditInput = InputOf<typeof editInput>;
+
+// Inside a Cossack component or service:
+@Server({
+    input: editInput,
+    authorize: posts.action('edit', (data: EditInput, { context, signal }) =>
+        loadPost(context, data.id, { signal })),
+})
+async edit(data: EditInput) {
+    // Use an application transaction or conditional write that repeats the
+    // trusted actor/tenant/ownership predicates if the record can change.
+    return updateOwnedPost(this.c, data.id, data.title);
+}
+```
+
+The action names retain their literal union. TypeScript rejects an unknown
+action such as `posts.action('publish', ...)`, a lookup with the wrong resource
+shape, or an authorizer whose input differs from the schema's parsed type.
+`createTypedDecorators<T>().Server` preserves these checks and channel typing.
+Keep factory aliases static: a local factory result, a destructured `Server`
+alias, or a directly selected `.Server` is recognized by the compiler.
+
+The inbound action boundary parses input first, looks up the record from trusted
+server context, evaluates the policy, then invokes the method. This applies to
+HTTP/SSE component actions, multipart uploads, explicit/forwarded services and
+socket actions. A forged payload owner, user, tenant or permission flag never
+substitutes for the lookup or authenticated actor. Avoid changing state in lookup
+and policy callbacks. Only boolean `true` grants access; nonboolean decisions and
+unexpected exceptions are internal errors.
+
+| Helper | Result and use |
+| --- | --- |
+| `posts.can(c, 'edit', post, { signal })` | `Promise<boolean>` for one presentation decision. Missing user/record or unknown runtime action returns false. |
+| `posts.permissions(c, post, { signal })` | Frozen named booleans such as `{ read: true, edit: false }`, suitable for public UI state. It does not serialize the user, record, callback or lookup. |
+| `posts.authorize(c, 'edit', post, { signal })` | Returns the resource when allowed; otherwise throws a fixed authorization error. Use in reads, API handlers and native server calls. |
+| `posts.action('edit', lookup)` | Callback for `@Server({ authorize })` over parsed input and the owned action signal. |
+| `posts.middleware('edit', lookup)` | Hono middleware that checks a request-specific resource before the handler. |
+
+For a server read loader or API handler, check access before exposing the record:
+
+```ts
+async init() {
+    const post = await posts.authorize(
+        this.c, 'read', await loadPost(this.c, this.postId),
+    );
+    this.title = post.title;
+    this.permissions = await posts.permissions(this.c, post);
+}
+// render() uses this.permissions.edit to decide whether to show the edit control.
+```
+
+Native API methods and internal `this.edit(...)` calls execute authored code;
+decorator metadata does not wrap them. Explicitly authorize those paths. The
+framework normalizes expected denials in API handlers, server reads and actions
+to `COSSACK_AUTH_UNAUTHENTICATED` / `COSSACK_AUTH_FORBIDDEN`, fixed public messages,
+and request IDs. HTTP uses 401/403; socket callers receive correlated RPC errors.
+A missing record is a forbidden decision for an authenticated actor. Unexpected
+lookup/policy failures remain internal. Resource middleware returns the same
+denial envelope and stops its handler.
+
+Permission booleans only control presentation. Recheck each mutation on the
+server even if its button is hidden. Policy metadata, private callbacks and
+module dependencies used solely by server methods are stripped from client
+builds. Keep private policy contracts separate from exported/client-reachable
+bindings and shared form rules. The compiler rejects private metadata that would
+retain local contracts or foreign module initializers on the client.
+
+Callbacks and lookups receive an abort signal. Direct helpers default to the
+request signal; inbound action adapters use the framework's action signal.
+Cancellation releases pending checks and prevents later mutation, but does not
+stop ignored I/O or roll back callback side effects. The policy kit does not
+revalidate an existing socket session, provide transaction atomicity, or retry
+mutations. Session freshness/revocation remains the authentication layer's job.
 
 ## Conditional UI in `render()`
 

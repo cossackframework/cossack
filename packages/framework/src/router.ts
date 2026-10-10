@@ -1,5 +1,12 @@
+import { logConfigRequirementFailure } from './config-diagnostics.js';
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
+import { createServerFailureContext, logServerFailure } from './server-logging.js';
+import { HTTPException } from 'hono/http-exception';
+import { developmentRpcEvidence, developmentRpcInvoked, developmentRpcReturned, developmentRpcStream, developmentRpcNative } from './transports/development-trace.js';
+import { getModuleDefault } from './module-default.js';
 import { getForwardedServerMethodClass } from '@cossackframework/core';
 // src/router.ts
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
 import { Page, PageOptions, Cossack, User, type CossackRuntimeInfo, type Middleware } from '@cossackframework/core';
@@ -7,6 +14,8 @@ import {
   createInstance,
   createLayoutServiceScope,
   createRootServiceScope,
+  snapshotRpcValue,
+  RpcError,
   getServiceState,
   isOriginAllowed,
   isRpcCallableAction,
@@ -14,7 +23,7 @@ import {
   sanitizeServiceState,
 } from '@cossackframework/core';
 import { enforceMethodRateLimit } from '@cossackframework/core';
-import { isClientVisibleError } from '@cossackframework/core';
+import { enforceActionInput, enforceActionAuthorization, getAuthorizationFailure, isActionValidationError, isClientVisibleError } from '@cossackframework/core';
 
 /**
  * RPC allowlist that also accepts @Server methods on injected @Service
@@ -29,31 +38,93 @@ function isRpcCallableActionOrService(instance: any, action: unknown): boolean {
   const serviceClass = getForwardedServerMethodClass(instance, action);
   return serviceClass !== undefined && isRpcCallableAction(serviceClass, action);
 }
-import { createApiHandler } from './api-handler.js';
+
+/** Change only the action's signal; preserve Hono/native Request receivers. */
+function withRpcSignal(c: Context, signal: AbortSignal): Context {
+  const raw = new Proxy(c.req.raw, {
+    get(target, property) {
+      if (property === 'signal') return signal;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const req = new Proxy(c.req, {
+    get(target, property) {
+      if (property === 'raw') return raw;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return new Proxy(c, {
+    set(target, property, value) { return Reflect.set(target, property, value, target); },
+    get(target, property) {
+      if (property === 'req') return req;
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+function serializeRpcResult(value: unknown, state: unknown) {
+  return { value: snapshotRpcValue(value, 'value'), state: snapshotRpcValue(state, 'state') };
+}
+
+/** Preserve action-owned cookies when Hono merges its existing Context response. */
+async function rpcRedirectResponse(c: Context, result: unknown): Promise<Response | undefined> {
+  const response = result instanceof Response ? result : undefined;
+  const existingCookies = new Set(c.res.headers.getSetCookie());
+  for (const value of response?.headers.getSetCookie() ?? []) {
+    if (!existingCookies.has(value)) {
+      c.header('Set-Cookie', value, { append: true });
+      existingCookies.add(value);
+    }
+  }
+  const location = response && response.status >= 300 && response.status < 400
+    ? response.headers.get('Location') ?? c.res.headers.get('Location')
+    : c.res.headers.get('Location');
+  if (!location) return undefined;
+  // Fetch must receive RPC metadata rather than follow the redirect into HTML.
+  await response?.body?.cancel();
+  c.header('Location', undefined);
+  return c.json({ _cossack_redirect: location });
+}
+import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
-import configFactories from 'virtual:cossack-config';
+import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
-import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
+import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, resolveNearestSpecialPage, createNotFoundResolver, classifyRoute, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
 import {
   handleSseEndpoint,
-  handleSseCrpc,
   syncSseState,
   registerSseStoreEntry,
   resolveSseScopeKey,
+  getSseScopeStub,
+  isCloudflareRuntime,
+  sseBindingMissingMessage,
+  sseBindingMissingResponse,
+  hydrateSseScopeState,
+  attachCoordinatorRuntime,
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
-import { handleUpload } from './transports/http.js';
+import { readRpcRequest } from './transports/http.js';
 import { protectTransport } from './transports/security.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
 import { createRequestContextMiddleware } from './middlewares/request-context.js';
+import { runWithContext } from './request-context-als.js';
 import { createCorsMiddleware } from './middlewares/cors.js';
 import { getLocale, getLocaleCatalog, getDefaultLocale } from '@cossackframework/core';
-import { runWithConfig, buildConfig, type EnvFunction } from './config.js';
+import { runWithConfig, prepareConfigStore } from './config.js';
+import type { ConfigRuntime, ConfigRequirementContext } from './config-requirements.js';
 import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
+import { createAssetsMiddleware } from './assets.js';
+import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './transports/rpc-stream.js';
+import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
+import { retainResponseLifetime } from './response-lifetime.js';
+import { captureRealtimeIdentity, snapshotRealtimeRequest, withRealtimeAuthorization } from './realtime-context.js';
 
 // Side-effect: register the i18n helpers (`__`, `setLocale`, ...) on
 // `globalThis` so bare `__('key')` calls in `render()` resolve during SSR.
@@ -115,10 +186,9 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
     resolved = JSON.parse(text);
   } catch (e) {
     // Dev mode or manifest not yet generated: renderRoot falls back to
-    // un-hashed dev paths. Warn (not error) so a genuinely broken/corrupt
-    // manifest isn't completely silent.
+    // un-hashed dev paths. Emit fixed metadata so a corrupt manifest is observable.
     if (!import.meta.env?.DEV) {
-      console.warn('[Cossack] Could not load client manifest; falling back to dev paths:', e);
+      logRuntimeFailure({ runtime: 'unknown', action: 'load-client-manifest' }, 'initialization');
     }
   }
   _manifest = resolved;
@@ -226,9 +296,8 @@ async function getInlineCss(env: any): Promise<string | undefined> {
     cachedInlineCss = null;
     return undefined;
   } catch (e) {
-    // Non-fatal: CSS inlining is an optimisation. Warn so a permissions /
-    // read error isn't completely silent.
-    console.warn('[Cossack] Could not read client CSS for inlining:', e);
+    // Non-fatal: CSS inlining is an optimisation. Emit fixed failure metadata.
+    logRuntimeFailure({ runtime: 'unknown', action: 'inline-client-css' }, 'initialization');
     cachedInlineCss = null;
     return undefined;
   }
@@ -260,25 +329,7 @@ export type PageModule = {
 };
 
 function getLayoutStack(pagePath: string) {
-  const stack: string[] = [];
-  const relativePath = pagePath.replace('/src/pages/', '');
-  const parts = relativePath.split('/');
-
-  let currentPath = '/src/pages';
-
-  if (layouts[`${currentPath}/layout.ts`]) {
-    stack.push(`${currentPath}/layout.ts`);
-  }
-
-  for (let i = 0; i < parts.length - 1; i++) {
-    currentPath += `/${parts[i]}`;
-    const layoutPath = `${currentPath}/layout.ts`;
-    if (layouts[layoutPath]) {
-      stack.push(layoutPath);
-    }
-  }
-
-  return stack;
+  return resolveLayoutPaths(pagePath, Object.keys(layouts));
 }
 
 /**
@@ -287,19 +338,8 @@ function getLayoutStack(pagePath: string) {
  * In production, collects the page chunk and all its transitive JS imports.
  */
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
-  const relativePath = pagePath.replace('/src/pages/', '');
-  const parts = relativePath.split('/');
-
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const dir = parts.slice(0, i).join('/');
-    const searchPath = dir ? `/src/pages/${dir}/${type}/index.ts` : `/src/pages/${type}/index.ts`;
-
-    if (pages[searchPath]) {
-      return { path: searchPath, component: Object.values(pages[searchPath] as object)[0] as new () => Cossack };
-    }
-  }
-
-  return null;
+  const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type);
+  return path ? { path, component: getModuleDefault(pages[path] as object) as new () => Cossack } : null;
 }
 
 export interface CreateAppOptions {
@@ -320,7 +360,7 @@ export interface CreateAppOptions {
   i18n?: {
     autoDetectBrowser?: boolean;
   };
-  /** Optional process runtime integration (for example the Deno adapter). */
+  /** Optional process runtime integration (for example the Node adapter). */
   runtimeAdapter?: CossackRuntimeAdapter;
 }
 
@@ -335,7 +375,39 @@ export function createApp(options: CreateAppOptions = {}) {
   // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
-  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any } }>({ strict: false });
+  const app = new Hono<{ Bindings: CloudflareBindings; Variables: { user?: User; db?: any; 'cossack.configContext'?: Pick<ConfigRequirementContext, 'runtime' | 'environment'> } }>({ strict: false });
+  app.onError((error, c) => {
+    if (error instanceof HTTPException) return error.getResponse();
+    const context = createServerFailureContext(c, {
+      route: c.req.matchedRoutes.findLast(route => route.path !== '*')?.path ?? 'unknown',
+      action: 'request', runtime: options.runtimeAdapter?.name ?? 'cloudflare',
+    });
+    logConfigRequirementFailure(error);
+    const denial = getAuthorizationFailure(error);
+    if (denial) return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
+    logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL');
+    return c.json({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: context.requestId }, 500);
+  });
+  const resolveNotFound = createNotFoundResolver(Object.keys(pages));
+  const executedPolicies = Symbol('cossack:executed-route-policies');
+  const policy = (source: string, index: number, middleware: Middleware): Middleware => async (c, next) => {
+    const context = c as Context & { [executedPolicies]?: Set<string> };
+    const executed = context[executedPolicies] ??= new Set();
+    const key = JSON.stringify([source, index]);
+    if (executed.has(key)) return next();
+    executed.add(key);
+    return middleware(c, next);
+  };
+  const getMiddlewares = (componentPath: string): Middleware[] => {
+    const paths = new Set([...getLayoutStack(componentPath), componentPath]);
+    return [...paths].flatMap(path => {
+      const module = pages[path] || layouts[path];
+      const component = path === '/src/App' ? options.AppComponent ?? RouterFallbackApp : module && getModuleDefault(module);
+      const middlewares: Middleware[] = typeof component === 'function'
+        ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? [] : [];
+      return middlewares.map((middleware, index) => policy(path, index, middleware));
+    });
+  };
 
   const resolveRuntimeInfo = async (): Promise<CossackRuntimeInfo> => ({
     platform: 'web',
@@ -354,18 +426,7 @@ export function createApp(options: CreateAppOptions = {}) {
     layouts,
     allowedOrigins: options.allowedOrigins,
     runtimeInfo: resolveRuntimeInfo,
-    getMiddlewares: (componentPath) => {
-      const paths = new Set([...getLayoutStack(componentPath), componentPath]);
-      return [...paths].flatMap((path) => {
-        const module = pages[path] || layouts[path];
-        const component = path === '/src/App'
-          ? options.AppComponent ?? RouterFallbackApp
-          : module && Object.values(module)[0];
-        return typeof component === 'function'
-          ? (Reflect.getMetadata('page:options', component) as PageOptions | undefined)?.middlewares ?? []
-          : [];
-      });
-    },
+    getMiddlewares,
   };
 
   // Request-context middleware — scopes the Hono `Context` into
@@ -383,12 +444,13 @@ export function createApp(options: CreateAppOptions = {}) {
   // request, not once at module load.
   app.use('*', async (c, next) => {
     const envBindings = c.env as unknown as Record<string, unknown>;
-    const envFn: EnvFunction = (key, def) => {
-      const v = envBindings?.[key];
-      return v !== undefined && v !== null ? String(v) : def ?? '';
-    };
-    const built = buildConfig(configFactories as Record<string, unknown>, envFn);
-    return runWithConfig({ env: envBindings, config: built }, () => next());
+    const configContext = { runtime: (options.runtimeAdapter ? ['cloudflare', 'node', 'desktop'].includes(options.runtimeAdapter.name) ? options.runtimeAdapter.name : 'unknown' : 'cloudflare') as ConfigRuntime,
+      ...(configEnvironment ? { environment: configEnvironment } : {}) };
+    const store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings, {
+      requirements: configRequirements, context: configContext,
+    });
+    c.set('cossack.configContext', configContext);
+    return runWithConfig(store, () => next());
   });
 
   // Built-in API CORS runs inside the request config scope but before project
@@ -407,23 +469,39 @@ export function createApp(options: CreateAppOptions = {}) {
   // Locale middleware — resolves per-request locale and wraps the remainder
   // of the request in an AsyncLocalStorage scope so `__()` / `getLocale()`
   // resolve the right locale for each visitor. No-op without `src/lang/`.
-  app.use('*', createLocaleMiddleware({ autoDetectBrowser: options.i18n?.autoDetectBrowser }));
+  const contentLocales = new Map<string, string>();
+  for (const source of resolvePageRouteFiles(Object.keys(pages))) {
+    if (!/\.mdx?$/.test(source)) continue;
+    const component = getModuleDefault(pages[source]);
+    const locale = typeof component === 'function' ? (component as any).markdownFrontmatter?.locale : undefined;
+    if (typeof locale === 'string') contentLocales.set(filePathToRoutePath(source), locale);
+  }
+  app.use('*', createLocaleMiddleware({ autoDetectBrowser: options.i18n?.autoDetectBrowser,
+    resolveLocale: context => contentLocales.get(context.req.path.replace(/\/$/, '') || '/'),
+  }));
 
   // Flash middleware — two-phase signed-cookie lifecycle for flash data
   // (POST writes → GET reads once). No-op (no cookie, no outgoing data) when
   // flash isn't used; throws only if flash is used without an APP_SECRET.
   app.use('*', createFlashMiddleware());
+  // Worker-first routing keeps global auth/config and page/layout policies in
+  // front of static HTML and files. Missing assets continue to SSR/API routes.
+  app.use('*', createAssetsMiddleware(routerContext));
 
   const createSsrHandler = (PageComponent: new () => Cossack, path: string, pageOptions?: PageOptions) => {
     return async (c: Context) => {
+      const failureContext = createServerFailureContext(c, { route: filePathToHttpRoute(path),
+        action: 'render', runtime: options.runtimeAdapter?.name ?? 'cloudflare' });
       const inlineCss = await getInlineCss(c.env);
       const runtimeInfo = await resolveRuntimeInfo();
       const requestServiceScope = createRootServiceScope();
+      const requestComponents: Cossack[] = [];
 
       try {
         const user = c.get('user');
         requestServiceScope.bindRequest({ context: c, user, env: c.env });
         const appInstance = createInstance(options.AppComponent ?? RouterFallbackApp, { serviceScope: requestServiceScope });
+        requestComponents.push(appInstance);
         const layoutInstances: any[] = [];
         const layoutPaths = getLayoutStack(path);
 
@@ -470,7 +548,7 @@ export function createApp(options: CreateAppOptions = {}) {
             }
           } catch (e) {
             // DO might not exist yet, or other error - proceed with default state
-            console.log('[Cossack] Could not query DO state:', e);
+            logRuntimeFailure({ runtime: 'cloudflare', route: path, action: 'read-state' }, 'initial-state');
           }
         }
 
@@ -481,7 +559,7 @@ export function createApp(options: CreateAppOptions = {}) {
         const layoutStates: Record<string, any> = {};
         let activeServiceScope = requestServiceScope;
         for (const lPath of layoutPaths) {
-          const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
+          const LComp = getModuleDefault(layouts[lPath] as object) as new () => Cossack;
           const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
             ownerRouteId: routePathToIdMap.get(lPath),
             ownerRoutePath: lPath,
@@ -489,6 +567,7 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           layoutServiceScope.bindRequest({ context: c, user, env: c.env });
           const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
+          requestComponents.push(lInst);
           await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
           layoutInstances.push(lInst);
           layoutStates[lPath] = lInst.getInitialState();
@@ -496,6 +575,7 @@ export function createApp(options: CreateAppOptions = {}) {
         }
 
         const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
+        requestComponents.push(pageInstance);
         // Check if component has a loading template (method or file convention)
         // If so, skip init() during SSR to show loading UI immediately
         const hasLoadingTemplate = typeof (pageInstance as any).loadingTemplate === 'function';
@@ -512,6 +592,7 @@ export function createApp(options: CreateAppOptions = {}) {
           env: c.env,
           runtime: runtimeInfo,
           page: c.req.path,
+          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: scopeKey } : undefined,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
         });
@@ -522,12 +603,25 @@ export function createApp(options: CreateAppOptions = {}) {
           (pageInstance as any).loading.init = 1;
         }
 
-        // Force render to populate registry
-        pageInstance._render();
-
-        // For SSE transport, store the component instance for later use by the SSE endpoint and /crpc.
+        // For SSE transport, connect the shared scope before rendering so SSR
+        // renders the authoritative state. On Cloudflare the coordinator owns
+        // the scope: first initialization wins and later requests hydrate the
+        // snapshot instead of overwriting it. Node keeps the
+        // process-local store entry for the SSE endpoint and /crpc.
         if (pageOptions?.transport === 'sse') {
-          registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
+          const componentRouteId = routePathToIdMap.get(path);
+          const sseStub = componentRouteId ? getSseScopeStub(c.env, componentRouteId, scopeKey) : undefined;
+          if (sseStub) {
+            const initialized = await sseStub.initialize(JSON.stringify(pageInstance.getPublicState()));
+            if (!initialized.fresh) {
+              try { hydrateSseScopeState(pageInstance, JSON.parse(initialized.state)); }
+              catch { throw new Error('[Cossack SSE] scope state is not valid JSON.'); }
+            }
+          } else if (isCloudflareRuntime()) {
+            throw new Error(`${sseBindingMissingMessage()} (page: ${path})`);
+          } else {
+            registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
+          }
         }
 
         // Wrap rendering
@@ -579,9 +673,14 @@ export function createApp(options: CreateAppOptions = {}) {
           }
         }
 
+        const kind = classifyRoute(filePathToHttpRoute(path));
+        const boundary = kind === '404' || kind === 'error';
+        if (boundary && pageInitialState.metadata) pageInitialState.metadata.routePath = path;
         const finalInitialState = {
           ...pageInitialState,
-          routePath: filePathToRoutePath(path), // Simplified route path (no /src/pages prefix)
+          routePath: boundary ? path : filePathToRoutePath(path),
+          componentPath: path,
+          _cossackBoundary: boundary ? { type: kind, source: path } : undefined,
           componentRouteId: routePathToIdMap.get(path),
           appRouteId: 'cossack_app', // Route ID for the App component (root)
           pathname: c.req.path,
@@ -601,6 +700,7 @@ export function createApp(options: CreateAppOptions = {}) {
           runtime: runtimeInfo,
         };
 
+        c.header('X-Cossack-Request-Id', failureContext.requestId);
         c.header('Content-Type', 'text/html');
         const manifest = await getManifest(c.env);
         const modulePreloads = getModulePreloads(manifest, path);
@@ -618,28 +718,59 @@ export function createApp(options: CreateAppOptions = {}) {
           }),
         );
       } catch (err) {
-        console.error('[Cossack SSR Error]:', err);
+        const denial = getAuthorizationFailure(err);
+        if (denial) {
+          const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+          c.header('X-Cossack-Request-Id', requestId);
+          return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+        }
+        c.header('X-Cossack-Request-Id', failureContext.requestId);
+        logServerFailure(failureContext, 'ssr', 'render', 'COSSACK_SSR_INTERNAL');
         const errorPage = findNearestSpecialPage(path, 'error');
         if (errorPage && path !== errorPage.path) {
           c.status(500);
-          const handler = createSsrHandler(errorPage.component, errorPage.path);
-          return handler(c);
+          return renderBoundary(errorPage.component, errorPage.path, c);
         }
-        // Escape the error to prevent XSS via user-controlled content in the
-        // message/stack, and only expose detailed traces in development. In
-        // production, stack traces leak file paths and library versions.
-        const detail = err instanceof Error ? err.stack : String(err);
+        // Development diagnostics retain correlation without publishing application exceptions.
         const body = import.meta.env.DEV
-          ? `<h1>Internal Server Error</h1><pre>${escapeHtml(detail)}</pre>`
+          ? `<h1>Internal Server Error</h1><pre>COSSACK_SSR_INTERNAL
+Request ID: ${escapeHtml(failureContext.requestId)}
+Route: ${escapeHtml(failureContext.route)}</pre>`
           : '<h1>Internal Server Error</h1>';
         return c.html(body, 500);
       } finally {
-        requestServiceScope.dispose();
+        for (const instance of requestComponents.reverse()) {
+          try { await instance.destroyAsync(); }
+          catch { logServerFailure(failureContext, 'ssr', 'component-cleanup', 'COSSACK_SSR_CLEANUP_FAILED'); }
+        }
+        try { await requestServiceScope.disposeAsync(); }
+        catch { logServerFailure(failureContext, 'ssr', 'service-cleanup', 'COSSACK_SSR_CLEANUP_FAILED'); }
       }
     };
   };
 
+  const renderBoundary = async (component: new () => Cossack, path: string, c: Context) => {
+    const middlewares = getMiddlewares(path);
+    const handler = createSsrHandler(component, path, Reflect.getMetadata('page:options', component));
+    // Preserve Hono's original route index and the selected parameter proxy.
+    let index = -1;
+    const dispatch = async (position: number): Promise<void> => {
+      if (position <= index) throw new Error('next() called multiple times');
+      index = position;
+      const middleware = middlewares[position];
+      if (!middleware) { c.res = await handler(c); return; }
+      const response = await middleware(c, () => dispatch(position + 1));
+      if (response) c.res = response;
+    };
+    await dispatch(0);
+    return c.res;
+  };
+
   // Transport routes
+  if (import.meta.env.DEV) {
+    app.use('/crpc', developmentRpcEvidence());
+    app.use('/upload', developmentRpcEvidence());
+  }
   app.use('/crpc', protectTransport(routerContext));
   app.use('/upload', protectTransport(routerContext));
   app.use('/sse/:componentRouteId', protectTransport(routerContext));
@@ -655,7 +786,7 @@ export function createApp(options: CreateAppOptions = {}) {
       const componentPath = routePathToFilePathMap.get(routePath) || routePath;
       const componentModule = pages[componentPath] || layouts[componentPath];
       if (!componentModule) return c.text('Component not found', 404);
-      const ComponentClass = Object.values(componentModule as object)[0] as new () => Cossack;
+      const ComponentClass = getModuleDefault(componentModule as object) as new () => Cossack;
       const pageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
       try {
         assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
@@ -670,14 +801,22 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch {
         return c.text('Invalid WebSocket route params', 400);
       }
-      const expectedTarget = await resolveSseScopeKey(
-        withRuntimeRouteParams(c, routeParams),
-        pageOptions,
-      );
-      if (target !== expectedTarget) return c.text('Invalid WebSocket scope', 403);
+      const componentContext = withRuntimeRouteParams(c, routeParams);
+      const expectedTarget = await resolveSseScopeKey(componentContext, pageOptions);
+      let rejectAuthorization = target !== expectedTarget;
 
       const pathname = c.req.query('pathname') || '/';
       const user = c.get('user');
+      let identity: Awaited<ReturnType<typeof captureRealtimeIdentity>>;
+      try { identity = await captureRealtimeIdentity(c); }
+      catch { identity = null; rejectAuthorization = true; }
+      const originalUserId = (user as { id?: unknown } | undefined)?.id;
+      const authSnapshot = snapshotRealtimeRequest(c, routeParams, getLocale());
+      const authorize = async (operation: (fresh: Context) => Promise<void>) => !rejectAuthorization && (await withRealtimeAuthorization(
+        authSnapshot, identity, getMiddlewares(componentPath), async fresh =>
+          fresh.get('user')?.id === originalUserId && await resolveSseScopeKey(fresh, pageOptions) === expectedTarget,
+        operation,
+      )) !== null;
       const runtimeInfo = await resolveRuntimeInfo();
       return options.runtimeAdapter!.handleWebSocketUpgrade!(c, {
         target,
@@ -685,12 +824,34 @@ export function createApp(options: CreateAppOptions = {}) {
         componentId: componentPath,
         pathname,
         user,
+        context: componentContext,
+        authorize,
+        rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
-          const instance = createInstance(ComponentClass) as Cossack;
-          await instance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider });
-          instance._render();
-          return instance;
+          const rootScope = createRootServiceScope();
+          rootScope.bindRequest({ context: componentContext, user, env: c.env });
+          let instance: Cossack | undefined;
+          try {
+            let activeScope = rootScope;
+            for (const layoutPath of getLayoutStack(componentPath)) {
+              const Layout = getModuleDefault(layouts[layoutPath]) as new () => Cossack;
+              activeScope = createLayoutServiceScope(activeScope, Layout, {
+                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: expectedTarget,
+              });
+              activeScope.bindRequest({ context: componentContext, user, env: c.env });
+            }
+            instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
+            instance.__cossack_rpcOwner = componentPath;
+            instance._ownServiceScopeLifetime(rootScope);
+            await instance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, page: pathname, providerName: provider, providerTargets: { page: expectedTarget, [provider]: expectedTarget } });
+            instance._render();
+            return instance;
+          } catch (error) {
+            try { await instance?.destroyAsync(); }
+            finally { await rootScope.disposeAsync(); }
+            throw error;
+          }
         },
       });
     });
@@ -698,14 +859,22 @@ export function createApp(options: CreateAppOptions = {}) {
     app.get('/ws/:provider/:id', handleWebSocketProxy(routerContext));
   }
   app.get('/sse/:componentRouteId', handleSseEndpoint(routerContext));
-  app.post('/upload', handleUpload(routerContext));
-
-  app.post('/crpc', async (c) => {
-    const body = await c.req.json();
+  // JSON and multipart differ only at decoding. Ownership, validation,
+  // streaming, cookies and cleanup use the same action pipeline.
+  const handleRpc: Handler = async (c) => {
+    const startedAt = performance.now();
+    const body = await readRpcRequest(c);
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
-    const isStreamRequest = !!body._cossack_stream;
+    const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
+    if (typeof action !== 'string' || !action) return c.json({ error: 'Invalid action', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
+    // Materialize prepared middleware headers before an action can return an
+    // independently constructed stream Response. Hono merges an existing res,
+    // but otherwise drops prepared headers when assigning that raw Response.
+    c.res.headers.set('X-Cossack-Request-Id', requestId);
     const user = c.get('user');
     const runtimeInfo = await resolveRuntimeInfo();
+    const runtime = runtimeInfo.adapter ?? (isCloudflareRuntime() ? 'cloudflare-workers' : runtimeInfo.platform);
+    const logContextFor = (route: string): RpcFailureContext => ({ requestId, route, action, runtime, startedAt });
 
     // Explicit layout-service RPC. The client addresses the owning layout and
     // stable service slot; no service fields or methods are projected onto a
@@ -718,16 +887,18 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       const ownerPath = routeIdMap.get(ownerRouteId);
       if (!ownerPath || !layouts[ownerPath]) return c.json({ error: 'Invalid service owner' }, 400);
+      const logContext = logContextFor(ownerPath);
 
       const requestScope = createRootServiceScope();
       requestScope.bindRequest({ context: c, user, env: c.env });
+      let responseOwnsCleanup = false;
       try {
         let activeScope = requestScope;
         let ownerScope: ReturnType<typeof createLayoutServiceScope> | undefined;
         for (const layoutPath of getLayoutStack(ownerPath)) {
           const layoutModule = layouts[layoutPath];
           if (!layoutModule) return c.json({ error: 'Service layout not found' }, 404);
-          const LayoutComponent = Object.values(layoutModule as object)[0] as new () => Cossack;
+          const LayoutComponent = getModuleDefault(layoutModule as object) as new () => Cossack;
           const nextScope = createLayoutServiceScope(activeScope, LayoutComponent, {
             ownerRouteId: routePathToIdMap.get(layoutPath),
             ownerRoutePath: layoutPath,
@@ -744,66 +915,101 @@ export function createApp(options: CreateAppOptions = {}) {
         const safeState = sanitizeServiceState(owned.serviceClass, state);
         ownerScope.hydrateOwnedService(slot, safeState);
         if (!isRpcCallableAction(owned.serviceClass, action)) {
-          return c.json({ error: `Action '${String(action)}' is not a callable service method` }, 403);
+          return c.json({ error: `Action '${String(action)}' is not a callable service method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
         }
         const rateLimited = await enforceMethodRateLimit(c, owned.serviceClass, action, `crpc-service:${ownerRouteId}:${slot}`);
         if (rateLimited) return rateLimited;
 
         let actionResult: unknown;
         try {
-          actionResult = await owned.instance[action](...(Array.isArray(payload) ? payload : []));
+          const validatedServicePayload = await enforceActionInput(owned.serviceClass, action, Array.isArray(payload) ? payload : [], { signal: c.req.raw.signal });
+          await enforceActionAuthorization(owned.serviceClass, action, validatedServicePayload, c, c.req.raw.signal);
+          if (c.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+          if (import.meta.env.DEV) developmentRpcInvoked(c);
+          actionResult = await owned.instance[action](...(validatedServicePayload as any[]));
+          if (import.meta.env.DEV) developmentRpcReturned(c, actionResult instanceof Response ? 'native' : 'value');
         } catch (e: any) {
-          if (isClientVisibleError(e)) return c.json({ error: e.message }, 400);
-          console.error('[/crpc service] internal error:', e);
-          const isDev = (import.meta as any).env?.DEV;
-          return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
+          const denial = getAuthorizationFailure(e);
+          if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+          if (e instanceof RpcError && e.code === 'COSSACK_RPC_CANCELLED') {
+            return Response.json({ error: e.message, code: e.code, requestId }, { status: 499 });
+          }
+          if (isActionValidationError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_VALIDATION_FAILED',
+              fieldErrors: e.fieldErrors, requestId }, 400);
+          }
+          if (isClientVisibleError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
+          }
+          logRpcFailure(logContext, 'action');
+          return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+        }
+        // Generator results stream through the same response-local protocol as
+        // component calls; the stream owns request-scope cleanup until it ends.
+        if (isRpcStream(actionResult)) {
+          const finishResponseLifetime = retainResponseLifetime(c);
+          const response = createRpcStreamResponse({
+            ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
+            result: actionResult, requestId, signal: c.req.raw.signal, logContext,
+            getState: () => getServiceState(owned.instance),
+            cleanup: async () => {
+              try { await requestScope.disposeAsync(); }
+              finally { await finishResponseLifetime?.(); }
+            },
+          });
+          responseOwnsCleanup = true;
+          return response;
         }
 
-        const location = c.res.headers.get('Location');
-        if (location) return c.json({ _cossack_redirect: location });
-        if (actionResult instanceof Response) return actionResult;
+        const redirectResponse = await rpcRedirectResponse(c, actionResult);
+        if (redirectResponse) return redirectResponse;
+        if (actionResult instanceof Response) {
+          const finishResponseLifetime = retainResponseLifetime(c);
+          responseOwnsCleanup = true;
+          return await retainRpcResponseBody(actionResult, c.req.raw.signal, async () => {
+            try { await requestScope.disposeAsync(); }
+            finally { await finishResponseLifetime?.(); }
+          }, import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined, logContext);
+        }
+        const serviceState = getServiceState(owned.instance);
+        const serialized = serializeRpcResult(actionResult, serviceState);
         return c.json({
-          _cossack_service_state: getServiceState(owned.instance),
-          ...(actionResult !== undefined ? { _cossack_return: actionResult } : {}),
+          _cossack_service_state: serialized.state,
+          ...(serialized.value !== undefined ? { _cossack_return: serialized.value } : {}),
         });
+      } catch (error) {
+        const denial = getAuthorizationFailure(error);
+        if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+        if (!isActionValidationError(error) && !isClientVisibleError(error) &&
+            !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
+          logRpcFailure(logContext, 'request');
+        }
+        return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
+          code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
       } finally {
-        requestScope.dispose();
+        // Match component RPC: await scoped-service cleanup so onDispose
+        // hooks finish before the response completes.
+        if (!responseOwnsCleanup) await requestScope.disposeAsync();
       }
     }
 
     const componentPath = routeIdMap.get(componentRouteId);
     if (!componentPath) return c.json({ error: 'Invalid component ID' }, 400);
+    const logContext = logContextFor(componentPath);
 
-    // Handle App component (global component) specially
-    let componentInstance: any;
+    let ComponentClass: new (...args: any[]) => Cossack;
     if (componentPath === '/src/App') {
-      componentInstance = createInstance(options.AppComponent ?? RouterFallbackApp);
-      await componentInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, skipInit: true });
-      componentInstance._render();
+      ComponentClass = options.AppComponent ?? RouterFallbackApp;
     } else {
       const module = pages[componentPath] || layouts[componentPath];
       if (!module) return c.json({ error: 'Component not found' }, 404);
-      const PageComponent = Object.values(module as object)[0] as new () => Cossack;
-      if (!PageComponent || typeof PageComponent !== 'function') return c.json({ error: 'Invalid component' }, 500);
-      componentInstance = createInstance(PageComponent) as any;
-      await componentInstance.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, skipInit: true });
-
-      // Rebuild component tree
-      componentInstance._render();
+      ComponentClass = getModuleDefault(module as object) as new (...args: any[]) => Cossack;
+      if (typeof ComponentClass !== 'function') return c.json({ error: 'Invalid component' }, 500);
     }
-
-    let targetInstance = componentInstance;
-    if (target && target !== targetInstance._id) {
-      if (targetInstance.activeComponents.has(target)) {
-        targetInstance = targetInstance.activeComponents.get(target);
-      } else {
-        return c.json({ error: `Target component '${target}' not found` }, 404);
-      }
-    }
-
-    // Validate the scope before invoking an action or updating a shared stream.
-    const targetPageOptions = Reflect.getMetadata('page:options', componentInstance.constructor) as PageOptions | undefined;
+    // Resolve and authorize scope before constructors, rendering, or user actions.
+    const targetPageOptions = Reflect.getMetadata('page:options', ComponentClass) as PageOptions | undefined;
     let effectiveScopeKey = await resolveSseScopeKey(c, undefined);
+    let componentContext: Context = c;
     if (targetPageOptions?.transport === 'sse') {
       let params: Record<string, string>;
       try {
@@ -811,90 +1017,329 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch {
         return c.json({ error: 'Invalid route params' }, 400);
       }
-      effectiveScopeKey = await resolveSseScopeKey(withRuntimeRouteParams(c, params), targetPageOptions);
+      componentContext = withRuntimeRouteParams(c, params);
+      effectiveScopeKey = await resolveSseScopeKey(componentContext, targetPageOptions);
       if (clientScopeKey !== effectiveScopeKey) return c.json({ error: 'Invalid SSE scope' }, 403);
     }
 
-    // Apply the received state to the target component. First restrict to the
+    // Cloudflare's distributed backend serializes scope actions inside the
+    // coordinator Durable Object and hydrates them from the authoritative
+    // snapshot instead of the browser's state. Node keeps executing
+    // against the process-local store.
+    const sseStub = targetPageOptions?.transport === 'sse'
+      ? getSseScopeStub(c.env, componentRouteId, effectiveScopeKey) : undefined;
+    if (targetPageOptions?.transport === 'sse' && !sseStub && isCloudflareRuntime()) {
+      return sseBindingMissingResponse();
+    }
+
+    const actionCancellation = sseStub ? new AbortController() : undefined;
+    if (actionCancellation) componentContext = withRpcSignal(componentContext, actionCancellation.signal);
+
+    const requestScope = createRootServiceScope();
+    requestScope.bindRequest({ context: componentContext, user, env: c.env });
+    let componentInstance: Cossack | undefined;
+    let responseOwnsCleanup = false;
+    let finishResponseLifetime: (() => Promise<void>) | undefined;
+    let cleanupPromise: Promise<void> | undefined;
+    const cleanup = () => cleanupPromise ??= (async () => {
+      try { await componentInstance?.destroyAsync(); }
+      finally {
+        try { await requestScope.disposeAsync(); }
+        finally { await finishResponseLifetime?.(); }
+      }
+    })();
+
+    // Apply received state to a component instance. First restrict to the
     // component's own @State keys (sanitizeClientState) to block overwrites of
     // internal/security-sensitive props. Then also apply keys in the instance's
     // actual public state — covers @State from injected @Service dependencies
     // (synced into the container) which must round-trip or per-action service
     // state would reset on every call.
-    const safeState = sanitizeClientState(targetInstance.constructor, state);
-    for (const key in safeState) {
-      (targetInstance as any)[key] = safeState[key];
-    }
-    const publicStateKeys = new Set(Object.keys(targetInstance.getPublicState()));
-    if (state && typeof state === 'object') {
-      for (const key of Object.keys(state)) {
-        if (key in safeState) continue;
-        if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
-        if (publicStateKeys.has(key)) (targetInstance as any)[key] = (state as Record<string, unknown>)[key];
+    const applyReceivedState = (instance: any, source: Record<string, unknown> | undefined) => {
+      const safeState = sanitizeClientState(instance.constructor, source);
+      for (const key in safeState) {
+        instance[key] = safeState[key];
+      }
+      const publicStateKeys = new Set(Object.keys(instance.getPublicState()));
+      if (source && typeof source === 'object') {
+        for (const key of Object.keys(source)) {
+          if (key in safeState) continue;
+          if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+          if (publicStateKeys.has(key)) instance[key] = (source as Record<string, unknown>)[key];
+        }
+      }
+    };
+
+    const runComponentAction = async (
+      authoritativeState: Record<string, unknown> | undefined,
+    ): Promise<Response> => {
+      try {
+        if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+        let activeScope = requestScope;
+        for (const layoutPath of getLayoutStack(componentPath)) {
+          const LayoutClass = getModuleDefault(layouts[layoutPath] as object) as new () => Cossack;
+          activeScope = createLayoutServiceScope(activeScope, LayoutClass, {
+            ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: effectiveScopeKey,
+          });
+          activeScope.bindRequest({ context: componentContext, user, env: c.env });
+        }
+        componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
+        componentInstance.__cossack_rpcOwner = componentPath;
+        const coordinatorRuntime = sseStub ? attachCoordinatorRuntime(componentInstance, sseStub) : undefined;
+        await componentInstance.bootstrap({ context: componentContext, user, env: c.env, runtime: runtimeInfo, skipInit: true });
+        if (authoritativeState !== undefined) applyReceivedState(componentInstance, authoritativeState);
+        else if (!target || target === componentInstance._id) applyReceivedState(componentInstance, state);
+        componentInstance.__renderRpcTarget();
+        let targetInstance: any = componentInstance;
+        if (target && target !== targetInstance._id) {
+          if (targetInstance.activeComponents.has(target)) targetInstance = targetInstance.activeComponents.get(target);
+          else return c.json({ error: `Target component '${target}' not found`, code: 'COSSACK_RPC_NOT_FOUND', requestId }, 404);
+        }
+
+        // On the coordinator path the authoritative scope snapshot replaces the
+        // browser snapshot, so a stale tab cannot overwrite shared state. Child
+        // targets still receive the client state because the scope tracks the
+        // page's public state, not child-local state. Hydrate the page before
+        // rendering so conditional children match the authoritative snapshot.
+        if (authoritativeState !== undefined) {
+          if (targetInstance !== componentInstance) applyReceivedState(targetInstance, state);
+        } else {
+          applyReceivedState(targetInstance, state);
+        }
+
+        // Authorisation gate: only @Server-registered methods are RPC-callable.
+        // Prevents crafted requests from invoking framework-internal methods
+        // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
+        // Includes @Server methods on injected @Service dependencies (forwarded
+        // onto the component instance but registered on the service class).
+        if (!isRpcCallableActionOrService(targetInstance, action)) {
+          return c.json({ error: `Action '${action}' is not a callable server method`, code: 'COSSACK_RPC_FORBIDDEN', requestId }, 403);
+        }
+
+        // Rate-limit gate: enforce any @RateLimit declared on the action.
+        // If this is a forwarded @Service method, the metadata lives on the service class.
+        const rateLimitConstructor = isRpcCallableAction(targetInstance.constructor, action)
+          ? targetInstance.constructor
+          : getForwardedServerMethodClass(targetInstance, action);
+
+        const rateLimited = await enforceMethodRateLimit(componentContext, rateLimitConstructor, action,
+          JSON.stringify(['crpc', componentPath, (rateLimitConstructor as typeof Cossack).name]));
+        if (rateLimited) return rateLimited;
+
+        if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
+
+        // RT-02: enforce @Server({ input }) before the method runs. Coerced
+        // values replace the raw payload; failures return stable field errors.
+        let validatedPayload: unknown[] = payload as any[];
+        try {
+          validatedPayload = await enforceActionInput(
+            getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor, action, payload || [],
+            { signal: componentContext.req.raw.signal });
+          await enforceActionAuthorization(getForwardedServerMethodClass(targetInstance, action) ?? targetInstance.constructor,
+            action, validatedPayload, componentContext, componentContext.req.raw.signal);
+        } catch (validation) {
+          const denial = getAuthorizationFailure(validation);
+          if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+          if (validation instanceof RpcError && validation.code === 'COSSACK_RPC_CANCELLED') {
+            return Response.json({ error: validation.message, code: validation.code, requestId }, { status: 499 });
+          }
+          if (isActionValidationError(validation)) {
+            return c.json({ error: validation.message, code: 'COSSACK_VALIDATION_FAILED',
+              fieldErrors: validation.fieldErrors, requestId }, 400);
+          }
+          throw validation;
+        }
+
+        if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+
+        // Await promises before inspecting the result. Awaiting an async generator
+        // does not pull it; its response owns iteration and request-context lifetime.
+        let actionResult: unknown;
+        try {
+          if (import.meta.env.DEV) developmentRpcInvoked(c);
+          actionResult = await targetInstance[action](...(validatedPayload as any[]));
+          if (import.meta.env.DEV) developmentRpcReturned(c, actionResult instanceof Response ? 'native' : 'value');
+        } catch (e: any) {
+          const denial = getAuthorizationFailure(e);
+          if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+          if (isActionValidationError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_VALIDATION_FAILED',
+              fieldErrors: e.fieldErrors, requestId }, 400);
+          }
+          if (isClientVisibleError(e)) {
+            return c.json({ error: e.message, code: 'COSSACK_RPC_CLIENT_ERROR', requestId }, 400);
+          }
+          logRpcFailure(logContext, 'action');
+          return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+        }
+        if (componentContext.req.raw.signal.aborted) {
+          if (actionResult instanceof Response) void actionResult.body?.cancel().catch(() => {});
+          throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
+        }
+        if (isRpcStream(actionResult)) {
+          finishResponseLifetime = retainResponseLifetime(c);
+          let localSseCursor: number | undefined;
+          const response = createRpcStreamResponse({
+            ...(import.meta.env.DEV ? { developmentTrace: developmentRpcStream(c, requestId) } : {}),
+            result: actionResult, requestId, signal: componentContext.req.raw.signal, logContext,
+            getState: () => targetInstance.getPublicState(),
+            getScopeState: sseStub && targetInstance !== componentInstance
+              ? () => componentInstance!.getPublicState() : undefined,
+            getStateCursor: !sseStub && targetPageOptions?.transport === 'sse' && targetInstance === componentInstance
+              ? () => localSseCursor : undefined,
+            // The coordinator publishes every frame's state itself; only the
+            // process-local backend needs the store sync.
+            onState: coordinatorRuntime
+              ? () => coordinatorRuntime.flush()
+              : targetPageOptions?.transport === 'sse'
+                ? () => { localSseCursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState(), requestId); } : undefined,
+            cleanup,
+          });
+          responseOwnsCleanup = true;
+          return response;
+        }
+
+        // Ordinary results publish the final scope state once. Through the
+        // coordinator this is an explicit publish (the DO passes non-stream
+        // responses through without inspecting them); locally it bumps the
+        // store's version counter for the polling endpoint.
+        const publishScopeState = async () => {
+          await coordinatorRuntime?.flush();
+          if (sseStub) {
+            const snapshot = await sseStub.publish(JSON.stringify(componentInstance!.getPublicState()), requestId);
+            if (targetInstance === componentInstance) c.header('X-Cossack-SSE-Cursor', String(snapshot.cursor));
+            return;
+          }
+          if (targetPageOptions?.transport === 'sse') {
+            const cursor = syncSseState(`${componentRouteId}:${effectiveScopeKey}`, componentInstance!.getPublicState(), requestId);
+            if (targetInstance === componentInstance && cursor !== undefined) c.header('X-Cossack-SSE-Cursor', String(cursor));
+          }
+          return Promise.resolve();
+        };
+        const redirectResponse = await rpcRedirectResponse(c, actionResult);
+        if (redirectResponse) {
+          await publishScopeState();
+          return redirectResponse;
+        }
+        if (actionResult instanceof Response) {
+          await publishScopeState();
+          finishResponseLifetime = retainResponseLifetime(c);
+          responseOwnsCleanup = true;
+          return await retainRpcResponseBody(actionResult, componentContext.req.raw.signal, cleanup,
+            import.meta.env.DEV ? developmentRpcNative(c, requestId) : undefined, logContext);
+        }
+
+        // Get the state of the component that was actually modified
+        const responseData = targetInstance.getPublicState();
+        const serialized = serializeRpcResult(actionResult, responseData);
+        await publishScopeState();
+
+        // Non-streaming path: regular method return
+        if (serialized.value !== undefined) {
+          (serialized.state as any)._cossack_return = serialized.value;
+        }
+
+        return c.json(serialized.state as Record<string, unknown>);
+      } catch (error) {
+        // Unexpected framework failures (construction, DI, serialization) still
+        // produce one JSON RPC error on both backends.
+        const denial = getAuthorizationFailure(error);
+        if (denial) return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
+        if (!isActionValidationError(error) && !isClientVisibleError(error) &&
+            !(error instanceof RpcError && error.code === 'COSSACK_RPC_CANCELLED')) {
+          logRpcFailure(logContext, 'request');
+        }
+        return c.json({ error: error instanceof RpcError ? error.message : 'Internal Server Error',
+          code: error instanceof RpcError ? error.code : 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+      } finally {
+        if (!responseOwnsCleanup) await cleanup();
+      }
+    };
+
+    if (sseStub) {
+      // A private operation ID is distinct from caller-controlled correlation.
+      const operationId = crypto.randomUUID();
+      const inRequest = AsyncLocalStorage.snapshot();
+      const signal = c.req.raw.signal;
+      let cancelSent = false;
+      let bodyOwnsCancellation = false;
+      let stopBody: (() => void) | undefined;
+      const cancel = () => {
+        actionCancellation!.abort();
+        if (cancelSent) { stopBody?.(); return; }
+        cancelSent = true;
+        const pending = sseStub.cancel(operationId).catch(error => {
+          logRpcFailure(logContext, 'coordinator-cancellation', 'COSSACK_RPC_CLEANUP_FAILED');
+        });
+        // Incoming disconnect cleanup must survive the cancelled invocation.
+        try { c.executionCtx.waitUntil(pending); } catch { /* process-local test adapter */ }
+        void pending;
+        stopBody?.();
+      };
+      try {
+        if (signal.aborted) return Response.json({ error: 'RPC call was cancelled.', code: 'COSSACK_RPC_CANCELLED', requestId }, { status: 499 });
+        const responsePromise = sseStub.execute(
+          snapshot => inRequest(async () => runWithContext(componentContext,
+            () => runComponentAction(JSON.parse(snapshot)))),
+          operationId, async () => { actionCancellation!.abort(); },
+        );
+        signal.addEventListener('abort', cancel, { once: true });
+        if (signal.aborted) cancel();
+        const response = await responsePromise;
+        if (signal.aborted) {
+          cancel();
+          void response.body?.cancel().catch(() => {});
+          return Response.json({ error: 'RPC call was cancelled.', code: 'COSSACK_RPC_CANCELLED', requestId }, { status: 499 });
+        }
+        if (!response.body) return response;
+        const reader = response.body.getReader();
+        let closed = false;
+        let output!: ReadableStreamDefaultController<Uint8Array>;
+        const finishBody = () => {
+          if (closed) return;
+          closed = true;
+          signal.removeEventListener('abort', cancel);
+          reader.releaseLock();
+        };
+        stopBody = () => {
+          if (closed) return;
+          void reader.cancel().catch(() => {});
+          finishBody();
+          try { output.close(); } catch { /* consumer already cancelled */ }
+        };
+        const ownedBody = new ReadableStream<Uint8Array>({
+          start: controller => { output = controller; },
+          pull: async controller => {
+            if (closed) return;
+            try {
+              const next = await reader.read();
+              if (closed) return;
+              if (next.done) { finishBody(); controller.close(); }
+              else controller.enqueue(next.value);
+            } catch (error) {
+              if (closed) return;
+              logRpcFailure(logContext, 'coordinator-stream');
+              finishBody(); controller.error(error);
+            }
+          },
+          cancel,
+        }, { highWaterMark: 0 });
+        bodyOwnsCancellation = true;
+        if (signal.aborted) cancel();
+        return new Response(ownedBody, { status: response.status, statusText: response.statusText, headers: response.headers });
+      } catch (error) {
+        await cleanup();
+        logRpcFailure(logContext, 'coordinator-action');
+        return c.json({ error: 'Internal Server Error', code: 'COSSACK_RPC_INTERNAL_ERROR', requestId }, 500);
+      } finally {
+        if (!bodyOwnsCancellation) signal.removeEventListener('abort', cancel);
+        if (!responseOwnsCleanup) await cleanup();
       }
     }
-
-    // Authorisation gate: only @Server-registered methods are RPC-callable.
-    // Prevents crafted requests from invoking framework-internal methods
-    // (bootstrap, getMethod, setProperty, getPublicState, destroy, ...).
-    // Includes @Server methods on injected @Service dependencies (forwarded
-    // onto the component instance but registered on the service class).
-    if (!isRpcCallableActionOrService(targetInstance, action)) {
-      return c.json({ error: `Action '${action}' is not a callable server method` }, 403);
-    }
-
-    // Rate-limit gate: enforce any @RateLimit declared on the action.
-    // If this is a forwarded @Service method, the metadata lives on the service class.
-    const rateLimitConstructor = isRpcCallableAction(targetInstance.constructor, action)
-      ? targetInstance.constructor
-      : getForwardedServerMethodClass(targetInstance, action);
-
-    const rateLimited = await enforceMethodRateLimit(c, rateLimitConstructor, action, `crpc:${componentRouteId}`);
-    if (rateLimited) return rateLimited;
-
-    if (typeof targetInstance[action] !== 'function') return c.json({ error: `Action '${action}' not found` }, 404);
-
-    // Call the method. For streaming requests, don't await — the result may
-    // be an async iterable that the SSE driver will pull values from.
-    // Wrap in try/catch so thrown errors surface as a JSON body the client can
-    // display instead of a generic HTTP 500. `ClientVisibleError` (the caller's
-    // fault, message is user-facing) → 400 with the message; anything else is an
-    // internal failure → 500, logged server-side, generic message to the client.
-    let actionResult: any;
-    try {
-      if (isStreamRequest) {
-        actionResult = targetInstance[action](...(payload || []));
-      } else {
-        actionResult = await targetInstance[action](...(payload || []));
-      }
-    } catch (e: any) {
-      if (isClientVisibleError(e)) {
-        return c.json({ error: e.message }, 400);
-      }
-      console.error('[/crpc] internal error:', e);
-      const isDev = (import.meta as any).env?.DEV;
-      return c.json({ error: isDev ? (e?.stack || String(e)) : 'Internal Server Error' }, 500);
-    }
-
-    const location = c.res.headers.get('Location');
-    if (location) return c.json({ _cossack_redirect: location });
-    if (actionResult instanceof Response) return actionResult;
-
-    // Get the state of the component that was actually modified
-    const responseData = targetInstance.getPublicState();
-
-    const sseResult = handleSseCrpc(componentRouteId, effectiveScopeKey, actionResult, responseData, targetInstance);
-    if (sseResult.handled) {
-      return c.json(sseResult.response);
-    }
-
-    // Non-streaming path: regular method return
-    if (actionResult !== undefined) {
-      (responseData as any)._cossack_return = actionResult;
-    }
-
-    return c.json(responseData);
-  });
+    return runComponentAction(undefined);
+  };
+  app.post('/crpc', handleRpc);
+  app.post('/upload', handleRpc);
 
   // Register all routes.
   //
@@ -914,20 +1359,13 @@ export function createApp(options: CreateAppOptions = {}) {
     if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
 
     const module = pages[path] as any;
-    const mainExport = Object.values(module)[0];
+    const mainExport = getModuleDefault(module);
 
     // 1. Check if it's a Cossack Component
     if (mainExport && typeof mainExport === 'function' && mainExport.prototype instanceof Cossack) {
       const PageComponent = mainExport as new () => Cossack;
       const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', PageComponent);
-      const layoutPaths = getLayoutStack(path);
-      const combinedMiddlewares: Middleware[] = [];
-      for (const lPath of layoutPaths) {
-        const LComp = Object.values(layouts[lPath] as object)[0] as new () => Cossack;
-        const lOpts = Reflect.getMetadata('page:options', LComp);
-        if (lOpts?.middlewares) combinedMiddlewares.push(...lOpts.middlewares);
-      }
-      if (pageOptions?.middlewares) combinedMiddlewares.push(...pageOptions.middlewares);
+      const combinedMiddlewares = getMiddlewares(path);
 
       if (pageOptions?.transport !== 'http' && pageOptions?.transport !== 'sse') {
         Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', PageComponent);
@@ -945,7 +1383,7 @@ export function createApp(options: CreateAppOptions = {}) {
       // handler as usual (it may still expose post/put/etc. as JSON endpoints).
       const isApiRoute =
         pageOptions?.transport === 'http' &&
-        !Object.getOwnPropertyDescriptor(PageComponent.prototype, 'render');
+        !getAuthoredRouteMember(PageComponent, 'render');
 
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
@@ -968,7 +1406,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
     // 2. Check if it's a functional API Route
-    else if (path.includes('/src/pages/api/')) {
+    else if (classifyRoute(httpRoute) === 'api') {
       // Handle default export as a generic handler
       if (typeof module.default === 'function') {
         app.all(httpRoute, module.default);
@@ -984,11 +1422,12 @@ export function createApp(options: CreateAppOptions = {}) {
   }
 
   app.notFound(async (c) => {
-    const virtualPath = `/src/pages${c.req.path.replace(/\/$/, '')}/index.ts`;
-    const notFoundPage = findNearestSpecialPage(virtualPath, '404');
-    if (notFoundPage) {
+    const selected = resolveNotFound(c.req.path);
+    if (selected) {
+      const component = getModuleDefault(pages[selected.path] as object) as new () => Cossack;
+      const context = withRuntimeRouteParams(c, selected.params);
       c.status(404);
-      return createSsrHandler(notFoundPage.component, notFoundPage.path)(c);
+      return runWithContext(context, () => renderBoundary(component, selected.path, context));
     }
     return c.text('404 Not Found', 404);
   });

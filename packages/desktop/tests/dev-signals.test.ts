@@ -2,18 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   developmentGraphicsArgs,
   developmentSandboxArgs,
-  isSuccessfulBuildOutput,
 } from '../src/dev-signals';
 import { resolveLinuxOzonePlatform } from '../src/platform';
 
 describe('Desktop development runner signals', () => {
-  it('recognizes initial and watched Vite build completion', () => {
-    expect(isSuccessfulBuildOutput('✓ built in 231ms')).toBe(true);
-    expect(isSuccessfulBuildOutput('built in 1.4s')).toBe(true);
-    expect(isSuccessfulBuildOutput('watching for file changes...')).toBe(false);
-    expect(isSuccessfulBuildOutput('transforming modules')).toBe(false);
-  });
-
   it('only disables Chromium sandboxing for a misconfigured Linux development helper', () => {
     expect(developmentSandboxArgs('linux', { uid: 0, mode: 0o104755 })).toEqual([]);
     expect(developmentSandboxArgs('linux', { uid: 1000, mode: 0o100755 })).toEqual(['--no-sandbox']);

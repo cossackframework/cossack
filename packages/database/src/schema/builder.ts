@@ -44,14 +44,10 @@ export class SchemaBuilder {
 
   async execute(orm: ORM): Promise<void> {
     const dialect = dialectFor(orm.driver.dialect);
-    for (const item of this.queue) {
-      if (!(item instanceof SQLFragment)) {
-        for (const statement of renderOperation(item as SchemaOperation, dialect)) {
-          await orm.executeFragment(orm.sql.unsafe(statement), "ddl");
-        }
-      } else {
-        await orm.executeFragment(item as SQLFragment, "ddl");
-      }
-    }
+    // Render every operation before executing any statement. An unsupported
+    // operation later in the queue must not leave earlier schema changes behind.
+    const statements = this.queue.flatMap(item => item instanceof SQLFragment
+      ? [item] : renderOperation(item, dialect).map(text => orm.sql.unsafe(text)));
+    for (const statement of statements) await orm.executeFragment(statement, "ddl");
   }
 }

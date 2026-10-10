@@ -97,9 +97,9 @@ export class PragmasTab extends Cossack {
                   ${component(Switch, {
                     checked: value === '1',
                     'aria-label': `${pragma.name} value`,
-                    '@change': (event: InputEvent) => this.props.onDraftChange(
+                    '@change': (event) => this.props.onDraftChange(
                       pragma.name,
-                      (event.target as HTMLInputElement).checked ? '1' : '0',
+                      event.currentTarget.checked ? '1' : '0',
                     ),
                   })}
                   <span class="text-xs text-muted-foreground">
@@ -122,9 +122,9 @@ export class PragmasTab extends Cossack {
                   size: 'sm',
                   '.value': value,
                   'aria-label': `${pragma.name} value`,
-                  '@change': (event: InputEvent) => this.props.onDraftChange(
+                  '@change': event => this.props.onDraftChange(
                     pragma.name,
-                    (event.target as HTMLSelectElement).value,
+                    event.currentTarget.value,
                   ),
                 }, html`
                   ${pragma.options?.map((option) => html`

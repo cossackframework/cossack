@@ -1,5 +1,21 @@
 import { defineServerMiddleware } from '@cossackframework/core';
+import { createAuthorizer } from '@cossackframework/auth';
 import { auth } from '../auth';
+
+const dashboardAuthorizer = createAuthorizer({
+    onUnauthorized: (c, reason) => {
+        if (c.req.path === '/crpc' || c.req.path === '/upload' || c.req.path.startsWith('/ws/')) {
+            return c.json({ error: reason === 'unauthenticated' ? 'Authentication required' : 'Forbidden',
+                code: reason === 'unauthenticated' ? 'COSSACK_RPC_UNAUTHENTICATED' : 'COSSACK_RPC_FORBIDDEN' },
+                reason === 'unauthenticated' ? 401 : 403);
+        }
+        return c.redirect(config('auth.redirectAfterLogout'));
+    },
+});
+
+// A layout guard also runs for the dashboard's RPC actions. The global path
+// guard below sees /crpc rather than the component's dashboard URL.
+export const requireDashboardUser = defineServerMiddleware(dashboardAuthorizer.requireUser);
 
 /**
  * Auth guard.

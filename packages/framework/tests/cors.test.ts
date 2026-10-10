@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createCorsMiddleware, type CorsConfig } from '../src/middlewares/cors';
 import { createApp } from '../src/router';
+import { runWithConfig } from '../src/config';
 
 const base: CorsConfig = {
   enabled: true,
@@ -22,6 +23,18 @@ function appWith(overrides: Partial<CorsConfig> = {}, downstream = vi.fn()) {
 }
 
 describe('built-in API CORS middleware', () => {
+  it('reads optional request configuration without requiring a registered cors type', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware());
+    app.get('/api', c => c.json({ ok: true }));
+    const request = () => app.request('/api', { headers: { Origin: 'https://app.example.com' } });
+    const configured = await runWithConfig({ env: {}, config: { cors: { origins: ['https://app.example.com'] } } }, request);
+    expect(configured.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
+    const absent = await runWithConfig({ env: {}, config: {} }, request);
+    expect(absent.status).toBe(200);
+    expect(absent.headers.has('access-control-allow-origin')).toBe(false);
+  });
+
   it.each([
     ['exact', ['https://app.example.com/'], 'https://app.example.com'],
     ['scheme wildcard', ['https://*.example.com'], 'https://admin.example.com'],

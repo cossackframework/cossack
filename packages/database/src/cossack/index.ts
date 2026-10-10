@@ -1,9 +1,20 @@
+import { cacheKey, cacheKeys, cacheExpiry as validatedCacheExpiry, cacheJson, prepareCacheEntries } from "./cache-policy.js";
 import type { ORM } from "../orm.js";
 import { currentORM } from "../scope.js";
 import type { SQLFragment } from "../sql/fragment.js";
 
 export interface MiddlewareContext {
   set?(key: string, value: unknown): void;
+  get?(key: string): unknown;
+}
+
+interface ResponseLifetime {
+  deferCleanup(cleanup: () => Promise<void>): boolean;
+}
+
+function responseLifetime(value: unknown): value is ResponseLifetime {
+  return value !== null && typeof value === "object" && "deferCleanup" in value &&
+    typeof value.deferCleanup === "function";
 }
 
 export type MiddlewareNext = () => Promise<void>;
@@ -15,7 +26,8 @@ export type ORMFactory<Context extends MiddlewareContext = MiddlewareContext> =
  *
  * An ORM instance is caller-owned and is never closed by middleware. An ORM
  * created by a request factory is owned by middleware and is always closed,
- * including when downstream throws.
+ * including when downstream throws. A framework streaming response can retain
+ * cleanup until its body completes or is cancelled.
  */
 export function ormMiddleware<Context extends MiddlewareContext>(
   source: ORM | ORMFactory<Context>,
@@ -30,7 +42,12 @@ export function ormMiddleware<Context extends MiddlewareContext>(
         await next();
       });
     } finally {
-      if (ownsORM) await orm.close();
+      if (ownsORM) {
+        const lifetime = context.get?.("cossack:response-lifetime");
+        if (!responseLifetime(lifetime) || !lifetime.deferCleanup(() => orm.close())) {
+          await orm.close();
+        }
+      }
     }
   };
 }
@@ -38,12 +55,20 @@ export function ormMiddleware<Context extends MiddlewareContext>(
 export interface CacheEntry<T = unknown> {
   readonly key: string;
   readonly value: T;
-  readonly ttlSeconds?: number;
+  readonly ttlMs?: number;
 }
 
+const DATABASE_CACHE_CAPABILITIES = Object.freeze({
+  kind: 'cache' as const, provider: 'database', durationUnit: 'milliseconds' as const,
+  locality: 'unknown' as const, persistence: 'unknown' as const, consistency: 'unknown' as const,
+  atomicIncrement: false as const, expiryPrecision: 'milliseconds' as const,
+  operations: Object.freeze(['get', 'set', 'has', 'delete', 'flush', 'getMany', 'setMany', 'deleteMany'] as const),
+});
+
 export interface CacheStore {
+  readonly capabilities?: typeof DATABASE_CACHE_CAPABILITIES;
   get<T = unknown>(key: string): Promise<T | undefined>;
-  set<T = unknown>(key: string, value: T, ttlSeconds?: number): Promise<void>;
+  set<T = unknown>(key: string, value: T, ttlMs?: number): Promise<void>;
   has(key: string): Promise<boolean>;
   delete(key: string): Promise<void>;
   flush(): Promise<void>;
@@ -62,10 +87,8 @@ function resolveORM(explicit?: ORM): ORM {
   return orm;
 }
 
-function cacheExpiry(ttlSeconds?: number): number | null {
-  return ttlSeconds === undefined
-    ? null
-    : Date.now() + Math.max(0, ttlSeconds) * 1_000;
+function cacheExpiry(ttlMs?: number): number | null {
+  return validatedCacheExpiry(ttlMs) ?? null;
 }
 
 function cacheExpired(value: unknown): boolean {
@@ -79,7 +102,9 @@ export function createDatabaseCacheStore(
   const table = options.tableName ?? "cache_items";
   const getORM = () => resolveORM(orm);
   return {
+    capabilities: DATABASE_CACHE_CAPABILITIES,
     async get<T>(key: string): Promise<T | undefined> {
+      cacheKey(key);
       const scoped = getORM();
       const result = await scoped.executeFragment<Record<string, unknown>>(scoped.sql.fragment`
         SELECT ${scoped.sql.id("value")}, ${scoped.sql.id("expires_at")}
@@ -90,21 +115,34 @@ export function createDatabaseCacheStore(
       const row = result.rows[0];
       if (!row) return undefined;
       if (cacheExpired(row["expires_at"])) {
-        await this.delete(key);
+        await scoped.executeFragment(scoped.sql.fragment`
+          DELETE FROM ${scoped.sql.id(table)}
+          WHERE ${scoped.sql.id("key")} = ${key}
+            AND ${scoped.sql.id("value")} = ${String(row["value"])}
+            AND (${scoped.sql.id("expires_at")} = ${row["expires_at"] == null ? null : Number(row["expires_at"])}
+              OR (${scoped.sql.id("expires_at")} IS NULL AND ${row["expires_at"] == null ? null : Number(row["expires_at"])} IS NULL))
+        `, "delete");
         return undefined;
       }
       try {
         return JSON.parse(String(row["value"])) as T;
       } catch {
-        await this.delete(key);
+        await scoped.executeFragment(scoped.sql.fragment`
+          DELETE FROM ${scoped.sql.id(table)}
+          WHERE ${scoped.sql.id("key")} = ${key}
+            AND ${scoped.sql.id("value")} = ${String(row["value"])}
+            AND (${scoped.sql.id("expires_at")} = ${row["expires_at"] == null ? null : Number(row["expires_at"])}
+              OR (${scoped.sql.id("expires_at")} IS NULL AND ${row["expires_at"] == null ? null : Number(row["expires_at"])} IS NULL))
+        `, "delete");
         return undefined;
       }
     },
-    async set<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
-      if (value === undefined) return this.delete(key);
+    async set<T>(key: string, value: T, ttlMs?: number): Promise<void> {
+      cacheKey(key);
+      const expiresAt = cacheExpiry(ttlMs);
+      const json = cacheJson(value);
+      if (json === undefined || ttlMs === 0) return this.delete(key);
       const scoped = getORM();
-      const json = JSON.stringify(value);
-      const expiresAt = cacheExpiry(ttlSeconds);
       const updatedAt = Date.now();
       const fragment = scoped.driver.dialect === "mysql"
         ? scoped.sql.fragment`
@@ -128,22 +166,10 @@ export function createDatabaseCacheStore(
       await scoped.executeFragment(fragment, "insert");
     },
     async has(key: string): Promise<boolean> {
-      const scoped = getORM();
-      const result = await scoped.executeFragment<Record<string, unknown>>(scoped.sql.fragment`
-        SELECT ${scoped.sql.id("expires_at")}
-        FROM ${scoped.sql.id(table)}
-        WHERE ${scoped.sql.id("key")} = ${key}
-        LIMIT 1
-      `, "select");
-      const row = result.rows[0];
-      if (!row) return false;
-      if (cacheExpired(row["expires_at"])) {
-        await this.delete(key);
-        return false;
-      }
-      return true;
+      return (await this.get(key)) !== undefined;
     },
     async delete(key: string): Promise<void> {
+      cacheKey(key);
       const scoped = getORM();
       await scoped.executeFragment(
         scoped.sql.fragment`DELETE FROM ${scoped.sql.id(table)} WHERE ${scoped.sql.id("key")} = ${key}`,
@@ -155,14 +181,17 @@ export function createDatabaseCacheStore(
       await scoped.executeFragment(scoped.sql.fragment`DELETE FROM ${scoped.sql.id(table)}`, "delete");
     },
     async getMany<T>(keys: string[]): Promise<(T | undefined)[]> {
+      cacheKeys(keys);
       return Promise.all(keys.map((key) => this.get<T>(key)));
     },
     async setMany<T>(entries: CacheEntry<T>[]): Promise<void> {
-      for (const entry of entries) {
-        await this.set(entry.key, entry.value, entry.ttlSeconds);
+      const prepared = prepareCacheEntries(entries);
+      for (const entry of prepared) {
+        await this.set(entry.key, entry.raw === undefined ? undefined : JSON.parse(entry.raw), entry.ttlMs);
       }
     },
     async deleteMany(keys: string[]): Promise<void> {
+      cacheKeys(keys);
       if (!keys.length) return;
       const scoped = getORM();
       await scoped.executeFragment(
@@ -182,7 +211,9 @@ export interface DatabaseSessionStore {
   load(sessionId: string): Promise<Record<string, unknown>>;
   get<T = unknown>(sessionId: string, key: string): Promise<T | undefined>;
   getAll(sessionId: string): Promise<Record<string, unknown>>;
+  /** Atomically updates one key while preserving unrelated concurrent writes. */
   set(sessionId: string, key: string, value: unknown, ttlMs?: number): Promise<void>;
+  /** Atomically removes one key while preserving unrelated concurrent writes. */
   unset(sessionId: string, key: string): Promise<void>;
   destroy(sessionId: string): Promise<void>;
   bindUser(sessionId: string, userId: string): Promise<void>;
@@ -201,6 +232,67 @@ function sessionToken(): string {
   let binary = "";
   for (const value of bytes) binary += String.fromCharCode(value);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function serializeSessionValue(key: string, value: unknown): string | undefined {
+  const encoded = JSON.stringify({ [key]: value });
+  if (encoded === undefined) return undefined;
+  const object = JSON.parse(encoded) as Record<string, unknown>;
+  return Object.hasOwn(object, key) ? JSON.stringify(object[key]) : undefined;
+}
+
+/** Apply one bag-key change in SQL so concurrent distinct keys cannot erase each other. */
+async function mutateSessionKey(
+  orm: ORM,
+  table: string,
+  sessionId: string,
+  key: string,
+  serializedValue: string | undefined,
+  ttlMs?: number,
+): Promise<void> {
+  const sql = orm.sql;
+  const data = sql.id("data");
+  const now = new Date().toISOString();
+  const active = sql.fragment`${sql.id("id")} = ${sessionId} AND ${sql.id("expires_at")} > ${now}`;
+  let root: SQLFragment;
+  let updated: SQLFragment;
+
+  switch (orm.driver.dialect) {
+    case "sqlite":
+      root = sql.fragment`CASE WHEN json_valid(${data}) AND json_type(${data}) = 'object' THEN ${data} ELSE '{}' END`;
+      updated = serializedValue === undefined
+        ? sql.fragment`json_remove(${root}, ${`$.${JSON.stringify(key)}`})`
+        : sql.fragment`json_set(${root}, ${`$.${JSON.stringify(key)}`}, json(${serializedValue}))`;
+      break;
+    case "postgres":
+      root = sql.fragment`CASE WHEN jsonb_typeof(COALESCE(NULLIF(${data}, '')::jsonb, '{}'::jsonb)) = 'object'
+        THEN COALESCE(NULLIF(${data}, '')::jsonb, '{}'::jsonb) ELSE '{}'::jsonb END`;
+      updated = serializedValue === undefined
+        ? sql.fragment`(${root} - ${key})`
+        : sql.fragment`jsonb_set(${root}, ARRAY[${key}]::text[], ${serializedValue}::jsonb, true)`;
+      break;
+    case "mysql":
+      root = sql.fragment`CASE WHEN JSON_VALID(${data})
+        THEN CASE WHEN JSON_TYPE(CAST(${data} AS JSON)) = 'OBJECT'
+          THEN CAST(${data} AS JSON) ELSE JSON_OBJECT() END
+        ELSE JSON_OBJECT() END`;
+      updated = serializedValue === undefined
+        ? sql.fragment`JSON_REMOVE(${root}, ${`$.${JSON.stringify(key)}`})`
+        : sql.fragment`JSON_SET(${root}, ${`$.${JSON.stringify(key)}`}, CAST(${serializedValue} AS JSON))`;
+      break;
+  }
+
+  if (ttlMs === undefined) {
+    await orm.executeFragment(sql.fragment`
+      UPDATE ${sql.id(table)} SET ${data} = ${updated}
+      WHERE ${active}
+    `, "update");
+  } else {
+    await orm.executeFragment(sql.fragment`
+      UPDATE ${sql.id(table)} SET ${data} = ${updated}, ${sql.id("expires_at")} = ${expiryISO(ttlMs)}
+      WHERE ${active}
+    `, "update");
+  }
 }
 
 export function createDatabaseSessionStore(
@@ -257,29 +349,13 @@ export function createDatabaseSessionStore(
     },
     async set(sessionId: string, key: string, value: unknown, ttlMs = DEFAULT_SESSION_TTL_MS): Promise<void> {
       const scoped = getORM();
-      const data = await this.load(sessionId);
-      data[key] = value;
-      const json = JSON.stringify(data);
-      const expiresAt = expiryISO(ttlMs);
-      // Update only a live, server-issued row. Upserts would resurrect expired
-      // authenticated sessions and let request cookies choose new session IDs.
-      await scoped.executeFragment(scoped.sql.fragment`
-        UPDATE ${scoped.sql.id(table)}
-        SET ${scoped.sql.id("data")} = ${json}, ${scoped.sql.id("expires_at")} = ${expiresAt}
-        WHERE ${scoped.sql.id("id")} = ${sessionId}
-          AND ${scoped.sql.id("expires_at")} > ${new Date().toISOString()}
-      `, "update");
+      // A single-key SQL mutation preserves unrelated concurrent session
+      // writes. Read/merge/write here loses keys across Workers or adapters.
+      await mutateSessionKey(scoped, table, sessionId, key, serializeSessionValue(key, value), ttlMs);
     },
     async unset(sessionId: string, key: string): Promise<void> {
       const scoped = getORM();
-      const data = await this.load(sessionId);
-      if (!(key in data)) return;
-      delete data[key];
-      await scoped.executeFragment(scoped.sql.fragment`
-        UPDATE ${scoped.sql.id(table)}
-        SET ${scoped.sql.id("data")} = ${JSON.stringify(data)}
-        WHERE ${scoped.sql.id("id")} = ${sessionId}
-      `, "update");
+      await mutateSessionKey(scoped, table, sessionId, key, undefined);
     },
     async destroy(sessionId: string): Promise<void> {
       const scoped = getORM();

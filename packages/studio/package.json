@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/studio",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
   "description": "A local, browser-based database inspector for Cossack applications",
   "license": "MIT",
@@ -18,7 +18,8 @@
   },
   "files": [
     "README.md",
-    "dist"
+    "dist",
+    "agent-docs.json"
   ],
   "scripts": {
     "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",

@@ -1,84 +1,71 @@
-import { test, expect } from '../fixtures';
+import { test, expect, type Page } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
+
+const SEED = ['Learn Cossack Framework', 'Build a real-time app', 'Deploy to Cloudflare Workers'];
+
+function taskItems(page: Page) {
+  return page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Delete' }) });
+}
 
 test.describe('Tasks Page', () => {
+  // All tests share one Durable Object task list and one test deletes from it.
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
     await page.goto('/tasks');
+    await waitForHydration(page);
   });
 
-  test('should display task list or empty state', async ({ page }) => {
-    await expect(page.locator('body')).toBeVisible();
+  test('renders the server-initialized task list', async ({ page }) => {
+    await expect(page).toHaveTitle(/Task List/);
+    await expect(page.getByRole('heading', { name: 'Tasks', exact: true })).toBeVisible();
+    // The list lives in a shared Durable Object and the delete test removes
+    // entries, so assert membership in the seed rather than an exact list.
+    const texts = await taskItems(page).locator('span').allTextContents();
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) expect(SEED).toContain(text.trim());
   });
 
-  test('should add a new task', async ({ page }) => {
-    const input = page.locator('input[type="text"]').first();
+  test('dismissing the confirm dialog does not delete the task', async ({ page }) => {
+    const first = taskItems(page).first();
+    const text = (await first.locator('span').textContent())!.trim();
+    page.once('dialog', dialog => dialog.dismiss());
+    await first.getByRole('button', { name: 'Delete' }).click();
+    await expect(first.getByRole('button', { name: 'Delete' })).toBeEnabled();
+    await expect(taskItems(page).filter({ hasText: text })).toHaveCount(1);
+  });
 
-    if (await input.isVisible()) {
-      await input.fill('Test Task E2E');
+  test('deleting a task updates every tab on the channel', async ({ page, context }) => {
+    const other = await context.newPage();
+    await other.goto('/tasks');
+    await waitForHydration(other);
 
-      const addButton = page.locator('button:has-text("Add")').first();
-      await addButton.click();
+    const first = taskItems(page).first();
+    const text = (await first.locator('span').textContent())!.trim();
+    // Deleting the last task empties the list, and the tasks:changed handler's
+    // init() then re-seeds it.
+    const wasLast = (await taskItems(page).count()) === 1;
+    await expect(taskItems(other).filter({ hasText: text })).toHaveCount(1);
 
-      await page.waitForTimeout(500);
+    const dialogs: string[] = [];
+    page.on('dialog', dialog => {
+      dialogs.push(`${dialog.type()}:${dialog.message()}`);
+      void dialog.accept();
+    });
+    other.on('dialog', dialog => void dialog.accept());
 
-      await expect(page.locator('body')).toContainText('Test Task E2E');
+    await first.getByRole('button', { name: 'Delete' }).click();
+    // The per-task loading flag disables the button while the server works.
+    await expect(taskItems(page).filter({ hasText: text }).getByRole('button')).toBeDisabled();
+
+    for (const tab of [page, other]) {
+      if (wasLast) await expect(taskItems(tab).locator('span')).toHaveText(SEED, { timeout: 10_000 });
+      else await expect(taskItems(tab).filter({ hasText: text })).toHaveCount(0, { timeout: 10_000 });
     }
-  });
-
-  test('should show loading state when adding task', async ({ page }) => {
-    const input = page.locator('input[type="text"]').first();
-
-    if (await input.isVisible()) {
-      await input.fill('Loading Test Task');
-
-      const addButton = page.locator('button:has-text("Add")').first();
-      await addButton.click();
-
-      await page.waitForTimeout(100);
-    }
-  });
-
-  test('should handle task completion toggle', async ({ page }) => {
-    const checkboxes = page.locator('input[type="checkbox"]');
-
-    if ((await checkboxes.count()) > 0) {
-      const firstCheckbox = checkboxes.first();
-      await firstCheckbox.click();
-
-      await page.waitForTimeout(300);
-    }
-  });
-
-  test('should delete a task', async ({ page }) => {
-    const deleteButtons = page.locator('button:has-text("Delete"), button:has-text("Remove")');
-
-    if ((await deleteButtons.count()) > 0) {
-      const bodyBefore = await page.locator('body').textContent();
-
-      await deleteButtons.first().click();
-
-      await page.waitForTimeout(500);
-    }
-  });
-
-  test('should sync tasks across browser tabs', async ({ page, context }) => {
-    const input = page.locator('input[type="text"]').first();
-
-    if (await input.isVisible()) {
-      await input.fill('Sync Test Task');
-
-      const addButton = page.locator('button:has-text("Add")').first();
-      await addButton.click();
-
-      await page.waitForTimeout(500);
-
-      const secondPage = await context.newPage();
-      await secondPage.goto('/tasks');
-
-      await secondPage.waitForTimeout(500);
-
-      await expect(secondPage.locator('body')).toContainText('Sync Test Task');
-
-      await secondPage.close();
-    }
+    await expect.poll(() => dialogs).toEqual([
+      'confirm:Are you sure you want to delete this task?',
+      'alert:Task was deleted successfully!',
+    ]);
+    await other.close();
   });
 });

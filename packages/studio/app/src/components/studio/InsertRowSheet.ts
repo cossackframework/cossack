@@ -5,6 +5,7 @@ import {
   Alert,
   Button,
   DatePicker,
+  isCalendarDate,
   Icon,
   Input,
   Sheet,
@@ -47,6 +48,7 @@ export class InsertRowSheet extends Cossack {
       size: 'min(42rem, 94vw)',
       onClose: this.props.onClose,
       'data-testid': 'insert-form',
+      'aria-label': 'Insert row',
     }, html`
       <header class="shrink-0 border-b p-5">
         <h2 class="font-semibold">Insert row</h2>
@@ -69,13 +71,14 @@ export class InsertRowSheet extends Cossack {
               value: '',
             };
             const { mode, valueKind, value } = field;
+            const inputId = `insert-value-${encodeURIComponent(column.name)}`;
             const selection: InsertSelection = mode === 'value' ? valueKind : mode;
             const activeClass = mode === 'value'
               ? 'studio-insert-value'
               : 'bg-muted/60';
             return html`
               <div class="grid gap-1.5 text-sm" data-testid="insert-field-${column.name}">
-                <label class="font-medium" for="insert-value-${column.name}">
+                <label class="font-medium" for=${inputId}>
                   ${column.name}
                   <small class="ml-1 font-normal text-muted-foreground">${column.dataType}</small>
                 </label>
@@ -94,13 +97,14 @@ export class InsertRowSheet extends Cossack {
                       'data-testid': `insert-value-${column.name}`,
                       onChange: (nextValue: string) =>
                         this.props.onValueChange(column.name, nextValue),
-                    }) : valueKind === 'date' ? html`
+                    }) : valueKind === 'date' && (!value || isCalendarDate(value)) ? html`
                       <div
-                        id="insert-value-${column.name}"
                         class="rounded-md ${activeClass}"
                         data-testid="insert-value-${column.name}"
                       >
                         ${component(DatePicker, {
+                          id: inputId,
+                          disabled: mode !== 'value',
                           value,
                           onChange: (nextValue: string) =>
                             this.props.onValueChange(column.name, nextValue),
@@ -108,7 +112,7 @@ export class InsertRowSheet extends Cossack {
                       </div>
                     ` : valueKind === 'boolean' ? html`
                       <select
-                        id="insert-value-${column.name}"
+                        id=${inputId}
                         class="h-10 w-full rounded-md border border-input px-3 ${activeClass}"
                         data-testid="insert-value-${column.name}"
                         ?disabled="${mode !== 'value'}"
@@ -124,7 +128,7 @@ export class InsertRowSheet extends Cossack {
                     ` : html`
                       <div class="flex gap-2">
                         ${component(Input, {
-                          id: `insert-value-${column.name}`,
+                          id: inputId,
                           class: `min-w-0 flex-1 font-mono ${activeClass}`,
                           type: valueKind === 'number'
                             ? 'number'

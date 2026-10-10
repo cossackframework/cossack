@@ -134,3 +134,5 @@ export class SseChat extends Cossack {
         `;
     }
 }
+
+export default SseChat;

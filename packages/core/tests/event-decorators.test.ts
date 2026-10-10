@@ -140,7 +140,7 @@ describe('Event Decorators', () => {
             removeEventListener: vi.fn((event, handler) => {
                 delete windowListeners[event];
             }),
-            location: { host: 'localhost' },
+            location: { host: 'localhost', href: 'http://localhost/', pathname: '/' },
         } as any;
 
         component = new EventComponent();
@@ -223,7 +223,7 @@ describe('Lifecycle Event Decorators (@On mount / navigate-complete)', () => {
             __INITIAL_STATE__: {},
             addEventListener: vi.fn(),
             removeEventListener: vi.fn(),
-            location: { host: 'localhost' },
+            location: { host: 'localhost', href: 'http://localhost/', pathname: '/' },
         } as any;
 
         component = new LifecycleEventComponent();

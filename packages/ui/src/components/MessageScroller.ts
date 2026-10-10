@@ -1,100 +1,203 @@
-import { html } from "@cossackframework/renderer";
-import {
-    Cossack,
-    Component,
-    Client,
-    ClientState,
-    ClientTask,
-    createRef,
-    type RefObject,
-} from "@cossackframework/core";
+import { html, IfDefinedResult, PreventDefaultResult, preventDefault } from '@cossackframework/renderer';
+import { Cossack, Component, Client, ClientState } from '@cossackframework/core';
+import type { GlobalAttributes, ButtonAttributes } from '../native-attributes';
 
-export interface MessageScrollerProps {
-    /** Label for the "new messages" affordance button. */
-    newMessageLabel?: string;
-    /** Threshold in px from the bottom to consider "at bottom". Default 80. */
+export type MessageScrollerViewportProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role' | 'tabindex' | 'aria-label' | 'aria-labelledby'>;
+export type MessageScrollerJumpProps = Omit<ButtonAttributes, 'type' | 'role' | 'aria-label' | 'aria-labelledby' | 'aria-controls' | 'popovertarget' | 'popovertargetaction'>;
+export type MessageScrollerProps = Omit<GlobalAttributes<HTMLDivElement>, 'id'> & {
+    id: string;
+    /** Accessible name of the keyboard-scrollable viewport. */
+    label: string;
+    viewportProps?: MessageScrollerViewportProps;
+    jumpProps?: MessageScrollerJumpProps;
+    jumpLabel?: string;
+    /** Nonnegative finite distance from the bottom in CSS pixels. Default 80. */
     threshold?: number;
-    [key: string]: any;
+    /** Captured when mounted. Default end. Existing browser focus/scroll takes precedence. */
+    initialPosition?: 'start' | 'end';
+};
+
+type ReadingAnchor = { element: Element; offset: number };
+function scrollerListener(supplied: unknown, own: (event: Event) => void) {
+    const listener: EventListener = event => {
+        if (typeof supplied === 'function') supplied(event);
+        else if (supplied instanceof PreventDefaultResult) supplied.handler.call(event.currentTarget, event);
+        if (!event.defaultPrevented) own(event);
+    };
+    return supplied instanceof PreventDefaultResult ? preventDefault(listener, { novalidate: supplied.novalidate }) : listener;
 }
 
-/**
- * Cossack UI MessageScroller — scroll container that sticks to the bottom.
- *
- * Automatically scrolls to bottom on mount and when new content arrives — but
- * only if the user was already at (or near) the bottom. If the user scrolled
- * up to read history, a floating "new messages" button appears to jump back.
- *
- *   ${component(MessageScroller, {},
- *       html\`${messages.map(m => component(Message, {...}, component(Bubble, {...}, m.text)))}\`)}
- */
+/** Native transcript viewport with owned following, visible-element anchoring and cleanup. */
 @Component()
 export class MessageScroller extends Cossack {
     declare props: MessageScrollerProps;
-
-    scrollRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
-    @ClientState() private atBottom = true;
-    @ClientState() private showJumpButton = false;
-    private prevScrollHeight = 0;
+    @ClientState() private showJump = false;
+    private viewport?: HTMLDivElement;
+    private content?: HTMLDivElement;
+    private jumpButton?: HTMLButtonElement;
+    private disposeObservers?: () => void;
+    private resizeObserver?: ResizeObserver;
+    private observedRows = new Set<Element>();
+    private frame?: number;
+    private generation = 0;
+    private following = true;
+    private restoringFocus = false;
+    private lastTop = 0;
+    private lastMaximum = 0;
+    private anchors: ReadingAnchor[] = [];
+    private focusedBeforeRender?: HTMLElement;
 
     render() {
-        const { newMessageLabel = "New messages ↓" } = this.props;
-
-        return html`
-            <div class="cs-message-scroller relative h-full">
-                <div
-                    ref=${this.scrollRef}
-                    class="cs-message-scroller__viewport h-full overflow-y-auto"
-                    @scroll=${() => this.handleScroll()}
-                >
-                    <div class="cs-message-scroller__content flex flex-col gap-3 p-4">
-                        ${this.children}
-                    </div>
-                </div>
-                ${this.showJumpButton
-                    ? html`<button
-                          type="button"
-                          class="cs-message-scroller__jump absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 text-sm font-medium rounded-full bg-popover text-popover-foreground border shadow-lg cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] transition-colors z-10"
-                          @click=${() => this.scrollToBottom()}
-                      >${newMessageLabel}</button>`
-                    : null}
-            </div>
-        `;
-    }
-
-    onMount() {
-        // Stick to bottom on initial load.
-        requestAnimationFrame(() => this.scrollToBottom());
-    }
-
-    /** If content grew and we were at the bottom, keep sticking. Client-only. */
-    @ClientTask()
-    private stickToBottom() {
-        const vp = this.scrollRef.value;
-        if (!vp) return;
-        const grew = vp.scrollHeight > this.prevScrollHeight;
-        if (grew && this.atBottom) {
-            requestAnimationFrame(() => this.scrollToBottom());
+        // Finish pending geometry reconciliation before the next render can remove
+        // our primary anchor. Otherwise a surviving sibling can retain its offset
+        // from before a resize even though the reader now sees a different one.
+        if (this.frame !== undefined && this.disposeObservers) {
+            this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.frame);
+            this.frame = undefined;
+            this.reconcile();
         }
-        this.prevScrollHeight = vp.scrollHeight;
+        const { id, label, viewportProps, jumpProps, jumpLabel = 'Scroll to latest messages', threshold = 80, initialPosition = 'end', ...rest } = this.props;
+        if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('MessageScroller requires a nonempty id without whitespace.');
+        if (typeof label !== 'string' || !label.trim() || typeof jumpLabel !== 'string' || !jumpLabel.trim()) throw new Error('MessageScroller label and jumpLabel must be nonempty.');
+        if (!Number.isFinite(threshold) || threshold < 0) throw new Error('MessageScroller threshold must be finite and nonnegative.');
+        if (initialPosition !== 'start' && initialPosition !== 'end') throw new Error('MessageScroller initialPosition must be start or end.');
+        const focused = this.viewport?.ownerDocument.activeElement;
+        if (focused && this.content?.contains(focused)) this.focusedBeforeRender = focused as HTMLElement;
+        const { style: viewportStyle, ...nativeViewport } = viewportProps ?? {};
+        const suppliedStyle = viewportStyle instanceof IfDefinedResult ? viewportStyle.value : viewportStyle;
+        const scrollStyle = `${typeof suppliedStyle === 'string' ? suppliedStyle : ''};overflow-anchor:none;`;
+        const attributes = {
+            ...nativeViewport,
+            '@scroll': scrollerListener(viewportProps?.['@scroll'], () => this.readScroll()),
+            '@focusin': scrollerListener(viewportProps?.['@focusin'], event => {
+                if (!this.restoringFocus && this.content?.contains(event.target as Node)) { this.following = false; this.remember(); }
+            }),
+            '@pointerdown': scrollerListener(viewportProps?.['@pointerdown'], () => this.remember()),
+            '@wheel': scrollerListener(viewportProps?.['@wheel'], event => {
+                const delta = (event as WheelEvent).deltaY;
+                if (delta !== 0) { if (delta < 0) this.following = false; this.remember(); }
+            }),
+            '@keydown': scrollerListener(viewportProps?.['@keydown'], event => {
+                const key = event as KeyboardEvent;
+                if (key.target === this.viewport && !key.altKey && !key.ctrlKey && !key.metaKey && ['Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', ' '].includes(key.key)) {
+                    if (key.key === 'Home') {
+                        key.preventDefault();
+                        this.following = false;
+                        this.viewport.scrollTo({ top: 0, behavior: 'instant' });
+                        this.remember(); this.updateJump();
+                        return;
+                    }
+                    if (['Home', 'PageUp', 'ArrowUp'].includes(key.key) || (key.key === ' ' && key.shiftKey)) this.following = false;
+                    this.remember();
+                }
+            }),
+        };
+        return html`<div class="cs-message-scroller relative h-full min-h-0 min-w-0" ...=${rest} id=${id}>
+            <div class="cs-message-scroller__viewport h-full overflow-y-auto min-w-0 focus-visible:ring-2 focus-visible:ring-ring"
+                ...=${attributes} style=${scrollStyle} id=${`${id}-viewport`} role="region" aria-label=${label} tabindex="0"
+                ref=${(element: Element) => this.connect(element as HTMLDivElement)}>
+                <div class="cs-message-scroller__content flex flex-col gap-3 p-4 min-w-0" ref=${(element: Element) => { this.content = element as HTMLDivElement; }}>${this.children}</div>
+            </div>
+            ${this.showJump ? html`<button
+                class="cs-message-scroller__jump absolute bottom-4 start-1/2 -translate-x-1/2 rtl:translate-x-1/2 max-w-[calc(100%-2rem)] px-3 py-1.5 text-sm font-medium rounded-full bg-popover text-popover-foreground border shadow-lg cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px] transition-colors motion-reduce:transition-none disabled:opacity-50 disabled:cursor-not-allowed z-10"
+                ...=${{ ...jumpProps, '@click': scrollerListener(jumpProps?.['@click'], event => { if (!(event.currentTarget as HTMLButtonElement).matches(':disabled')) this.scrollToBottom(); }) }}
+                type="button" aria-controls=${`${id}-viewport`} ref=${(element: Element) => { this.jumpButton = element as HTMLButtonElement; }}>${jumpLabel}</button>` : null}
+        </div>`;
     }
-
-    @Client()
-    private handleScroll() {
-        const vp = this.scrollRef.value;
-        if (!vp) return;
-        const threshold = this.props.threshold ?? 80;
-        const distanceFromBottom = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-        const isAtBottom = distanceFromBottom <= threshold;
-        this.atBottom = isAtBottom;
-        this.showJumpButton = !isAtBottom && vp.scrollHeight > vp.clientHeight + threshold;
+    private innerTop() { return this.viewport!.getBoundingClientRect().top + this.viewport!.clientTop; }
+    private rows() { return Array.from(this.content?.children ?? []); }
+    private distance() { const vp = this.viewport!; return Math.max(0, vp.scrollHeight - vp.clientHeight - vp.scrollTop); }
+    private remember() {
+        const vp = this.viewport;
+        if (!vp?.isConnected || !vp.clientHeight) return;
+        const top = this.innerTop(), bottom = top + vp.clientHeight;
+        this.lastTop = vp.scrollTop;
+        this.lastMaximum = Math.max(0, vp.scrollHeight - vp.clientHeight);
+        this.anchors = this.rows().flatMap(element => {
+            const rect = element.getBoundingClientRect();
+            return rect.height > 0 && rect.bottom > top && rect.top < bottom ? [{ element, offset: rect.top - top }] : [];
+        });
     }
-
+    private updateJump() {
+        if (!this.viewport?.isConnected) return;
+        const visible = this.distance() > (this.props.threshold ?? 80);
+        if (!visible && this.jumpButton === this.viewport.ownerDocument.activeElement) this.viewport.focus({ preventScroll: true });
+        this.showJump = visible;
+    }
+    private readScroll() {
+        const vp = this.viewport;
+        if (!this.disposeObservers || !vp?.isConnected || Math.abs(vp.scrollTop - this.lastTop) < 0.5) return;
+        // Geometry can clamp scrollTop without a user choosing to follow.
+        // Pointer/key/focus intent records current geometry before native scrolling.
+        if (Math.abs(Math.max(0, vp.scrollHeight - vp.clientHeight) - this.lastMaximum) > 0.5) { this.schedule(); return; }
+        // An explicit upward scroll pauses following even inside the threshold.
+        // Resume near the bottom only when the reader scrolls toward it.
+        this.following = this.distance() <= (this.props.threshold ?? 80)
+            && (this.following || vp.scrollTop > this.lastTop || this.distance() < 0.5);
+        this.remember(); this.updateJump();
+    }
+    private schedule() {
+        const window = this.viewport?.ownerDocument.defaultView;
+        if (!this.disposeObservers || !window || this.frame !== undefined) return;
+        this.frame = window.requestAnimationFrame(() => { this.frame = undefined; this.reconcile(); });
+    }
+    private reconcile() {
+        const vp = this.viewport, content = this.content;
+        if (!this.disposeObservers || !vp?.isConnected || !content || !vp.clientHeight) return;
+        const rows = new Set(this.rows());
+        for (const row of this.observedRows) if (!rows.has(row)) { this.resizeObserver?.unobserve(row); this.observedRows.delete(row); }
+        for (const row of rows) if (!this.observedRows.has(row)) { this.resizeObserver?.observe(row); this.observedRows.add(row); }
+        if (this.following) vp.scrollTo({ top: vp.scrollHeight, behavior: 'instant' });
+        else {
+            const anchor = this.anchors.find(item => content.contains(item.element) && item.element.getBoundingClientRect().height > 0);
+            const top = anchor ? vp.scrollTop + anchor.element.getBoundingClientRect().top - this.innerTop() - anchor.offset : this.lastTop;
+            vp.scrollTo({ top, behavior: 'instant' });
+        }
+        this.remember(); this.updateJump();
+    }
+    private connect(viewport: HTMLDivElement) {
+        this.viewport = viewport;
+        const generation = this.generation;
+        queueMicrotask(() => {
+            if (generation !== this.generation || this.viewport !== viewport || !viewport.isConnected || !this.content?.isConnected) return;
+            if (!this.disposeObservers) {
+                this.following = (this.props.initialPosition ?? 'end') === 'end' && viewport.scrollTop === 0 && !viewport.contains(viewport.ownerDocument.activeElement);
+                this.remember();
+                const resize = new ResizeObserver(() => this.schedule()); this.resizeObserver = resize;
+                resize.observe(viewport); resize.observe(this.content);
+                const mutations = new MutationObserver(() => this.schedule());
+                mutations.observe(this.content, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+                this.disposeObservers = () => { resize.disconnect(); mutations.disconnect(); };
+            }
+            const old = this.focusedBeforeRender; this.focusedBeforeRender = undefined;
+            if (old && (viewport.ownerDocument.activeElement === old || viewport.ownerDocument.activeElement === viewport.ownerDocument.body)) {
+                const target = old.isConnected && old.getClientRects().length && !old.matches(':disabled') && !old.closest('[hidden],[inert]') ? old : viewport;
+                this.restoringFocus = true;
+                try {
+                    target.focus({ preventScroll: true });
+                    if (viewport.ownerDocument.activeElement === viewport.ownerDocument.body) viewport.focus({ preventScroll: true });
+                } finally { this.restoringFocus = false; }
+            }
+            this.schedule();
+        });
+    }
+    /** Follow the latest content. Disconnected calls are harmless. */
     @Client()
-    private scrollToBottom() {
-        const vp = this.scrollRef.value;
-        if (!vp) return;
-        vp.scrollTop = vp.scrollHeight;
-        this.atBottom = true;
-        this.showJumpButton = false;
+    scrollToBottom() {
+        const vp = this.viewport;
+        if (!this.disposeObservers || !vp?.isConnected) return;
+        this.following = true; vp.scrollTo({ top: vp.scrollHeight, behavior: 'instant' });
+        const focused = vp.ownerDocument.activeElement;
+        if (focused && this.content?.contains(focused)) {
+            const rect = focused.getBoundingClientRect(), top = this.innerTop();
+            if (rect.top < top || rect.bottom > top + vp.clientHeight) vp.focus({ preventScroll: true });
+        }
+        this.remember(); this.updateJump();
+    }
+    onCleanup() {
+        this.generation++;
+        if (this.frame !== undefined) this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.frame);
+        this.frame = undefined; this.disposeObservers?.(); this.disposeObservers = undefined; this.resizeObserver = undefined;
+        this.observedRows.clear(); this.anchors = []; this.viewport = undefined; this.content = undefined; this.jumpButton = undefined; this.focusedBeforeRender = undefined;
     }
 }

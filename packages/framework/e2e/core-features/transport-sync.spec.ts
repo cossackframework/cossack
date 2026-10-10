@@ -1,10 +1,14 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Helper: read the current counter value from the page.
  * Waits for "Count: N" to be visible, then parses the value.
  */
 async function getCounterValue(page: import('@playwright/test').Page): Promise<number> {
+  // Clicks issued before hydration are lost, so every read also implies "ready".
+  await waitForHydration(page);
   const countEl = page.locator('text=/Count:\\s*\\d+/').first();
   await expect(countEl).toBeVisible({ timeout: 10000 });
   const text = await countEl.textContent();
@@ -26,7 +30,20 @@ async function waitForCounterAtLeast(page: import('@playwright/test').Page, expe
     const text = await page.locator('body').textContent({ timeout: 5000 });
     const match = text?.match(/Count:\s*(\d+)/i);
     return match ? parseInt(match[1], 10) : -1;
-  }, { timeout: 60000, interval: 500 }).toBeGreaterThanOrEqual(expected);
+  }, { timeout: 60000 }).toBeGreaterThanOrEqual(expected);
+}
+
+async function openSseChat(page: import('@playwright/test').Page, room: string): Promise<void> {
+  const sseResponse = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname.startsWith('/sse/');
+  });
+
+  await page.goto(`/sse-chat?room=${encodeURIComponent(room)}`);
+  const response = await sseResponse;
+  expect(response.status()).toBe(200);
+  await waitForHydration(page);
+  await expect(page.locator('.sse-chat h1')).toHaveText('SSE Chat');
 }
 
 test.describe('Transport Multi-Tab Sync', () => {
@@ -90,66 +107,69 @@ test.describe('Transport Multi-Tab Sync', () => {
 
   test.describe('SSE', () => {
     test('should sync state across two tabs', async ({ page, context }) => {
-      // Tab 1: load the SSE chat page
-      // Use waitForSelector instead of networkidle — SSE keeps a persistent
-      // connection open, so networkidle never resolves.
-      await page.goto('/sse-chat');
-      await page.waitForSelector('.sse-chat h1');
+      const room = `transport-sync-${randomUUID()}`;
+      await openSseChat(page, room);
 
-      // Tab 2: open the same page (same default scope)
+      // The room is unique to this test, but shared by the two intended tabs.
       const tab2 = await context.newPage();
-      await tab2.goto('/sse-chat');
-      await tab2.waitForSelector('.sse-chat h1');
+      await openSseChat(tab2, room);
 
       // Tab 1: send a message
-      await page.fill('input[type="text"]', 'Hello from tab 1');
-      await page.click('button[type="submit"]');
+      const input = page.getByPlaceholder('Type a message...', { exact: true });
+      await expect(input).toBeEnabled();
+      await input.fill('Hello from tab 1');
+      await expect(input).toHaveValue('Hello from tab 1');
+      await input.press('Enter');
 
       // Tab 1: user message should appear immediately
-      await expect(page.locator('.msg.user .bubble')).toContainText('Hello from tab 1', { timeout: 5000 });
+      await expect(page.locator('.msg.user .bubble').last()).toContainText('Hello from tab 1', { timeout: 5000 });
 
       // Tab 2: should see the user message broadcast via SSE
-      await expect(tab2.locator('.msg.user .bubble')).toContainText('Hello from tab 1', { timeout: 10000 });
+      await expect(tab2.locator('.msg.user .bubble').last()).toContainText('Hello from tab 1', { timeout: 10000 });
 
       await tab2.close();
     });
 
     test('should isolate state between different scope keys', async ({ page, context }) => {
-      // Tab 1: join room alpha
-      await page.goto('/sse-chat?room=alpha');
-      await page.waitForSelector('.sse-chat h1');
-
-      // Tab 2: join room beta
+      const alphaRoom = `transport-sync-alpha-${randomUUID()}`;
+      const betaRoom = `transport-sync-beta-${randomUUID()}`;
+      // A sender and a passive observer per room. Observers only receive
+      // messages through their own SSE stream, so a message that reaches an
+      // observer acts as an ordering barrier: anything broadcast earlier to the
+      // wrong room would already have arrived on that stream.
+      await openSseChat(page, alphaRoom);
+      const alphaObserver = await context.newPage();
+      await openSseChat(alphaObserver, alphaRoom);
       const tab2 = await context.newPage();
-      await tab2.goto('/sse-chat?room=beta');
-      await tab2.waitForSelector('.sse-chat h1');
+      await openSseChat(tab2, betaRoom);
+      const betaObserver = await context.newPage();
+      await openSseChat(betaObserver, betaRoom);
 
-      // Tab 1: send a message in room alpha
-      await page.fill('input[type="text"]', 'alpha-msg');
-      await page.click('button[type="submit"]');
+      const send = async (sender: import('@playwright/test').Page, text: string) => {
+        const input = sender.getByPlaceholder('Type a message...', { exact: true });
+        await expect(input).toBeEnabled({ timeout: 10_000 });
+        await input.fill(text);
+        await expect(input).toHaveValue(text);
+        await input.press('Enter');
+      };
+      const userBubbles = (p: import('@playwright/test').Page) => p.locator('.msg.user .bubble');
 
-      // Tab 1: should see the alpha message
-      await expect(page.locator('.msg.user .bubble').first()).toContainText('alpha-msg', { timeout: 5000 });
+      await send(page, 'alpha-msg');
+      await expect(userBubbles(alphaObserver)).toHaveText(['alpha-msg'], { timeout: 10_000 });
 
-      // Tab 2: should NOT see the alpha message (different scope)
-      // Wait a reasonable time then verify it's absent
-      await tab2.waitForTimeout(2000);
-      const tab2Body = await tab2.locator('.messages').textContent();
-      expect(tab2Body).not.toContain('alpha-msg');
+      await send(tab2, 'beta-msg');
+      // Barrier: beta-msg was broadcast after alpha-msg, so a leak would show first.
+      await expect(userBubbles(betaObserver)).toHaveText(['beta-msg'], { timeout: 10_000 });
+      await expect(betaObserver.locator('.messages')).not.toContainText('alpha-msg');
+      await expect(userBubbles(tab2)).toHaveText(['beta-msg']);
 
-      // Tab 2: send a message in room beta
-      await tab2.fill('input[type="text"]', 'beta-msg');
-      await tab2.click('button[type="submit"]');
+      await send(page, 'alpha-msg-2');
+      // Barrier: alpha-msg-2 was broadcast after beta-msg.
+      await expect(userBubbles(alphaObserver)).toHaveText(['alpha-msg', 'alpha-msg-2'], { timeout: 10_000 });
+      await expect(alphaObserver.locator('.messages')).not.toContainText('beta-msg');
+      await expect(page.locator('.messages')).not.toContainText('beta-msg');
 
-      // Tab 2: should see the beta message
-      await expect(tab2.locator('.msg.user .bubble').first()).toContainText('beta-msg', { timeout: 5000 });
-
-      // Tab 1: should NOT see the beta message (different scope)
-      await page.waitForTimeout(2000);
-      const tab1Body = await page.locator('.messages').textContent();
-      expect(tab1Body).not.toContain('beta-msg');
-
-      await tab2.close();
+      await Promise.all([alphaObserver.close(), tab2.close(), betaObserver.close()]);
     });
   });
 });

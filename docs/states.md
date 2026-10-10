@@ -1,303 +1,194 @@
 ---
-title: "States Management"
-description: "Shared state between client and server using the @State and @Store decorators with automatic synchronization, flash/old auto-binding, and simple property definitions."
+title: "State Management"
+description: "Choose shallow state, deep stores, client-only fields, computed values, and server resources."
 ---
 
-# States Management
+# State Management
 
-Managing states in traditional frameworks used to be hard. You'll need to init state, fetch the data from the server, mutate it and synchronize everytime state change on both server and client. However, not anymore with Cossack.
+A reactive field asks Cossack to update the UI when its value changes.
+Public fields also cross the server/browser boundary.
+Client-only fields belong to the component in the browser.
+Choose the mechanism for each field before you write mutation code.
 
-## Defining States (`@State`)
+## Choose a mechanism
 
-To define a state, in your pages or components, just define a property with a `@State()` decorator. This will create a shared state between client and server, and they are synced automatically!
+A store proxy observes writes through the component property.
+A computed getter calculates a value when code reads it.
+A server resource loads data on the server and exposes its loading status.
+These mechanisms use different rules:
 
-```ts
-export class Counter extends Cossack {
-    @State()
-    private count: number = 0;
+| Mechanism | What requests a render | What crosses the boundary |
+| --- | --- | --- |
+| `@State()` | Assign a different value to the field | Public snapshots for hydration, RPC, and realtime |
+| `@Store()` | Replace the field, or change a nested plain object/array through its proxy | The complete public value |
+| `@ClientState()` | Assign a different value to the field in the browser | No field snapshot |
+| `@ClientStore()` | Replace the field, or change a nested plain object/array in the browser | No field snapshot |
+| `@Computed()` | Reads calculate the value. Its reactive inputs request renders | No computed field snapshot |
+| `server$()` | A read starts a load when dependencies change. Completion requests a render | Dependency identity and resolved data for hydration, explicit loader arguments for RPC |
+| `createStore()` | `set` or `update` returns a different value. A subscribed component requests its render | No automatic serialization or server synchronization |
 
-    increment() {
-        this.count++;
-    }
+Use public state for values that server actions read or update.
+Use client-only state for browser-owned filters, draft input, selected tabs, and panel visibility.
+An authoritative realtime snapshot can replace public state.
+Declare a browser-owned selection with `@ClientState` to retain it through that snapshot.
 
-    render() {
-        return html`
-            <div>
-                <p>Count: ${this.count}</p>
-                <button @click=${this.increment}>+</button>
-            </div>
-        `;
-    }
-}
-```
+Public state from a client request is untrusted input.
+A decorator does not provide authorization, database persistence, or a shared quota.
+Use validated server actions and resource policies for those boundaries.
+TypeScript `private` does not hide a decorated public field from serialization.
 
-When you change a state value, such as with `this.count++`, Cossack syncs it between the server and client. The UI updates without extra hooks.
+## Run the example
 
-## `@State` / `@Store` Options
+[StateMechanisms](./examples/state-mechanisms.ts) is a complete HTTP page.
+Copy it to `src/pages/state-example/index.ts` in a generated Cossack app.
+The release tests compile this file against published exports and run its production browser build.
+Its buttons demonstrate shallow replacement, nested store writes, local drafts, computed totals, and server resources.
 
-Both `@State()` and `@Store()` accept an options object. The `flash` and `old` options bind flashed values and old form input during bootstrap. Use them for the POST → redirect → GET form flow.
-
-```ts
-@State({ flash: true }) success: string | undefined;          // binds flashed('success')
-@State({ flash: true }) errors: NestedErrors<MyForm> | undefined;
-@State({ old: true })   name = '';                            // binds old('name'), falls back to ''
-@Store({ old: true })   address = { street: '', city: '' };   // binds old('address'), whole object
-```
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `flash` | `boolean \| string` | | Auto-bind from a flashed value (`flashed()`). `true` uses the property name as the key. A string sets the key. |
-| `old` | `boolean \| string` | | Auto-bind from old input (`old()`). `true` uses the property name. A string sets the key and supports dot paths such as `'address.street'`. |
-| `channel` | `string` | `'global'` | A logical grouping tag (realtime transport). See [WebSockets](/docs/websockets.md). |
-| `provider` | `string` | `'page'` | Which `StateProvider` (Durable Object) a `@Server` action is dispatched over. See [Providers](/docs/providers.md). |
-
-**`flash` / `old` rules:**
-
-- The flashed or old value **wins over the class-field initializer**. This matches `old('name') ?? ''`. If no value was flashed, Cossack keeps the initializer.
-- **Server-only.** On the client `flashed()`/`old()` return `undefined`, so the initializer is kept and the SSR-bound value arrives via normal state hydration.
-- `flash` and `old` cannot be used together. If you set both, the property uses `flash`.
-- No `init()` is needed for repopulation. Keep `init()` only when you need to *compute or transform* a value.
-
-This removes the repetitive `init()` boilerplate. Instead of:
+These fields use the same declarations as the example:
 
 ```ts
-async init() {
-    this.success = flashed('success');
-    this.errors = flashed('errors');
-    this.name = old('name') ?? '';
-    this.address = old('address') ?? { street: '', city: '' };
+@State() profile = { name: 'Ada' };
+@Store() cart = { lines: [{ quantity: 1, price: 3 }], tags: [] as string[] };
+@ClientState() panelOpen = false;
+@ClientStore() draft = { tags: ['first'] };
+
+@Computed()
+get total() {
+    return this.cart.lines.reduce((sum, line) => sum + line.quantity * line.price, 0);
 }
 ```
 
-just declare the bindings inline. See [Session & Flash → Auto-binding](/docs/session.md#auto-binding-flash--old-input-into-state) for the full reference, and [Forms](/docs/forms.md) for the complete POST → redirect → GET example.
+Computed getters run on each read.
+They do not maintain a separate cache or a dependency graph.
+If a shallow mutation does not request a render, the displayed computed value can remain stale until another render.
+Keep computed getters free of writes and side effects.
 
-## Client-Only States (`@ClientState`)
+## Replace shallow state
 
-Not all state needs server synchronization. For example, a dropdown's open state, the selected tab, and an unsubmitted input value are client-only. These values do not need a network request.
+Assign a new value to an object or array field declared with `@State` or `@ClientState`.
+A nested write changes the underlying data, but that write does not request a render.
+An unrelated later render can display the changed data.
+These operations therefore have different update behavior:
 
-For these cases, use the `@ClientState` decorator.
+```ts
+// Does not request a render through this field.
+this.profile.name = 'Grace';
 
-**How it works:**
-1. You decorate a property with `@ClientState`.
-2. When you change this property on the client, it **automatically** triggers a re-render.
-3. The property is **ignored** during Server-Side Rendering (initial state) and is **never** sent over the WebSocket.
-
-### Example: A Toggle Switch
-
-```typescript
-import { Page, ClientState } from '@cossackframework/core';
-
-@Page()
-export class ToggleDemo extends Cossack {
-    
-    @ClientState() 
-    private isExpanded: boolean = false;
-
-    @Client()
-    toggle() {
-        this.isExpanded = !this.isExpanded;
-    }
-
-    protected render() {
-         return html`
-            <button @click=${this.toggle}>
-                ${this.isExpanded ? 'Hide' : 'Show'} Details
-            </button>
-
-            ${this.isExpanded ? html`<div>Secret details here...</div>` : ''}
-        `;
-    }
-}
+// Requests a render through this field.
+this.profile = { ...this.profile, name: 'Grace' };
 ```
 
+For arrays, use a replacement such as `this.rows = [...this.rows, row]`.
+Calling `push` on a shallow array does not request a render through that field.
+Assigning the same reference also does not request a render.
+Use `@Store` or `@ClientStore` when the application needs nested mutation.
 
-## Stores (`@Store` / `@ClientStore`)
+## Mutate a deep store
 
-For complex forms and grouped UI state, defining many individual `@State` fields becomes repetitive. The `@Store` and `@ClientStore` decorators let you group multiple related fields in **one object** while keeping full reactivity at **any depth**.
+Read and mutate the value through its component property.
+Nested plain objects, array elements, `push`, `splice`, and deletion request updates.
+Cossack batches synchronous notifications into its normal render or broadcast cycle.
+Whole-field replacement also requests an update.
 
-### How it works
-1. Decorate an object property with `@Store()` (isomorphic, synchronized with the server : like `@State`) or `@ClientStore()` (client-only, never serialized : like `@ClientState`).
-2. The framework wraps the value in a **recursive reactive Proxy**. Mutating any nested field or array element triggers a re-render (and a server broadcast on `@Store` when mutated server-side).
-3. The store is serialized as a whole. Nested objects and arrays stay intact during client hydration and broadcasts.
-
-### Deep nested mutation
-Reactivity works for **objects** and **arrays** at any depth, including array methods:
-
-```typescript
-import { Page, Store, ClientState } from '@cossackframework/core';
-
-interface FormState {
-    email: string;
-    address: { zip: string; country: string };
-    tags: string[];
-}
-
-@Page({ transport: 'http' })
-export class ComplexForm extends Cossack {
-    @Store()
-    form: FormState = {
-        email: '',
-        address: { zip: '', country: '' },
-        tags: [],
-    };
-
-    @ClientState()
-    draftTag = '';
-
-    @Client()
-    onEmail(e: Event) {
-        // Top-level mutation — reactive.
-        this.form.email = (e.target as HTMLInputElement).value;
-    }
-
-    @Client()
-    onZip(e: Event) {
-        // Deep nested mutation — reactive (multi-level).
-        this.form.address.zip = (e.target as HTMLInputElement).value;
-    }
-
-    @Client()
-    addTag() {
-        // Array mutation — reactive (push/splice/pop/sort/length all work).
-        if (this.draftTag) this.form.tags.push(this.draftTag);
-        this.draftTag = '';
-    }
-
-    protected render() {
-        return html`
-            <p>Email: ${this.form.email}</p>
-            <p>ZIP: ${this.form.address.zip}</p>
-            <ul>${this.form.tags.map(t => html`<li>${t}</li>`)}</ul>
-        `;
-    }
-}
+```ts
+this.cart.lines[0].quantity++;
+this.cart.tags.push('edited');
+this.draft.tags.splice(0, 1, 'replacement');
 ```
 
-### Identity & serialization
-- Repeated reads of the same store (or nested object) return the **same proxy** (stable identity), so `this.form.address === this.form.address`.
-- The proxy is transparent to `JSON.stringify`, so stores serialize identically to plain objects for SSR hydration and broadcasts.
-- Whole-store reassignment (`this.form = {...}`) is also reactive and invalidates the cached proxy.
+Repeated reads return stable proxies within a field.
+A replacement starts a new proxy tree.
+An alias to the original raw object bypasses the proxy and cannot notify the component.
+Built-in objects and class instances remain raw to preserve their native methods.
 
-### Client-only stores
-`@ClientStore` mirrors `@ClientState`: nested mutations re-render the client UI, but the store is **never** serialized or sent over the wire. Use it for ephemeral grouped state (multi-step form drafts, transient filters, panel state).
+A `Date`, `Map`, `Set`, or typed array inside a store does not gain deep reactivity.
+Replace the enclosing field to notify the component after changing such a value.
+Public serialization still follows the JSON contract below.
+Client-only stores can retain browser-local native values.
 
-### Validating store fields
-Stores work with `@Validate` and the **type-safe `storeRules<T>()` helper**. Write keys relative to the store. TypeScript checks them against the store type and reports typos. See [Form Validation → Validating Stores](/docs/validation.md#validating-stores).
+Keep stores as trees for tracked tasks.
+If two paths refer to the same object, its stable proxy reports the first observed path.
+A task that tracks the other alias can miss that nested write.
+Cycles also cannot cross the JSON boundary.
 
-```typescript
-import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
+Do not pass a store proxy directly to `structuredClone`.
+For JSON-compatible public data, create a detached snapshot with `JSON.parse(JSON.stringify(this.cart))`.
+This also converts Dates to strings and drops undefined object fields.
+Use an application-owned conversion for other values.
 
-interface FormState {
-    email: string;
-    address: { zip: string; country: string };
-    tags: string[];
-}
+## Keep client-only fields out of snapshots
 
-@Page({ transport: 'http' })
-export class StoreFormDemo extends Cossack {
-    @Store()
-    @Validate({
-        rules: storeRules<FormState>({
-            email: { required: true, email: true, message: 'Enter a valid email' },
-            address: { zip: { required: true, pattern: /^\d{4,10}$/, message: 'Invalid ZIP' } },
-            tags: { required: true, minLength: 1, message: 'Add at least one tag' },
-        }),
-        config: { trigger: 'all', runOn: 'both' },
-    })
-    form: FormState = { email: '', address: { zip: '', country: '' }, tags: [] };
+Cossack omits `@ClientState` and `@ClientStore` from initial state, component RPC state, and shared realtime state.
+A child declaration can replace an inherited public field with a client-only field.
+Request sanitization also rejects that field from a forged public overlay.
+Inherited fields retain their declarations unless the child decorates a replacement.
 
-    @Client()
-    onZipInput(event: Event) {
-        this.form.address.zip = (event.target as HTMLInputElement).value;
-        // At runtime, validate by the full prefixed dot-path:
-        this.validateProperty('form.address.zip', 'input');
-        this.hasError('form.address.zip');
-    }
-}
-```
+Client-only fields still exist during server rendering with their authored initial values.
+A template that reads one can include that initial value in HTML.
+The decorator does not make a value secret or prevent an application from explicitly passing it as an RPC argument.
+Use server-only code for secrets.
 
-`storeRules<T>()` is optional. Omit `<T>` to use a nested map without compile-time path checks.
+Initialize browser API values in `onMount` or `clientInit`.
+Field initializers and shared rendering can run on the server.
+For browser-only modules, use the `.client.ts` naming rule described in [Reactive Store](./reactive-store.md).
 
-> `@Store` and `@ClientStore` work with `@State`, `@ClientState`, and `@Computed`. Choose the decorator for each state value.
+## Follow the public JSON contract
 
-### Advanced: Why stores?
+Public state follows the RPC value rules when it crosses an RPC boundary.
+Use strings, finite numbers, booleans, null, arrays, and objects with serializable fields.
+Model instances cross as own enumerable fields, without prototype methods.
+Custom `toJSON` hooks define their representation at the real serializer.
 
-In React (and immutable-state models generally), you must never mutate state directly : every update produces a **new reference at each level** of the tree. For a deeply nested form this gets verbose and error-prone: you re-derive the whole update path by hand, or reach for `immer`/reducers to do it for you.
+Valid Dates cross as ISO strings.
+Declare a public date field as an ISO string when both server and browser code need the same field type.
+Undefined object fields disappear, and undefined or sparse array entries become null.
+Null remains null.
 
-Cossack stores use a recursive reactive Proxy, so **you mutate the object directly** and the framework observes the change at any depth. The code reads exactly like the data shape.
+Functions, symbols, bigints, cycles, non-finite numbers, invalid Dates, Maps, Sets, weak collections, binary values, and opaque native objects fail RPC serialization.
+Do not use a public field for a `File`, DOM object, callback, or connection handle.
+Pass upload files through a validated action argument instead.
+`server$` resources use a stricter JSON-preserving contract that also rejects Dates, class instances, and custom hooks.
 
-```typescript
-// React — must spread at every level to produce new references
-setForm(prev => ({
-    ...prev,
-    address: { ...prev.address, zip: '12345' },   // nested object
-}));
-setForm(prev => ({ ...prev, tags: [...prev.tags, 'new'] })); // array
+The initial HTML serializer retains its existing JSON behavior.
+Development diagnostics identify known values that cannot round-trip through RPC before that snapshot hides or loses them.
+They do not change production serialization or reject a write.
+Keep public state valid for both hydration and RPC.
 
-// Cossack — direct structural mutation, reactive at any depth
-this.form.address.zip = '12345';
-this.form.tags.push('new');
-```
+## Read development diagnostics
 
-The win compounds with depth: a 3-level immutable spread (`...prev.a.b.c`) is genuinely hard to write correctly, while `this.form.section.group.field = x` is self-evident.
+A shallow mutation warning names the component, field, nested path, and the replacement or deep-store fix.
+It covers `@State` and `@ClientState`.
+No-op assignments, missing deletes, and rejected writes do not produce a warning.
+The warning fires once per field for that component instance.
 
-#### Tradeoffs vs. React state
+A public-state warning names the component, field, snapshot boundary, value path, and unsupported type.
+For example, a cycle can report `state.cart.lines[0].owner (cyclic reference)`.
+The warning prints no field values.
+Identical issues remain quiet until the field becomes valid or the issue changes.
 
-| Aspect | React (`useState` / `useReducer`) | Cossack `@Store` |
-| :--- | :--- | :--- |
-| **Update style** | Create a new value with spread or cloning at each level. | Change the value directly with `store.field = x`. |
-| **Deep nested update** | Rebuild the path or use `immer` or a reducer. | `store.address.zip = x` updates the state at any depth. |
-| **Array mutation** | Do not use `push` or `splice`. Use `map`, `filter`, or spread. | `store.tags.push(x)`, `splice`, and `pop` update the state. |
-| **Change detection** | Compare references with `prev !== next`. | A Proxy `set` trap detects the change, as with `@State`. |
-| **Equality after nested mutation** | A nested update creates a new top-level reference. | The proxy reference stays the same. |
-| **Reassignment** | Reassign the value to trigger an update. | Reassignment such as `this.store = {...}` also works. |
-| **Snapshot / undo** | Trivial (keep the old reference) | Roll your own (`structuredClone`), no built-in history |
-| **Cyclic structures** | Supported because references stay plain. | `JSON.stringify` throws on a cyclic object. |
-| **Server sync** | Manual (`fetch`, optimistic UI, the whole RPC layer) | Automatic broadcast on `@Store` server-side mutations |
-| **Boilerplate** | Add reducers, action creators, `immer`, or props. | Declare `@Store()` and change its value. |
+Diagnostic reads inspect data properties without calling getters or serialization hooks.
+Those representations remain unknown until the real serializer runs.
+Inspection stops after its depth or visit budget, so silence does not prove that every value is valid.
+The consuming Vite application's development mode enables the checks.
+Production builds and direct Node imports without Vite do not run them.
 
-**When immutable snapshots matter:** React-style immutable references support undo/redo, time-travel debugging, and shallow-compare memoization. Cossack stores use direct mutations by default. Create a snapshot with `structuredClone(this.form)` when you need one.
+## Bind flash and old input
 
-**Both idioms available:** you are never locked in. Whole-store reassignment (`this.form = {...}`) is reactive too, so you can mix mutation and replacement as the situation demands.
+`@State` and `@Store` accept `flash` and `old` options.
+The server reads them during bootstrap.
+A found value replaces the field initializer, then public hydration carries it to the browser.
+Missing values retain the initializer.
 
+| Option | Meaning |
+| --- | --- |
+| `flash: true` | Read the flashed value under the field name |
+| `flash: 'message'` | Read the flashed value under that key |
+| `old: true` | Read old form input under the field name |
+| `old: 'address.street'` | Read old form input using that path |
+| `channel`, `provider` | Select the logical grouping and provider for realtime dispatch |
 
-## Computed State (`@Computed`)
-
-For values that can be derived from existing state, use the `@Computed` decorator on a getter.
-
-**How it works:**
-1. You define a getter method that calculates a value based on other properties.
-2. You decorate it with `@Computed`.
-3. The value is automatically re-calculated whenever the underlying state changes (because the template re-renders).
-4. Computed properties are **not** serialized or sent over the network. Cossack calculates them locally.
-
-### Example: Derived Calculation
-
-```typescript
-import { Page, State, Computed } from '@cossackframework/core';
-
-@Page()
-export class Counter extends Cossack {
-    @State()
-    private count: number = 0;
-
-    // Derived state
-    @Computed()
-    get doubleCount() {
-        return this.count * 2;
-    }
-
-    protected render() {
-        return html`
-            <p>Count: ${this.count}</p>
-            <p>Doubled: ${this.doubleCount}</p>
-        `;
-    }
-}
-```
-
-## Advanced: Realtime State with WebSockets
-
-Refer to [Websockets](/docs/websockets.md) documentation about how to make realtime application with websockets.
-
-By default, Durable Object transport is **stateless**. It does not persist state to DO storage. Add `stateful: true` to `@Page()` to persist state across connections and DO evictions.
+If both `flash` and `old` are present, `flash` takes precedence.
+A client-only decorator does not accept these public binding options.
+Read [Session and Flash](./session.md) and [Validation](./validation.md) for the complete form flow.
+State persistence depends on the selected runtime and transport.
+Read [WebSockets](./websockets.md) before enabling durable state.

@@ -16,6 +16,7 @@ import {
   renderRecipe,
   resolveDashboardModules,
   resolveRecipe,
+  recipeCapabilityRequirements,
 } from '../src/index.js';
 
 const scaffoldPackage = JSON.parse(
@@ -38,6 +39,43 @@ afterEach(async () => {
 });
 
 describe('recipe resolution', () => {
+  it('keeps Cloudflare secrets local and declares their names without fake D1 IDs', async () => {
+    const cwd = await temporaryDirectory();
+    const result = await createApp('secure', {
+      cwd, adapter: 'cloudflare', preset: 'auth', interactive: false,
+      authMethods: 'oauth', oauth: 'github',
+    });
+    const root = result.projectDir;
+    const configText = await fs.readFile(path.join(root, 'wrangler.jsonc'), 'utf8');
+    const config = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ''));
+    const local = await fs.readFile(path.join(root, '.dev.vars'), 'utf8');
+    const example = await fs.readFile(path.join(root, '.dev.vars.example'), 'utf8');
+    const ignored = await fs.readFile(path.join(root, '.gitignore'), 'utf8');
+    const manifest = await fs.readFile(path.join(root, '.cossack/scaffold.json'), 'utf8');
+    const secret = local.match(/^APP_SECRET=(.+)$/m)?.[1];
+    expect(secret).toMatch(/^[\w-]{43}$/);
+    expect(config.vars).not.toHaveProperty('APP_SECRET');
+    expect(config.secrets.required).toEqual(expect.arrayContaining(['APP_SECRET', 'OAUTH_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']));
+    expect(config.d1_databases[0]).not.toHaveProperty('database_id');
+    expect(ignored).toContain('.dev.vars*\n');
+    expect(ignored).toContain('.env*\n');
+    expect(ignored).toContain('!.dev.vars.example');
+    for (const content of [JSON.stringify(config), example, manifest, JSON.stringify(result)]) {
+      expect(content).not.toContain(secret);
+    }
+    await addFeature(root, 'markdown', { interactive: false });
+    expect(await fs.readFile(path.join(root, '.dev.vars'), 'utf8')).toContain(`APP_SECRET=${secret}`);
+  });
+  it('previews creation without writing or exposing generated secrets', async () => {
+    const cwd = await temporaryDirectory();
+    const result = await createApp('preview', {
+      cwd, adapter: 'node', preset: 'auth', dryRun: true,
+    });
+    expect(result.status).toBe('dry-run');
+    expect(result.changes.writes).toContainEqual(expect.objectContaining({ path: 'package.json' }));
+    expect(result.recipe.config).not.toHaveProperty('authSecret');
+    expect(await fs.readdir(cwd)).toEqual([]);
+  });
   it('keeps Full Stack as the default and resolves all dashboard modules', () => {
     const recipe = resolveRecipe({ adapter: 'cloudflare' });
     expect(recipe.preset).toBe('full-stack');
@@ -103,10 +141,6 @@ describe('recipe resolution', () => {
     ['node', 'database'],
     ['node', 'auth'],
     ['node', 'full-stack'],
-    ['deno', 'minimal'],
-    ['deno', 'database'],
-    ['deno', 'auth'],
-    ['deno', 'full-stack'],
   ])('renders the %s/%s combination', async (adapter, preset) => {
     const recipe = resolveRecipe({ adapter, preset });
     const files = await renderRecipe(recipe);
@@ -122,13 +156,16 @@ describe('recipe resolution', () => {
     expect(files.has('worker-configuration.d.ts')).toBe(false);
     expect(files.has('vitest.config.ts')).toBe(true);
     expect(files.has('scripts/dev.js')).toBe(adapter === 'node');
+    expect(files.get('vite.config.ts').content.toString().includes('@cossackframework/node-adapter/vite')).toBe(adapter === 'node');
     expect(pkg.devDependencies.typescript).toBe(dependencyVersions.typescript);
+    expect(JSON.parse(files.get('tsconfig.json').content.toString()).include).toContain('.cossack/config.d.ts');
+    expect(files.get('.gitignore').content.toString()).toContain('.cossack/config.d.ts');
     if (adapter === 'cloudflare') {
       expect(pkg.scripts['build:ssg']).toBe('vite build');
       expect(pkg.scripts['cf-typegen']).toBe(
         'wrangler types --env-interface CloudflareBindings',
       );
-      expect(pkg.scripts.deploy).toBe('vite build && wrangler deploy');
+      expect(pkg.scripts.deploy).toBe('cossack deploy');
       const tsconfig = JSON.parse(files.get('tsconfig.json').content.toString());
       expect(tsconfig.compilerOptions.types).not.toContain('./worker-configuration.d.ts');
       expect(tsconfig.include).toContain('worker-configuration.d.ts');
@@ -174,7 +211,6 @@ describe('recipe resolution', () => {
       .toBe(recipe.resolvedFeatures.includes('auth'));
     expect(files.has('.env')).toBe(adapter !== 'cloudflare');
     expect(files.has('.env.example')).toBe(adapter !== 'cloudflare');
-    expect(files.has('deno.json')).toBe(adapter === 'deno');
     expect(files.get('vite.config.ts').content.toString())
       .toContain('minify: true');
     expect(files.get('vite.config.ts').content.toString())
@@ -267,7 +303,7 @@ describe('composition', () => {
       path.join(project.projectDir, 'package.json'),
       'utf8',
     ));
-    expect(viteConfig).toContain('cossackPages(),');
+    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } }),");
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
 
@@ -281,7 +317,7 @@ describe('composition', () => {
     )).resolves.toContain('export async function processMarkdown');
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain('cossackPages({ markdownProcessor: processMarkdown })');
+    expect(viteConfig).toContain("cossackPages({ markdownProcessor: processMarkdown, capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } })");
     expect(viteConfig).toContain("from './src/markdown-processor.ts'");
     expect(pkg.devDependencies).toHaveProperty('unified');
     expect(pkg.devDependencies).toHaveProperty('remark-parse');
@@ -296,7 +332,7 @@ describe('composition', () => {
     )).rejects.toThrow();
     viteConfig = await fs.readFile(path.join(project.projectDir, 'vite.config.ts'), 'utf8');
     pkg = JSON.parse(await fs.readFile(path.join(project.projectDir, 'package.json'), 'utf8'));
-    expect(viteConfig).toContain('cossackPages(),');
+    expect(viteConfig).toContain("cossackPages({ capabilities: { runtime: mode === 'desktop' ? 'desktop' : 'cloudflare', requirements: mode === 'desktop' ? [] : [] } }),");
     expect(viteConfig).not.toContain('processMarkdown');
     expect(pkg.devDependencies).not.toHaveProperty('unified');
   });
@@ -485,7 +521,7 @@ describe('composition', () => {
     expect(files.get('src/auth.ts').content.toString()).toContain('c.env.OAUTH_SECRET');
     expect(files.get('src/auth.ts').content.toString()).toContain('GITHUB_CLIENT_ID');
     expect(files.get('src/auth.ts').content.toString())
-      .toContain("error: 'OAuth is not configured'");
+      .toContain("new OAuthError('COSSACK_OAUTH_CREDENTIALS_MISSING')");
     expect(files.get('src/auth.ts').content.toString())
       .toContain('[Cossack OAuth]');
     const login = files.get('src/pages/auth/login/index.ts').content.toString();
@@ -507,7 +543,7 @@ describe('composition', () => {
     }));
     expect(credentials.has('src/pages/auth/register/index.ts')).toBe(true);
     expect(credentials.has('src/migrations/0005_create_oauth_accounts.ts')).toBe(true);
-    expect(credentials.has('.dev.vars')).toBe(false);
+    expect(credentials.has('.dev.vars')).toBe(true);
 
     const oauth = await renderRecipe(resolveRecipe({
       preset: 'auth',
@@ -532,6 +568,21 @@ describe('composition', () => {
     expect(bothLogin.indexOf('<form @submit=')).toBeLessThan(
       bothLogin.indexOf('data-oauth-provider="github"'),
     );
+  });
+
+  it.each(['node', 'cloudflare'])('composes the %s sessions dashboard without unselected RBAC dependencies', async adapter => {
+    const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features: ['dashboard'], dashboardModules: ['sessions'] }));
+    const seeder = files.get('src/seeders/application.seeder.ts').content.toString();
+    expect(seeder).toContain('defineSeeder');
+    expect(seeder).not.toMatch(/Role|permissions|ADMIN_PASSWORD/);
+    expect(files.has('src/models/Role.ts')).toBe(false);
+    expect(files.has('src/models/UserRole.ts')).toBe(false);
+    expect(files.has('src/migrations/0008_add_session_public_id.ts')).toBe(true);
+    expect(files.get('src/migrations/index.ts').content.toString()).toContain("'./0008_add_session_public_id'");
+    const middleware = files.get('src/bootstrap/middlewares.ts').content.toString();
+    expect(middleware).toContain('auth.middleware');
+    expect(middleware).not.toContain('sessionMiddleware');
+    expect(files.get('src/middlewares/orm.ts').content.toString()).toContain('export const sessionMiddleware');
   });
 
   it('generates Node environment defaults without recording local secrets', async () => {
@@ -570,23 +621,21 @@ describe('composition', () => {
       path.join(project.projectDir, 'src/index.ts'),
       'utf8',
     );
-    expect(devEntry).toContain('...process.env');
-    expect(devEntry.indexOf('...process.env')).toBeLessThan(
-      devEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
-    );
-    expect(devEntry.indexOf('...process.env')).toBeLessThan(
-      devEntry.indexOf('env.EMAIL = createNodeEmailSender'),
-    );
-    expect(productionEntry).toContain('...process.env');
-    expect(productionEntry).toContain("import { serveStatic } from '@cossackframework/node-adapter'");
+    expect(devEntry).toContain('createServer');
+    expect(devEntry).not.toContain('ssrLoadModule');
+    expect(devEntry).not.toContain('buildEnv');
+    expect(productionEntry).toContain('export async function createEnv');
+    expect(productionEntry).toContain('...variables');
+    expect(productionEntry).toContain('bindings.EMAIL = createNodeEmailSender');
+    expect(productionEntry).toContain("import { createNodeAdapter, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter'");
     expect(productionEntry).toContain("new URL('../client', import.meta.url)");
     expect(productionEntry).toContain("urlPath.startsWith('/assets/')");
     expect(productionEntry).toContain("/\\.[a-zA-Z0-9_-]{8,}\\.[^/]+$/");
     expect(productionEntry).toContain("'public, max-age=31536000, immutable'");
     expect(productionEntry.indexOf("app.use('*', serveStatic"))
-      .toBeLessThan(productionEntry.indexOf("app.route('/', frameworkApp)"));
-    expect(productionEntry.indexOf('...process.env')).toBeLessThan(
-      productionEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
+      .toBeLessThan(productionEntry.indexOf("app.all('*', c => frameworkApp.fetch(c.req.raw, c.env))"));
+    expect(productionEntry.indexOf('...variables')).toBeLessThan(
+      productionEntry.indexOf("DB_PATH: variables.DB_PATH ?? './database.sqlite'"),
     );
     expect(await detectProjectRuntime(project.projectDir)).toBe('node');
     const environment = await fs.readFile(path.join(project.projectDir, '.env'), 'utf8');
@@ -612,19 +661,13 @@ describe('composition', () => {
     expect(manifest.files).not.toHaveProperty('src/config/oauth.ts');
   });
 
-  it('keeps arbitrary Node bindings and explicit overrides in the raw dev template', async () => {
-    const rawDevEntry = await fs.readFile(
-      new URL('../template/scripts/dev.js', import.meta.url),
-      'utf8',
-    );
-
-    expect(rawDevEntry).toContain('...process.env');
-    expect(rawDevEntry.indexOf('...process.env')).toBeLessThan(
-      rawDevEntry.indexOf("DB_PATH: process.env.DB_PATH ?? './database.sqlite'"),
-    );
-    expect(rawDevEntry.indexOf('...process.env')).toBeLessThan(
-      rawDevEntry.indexOf('env.EMAIL = createNodeEmailSender'),
-    );
+  it('uses one Node Vite development lifecycle while preserving the local overlay', async () => {
+    const rawDevEntry = await fs.readFile(new URL('../template/scripts/dev.js', import.meta.url), 'utf8');
+    expect(rawDevEntry).toContain('mergeConfig(overlay');
+    expect(rawDevEntry).toContain('COSSACK_LOCAL');
+    expect(rawDevEntry).toContain('server.close()');
+    expect(rawDevEntry).not.toContain('ssrLoadModule');
+    expect(rawDevEntry).not.toContain('createNodeEmailSender');
   });
 
   it('keeps Node minimal free of database dependencies while still providing env defaults', async () => {
@@ -664,13 +707,33 @@ describe('composition', () => {
     const cliConfig = files.get('orm.config.ts').content.toString();
     expect(runtimeConfig).toContain("from '@cossackframework/database/cloudflare'");
     expect(runtimeConfig).not.toContain('wrangler');
-    expect(toolingConfig).toContain("from 'wrangler'");
-    expect(toolingConfig).toContain('getPlatformProxy');
+    expect(toolingConfig).toContain("from '@cossackframework/database/tooling'");
+    expect(toolingConfig).toContain('createD1ToolingAdapter(context');
     expect(cliConfig).toContain('createToolingAdapter');
     expect(cliConfig).toContain("migrationDirectory: './src/migrations'");
     const wrangler = files.get('wrangler.jsonc').content.toString();
-    expect(wrangler).toContain('"database_id": "00000000-0000-0000-0000-000000000000"');
+    expect(wrangler).not.toContain('database_id": "00000000');
     expect(wrangler).toContain('"preview_database_id": "d1-app-local"');
+    expect(wrangler).toContain('Remote D1 deployments require database_id.');
+    expect(wrangler).toContain('pnpm exec wrangler d1 create d1-app-db --update-config --binding DB');
+    expect(wrangler).not.toContain('provisions D1 on deployment');
+
+    const readme = files.get('README.md').content.toString();
+    const compactReadme = readme.replace(/\s+/g, ' ');
+    expect(compactReadme).toContain('`database_name`');
+    expect(compactReadme).toContain('pnpm exec wrangler d1 create my-cossack-app-db --update-config --binding DB');
+    expect(compactReadme).toContain('requires both `database_name` and `database_id` for a remote binding');
+    expect(compactReadme).toContain('pnpm exec wrangler d1 list');
+    expect(compactReadme).not.toContain('replace the placeholder `database_id`');
+    expect(compactReadme).toContain('replace the all-zero `id` in');
+    expect(compactReadme).toContain('only needs the opaque configuration ID');
+    expect(compactReadme).toContain('Do not put the connection string or credentials in source-controlled files.');
+
+    const configTemplate = await fs.readFile(
+      new URL('../template/wrangler.jsonc', import.meta.url), 'utf8',
+    );
+    expect(configTemplate).toContain('Remote D1 deployment requires database_id.');
+    expect(configTemplate).not.toContain('provisions D1 on deployment');
   });
 
   it('renders isolated recipes for every runtime/provider target', async () => {
@@ -679,10 +742,6 @@ describe('composition', () => {
       ['node', 'turso', 'turso', '@tursodatabase/serverless', undefined],
       ['node', 'postgres', 'postgres', 'pg', undefined],
       ['node', 'mysql', 'mysql', 'mysql2', undefined],
-      ['deno', 'sqlite', 'denoSQLite', '@tursodatabase/database', undefined],
-      ['deno', 'turso', 'turso', '@tursodatabase/serverless', undefined],
-      ['deno', 'postgres', 'postgres', 'pg', undefined],
-      ['deno', 'mysql', 'mysql', 'mysql2', undefined],
       ['cloudflare', 'd1', 'd1', undefined, 'nodejs_als'],
       ['cloudflare', 'turso', 'turso', '@tursodatabase/serverless', 'nodejs_als'],
       ['cloudflare', 'hyperdrive-postgres', 'hyperdrivePostgres', 'pg', 'nodejs_compat'],
@@ -702,8 +761,12 @@ describe('composition', () => {
         expect(Boolean(pkg.dependencies[candidate])).toBe(candidate === driver);
       }
       if (adapter === 'cloudflare') {
-        expect(files.get('wrangler.jsonc').content.toString())
-          .toContain(`"compatibility_flags": ["${compatibilityFlag}"]`);
+        const wrangler = files.get('wrangler.jsonc').content.toString();
+        expect(wrangler)
+          .toContain(`"compatibility_flags": ["${compatibilityFlag}", "enable_request_signal"]`);
+        if (database.startsWith('hyperdrive-')) {
+          expect(wrangler).toContain('Replace this placeholder with a real Hyperdrive configuration ID before deploying.');
+        }
         expect(runtime).not.toContain('wrangler');
       } else {
         expect(files.has('wrangler.jsonc')).toBe(false);
@@ -712,7 +775,7 @@ describe('composition', () => {
   });
 
   it('adds an Electron Desktop target beside every web adapter', async () => {
-    for (const adapter of ['cloudflare', 'node', 'deno']) {
+    for (const adapter of ['cloudflare', 'node']) {
       const target = resolveRecipe({ adapter, preset: 'minimal', features: 'desktop' });
       const targetFiles = await renderRecipe(target, { projectName: `${adapter}-desktop` });
       const targetPackage = JSON.parse(targetFiles.get('package.json').content.toString());
@@ -740,11 +803,11 @@ describe('composition', () => {
         .toContain('noExternal: true');
       expect(targetFiles.has('src/desktop/index.ts')).toBe(true);
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
-        .toContain('createDesktopApp({');
+        .toContain('startDesktop(createApplication = createDesktopApp)');
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .not.toContain('export const desktop = await');
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
-        .toContain('void main().catch');
+        .toContain('if (!import.meta.env.DEV) void startDesktop().catch');
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .toContain("behavior: 'quit'");
       expect(targetFiles.get('forge.config.ts').content.toString())
@@ -757,24 +820,7 @@ describe('composition', () => {
       const trayPng = Buffer.from(targetFiles.get('desktop-assets/tray-linux-22.png').content);
       expect(trayPng.readUInt8(24)).toBe(8);
       expect(trayPng.readUInt8(25)).toBe(6);
-      if (adapter !== 'deno') expect(targetFiles.has('deno.json')).toBe(false);
     }
-
-    const recipe = resolveRecipe({ adapter: 'deno', preset: 'database', features: 'desktop' });
-    const files = await renderRecipe(recipe, { projectName: 'desktop-app' });
-    const pkg = JSON.parse(files.get('package.json').content.toString());
-    expect(recipe.config.database).toBe('turso');
-    expect(pkg.dependencies['@tursodatabase/serverless']).toBeDefined();
-    expect(pkg.dependencies['@tursodatabase/database']).toBeUndefined();
-    expect(pkg.scripts['desktop:dev']).toBe('cossack-desktop');
-    expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
-    const deno = JSON.parse(files.get('deno.json').content.toString());
-    expect(deno.tasks.build).toBe('pnpm run build');
-    expect(deno.imports.hono).toMatch(/^npm:hono@/);
-    expect(deno.imports.vite).toMatch(/^npm:vite@/);
-    expect(deno.desktop).toBeUndefined();
-    expect(files.has('src/desktop/index.ts')).toBe(true);
-    expect(files.get('src/orm/factory.ts').content.toString()).toContain('TURSO_DATABASE_URL');
   });
 
   it('copies project guidance files and scaffolds actionable auth/database metadata', async () => {
@@ -790,6 +836,8 @@ describe('composition', () => {
       .resolves.toContain('# Cossack Framework');
     await expect(fs.readFile(path.join(project.projectDir, 'AGENTS.md'), 'utf8'))
       .resolves.toContain('Cossack Framework');
+    await expect(fs.readFile(path.join(project.projectDir, 'AGENTS.md'), 'utf8'))
+      .resolves.toContain('pnpm exec cossack docs --json');
 
     const auth = await fs.readFile(path.join(project.projectDir, 'src/auth.ts'), 'utf8');
     expect(auth).toContain('Session database is unavailable; continuing as guest.');
@@ -850,7 +898,7 @@ describe('composition', () => {
     }));
     expect(await detectProjectRuntime(root)).toBeUndefined();
     await expect(addFeature(root, 'ui', { interactive: false }))
-      .rejects.toThrow('Pass --runtime=cloudflare or --runtime=node or --runtime=deno');
+      .rejects.toThrow('Pass --runtime=cloudflare or --runtime=node');
   });
 
   it('adds only newly requested dashboard modules on a later run', async () => {
@@ -1222,4 +1270,133 @@ describe('prompt navigation and cancellation', () => {
       path.join(project.projectDir, 'src/auth.ts'),
     )).rejects.toThrow();
   });
+});
+
+it.each(['cloudflare', 'node'])('enables build capability discovery for generated %s recipes and their Desktop target', async adapter => {
+  for (const features of [[], ['markdown']]) {
+    const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features }));
+    const config = files.get('vite.config.ts').content.toString();
+    expect(config).toContain(`capabilities: { runtime: mode === 'desktop' ? 'desktop' : '${adapter}', requirements:`);
+    expect(config.includes('markdownProcessor: processMarkdown')).toBe(features.includes('markdown'));
+    // Binding names must come from the selected build environment, not a fixed template list.
+    expect(config).not.toContain('bindings: [');
+  }
+});
+
+it('derives capability requirements only from selected recipe features and targets', () => {
+  const minimal = resolveRecipe({ adapter: 'node', preset: 'minimal' });
+  expect(recipeCapabilityRequirements(minimal)).toEqual([]); // Default sqlite choice is inactive.
+  const recipe = resolveRecipe({ adapter: 'node', preset: 'database', features: ['desktop'] });
+  const source = { file: '.cossack/scaffold.json' };
+  expect(recipeCapabilityRequirements(recipe)).toEqual([{ feature: 'database/sqlite', source, requires: { filesystem: true } }]);
+  expect(recipeCapabilityRequirements(recipe, 'desktop')).toEqual([
+    { feature: 'database/sqlite', source, requires: { filesystem: true } },
+    { feature: 'desktop', source, requires: { filesystem: true } },
+  ]);
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', features: ['desktop'] }))).toEqual([]);
+  expect(() => recipeCapabilityRequirements(recipe, 'invalid')).toThrow('Unknown recipe target');
+});
+it('emits selected capability requirements into the generated Vite configuration', async () => {
+  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'database', features: ['desktop'] }));
+  const config = files.get('vite.config.ts').content.toString();
+  expect(config).toContain('"feature":"database/sqlite"');
+  expect(config).toContain('"feature":"desktop"');
+  expect(config).toContain('"file":".cossack/scaffold.json"');
+  expect(config).toContain('"filesystem":true');
+});
+
+it.each([['d1', 'DB'], ['hyperdrive-postgres', 'HYPERDRIVE'], ['hyperdrive-mysql', 'HYPERDRIVE']])('declares native %s requirements for both targets', (database, binding) => {
+  const recipe = resolveRecipe({ adapter: 'cloudflare', preset: 'database', database });
+  for (const target of ['web', 'desktop']) {
+    expect(recipeCapabilityRequirements(recipe, target)).toContainEqual({
+      feature: `database/${database}`, source: { file: '.cossack/scaffold.json' }, requires: { cloudflareBindings: [binding] },
+    });
+  }
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'cloudflare', preset: 'minimal', database }))).toEqual([]);
+});
+
+it.each(['d1', 'hyperdrive-postgres', 'hyperdrive-mysql'])('rejects native %s Desktop combinations during creation and composition before files change', async database => {
+  const root = await temporaryDirectory();
+  await expect(createApp('unsupported', { cwd: root, adapter: 'cloudflare', preset: 'minimal',
+    features: ['protected-route', 'desktop'], database, interactive: false }))
+    .rejects.toMatchObject({ code: 'COSSACK_CAPABILITY_UNSUPPORTED' });
+  await expect(fs.access(path.join(root, 'unsupported'))).rejects.toThrow();
+  const { projectDir } = await createApp('app', { cwd: root, adapter: 'cloudflare', preset: 'minimal',
+    features: ['protected-route'], database, interactive: false });
+  const manifest = await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8');
+  await expect(addFeature(projectDir, 'desktop', { interactive: false }))
+    .rejects.toThrow(`.cossack/scaffold.json: database/${database} requires cloudflareBindings on desktop`);
+  expect(await fs.readFile(path.join(projectDir, '.cossack/scaffold.json'), 'utf8')).toBe(manifest);
+  await expect(fs.access(path.join(projectDir, 'src/desktop/index.ts'))).rejects.toThrow();
+});
+it.each(['resource', 'mutation', 'scoped-service', 'protected-route'])('composes the %s recipe predictably and preserves edited pages', async feature => {
+  const root = await temporaryDirectory();
+  const { projectDir } = await createApp('app', { cwd: root, adapter: 'node', preset: 'minimal', interactive: false });
+  const added = await addFeature(projectDir, feature, { interactive: false });
+  expect(added.status).toBe('added');
+  const file = path.join(projectDir, `src/pages/${feature}/index.ts`);
+  const original = await fs.readFile(file, 'utf8');
+  if (feature === 'resource') {
+    expect(original).toContain("this.resourceStatus$('products')");
+    expect(original).toContain("this.refresh$('products')");
+  } else if (feature === 'mutation') {
+    expect(original).toContain('@Server({ input: submissionInput })');
+    expect(original).toContain('input.object');
+    expect(original).toContain('InputOf<typeof submissionInput>');
+    expect(original).toContain('await this.validateAll()');
+    expect(original).toContain('error.fieldErrors?.[field]');
+  } else if (feature === 'scoped-service') {
+    expect(original).toContain('@Inject(ScopedCounterService)');
+    expect(await fs.readFile(path.join(projectDir, 'src/pages/scoped-service/layout.ts'), 'utf8')).toContain('services: [ScopedCounterService]');
+    expect(await fs.readFile(path.join(projectDir, 'src/pages/scoped-service/other/index.ts'), 'utf8')).toContain('component(NestedCounterReadout)');
+    expect(await fs.readFile(path.join(projectDir, 'src/services/scoped-counter.ts'), 'utf8')).toContain('@Server()');
+  } else {
+    expect(original).toContain('this.user!.email');
+    expect(await fs.readFile(path.join(projectDir, 'src/pages/protected-route/layout.ts'), 'utf8')).toContain('middlewares: [requireProtectedUser]');
+    expect(await fs.readFile(path.join(projectDir, 'src/middlewares/protected-route.ts'), 'utf8')).toContain('authorizer.requireUser');
+    expect(await fs.readFile(path.join(projectDir, 'src/config/auth.ts'), 'utf8')).toContain("env('AUTH_REDIRECT_AFTER_LOGIN', '/protected-route')");
+    expect(await fs.readFile(path.join(projectDir, '.env'), 'utf8')).toContain('AUTH_REDIRECT_AFTER_LOGIN=/protected-route');
+  }
+  const pkg = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'));
+  if (feature === 'protected-route') {
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/database');
+    expect(pkg.dependencies).toHaveProperty('@cossackframework/auth');
+  } else expect(pkg.dependencies).not.toHaveProperty('@cossackframework/database');
+  const files = [file, ...(feature === 'scoped-service'
+    ? ['src/pages/scoped-service/layout.ts', 'src/pages/scoped-service/other/index.ts', 'src/services/scoped-counter.ts']
+    : feature === 'protected-route'
+      ? ['src/pages/protected-route/layout.ts', 'src/pages/protected-route/details/index.ts', 'src/middlewares/protected-route.ts'] : [])
+    .map(relative => path.join(projectDir, relative))];
+  const originals = await Promise.all(files.map(file => fs.readFile(file, 'utf8')));
+  await addFeature(projectDir, feature, { interactive: false });
+  expect(await Promise.all(files.map(file => fs.readFile(file, 'utf8')))).toEqual(originals);
+  await Promise.all(files.map(file => fs.appendFile(file, '\n// application customization\n')));
+  await addFeature(projectDir, feature, { interactive: false });
+  expect(await Promise.all(files.map(file => fs.readFile(file, 'utf8')))).toEqual(originals.map(original => original + '\n// application customization\n'));
+  expect(recipeCapabilityRequirements(resolveRecipe({ adapter: 'node', preset: 'minimal', features: [feature] })))
+    .toEqual([{ feature, source: { file: '.cossack/scaffold.json' }, requires: { transports: ['http'] } },
+      ...(feature === 'protected-route' ? [{ feature: 'database/sqlite', source: { file: '.cossack/scaffold.json' }, requires: { filesystem: true } }] : [])]);
+});
+
+it.each([
+  { features: ['database'], auth: false, rbac: false },
+  { features: ['auth'], auth: true, rbac: false },
+  { features: ['dashboard'], dashboardModules: ['sessions'], auth: true, rbac: false },
+  { features: ['dashboard'], dashboardModules: ['users'], auth: true, rbac: true },
+])('keeps generated entity relations and registrations aligned with selected features: %j', async selection => {
+  const files = await renderRecipe(resolveRecipe({ adapter: 'node', preset: 'minimal', ...selection }));
+  const registered = files.get('src/models/index.ts').content.toString();
+  for (const name of ['User', 'Session', 'OAuthAccount']) {
+    expect(files.has(`src/models/${name}.ts`)).toBe(selection.auth);
+    expect(registered.includes(`import { ${name} }`)).toBe(selection.auth);
+  }
+  for (const name of ['Role', 'UserRole']) {
+    expect(files.has(`src/models/${name}.ts`)).toBe(selection.rbac);
+    expect(registered.includes(`import { ${name} }`)).toBe(selection.rbac);
+  }
+  if (selection.auth) {
+    const user = files.get('src/models/User.ts').content.toString();
+    expect(user.includes('roleAssignments')).toBe(selection.rbac);
+    expect(user.includes("import { UserRole }")).toBe(selection.rbac);
+  }
 });

@@ -81,44 +81,7 @@ a:active {
     opacity: 0.85;
 }
 
-/*
- * Cossack UI Tooltip — pure-CSS hover/focus reveal (no JS).
- * The bubble is hidden by default and shown when the wrapper is hovered or
- * focused (keyboard accessible via :focus-within). Position offsets are per-side.
- */
-.cs-tooltip__bubble {
-    bottom: calc(100% + 0.5rem);
-    left: 50%;
-    transform: translateX(-50%) scale(0.95);
-}
-.cs-tooltip__bubble--bottom {
-    bottom: auto;
-    top: calc(100% + 0.5rem);
-}
-.cs-tooltip__bubble--left {
-    bottom: auto;
-    top: 50%;
-    right: calc(100% + 0.5rem);
-    left: auto;
-    transform: translateY(-50%) scale(0.95);
-}
-.cs-tooltip__bubble--right {
-    bottom: auto;
-    top: 50%;
-    left: calc(100% + 0.5rem);
-    transform: translateY(-50%) scale(0.95);
-}
-.cs-tooltip:hover .cs-tooltip__bubble,
-.cs-tooltip:focus-within .cs-tooltip__bubble {
-    opacity: 1;
-    transform: translateX(-50%) scale(1);
-}
-.cs-tooltip:hover .cs-tooltip__bubble--left,
-.cs-tooltip:focus-within .cs-tooltip__bubble--left,
-.cs-tooltip:hover .cs-tooltip__bubble--right,
-.cs-tooltip:focus-within .cs-tooltip__bubble--right {
-    transform: translateY(-50%) scale(1);
-}
+/* Tooltip visibility and positioning are owned by its native popover controller. */
 
 /* ==========================================================================
  * Cossack UI — Component Animations
@@ -148,17 +111,12 @@ a:active {
     transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
 }
 
-/* --- Card interactive: hover lift --- */
-.cs-card {
-    transition: box-shadow 200ms ease, transform 200ms ease;
-}
-
-/* --- Progress: shimmer overlay on the bar --- */
+/* --- Unknown progress: shimmer, with a static reduced-motion fallback --- */
 .cs-progress__bar {
     position: relative;
     overflow: hidden;
 }
-.cs-progress__bar::after {
+.cs-progress[data-state="indeterminate"] .cs-progress__bar::after {
     content: "";
     position: absolute;
     inset: 0;
@@ -175,6 +133,10 @@ a:active {
     100% {
         transform: translateX(100%);
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-progress[data-state="indeterminate"] .cs-progress__bar::after { animation: none; }
 }
 
 /* --- Modal (<dialog>): scale + fade enter/exit --- */
@@ -358,6 +320,15 @@ a:active {
 
 /* --- Drawer (<dialog>): same slide mechanism as Sheet --- */
 .cs-drawer {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    overflow: hidden;
     transition: display 300ms allow-discrete, overlay 300ms allow-discrete;
 }
 .cs-drawer::backdrop {
@@ -492,4 +463,32 @@ a:active {
 .cs-tabs[style] .cs-tabs__panel,
 .cs-tabs > div + div .cs-tabs__panel {
     /* fallback for non-vertical */
+}
+
+/* ButtonGroup joins only direct native controls; their actions and Tab order stay native. */
+.cs-button-group[data-orientation="horizontal"] { flex-direction: row; }
+.cs-button-group[data-orientation="vertical"] { flex-direction: column; }
+.cs-button-group > :is(button, a) { position: relative; }
+.cs-button-group > :is(button, a):focus-visible { z-index: 1; }
+.cs-button-group[data-orientation="horizontal"] > :is(button, a):not(:first-child) {
+    margin-inline-start: -1px;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+}
+.cs-button-group[data-orientation="horizontal"] > :is(button, a):not(:last-child) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+}
+.cs-button-group[data-orientation="vertical"] > :is(button, a):not(:first-child) {
+    margin-block-start: -1px;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+}
+.cs-button-group[data-orientation="vertical"] > :is(button, a):not(:last-child) {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cs-toast { animation: none; }
 }

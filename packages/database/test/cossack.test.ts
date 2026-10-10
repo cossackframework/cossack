@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createORM } from "../src/index.js";
 import { MemoryDriver } from "../src/adapter/index.js";
+import type { Driver, QueryOperation, QueryResult } from "../src/adapter/types.js";
 import { nodeSQLite } from "../src/runtime/node.js";
+import type { CompiledQuery } from "../src/sql/fragment.js";
 import {
   createDatabaseCacheStore,
   createDatabaseSessionStore,
@@ -13,6 +15,15 @@ function memoryORM(driver = new MemoryDriver()) {
 }
 
 describe("Cossack integration", () => {
+  it("declares cache operations and units without guessing database deployment guarantees", () => {
+    const capabilities = createDatabaseCacheStore().capabilities!;
+    expect(capabilities).toMatchObject({ kind: "cache", provider: "database", durationUnit: "milliseconds",
+      locality: "unknown", persistence: "unknown", consistency: "unknown", atomicIncrement: false,
+      expiryPrecision: "milliseconds" });
+    expect(capabilities.operations).toEqual(["get", "set", "has", "delete", "flush", "getMany", "setMany", "deleteMany"]);
+    expect(Object.isFrozen(capabilities)).toBe(true);
+    expect(Object.isFrozen(capabilities.operations)).toBe(true);
+  });
   it("keeps singleton ORM ownership with the caller", async () => {
     const orm = memoryORM();
     const close = vi.spyOn(orm, "close");
@@ -36,6 +47,24 @@ describe("Cossack integration", () => {
     })).rejects.toThrow("downstream");
     expect(instances).toHaveLength(1);
     expect(() => instances[0]!.run(() => undefined)).toThrow(/closed/i);
+  });
+
+  it("defers owned ORM cleanup only when a response lifetime retains it", async () => {
+    const orm = memoryORM();
+    const close = vi.spyOn(orm, "close");
+    const callbacks: Array<() => Promise<void>> = [];
+    await ormMiddleware(() => orm)({
+      get: key => key === "cossack:response-lifetime" ? {
+        deferCleanup: (cleanup: () => Promise<void>) => { callbacks.push(cleanup); return true; },
+      } : undefined,
+    }, async () => {});
+    expect(close).not.toHaveBeenCalled();
+    await callbacks[0]!();
+    expect(close).toHaveBeenCalledOnce();
+    const ordinary = memoryORM();
+    const closeOrdinary = vi.spyOn(ordinary, "close");
+    await ormMiddleware(() => ordinary)({ get: () => ({ deferCleanup: () => false }) }, async () => {});
+    expect(closeOrdinary).toHaveBeenCalledOnce();
   });
 
   it("provides complete lazy cache and session store contracts", async () => {
@@ -103,5 +132,155 @@ describe("Cossack integration", () => {
     } finally {
       await orm.close();
     }
+  });
+
+  it("preserves concurrent session bag keys with atomic database updates", async () => {
+    const sqlite = await nodeSQLite();
+    let reads = 0;
+    let gateWrites = true;
+    let release!: () => void;
+    const bothReads = new Promise<void>(resolve => { release = resolve; });
+    const driver: Driver = {
+      ...sqlite.driver,
+      async execute<Row = Record<string, unknown>>(
+        query: CompiledQuery,
+        operation?: QueryOperation,
+        signal?: AbortSignal,
+      ): Promise<QueryResult<Row>> {
+        if (gateWrites && query.text.startsWith('SELECT "data", "expires_at" FROM "sessions"') && reads < 2) {
+          if (++reads === 2) release();
+          await bothReads;
+        }
+        return sqlite.driver.execute<Row>(query, operation, signal);
+      },
+      async close() { await sqlite.driver.close(); },
+    };
+    const orm = createORM({ adapter: { ...sqlite, driver }, entities: [] });
+    try {
+      await orm.run(async () => {
+        await orm.executeFragment(orm.sql.fragment`
+          CREATE TABLE ${orm.sql.id("sessions")} (
+            ${orm.sql.id("id")} TEXT PRIMARY KEY,
+            ${orm.sql.id("user_id")} TEXT,
+            ${orm.sql.id("data")} TEXT,
+            ${orm.sql.id("expires_at")} TEXT NOT NULL
+          )
+        `, "ddl");
+        const sessions = createDatabaseSessionStore();
+        const id = await sessions.create();
+        await Promise.all([
+          sessions.set(id, 'cart', { items: [1, 2] }),
+          sessions.set(id, 'notice', 'ready'),
+        ]);
+        gateWrites = false;
+        expect(reads).toBe(0);
+        expect(await sessions.getAll(id)).toEqual({ cart: { items: [1, 2] }, notice: 'ready' });
+        const unusualKey = 'dot.key"quoted';
+        await sessions.set(id, unusualKey, 'kept');
+        expect(await sessions.get(id, unusualKey)).toBe('kept');
+      });
+    } finally {
+      await orm.close();
+    }
+  });
+
+  it.each([
+    ["sqlite", "json_set", "json_remove"],
+    ["postgres", "jsonb_set", " - "],
+    ["mysql", "JSON_SET", "JSON_REMOVE"],
+  ] as const)("compiles atomic session key mutations for %s", async (dialect, setFunction, unsetFunction) => {
+    const driver = new MemoryDriver(dialect);
+    const orm = memoryORM(driver);
+    try {
+      await orm.run(async () => {
+        const sessions = createDatabaseSessionStore();
+        await sessions.set('session-id', 'cart', { items: [1] });
+        await sessions.unset('session-id', 'notice');
+      });
+      expect(driver.statements).toHaveLength(2);
+      expect(driver.statements[0]!.query.text).toContain(setFunction);
+      expect(driver.statements[1]!.query.text).toContain(unsetFunction);
+      if (dialect === "mysql") {
+        expect(driver.statements[0]!.query.text).toContain("JSON_VALID");
+      }
+      expect(driver.statements.every(({ query }) => !query.text.startsWith('SELECT'))).toBe(true);
+    } finally {
+      await orm.close();
+    }
+  });
+
+  it("uses millisecond cache expiry and validates batches before writes in real SQLite", async () => {
+    const orm = createORM({ adapter: await nodeSQLite(), entities: [] });
+    const clock = vi.spyOn(Date, "now").mockReturnValue(2_000_000);
+    try {
+      await orm.run(async () => {
+        await orm.executeFragment(orm.sql.fragment`
+          CREATE TABLE ${orm.sql.id("cache_items")} (
+            ${orm.sql.id("key")} TEXT PRIMARY KEY,
+            ${orm.sql.id("value")} TEXT NOT NULL,
+            ${orm.sql.id("expires_at")} INTEGER,
+            ${orm.sql.id("updated_at")} INTEGER NOT NULL
+          )
+        `, "ddl");
+        const cache = createDatabaseCacheStore();
+        await cache.set("key", null, 1001);
+        clock.mockReturnValue(2_001_000);
+        expect(await cache.get("key")).toBeNull();
+        expect(await cache.has("key")).toBe(true);
+        expect(await cache.getMany(["key", "missing"])).toEqual([null, undefined]);
+        clock.mockReturnValue(2_001_001);
+        expect(await cache.has("key")).toBe(false);
+        await cache.set("kept", "original");
+        for (const ttl of [-1, 1.5, NaN, Infinity, null, "1000", 8640000000000000]) {
+          await expect(cache.set("kept", "changed", ttl as any)).rejects.toThrow(/ttlMs/);
+        }
+        expect(await cache.get("kept")).toBe("original");
+        await cache.set("zero", 1, 0);
+        expect(await cache.has("zero")).toBe(false);
+        for (const entry of [{ key: "invalid", value: 2, ttlMs: -1 },
+          { key: "legacy", value: 2, ttlSeconds: 1 }, { key: "", value: 1 },
+          { key: "oversized", value: "x".repeat(1024 * 1024) }]) {
+          await expect(cache.setMany([{ key: "first", value: 1 }, entry] as any)).rejects.toThrow();
+          expect(await cache.has("first")).toBe(false);
+        }
+        const keys = [".", "..", "/", "flush", "🙂"];
+        await cache.setMany(keys.map(key => ({ key, value: null })));
+        expect(await cache.getMany(keys)).toEqual(keys.map(() => null));
+        await cache.deleteMany(keys);
+        expect(await cache.getMany(keys)).toEqual(keys.map(() => undefined));
+      });
+    } finally { clock.mockRestore(); await orm.close(); }
+  });
+
+  it("does not let stale cache cleanup delete a fresh database replacement", async () => {
+    const orm = createORM({ adapter: await nodeSQLite(), entities: [] });
+    try {
+      await orm.run(async () => {
+        await orm.executeFragment(orm.sql.fragment`
+          CREATE TABLE ${orm.sql.id("cache_items")} (
+            ${orm.sql.id("key")} TEXT PRIMARY KEY,
+            ${orm.sql.id("value")} TEXT NOT NULL,
+            ${orm.sql.id("expires_at")} INTEGER,
+            ${orm.sql.id("updated_at")} INTEGER NOT NULL
+          )
+        `, "ddl");
+        const cache = createDatabaseCacheStore();
+        await cache.set("expired", "old", 1);
+        await orm.executeFragment(orm.sql.fragment`
+          UPDATE ${orm.sql.id("cache_items")} SET ${orm.sql.id("expires_at")} = ${1}
+          WHERE ${orm.sql.id("key")} = ${"expired"}
+        `, "update");
+        const execute = orm.executeFragment.bind(orm);
+        let replace = true;
+        const spy = vi.spyOn(orm, "executeFragment").mockImplementation(async (fragment, operation) => {
+          const result = await execute(fragment, operation);
+          if (operation === "select" && replace) { replace = false; await cache.set("expired", "fresh"); }
+          return result;
+        });
+        expect(await cache.get("expired")).toBeUndefined();
+        expect(await cache.get("expired")).toBe("fresh");
+        spy.mockRestore();
+      });
+    } finally { await orm.close(); }
   });
 });

@@ -1,5 +1,7 @@
-export const ADAPTERS = ['cloudflare', 'node', 'deno'];
-export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop'];
+import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
+
+export const ADAPTERS = ['cloudflare', 'node'];
+export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications', 'workflows'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
@@ -14,6 +16,15 @@ export const FEATURE_REGISTRY = {
   markdown: { requires: [] },
   examples: { requires: ['ui', 'markdown'] },
   desktop: { requires: [] },
+  resource: { requires: [] },
+  mutation: { requires: [] },
+  'scoped-service': { requires: [] },
+  'protected-route': { requires: ['auth'] },
+  jobs: { requires: [] },
+  turnstile: { requires: ['ui'] },
+  schedules: { requires: ['jobs'] },
+  notifications: { requires: ['jobs'] },
+  workflows: { requires: [] },
 };
 
 export const PRESET_REGISTRY = {
@@ -28,10 +39,10 @@ export const PRESET_REGISTRY = {
 
 export const DATABASE_PROVIDERS = {
   d1: { adapters: ['cloudflare'] },
-  sqlite: { adapters: ['node', 'deno'] },
+  sqlite: { adapters: ['node'] },
   turso: { adapters: ADAPTERS },
-  postgres: { adapters: ['node', 'deno'] },
-  mysql: { adapters: ['node', 'deno'] },
+  postgres: { adapters: ['node'] },
+  mysql: { adapters: ['node'] },
   'hyperdrive-postgres': { adapters: ['cloudflare'] },
   'hyperdrive-mysql': { adapters: ['cloudflare'] },
 };
@@ -108,7 +119,7 @@ export function resolveRecipe(options = {}) {
   const resolvedFeatures = resolveFeatures(explicitFeatures);
 
   const database = options.database ??
-    (adapter === 'cloudflare' ? 'd1' : adapter === 'deno' ? 'turso' : 'sqlite');
+    (adapter === 'cloudflare' ? 'd1' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }
@@ -140,7 +151,7 @@ export function resolveRecipe(options = {}) {
     resolvedFeatures.includes('dashboard'),
   );
 
-  return {
+  const recipe = {
     adapter,
     preset,
     explicitFeatures,
@@ -153,4 +164,47 @@ export function resolveRecipe(options = {}) {
       theme,
     },
   };
+  return recipe;
+}
+
+/** Host support for all selected targets. Recorded recipes remain inspectable. */
+export function recipeCapabilityDiagnostics(recipe) {
+  return ['web', ...(recipe.resolvedFeatures.includes('desktop') ? ['desktop'] : [])]
+    .flatMap(target => checkCapabilityRequirements(
+      target === 'desktop' ? 'desktop' : recipe.adapter,
+      recipeCapabilityRequirements(recipe, target),
+    )
+      // Binding configuration/remote readiness remain build/deploy checks.
+      .filter(result => result.code !== 'COSSACK_CAPABILITY_BINDING_MISSING')
+      .map(result => ({ ...result, target })));
+}
+
+/** Requirements selected by the recipe, separate from discovered page transports. */
+export function recipeCapabilityRequirements(recipe, target = 'web') {
+  if (target !== 'web' && target !== 'desktop') throw new Error(`Unknown recipe target: ${target}`);
+  const requirements = [];
+  const add = (feature, requires) => requirements.push({
+    feature, source: { file: '.cossack/scaffold.json' }, requires,
+  });
+  if (recipe.resolvedFeatures.includes('workflows')) add('workflows/cloudflare', { cloudflareBindings: ['WORKFLOWS'] });
+  if (recipe.resolvedFeatures.includes('jobs')) add('jobs/cloudflare-queues', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
+  if (recipe.resolvedFeatures.includes('schedules')) add('schedules/cloudflare-cron', { cloudflareBindings: ['JOBS', 'JOB_STATE'] });
+  if (recipe.resolvedFeatures.includes('notifications')) add('notifications/cloudflare-email', { cloudflareBindings: ['EMAIL', 'JOB_STATE'] });
+  if (recipe.resolvedFeatures.includes('resource')) add('resource', { transports: ['http'] });
+  if (recipe.resolvedFeatures.includes('mutation')) add('mutation', { transports: ['http'] });
+  if (recipe.resolvedFeatures.includes('scoped-service')) add('scoped-service', { transports: ['http'] });
+  if (recipe.resolvedFeatures.includes('protected-route')) add('protected-route', { transports: ['http'] });
+  if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite') {
+    add('database/sqlite', { filesystem: true });
+  }
+  if (recipe.resolvedFeatures.includes('database')) {
+    if (recipe.config.database === 'd1') add('database/d1', { cloudflareBindings: ['DB'] });
+    if (recipe.config.database.startsWith('hyperdrive-')) {
+      add(`database/${recipe.config.database}`, { cloudflareBindings: ['HYPERDRIVE'] });
+    }
+  }
+  if (target === 'desktop' && recipe.resolvedFeatures.includes('desktop')) {
+    add('desktop', { filesystem: true });
+  }
+  return requirements;
 }

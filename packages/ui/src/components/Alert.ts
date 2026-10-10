@@ -1,4 +1,5 @@
-import { html, classMap, component } from "@cossackframework/renderer";
+import type { GlobalAttributes } from "../native-attributes";
+import { html, classMap, component, ifDefined } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 import { Icon } from "../icons/Icon";
 import type { IconEntry } from "@cossackframework/solar-icons/types";
@@ -7,17 +8,17 @@ import { CheckCircleIcon } from "@cossackframework/solar-icons/check-circle";
 import { DangerTriangleIcon } from "@cossackframework/solar-icons/danger-triangle";
 import { DangerCircleIcon } from "@cossackframework/solar-icons/danger-circle";
 
-export interface AlertProps {
+export type AlertProps = Omit<GlobalAttributes<HTMLDivElement>, 'title' | 'role' | 'aria-live' | 'aria-atomic'> & {
+    /** assertive for urgent messages, polite for status, off for static content. */
+    announcement?: 'assertive' | 'polite' | 'off';
     /** Semantic tone; drives border + background tint. */
     variant?: "default" | "success" | "warning" | "destructive";
     /** Render an accent stripe on the left edge. */
     accent?: boolean;
     /** Optional title text (rendered in medium weight). */
     title?: string;
-    /** Optional Solar icon name shown at the start. */
+    /** Optional imported Solar icon entry shown at the start. */
     icon?: IconEntry | null;
-    /** Allow arbitrary HTML attributes to spread onto the root. */
-    [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<AlertProps["variant"]>, string> = {
@@ -40,7 +41,7 @@ const ICONS: Record<string, IconEntry> = {
  * shadcn-style: a simple bordered grid with an optional icon, title, and
  * description (passed as children). Default variant uses the card surface.
  *
- *   component(Alert, { variant: 'success', title: 'Saved', icon: 'check-circle' },
+ *   component(Alert, { variant: 'success', title: 'Saved', announcement: 'polite' },
  *       html\`Your changes have been saved.\`)
  */
 @Component()
@@ -48,7 +49,9 @@ export class Alert extends Cossack {
     declare props: AlertProps;
 
     render() {
-        const { variant = "default", accent = false, title, icon, ...rest } = this.props;
+        const { variant = "default", accent = false, title, icon, announcement = "assertive", ...rest } = this.props;
+        if (!Object.hasOwn(VARIANTS, variant)) throw new Error('Alert requires a supported variant.');
+        if (!['assertive', 'polite', 'off'].includes(announcement)) throw new Error('Alert announcement must be assertive, polite or off.');
         const iconEntry: IconEntry | undefined = icon !== undefined ? (icon ?? undefined) : ICONS[variant];
 
         const classes = classMap({
@@ -61,9 +64,9 @@ export class Alert extends Cossack {
         });
 
         return html`
-            <div class="${classes}" role="alert" ...=${rest}>
+            <div class="${classes}" role=${ifDefined(announcement === 'off' ? undefined : announcement === 'polite' ? 'status' : 'alert')} ...=${rest}>
                 ${iconEntry
-                    ? html`<span class="inline-flex items-start [&_svg]:size-4 [&_svg]:text-current">${component(Icon, { entry: iconEntry, size: 16 })}</span>`
+                    ? html`<span aria-hidden="true" class="inline-flex items-start [&_svg]:size-4 [&_svg]:text-current">${component(Icon, { entry: iconEntry, size: 16 })}</span>`
                     : null}
                 <div class=${iconEntry ? "col-start-2" : ""}>
                     ${title ? html`<div class="font-medium">${title}</div>` : null}

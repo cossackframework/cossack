@@ -27,11 +27,9 @@ pnpm add -g cossack
 
 Requires **Node.js >= 22**.
 
-`cossack create` detects whether it was invoked through npm, pnpm, Yarn, Bun,
-or Deno and prints matching install/dev commands. Globally installed users can
+`cossack create` detects whether it was invoked through npm, pnpm, Yarn or Bun
+and prints matching install/dev commands. Globally installed users can
 override detection with `--package-manager <manager>`.
-For Deno, generated `package.json` scripts run through `deno task`; a
-`deno.json` file is not required.
 
 ## Usage
 
@@ -59,6 +57,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
+| `config` | List configuration factory type origins; use `--generate` before standalone typechecking. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |
 | `upgrade [dir]` | Upgrade Cossack deps and report template drift. |

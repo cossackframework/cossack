@@ -259,3 +259,21 @@ console.log(result.meta.operation);
 
 See [Raw queries](./raw-queries.md) when a query cannot be expressed cleanly by
 the model APIs.
+
+## Stable pagination
+
+For an entity query with `limit()` or `offset()`, Cossack appends each primary
+key field to the order. An explicit primary key order keeps its direction.
+This makes ties in other sort fields deterministic. An entity without a primary
+key cannot use this automatic order.
+
+Joined, grouped, distinct, and projected pages require an explicit unique order.
+Include all fields needed to distinguish result rows; Cossack cannot infer their
+uniqueness. Offset pages can shift when concurrent writes insert or delete rows.
+Use a transaction when the provider supports the consistency your application needs.
+
+For keyset pagination, use the existing predicate and order APIs. For example,
+query rows with `id > lastSeenId`, order by `id`, and apply a limit. Composite
+orders need a matching lexicographic predicate. There is no opaque cursor API.
+`count()` and aggregates operate on the full predicate, independent of pagination,
+and restore the query's original window after execution.

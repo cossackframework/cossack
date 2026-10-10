@@ -90,3 +90,5 @@ export class CloudflareR2UploadDemo extends Cossack {
         `;
     }
 }
+
+export default CloudflareR2UploadDemo;

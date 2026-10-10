@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 import { demoEntries } from '../../src/demo-catalog';
 
 test.describe('Demo catalog smoke test', () => {

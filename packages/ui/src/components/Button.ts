@@ -1,7 +1,8 @@
+import type { ButtonAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface ButtonProps {
+export type ButtonProps = ButtonAttributes & {
     /** Visual style. Defaults to "default" (primary fill). */
     variant?:
         | "default"
@@ -14,8 +15,6 @@ export interface ButtonProps {
     size?: "default" | "sm" | "lg" | "icon";
     /** Render as a block-level (full-width) button. */
     block?: boolean;
-    /** Allow arbitrary HTML attributes / event handlers to spread onto the native button. */
-    [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {

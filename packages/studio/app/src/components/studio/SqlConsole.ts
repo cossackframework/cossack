@@ -33,16 +33,17 @@ interface SqlConsoleProps {
 }
 
 function iconButton(
+  id: string,
   icon: IconEntry,
   label: string,
   onClick: () => unknown,
   options: Record<string, unknown> = {},
 ) {
-  return component(Tooltip, { label, side: 'bottom' }, component(Button, {
+  return component(Tooltip, { id, label, side: 'bottom' }, component(Button, {
     variant: 'ghost',
     size: 'icon',
     'aria-label': label,
-    title: label,
+    'aria-describedby': id,
     '@click': onClick,
     ...options,
   }, component(Icon, { entry: icon, size: 17 })));
@@ -76,10 +77,10 @@ export class SqlConsole extends Cossack {
               Ctrl/Cmd+Enter to execute · schema-aware completion is cached in browser memory
             </span>
             <div class="flex items-center gap-1">
-              ${iconButton(HistoryIcon, 'Query history', this.props.onOpenHistory, {
+              ${iconButton('sql-history-tip', HistoryIcon, 'Query history', this.props.onOpenHistory, {
                 'data-testid': 'open-query-history',
               })}
-              ${iconButton(
+              ${iconButton('sql-explain-tip',
                 GraphIcon,
                 this.props.explaining ? 'Generating query plan' : 'Explain query',
                 this.props.onExplain,
@@ -89,7 +90,7 @@ export class SqlConsole extends Cossack {
                   variant: this.props.output === 'explain' ? 'secondary' : 'ghost',
                 },
               )}
-              ${iconButton(
+              ${iconButton('sql-run-tip',
                 PlayIcon,
                 this.props.running ? 'Running SQL' : 'Run SQL',
                 this.props.onRun,

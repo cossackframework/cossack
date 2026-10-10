@@ -1,3 +1,32 @@
+/** Declared server$ field names. Values remain ordinary application types. */
+export type ServerResourceName<Options, Host> = Options extends { Resources: infer Names extends string }
+    ? Names & keyof Host
+    : string;
+
+/** Infer lifecycle values from the named field, including null/undefined. */
+export type ServerResourceValue<Options, Host, Name extends string> =
+    Options extends { Resources: string } ? Host[Name & keyof Host] : unknown;
+
+/** A snapshot, not a mutable handle. Ready resources always have a value. */
+export type ServerResourceStatus<Value> =
+    | { state: 'ready'; hasValue: true; value: Value; stale: false; error?: undefined }
+    | ({ state: 'pending'; stale: boolean; error?: undefined } & (
+        | { hasValue: true; value: Value }
+        | { hasValue: false; value: undefined }
+    ))
+    | ({ state: 'error'; stale: false; error: unknown } & (
+        | { hasValue: true; value: Value }
+        | { hasValue: false; value: undefined }
+    ));
+
+/** Recovery reads data; it never confirms or repeats the original mutation. */
+export type ServerResourceReconciliation<Name extends string = string> = {
+    readonly resources: readonly Name[];
+} & (
+    | { readonly state: 'not-needed' | 'recovered' | 'disposed' | 'superseded'; readonly error?: undefined }
+    | { readonly state: 'failed'; readonly error: unknown }
+);
+
 /** Options accepted by the compiler-only {@link server$} macro. */
 export interface ServerResourceOptions<T, Args extends readonly unknown[] = readonly unknown[]> {
     initial?: T;

@@ -1,72 +1,37 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Counter HTTP Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/counter-http');
+    await waitForHydration(page);
   });
 
-  test('should display counter value', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
-
-    const body = await page.locator('body').textContent();
-    // The counter page shows "Count: 0" initially
-    expect(body).toContain('Count:');
+  test('should display the server-initialized counter value', async ({ page }) => {
+    await expect(page).toHaveTitle(/Counter \(HTTP\)/);
+    await expect(page.getByText(/^Count: -?\d+$/)).toHaveText('Count: 0');
   });
 
-  test('should increment counter via HTTP', async ({ page }) => {
-    const body = await page.locator('body').textContent();
-    const initialMatch = body?.match(/Count:\s*(\d+)/);
-    const initialValue = initialMatch ? parseInt(initialMatch[1], 10) : 0;
-
-    await page.click('button:has-text("+")');
-
-    await page.waitForFunction((expected) => {
-      const text = document.body.textContent || '';
-      const match = text.match(/Count:\s*(\d+)/);
-      return match ? parseInt(match[1], 10) === expected : false;
-    }, initialValue + 1);
+  test('should increment counter via an HTTP server call', async ({ page }) => {
+    const rpc = page.waitForResponse(r => r.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    expect((await rpc).ok()).toBe(true);
+    await expect(page.getByText(/^Count: -?\d+$/)).toHaveText('Count: 1');
   });
 
-  test('should decrement counter and redirect to tasks', async ({ page }) => {
-    // Note: The decrement button redirects to /tasks
-    await page.click('button:has-text("-")');
-
-    // Wait for redirect to tasks page
-    await page.waitForURL(/\/tasks/, { timeout: 10000 });
-    await expect(page).toHaveURL(/\/tasks/);
-  });
-
-  test('should handle redirect on decrement', async ({ page }) => {
-    const decrementButton = page.locator('button:has-text("-")');
-
-    await decrementButton.click();
-
-    await page.waitForTimeout(500);
+  test('should decrement counter and follow the server redirect to tasks', async ({ page }) => {
+    await page.getByRole('button', { name: 'Decrement', exact: true }).click();
+    await page.waitForURL(/\/tasks$/, { timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Tasks', exact: true })).toBeVisible();
   });
 
   test('should reset state on page reload (HTTP transport)', async ({ page }) => {
-    // Note: HTTP transport does not persist state across reloads
-    // Each reload resets the counter to initial value (0)
-    const body = await page.locator('body').textContent();
-    const initialMatch = body?.match(/Count:\s*(\d+)/);
-    const initialValue = initialMatch ? parseInt(initialMatch[1], 10) : 0;
-
-    await page.click('button:has-text("+")');
-
-    await page.waitForFunction((expected) => {
-      const text = document.body.textContent || '';
-      const match = text.match(/Count:\s*(\d+)/);
-      return match ? parseInt(match[1], 10) === expected : false;
-    }, initialValue + 1);
+    const count = page.getByText(/^Count: -?\d+$/);
+    await page.getByRole('button', { name: 'Increment', exact: true }).click();
+    await expect(count).toHaveText('Count: 1');
 
     await page.reload();
-
-    // After reload, counter resets to initial value (0) since HTTP transport doesn't persist
-    const afterReloadBody = await page.locator('body').textContent();
-    const afterReloadMatch = afterReloadBody?.match(/Count:\s*(\d+)/);
-    const afterReloadValue = afterReloadMatch ? parseInt(afterReloadMatch[1], 10) : 0;
-
-    // State resets to 0 on reload with HTTP transport
-    expect(afterReloadValue).toBe(0);
+    // HTTP transport does not persist state: init() runs again per request.
+    await expect(count).toHaveText('Count: 0');
   });
 });

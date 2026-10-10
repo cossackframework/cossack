@@ -5,30 +5,74 @@ the renderer and local Cossack SSR/RPC over the private `cossack://app` origin,
 injecting `ASSETS` and a window-scoped `COSSACK_DESKTOP` shell into request
 bindings.
 
-```ts
-import { createDesktopApp } from '@cossackframework/desktop';
+The generated `src/desktop/index.ts` exports its application and bootstrap so
+`desktop:dev` can load server modules through Vite inside Electron:
 
-async function main() {
-  await createDesktopApp({
+```ts
+import { app, createDesktopApp, electronRuntimeAdapter } from '@cossackframework/desktop';
+import { createApp } from '@cossackframework/framework/router';
+import { fileURLToPath } from 'node:url';
+import { App } from '../App';
+import { template } from '../root';
+
+export const env = { ...process.env };
+export const frameworkApp = createApp({
+  AppComponent: App,
+  htmlTemplate: template,
+  runtimeAdapter: electronRuntimeAdapter,
+});
+
+export async function startDesktop(createApplication = createDesktopApp) {
+  const desktop = await createApplication({
     identifier: 'dev.cossack.my-app',
     productName: 'My App',
-    assetsRoot: new URL('../../client/', import.meta.url).pathname,
-    fetch: (request, env) => app.fetch(request, env),
+    assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
+    env,
+    fetch: (request, bindings) => frameworkApp.fetch(request, bindings),
   });
+  // Set up native menus, trays and close behavior here.
+  return desktop;
 }
 
-void main();
+if (!import.meta.env.DEV) {
+  void startDesktop().catch(error => { console.error(error); app.exit(1); });
+}
 ```
 
-Do not top-level `await` `createDesktopApp()` in an ESM entry. Electron fires
-`ready` after the main module's first event-loop tick completes, while Desktop
-creation waits for `ready`; start an async function without awaiting it at the
-module's top level as shown above.
+Do not top-level `await` `createDesktopApp()` in an ESM entry. Electron emits
+`ready` after the main module's first event-loop tick; Desktop creation waits
+for that event. Development calls the exported bootstrap once. Production starts
+it through the guarded call above.
+
+`pnpm desktop:dev` requires Vite 8.1.4 or later in the 8.x series. The CLI
+supervises Electron, which runs the development module loader and asset server.
+Pages retain the private origin and native request checks. Source edits reload
+managed windows; changes under `src/desktop/`, to the Vite config or root `.env*`
+files restart Electron. Reloads do not undo application side effects. Page syntax
+errors remain visible and source repair can recover without restarting the CLI.
+
+Keep `ssr.noExternal: true` restricted to production Desktop builds:
+`mode === 'desktop' && command === 'build'`. Development needs normal external
+package resolution. Do not register another server that exposes native handlers
+on HTTP. Enable `developmentTraces: true` in `cossackPages()` to use the shared
+inspector and CLI/MCP capture readers.
+
+The optional `assets.fetch(request)` provider on `createDesktopApp()` replaces
+filesystem asset lookup. A 404 falls through to application dispatch after its
+body is canceled. The development runner supplies this provider for Vite assets;
+ordinary packaged apps use `assetsRoot`. Native proof headers are stripped
+before either provider or application code receives a request.
 
 `createDesktopApp()` forces context isolation and renderer sandboxing, with Node
 integration and preload bridges disabled. Only same-origin navigation is
 allowed; valid HTTP(S) popups are opened in the operating-system browser.
 Desktop pages currently require `@Page({ transport: 'http' })`.
+
+Use Electron 43.7+ in the 43.x series, or 44.4+. The runtime verifies native
+request initiators and managed window identity before dispatching local actions.
+Cossack reserves the `persist:cossack.<identifier>` session and its
+`onBeforeSendHeaders` hook. Default-session cookies/storage are not migrated.
+Keep the identifier stable; native app files retain their existing paths.
 
 On Linux, `desktop:dev` checks Electron's local `chrome-sandbox` helper. pnpm's
 download is normally user-owned rather than root-owned/setuid, so the runner

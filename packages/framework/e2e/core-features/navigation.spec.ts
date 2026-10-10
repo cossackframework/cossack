@@ -1,5 +1,17 @@
-import { test, expect } from '../fixtures';
-import { clickAndWaitForNavigation } from '../fixtures/helpers';
+import { test, expect, type Page } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
+
+async function navigationLink(page: Page, href: string) {
+  await waitForHydration(page);
+  const sidebar = page.getByTestId('desktop-sidebar');
+  const link = sidebar.locator(`a[href="${href}"]`);
+  const group = link.locator('xpath=ancestor::details[1]');
+  if (await group.count() && await group.getAttribute('open') === null) {
+    await group.locator(':scope > summary').click();
+  }
+  await expect(link).toBeVisible();
+  return link;
+}
 
 test.describe('Navigation', () => {
   test.beforeEach(async ({ page }) => {
@@ -11,19 +23,19 @@ test.describe('Navigation', () => {
   });
 
   test('should navigate to optimistic-counter page from nav', async ({ page }) => {
-    await clickAndWaitForNavigation(page, 'a[href="/optimistic-counter"]');
+    await (await navigationLink(page, '/optimistic-counter')).click();
     await expect(page).toHaveURL(/\/optimistic-counter/);
     await expect(page.getByRole('heading', { name: /Optimistic Counter/i })).toBeVisible();
   });
 
   test('should navigate to optimistic-counter page', async ({ page }) => {
-    await clickAndWaitForNavigation(page, 'a[href="/optimistic-counter"]');
+    await (await navigationLink(page, '/optimistic-counter')).click();
     await expect(page).toHaveURL(/\/optimistic-counter/);
     await expect(page.getByRole('heading', { name: /Optimistic Counter/i })).toBeVisible();
   });
 
   test('should navigate to lifecycle page', async ({ page }) => {
-    await clickAndWaitForNavigation(page, 'a[href="/lifecycle"]');
+    await (await navigationLink(page, '/lifecycle')).click();
     await expect(page).toHaveURL(/\/lifecycle/);
     // The lifecycle page shows "Loading Data..." or "Data Loaded!" initially
     await expect(page.locator('h1')).toContainText(/Loading|Data/);
@@ -48,31 +60,33 @@ test.describe('Navigation', () => {
   });
 
   test('should show progress indicator during navigation', async ({ page }) => {
-    const progressSelector = '[role="progressbar"], .progress, [data-progress]';
-
-    await page.click('a[href="/lifecycle"]');
+    await (await navigationLink(page, '/lifecycle')).click();
 
     await page.waitForURL(/\/lifecycle/);
     await expect(page).toHaveURL(/\/lifecycle/);
   });
 
-  test('should prefetch on hover', async ({ page }) => {
-    // Use .first() to handle multiple contact links
-    const link = page.locator('a[href="/contact"]').first();
+  test('should prefetch on hover and reuse the prefetched document on click', async ({ page }) => {
+    const link = await navigationLink(page, '/contact');
+    const documentRequests: string[] = [];
+    page.on('request', request => {
+      if (new URL(request.url()).pathname === '/contact') documentRequests.push(request.url());
+    });
+
+    const prefetch = page.waitForResponse(r => new URL(r.url()).pathname === '/contact');
     await link.hover();
+    expect((await prefetch).ok()).toBe(true);
 
-    // Wait a moment for prefetch to potentially trigger
-    await page.waitForTimeout(100);
     await link.click();
-
-    // Wait for navigation to complete
     await page.waitForURL(/\/contact/, { timeout: 10000 });
-    await expect(page).toHaveURL(/\/contact/);
+    await expect(page.getByText('Contact page')).toBeVisible();
+    // The click is served from the hover prefetch cache.
+    expect(documentRequests).toHaveLength(1);
   });
 
   test('hover prefetch navigates without RPC or a document reload and caches revisits', async ({ page }) => {
     await page.goto('/validation');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
 
     const requests: Array<{ pathname: string; type: string }> = [];
     page.on('request', (request) => {
@@ -86,7 +100,7 @@ test.describe('Navigation', () => {
       (window as any).__softNavigationMarker = 'preserved';
     });
 
-    const complexFormLink = page.locator('a[href="/forms/complex-form"]:visible').first();
+    const complexFormLink = await navigationLink(page, '/forms/complex-form');
     await complexFormLink.hover();
     await expect.poll(() =>
       requests.filter(({ pathname, type }) =>
@@ -105,7 +119,7 @@ test.describe('Navigation', () => {
       pathname === '/forms/complex-form' && type === 'fetch'
     )).toHaveLength(1);
 
-    const validationLink = page.locator('a[href="/validation"]:visible').first();
+    const validationLink = await navigationLink(page, '/validation');
     await validationLink.click();
     await expect(page).toHaveURL(/\/validation$/);
     await expect(page.locator('body')).toContainText('Validation');
@@ -118,9 +132,46 @@ test.describe('Navigation', () => {
     expect(requests.filter(({ type }) => type === 'document')).toHaveLength(0);
   });
 
+  test('a newer link wins when an earlier page response arrives late', async ({ page }) => {
+    await page.goto('/');
+    await waitForHydration(page);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let held = false;
+    let delivered = false;
+    await page.route('**/lifecycle', async route => {
+      const response = await route.fetch();
+      held = true;
+      await gate;
+      try { await route.fulfill({ response }); } finally { delivered = true; }
+    });
+    try {
+      await page.evaluate(() => {
+        const link = document.createElement('a');
+        link.href = '/lifecycle'; document.body.append(link); link.click(); link.remove();
+      });
+      await expect.poll(() => held).toBe(true);
+      await page.evaluate(() => {
+        const link = document.createElement('a');
+        link.href = '/optimistic-counter'; document.body.append(link); link.click(); link.remove();
+      });
+      await expect(page).toHaveURL(/\/optimistic-counter$/);
+      await expect(page.getByRole('heading', { name: 'Optimistic Counter', exact: true })).toBeVisible();
+      release();
+      await expect.poll(() => delivered).toBe(true);
+      // Let queued rendering run after the obsolete response is released.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(page).toHaveURL(/\/optimistic-counter$/);
+      await expect(page.getByRole('heading', { name: 'Optimistic Counter', exact: true })).toBeVisible();
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+
   test('successful mutation clears cached redirect destinations before soft navigation', async ({ page }) => {
     await page.goto('/cache-regression/detail');
-    await page.waitForFunction(() => (window as any).__cossackReady === true);
+    await waitForHydration(page);
     const initial = Number(
       (await page.locator('[data-cache-version]').textContent())?.match(/\d+/)?.[0],
     );

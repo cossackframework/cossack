@@ -1,178 +1,119 @@
 ---
 title: "File Storage & Uploads"
-description: "Upload files directly to R2 or S3, or send them to a server method."
+description: "Authorize streamed storage operations with local, R2, or S3 providers."
 ---
 
 # File Storage & Uploads
 
-Cossack supports file uploads on Cloudflare Workers and Node.js.
+`Storage` applies authorization, byte limits, content-type limits, and progress reporting before a provider stores an object.
+A provider supplies the storage backend. Keep providers and signing secrets in server-only modules.
 
-You can upload files in two ways:
-
-1. **Direct-to-Cloud (Recommended for R2/S3):** The client uploads to a storage bucket with a presigned URL. This avoids sending the file through your server.
-2. **RPC Upload (Server Proxy):** Pass a `File` object to a server method. The framework sends it as multipart data.
-
----
-
-## Strategy 1: Direct-to-Cloud (R2 / S3)
-
-Use this method for large files or Cloudflare Workers. The server creates a temporary, authorized URL called a presigned URL. The client uses it to upload the file directly.
-
-### Prerequisites
-
-You need to install the AWS SDK (which works with Cloudflare R2):
-
-```bash
-pnpm add @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
-```
-
-### Implementation Example
-
-We provide helper functions in `packages/framework/src/storage/s3.ts` to simplify this process.
-
-**`src/pages/upload-demo.ts`**
+## Local storage on Node.js
 
 ```typescript
-import { Cossack, Page, State, ClientState, Server } from "@cossackframework/core";
-import { html } from "@cossackframework/renderer";
-import { createR2PresignedUrl, getR2ConfigFromEnv, uploadToPresignedUrl } from "../storage/s3";
+import { Storage } from '@cossackframework/core/storage';
+import { LocalStorageProvider } from '@cossackframework/node-adapter/storage';
 
-@Page({ transport: 'http' })
-export class R2UploadPage extends Cossack {
-    @ClientState() uploadProgress: number = 0;
-    @State() lastUploadUrl: string = '';
+type UploadContext = { tenantId: string };
 
-    // 1. Server: Generate the Presigned URL
-    @Server()
-    async getPresignedUrl(key: string, contentType: string) {
-        // Automatically reads R2_ACCOUNT_ID, etc. from env
-        const config = getR2ConfigFromEnv(this.env);
-        // Returns { uploadUrl, publicUrl }
-        return await createR2PresignedUrl(config, key, contentType);
-    }
+const storage = new Storage<UploadContext>({
+    provider: new LocalStorageProvider({ root: './private-uploads' }),
+    authorize: ({ context, key }) => key.startsWith(`${context.tenantId}/`),
+    maxBytes: 10 * 1024 * 1024,
+    contentTypes: ['image/png', 'image/jpeg'],
+});
 
-    // 2. Client: Perform the Upload
-    async upload(file: File) {
-        try {
-            this.loading['upload'] = 1;
-            this._render();
-
-            // A. Get the URL
-            const { uploadUrl, publicUrl } = await this.getPresignedUrl(file.name, file.type);
-
-            // B. Upload directly to R2
-            await uploadToPresignedUrl(uploadUrl, file, (percent) => {
-                this.uploadProgress = percent;
-                this._render();
-            });
-
-            this.lastUploadUrl = publicUrl;
-        } catch (e) {
-            console.error(e);
-            alert('Upload failed');
-        } finally {
-            delete this.loading['upload'];
-            this._render();
-        }
-    }
-
-    render() {
-        return html`
-            <h1>Direct Upload</h1>
-            <input type="file" @change="${(e: any) => this.upload(e.target.files[0])}" />
-            <progress value="${this.uploadProgress}" max="100"></progress>
-            ${this.lastUploadUrl ? html`<img src="${this.lastUploadUrl}" width="200" />` : ''}
-        `;
-    }
+export async function upload(context: UploadContext, file: File, signal: AbortSignal) {
+    // Derive the tenant from authenticated server context.
+    const key = `${context.tenantId}/${crypto.randomUUID()}`;
+    return storage.put(context, key, file.stream(), {
+        size: file.size,
+        contentType: file.type,
+        signal,
+        onProgress: ({ transferred, total }) => {
+            // Report bytes through your application's progress channel.
+            reportProgress(transferred, total);
+        },
+    });
 }
 ```
 
-### Configuration (CORS)
+Replace `reportProgress` with your application callback. Progress reports transferred bytes, not proof of publication.
+Pass an `AbortSignal` to cancel an upload or download. The facade reports `COSSACK_STORAGE_ABORTED`. The local provider removes unpublished files after cancellation.
 
-To allow direct browser uploads, configure **CORS** on your R2 bucket to accept `PUT` requests from your domain.
+Use `storage.get(context, key, { signal, onProgress })` to read an object as a `ReadableStream<Uint8Array>`.
+Consume or cancel its `body` to release the open file. `head` returns metadata without a body. `delete` removes an object.
+Each operation applies the authorizer. A missing object returns `null` from `get` and `head`.
 
-```json
-[
-  {
-    "AllowedOrigins": ["https://your-domain.com", "http://localhost:5173"],
-    "AllowedMethods": ["GET", "PUT", "POST", "HEAD"],
-    "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3000
-  }
-]
-```
+Local keys use slash-separated ASCII segments. Each segment starts with a letter or digit and contains letters, digits, dots, underscores, or hyphens.
+The provider rejects traversal, empty segments, and symlink paths. It hashes keys into private filenames.
+Do not use an uploaded filename as an authorization rule.
 
----
+The local provider writes an immutable data file and metadata before it atomically publishes the metadata reference.
+Readers see a complete generation. Existing readers retain their previous generation during replacement.
+Metadata and bytes survive provider recreation. Competing operations share a lock across provider instances in the same Node process.
 
-## Strategy 2: Magic RPC Upload (Server Proxy)
+Give the root exclusively to one Node process. Keep the root and its parent directories under trusted filesystem ownership.
+This provider does not supply distributed locking or protection against hostile concurrent directory replacement.
+An interrupted process can leave unpublished files. Atomic publication does not guarantee durability after sudden power loss.
 
-This method lets you pass a `File` object to a server method. The framework sends the file as multipart data and rebuilds the `File` object on the server.
+## R2 and S3
 
-Use this method for:
-- Node.js environments (saving to disk via `fs`).
-- Small file uploads in Workers (where memory/body limits allow).
-- Processing file content immediately (e.g., parsing a CSV, resizing an image).
+Use the public provider modules `@cossackframework/framework/storage/r2` and `@cossackframework/framework/storage/s3`.
+Wrap either provider in the same `Storage` authorization API. Configure R2 through a Worker bucket binding.
+For R2, call `createR2StorageProvider(env.FILES)` from
+`@cossackframework/framework/storage/r2`, where `FILES` is your R2 binding.
+For S3, call `createS3StorageProvider({ client, bucket })` from
+`@cossackframework/framework/storage/s3`, where `client` is your server-owned
+AWS SDK v3 `S3Client` and `bucket` is its configured bucket name. Neither factory
+authorizes callers; always use the facade or apply an equivalent server policy.
+Configure S3 credentials only on the server. Store secrets through your runtime's secret mechanism.
+Never put access keys in browser code or public Worker variables.
 
-### Example
+Provider configuration and credentials belong to the server adapter. The portable core does not import a cloud SDK.
+Provider failures return fixed error codes and messages without provider credentials or object contents.
+
+## Signed application URLs
+
+A signed URL is a temporary permission ticket. Configure `signing` on `Storage` with a server secret and your application endpoint.
 
 ```typescript
-import { Cossack, Page, Server } from "@cossackframework/core";
-import { html } from "@cossackframework/renderer";
-
-@Page({ transport: 'http' })
-export class SimpleUploadPage extends Cossack {
-    
-    async saveFile(id: string, file: File) {
-        console.log(`Receiving file for ID: ${id}`);
-        console.log(`File Name: ${file.name}, Size: ${file.size}`);
-
-        // Example: Read content (Buffer/ArrayBuffer)
-        const buffer = await file.arrayBuffer();
-        
-        // Example: Save to disk (Node.js only)
-        // import fs from 'node:fs/promises';
-        // await fs.writeFile(`./uploads/${file.name}`, Buffer.from(buffer));
-
-        // Example: Process text
-        // const text = await file.text();
-        
-        return { success: true, size: file.size };
-    }
-
-    render() {
-        return html`
-            <input type="file" @change="${(e: any) => {
-                const file = e.target.files[0];
-                if (file) this.saveFile('user-123', file);
-            }}" />
-        `;
-    }
-}
+const storage = new Storage<UploadContext>({
+    provider,
+    authorize: ({ context, key }) => key.startsWith(`${context.tenantId}/`),
+    // Use a server secret of at least 32 bytes.
+    signing: { secret: signingSecret, endpoint: 'https://app.example.com/files' },
+});
+const url = await storage.signedUrl(context, key, 'put', {
+    expiresIn: 60,
+    size: file.size,
+    contentType: file.type,
+});
 ```
 
-### How it Works
-1. The client detects a `File` argument in the call to `saveFile`.
-2. It sends the request as `multipart/form-data` instead of JSON RPC.
-3. It uploads the file to the framework's internal `/upload` endpoint.
-4. The server rebuilds the arguments and calls `saveFile` with the `File` object.
-5. The framework updates a `${methodName}Progress` property, such as `saveFileProgress`, if the component defines one.
+Replace `provider`, `signingSecret`, `context`, `key`, and `file` with your server values.
+Route the configured endpoint to `storage.handleSignedRequest(context, request)` with the current authenticated context.
+The handler checks the signature, expiry, operation, upload metadata, and authorization again.
+The URL targets your application endpoint. It does not expose bucket credentials or promise a direct provider upload.
+Use `fetch(url, { method: 'PUT', body: file, signal })` in the browser. Cancel the request through its signal.
 
----
+## RPC uploads
 
-## Environment Configuration
+An HTTP server method can receive a `File` through the framework's multipart RPC transport.
+Pass `file.stream()` and its declared size to `Storage.put` inside that method.
+Derive the object key and authorization context on the server. Avoid buffering the entire file with `arrayBuffer()`.
 
-If you use R2 or S3, add the required credentials to `wrangler.jsonc` for Cloudflare or `.env` for Node.js.
+## Provider transfer limits
 
-```jsonc
-// wrangler.jsonc
-{
-  "vars": {
-    "R2_ACCOUNT_ID": "your_account_id",
-    "R2_ACCESS_KEY_ID": "your_access_key",
-    "R2_SECRET_ACCESS_KEY": "your_secret_key",
-    "R2_BUCKET_NAME": "your_bucket_name",
-    "R2_PUBLIC_URL": "https://data.yourdomain.com"
-  }
-}
-```
+R2 and S3 uploads use multipart parts of 5 MiB, with at most 10,000 parts
+(52,428,800,000 bytes, about 48.83 GiB). The facade defaults to a lower 64 MiB
+limit; set `maxBytes` deliberately for larger transfers. Provider/service limits
+may be lower. Uploads and downloads retain backpressure; they do not buffer the
+whole object. Progress counts bytes, not provider acceptance or durable delivery.
+
+Cancellation before publication aborts the pending upload and preserves an older
+object. Cleanup is bounded and best effort when the provider is unavailable;
+configure provider lifecycle rules for abandoned multipart uploads. A completion
+race or lost completion response can leave a fully committed object. Cancellation
+never promises rollback, and the framework does not delete a newly committed
+object to simulate rollback. Reconcile uncertain completion before retrying.

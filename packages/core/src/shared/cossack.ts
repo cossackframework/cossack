@@ -1,3 +1,11 @@
+import { diagnoseHydrationState, hydrationBoundaryMetadata } from './hydration-diagnostics';
+import type { HydrationDiagnosticMetadata } from '@cossackframework/renderer';
+import { logRuntimeFailure, type RuntimeFailureContext } from './server-diagnostics';
+import type { DevelopmentSocketDispatch } from './development-socket-dispatch';
+import { registerDevelopmentInspector, inspectDevelopmentScopes, developmentName, developmentData, type DevelopmentComponentDetails } from './development-inspection';
+import { enforceActionInput } from './action-input';
+import { enforceActionAuthorization, getAuthorizationFailure } from './action-authorization';
+import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/cossack.ts
 import {
     renderToString,
@@ -11,7 +19,11 @@ import {
     instanceStack
 } from '@cossackframework/renderer';
 import { isServer } from './environment';
+import type { UrlCodec, UrlValue, UrlStateDefinition, UrlStateValues, UrlStatePatch, ExactUrlStatePatch } from './url-state';
 import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
+import { isActionValidationError, isClientVisibleError } from './errors';
+import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, type RpcStreamFrame, describeUnsupportedStateValue } from './rpc-stream';
+import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
 import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
@@ -21,6 +33,10 @@ import {
     initializeProviders as initializeProvidersFn,
     connectWebSocket as connectWebSocketFn,
     connectSSE as connectSSEFn,
+    disconnectSSE,
+    disconnectWebSockets,
+    realtimeStatus,
+    type RealtimeStatusRecord,
 } from './transport-connections';
 import {
     proxyHttpMethods as proxyHttpMethodsFn,
@@ -53,12 +69,16 @@ import {
     proxyServiceMethods as proxyServiceMethodsFn,
     findServiceInstance as findServiceInstanceFn,
     getConstructorParamNames as getConstructorParamNamesFn,
+    getForwardedServerMethodClass,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
+import { collectReactiveMetadata } from './reactive-metadata';
+import { noteOptimisticWrite } from './optimistic-state';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
+import { snapshotNavigationDraft } from './navigation-draft';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
-import { supportsViewTransitions, type NavigateOptions } from '../client/navigation';
+import { supportsViewTransitions, type NavigateOptions, type NavigateResult } from '../client/navigation';
 import type {
     ComponentState,
     SerializedComponentState,
@@ -71,9 +91,15 @@ import type {
 } from './component-types';
 import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
-import { ServerResourceSerializationError, type ServerResourceOptions } from './server-resource';
+import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus, type ServerResourceReconciliation } from './server-resource';
 import type { ServiceClass } from './container';
 import type { ServiceScope } from './service-scope';
+
+// RPC tree reconstruction is synchronous, including nested renderer components.
+// It binds resource getters without dispatching unrelated read operations.
+let rpcReconstructionDepth = 0;
+import { TaskCommitError, type TaskContext } from './task';
+import { getActionIdentityScope, type ActionIdentity } from './action-identity-scope';
 
 // Re-export public types so `export * from './shared/cossack'` in index.ts
 // continues to surface them to consumers. Split runtime vs type-only so
@@ -88,6 +114,17 @@ export type {
 };
 
 export const RootContext = createContext<Cossack | null>(null);
+
+interface ServerResourceEntry {
+    argsKey: string;
+    value: unknown;
+    hasValue: boolean;
+    resolved: boolean;
+    pending?: Promise<unknown>;
+    error?: unknown;
+    failed?: boolean;
+    loader?: () => unknown;
+}
 
 /**
  * Wraps `fn` in a trailing-edge debounce: each call resets the timer, so `fn`
@@ -151,45 +188,68 @@ function attachTemplateOwner(value: unknown, owner: CossackElement): void {
     }
 }
 
+// Local capabilities never enter serialized state. Only the original class can
+// consume one, once; raw store targets receive fresh proxies in their new owner.
+const navigationDrafts = new WeakMap<object, { constructor: Function; values: Map<string, unknown> }>();
+const rendererScopeAttachments = new WeakMap<ServiceScope, Set<Promise<void>>>();
+const retiringNavigationScopes = new WeakSet<ServiceScope>();
+
 export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends CossackElement {
     private _serviceScope?: ServiceScope;
     private _ownsServiceScope = false;
+    private _serviceScopeLifetime?: ServiceScope;
     private _serviceInjectionCleanups = new Map<string | symbol, () => void>();
-    private _serverResources = new Map<string, {
-        argsKey: string;
-        value: unknown;
-        hasValue: boolean;
-        resolved: boolean;
-        pending?: Promise<unknown>;
-        error?: unknown;
-    }>();
+    private _cleanupCompletion?: Promise<unknown[]>;
+    private _serverResources = new Map<string, ServerResourceEntry>();
+    private _bindingServerResource = false;
+    private _resourceReconciliations = new WeakMap<object, Map<string, Promise<ServerResourceReconciliation>>>();
+    /** @internal Compiler-owned named resource fields, separately stored per class. */
+    static readonly __cossackResourceFields: readonly string[] = [];
 
     private _serverResourceKey(
         name: string,
         args: readonly unknown[],
         subject: 'dependencies' | 'result' = 'dependencies',
     ): string {
-        const seen = new WeakSet<object>();
+        const ancestors = new WeakSet<object>();
+        // Validate before JSON calls toJSON(), and detect ancestor cycles rather
+        // than treating repeated references in an otherwise acyclic tree as cycles.
+        const normalize = (value: unknown): unknown => {
+            if (value === undefined && subject === 'dependencies') {
+                throw new TypeError('undefined dependency; use null for an absent value');
+            }
+            if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
+                throw new TypeError(`unsupported dependency type ${typeof value}`);
+            }
+            if (typeof value === 'number' && !Number.isFinite(value)) {
+                throw new TypeError('non-finite number');
+            }
+            if (!value || typeof value !== 'object') return value;
+            if (ancestors.has(value)) throw new TypeError('circular dependency');
+            if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+                throw new TypeError(`unsupported dependency ${value.constructor?.name || 'object'}`);
+            }
+            if (typeof (value as { toJSON?: unknown }).toJSON === 'function') {
+                throw new TypeError('custom toJSON hook');
+            }
+            ancestors.add(value);
+            try {
+                return Array.isArray(value)
+                    ? Array.from(value, normalize)
+                    : Object.fromEntries(Object.keys(value).sort().map(key => [key, normalize((value as Record<string, unknown>)[key])]));
+            } finally { ancestors.delete(value); }
+        };
         try {
-            return JSON.stringify(args, (_key, value) => {
-                if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
-                    throw new TypeError(`unsupported dependency type ${typeof value}`);
-                }
-                if (value && typeof value === 'object') {
-                    if (seen.has(value)) throw new TypeError('circular dependency');
-                    seen.add(value);
-                    if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-                        throw new TypeError(`unsupported dependency ${value.constructor?.name || 'object'}`);
-                    }
-                    if (!Array.isArray(value)) {
-                        return Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]));
-                    }
-                }
-                return value;
-            }) ?? '[]';
+            return JSON.stringify(normalize(args)) ?? '[]';
         } catch (error) {
             throw new ServerResourceSerializationError(name, `${subject} is not transport-safe: ${(error as Error).message}`);
         }
+    }
+
+    /** @internal Entry point emitted by the server$ compiler transform. */
+    public __serverResourceResult<Value>(name: string, value: Value): Value {
+        this._serverResourceKey(name, [value], 'result');
+        return value;
     }
 
     /** @internal Entry point emitted by the server$ compiler transform. */
@@ -198,49 +258,166 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         loader: (...args: TArgs) => Promise<TValue> | TValue,
         options: ServerResourceOptions<TValue, TArgs> = {},
     ): TValue | undefined {
+        if (this._phase === LifecyclePhase.Destroyed) {
+            throw new Error(`[Cossack] Cannot read server$ resource "${name}" after ${this.constructor.name} was destroyed.`);
+        }
         const args = (options.deps?.() ?? []) as TArgs;
         const argsKey = this._serverResourceKey(name, args);
         let entry = this._serverResources.get(name);
-        if (entry?.argsKey === '') entry.argsKey = argsKey;
         if (!entry || entry.argsKey !== argsKey) {
             entry = { argsKey, value: entry?.hasValue ? entry.value : options.initial, hasValue: entry?.hasValue || 'initial' in options, resolved: false };
             this._serverResources.set(name, entry);
         }
-        if (!entry.resolved && !entry.pending && !entry.error) {
-            entry.pending = Promise.resolve(loader(...args)).then((value) => {
-                // Results use the same JSON-safe contract as hydration/RPC.
-                this._serverResourceKey(name, [value], 'result');
-                if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return value;
-                entry!.value = value;
-                entry!.hasValue = true;
-                entry!.resolved = true;
-                entry!.error = undefined;
-                entry!.pending = undefined;
-                if (!this.isServer) void this.requestUpdate();
-                return value;
-            }).catch((error) => {
-                if (this._serverResources.get(name) === entry) {
-                    entry!.pending = undefined;
-                    entry!.error = error;
-                    if (!this.isServer) console.error(`[Cossack server$:${name}]`, error);
-                }
-                if (this.isServer) throw error;
-            });
+        entry.loader = () => loader(...args);
+        if (!this._bindingServerResource && rpcReconstructionDepth === 0 && !entry.resolved && !entry.pending && !entry.failed) {
+            this._loadServerResource(name, entry);
         }
         return entry.value as TValue | undefined;
     }
 
-    public async refresh$(name: string): Promise<void> {
-        const entry = this._serverResources.get(name);
-        if (!entry) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
-        entry.error = undefined;
-        entry.pending = undefined;
-        entry.resolved = false;
-        await this.requestUpdate();
-        await this._serverResources.get(name)?.pending;
+    private _loadServerResource(name: string, entry: ServerResourceEntry): Promise<unknown> {
+        // Scheduling the invocation also captures synchronous exceptions.
+        const loader = entry.loader!;
+        entry.pending = Promise.resolve().then(loader).then((value) => {
+                if (this._serverResources.get(name) !== entry || this._phase === LifecyclePhase.Destroyed) return;
+                // Results use the same JSON-safe contract as hydration/RPC.
+                this.__serverResourceResult(name, value);
+                entry.value = value;
+                entry.hasValue = true;
+                entry.resolved = true;
+                entry.error = undefined;
+                entry.failed = false;
+                entry.pending = undefined;
+                if (!this.isServer) void this.requestUpdate();
+                return value;
+            }).catch((error) => {
+                if (this._serverResources.get(name) === entry && this._phase !== LifecyclePhase.Destroyed) {
+                    entry.pending = undefined;
+                    entry.error = error;
+                    entry.failed = true;
+                    if (!this.isServer) {
+                        console.error(`[Cossack server$:${name}]`, error);
+                        // Error status is observable state too. Notify the view
+                        // after settlement so it can offer retry without an
+                        // unrelated state change or a successful refresh.
+                        void this.requestUpdate();
+                    }
+                }
+                if (this.isServer && this._serverResources.get(name) === entry && this._phase !== LifecyclePhase.Destroyed) throw error;
+            });
+        return entry.pending;
     }
 
-    public invalidate$(name: string): void {
+    /**
+     * Observe a server$ resource's lifecycle (RT-03): `pending` while loading
+     * (or refreshing), `error` with the last failure, `value`/`hasValue` for
+     * the latest data, and `stale` true when a new load runs over existing
+     * data. Returns a plain snapshot; unknown resources fail loudly.
+     */
+    public resourceStatus$<Name extends ServerResourceName<T, this>>(name: Name): ServerResourceStatus<ServerResourceValue<T, this, Name>> {
+        this._bindServerResourceField(name);
+        const entry = this._serverResources.get(name);
+        if (!entry) {
+            throw new Error(`[Cossack] Unknown server$ resource "${name}". Declare it with server$() first.`);
+        }
+        if (entry.pending) {
+            return { state: 'pending', hasValue: entry.hasValue, value: entry.value, stale: entry.hasValue } as ServerResourceStatus<ServerResourceValue<T, this, Name>>;
+        }
+        if (entry.failed) {
+            return { state: 'error', hasValue: entry.hasValue, value: entry.value, error: entry.error, stale: false } as ServerResourceStatus<ServerResourceValue<T, this, Name>>;
+        }
+        // Not resolved and not failed: either a cold first load or the window
+        // between refresh$() clearing the entry and the loader restarting —
+        // existing data is stale in both cases.
+        return { state: entry.resolved ? 'ready' : 'pending', hasValue: entry.hasValue, value: entry.value,
+            stale: entry.hasValue && !entry.resolved } as ServerResourceStatus<ServerResourceValue<T, this, Name>>;
+    }
+
+    private _bindServerResourceField(name: string, suppressLoad = false): void {
+        // Only compiler-declared fields may be evaluated here. An unknown name
+        // must not execute an unrelated getter. Include inherited declarations.
+        for (let constructor = this.constructor; constructor; constructor = Object.getPrototypeOf(constructor)) {
+            const fields = Object.getOwnPropertyDescriptor(constructor, '__cossackResourceFields')?.value as readonly string[] | undefined;
+            if (!fields?.includes(name)) continue;
+            const previousBinding = this._bindingServerResource;
+            this._bindingServerResource = suppressLoad;
+            try { Reflect.get(this, name); }
+            finally { this._bindingServerResource = previousBinding; }
+            return;
+        }
+    }
+
+    public async refresh$<Name extends ServerResourceName<T, this>>(name: Name): Promise<void> {
+        // Bind current arguments without starting a duplicate load. This also
+        // works before the field is read or immediately after hydration.
+        this._bindServerResourceField(name, true);
+        const previous = this._serverResources.get(name);
+        if (!previous) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
+        // Each refresh owns a new entry, so older loads cannot publish into it.
+        const entry: ServerResourceEntry = { ...previous, error: undefined, failed: false,
+            pending: undefined, resolved: false };
+        this._serverResources.set(name, entry);
+        const pending = entry.loader ? this._loadServerResource(name, entry) : undefined;
+        void this.requestUpdate();
+        await pending;
+    }
+
+    /** Read declared resources after an uncertain RPC failure, without retrying its action. */
+    public reconcile$<Name extends ServerResourceName<T, this>>(
+        failure: unknown, name: Name, ...otherNames: Name[]
+    ): Promise<ServerResourceReconciliation<Name>> {
+        const names = [...new Set([name, ...otherNames])];
+        const result = (state: 'not-needed' | 'recovered' | 'disposed' | 'superseded') =>
+            Object.freeze({ state, resources: Object.freeze(names) }) as ServerResourceReconciliation<Name>;
+        const failed = (error: unknown) => Object.freeze({ state: 'failed' as const,
+            resources: Object.freeze(names), error });
+        if (!isUncertainRpcError(failure)) return Promise.resolve(result('not-needed'));
+        if (this._phase === LifecyclePhase.Destroyed) return Promise.resolve(result('disposed'));
+        // Validate all targets before any read starts. Binding may evaluate
+        // compiler-declared dependency getters, but suppresses loader dispatch.
+        try {
+            for (const key of names) {
+                if (typeof key !== 'string' || !key) throw new Error('[Cossack] Recovery needs a server$ resource name.');
+                this._bindServerResourceField(key, true);
+                if (!this._serverResources.get(key)?.loader) throw new Error(`[Cossack] Unknown server$ resource "${key}".`);
+            }
+        } catch (error) { return Promise.resolve(failed(error)); }
+        const identity = JSON.stringify(names.slice().sort().map(key => [key, this._serverResources.get(key)!.argsKey]));
+        let recoveries = this._resourceReconciliations.get(failure);
+        if (!recoveries) this._resourceReconciliations.set(failure, recoveries = new Map());
+        const existing = recoveries.get(identity);
+        if (existing) return existing as Promise<ServerResourceReconciliation<Name>>;
+        const operation = async (): Promise<ServerResourceReconciliation<Name>> => {
+            const entries = new Map<string, ServerResourceEntry>();
+            try {
+                const reads = names.map(key => {
+                    const pending = this.refresh$(key);
+                    entries.set(key, this._serverResources.get(key)!);
+                    return pending;
+                });
+                await Promise.all(reads);
+                if (this._phase === LifecyclePhase.Destroyed) return result('disposed');
+                if ([...entries].some(([key, entry]) => this._serverResources.get(key) !== entry)) return result('superseded');
+                // Client refresh resolves after exposing its error in status.
+                // It must not masquerade as a successful authoritative read.
+                for (const entry of entries.values()) if (entry.failed) return failed(entry.error);
+                return result('recovered');
+            } catch (error) {
+                if (this._phase === LifecyclePhase.Destroyed) return result('disposed');
+                return failed(error);
+            }
+        };
+        // Publish before starting the refreshes, then bind their entries now.
+        // Deferring that binding could let two dependency identities read the
+        // same later dependency. The resource's loader still starts in a microtask.
+        let complete!: (value: ServerResourceReconciliation<Name>) => void;
+        const pending = new Promise<ServerResourceReconciliation<Name>>(resolve => { complete = resolve; });
+        recoveries.set(identity, pending as Promise<ServerResourceReconciliation>);
+        void operation().then(complete);
+        return pending;
+    }
+
+    public invalidate$<Name extends ServerResourceName<T, this>>(name: Name): void {
         if (!this._serverResources.delete(name)) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
         if (!this.isServer) void this.requestUpdate();
     }
@@ -260,17 +437,62 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _runtimeInfo?: CossackRuntimeInfo;
 
     protected get c(): Context & CossackContext {
+        if (!this._scopedIdentity()) this._assertUnambiguousIdentity('c');
+        return this._ambientContext();
+    }
+    /** The identity of the action call whose async context is running, when the framework wired a scope. */
+    private _scopedIdentity(): ActionIdentity | undefined {
+        const identity = getActionIdentityScope()?.get();
+        return identity?.owner === this ? identity : undefined;
+    }
+    /** @internal Framework-owned read of the current context, bypassing the stream identity guard. */
+    private _ambientContext(): Context & CossackContext {
         // The context is wrapped by `createCossackContext`, whose proxy adds
         // `getFormData` at runtime. Cast through to the augmented type so
         // `this.c.getFormData` type-checks for developers.
-        return (this._actionIdentity?.context || this._c || this.consume(RequestContext)) as Context & CossackContext;
+        const scoped = this._scopedIdentity();
+        return ((scoped ? scoped.context : this._actionIdentity?.context) || this._c || this.consume(RequestContext)) as Context & CossackContext;
     }
     protected set c(val: Context) {
         this._c = val;
     }
 
     protected get user(): User | undefined {
-        return this._actionIdentity ? this._actionIdentity.user : this._user || this.consume(UserContext);
+        if (!this._scopedIdentity()) this._assertUnambiguousIdentity('user');
+        return this._ambientUser();
+    }
+    /** @internal Framework-owned read of the current user, bypassing the stream identity guard. */
+    private _ambientUser(): User | undefined {
+        const identity = this._scopedIdentity() ?? this._actionIdentity;
+        return identity ? identity.user : this._user || this.consume(UserContext);
+    }
+
+    /**
+     * Number of streaming actions that left the action queue and are still
+     * running, and the depth of synchronous segments whose identity is known.
+     * See `_runAction` for the streaming identity semantics.
+     */
+    private _detachedStreams = 0;
+    private _identityWindow = 0;
+
+    /**
+     * Defense in depth for reads outside any action-identity scope (e.g. a
+     * callback that escaped async context) while a detached stream runs: the
+     * reader cannot be determined, so refuse rather than return the identity
+     * of whichever queued action currently owns the instance slots.
+     */
+    private _assertUnambiguousIdentity(name: string): void {
+        if (this._detachedStreams > 0 && this._identityWindow === 0) {
+            throw new Error(`[Cossack] this.${name} is ambiguous here: a streaming @Server action on ${this.constructor.name} `
+                + 'is still running, so the caller cannot be determined after an await. Read this.user/this.c '
+                + 'synchronously (before the first await of the action, or of each stream step) and keep it in a local variable.');
+        }
+    }
+
+    private _withIdentityWindow<T>(step: () => T): T {
+        this._identityWindow++;
+        try { return step(); }
+        finally { this._identityWindow--; }
     }
     protected set user(val: User | undefined) { this._user = val; }
 
@@ -287,10 +509,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     protected get isDesktop(): boolean { return this.runtime.platform === 'desktop'; }
 
     protected providers!: Map<string, StateProvider>;
+    private _providerTargets?: Record<string, string>;
     public props: Record<string, any> = {};
 
     // Component Registry (Server-Side mostly)
     public activeComponents: Map<string, Cossack> = new Map();
+    private _retiredServerComponents: Set<Cossack> = new Set();
 
     // Unified State Management
     private _stateContainer = new StateContainer();
@@ -317,6 +541,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /** HTTP RPC route ID for this exact hydrated component (page or layout). */
     public __cossack_componentRouteId?: string;
+    /** @internal Canonical server route owner, assigned by the runtime. */
+    public __cossack_rpcOwner?: string;
 
     /**
      * Throw (dev) or warn (prod) if a server-only method is being invoked during
@@ -383,6 +609,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private isMounted: boolean = false;
     private skipRenderTasks: boolean = false;
     private isRunningTasks: boolean = false;
+    /** Cancellation controllers for in-flight task executions (RT-05). */
+    private _taskExecutions = new Map<string | symbol, AbortController>();
+    private _taskCleanupPending = new Map<string | symbol, Promise<void>>();
     private isBootstrapping: boolean = false;
     private eventCleanupFns: (() => void)[] = [];
     /**
@@ -410,15 +639,56 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public _pendingNavigation: (() => void) | null = null;
 
     // DevTools Metadata (Injected by Vite plugin)
-    public static __source?: { file: string };
+    public declare static __source?: { file: string; line?: number; column?: number };
+
+    public override get hydrationMetadata(): HydrationDiagnosticMetadata | undefined {
+        return import.meta.env?.DEV ? hydrationBoundaryMetadata(this.constructor) : undefined;
+    }
 
     constructor() {
         super();
         this._id = 'root'; // Default for root components (App, Page)
         this.autoBindMethods();
+        if (import.meta.env?.DEV) registerDevelopmentInspector(this, fields => {
+            const metadata = collectReactiveMetadata(this.constructor);
+            const clientKeys = new Set([...metadata.clientState, ...metadata.clientStore]);
+            const resources: DevelopmentComponentDetails['resources'] = { entries: [], truncated: this._serverResources.size > 64 };
+            for (const [name, entry] of this._serverResources) {
+                if (resources.entries.length >= 64) break;
+                resources.entries.push({ name: developmentName(name), state: entry.pending ? 'pending' : entry.failed ? 'error' : entry.resolved ? 'ready' : 'pending',
+                    hasValue: !!entry.hasValue, stale: !!entry.hasValue && (!!entry.pending || (!entry.failed && !entry.resolved)) });
+            }
+            const bound = new Set<string>();
+            let constructor = this.constructor, depth = 0;
+            while (constructor && depth++ < 16) {
+                const declared = Object.getOwnPropertyDescriptor(constructor, '__cossackResourceFields')?.value;
+                if (Array.isArray(declared)) for (const name of declared) {
+                    if (typeof name !== 'string' || bound.has(name) || this._serverResources.has(name)) continue;
+                    if (resources.entries.length >= 64) { resources.truncated = true; break; }
+                    bound.add(name); resources.entries.push({ name: developmentName(name), state: 'unbound', hasValue: false, stale: false });
+                }
+                constructor = Object.getPrototypeOf(constructor);
+            }
+            if (constructor) resources.truncated = true;
+            const transports: DevelopmentComponentDetails['transports'] = { entries: [], truncated: false };
+            const record = developmentData(this, '__realtimeStatus');
+            const sockets = developmentData(record, 'websockets');
+            const statuses = record ? [developmentData(record, 'sse'), ...Object.keys(sockets ?? {}).slice(0, 64).map(key => developmentData(sockets, key))] : [];
+            for (const [index, status] of statuses.entries()) {
+                if (transports.entries.length >= 64) { transports.truncated = true; break; }
+                const state = developmentData(status, 'state'), attempts = developmentData(status, 'attempts');
+                if (!['connecting', 'open', 'reconnecting', 'closed'].includes(state)) continue;
+                transports.entries.push({ transport: index === 0 ? 'sse' : 'websocket', slot: index,
+                    state, attempts: Number.isSafeInteger(attempts) && attempts >= 0 ? attempts : 0,
+                    resynced: developmentData(status, 'resynced') === true });
+            }
+            return { lifecycle: this._phase, state: this._stateContainer.developmentSnapshot(fields, clientKeys),
+                resources, scopes: inspectDevelopmentScopes(this._serviceScope), transports };
+        });
     }
 
     connectedCallback() {
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         // Transition to Mounted phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
 
@@ -431,6 +701,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Register first so parent can provide restored child state
             this.registerSelf();
             this.initializeState();
+            this._navigationClientDraft = undefined;
             super.connectedCallback();
 
             // Child components rendered via component() go through
@@ -512,6 +783,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         if (component._id) {
+            const previous = this.activeComponents.get(component._id);
+            if (this.isServer && previous && previous !== component) {
+                this._retiredServerComponents.add(previous);
+            }
             this.activeComponents.set(component._id, component);
             const childState = this._childrenStateRegistry[component._id];
             if (childState) {
@@ -572,6 +847,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._serviceScope;
     }
 
+    /** @internal Own cleanup of a runtime scope tree without claiming its service state. */
+    public _ownServiceScopeLifetime(scope: ServiceScope): void {
+        this._serviceScopeLifetime = scope;
+    }
+
     /** @internal True when legacy constructor DI must not flatten a scoped service. */
     public _isExplicitlyScopedService(serviceClass: ServiceClass, instance: unknown): boolean {
         const owner = this._serviceScope?.getOwnerScope(serviceClass);
@@ -608,7 +888,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             'the component is not attached to an active layout service scope.',
                         );
                     }
-                    resolved = this._serviceScope.resolveDeclared(serviceClass);
+                    resolved = this._serviceScope.resolveDeclared(serviceClass, this);
                     this._serviceInjectionCleanups.set(
                         propertyKey,
                         this._serviceScope.subscribe(serviceClass, this),
@@ -676,6 +956,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Used when a lifecycle operation completes.
      */
     private _restorePhase(): void {
+        // Disposal can happen inside a lifecycle hook or across an await.
+        // No enclosing operation may restore a live phase after that point.
+        if (this.isInPhase(LifecyclePhase.Destroyed)) {
+            this._phaseTransitionStack.length = 0;
+            return;
+        }
         const previousPhase = this._phaseTransitionStack.pop();
         if (previousPhase !== undefined) {
             this._phase = previousPhase;
@@ -776,7 +1062,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, skipInit, deferMount }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount, stageNavigation }: BootstrapOptions = {}) {
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
 
@@ -812,17 +1100,19 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Access metadata from the new state structure
             const metadata = clientInitialState?.metadata || {};
             this.user = metadata.user;
-            const clientParams = metadata.params || {};
+            this._cossack_params = metadata.params || {};
             this._cossack_path = metadata.pathname || window.location.pathname;
+            this._cossack_url = new URL(metadata.url ?? window.location.href, window.location.href).href;
 
             // Capture component reference for the getter
             const component = this;
             const hydratedContext: HydratedContext = {
                 req: {
-                    param: (key?: string) => key ? clientParams[key] : clientParams,
+                    param: (key?: string) => key ? component._cossack_params[key] : component._cossack_params,
                     get path() { return (this as any)._component?._cossack_path || component._cossack_path; },
+                    get url() { return component._cossack_url ?? window.location.href; },
                     query: (key?: string) => {
-                         const url = new URL(window.location.href);
+                         const url = new URL(component._cossack_url ?? window.location.href);
                          if (key) return url.searchParams.get(key);
                          const params: Record<string, string> = {};
                          url.searchParams.forEach((value, k) => {
@@ -841,16 +1131,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Provide Contexts (After initialization)
         this.provide(RootContext, this);
         this.provide(EnvContext, this.env);
-        this.provide(UserContext, this.user);
-        this.provide(RequestContext, this.c);
+        this.provide(UserContext, this._ambientUser());
+        this.provide(RequestContext, this._ambientContext());
         this.provide(RuntimeContext, this.runtime);
 
-        this._serviceScope?.bindRequest({ context: this.c, user: this.user, env: this.env });
+        if (!stageNavigation) this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
 
         this.initializeState(initialState);
+        this._navigationClientDraft = undefined;
 
-        for (const [name, value] of Object.entries(initialState?.serverResources ?? {})) {
-            this._serverResources.set(name, { argsKey: '', value, hasValue: true, resolved: true });
+        for (const [name, resource] of Object.entries(initialState?.serverResources ?? {}) as [string, { argsKey: string; value: unknown }][]) {
+            this._serverResources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
         }
 
         // Bootstrap injected services
@@ -862,32 +1153,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         // Run tasks after state initialization
-        await this.runTasks();
+        if (!stageNavigation) await this.runTasks();
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
 
         if (this.isServer) {
             this.proxyClientMethods();
         } else {
-            const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
-
-            // Get server methods directly from Reflect metadata instead of serialized state
-            const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
-            const serverMethods = Object.entries(serverMethodsMetadata)
-                .filter(([name]) => !isSharedMethod(this.constructor, name))
-                .map(([name, options]: [string, any]) => ({
-                    name,
-                    channel: options.channel || 'global',
-                    provider: options.provider || 'page',
-                }));
-
-            if (pageOptions?.transport === 'http') {
-                this.proxyHttpMethods(serverMethods);
-            } else if (pageOptions?.transport === 'sse') {
-                this.connectSSE();
-                this.proxyHttpMethods(serverMethods);
-            } else {
-                this.connectWebSocket();
-                this.proxyServerMethods(serverMethods);
-            }
+            if (!stageNavigation) this._frameworkConnectClientTransport();
         }
 
         // Perform initialization (wrapped hooks). get()/init() are server-only;
@@ -895,8 +1167,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // invoke them during hydration (use clientInit() for client-side setup).
         if (this.isServer) {
             await this.get();
+            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
             if (!skipInit) {
                 await this.init();
+                if (this.isInPhase(LifecyclePhase.Destroyed)) return;
             }
         }
 
@@ -908,7 +1182,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // critical for the client app bootstrap — mounting before the page
         // content is loaded would render the App shell with empty `children`,
         // wiping the SSR DOM and flashing an empty main (a major CLS source).
-        if (this.container && !this.isServer && !deferMount) {
+        if (this.container && !this.isServer && !deferMount && !stageNavigation) {
             this.skipRenderTasks = true;
             try {
                 this.mount(this.container as HTMLElement);
@@ -917,25 +1191,67 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         }
 
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+
         // Call onMount() and clientInit() for all components (not just those with containers)
         // Page components don't have containers, but they still need their lifecycle hooks
-        if (!this.isServer && !this.isMounted && !deferMount) {
-            this.isMounted = true;
-            this._frameworkMount();
+        if (!deferMount && !stageNavigation) this._frameworkActivateNavigation();
 
-            // Run clientInit() if it exists - for client-only initialization
-            // that should show loading state on initial page load
-            if (this.hasMethod('clientInit')) {
-                const clientInitMethod = this.getMethod('clientInit');
-                if (clientInitMethod) {
-                    (clientInitMethod as any)().catch((err: Error) => console.error('clientInit error:', err));
-                }
-            }
-        }
         } finally {
+            this.isBootstrapping = false;
             // Restore phase after bootstrap complete
             this._restorePhase();
         }
+    }
+
+    private _frameworkConnectClientTransport(): void {
+        const pageOptions: PageOptions | undefined = Reflect.getMetadata('page:options', this.constructor);
+
+        // Get server methods directly from Reflect metadata instead of serialized state
+        const serverMethodsMetadata = collectServerMethodMetadata(this.constructor);
+        const serverMethods = Object.entries(serverMethodsMetadata)
+            .filter(([name]) => !isSharedMethod(this.constructor, name))
+            .map(([name, options]: [string, any]) => ({
+                name,
+                channel: options.channel || 'global',
+                provider: options.provider || 'page',
+            }));
+
+        if (pageOptions?.transport === 'http') {
+            this.proxyHttpMethods(serverMethods);
+        } else if (pageOptions?.transport === 'sse') {
+            this.connectSSE();
+            this.proxyHttpMethods(serverMethods);
+        } else {
+            this.connectWebSocket();
+            this.proxyServerMethods(serverMethods);
+        }
+    }
+
+    /** @internal Activate a prepared browser owner once, after publishing its tree. */
+    public _frameworkActivateNavigation(): void {
+        if (this.isServer || this.isMounted || this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
+        this.isMounted = true;
+        this._frameworkMount();
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+        if (this.hasMethod('clientInit')) {
+            const method = this.getMethod('clientInit');
+            if (method) Promise.resolve((method as any)()).catch((error: Error) => console.error('clientInit error:', error));
+        }
+    }
+
+    private _navigationPublished = false;
+
+    /** @internal Start prepared transport only when its navigation publishes. */
+    public async _frameworkPublishNavigation(): Promise<void> {
+        if (this.isServer || this.isMounted || this._navigationPublished || this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._navigationPublished = true;
+        this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
+        await this.runTasks();
+        if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+        this._frameworkConnectClientTransport();
+        this._frameworkActivateNavigation();
     }
 
     private _wrapLifecycleMethods() {
@@ -972,8 +1288,171 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     @Client()
-    public updatePath(path: string) {
+    public updatePath(path: string, url?: string) {
         this._cossack_path = path;
+        if (url !== undefined) this._cossack_url = new URL(url, typeof window === 'undefined' ? 'https://cossack.invalid' : window.location.href).href;
+    }
+
+    private _cossack_url?: string;
+    private _cossack_params: Record<string, string> = {};
+    private _navigationClientDraft?: Map<string, unknown>;
+
+    /** @internal Fork an unconsumed capability without reading its former owner. */
+    public static _frameworkForkClientDraft(token: object): object | undefined {
+        const draft = navigationDrafts.get(token);
+        if (!draft || !Object.is(draft.constructor, this)) return undefined;
+        const fork = Object.freeze({});
+        navigationDrafts.set(fork, { constructor: draft.constructor, values: snapshotNavigationDraft(draft.values) });
+        return fork;
+    }
+
+    /** @internal Capture browser-owned declarations without serialization or proxy getters. */
+    @Client()
+    public _frameworkCaptureClientDraft(): object | undefined {
+        if (this.isServer || this._phase === LifecyclePhase.Destroyed) return undefined;
+        const { clientState, clientStore } = collectReactiveMetadata(this.constructor);
+        const values = new Map<string, unknown>();
+        for (const key of [...clientState, ...clientStore]) {
+            if (this._stateContainer.isInitialized(key)) values.set(key, this._stateContainer.getInternal(key));
+        }
+        const token = Object.freeze({});
+        navigationDrafts.set(token, { constructor: this.constructor, values: snapshotNavigationDraft(values) });
+        return token;
+    }
+
+    /** @internal Restore only a local capability before the new owner bootstraps. */
+    @Client()
+    public _frameworkRestoreClientDraft(token: object): boolean {
+        if (this.isServer || this._phase !== LifecyclePhase.Creating) return false;
+        const draft = navigationDrafts.get(token);
+        if (!draft || draft.constructor !== this.constructor) return false;
+        navigationDrafts.delete(token);
+        this._navigationClientDraft = draft.values;
+        return true;
+    }
+
+    /** @internal Adopt the latest local draft after preparation, before activation. */
+    @Client()
+    public _frameworkAdoptClientDraft(token: object): boolean {
+        if (this.isServer || this.isMounted || this.isInPhase(LifecyclePhase.Destroyed)) return false;
+        const draft = navigationDrafts.get(token);
+        if (!draft || draft.constructor !== this.constructor) return false;
+        navigationDrafts.delete(token);
+        for (const [key, value] of draft.values) {
+            if (!this._stateContainer.isInitialized(key)) continue;
+            this._stateContainer.setInternal(key, value);
+            this._storeProxies.delete(key);
+        }
+        return true;
+    }
+
+    private _rendererRelease?: () => void;
+    private _navigationScopeRemoval?: Promise<void>;
+
+    /** @internal Called only by the client renderer for a mounted component part. */
+    public _frameworkRendererAttached(): void {
+        if (this.isServer || this._rendererRelease || this.isInPhase(LifecyclePhase.Destroyed)) return;
+        if (!this._serviceScope) this._serviceScope = (this.getParentComponent() as any)?._getServiceScope?.();
+        const scopes: ServiceScope[] = [];
+        for (let scope = this._serviceScope; scope; scope = scope.parent) {
+            if (retiringNavigationScopes.has(scope)) throw new Error('[Cossack] Cannot attach a component to a retiring navigation scope.');
+            scopes.push(scope);
+        }
+        const owned = this._serviceScopeLifetime ?? (this._ownsServiceScope ? this._serviceScope : undefined);
+        const releases = scopes.map(scope => {
+            let release!: () => void;
+            const detached = new Promise<void>(resolve => { release = resolve; });
+            let attachments = rendererScopeAttachments.get(scope);
+            if (!attachments) rendererScopeAttachments.set(scope, attachments = new Set());
+            attachments.add(detached);
+            return { scope, release: () => {
+                attachments!.delete(detached);
+                release();
+            } };
+        });
+        this._rendererRelease = () => {
+            // An owned scope can itself be waiting for this DOM lease. Release
+            // it first; keep ancestors alive through asynchronous child cleanup.
+            for (const entry of releases) if (entry.scope === owned) entry.release();
+            void Promise.resolve(this._cleanupCompletion).then(() => {
+                for (const entry of releases) if (entry.scope !== owned) entry.release();
+            });
+        };
+    }
+
+    /** @internal Called after renderer disconnection and component destruction. */
+    public _frameworkRendererDetached(): void {
+        const release = this._rendererRelease;
+        this._rendererRelease = undefined;
+        release?.();
+    }
+
+    /** @internal Retire abandoned scopes only after their DOM consumers detach. */
+    public _frameworkRetireNavigationScope(): void {
+        const scope = this._serviceScopeLifetime ?? (this._ownsServiceScope ? this._serviceScope : undefined);
+        if (!scope || this._navigationScopeRemoval) return;
+        retiringNavigationScopes.add(scope);
+        this._navigationScopeRemoval = Promise.all([...rendererScopeAttachments.get(scope) ?? []]).then(() => {});
+    }
+
+    /** @internal Restore retained request/resource ownership after an abandoned publication. */
+    public _frameworkCaptureNavigationContext(): () => void {
+        const path = this._cossack_path;
+        const url = this._cossack_url;
+        const params = this._cossack_params;
+        const user = this._ambientUser();
+        const children = this._childrenStateRegistry;
+        const scope = this._serviceScope;
+        const request = scope?.getRequestContext();
+        // Pending results belonged to the old entry identities. On recovery,
+        // unresolved reads can start again instead of joining discarded work.
+        const resources = new Map([...this._serverResources].map(([name, entry]) =>
+            [name, { ...entry, pending: undefined }] as const));
+        return () => {
+            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+            this._cossack_path = path;
+            this._cossack_url = url;
+            this._cossack_params = params;
+            this.user = user;
+            this.provide(UserContext, user);
+            this._childrenStateRegistry = children;
+            this._serverResources = resources;
+            if (request) scope?.bindRequest(request);
+        };
+    }
+
+    /** @internal Replace SSR resource ownership in a retained browser component. */
+    @Client()
+    public _frameworkHydrateNavigationResources(state: SerializedComponentState, pathname: string, destination: string): void {
+        if (this.isServer || this._phase === LifecyclePhase.Destroyed) return;
+        const resources = new Map<string, ServerResourceEntry>();
+        for (const [name, resource] of Object.entries(state.serverResources ?? {})) {
+            this.__serverResourceResult(name, resource.value);
+            resources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
+        }
+        // Replace entries before changing dependencies. Late old loads cannot
+        // settle into the new map; matching SSR arguments need no second RPC.
+        this._serverResources = resources;
+        this.updatePath(pathname, destination);
+        this._cossack_params = { ...state.metadata?.params };
+        const user = state.metadata?.user as User | undefined;
+        this.user = user;
+        this.provide(UserContext, user);
+        this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
+        this._childrenStateRegistry = state.children ?? {};
+    }
+    private _urlStateCache = new WeakMap<object, { url: string; values: unknown }>();
+
+    /** Read immutable query values from this request/destination, including during hydration. */
+    @Shared()
+    public urlState<S extends Record<string, UrlCodec<UrlValue>>>(definition: UrlStateDefinition<S>): UrlStateValues<S> {
+        const current = this.c?.req.url;
+        if (typeof current !== 'string') throw new Error('[Cossack] urlState() requires a request context. Read it in a getter or after bootstrap.');
+        const cached = this._urlStateCache.get(definition);
+        if (cached?.url === current) return cached.values as UrlStateValues<S>;
+        const values = definition.read(current).values;
+        this._urlStateCache.set(definition, { url: current, values });
+        return values;
     }
 
     public isActive(path: string, exact: boolean = true): boolean {
@@ -996,29 +1475,82 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * action at a time per instance — eliminates the race. It also bounds
      * re-entrancy on shared component state.
      */
+    private _failureContext(action?: string, requestId?: string, context?: Context): RuntimeFailureContext {
+        let header: string | undefined;
+        let runtime: string | undefined;
+        // Logging must not turn a partial/synthetic context into a lifecycle failure.
+        if (this.isServer) {
+            try {
+                const request = context ?? this._ambientContext();
+                header = request?.res?.headers?.get('X-Cossack-Request-Id') ?? undefined;
+                runtime = typeof request?.get === 'function' ? request.get('cossack.configContext')?.runtime : undefined;
+            } catch { /* Unavailable metadata is represented by the fixed fallback. */ }
+        }
+        return { requestId: requestId ?? header,
+            route: this.__cossack_rpcOwner ?? this.__cossack_componentRouteId,
+            action, component: this.constructor.name,
+            runtime: runtime ?? this._runtimeInfo?.adapter ?? 'unknown',
+            startedAt: performance.now() };
+    }
+
     private _actionQueue: Promise<void> = Promise.resolve();
 
-    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown): Promise<void> {
+    public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string,
+        requestContext?: Context, development?: DevelopmentSocketDispatch): Promise<void> {
+        const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
         // setProperty, getPublicState, destroy, ...) would be callable by a
         // crafted WebSocket message, bypassing the client-side stripping.
-        if (!isRpcCallableAction(this.constructor, action)) {
+        if (!isRpcCallableAction(getForwardedServerMethodClass(this, action) ?? this.constructor, action)) {
+            if (requestId !== undefined) send({ v: 1, type: 'error', requestId,
+                code: 'COSSACK_RPC_FORBIDDEN', message: `Action '${action}' is not a callable server method.` });
             return Promise.resolve();
         }
         // Chain onto the queue so actions run one at a time. The runner catches
         // its own errors so a failing action never breaks the chain for later
         // callers (and never surfaces as an unhandled rejection).
-        const run = () => this._runAction(action, payload, user, clientContext);
-        this._actionQueue = this._actionQueue.then(run, run);
-        return this._actionQueue;
+        const cancellation = { cancelled: false, controller: new AbortController(), close: undefined as (() => void) | undefined };
+        if (requestId !== undefined) {
+            const hooks = rpcCancellations(clientContext);
+            if (hooks.has(requestId)) {
+                send({ v: 1, type: 'error', requestId,
+                    code: 'COSSACK_RPC_REQUEST_DUPLICATE', message: 'A call with this request ID is already active.' });
+                return Promise.resolve();
+            }
+            hooks.set(requestId, () => { cancellation.cancelled = true; cancellation.controller.abort(); cancellation.close?.(); });
+        }
+        // The queue turn ends when the action settles or, for a streaming
+        // action, as soon as its first `next()` has been invoked (`release`).
+        // The returned promise still settles only when the whole call ends.
+        let release!: () => void;
+        const turn = new Promise<void>((resolve) => { release = resolve; });
+        const run = async () => {
+            try {
+                if (cancellation.cancelled) return;
+                await this._runAction(action, payload, user, clientContext, requestId, cancellation, requestContext, development, release);
+            } finally {
+                release();
+                if (requestId !== undefined) rpcCancellations(clientContext).delete(requestId);
+            }
+        };
+        const done = this._actionQueue.then(run, run);
+        this._actionQueue = turn;
+        return done;
     }
 
-    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown): Promise<void> {
+    private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
+        requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context, development?: DevelopmentSocketDispatch,
+        releaseQueue?: () => void): Promise<void> {
+        const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         const actionMethod = this.getMethod(action);
-        if (!actionMethod) return;
+        if (!actionMethod) {
+            if (requestId !== undefined) send({ v: 1, type: 'error', requestId,
+                code: 'COSSACK_RPC_NOT_FOUND', message: `Action '${action}' not found.` });
+            return;
+        }
         this._cossack_ws_context = clientContext;
-        const context = this.c;
+        const context = requestContext ? createCossackContext(requestContext, true) : this._ambientContext();
         this._actionIdentity = {
             user,
             context: context && new Proxy(context, {
@@ -1029,24 +1561,155 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 },
             }),
         };
+        const failureContext = this._failureContext(action, requestId, requestContext);
+        let iterator: AsyncIterator<unknown> | undefined;
+        let detached = false;
+        const identity = this._actionIdentity;
+        const scope = getActionIdentityScope();
+        const callIdentity: ActionIdentity = { owner: this, user, context: identity?.context, socket: clientContext };
+        // Enters this call's async identity scope (when wired) so continuations
+        // after `await` inside the method/generator keep resolving this caller.
+        const scoped = <T>(step: () => T): T => scope ? scope.run(callIdentity, step) : step();
+        // Runs `step` synchronously with this call's identity, then restores
+        // whatever identity (another queued action's, or none) was current.
+        const withIdentity = <T>(step: () => T): T => {
+            const previous = this._actionIdentity, previousSocket = this._cossack_ws_context;
+            this._actionIdentity = identity;
+            this._cossack_ws_context = clientContext;
+            try { return this._withIdentityWindow(() => scoped(step)); }
+            finally { this._actionIdentity = previous; this._cossack_ws_context = previousSocket; }
+        };
         try {
-            // Arguments are entirely client-controlled. Identity belongs in
-            // the action context, never an appended positional argument that
+            const actionClass = getForwardedServerMethodClass(this, action) ?? this.constructor;
+            const limit = getRateLimitForAction(actionClass, action);
+            if (limit) {
+                // Counter ownership is independent of socket/request/child IDs.
+                // Siblings of the same class share an action budget. Identity
+                // comes from the runtime's authenticated peer, never payload.
+                let root: Cossack = this;
+                let parent = this.getParentComponent();
+                const seen = new Set<CossackElement>();
+                while (parent && !seen.has(parent)) {
+                    seen.add(parent);
+                    // Renderer/UI parents need not be Cossack components.
+                    // Keep the canonical route even above an unowned wrapper.
+                    if (parent instanceof Cossack && (parent.__cossack_rpcOwner || !root.__cossack_rpcOwner)) root = parent;
+                    parent = (parent as unknown as CossackElementInternal).__parent;
+                }
+                const rateContext = new Proxy(context ?? {} as Context, {
+                    get: (target, property) => {
+                        if (property === 'get') return (key: string) => key === 'user' ? user : target.get?.(key);
+                        if (property === 'env') return context?.env ?? this.env;
+                        if (property === 'req' && !target.req) return { header: () => undefined };
+                        const value = Reflect.get(target, property, target);
+                        return typeof value === 'function' ? value.bind(target) : value;
+                    },
+                });
+                const blocked = await evaluateRateLimit(rateContext,
+                    `${JSON.stringify(['crpc', root.__cossack_rpcOwner ?? root.constructor.name, actionClass.name])}:${action}`, limit, cancellation.controller.signal);
+                if (blocked) throw new RpcError('COSSACK_RPC_RATE_LIMITED', blocked.message);
+                if (cancellation.cancelled) return;
+            }
+            // RT-02: enforce @Server({ input }) before the method runs; a
+            // failed contract rejects with client-visible field errors.
+            const validatedPayload = await enforceActionInput(
+                getForwardedServerMethodClass(this, action) ?? this.constructor, action, payload || [],
+                { signal: cancellation.controller.signal });
+            await enforceActionAuthorization(actionClass, action, validatedPayload,
+                this._actionIdentity.context, cancellation.controller.signal);
+            if (cancellation.cancelled) return;
+            // Arguments are entirely client-controlled. Identity belongs in the
+            // action context, never an appended positional argument that
             // a longer client payload could displace.
-            await (actionMethod as any)(...(payload || []));
+            // Inherited prototype actions may not have been auto-bound by the
+            // most-derived constructor. Preserve the component receiver here.
+            if (import.meta.env?.DEV) development?.invoked();
+            const result = await this._withIdentityWindow(() => scoped(() => (actionMethod as any).apply(this, validatedPayload as any[])));
+            if (requestId !== undefined && result instanceof Response) {
+                if (import.meta.env?.DEV) development?.returned('native');
+                await result.body?.cancel().catch(() => {});
+                throw new RpcError('COSSACK_RPC_HTTP_RESPONSE_REQUIRED',
+                    'Native HTTP responses require an HTTP or SSE action. WebSocket actions must return data.');
+            }
+            if (requestId !== undefined && result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
+                if (import.meta.env?.DEV) development?.returned('stream');
+                const stream = (result as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+                iterator = stream;
+                cancellation.close = () => { withIdentity(() => { void stream.return?.(undefined)?.catch(() => {}); }); };
+                // Streaming semantics: with an async action-identity scope wired
+                // (the framework wires AsyncLocalStorage), the stream holds the
+                // per-component action queue only until its first `next()` has
+                // been invoked, so a long-lived stream cannot block other callers'
+                // actions. Every `next()`/`return()` runs inside this call's
+                // scope, so `this.user`/`this.c`/@Client calls resolve to the
+                // stream caller even after `await`, while other actions resolve
+                // their own. Unscoped reads while a detached stream runs throw
+                // instead of guessing. Without a wired scope (core used alone),
+                // the stream keeps the queue until it ends: identity stays
+                // correct, but one stream serializes the component's actions.
+                if (!cancellation.cancelled) {
+                    let step = withIdentity(() => stream.next());
+                    if (scope) {
+                        detached = true;
+                        this._detachedStreams++;
+                        this._actionIdentity = undefined;
+                        this._cossack_ws_context = undefined;
+                        releaseQueue?.();
+                    }
+                    while (true) {
+                        const next = await step;
+                        if (cancellation.cancelled) break;
+                        if (next.done) {
+                            send({ v: 1, type: 'done', requestId,
+                                value: next.value, state: this.getPublicState() });
+                            break;
+                        }
+                        send({ v: 1, type: 'yield', requestId,
+                            value: next.value, state: this.getPublicState() });
+                        if (cancellation.cancelled) break;
+                        step = withIdentity(() => stream.next());
+                    }
+                }
+            } else if (requestId !== undefined && !cancellation.cancelled) {
+                if (import.meta.env?.DEV) development?.returned('value');
+                send({ v: 1, type: 'done', requestId,
+                    value: result, state: this.getPublicState() });
+            }
         } catch (e) {
             // Error boundary: log and continue so the runtime doesn't receive an
             // unhandled rejection and so `loading[action]` is always released.
-            console.error(`[Cossack] Error executing action '${action}':`, e);
+            if (requestId !== undefined && !cancellation.cancelled) {
+                const denial = getAuthorizationFailure(e);
+                send({ v: 1, type: 'error', requestId,
+                    code: denial?.code ?? (isActionValidationError(e) ? e.validationCode : isClientVisibleError(e) ? 'COSSACK_RPC_CLIENT_ERROR'
+                        : e instanceof RpcError ? e.code : 'COSSACK_RPC_INTERNAL_ERROR'),
+                    fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,
+                    message: denial?.message ?? (isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error') });
+            }
+            logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
         } finally {
-            this._actionIdentity = undefined;
-            this._cossack_ws_context = undefined;
-            const ws = clientContext as { readyState?: number; send: (d: string) => void };
-            // Use the numeric literal (1 === WebSocket.OPEN) rather than the
-            // global so this works in the Node adapter where `WebSocket` is
-            // imported from 'ws' and may not be a global.
-            if (ws && ws.readyState === 1) {
-                ws.send(JSON.stringify({ type: 'action-complete', action }));
+            if (iterator) {
+                const stream = iterator;
+                try { await (detached ? withIdentity(() => stream.return?.(undefined)) : stream.return?.(undefined)); }
+                catch { logRuntimeFailure(failureContext, 'action-cleanup', 'COSSACK_RPC_CLEANUP_FAILED'); }
+            }
+            // A detached stream no longer owns the shared identity slots; a
+            // queued action may be using them now.
+            if (detached) this._detachedStreams--;
+            else {
+                this._actionIdentity = undefined;
+                this._cossack_ws_context = undefined;
+            }
+            // Legacy completion signal for callers without a request id. The
+            // correlated protocol manages its own call lifecycle.
+            if (requestId === undefined) {
+                const ws = clientContext as { readyState?: number; send: (d: string) => void };
+                // Use the numeric literal (1 === WebSocket.OPEN) rather than the
+                // global so this works in the Node adapter where `WebSocket` is
+                // imported from 'ws' and may not be a global.
+                if (ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: 'action-complete', action }));
+                }
             }
         }
     }
@@ -1096,23 +1759,31 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      *           progress). Callers use the return value to decide whether to
      *           preserve accumulated paths for the in-progress run.
      */
-    private async runTasks(changedPaths?: Set<string>): Promise<boolean> {
+    private async runTasks(changedPaths?: Set<string>, initialTrigger = 'bootstrap'): Promise<boolean> {
+        if ([LifecyclePhase.Destroyed].includes(this._phase)) return true;
         if (this.isRunningTasks) return false;
         this.isRunningTasks = true;
         try {
-            // Regular @Task — always runs (both server and client).
-            const tasks: TaskRegistration[] =
-                Reflect.getMetadata('cossack:tasks', this.constructor) || [];
-            // @ServerTask — only runs on the server (body stripped on client).
-            const serverTasks: TaskRegistration[] = this.isServer
-                ? (Reflect.getMetadata('cossack:server-tasks', this.constructor) || [])
-                : [];
-            // @ClientTask — only runs on the client (skipped on server).
-            const clientTasks: TaskRegistration[] = !this.isServer
-                ? (Reflect.getMetadata('cossack:client-tasks', this.constructor) || [])
-                : [];
-            const allTasks = [...tasks, ...serverTasks, ...clientTasks];
+            // Gather own declarations across inheritance. A child declaration
+            // replaces the same method's kind/track contract, without dropping siblings.
+            const constructors: Function[] = [];
+            for (let ctor = this.constructor; ctor; ctor = Object.getPrototypeOf(ctor)) constructors.unshift(ctor);
+            const registrations = new Map<string | symbol, TaskRegistration & { kind: string }>();
+            for (const ctor of constructors) {
+                for (const kind of ['tasks', 'server-tasks', 'client-tasks']) {
+                    for (const entry of (Reflect.getOwnMetadata(`cossack:${kind}`, ctor) || []) as TaskRegistration[]) {
+                        registrations.set(entry.propertyKey, { ...entry, kind });
+                    }
+                }
+            }
+            const allTasks = [...registrations.values()].filter(entry => entry.kind === 'tasks' ||
+                (this.isServer ? entry.kind === 'server-tasks' : entry.kind === 'client-tasks'));
             const isFilteredRun = changedPaths !== undefined;
+            // Each task runs under its own cancellation identity. Dependency
+            // changes abort the previous signal; owned commits gate reactive
+            // writes even when an external operation ignores cancellation. Slow tasks
+            // do not block siblings, and cleanup stays ordered per task.
+            const inFlight: Promise<void>[] = [];
             for (const { propertyKey: task, track } of allTasks) {
                 if (isFilteredRun && track && track.length > 0) {
                     if (!track.some(dep => matchesTrackedPath(dep, changedPaths!))) {
@@ -1120,44 +1791,120 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     }
                 }
                 if (this.hasMethod(task)) {
-                    // Run the previous cleanup before re-invoking (React style).
-                    this._runTaskCleanup(task);
-                    try {
-                        const taskMethod = this.getMethod(task);
-                        const result = (taskMethod as any)();
-                        const resolved = result instanceof Promise ? await result : result;
-                        if (typeof resolved === 'function') {
-                            this._taskCleanups.set(task, resolved as () => unknown);
+                    // Cancel the previous execution before re-invoking, then
+                    // run its cleanup (React style, still ordered per task).
+                    const trigger = isFilteredRun
+                        ? `dependency change (${[...changedPaths!].map(String).join(', ')})`
+                        : initialTrigger;
+                    this._taskExecutions.get(task)?.abort();
+                    const previousCleanup = this._runTaskCleanup(task, undefined, trigger);
+                    const previousCleanupPromise = previousCleanup ?? undefined;
+                    const controller = new AbortController();
+                    this._taskExecutions.set(task, controller);
+                    const context = this._createTaskContext(task, controller, trigger);
+                    const start = async () => {
+                        try {
+                            if (previousCleanupPromise) await previousCleanupPromise;
+                            if (!context.isCurrent) return;
+                            const taskMethod = this.getMethod(task);
+                            const result = (taskMethod as any)(controller.signal, context);
+                            const resolved = result && typeof result.then === 'function' ? await result : result;
+                            if (controller.signal.aborted) {
+                                // An async setup can acquire resources before noticing cancellation.
+                                if (typeof resolved === 'function') await this._runTaskCleanup(task, resolved,
+                                    this._phase === LifecyclePhase.Destroyed ? 'disposal after cancelled setup' : `${trigger} (cancelled setup)`);
+                                return;
+                            }
+                            if (typeof resolved === 'function') {
+                                this._taskCleanups.set(task, resolved as () => unknown);
+                            }
+                        } catch (e: any) {
+                            if (controller.signal.aborted) return; // cancelled work stops quietly
+                            if (this.isServer) logRuntimeFailure(this._failureContext(String(task)), 'task-setup', 'COSSACK_TASK_FAILED');
+                            else console.error(
+                                `[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (${e instanceof TaskCommitError ? 'commit' : 'setup'}):`, e);
                         }
-                    } catch (e) {
-                        console.error(`[Cossack] Error in task '${String(task)}':`, e);
+                        // Keep this identity until rerun/disposal: completed setup
+                        // can leave subscriptions that still use its signal.
+                    };
+                    const started = start();
+                    if (started instanceof Promise && typeof (started as any).then === 'function') {
+                        inFlight.push(started as Promise<void>);
                     }
                 }
             }
+            // Async tasks settle in the background; a rejected task already
+            // logged its own diagnostic above (never unhandled).
+            for (const flight of inFlight) void flight.catch(() => {});
         } finally {
             this.isRunningTasks = false;
         }
         return true;
     }
 
+    private _createTaskContext(task: string | symbol, controller: AbortController, trigger: string): TaskContext {
+        const current = () => !controller.signal.aborted && this._phase !== LifecyclePhase.Destroyed &&
+            this._taskExecutions.get(task) === controller;
+        return Object.freeze({
+            signal: controller.signal,
+            task,
+            component: this.constructor.name,
+            trigger,
+            get isCurrent() { return current(); },
+            commit: (values: Record<string, unknown>) => {
+                if (!current()) return false;
+                if (!values || typeof values !== 'object' ||
+                    (Object.getPrototypeOf(values) !== Object.prototype && Object.getPrototypeOf(values) !== null)) {
+                    throw new TaskCommitError('pass a plain object of reactive field values, not a callback or promise.');
+                }
+                const fields = Reflect.ownKeys(values).map(key => {
+                    const descriptor = Object.getOwnPropertyDescriptor(values, key)!;
+                    if (typeof key !== 'string' || !this._stateContainer.isInitialized(key)) {
+                        throw new TaskCommitError(`"${String(key)}" is not an initialized reactive field on ${this.constructor.name}.`);
+                    }
+                    if (!('value' in descriptor)) throw new TaskCommitError(`"${key}" must be a data property.`);
+                    return [key, descriptor.value] as const;
+                });
+                for (const [key, value] of fields) {
+                    if (!current()) return false;
+                    if (!Reflect.set(this, key, value)) throw new TaskCommitError(`"${key}" is not writable.`);
+                }
+                return current();
+            },
+        });
+    }
+
     /**
      * Invoke (and drop) the stored cleanup function for a task, if any.
      * Swallows errors so one failing cleanup can't abort sibling tasks.
      */
-    private _runTaskCleanup(task: string | symbol) {
-        const cleanup = this._taskCleanups.get(task);
-        if (!cleanup) return;
-        this._taskCleanups.delete(task);
-        try {
-            const result = cleanup();
-            if (result instanceof Promise) {
-                result.catch(e =>
-                    console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e),
-                );
+    private _runTaskCleanup(task: string | symbol, lateCleanup?: () => unknown, trigger = 'disposal'): Promise<void> | undefined {
+        const previous = this._taskCleanupPending.get(task);
+        const cleanup = lateCleanup ?? this._taskCleanups.get(task);
+        if (!cleanup) return previous;
+        if (!lateCleanup) this._taskCleanups.delete(task);
+        const failureContext = this._failureContext(String(task));
+        const report = (error: unknown) => {
+            if (this.isServer) logRuntimeFailure(failureContext, 'task-cleanup', 'COSSACK_TASK_CLEANUP_FAILED');
+            else console.error(`[Cossack] Task '${String(task)}' on ${this.constructor.name} failed during ${trigger} (cleanup):`, error);
+        };
+        const invoke = () => {
+            try {
+                const result = cleanup();
+                if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+                    return Promise.resolve(result).then(() => {}, report);
+                }
+            } catch (e) {
+                report(e);
             }
-        } catch (e) {
-            console.error(`[Cossack] Error in task cleanup '${String(task)}':`, e);
-        }
+        };
+        const pending = previous ? previous.then(invoke) : invoke();
+        if (!pending) return;
+        this._taskCleanupPending.set(task, pending);
+        void pending.finally(() => {
+            if (this._taskCleanupPending.get(task) === pending) this._taskCleanupPending.delete(task);
+        });
+        return pending;
     }
 
     /**
@@ -1356,10 +2103,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * same broadcast / re-render path at any depth.
      */
     private initializeState(serializedState?: SerializedComponentState) {
-        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
-        const clientStateProperties = Reflect.getMetadata('cossack:client-state', this.constructor) || new Set();
-        const storeProperties = Reflect.getMetadata('cossack:store', this.constructor) || {};
-        const clientStoreProperties = Reflect.getMetadata('cossack:client-store', this.constructor) || new Set();
+        const { state: stateProperties, store: storeProperties,
+            clientState: clientStateProperties, clientStore: clientStoreProperties } = collectReactiveMetadata(this.constructor);
 
         const stateKeys = Object.keys(stateProperties);
         const clientKeys = Array.from(clientStateProperties) as string[];
@@ -1385,7 +2130,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             const isPublic = !isClientOnly; // @State / @Store are public; @ClientState / @ClientStore are internal
 
             // Get initial value from state source or from existing property value
-            let value = this.getProperty(key);
+            let value = isClientOnly && this._navigationClientDraft?.has(key)
+                ? this._navigationClientDraft.get(key) : this.getProperty(key);
 
             // Auto-bind from flash/old (server-only). `flash`/`old` are set via
             // @State/@Store options; the bound value wins over the class-field
@@ -1406,6 +2152,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             // Only sync properties that are NOT client-only
             if (!isClientOnly && stateSource && stateSource[key] !== undefined) {
+                if (import.meta.env?.DEV && !this.isServer) {
+                    diagnoseHydrationState(value, stateSource[key], String(key), this.hydrationMetadata);
+                }
                 value = stateSource[key];
             }
 
@@ -1478,12 +2227,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                             // a raw primitive if newValue is not an object).
                             this._storeProxies.delete(key);
 
-                            if (import.meta.env.DEV) {
-                                console.log(`[Cossack] Store change: ${key}`, oldValue, '->', newValue);
-                            }
                             triggerReactivity();
-                        } else if (import.meta.env.DEV) {
-                            console.log(`[Cossack] Store change suppressed (same value): ${key}`, oldValue);
+
                         }
                     },
                     enumerable: true,
@@ -1493,11 +2238,22 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // Plain @State / @ClientState reactive getter/setter.
                 Object.defineProperty(this, key, {
                     get: () => {
-                        return isPublic
+                        const raw = isPublic
                             ? this._stateContainer.getPublic(key)
                             : this._stateContainer.getInternal(key);
+                        // DEV diagnostic (RT-04): plain @State is shallow —
+                        // assigning re-renders, mutating a nested object in
+                        // place does not. Warn once per field when that
+                        // happens, naming the component and the fix. Bundlers
+                        // replace import.meta.env?.DEV, eliminating this from
+                        // production output.
+                        if (import.meta.env?.DEV === true && raw !== null && typeof raw === 'object' && isPlainObjectOrArray(raw)) {
+                            return this._diagnoseShallowMutation(key, raw as Record<PropertyKey, unknown>, String(key), isClientOnly);
+                        }
+                        return raw;
                     },
                     set: (newValue: any) => {
+                        newValue = this._shallowMutationRaw.get(newValue) ?? newValue;
                         const oldValue = isPublic
                             ? this._stateContainer.getPublic(key)
                             : this._stateContainer.getInternal(key);
@@ -1510,12 +2266,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                                 this._stateContainer.setInternal(key, newValue);
                             }
 
-                            if (import.meta.env.DEV) {
-                                console.log(`[Cossack] State change: ${key}`, oldValue, '->', newValue);
-                            }
                             this._applyStateChange(key, oldValue, newValue, isPublic);
-                        } else if (import.meta.env.DEV) {
-                            console.log(`[Cossack] State change suppressed (same value): ${key}`, oldValue);
+
                         }
                     },
                     enumerable: true,
@@ -1528,6 +2280,61 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (!this.isServer) {
             this._setupServerMethodProxies();
         }
+    }
+
+    /**
+     * DEV-only shallow-mutation diagnostic (RT-04): a transparent Proxy over
+     * plain-object/array @State values that warns the first time a nested
+     * mutation happens without a re-render trigger, naming the component and
+     * field and pointing at the fixes. Warnings fire once per field per
+     * instance. Never active in production builds.
+     * @internal
+     */
+    private _shallowMutationWarned = new Set<string>();
+    private _shallowMutationProxies = new Map<string, WeakMap<object, object>>();
+    private _shallowMutationRaw = new WeakMap<object, object>();
+    private _diagnoseShallowMutation<T extends Record<PropertyKey, unknown>>(key: string, raw: T, path = String(key), clientOnly = false): T {
+        let cache = this._shallowMutationProxies.get(key);
+        if (!cache) this._shallowMutationProxies.set(key, cache = new WeakMap());
+        const cached = cache.get(raw);
+        if (cached) return cached as T;
+        const component = this;
+        const warn = (operation: string, property: PropertyKey) => {
+            if (component._shallowMutationWarned.has(key)) return;
+            component._shallowMutationWarned.add(key);
+            const decorator = clientOnly ? 'ClientState' : 'State';
+            const store = clientOnly ? 'ClientStore' : 'Store';
+            console.warn(`[Cossack] Nested ${operation} on plain @${decorator} '${String(key)}' of ` +
+                `${component.constructor.name} at ${path}.${String(property)} does not re-render. ` +
+                `Assign a new value to this.${String(key)} or declare the field with @${store}().`);
+        };
+        const proxy = new Proxy(raw, {
+            get(target, property, receiver) {
+                const value = Reflect.get(target, property, receiver);
+                const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+                // Proxy invariants require returning the exact value of frozen properties.
+                if (descriptor && !descriptor.configurable && 'value' in descriptor && !descriptor.writable) return value;
+                return value !== null && typeof value === 'object' && isPlainObjectOrArray(value)
+                    ? component._diagnoseShallowMutation(key, value as Record<PropertyKey, unknown>, `${path}.${String(property)}`, clientOnly) : value;
+            },
+            set(target, property, value) {
+                value = component._shallowMutationRaw.get(value) ?? value;
+                const descriptor = Object.getOwnPropertyDescriptor(target, property);
+                const changed = !descriptor || !('value' in descriptor) || !Object.is(descriptor.value, value);
+                const result = Reflect.set(target, property, value);
+                if (result && changed) warn('mutation', property);
+                return result;
+            },
+            deleteProperty(target, property) {
+                const existed = Object.hasOwn(target, property);
+                const result = Reflect.deleteProperty(target, property);
+                if (result && existed) warn('delete', property);
+                return result;
+            },
+        });
+        cache.set(raw, proxy);
+        this._shallowMutationRaw.set(proxy, raw);
+        return proxy;
     }
 
     /**
@@ -1551,6 +2358,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         isPublic: boolean,
         path?: string,
     ): void {
+        if (!this.isServer) noteOptimisticWrite(this, key);
         // Record the dotted path for `@Task({ track })` filtering. For nested
         // store mutations `path` is `storeKey.a.b`; for plain state / top-level
         // assignments it falls back to the property key.
@@ -1565,8 +2373,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // Client-only state: just trigger re-render on client
             if (!this.isServer && !this.isBootstrapping) {
                 this.requestUpdate(key, oldValue);
-            } else if (import.meta.env.DEV && this.isBootstrapping) {
-                console.warn(`[Cossack] requestUpdate suppressed during bootstrapping for "${key}".`);
             }
         }
         // Reference newValue so it is part of the signature for future hooks;
@@ -1624,11 +2430,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     console.warn(`[Cossack] Client method '${String(key)}' cannot be called from the client.`);
                     return;
                 }
-                if (!this._cossack_ws_context) {
+                // The socket slot has the same ambiguity as this.user while a
+                // detached stream runs; never deliver to another caller's socket.
+                const scoped = this._scopedIdentity();
+                if (!scoped) this._assertUnambiguousIdentity(`${String(key)}()`);
+                const socket = scoped ? scoped.socket : this._cossack_ws_context;
+                if (!socket) {
                     console.warn(`[Cossack] Client method '${String(key)}' was called from a non-WebSocket context and could not be sent.`);
                     return;
                 }
-                this._runtime?.sendClientAction(this._cossack_ws_context, key, args);
+                this._runtime?.sendClientAction(socket, key, args);
             });
         }
     }
@@ -1641,7 +2452,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             definedChannels.add('global');
         }
 
-        const stateProperties = Reflect.getMetadata('cossack:state', this.constructor) || {};
+        const { state, store } = collectReactiveMetadata(this.constructor);
+        const stateProperties = { ...state, ...store };
         for (const prop in stateProperties) {
             const channel = stateProperties[prop].channel || 'global';
             if (!definedChannels.has(channel)) {
@@ -1649,7 +2461,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         }
 
-        const serverMethods = Reflect.getMetadata('cossack:server-methods', this.constructor) || {};
+        const serverMethods = collectServerMethodMetadata(this.constructor);
         for (const method in serverMethods) {
             const channel = serverMethods[method].channel || 'global';
             if (!definedChannels.has(channel)) {
@@ -1736,6 +2548,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public _getWrappedTemplate(): TemplateResult | null {
+        // Direct SSR/layout composition must use the same child IDs as a
+        // standalone RPC render, including repeated resource render passes.
+        this.resetRenderState();
         // Mark the render window around every render()/loadingTemplate()
         // invocation. `_getWrappedTemplate` is the single chokepoint used by
         // `_render()` and `performUpdate()` (this package) AND by the framework's
@@ -1765,10 +2580,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 : isTemplateResult(output) ? output : html`${output}`;
             attachTemplateOwner(template, this);
 
-            // Inject devtools markers if source info is present
-            // Since __source is injected by the Vite plugin only in DEV mode,
-            // we can safely assume if it exists, we are in DEV.
-            const source = (this.constructor as any).__source;
+            // Exclude source-marker handling from production, even when an
+            // application class happens to retain development metadata.
+            const source = import.meta.env?.DEV ? (this.constructor as any).__source : undefined;
             if (template && source) {
                 const Ctor = this.constructor as any;
                 if (!Ctor.__devStrings) {
@@ -1818,9 +2632,16 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
+    /** @internal Reconstruct deterministic RPC child targets without unrelated resource I/O. */
+    public __renderRpcTarget(): string {
+        rpcReconstructionDepth++;
+        try { return this._render(); }
+        finally { rpcReconstructionDepth--; }
+    }
+
     public _render(): string {
         if (!this.isServer && !this.skipRenderTasks) {
-            this.runTasks();
+            this.runTasks(undefined, 'render');
         }
 
         pushCurrentInstance(this);
@@ -1858,6 +2679,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     
     // Override performUpdate to wrap template with devtools markers for client-side rendering
     protected async performUpdate() {
+        return this._performOwnedUpdate(() => true, false);
+    }
+
+    /** @internal Render a navigation without joining a stale application update promise. */
+    public _frameworkRenderNavigation(isCurrent: () => boolean): Promise<boolean> {
+        return this._performOwnedUpdate(isCurrent, true);
+    }
+
+    private async _performOwnedUpdate(isCurrent: () => boolean, propagateError: boolean) {
+        const active = () => isCurrent() && !this.isInPhase(LifecyclePhase.Destroyed);
+        if (!isCurrent()) return false;
         // Skip if component is destroyed
         if (this._phase === LifecyclePhase.Destroyed) {
             return false;
@@ -1867,19 +2699,22 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
         // Check again after async boundary (component may have been destroyed during await)
         // Use type assertion to avoid TS narrowing issue
-        if ((this._phase as LifecyclePhase) === LifecyclePhase.Destroyed) {
+        if ((this._phase as LifecyclePhase) === LifecyclePhase.Destroyed || !isCurrent()) {
             return false;
         }
 
+        const failureContext = this.isServer ? this._failureContext() : undefined;
         let shouldUpdate = false;
         const elementInternal = this.getElementInternal();
+        const pendingUpdate = elementInternal.__updatePromise;
         const changedProperties = elementInternal.__changedProperties;
         const controllers = elementInternal.__controllers;
         try {
             shouldUpdate = this.shouldUpdate(changedProperties);
             if (shouldUpdate) {
                 // Controller hostUpdate
-                controllers.forEach((c: any) => c.hostUpdate && c.hostUpdate());
+                controllers.forEach((c: any) => { if (active()) c.hostUpdate?.(); });
+                if (!active()) return false;
 
                 // Run @Task methods before willUpdate/render. On the server,
                 // tasks run during `bootstrap()` and state broadcasts. On the
@@ -1900,7 +2735,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     });
                 }
 
+                if (!active()) return false;
                 this.willUpdate(changedProperties);
+                if (!isCurrent() || this.isInPhase(LifecyclePhase.Destroyed)) return false;
 
                 this.resetRenderState();
                 pushCurrentInstance(this);
@@ -1908,24 +2745,33 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 // `_getWrappedTemplate` self-guards the render window (see `_render`).
                 const template = this._getWrappedTemplate();
 
+                if (!isCurrent() || this.isInPhase(LifecyclePhase.Destroyed)) {
+                    popCurrentInstance();
+                    return false;
+                }
                 elementInternal.__notifyListeners(template);
 
                 popCurrentInstance();
 
+                if (!active()) return false;
                 this.updated(changedProperties);
 
                 // Controller hostUpdated
-                controllers.forEach((c: any) => c.hostUpdated && c.hostUpdated());
+                controllers.forEach((c: any) => { if (active()) c.hostUpdated?.(); });
             }
         } catch (e) {
-            console.error('Error during update:', e);
             if (instanceStack[instanceStack.length - 1] === this) {
                 popCurrentInstance();
             }
+            if (propagateError) throw e;
+            if (failureContext) logRuntimeFailure(failureContext, 'dispatch', 'COSSACK_RUNTIME_FAILED');
+            else console.error('Error during update:', e);
+        } finally {
+            if (elementInternal.__updatePromise === pendingUpdate) {
+                elementInternal.__changedProperties = new Map();
+                elementInternal.__updatePromise = null;
+            }
         }
-
-        elementInternal.__changedProperties = new Map();
-        elementInternal.__updatePromise = null;
         return shouldUpdate;
     }
 
@@ -2011,7 +2857,35 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
     }
 
-    public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<void>;
+    public static _onNavigate?: (url: string, options?: NavigateOptions) => Promise<NavigateResult>;
+
+    /** @internal The framework owns pending query intent alongside navigation. */
+    public static _onUpdateUrlState?: (
+        sourceUrl: string, build: (current: string) => string,
+        isCurrent: () => boolean, options?: NavigateOptions,
+    ) => Promise<NavigateResult>;
+
+    /** Merge a typed patch with the latest pending query intent, then navigate. */
+    @Client()
+    public updateUrlState<S extends Record<string, UrlCodec<UrlValue>>, P extends UrlStatePatch<S>>(
+        definition: UrlStateDefinition<S>, patch: ExactUrlStatePatch<S, P>, options?: NavigateOptions,
+    ): Promise<NavigateResult> {
+        const current = () => this._phase !== LifecyclePhase.Destroyed;
+        const sourceUrl = this.c?.req.url;
+        if (!current() || typeof sourceUrl !== 'string' || !Cossack._onUpdateUrlState) {
+            return Promise.resolve({ outcome: 'failed', url: sourceUrl ?? '',
+                error: new Error('[Cossack] URL state updates require an active browser navigation owner.') });
+        }
+        return Cossack._onUpdateUrlState(sourceUrl, base => definition.url(base, patch), current, options);
+    }
+
+    /** Await the SPA navigation outcome on the client. */
+    @Client()
+    public navigate(url: string, options?: NavigateOptions): Promise<NavigateResult> {
+        if (!Cossack._onNavigate) return Promise.resolve({ outcome: 'failed', url,
+            error: new Error('[Cossack] Client navigation is not initialized.') });
+        return Cossack._onNavigate(url, options);
+    }
 
     /**
      * When true (default), server-side rendering emits hydratable marker
@@ -2146,16 +3020,20 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * Returns a unified SerializedComponentState containing public state, metadata, and children.
      */
     public getInitialState(): SerializedComponentState {
-        const params = (this.c as Context)?.req.param() || {};
+        const ambient = this._ambientContext() as Context | undefined;
+        const params = ambient?.req.param() || {};
+        const requestUrl = ambient?.req.url;
+        const destination = typeof requestUrl === 'string' ? new URL(requestUrl, 'https://cossack.invalid') : undefined;
 
         // Build the serialized state object
         const serializedState: SerializedComponentState = {
-            public: this._stateContainer.getPublicState(),
+            public: this._readPublicState('initial state'),
             metadata: {
                 componentId: this.constructor.name,
-                pathname: (this.c as Context)?.req.path,
+                pathname: ambient?.req.path,
+                url: destination ? destination.pathname + destination.search : undefined,
                 params,
-                user: this.user,
+                user: this._ambientUser(),
             },
         };
         if (this._ownsServiceScope) {
@@ -2163,7 +3041,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
         if (this._serverResources.size) {
             serializedState.serverResources = Object.fromEntries(
-                [...this._serverResources].filter(([, entry]) => entry.hasValue).map(([name, entry]) => [name, entry.value]),
+                [...this._serverResources].filter(([, entry]) => entry.resolved).map(([name, entry]) => [name, { argsKey: entry.argsKey, value: entry.value }]),
             );
         }
 
@@ -2176,10 +3054,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         }
 
         // Add provider targets for WebSocket connections
-        const providerTargets: Record<string, string> = {};
+        const providerTargets: Record<string, string> = { ...this._providerTargets };
         if (this.providers) {
             for (const [name, provider] of this.providers.entries()) {
-                const target = provider.getConnectionTarget();
+                const target = this._providerTargets?.[name] ?? provider.getConnectionTarget();
                 if (target) {
                     providerTargets[name] = (target as any).toString();
                 }
@@ -2202,10 +3080,39 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * This is a simple accessor that returns the public state from the container.
      */
     public getPublicState(): Record<string, unknown> {
-        return this._stateContainer.getPublicState();
+        return this._readPublicState('public state');
+    }
+
+    private _stateSerializationWarned = new Map<string, string>();
+    private _readPublicState(boundary: string): Record<string, unknown> {
+        const state = this._stateContainer.getPublicState();
+        if (import.meta.env?.DEV === true) {
+            for (const [field, value] of Object.entries(state)) {
+                const issue = describeUnsupportedStateValue(value, `state.${field}`);
+                if (!issue) { this._stateSerializationWarned.delete(field); continue; }
+                if (this._stateSerializationWarned.get(field) === issue) continue;
+                this._stateSerializationWarned.set(field, issue);
+                console.warn(`[Cossack] Unsupported public state on ${this.constructor.name} field '${field}' ` +
+                    `during ${boundary}: ${issue}. Use JSON-compatible data, or keep browser-owned values in @ClientState/@ClientStore.`);
+            }
+        }
+        return state;
+    }
+
+
+    /**
+     * Realtime connection status for this component (client side): the SSE
+     * subscription state plus one entry per WebSocket provider. Values update
+     * on connect, failure, reconnect, delivery, and snapshot resynchronization;
+     * renders can read `this.realtime.sse.state` directly.
+     */
+    public get realtime(): RealtimeStatusRecord {
+        return realtimeStatus(this);
     }
 
     public destroy() {
+        if (this._phase === LifecyclePhase.Destroyed) return;
+        const failureContext = this._failureContext();
         // Transition to Destroyed phase from any phase except already Destroyed
         this._transitionToPhase(LifecyclePhase.Destroyed, [
             LifecyclePhase.Creating,
@@ -2214,48 +3121,88 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             LifecyclePhase.Updating
         ]);
 
-        try {
-            this.onCleanup();
-            for (const cleanup of this._serviceInjectionCleanups.values()) cleanup();
-            this._serviceInjectionCleanups.clear();
-            // Drain task cleanup functions (React `useEffect` style). Runs on
-            // both server and client since tasks themselves run on both.
-            for (const taskKey of [...this._taskCleanups.keys()]) {
-                this._runTaskCleanup(taskKey);
-            }
-            this._taskCleanups.clear();
-            if (!this.isServer) {
-                this.websockets.forEach(ws => {
-                    ws.close();
-                });
-                this.websockets.clear();
+        // Revoke task ownership before any application/descendant cleanup runs.
+        this._navigationClientDraft = undefined;
+        for (const controller of this._taskExecutions.values()) controller.abort();
+        this._taskExecutions.clear();
 
-                if (this._sseConnection) {
-                    this._sseConnection.close();
-                    this._sseConnection = undefined;
+        const errors: unknown[] = [];
+        const pending: Promise<void>[] = [];
+        const release = (cleanup: () => unknown) => {
+            try {
+                const result = cleanup();
+                if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+                    pending.push(Promise.resolve(result).then(() => {}, error => { errors.push(error); }));
                 }
-
-                // Disconnect @VisibleTask IntersectionObservers — otherwise they
-                // retain references to the destroyed component and keep firing
-                // callbacks that mutate destroyed state.
-                this._visibleTaskObservers.forEach(({ observer }) => observer.disconnect());
-                this._visibleTaskObservers.clear();
-
-                // Clean up event listeners
-                this.eventCleanupFns.forEach(cleanup => cleanup());
-                this.eventCleanupFns = [];
-
-                // Drop cached store proxies so their raw targets (and the
-                // component's state) can be GC'd once the component is gone.
-                this._storeProxies.clear();
-            }
-            if (this._ownsServiceScope) {
-                this._serviceScope?.dispose();
-                this._ownsServiceScope = false;
-            }
-        } finally {
-            // Don't restore phase after destroy - the component is destroyed
-            // This ensures any subsequent operations will throw an error
+            } catch (error) { errors.push(error); }
+        };
+        // Drain descendants and each independent cleanup even when a user
+        // hook fails. Publish the completion so server renders can await it.
+        for (const child of new Set([...this._retiredServerComponents, ...this.activeComponents.values()])) {
+            release(() => child.destroyAsync());
         }
+        this._retiredServerComponents.clear();
+        this.activeComponents.clear();
+        release(() => this.onCleanup());
+        for (const cleanup of this._serviceInjectionCleanups.values()) release(cleanup);
+        this._serviceInjectionCleanups.clear();
+        // Drain task cleanup functions (React `useEffect` style). Runs on
+        // both server and client since tasks themselves run on both.
+        for (const taskKey of [...this._taskCleanups.keys()]) {
+            release(() => this._runTaskCleanup(taskKey));
+        }
+        this._taskCleanups.clear();
+        for (const cleanup of this._taskCleanupPending.values()) release(() => cleanup);
+        if (!this.isServer) {
+            release(() => disconnectWebSockets(this));
+
+            release(() => disconnectSSE(this));
+
+            // Disconnect @VisibleTask IntersectionObservers — otherwise they
+            // retain references to the destroyed component and keep firing
+            // callbacks that mutate destroyed state.
+            this._visibleTaskObservers.forEach(({ observer }) => release(() => observer.disconnect()));
+            this._visibleTaskObservers.clear();
+
+            // Clean up event listeners
+            this.eventCleanupFns.forEach(cleanup => release(cleanup));
+            this.eventCleanupFns = [];
+
+            // Drop cached store proxies so their raw targets (and the
+            // component's state) can be GC'd once the component is gone.
+            this._storeProxies.clear();
+        }
+        if (this._ownsServiceScope || this._serviceScopeLifetime) {
+            const scope = this._serviceScopeLifetime ?? this._serviceScope;
+            // Keep request facilities available until asynchronous
+            // component/descendant hooks have finished using services.
+            const facilities = this._navigationScopeRemoval ? [...pending, this._navigationScopeRemoval] : pending;
+            release(() => facilities.length
+                ? Promise.all(facilities).then(() => scope?.disposeAsync())
+                : scope?.disposeAsync());
+            this._ownsServiceScope = false;
+            this._serviceScopeLifetime = undefined;
+        }
+        this._serverResources.clear();
+        this._resourceReconciliations = new WeakMap();
+        const syncErrors = errors.slice();
+        this._cleanupCompletion = Promise.all(pending).then(() => errors);
+        // Synchronous callers cannot await hooks; observe rejected hooks here.
+        void this._cleanupCompletion.then(allErrors => {
+            for (const error of allErrors.slice(syncErrors.length)) {
+                if (this.isServer) logRuntimeFailure(failureContext, 'component-cleanup', 'COSSACK_COMPONENT_CLEANUP_FAILED');
+                else console.error(`[Cossack] Error cleaning up ${this.constructor.name}:`, error);
+            }
+        });
+        if (syncErrors.length) throw new AggregateError(syncErrors, `[Cossack] Failed to clean up ${this.constructor.name}.`);
+    }
+
+    /** Destroy once and wait for component, descendant, and scoped-service hooks. */
+    public async destroyAsync(): Promise<void> {
+        try { this.destroy(); } catch (error) {
+            if (!this._cleanupCompletion) throw error;
+        }
+        const errors = await this._cleanupCompletion;
+        if (errors?.length) throw new AggregateError(errors, `[Cossack] Failed to clean up ${this.constructor.name}.`);
     }
 }

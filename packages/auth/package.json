@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/auth",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
   "description": "Authentication utilities for the Cossack Framework",
   "license": "MIT",
@@ -11,7 +11,8 @@
   },
   "main": "src/index.ts",
   "files": [
-    "src"
+    "src",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"
@@ -25,5 +26,10 @@
   },
   "peerDependencies": {
     "hono": "^4.13.7"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./turnstile": "./src/turnstile.ts",
+    "./package.json": "./package.json"
   }
 }

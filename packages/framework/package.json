@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/framework",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
   "description": "Meta framework package for the Cossack Framework",
   "license": "MIT",
@@ -13,6 +13,14 @@
     ".": {
       "types": "./dist/esm/public.d.ts",
       "import": "./dist/esm/public.js"
+    },
+    "./storage-capabilities": {
+      "types": "./dist/esm/storage-capabilities.d.ts",
+      "import": "./dist/esm/storage-capabilities.js"
+    },
+    "./runtime-capabilities": {
+      "types": "./dist/esm/runtime-capabilities.d.ts",
+      "import": "./dist/esm/runtime-capabilities.js"
     },
     "./config": {
       "types": "./dist/esm/config.d.ts",
@@ -94,11 +102,108 @@
       "types": "./dist/esm/DurableObject.d.ts",
       "import": "./dist/esm/DurableObject.js"
     },
-    "./vite-env": "./src/vite-env.d.ts"
+    "./SseDurableObject": {
+      "types": "./dist/esm/SseDurableObject.d.ts",
+      "import": "./dist/esm/SseDurableObject.js"
+    },
+    "./vite-env": "./src/vite-env.d.ts",
+    "./page-inspection": {
+      "types": "./dist/esm/page-inspection.d.ts",
+      "import": "./dist/esm/page-inspection.js"
+    },
+    "./route-codegen": {
+      "types": "./dist/esm/route-codegen.d.ts",
+      "import": "./dist/esm/route-codegen.js"
+    },
+    "./api": {
+      "types": "./dist/esm/api.d.ts",
+      "import": "./dist/esm/api.js"
+    },
+    "./development-traces": {
+      "types": "./dist/esm/development-traces.d.ts",
+      "import": "./dist/esm/development-traces.js"
+    },
+    "./config-codegen": {
+      "types": "./dist/esm/config-codegen.d.ts",
+      "import": "./dist/esm/config-codegen.js"
+    },
+    "./config-requirements": {
+      "types": "./dist/esm/config-requirements.d.ts",
+      "import": "./dist/esm/config-requirements.js"
+    },
+    "./config-inspection": {
+      "types": "./dist/esm/config-inspection.d.ts",
+      "import": "./dist/esm/config-inspection.js"
+    },
+    "./config-preflight": {
+      "types": "./dist/esm/config-preflight.d.ts",
+      "import": "./dist/esm/config-preflight.js"
+    },
+    "./build-budgets": {
+      "types": "./dist/esm/build-budgets.d.ts",
+      "import": "./dist/esm/build-budgets.js"
+    },
+    "./deployment-artifact": {
+      "types": "./dist/esm/deployment-artifact.d.ts",
+      "import": "./dist/esm/deployment-artifact.js"
+    },
+    "./budget-receipts": {
+      "types": "./dist/esm/budget-receipts.d.ts",
+      "import": "./dist/esm/budget-receipts.js"
+    },
+    "./auxiliary-build-budgets": {
+      "types": "./dist/esm/auxiliary-deployment.d.ts",
+      "import": "./dist/esm/auxiliary-deployment.js"
+    },
+    "./locale": {
+      "types": "./dist/esm/middlewares/locale.d.ts",
+      "import": "./dist/esm/middlewares/locale.js"
+    },
+    "./markdown-processor": {
+      "types": "./dist/esm/markdown-processor.d.ts",
+      "import": "./dist/esm/markdown-processor.js"
+    },
+    "./markdown-frontmatter": {
+      "types": "./dist/esm/markdown-frontmatter.d.ts",
+      "import": "./dist/esm/markdown-frontmatter.js"
+    },
+    "./jobs": {
+      "types": "./dist/esm/jobs/d1-store.d.ts",
+      "import": "./dist/esm/jobs/d1-store.js"
+    },
+    "./notifications": {
+      "types": "./dist/esm/notifications/index.d.ts",
+      "import": "./dist/esm/notifications/index.js"
+    },
+    "./schedules-inspection": {
+      "types": "./dist/esm/schedules-inspection.d.ts",
+      "import": "./dist/esm/schedules-inspection.js"
+    },
+    "./workflows": {
+      "types": "./dist/esm/workflows/index.d.ts",
+      "import": "./dist/esm/workflows/index.js"
+    },
+    "./storage/r2": {
+      "types": "./dist/esm/storage/r2.d.ts",
+      "import": "./dist/esm/storage/r2.js"
+    },
+    "./storage/s3": {
+      "types": "./dist/esm/storage/s3-provider.d.ts",
+      "import": "./dist/esm/storage/s3-provider.js"
+    },
+    "./workflows-inspection": {
+      "types": "./dist/esm/workflows-inspection.d.ts",
+      "import": "./dist/esm/workflows-inspection.js"
+    },
+    "./workflows/provider": {
+      "types": "./dist/esm/workflows/provider.d.ts",
+      "import": "./dist/esm/workflows/provider.js"
+    }
   },
   "files": [
     "dist/esm",
-    "src/vite-env.d.ts"
+    "src/vite-env.d.ts",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"
@@ -106,7 +211,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "pnpm run build:types && vite build",
-    "build:types": "node -e \"require('node:fs').rmSync('dist/esm',{recursive:true,force:true})\" && tsc -p tsconfig.declarations.json",
+    "build:types": "node -e \"require('node:fs').mkdirSync('.cossack',{recursive:true})\" && wrangler types .cossack/library-worker-configuration.d.ts --config wrangler.library.jsonc --env-interface CloudflareBindings && node scripts/build-declarations.mjs",
     "build:ssg": "pnpm run build:types && vite build",
     "build:all": "pnpm run build:types && pnpm run build",
     "preview": "pnpm run build:ssg && vite preview",
@@ -115,35 +220,36 @@
     "pretest": "pnpm run build:types",
     "test": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:dev": "COSSACK_E2E_SERVER=dev playwright test",
     "test:e2e:ssg": "COSSACK_TEST_SSG=1 playwright test e2e/pages/ssg.spec.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug"
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
-    "@cossackframework/renderer": "workspace:*"
-  },
-  "devDependencies": {
+    "@cossackframework/renderer": "workspace:*",
     "@aws-sdk/client-s3": "^3.1075.0",
-    "@aws-sdk/s3-request-presigner": "^3.1075.0",
-    "@cossackframework/solar-icons": "^0.7.1",
-    "@cossackframework/ui": "workspace:*",
+    "unified": "^11.0.5",
+    "remark-parse": "^11.0.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-toc": "^9.0.0",
+    "remark-rehype": "^11.1.2",
+    "remark-sugar-high": "^0.6.3",
     "rehype-raw": "^7.0.0",
     "rehype-slug": "^6.0.0",
     "rehype-stringify": "^10.0.1",
-    "remark-frontmatter": "^5.0.0",
-    "remark-gfm": "^4.0.1",
-    "remark-parse": "^11.0.0",
-    "remark-rehype": "^11.1.2",
-    "remark-sugar-high": "^0.6.3",
-    "remark-toc": "^9.0.0",
-    "tsx": "^4.23.0",
-    "unified": "^11.0.5",
     "vfile-matter": "^5.0.1",
+    "@types/mdast": "^4.0.4"
+  },
+  "devDependencies": {
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
+    "@cossackframework/solar-icons": "^0.7.1",
+    "@cossackframework/ui": "workspace:*",
+    "tsx": "^4.23.0",
     "@cloudflare/vite-plugin": "^1.47.0",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/mdast": "^4.0.4",
     "cossack": "workspace:*",
     "hono": "^4.13.7",
     "reflect-metadata": "^0.2.2",

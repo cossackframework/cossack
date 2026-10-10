@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isRpcCallableAction, proxyHttpMethods } from '../src/shared/method-proxy';
@@ -33,10 +34,7 @@ describe('HTTP component RPC targeting', () => {
     }
 
     it('uses the hydrated component route ID instead of the active page route ID', async () => {
-        const fetchMock = vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({}),
-        });
+        const fetchMock = vi.fn().mockResolvedValue(Response.json({}));
         vi.stubGlobal('fetch', fetchMock);
 
         const component = makeComponent();
@@ -64,27 +62,20 @@ describe('HTTP component RPC targeting', () => {
         const pending = component.__cossack_proxies.get('save')?.();
         expect(invalidate).not.toHaveBeenCalled();
 
-        resolveFetch({
-            ok: true,
-            json: async () => ({ _cossack_return: 'saved' }),
-        });
+        resolveFetch(Response.json({ _cossack_return: 'saved' }));
         await expect(pending).resolves.toBe('saved');
         expect(invalidate).toHaveBeenCalledOnce();
     });
 
     it('retains the cache for failed HTTP responses', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-            ok: false,
-            status: 500,
-            json: async () => ({ error: 'save failed' }),
-        }));
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ error: 'save failed' }, { status: 500 })));
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const invalidate = vi.fn();
         (globalThis as any).__cossack_invalidatePageCache = invalidate;
         const component = makeComponent();
 
         proxyHttpMethods(component, [{ name: 'save' }]);
-        await component.__cossack_proxies.get('save')?.();
+        await expect(component.__cossack_proxies.get('save')?.()).rejects.toThrow('save failed');
         expect(invalidate).not.toHaveBeenCalled();
     });
 
@@ -106,16 +97,10 @@ describe('HTTP component RPC targeting', () => {
         component.searchInput = 'south pine';
         const newer = component.__cossack_proxies.get('search')?.();
 
-        resolveResponses[1]({
-            ok: true,
-            json: async () => ({ searchInput: 'south pine' }),
-        });
+        resolveResponses[1](Response.json({ searchInput: 'south pine' }));
         await newer;
 
-        resolveResponses[0]({
-            ok: true,
-            json: async () => ({ searchInput: 'sout' }),
-        });
+        resolveResponses[0](Response.json({ searchInput: 'sout' }));
         await older;
 
         expect(component.searchInput).toBe('south pine');
@@ -124,10 +109,7 @@ describe('HTTP component RPC targeting', () => {
     });
 
     it('invalidates a successful SSE RPC before processing its redirect', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-            ok: true,
-            json: async () => ({ _cossack_redirect: '/fresh-detail' }),
-        }));
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ _cossack_redirect: '/fresh-detail' })));
         const order: string[] = [];
         (globalThis as any).__cossack_invalidatePageCache = () => order.push('invalidate');
         vi.stubGlobal('window', {
@@ -153,6 +135,7 @@ describe('HTTP component RPC targeting', () => {
             onload?: () => void;
             onerror?: () => void;
             open() {}
+            setRequestHeader() {}
             send() {
                 this.status = FakeXhr.status;
                 this.onload?.();
@@ -161,7 +144,7 @@ describe('HTTP component RPC targeting', () => {
         vi.stubGlobal('XMLHttpRequest', FakeXhr);
         const invalidate = vi.fn();
         (globalThis as any).__cossack_invalidatePageCache = invalidate;
-        const component = makeComponent();
+        const component = { ...makeComponent(), getProperty: () => 0 };
         proxyHttpMethods(component, [{ name: 'upload' }]);
 
         await component.__cossack_proxies.get('upload')?.(
@@ -171,9 +154,9 @@ describe('HTTP component RPC targeting', () => {
 
         FakeXhr.status = 500;
         vi.spyOn(console, 'error').mockImplementation(() => {});
-        await component.__cossack_proxies.get('upload')?.(
+        await expect(component.__cossack_proxies.get('upload')?.(
             new File(['data'], 'failed.txt'),
-        );
+        )).rejects.toThrow('HTTP error! status: 500');
         expect(invalidate).toHaveBeenCalledOnce();
     });
 

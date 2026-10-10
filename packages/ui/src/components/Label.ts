@@ -1,13 +1,12 @@
+import type { LabelAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface LabelProps {
+export type LabelProps = LabelAttributes & {
     /** The form control id this label is for. */
     for?: string;
     /** Render the label text in muted (secondary) style. */
     muted?: boolean;
-    /** Allow arbitrary HTML attributes to spread onto the native label. */
-    [key: string]: any;
 }
 
 /**

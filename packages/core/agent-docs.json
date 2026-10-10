@@ -1,0 +1,473 @@
+{
+  "schemaVersion": 1,
+  "guides": [
+    {
+      "id": "route-urls",
+      "title": "Build typed route URLs",
+      "summary": "Encode named route parameters without concatenating user input into URLs.",
+      "imports": [
+        "@cossackframework/core/routes"
+      ],
+      "markdown": "Use createRouteBuilder with literal patterns. Ordinary parameters accept strings. Catch-all parameters accept a nonempty array of path segments. The builder encodes each segment. It rejects unknown names, missing parameters and unsupported patterns.\n\nThis helper constructs URLs. It does not register routes, authorize requests or prove that a page exists. In an application, prefer the generated route registry when available. Keep authorization on the server. Query state has a separate URL-state API.",
+      "examples": [
+        {
+          "id": "encoded-route",
+          "language": "typescript",
+          "source": "import { createRouteBuilder } from '@cossackframework/core/routes';\n\nconst route = createRouteBuilder({ article: '/articles/:slug', files: '/files/:path{.+}' } as const);\nconst article: string = route('article', { slug: 'hello world' });\nconst files: string = route('files', { path: ['reports', 'October 2026.csv'] });\nif (article !== '/articles/hello%20world') throw new Error('Article URL was not encoded');\nif (files !== '/files/reports/October%202026.csv') throw new Error('Catch-all URL was not encoded');\n"
+        }
+      ]
+    },
+    {
+      "id": "development-rpc-traces",
+      "title": "Capture development navigation and RPC lifecycle evidence",
+      "summary": "Opt in to bounded navigation, client RPC phases and HTTP server dispatch evidence without storing URLs, arguments or state values.",
+      "imports": [
+        "@cossackframework/core/devtools"
+      ],
+      "markdown": "In Vite development code, import startDevelopmentTrace from @cossackframework/core/devtools and call it with an optional capacity (1\u20132048 events, default 512). Keep the returned session. Read session.snapshot() for versioned lifecycle events and call session.stop() when finished. Calls are not replayed or executed by snapshot reads.\n\nCapture covers framework navigation, component HTTP/SSE and WebSocket proxies, and explicit layout-service HTTP proxies. Narrow by kind (rpc, service-rpc, server-rpc, server-stream, server-socket, server-native or navigation). RPC events share callId and a UUID requestId when available. Component calls have componentId; service calls have a separate opaque serviceId. Service identities do not add service instances or their values to the component snapshot registry. Phases are start, response, state-reconciled and finish. Start means a local attempt, not proof of server dispatch. State reconciliation can skip stale fields and does not prove a DOM commit. Terminal outcomes are succeeded, failed, cancelled, timeout or disconnected. Cancellation does not prove rollback or stop ignored remote work.\n\nNo arguments, returned values, state values, method names, routes, provider names or raw errors are stored. Non-UUID wire request identifiers are omitted. A validated stream frame supplies correlation when its HTTP response omitted the request-ID header; later state/terminal events retain that ID. Snapshots are detached. dropped counts evicted events; partial histories must not be presented as complete. Times use the local wall clock and sequence gives event order. Each new session stops the old one; in-flight calls stay with the old session and are not adopted. Stopping capture does not cancel application calls and can leave an unfinished history.\n\nCapture is disabled outside Vite development. The framework browser inspector and opt-in cossackPages({ developmentTraces: true }) Vite bridge consume these snapshots. cossack traces --json and MCP read_development_traces share project-local records with receipt age and live: false; selected values never enter the bridge. HTTP/multipart server-rpc events join the call/request IDs with a separate dispatchId and server receipt/invocation/return/response timestamps. Header evidence alone does not prove body completion. A server-stream terminal joins that dispatch after request cleanup and full RPC stream validation; outcome is succeeded/failed and cleanup is completed/failed. Invalid or missing evidence does not change the call result. Cancellation does not invent server terminals. Browser receipt timestamps and server timestamps use separate clocks. WebSocket server-socket events carry the first yield and terminal frame evidence with callId, requestId, dispatchId, receipt/invocation/return/response timestamps, result kind and frame type. They have no HTTP status or cleanup claim. Invocation/return markers stay null for stages not reached. Browser timestamps mark frame consumption, which can follow a paused queue; server timestamps use a separate clock. The client accepts at most two records for the same call/dispatch and matching frame types. Invalid evidence is ignored, frame limits can omit it, and cancellation does not invent a terminal. Production excludes the encoder and collector. Native server-native terminals travel separately over the opt-in Vite server environment channel after producer cancellation and request disposal settle. They join native response headers by call/request/dispatch IDs without changing body bytes or headers. outcome is succeeded, failed or cancelled; cleanup is completed or failed, including producer cancellation errors. A stalled cleanup emits nothing. Background reporting waits at most one second for Vite receipt, using execution-context waitUntil where available. Headers and EOF do not wait for that acknowledgement, and reports are never replayed. At most 256 recent HTTP correlations and one early terminal per call are retained. A record can arrive before headers or after local finish, but never after capture stop or replacement. Disconnected messages are not replayed. Server cleanup evidence does not prove browser consumption or stop ignored I/O. Development trace acceptance is complete under RT-28. The remaining non-Desktop release matrix is tracked under REL-03.\n\nNavigation events retain navigationId across start/cache/layouts/transition/scroll/finish. Their finish records outcome and committed. component-prepared records an app/layout/page/loading role and the same opaque componentId used by RPC events from that instance. Preparation can fail; it is not proof of a commit or of the cause of every later RPC. Global invalidations and standalone prefetch decisions use navigationId: null. Navigation callbacks retain capture ownership across awaits and stop recording after their terminal event.\n\nSnapshots now include capturedAt and components: a weak registry of at most 64 observed instances. Component records have independent capture times and current lifecycle, initialized public/client state names, passive resource states, scope ownership/counts and transport status. These are current reads, not historical state reconstruction. Values are omitted by default. session.inspect(component, { state: ['count', 'draft'] }) selects up to 32 initialized public/client fields; private/internal/unknown fields stay excluded. Selection returns detached tagged values and is not retained in the event buffer or future default snapshots. Resources are inspected without calling getters or loaders; scope reads do not resolve services. Provider names, cursors, owner URLs, scope keys and raw errors/results are omitted.\n\nState/resource/transport inventories have 64-entry limits; scope ancestry is limited to 16 with at most 64 service slots per scope. Values have a shared 256-node budget, depth 4, 32 object/array entries and 512-character strings. Accessors, unsupported objects, cycles, sparse holes and truncation are explicit markers. Getters and toJSON are not called, but JavaScript proxy reflection can invoke traps; do not select untrusted proxies. Known secret names and common credential strings are redacted, not every possible secret. Select only fields appropriate to inspect/share. Stopping capture stops passive reads. Tracking is unavailable on platforms without WeakRef, while explicit inspect remains available.\n\nConfigured deadlines remain active while a component or service iterator is paused after a yield. Timeout/cancellation releases local loading and settles the shared call without another consumer pull. The next pull observes the interruption once. WebSocket disconnects and buffer failure also interrupt paused calls and discard unconsumed frames; already reconciled state remains authoritative. Local terminal capture does not prove that server execution or ignored application I/O stopped.",
+      "examples": [
+        {
+          "id": "development-rpc-traces",
+          "language": "typescript",
+          "source": "import { startDevelopmentTrace } from '@cossackframework/core/devtools';\nconst check = (condition: boolean, message: string) => { if (!condition) throw new Error(message); };\n\n// In a Vite development realm, capture is available; elsewhere the installed\n// package must fail closed with the documented error instead of recording data.\nlet trace: ReturnType<typeof startDevelopmentTrace> | undefined;\nlet disabledCode: unknown;\ntry {\n  trace = startDevelopmentTrace({ capacity: 16 });\n} catch (error) {\n  disabledCode = (error as { code?: unknown })?.code;\n}\n\nif (trace) {\n  const snapshot = trace.snapshot();\n  check(snapshot.schemaVersion === 1 && snapshot.collecting && snapshot.capacity === 16 && snapshot.events.length === 0, 'A new capture starts with an empty versioned bounded snapshot.');\n  trace.stop();\n  check(!trace.snapshot().collecting, 'Stopping capture marks its detached session as no longer collecting.');\n} else {\n  check(disabledCode === 'COSSACK_DEVTOOLS_DISABLED', 'Outside Vite development, capture fails closed with a stable diagnostic code.');\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "typed-url-state",
+      "title": "Parse typed URL query state",
+      "summary": "Read query fields with safe defaults and stable issues. Build a URL without losing unrelated query fields or fragments.",
+      "imports": [
+        "@cossackframework/core/url-state"
+      ],
+      "markdown": "A codec converts a query string into a typed value. Define page query fields with defineUrlState and the url codecs. Call definition.read(currentUrl) to get values and issues. Invalid values use their declared defaults. Repeated scalar fields produce repeated-scalar issues. Array fields accept repeated query keys. An invalid array item resets the whole field.\n\nCall definition.url(currentUrl, patch) to build the destination. Unknown query pairs and fragments survive. Declared fields use encoded, normalized values. Defaults are omitted unless defaults is include. A patch value of undefined resets that field. Unknown patch keys and invalid typed values throw UrlStateError. The helper does not navigate, fetch data or authorize access.\n\nUse url.integer for whole numbers and url.enum for a fixed set of strings. URL booleans accept true and false. They do not accept form checkbox strings such as on. Use url.optional when a missing value must stay undefined. Query text, field counts and array lengths have bounds. Custom codecs must be synchronous and must round-trip their serialized values.",
+      "examples": [
+        {
+          "id": "query-round-trip",
+          "language": "typescript",
+          "source": "import { defineUrlState, url } from '@cossackframework/core/url-state';\n\nconst filters = defineUrlState({\n  search: url.string(),\n  page: url.integer({ default: 1, min: 1 }),\n  tags: url.array(url.string()),\n});\nconst repeated = filters.read('/articles?page=2&page=3');\nif (repeated.values.page !== 1 || repeated.issues[0]?.code !== 'repeated-scalar') {\n  throw new Error('Repeated page values must use the default and report an issue');\n}\nconst destination = filters.url('/articles?utm=a%20b&page=bad#results', {\n  search: 'snow & books', page: 2, tags: ['a/b', 'typescript'],\n});\nif (!destination.startsWith('/articles?utm=a%20b&') || !destination.endsWith('#results')) {\n  throw new Error('Unrelated query bytes and fragment must survive');\n}\nconst result = filters.read(destination);\nconst page: number = result.values.page;\nif (result.issues.length || page !== 2 || result.values.search !== 'snow & books' || result.values.tags[0] !== 'a/b') {\n  throw new Error('Typed query values must round-trip');\n}\nif (filters.read(filters.url(destination, { page: undefined })).values.page !== 1) {\n  throw new Error('Undefined must reset a query field');\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "validated-input",
+      "title": "Parse and type action input",
+      "summary": "Declare an input schema, infer its raw and parsed types, handle field errors and cancel asynchronous validation.",
+      "imports": [
+        "@cossackframework/core/input"
+      ],
+      "markdown": "An input schema describes accepted data and returns parsed values. Import input, InputOf and RawInputOf from @cossackframework/core/input. This focused entry also exports parseFormData and validation errors. It does not import components, rendering or runtime adapters. The same helpers remain available from the core root.\n\nDefine an input.object shape and await schema.parse(untrustedValue). Use InputOf<typeof schema> for parsed values. Use RawInputOf<typeof schema> for the declared incoming shape. TypeScript types do not validate data at runtime. Always use the returned parsed object. It contains normalized values and does not change the input object. Object schemas reject unknown keys by default. Use unknownKeys: strip only when intentionally discarding extra fields.\n\nNumbers and booleans require their exact types unless coerce is true. Coercion accepts supported strings and rejects ambiguous values. optional permits an absent field. nullable permits null. A missing optional object field stays absent. String fields accept empty strings unless required or minLength rules reject them.\n\nExpected failures throw ActionValidationError. Use isActionValidationError and fieldErrors rather than parsing message strings. Nested object and array errors retain field paths. Root and container errors use the reserved underscore key. Unexpected refinement exceptions remain internal failures.\n\nIn a Cossack component, attach the schema through @Server({ input: schema }). Give the method one argument typed as InputOf<typeof schema>. Inbound RPC dispatch parses that argument before invoking the method. Direct local method calls do not run the inbound contract. RawInputOf does not widen a method or browser proxy parameter. Pass parsed values when calling a method typed with InputOf. Parsing does not authorize a user or a record. Apply server authorization before external effects.\n\nA refinement checks a parsed value. It can return a boolean or a promise of a boolean. Pass signal to parse and pass it to external I/O inside refinements. Abort stops waiting for validation and rejects with AbortError. It does not stop I/O that ignores the signal. The examples below prove standalone parsing and cancellation, not a complete RPC transport.",
+      "examples": [
+        {
+          "id": "parsed-input",
+          "language": "typescript",
+          "source": "import { input, isActionValidationError, type InputOf, type RawInputOf } from '@cossackframework/core/input';\n\nconst schema = input.object({\n  title: input.string({ required: true, maxLength: 120 }),\n  copies: input.number({ coerce: true, integer: true, min: 1 }),\n  published: input.boolean({ coerce: true }),\n  note: input.string().optional(),\n});\nconst raw: RawInputOf<typeof schema> = { title: 'Guide', copies: '2', published: 'false' };\nconst parsed: InputOf<typeof schema> = await schema.parse(raw);\nconst copies: number = parsed.copies;\nif (copies !== 2 || parsed.published !== false || Object.hasOwn(parsed, 'note') || raw.copies !== '2') {\n  throw new Error('Parsing must normalize a copy and preserve absent optional fields');\n}\nlet rejected = false;\ntry {\n  await schema.parse({ ...raw, canEdit: true });\n} catch (error) {\n  if (!isActionValidationError(error) || error.fieldErrors.canEdit !== 'Unknown field.') throw error;\n  rejected = true;\n}\nif (!rejected) throw new Error('Unknown fields must fail validation');\n// @ts-expect-error Parsed numeric fields cannot be strings.\nconst invalid: InputOf<typeof schema> = { title: 'Guide', copies: '2', published: false };\nvoid invalid;\n"
+        },
+        {
+          "id": "validation-cancellation",
+          "language": "typescript",
+          "source": "import { input } from '@cossackframework/core/input';\n\nconst controller = new AbortController();\nlet entered!: () => void;\nconst started = new Promise<void>(resolve => { entered = resolve; });\nlet rejectIgnored!: (error: Error) => void;\nconst ignored = new Promise<boolean>((_resolve, reject) => { rejectIgnored = reject; });\nconst schema = input.string().refine(async (_value, { signal }) => {\n  if (signal !== controller.signal) throw new Error('Refinement lost the caller signal');\n  entered();\n  return ignored;\n}, 'Name is unavailable');\nconst result = schema.parse('guide', { signal: controller.signal }).then(\n  () => { throw new Error('Cancelled validation must not return a value'); },\n  error => {\n    if (!(error instanceof DOMException) || error.name !== 'AbortError') throw error;\n  },\n);\nawait started;\ncontroller.abort();\nawait result;\n// A late failure from ignored work must stay observed after cancellation.\nrejectIgnored(new Error('Ignored validator stopped late'));\nawait new Promise<void>(resolve => setTimeout(resolve, 0));\n"
+        }
+      ]
+    },
+    {
+      "id": "nested-form-input",
+      "title": "Parse and validate nested form fields",
+      "summary": "Convert bracketed form names into nested records, then apply an input schema before using the data.",
+      "imports": [
+        "@cossackframework/core/input"
+      ],
+      "markdown": "parseFormData converts bracketed field names into nested objects and arrays. For example, profile[name] produces profile.name and tags[] appends a tag. Numeric bracket keys are object keys. Use empty brackets to create arrays. Repeated ordinary keys also produce arrays. File objects pass through unchanged. Parsed containers have no prototype. A period in a name does not create a nested path.\n\nRead FormData from the request, call parseFormData, then await schema.parse on the result. Form parsing does not enforce field types, array limits, upload limits or authorization. Use input.number({ coerce: true }) for numeric form strings. Use input.file with explicit bounds for uploads. Schema parsing returns typed data or throws ActionValidationError with nested fieldErrors.\n\nUnchecked HTML checkboxes are absent from FormData. Do not assume that the browser sends false. Choose an explicit representation and a schema that accepts it. A malicious caller can add fields or repeat scalar names. Keep unknown-key rejection and handle validation failures before writing data. The executable example parses an array of records and rejects a forged field. It does not make a request or write to a database.",
+      "examples": [
+        {
+          "id": "form-validation",
+          "language": "typescript",
+          "source": "import { input, isActionValidationError, parseFormData } from '@cossackframework/core/input';\n\nconst schema = input.object({\n  profile: input.object({ name: input.string({ required: true }) }),\n  items: input.array(input.object({ count: input.number({ coerce: true, integer: true, min: 1 }) }), { minItems: 1, maxItems: 3 }),\n});\nconst form = new FormData();\nform.append('profile[name]', 'Tan');\nform.append('items[][count]', '2');\nconst parsed = await schema.parse(parseFormData(form));\nif (parsed.profile.name !== 'Tan' || parsed.items[0]?.count !== 2) {\n  throw new Error('Nested forms must return typed values');\n}\nform.set('items[][count]', 'bad');\nlet invalid = false;\ntry {\n  await schema.parse(parseFormData(form));\n} catch (error) {\n  if (!isActionValidationError(error)) throw error;\n  const items = error.fieldErrors.items as Record<string, Record<string, unknown>>;\n  if (items['0']?.count !== 'Expected a safe integer.') throw error;\n  invalid = true;\n}\nif (!invalid) throw new Error('Invalid nested counts must produce a field error');\nform.set('items[][count]', '2');\nform.append('profile[canEdit]', 'true');\nlet forged = false;\ntry {\n  await schema.parse(parseFormData(form));\n} catch (error) {\n  if (!isActionValidationError(error)) throw error;\n  const profile = error.fieldErrors.profile as Record<string, unknown>;\n  if (profile.canEdit !== 'Unknown field.') throw error;\n  forged = true;\n}\nif (!forged) throw new Error('Form parsing must not authorize forged fields');\n"
+        }
+      ]
+    },
+    {
+      "id": "component-actions",
+      "title": "Call validated server actions from a component",
+      "summary": "Use one page for server actions, reactive rendering and browser handlers. Reject invalid input before changing server state.",
+      "imports": [
+        "@cossackframework/core",
+        "@cossackframework/core/input"
+      ],
+      "markdown": "Save the example as a page in a scaffolded Cossack application. It needs the framework Vite plugins and generated client entry. Run the application to execute it. Plain Node execution does not apply the server/client transform.\n\nExtend Cossack and declare the page transport with @Page. State is shared reactive data. ClientState belongs to the browser. Server marks an inbound action. Client marks a browser handler. The security plugin removes server bodies from browser code and supplies action proxies. Browser handlers call the authored method directly and await its result.\n\nAttach an input schema to Server. The dispatcher parses input before invoking the action. InputOf gives the authored method its parsed parameter type. Incoming data remains untrusted, including values sent by the generated proxy. Invalid input produces COSSACK_VALIDATION_FAILED and nested field errors. Validate again at native entrypoints that bypass RPC dispatch.\n\nThe example uses HTTP and displays loading state, confirmed count and a validation failure. The invalid button submits zero, which TypeScript permits but the schema rejects. The server owns the count update. Input validity does not establish user or record permissions. Shared State can be supplied by the browser in stateless HTTP calls. Store authoritative balances and permissions in trusted server storage.\n\nUse ClientState for browser drafts and error display. Keep private messages in server bodies. Return only intended public data. Application examples need browser and server acceptance, not only declaration compilation.",
+      "examples": [
+        {
+          "id": "validated-counter",
+          "language": "typescript",
+          "source": "import { Cossack, Page, State, ClientState, Server, Client, html } from '@cossackframework/core';\nimport { input, type InputOf } from '@cossackframework/core/input';\n\nconst incrementInput = input.object({ amount: input.number({ integer: true, min: 1, max: 5 }) });\n\n@Page({ transport: 'http' })\nexport default class ActionPage extends Cossack {\n  @State() count = 0;\n  @ClientState() failure = '';\n\n  @Server({ input: incrementInput })\n  async increment(data: InputOf<typeof incrementInput>): Promise<number> {\n    const next = this.count + data.amount;\n    if (!Number.isSafeInteger(next)) throw new Error('PRIVATE_GUIDE_ACTION');\n    this.count = next;\n    return this.count;\n  }\n\n  @Client()\n  async submit(amount: number) {\n    this.failure = '';\n    try { await this.increment({ amount }); }\n    catch (error) {\n      this.failure = error instanceof Error && 'code' in error ? String(error.code) : 'Request failed';\n    }\n  }\n\n  render() {\n    return html`<main>\n      <h1>Validated counter</h1>\n      <output id=\"guide-count\">${this.count}</output>\n      <output id=\"guide-loading\">${this.loading.increment || 0}</output>\n      <p role=\"alert\">${this.failure}</p>\n      <button @click=${() => this.submit(1)}>Add one</button>\n      <button @click=${() => this.submit(0)}>Reject invalid input</button>\n    </main>`;\n  }\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "server-resources",
+      "title": "Load a read-only server resource",
+      "summary": "Declare server$ data, retain its last successful value, recover after failure and refresh by a typed field name.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Save this example as a page in a scaffolded application. server$ is a compiler macro. It needs cossackSecurityPlugin in Vite. Declare it in a Cossack class field or directly inside render. An ordinary function call in Node throws. The loader runs on the server. Its resolved value and dependency arguments are public data.\n\nKeep loaders read-only. Authorize record access inside the loader using trusted request context. Browser selections and dependency values do not establish permissions. Use plain transport-safe objects and finite primitives. Convert database entities and dates to plain data before returning them. Dependencies cannot contain undefined. Use null for an absent dependency.\n\nUse ClientState for browser-owned selections. Declare deps as a callback and return a readonly tuple. Cossack hydrates SSR results and reuses them without an initial duplicate browser request. A dependency change starts a new load. The last successful value remains available during pending and failed loads.\n\nresourceStatus$ returns a snapshot with state, hasValue, value and stale. Render a generic message for a resource failure. Avoid exposing the raw error. A failed browser load does not continuously retry. Change dependencies or call refresh$ to try again. refresh$ retains the last value while loading. invalidate$ removes the invocation and the next read starts from the initial value.\n\nDeclare Resources in the Cossack type options to check resource names and values. The example renders an initial record, changes its selection, displays a retained value after failure and refreshes it. It uses derived sample data and does not establish database persistence or authorization.",
+      "examples": [
+        {
+          "id": "resource-page",
+          "language": "typescript",
+          "source": "import { Cossack, Page, ClientState, Client, html, server$ } from '@cossackframework/core';\n\n@Page({ transport: 'http' })\nexport default class ResourcePage extends Cossack<{}, { Resources: 'record' }> {\n  @ClientState() selected = 1;\n  record = server$((id: number) => {\n    if (id === 3) throw new Error('PRIVATE_GUIDE_RESOURCE');\n    return { id, label: 'Record ' + id };\n  }, { deps: () => [this.selected] as const, initial: { id: 0, label: '' } });\n\n  @Client() choose(id: number) { this.selected = id; }\n  @Client() async refresh() { await this.refresh$('record'); }\n\n  render() {\n    const status = this.resourceStatus$('record');\n    return html`<main>\n      <h1>Server resource</h1>\n      <output id=\"guide-record\">${status.hasValue ? status.value.label : 'No record'}</output>\n      <output id=\"guide-resource-state\">${status.state}</output>\n      <p role=\"alert\">${status.state === 'error' ? 'Record unavailable. Try another selection.' : ''}</p>\n      <button @click=${() => this.choose(2)}>Select two</button>\n      <button @click=${() => this.choose(3)}>Select failing record</button>\n      <button @click=${() => this.choose(4)}>Select four</button>\n      <button @click=${() => this.refresh()} ?disabled=${status.state === 'pending'}>Refresh record</button>\n    </main>`;\n  }\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "lifecycle-tasks",
+      "title": "Own asynchronous task results and cleanup",
+      "summary": "Track reactive inputs, reject stale commits and stop an owned timer when a task reruns or its page is disposed.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Save the example as a page in a scaffolded application. ClientTask runs on the browser after mount and when its tracked reactive fields change. Task runs in both environments. ServerTask runs only on the server. The security plugin preserves the required browser handlers and removes server-only task bodies.\n\nPass the host type to the task decorator and TaskContext to check dependency paths and committed fields. Declared paths must also use reactive State or Store decorators to trigger a rerun. ClientState and ClientStore are browser-owned reactive fields. Methods and unknown fields are not valid dependency paths.\n\nEach execution receives an AbortSignal and a task context. Pass the signal to I/O that accepts cancellation. Use task.commit to replace reactive fields after asynchronous work. It returns false when another execution owns the task or the component is disposed. Direct writes and external effects remain the application responsibility. A signal does not stop work that ignores it.\n\nReturn a cleanup function to stop owned subscriptions or timers. Rerun and disposal abort the signal before cleanup. A cleanup returned after cancellation still runs. A retained task context stays current after setup finishes, until rerun or disposal. Commits must contain initialized reactive fields and synchronous data values.\n\nThe example simulates work that ignores cancellation. A slow query cannot overwrite a newer fast query because the result uses task.commit. It then starts a timer and returns clearInterval as cleanup. The timer uses the same owned context. The Leave example link requires a root page, which the scaffold supplies. This is browser lifecycle evidence, not a background-job or durable-workflow scheduler.",
+      "examples": [
+        {
+          "id": "owned-task",
+          "language": "typescript",
+          "source": "import { Cossack, Page, ClientState, Client, ClientTask, html, type TaskContext } from '@cossackframework/core';\n\n@Page({ transport: 'http' })\nexport default class TaskPage extends Cossack {\n  @ClientState() query = 'initial';\n  @ClientState() result = '';\n  @ClientState() ticks = 0;\n\n  @ClientTask<TaskPage>({ track: ['query'] as const })\n  async update(signal: AbortSignal, task: TaskContext<TaskPage>) {\n    const query = this.query;\n    // Simulate a legacy operation that ignores the abort signal.\n    await new Promise<void>(resolve => setTimeout(resolve, query === 'slow' ? 100 : 0));\n    task.commit({ result: query });\n    if (signal.aborted) return;\n    const timer = setInterval(() => task.commit({ ticks: this.ticks + 1 }), 40);\n    return () => clearInterval(timer);\n  }\n\n  @Client() choose(query: string) { this.query = query; }\n\n  render() {\n    return html`<main>\n      <h1>Owned task</h1>\n      <output id=\"guide-task-result\">${this.result}</output>\n      <output id=\"guide-task-ticks\">${this.ticks}</output>\n      <button @click=${() => this.choose('slow')}>Slow query</button>\n      <button @click=${() => this.choose('fast')}>Fast query</button>\n      <a href=\"/\">Leave example</a>\n    </main>`;\n  }\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "safe-old-input",
+      "title": "Restore public form input after a redirect",
+      "summary": "Select public dot paths before a signed flash cookie is serialized. Credentials remain in the server handler.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Save the example as src/pages/guidance-old-input/index.ts in a scaffolded application. Configure APP_SECRET for flash signing. A signed flash cookie is readable, not encrypted. getFormData flashes nonempty validation errors by default. It retains no old input unless flash.input supplies an explicit list of public dot paths. flash: true has the same errors-only default; flash: false disables both categories.\n\nGeneric flash() rejects the reserved __input namespace; use flashInput for old input.\n\nUse flash: { input: ['name', 'profile.city'] } or call flashInput(data, { fields: ['name', 'profile.city'] }) before redirecting. Selection does not change the parsed or validated server data. Select nested leaves, not whole object branches. Finite JSON scalars and arrays of scalars are copied. Files, Date objects, object arrays, accessors and custom serialization objects are omitted. An array element can be selected with a numeric dot path such as contacts.0.label. Array positions are preserved; unselected positions serialize as null. A later mutation of the source does not change old input.\n\nKnown credential paths are excluded even if selected: names containing password, passwd, passphrase, secret, token, credential, authorization, cookie, apikey, privatekey, sessionid or csrf after punctuation removal and case folding; pin, otp, cvv and cvc are also excluded. This is an additional guard, not automatic classification of every custom secret. Keep custom credentials and private values outside the public field list. Keep that policy in server-authored code, not request data. Prototype paths and inherited properties are excluded. Reflective reads can still invoke JavaScript proxy traps; pass ordinary parsed form data, not an untrusted proxy.\n\nRead selected fields with old('name') or old('profile.city') on the following page request. The middleware clears the cookie. Valid incoming flash survives background RPC/upload/realtime requests and failed outgoing RPC writes. The signed cookie carries a server-checked expiry matching maxAge. On Cloudflare, the COSSACK_SSE Durable Object binding consumes each signed nonce once; generated Cloudflare projects include this binding and its SQLite migration. A Cloudflare app without the binding fails closed for flash reads and writes. Node has no durable replay store, so a copied token remains readable until its signed expiry. Prepare flash before returning a lazy generator. Late writes reject after headers are committed. Do not put secrets into arbitrary flash messages or application-authored validation messages either.\n\nThe example submits by native POST, validates email, redirects and restores only three public fields. The password is never restored. It does not create an account or prove authorization. For a server RPC method, apply the same explicit flashInput policy before returning a redirect.",
+      "examples": [
+        {
+          "id": "public-form-fields",
+          "language": "typescript",
+          "source": "import { Cossack, Page, State, old, flashed } from '@cossackframework/core';\nimport { html } from '@cossackframework/renderer';\n\ninterface PublicForm {\n  name: string;\n  email: string;\n  password: string;\n  profile: { city: string };\n}\n\n@Page({ transport: 'http' })\nexport default class PublicFormPage extends Cossack {\n  @State() name = '';\n  @State() email = '';\n  @State() city = '';\n  @State() errors: Record<string, string> | null = null;\n  @State() notice = '';\n\n  async init() {\n    this.name = old<string>('name') ?? '';\n    this.email = old<string>('email') ?? '';\n    this.city = old<string>('profile.city') ?? '';\n    this.errors = flashed<Record<string, string>>('errors') ?? null;\n    this.notice = flashed<string>('success') ?? '';\n  }\n\n  async post() {\n    const { valid } = await this.c.getFormData<PublicForm>({\n      rules: { email: { required: true, email: true, message: 'Enter a valid email.' } },\n      flash: { input: ['name', 'email', 'profile.city'] },\n    });\n    if (!valid) return this.c.redirect('/guidance-old-input');\n    // Process validated data here. Authorize any account or storage operation.\n    return this.c.redirect('/guidance-old-input');\n  }\n\n  render() {\n    return html`<main><h1>Public form fields</h1>\n      <p role=\"alert\">${this.errors?.email ?? ''}</p>\n      <form method=\"post\" action=\"/guidance-old-input\" novalidate>\n        <label>Name <input name=\"name\" value=${this.name} /></label>\n        <label>Email <input name=\"email\" value=${this.email} /></label>\n        <label>City <input name=\"profile[city]\" value=${this.city} /></label>\n        <label>Password <input type=\"password\" name=\"password\" /></label>\n        <button type=\"submit\">Submit</button>\n      </form>\n    </main>`;\n  }\n}\n"
+        }
+      ]
+    },
+    {
+      "id": "localization-and-worker-isolation",
+      "title": "Resolve locales safely and format translated counts",
+      "summary": "Use packaged catalogs and request-scoped locales without sharing mutable locale state across Cloudflare requests.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Generate catalogs with `pnpm exec cossack lang publish`, then add translations under `src/lang/*.json`; use `pnpm exec cossack lang add <locale>` to add another catalog. The framework installs locale middleware and exposes `__()` during rendering. Locale priority is the `cossack_locale` cookie, `Accept-Language` when `createApp({ i18n: { autoDetectBrowser: true } })` enables it, `APP_LOCALE`, then `en`. Browser detection is off by default. On Workers, the framework stores the active locale in per-request AsyncLocalStorage. Do not set a server-wide current locale or call client-only `setLocale()` from server code. If publicly caching localized HTML, include the effective locale in the cache key or disable shared caching for that response. `__()` supports `:name` placeholders and `|`-separated CLDR plural forms; missing translations fall back to the default catalog and then to the key.\n\nThe examples exercise locale negotiation and plural formatting from the installed core export. They do not configure an application catalog or prove request middleware and cache behavior; use a generated application to verify those boundaries.",
+      "examples": [
+        {
+          "id": "accept-language-fallbacks",
+          "language": "typescript",
+          "source": "import { detectBrowserLocale } from '@cossackframework/core';\n\nconst supported = ['en', 'fr', 'es'];\nconst selected = detectBrowserLocale('fr-CA, fr;q=0.9, en;q=0.8', supported, 'en');\nif (selected !== 'fr') throw new Error('The best supported language range should win');\nconst fallback = detectBrowserLocale('de-DE, de;q=0.9', supported, 'en');\nif (fallback !== 'en') throw new Error('Unsupported languages should use the configured fallback');\nconst excluded = detectBrowserLocale('fr;q=0', supported, 'en');\nif (excluded !== 'en') throw new Error('A q=0 language range must remain unacceptable');\n"
+        },
+        {
+          "id": "cldr-plural-and-placeholder",
+          "language": "typescript",
+          "source": "import { replacePlaceholders, selectPluralForm } from '@cossackframework/core';\n\nconst template = '\u0423 \u0432\u0430\u0441 :count \u044f\u0431\u043b\u043e\u043a\u043e|\u0423 \u0432\u0430\u0441 :count \u044f\u0431\u043b\u043e\u043a\u0430|\u0423 \u0432\u0430\u0441 :count \u044f\u0431\u043b\u043e\u043a';\nconst selected = selectPluralForm(template, 2, 'ru');\nconst message = replacePlaceholders(selected, { count: 2 });\nif (message !== '\u0423 \u0432\u0430\u0441 2 \u044f\u0431\u043b\u043e\u043a\u0430') throw new Error('Russian plural category or placeholder was incorrect');\n"
+        }
+      ]
+    },
+    {
+      "id": "background-jobs-runtime",
+      "title": "Dispatch validated jobs with explicit retry and duplicate behavior",
+      "summary": "Dispatch validated jobs with explicit retry and duplicate behavior.",
+      "imports": [
+        "@cossackframework/core/input",
+        "@cossackframework/core/jobs"
+      ],
+      "markdown": "Use defineJob schemas and createJobRuntime to validate bounded JSON at dispatch and again at consumption. Jobs are independent of component Task lifecycles. Serialize only required tenantId/actorId context, then independently authorize it against trusted application data in the handler. Resolve facilities per attempt and register onCleanup for owned resources; do not retain requests or credentials in payloads.\n\nLocalJobAdapter and MemoryJobStore are process-only deterministic test facilities. Advance the explicit clock to deliver delayed work; their snapshots do not provide durable infrastructure. Cloudflare adapters require an explicitly durable JobStore. Stable logical keys include namespace, job, tenant, actor and authored idempotencyKey. Store-owned attempts, fenced leases and persisted retry deadlines prevent duplicate deliveries from bypassing backoff; terminal records suppress repeats only while retained. Transient errors retry within maxAttempts; PermanentJobError terminates. Cleanup failure never automatically repeats successful effects. Inspect emits bounded structural diagnostics without payloads/raw errors.\n\nAt-least-once delivery is not exactly-once effects: crashes and expired leases can overlap work. Use a provider idempotency key or a transactionally persisted receipt keyed by context.key for effects. Await queue(batch) from the Worker handler; configure provider retry/dead-letter limits. See repository docs/jobs.md.",
+      "examples": [
+        {
+          "id": "jobs-duplicate-backoff",
+          "language": "typescript",
+          "source": "import { input } from '@cossackframework/core/input';\nimport { createJobRuntime, defineJob, LocalJobAdapter, MemoryJobStore, TransientJobError } from '@cossackframework/core/jobs';\nconst adapter = new LocalJobAdapter();\nlet attempts = 0;\nconst runtime = createJobRuntime({ namespace: 'guide', adapter, store: new MemoryJobStore(), now: adapter.now,\n  jobs: { receipt: defineJob({ schema: input.object({ value: input.string({ required: true }) }), retryDelaySeconds: 10,\n    handle() { if (++attempts === 1) throw new TransientJobError(); },\n  }) },\n});\nawait runtime.dispatch('receipt', { value: 'test' }, { scope: { tenantId: 'tenant', actorId: 'actor' }, idempotencyKey: 'receipt-1' });\nconst envelope = adapter.snapshot()[0]!.envelope;\nif ((await adapter.drain(runtime))[0]?.status !== 'retry') throw Error('Transient failures must retry');\nif ((await runtime.consume(envelope)).status !== 'retry' || attempts !== 1) throw Error('A duplicate cannot bypass backoff');\nadapter.advance(10);\nif ((await adapter.drain(runtime))[0]?.status !== 'completed') throw Error('Retry should complete after backoff');\nif ((await runtime.consume(envelope)).status !== 'duplicate' || Number(attempts) !== 2) throw Error('Completed keys must not repeat');\n// This adapter and store are process-only fixtures, not durable production storage.\n"
+        }
+      ]
+    },
+    {
+      "id": "schedule-occurrence-jobs",
+      "title": "Run schedules through the jobs ledger",
+      "summary": "Run schedules through the jobs ledger.",
+      "imports": [
+        "@cossackframework/core/schedules",
+        "@cossackframework/core/jobs",
+        "@cossackframework/core/input"
+      ],
+      "markdown": "Schedules dispatch existing validated jobs instead of calling a separate business handler. Use createScheduleRuntime with explicit definitions, UTC cron, serialized payload/scope and an explicit dispatcher. runOnce requires the original nonnegative integer scheduledTime; provider scheduled events use that same timestamp to create a stable occurrence key. Distinct occurrences may overlap; duplicates rely on the jobs ledger, retries on jobs, and missed runs have no automatic catch-up. LocalJobAdapter must be drained after a one-shot dispatch.\n\nlist omits payload and tenant/actor values. validateScheduleDefinitions is a pure guard for JSON registries and does not prove provider deployment or separately registered job names. Compile-generated Cron configuration and CLI schedule tools use the same validator. Scope IDs must come from trusted configuration; consumers independently authorize context. Use durable jobs state for production and transactional receipts/provider keys for external effects. Process-only test ledgers do not survive process loss. Never claim exactly-once effects or parity for a runtime without an explicitly configured durable schedule provider. See docs/schedules.md.",
+      "examples": [
+        {
+          "id": "schedule-occurrence-identity",
+          "language": "typescript",
+          "source": "import { input } from '@cossackframework/core/input';\nimport { createJobRuntime, defineJob, LocalJobAdapter, MemoryJobStore } from '@cossackframework/core/jobs';\nimport { createScheduleRuntime } from '@cossackframework/core/schedules';\nconst adapter = new LocalJobAdapter(); let effects = 0;\nconst jobs = createJobRuntime({ namespace: 'guide', adapter, store: new MemoryJobStore(), now: adapter.now,\n  jobs: { report: defineJob({ schema: input.object({ title: input.string({ required: true }) }), handle() { effects++; } }) },\n});\nconst schedules = createScheduleRuntime({ dispatcher: jobs, schedules: [{\n  name: 'report', cron: '0 9 * * MON-FRI', job: 'report', payload: { title: 'PRIVATE_PAYLOAD' }, scope: { tenantId: 'PRIVATE_TENANT' },\n}] as const });\nconst scheduledTime = Date.UTC(2026, 9, 5, 9);\nawait schedules.runOnce('report', { scheduledTime });\nawait schedules.scheduled({ cron: '0 9 * * MON-FRI', scheduledTime });\nawait adapter.drain(jobs);\nif (Number(effects) !== 1) throw Error('One occurrence must share the jobs duplicate ledger');\nif (JSON.stringify(schedules.list()).includes('PRIVATE_')) throw Error('Schedule inspection must omit payload/scope');\n"
+        }
+      ]
+    },
+    {
+      "id": "notification-templates-preferences",
+      "title": "Separate notification rendering, preferences and delivery",
+      "summary": "Separate notification rendering, preferences and delivery.",
+      "imports": [
+        "@cossackframework/core/notifications",
+        "@cossackframework/core/input"
+      ],
+      "markdown": "Define typed templates with input schemas and notificationHtml/escapeNotificationHtml for interpolated text. Literal markup remains author-trusted; hand-cast/raw HTML remains your responsibility. preview validates and renders without dispatch or provider send. createNotificationRuntime separates enqueue, application-owned preferences, job dispatch and delivery. Preferences are checked at enqueue and again before effects, including failures while resolving them. Persist only bounded JSON and required identity; do not retain requests.\n\nResolve tenantId/userId/email from trusted server authorization. Exact tenant/user filters protect delivered in-app list and read/unread updates. queued means work awaits execution; provider-accepted does not mean delivered. Email delivery requires authenticated matching provider evidence before recordDelivered. Structural inspect omits content/data/email/provider exceptions. MemoryNotificationStore is process-only, with snapshots for deterministic tests; choose a durable adapter for production.\n\nUse SVC-01 jobs to dispatch notification IDs and await runtime.deliver. Stable authored keys deduplicate identical notifications; changed content under the same identity rejects. Explicit known rejection can retry safely. Unknown outcomes from non-idempotent providers are terminal and require reconciliation, including crashes after a persisted sending marker. Provider-capable retries retain their uncertainty marker; opt-out after a previous uncertain send reports unknown, never a fabricated failed delivery. NotificationDeliveryError has fixed fields and a brand guard; arbitrary thrown objects do not establish rejection. See docs/notifications.md and docs/notification-providers.md.",
+      "examples": [
+        {
+          "id": "notification-preview-isolation",
+          "language": "typescript",
+          "source": "import { input } from '@cossackframework/core/input';\nimport { createNotificationRuntime, defineNotificationTemplate, notificationHtml, MemoryNotificationStore } from '@cossackframework/core/notifications';\nlet enabled = true; const pending: string[] = [];\nconst runtime = createNotificationRuntime({ namespace: 'guide', store: new MemoryNotificationStore(),\n  preferences: () => enabled, dispatch: async id => { pending.push(id); },\n  templates: { welcome: defineNotificationTemplate({ schema: input.object({ name: input.string({ required: true }) }),\n    render(data) { return { subject: 'Welcome', text: data.name, html: notificationHtml`<p>${data.name}</p>` }; },\n  }) },\n});\nconst owner = { tenantId: 'tenant', userId: 'owner' };\nconst preview = await runtime.preview('welcome', { name: '<script>' });\nif (preview.html !== '<p>&lt;script&gt;</p>' || pending.length !== 0) throw Error('Preview must escape without dispatch');\nconst first = await runtime.enqueue('welcome', { name: 'Ada' }, { channel: 'in-app', recipient: owner, idempotencyKey: 'welcome-1' });\nawait runtime.deliver(first.id!);\nif ((await runtime.list({ tenantId: 'other', userId: 'owner' })).length !== 0) throw Error('Tenant inboxes must be isolated');\nif (await runtime.setRead(first.id!, { tenantId: 'tenant', userId: 'another' }, true)) throw Error('Another user cannot mark read');\nif (!await runtime.setRead(first.id!, owner, true) || !(await runtime.list(owner))[0]?.read) throw Error('Owner read state must persist');\nconst second = await runtime.enqueue('welcome', { name: 'Grace' }, { channel: 'in-app', recipient: owner, idempotencyKey: 'welcome-2' });\nenabled = false;\nif ((await runtime.deliver(second.id!)).code !== 'NOTIFICATION_PREFERENCE_DISABLED') throw Error('Delivery must recheck preferences');\nif ((await runtime.list(owner)).length !== 1) throw Error('Suppressed delivery must not enter inbox');\n"
+        }
+      ]
+    },
+    {
+      "id": "reactive-state-and-stores",
+      "title": "Choose replacement state, deep stores and derived values",
+      "summary": "Keep shared state, browser drafts and subscribed local stores under explicit ownership.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Use @State for reactive replacement and @Store for nested plain-object/array mutations. @ClientState and @ClientStore stay in the browser. @Computed marks a getter: it derives current values rather than adding another synchronized state field. Non-plain objects such as Date and Map require replacement to notify. Keep store trees free of aliases when task tracking depends on paths. State supplied by a stateless client is not authoritative permissions or balances.\n\ncreateStore is a portable process-local subscription helper. subscribe immediately receives the current value; Object.is-equal replacements do not notify. connectStore writes a component field and returns an unsubscribe function. Dispose subscriptions in the owner's cleanup. Do not keep request/user state in a module singleton on Workers. provide/consume context is a one-time read, not a reactive subscription.\n\nThe example executes store subscription and cleanup. Its typed component declares shallow/deep/client/derived fields but is not mounted: plain Node does not prove component rerenders, hydration or server/client stripping. Use the application lifecycle examples and generated browser acceptance for those behaviors.",
+      "examples": [
+        {
+          "id": "reactive-state-and-stores",
+          "language": "typescript",
+          "source": "import { Cossack, State, Store, ClientState, ClientStore, Computed, createStore, connectStore } from '@cossackframework/core';\nclass Basket extends Cossack {\n @State() count = 1;\n @Store() basket = { rows: [{ quantity: 2 }] };\n @ClientState() expanded = false;\n @ClientStore() draft = { note: '' };\n @Computed() get total(): number { return this.count + this.basket.rows.reduce((sum,row)=>sum+row.quantity,0); }\n}\nconst source = createStore<number>(1);\nconst target = { count: 0 };\nconst seen: number[] = [];\nconst stop = source.subscribe(value=>seen.push(value));\nconst disconnect = connectStore(source,target,'count');\nsource.update(value=>value+1);source.set(2);\nif(target.count!==2 || seen.join(',')!=='1,2')throw new Error('Subscriptions or equality suppression failed');\nstop();disconnect();source.set(3);\nif(target.count!==2 || seen.length!==2)throw new Error('Subscription cleanup failed');\nexport type BasketState = Pick<Basket,'count'|'basket'|'total'>;\n"
+        }
+      ]
+    },
+    {
+      "id": "scoped-services-and-injection",
+      "title": "Give services a request or layout owner",
+      "summary": "Resolve scoped services without retaining one user across request boundaries.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "@Service registers a DI service; @Inject supports explicit property injection and constructor injection uses emitted metadata. DIContainer singleton means per container, not a distributed singleton. Its transient option creates a fresh instance. Legacy getContainer is environment-global: never put user/session state there.\n\nCossackService exposes protected c/user/env from the active scoped SSR/RPC context; those facilities are unavailable outside that request. Do not retain them in global services.\n\nDeclare services on @Page({ services: [...] }) for the framework-owned layout lifetime. ServiceScope resolves the nearest declaration; a nested declaration shadows ancestors. Undeclared services fall back to legacy DI. A scope is request/navigation-local, not durable. The framework bootstraps/hydrates scoped service state and retires it with its owner; @State/@Store public fields are the serialization contract, not authorization. Await disposeAsync to settle cleanup. Do not retain Hono requests after their owner ends.\n\nThis example proves independent scope instances, inheritance, shadowing and disposal with public APIs. It does not prove transformed service RPC, browser navigation or compiled injection. Those require the framework module graph and generated application acceptance.",
+      "examples": [
+        {
+          "id": "scoped-services-and-injection",
+          "language": "typescript",
+          "source": "import { Service, ServiceScope, DIContainer } from '@cossackframework/core';\n@Service() class DraftService { note = ''; }\nconst first = new ServiceScope(undefined,[DraftService],{ownerRouteId:'first'});\nconst second = new ServiceScope(undefined,[DraftService],{ownerRouteId:'second'});\nfirst.resolve(DraftService).note='private-first';\nif(second.resolve(DraftService).note!=='')throw new Error('Scopes leaked state');\nconst child = new ServiceScope(first);\nif(child.resolve(DraftService)!==first.resolve(DraftService))throw new Error('Parent declaration was not inherited');\nconst shadow = new ServiceScope(first,[DraftService]);\nif(shadow.resolve(DraftService)===first.resolve(DraftService))throw new Error('Nested declaration did not shadow');\nconst container = new DIContainer();\nif(container.resolve(DraftService)!==container.resolve(DraftService))throw new Error('Container singleton failed');\ncontainer.clear();\nawait first.disposeAsync();await second.disposeAsync();\n"
+        }
+      ]
+    },
+    {
+      "id": "optimistic-edits-and-uncertain-rpc",
+      "title": "Reconcile optimistic edits with confirmed server state",
+      "summary": "Apply typed synchronous operations and treat uncertain transport outcomes separately from rejection.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "@Optimistic('actionName') marks the synchronous browser handler associated with an inbound @Server action. Use optimistic(this).increment, append or remove inside that handler. Typed operations record edits for rebasing; do not replay arbitrary application handlers after a reply. Keep authoritative writes in the server action and make retryable mutations idempotent. Never await or perform I/O inside the optimistic handler.\n\nThe client reconciles authoritative replies and overlapping edits. A rejected call and an uncertain result are different: isUncertainRpcError identifies timeout, cancellation, disconnect and response failures that cannot establish whether the server write finished. Refresh authoritative state or inspect an application-owned receipt before resubmitting. Cancellation is not rollback. A public State field cannot establish authorization.\n\nThe typed definition demonstrates the compiled component contract. The executed assertions check uncertainty classification only; Node execution does not run the transformed proxy or prove optimistic UI behavior. Use a generated application for overlapping requests and rollback/rebase acceptance.",
+      "examples": [
+        {
+          "id": "optimistic-edits-and-uncertain-rpc",
+          "language": "typescript",
+          "source": "import { Cossack, State, Server, Optimistic, optimistic, RpcError, isUncertainRpcError } from '@cossackframework/core';\nclass Counter extends Cossack {\n @State() count=0;\n @Server() async add(amount:number):Promise<number>{this.count+=amount;return this.count;}\n @Optimistic('add') preview(amount:number){optimistic<Counter>(this).increment('count',amount);}\n}\nif(!isUncertainRpcError(new RpcError('COSSACK_RPC_TIMEOUT','Deadline expired')))throw new Error('Timeout must remain uncertain');\nif(isUncertainRpcError(new RpcError('COSSACK_VALIDATION_FAILED','Validation failed',{status:400})))throw new Error('Validation rejection is known');\nexport type CounterResult=Awaited<ReturnType<Counter['add']>>;\n"
+        }
+      ]
+    },
+    {
+      "id": "rpc-streams-and-transport-policy",
+      "title": "Consume one RPC result and its streamed yields",
+      "summary": "Keep result/yield types, cancellation and runtime capabilities explicit.",
+      "imports": [
+        "@cossackframework/core",
+        "@cossackframework/core/runtime-capabilities"
+      ],
+      "markdown": "rpc$ accepts a browser server-method proxy call (or its factory) as RpcCall: await it for the terminal result and use for await for intermediate yields. Awaiting and iterating share one invocation. Duplicate consumers do not create independent executions; cleanup, timeout and cancellation belong to that shared call. Use the declared Server timeout policy and pass cancellation to I/O; ignored remote work may still finish. Read stable RpcError codes rather than parsing exception text. Native Response actions use the explicit response contract and byte bounds.\n\n@Page transport selects HTTP, SSE or Durable Object/WebSocket integration. HTTP is stateless; SSE carries server-to-client updates with HTTP actions. Node realtime state is process-local; it is not Cloudflare durable state. StateProvider/PageStateProvider and CossackDurableObject are infrastructure integration points requiring real bindings. Never infer durability from a transport name. Socket peers and delivered operations must be authorized against trusted server context, including after connection.\n\nThe example defines typed consumption for a transformed browser proxy and executes rejection of an ordinary local generator plus capability reporting. rpc$ is not a general generator wrapper. It does not open a socket, prove a server dispatch, or simulate native Durable Object persistence.",
+      "examples": [
+        {
+          "id": "rpc-streams-and-transport-policy",
+          "language": "typescript",
+          "source": "import { rpc$,RpcError } from '@cossackframework/core';\nimport { evaluateTransportCapability, describeRuntimeCapabilities } from '@cossackframework/core/runtime-capabilities';\nexport async function consumeProxy(action:()=>AsyncGenerator<number,number,void>):Promise<number>{\n const call=rpc$(action);const values:number[]=[];\n for await(const value of call)values.push(value);\n return await call;\n}\nlet code='';try{rpc$((async function*(){yield 1;return 2;})());}catch(error){if(error instanceof RpcError)code=error.code;else throw error;}\nif(code!=='COSSACK_RPC_CALL_REQUIRED')throw new Error('A plain generator was misrepresented as a proxy');\nif(evaluateTransportCapability('cloudflare','durable-object',{}).status!=='missing-binding')throw new Error('Native binding must be explicit');\nif(describeRuntimeCapabilities('node',{}).durableState.status==='available')throw new Error('Process realtime is not durable');\n"
+        }
+      ]
+    },
+    {
+      "id": "accessible-form-controller",
+      "title": "Bind typed form state to native controls",
+      "summary": "Share validation schemas while keeping errors, field IDs and submission ownership explicit.",
+      "imports": [
+        "@cossackframework/core",
+        "@cossackframework/core/input"
+      ],
+      "markdown": "createFormController owns raw typed values, touched/dirty/errors, parsed validation and single-flight submit. Async validation/results cannot overwrite newer edits; inspect submitted/invalid/stale/busy outcomes. Field paths include bounded numeric array paths. The server must parse and authorize again; browser validation is only UX. RpcError/ActionValidationError field errors map to fields without message parsing.\n\ncreateFormBindings(controller,{id}) supplies field input/label/error/ref and form event attributes. Spread them in the renderer template. Preserve label for/id, aria-describedby/error IDs and focusInvalid; register refs so invalid submission can focus controls. Subscribe to controller changes to rerender, and dispose bindings/subscriptions with the component. Checkbox/file/files/select-multiple require the matching kind. File values travel through framework multipart RPC; never serialize them into JSON yourself. Reset clears owned file controls.\n\nThe portable example proves validation, bindings IDs, successful parsed submission and reset. DOM keyboard focus, native File inputs and transformed multipart actions need actual browser/application acceptance, not this Node script.",
+      "examples": [
+        {
+          "id": "accessible-form-controller",
+          "language": "typescript",
+          "source": "import { createFormController, createFormBindings } from '@cossackframework/core';\nimport { input } from '@cossackframework/core/input';\nconst schema=input.object({name:input.string({minLength:1})});\nconst form=createFormController(schema,{name:''});\nconst bindings=createFormBindings(form,{id:'profile'});\nconst field=bindings.field('name');\nif(field.label.for!==field.input.id || field.error.id!==field.input.id+'-error')throw new Error('Accessible associations failed');\nlet saves=0;\nconst invalid=await form.submit(async()=>{saves++;return 1;});\nif(invalid.status!=='invalid'||saves!==0)throw new Error('Invalid input was submitted');\nform.setFieldValue('name','Ada');\nconst submitted=await form.submit(async data=>{saves++;return data.name;});\nif(submitted.status!=='submitted'||submitted.result!=='Ada'||Number(saves)!==1)throw new Error('Parsed submission failed');\nform.reset();bindings.dispose();\nif(form.getField('name').value!=='')throw new Error('Reset did not restore initial values');\n"
+        }
+      ]
+    },
+    {
+      "id": "authorized-object-storage",
+      "title": "Authorize bounded object transfers",
+      "summary": "Stream object data through an explicit provider instead of exposing private bindings.",
+      "imports": [
+        "@cossackframework/core/storage"
+      ],
+      "markdown": "Storage takes an explicit StorageProvider and authorize callback. Authorize every get/head/put/delete using trusted server context and a scoped object key. The facade rejects traversal keys, enforces declared upload size/content types, preserves stream backpressure, supports AbortSignal and byte progress, and redacts provider failures. Cloudflare R2 and Node local filesystem adapters live outside Core. Core does not silently supply durable storage.\n\nSigned read/write URLs require a server-only secret and an application-owned HTTPS endpoint served by handleSignedRequest. They are expiring bearer capabilities, not a user session; recheck authorization at redemption. An upload ticket declares size and content type. Never send a signing secret, provider credentials or privileged binding to the browser. See docs/storage.md and provider guides for native setup.\n\nThe example proves unauthorized access never reaches a provider and validates keys. Its explicit in-memory test provider is not durable storage or native upload acceptance.",
+      "examples": [
+        {
+          "id": "authorized-object-storage",
+          "language": "typescript",
+          "source": "import { Storage, StorageError, validateStorageKey, type StorageProvider } from '@cossackframework/core/storage';\nlet reads=0;\nconst provider:StorageProvider={name:'example-only',async put(){throw new Error('No upload configured');},async get(){reads++;return null;},async head(){return null;},async delete(){}};\nconst storage=new Storage<{userId:string}>({provider,authorize:({context,key})=>key.startsWith(context.userId+'/'),maxBytes:1024});\nlet code='';try{await storage.get({userId:'alice'},'bob/private.txt');}catch(error){if(error instanceof StorageError)code=error.code;else throw error;}\nif(code!=='COSSACK_STORAGE_FORBIDDEN'||reads!==0)throw new Error('Unauthorized provider access');\nif(await storage.get({userId:'alice'},'alice/readme.txt')!==null||Number(reads)!==1)throw new Error('Authorized read was not delegated');\nlet rejected=false;try{validateStorageKey('../secret');}catch(error){rejected=error instanceof StorageError;}\nif(!rejected)throw new Error('Traversal key was accepted');\n"
+        }
+      ]
+    },
+    {
+      "id": "image-rendering-diagnostics",
+      "title": "Render images with explicit transform limits",
+      "summary": "Supply accessible dimensions and distinguish original assets from Cloudflare transforms.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Image renders an img template with alt, dimensions and loading. Configure VITE_COSSACK_IMAGE_PROVIDER as none or cloudflare. Cloudflare Image Resizing URL generation requires a configured zone in production; local development renders the original asset. imageDiagnostics reports invalid source/dimensions/quality/format and unavailable transforms without claiming account readiness. Transform output formats are webp/avif, not JSON metadata. Use width/height to reserve layout space and descriptive alt for meaningful images (empty alt for decoration).\n\nThe example checks pure static diagnostics and creates the template. It does not fetch an image or prove a remote resizing zone. Offline variants and native provider setup belong to CLI/image and framework guides.",
+      "examples": [
+        {
+          "id": "image-rendering-diagnostics",
+          "language": "typescript",
+          "source": "import { Image, imageDiagnostics } from '@cossackframework/core';\nconst props={src:'/assets/avatar.png',width:64,height:64,alt:'Profile portrait',quality:80};\nconst diagnostics=imageDiagnostics(props,{provider:'none'});\nif(!diagnostics.some(item=>item.code==='COSSACK_IMAGE_TRANSFORM_UNAVAILABLE'))throw new Error('Missing transform warning');\nif(!imageDiagnostics({...props,width:0}).some(item=>item.severity==='error'))throw new Error('Invalid dimension accepted');\nconst template=Image({src:props.src,width:64,height:64,alt:props.alt});\nif(!template)throw new Error('Image did not produce a template');\n"
+        }
+      ]
+    },
+    {
+      "id": "local-workflow-lifecycle",
+      "title": "Exercise typed workflows with a process-only adapter",
+      "summary": "Validate inputs/events and inspect redacted state without claiming durable local execution.",
+      "imports": [
+        "@cossackframework/core/workflows",
+        "@cossackframework/core/input"
+      ],
+      "markdown": "defineWorkflow declares authored name/version, input schema, event schemas and run callback. createWorkflowClient derives identity from namespace/name/version/trusted tenant/actor/key. Invoke, inspect, sendEvent and administrative controls require server authorization; an identity is not proof of ownership. Step do/sleep/waitForEvent belongs to the provider. Keep side effects idempotent because provider retries are not exactly-once transactions.\n\ncreateLocalWorkflowProvider is explicit process-only development/test state. Restarting the process or making a new provider loses it. It honors retry delays/backoff and bounded step/event deadlines; termination cancels owned timers but cannot stop callback I/O that ignores cancellation. Native Cloudflare factory and pure provider client are separate framework subpaths to avoid cloudflare:workers in Node SSG graphs. See docs/workflows.md.\n\nSVC-04 native acceptance is complete at its recorded composite scope. Native persisted local lifecycle acceptance proves retry effects, pause, process restart, resume, validated events, completion, failure redaction and cleanup. Actual hosted Cloudflare acceptance separately proves literal Waiting before and after pause/resume, with exact retry/event effects and cleanup. The pinned local Miniflare provider does not prove literal Waiting; release acceptance uses the approved hosted/local split. The process-only example below proves only local typed event delivery, completion and redacted process durability. Do not present this example as native restart or hosted Waiting evidence.",
+      "examples": [
+        {
+          "id": "local-workflow-lifecycle",
+          "language": "typescript",
+          "source": "import { defineWorkflow,createWorkflowClient,createLocalWorkflowProvider } from '@cossackframework/core/workflows';\nimport { input } from '@cossackframework/core/input';\nconst events={approved:input.object({approved:input.boolean()})};\nconst definition=defineWorkflow({name:'local-approval',version:1,schema:input.object({reference:input.string()}),events,async run(_input,{step}){const event=await step.waitForEvent('approval','approved',{timeout:1000});return event.approved;}});\nconst provider=createLocalWorkflowProvider(definition,{env:undefined});\nconst client=createWorkflowClient(definition,provider,{namespace:'guide'});\nconst identity=await client.invoke({reference:'one'},{key:'one',scope:{actorId:'trusted-example'}});\nawait client.sendEvent(identity,'approved',{approved:true});\nlet status=await client.inspect(identity);\nfor(let attempt=0;attempt<50&&status.status!=='complete';attempt++){await new Promise<void>(resolve=>setTimeout(resolve,1));status=await client.inspect(identity);}\nif(status.status!=='complete'||status.durability!=='process'||'output'in status)throw new Error('Local completion/redaction failed');\n"
+        }
+      ]
+    },
+    {
+      "id": "fixed-server-failure-diagnostics",
+      "title": "Log bounded server failure metadata",
+      "summary": "Keep request correlation and fixed failure codes without exposing state or authored exceptions.",
+      "imports": [
+        "@cossackframework/core/server-diagnostics"
+      ],
+      "markdown": "logRuntimeFailure emits one cossack.runtime.failure record with an allowlisted stage/code, optional UUID requestId, bounded authored route template/action/component labels, runtime enum and duration. Pass authored identifiers, not concrete URLs, query strings, secrets, state values, exceptions or stacks. Unknown IDs/runtimes are replaced. Context data descriptors are read without invoking getters. The logger is server-only operational evidence; it is not an error-to-public-message adapter and does not authorize an action.\n\nUnexpected RPC failures remain generic. Throw ClientVisibleError only for deliberately public messages; ActionValidationError carries intended field errors. Do not wrap internal exception text in a public error. Development traces and fixed server diagnostics serve different scopes. The example captures one record and checks accessor avoidance; it restores console ownership even if an assertion fails.",
+      "examples": [
+        {
+          "id": "fixed-server-failure-diagnostics",
+          "language": "typescript",
+          "source": "import { logRuntimeFailure,type RuntimeFailureContext } from '@cossackframework/core/server-diagnostics';\nconst records:unknown[]=[];let getterCalls=0;\nconst context:RuntimeFailureContext={route:'/articles/[slug]',action:'save',component:'Article',runtime:'node'};\nObject.defineProperty(context,'requestId',{get(){getterCalls++;throw new Error('PRIVATE_SENTINEL');}});\nconst original=console.error;console.error=(value:unknown)=>{records.push(value);};\ntry{logRuntimeFailure(context,'action','COSSACK_RPC_INTERNAL_ERROR');}finally{console.error=original;}\nconst record=records[0] as {event?:unknown;requestId?:unknown;code?:unknown};\nif(getterCalls!==0||record.event!=='cossack.runtime.failure'||record.requestId!=='unavailable'||record.code!=='COSSACK_RPC_INTERNAL_ERROR'||JSON.stringify(record).includes('PRIVATE_SENTINEL'))throw new Error('Failure metadata leaked or lost its contract');\n"
+        }
+      ]
+    },
+    {
+      "id": "runtime-and-counter-guarantees",
+      "title": "Check runtime and rate-limit guarantees before I/O",
+      "summary": "Distinguish process counters, eventual KV storage and atomic shared providers.",
+      "imports": [
+        "@cossackframework/core",
+        "@cossackframework/core/storage-capabilities",
+        "@cossackframework/core/runtime-capabilities"
+      ],
+      "markdown": "checkCapabilityRequirements/evaluateTransportCapability describe declared runtime support and required bindings, not remote availability. Capability inspection never provisions infrastructure. storageCapabilities/assertStorageRequirements describe locality, persistence, consistency, expiry and operations for cache/counter providers. Unknown custom guarantees cannot satisfy explicit requirements.\n\nRateLimit wraps inbound actions or Hono handlers. Choose trusted user/tenant identity buckets, positive millisecond windows and nonnegative max; zero denies all. InMemoryRateLimitStore is process-only, KV increments are non-atomic/eventually consistent, Durable Object and configured Redis integrations provide their declared atomic counter contract. Declare requires to fail before unsupported backend I/O. Deadlines cover response body completion; failure is not permission to bypass the limiter. Configure the store before request use. Inspect capability metadata without exposing Redis credentials or namespace values. Server credentials remain server-only. Do not use reset hooks in application code.\n\nThis example checks memory counter increments and rejects a false shared guarantee; no distributed counter or live backend is involved.",
+      "examples": [
+        {
+          "id": "runtime-and-counter-guarantees",
+          "language": "typescript",
+          "source": "import { InMemoryRateLimitStore } from '@cossackframework/core';\nimport { storageCapabilities,assertStorageRequirements,StorageCapabilityError } from '@cossackframework/core/storage-capabilities';\nimport { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';\nif(checkCapabilityRequirements('cloudflare',[{feature:'guide',source:{file:'guide.ts'},requires:{cloudflareBindings:['OBJECTS']}}],[]).length===0)throw new Error('Missing binding was not diagnosed');\nconst store=new InMemoryRateLimitStore();\nconst first=await store.hit('trusted-user:guide',60000);const second=await store.hit('trusted-user:guide',60000);\nif(first.count!==1||second.count!==2)throw new Error('Counter did not increment');\nlet rejected=false;try{assertStorageRequirements(storageCapabilities('rate-limit','memory'),{shared:true});}catch(error){rejected=error instanceof StorageCapabilityError;}\nif(!rejected)throw new Error('Process memory was advertised as shared');\n"
+        }
+      ]
+    },
+    {
+      "id": "template-head-and-browser-ownership",
+      "title": "Keep template, head and browser handles under their owner",
+      "summary": "Use escaped templates and explicit refs rather than raw HTML or retained DOM.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "html/svg escape ordinary interpolated values; nothing omits output. css provides static styles; unsafeCSS is an explicit trust boundary, never a sanitizer for user strings. Use renderer directives and UI components for DOM binding. head() returns HeadValue; composeHead/buildHeadContext/mergeHead are composition helpers, applyHeadTags is browser-only. Script/style children are trusted authored code, not user content.\n\ncreateRef/@Ref hold owned element references. Use @On/@OnDocument/@OnWindow for managed handlers, Debounce/Throttle for event scheduling and focusTrap/focusFirst/focusLast/focusNext/getTabbable for keyboard accessibility. Browser event/focus APIs need DOM and owner cleanup; they do not run in server render. Do not retain refs after component disposal or install global listeners without cleanup. @PreventNavigation guards client navigation, not authorization.\n\nThe portable example checks ref isolation and head composition. Actual events, focus trapping, DOM disposal and hydration require the generated browser lifecycle and renderer tests; creating a template is not proof of DOM commit.",
+      "examples": [
+        {
+          "id": "template-head-and-browser-ownership",
+          "language": "typescript",
+          "source": "import { html,css,nothing,createRef,buildHeadContext,mergeHead,type HeadValue } from '@cossackframework/core';\nconst first=createRef<HTMLInputElement>();const second=createRef<HTMLInputElement>();\nif(first===second||first.value!==undefined)throw new Error('Refs must start isolated');\nconst value:HeadValue={title:'Guide',links:[{tag:'link',attributes:{rel:'canonical',href:'https://example.test/guide'}}]};\nconst tags=mergeHead(buildHeadContext([]),value);\nif(!tags.some(tag=>tag.tag==='title'&&tag.children==='Guide')||!tags.some(tag=>tag.tag==='link'))throw new Error('Head composition failed');\nconst template=html`<p>${'<script>untrusted</script>'}${nothing}</p>`;\nconst style=css`p { color: inherit; }`;\nif(!template||!style)throw new Error('Template construction failed');\n"
+        }
+      ]
+    },
+    {
+      "id": "request-context-and-signed-values",
+      "title": "Use server request helpers and signed data safely",
+      "summary": "Keep cookie/flash ownership in the active request and verify tamper resistance without confusing it with authorization.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "cookie(), flash(), flashInput(), flashed()/old() resolve the active framework request context; they are not browser or standalone-script storage. Set cookies and response headers before the response commits. Configure secure/httpOnly/sameSite according to your application, and never retain a request past disposal. createCossackContext adapts an explicit Hono context; defineServerMiddleware registers server-only request behavior. The framework owns request-context getter wiring; reset hooks and raw header-state keys are integration internals.\n\nsignValue/verifyValue use Web Crypto HMAC and base64url JSON, not encryption. Use a server secret, bounded intended data and explicit expiry/replay policy. A valid signature proves only integrity under that key, not current user authorization. generateToken supplies random tokens. ClientVisibleError messages are intentionally public; unexpected exception text must remain private. Safe old-input allowlists are described in the existing safe-old-input guide.\n\nThe example proves signed JSON round-trip and tamper rejection using an example-only secret. It does not create a cookie session or prove request isolation; those require native request acceptance.",
+      "examples": [
+        {
+          "id": "request-context-and-signed-values",
+          "language": "typescript",
+          "source": "import { signValue,verifyValue,generateToken,constantTimeEqual } from '@cossackframework/core';\nconst secret='example-only-secret-not-a-deployment-key';\nconst token=await signValue({purpose:'guide',expires:1},secret);\nconst parsed=await verifyValue<{purpose:string;expires:number}>(token,secret);\nif(parsed?.purpose!=='guide'||parsed.expires!==1)throw new Error('Signed data failed round-trip');\nif(await verifyValue(token+'x',secret)!==null)throw new Error('Tampering was accepted');\nif(!generateToken(16)||!constantTimeEqual('same','same')||constantTimeEqual('same','other'))throw new Error('Crypto helpers failed');\n"
+        }
+      ]
+    },
+    {
+      "id": "navigation-result-ownership",
+      "title": "Await navigation outcomes before acting on a destination",
+      "summary": "Use typed completion and guards without treating a superseded request as committed.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "Cossack.navigate returns NavigateResult with completed/superseded/canceled/redirected/failed outcome. Await it before work that needs the new page. A started fetch or prepared component is not a DOM commit. history push/replace, scroll auto/top/preserve and view-transition types belong to the browser navigation owner. @PreventNavigation can block leaving unsaved drafts; cancellation must retire provisional resources and services. Router cache/prefetch configuration belongs to the framework, while typed route construction and URL query state have separate guides.\n\nUse redirect/back in server handlers for an HTTP response or in client handlers for navigation, with a safe application-owned target and fallback. updateUrlState combines typed query codecs with the active navigation owner. startViewTransition has browser support limits; it is not a durable transaction.\n\nDo not call navigation APIs on the server or copy the framework's enableClientNavigation bootstrap into page code. History-location helpers and component transport dispatchers exported for integration are not application routing entrypoints. The example declares a typed browser command and checks failure classification; it does not call it in Node. Actual navigation/scroll/service retirement is covered by generated browser application acceptance, not portable execution.",
+      "examples": [
+        {
+          "id": "navigation-result-ownership",
+          "language": "typescript",
+          "source": "import { Cossack,type NavigateResult,type NavigateOptions } from '@cossackframework/core';\nexport async function openDetails(page:Cossack):Promise<NavigateResult>{const options:NavigateOptions={history:'replace',scroll:'top'};return page.navigate('/details',options);}\nconst outcome:NavigateResult={outcome:'superseded',url:'/details'};\nconst committed=(result:NavigateResult)=>result.outcome==='completed'||result.outcome==='redirected';\nif(committed(outcome))throw new Error('A superseded navigation is not committed');\n"
+        }
+      ]
+    },
+    {
+      "id": "reactive-field-validation",
+      "title": "Validate reactive fields and nested rule trees",
+      "summary": "Keep field UX rules separate from inbound server parsing and authorization.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "@Validate attaches reactive field rules; trigger input/blur/submit deliberately. storeRules<T> checks a nested rule tree against your model; arrays and built-ins are whole-field rules rather than recursively guessed records. Cossack validateProperty/validateAll/getError/hasError/clearErrors expose UI error state. Custom async rules must account for stale edits and owner cleanup. validateValue/validateValueAsync/validateObject also work without a component.\n\nCoercion validates a converted value; reactive field validation does not write that conversion back into state. validateObject returns coerced data. Required rules run before coercion, so empty strings do not become zero. Use InputSchema and @Server({input}) for typed untrusted payload boundaries; reactive Validate rules alone do not enforce server authorization or RPC input parsing. Internal metadata/rule registration helpers are not a replacement for decorators.\n\nThe portable example proves required rejection and explicit number coercion. Browser input triggers and error rendering require mounted components and generated browser acceptance.",
+      "examples": [
+        {
+          "id": "reactive-field-validation",
+          "language": "typescript",
+          "source": "import { storeRules,validateValue,type ValidationRule } from '@cossackframework/core';\ninterface Address {zip:string;}\nconst rules=storeRules<Address>({zip:{required:true,minLength:3}});\nif(!rules)throw new Error('Typed rule tree was not built');\nconst quantityRule:ValidationRule={required:true,coerce:'number',min:1};\nconst empty=validateValue('',quantityRule);\nif(empty.valid)throw new Error('Required empty quantity was accepted');\nconst parsed=validateValue('2',quantityRule);\nif(!parsed.valid||parsed.value!==2)throw new Error('Number coercion failed');\n"
+        }
+      ]
+    },
+    {
+      "id": "server-action-access-policy",
+      "title": "Require trusted access policy at every server action",
+      "summary": "Treat validated inputs and transport state as untrusted until ownership checks pass.",
+      "imports": [
+        "@cossackframework/core"
+      ],
+      "markdown": "@Server({input,authorize}) runs the declared authorizer on parsed input before invoking an inbound action. Return true or false, or throw a deliberate authorization denial. Read trusted authenticated context and load record ownership server-side; never accept a submitted user ID, client State or socket attachment as proof of access. Authorizers receive AbortSignal and must pass it to cancellable I/O. A disconnected or cancelled caller does not prove a write was rolled back.\n\n@Shared marks intentional server/client logic, not an inbound remote endpoint. createTypedDecorators supports authored channel/provider contracts when a component has multiple transports. Client handlers and optimistic previews cannot enforce security. Realtime peers must be rechecked for inbound actions and delivered operations; revocation must stop later access even when a socket remains open. Socket request snapshots are bounded context evidence, not retained Request objects or client authority.\n\ngetAuthorizationFailure yields fixed unauthenticated/forbidden diagnostics, omitting authored exception messages and values. Unexpected exceptions stay private; ClientVisibleError is only for deliberately public wording and ActionValidationError for intended field errors. The example proves fixed denial redaction and accessor avoidance; real dispatch-policy execution belongs to generated native transport acceptance.",
+      "examples": [
+        {
+          "id": "server-action-access-policy",
+          "language": "typescript",
+          "source": "import { getAuthorizationFailure,ClientVisibleError,ActionValidationError,isActionValidationError } from '@cossackframework/core';\nlet reads=0;\nconst denied={authorizationCode:'COSSACK_AUTH_FORBIDDEN',message:'PRIVATE_PROVIDER_VALUE'};\nconst denial=getAuthorizationFailure(denied);\nif(denial?.status!==403||denial.message!=='Forbidden'||JSON.stringify(denial).includes('PRIVATE_PROVIDER_VALUE'))throw new Error('Authorization denial leaked');\nconst hostile={};Object.defineProperty(hostile,'authorizationCode',{get(){reads++;throw new Error('PRIVATE_GETTER');}});\nif(getAuthorizationFailure(hostile)!==undefined||reads!==0)throw new Error('Denial getter was invoked');\nconst expected=new ActionValidationError({email:'Use a valid email'});\nif(!(expected instanceof ClientVisibleError)||!isActionValidationError(expected))throw new Error('Expected field error lost its public contract');\n"
+        }
+      ]
+    }
+  ]
+}

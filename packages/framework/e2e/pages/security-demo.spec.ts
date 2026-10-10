@@ -1,4 +1,5 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Security Demo (transitive preservation regression)', () => {
   let strippingErrors: string[] = [];
@@ -12,7 +13,7 @@ test.describe('Security Demo (transitive preservation regression)', () => {
     page.on('pageerror', (err) => strippingErrors.push(String(err)));
 
     await page.goto('/security-demo');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
   });
 
   test.afterEach(() => {

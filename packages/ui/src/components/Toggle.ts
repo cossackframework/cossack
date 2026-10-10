@@ -1,17 +1,14 @@
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, PreventDefaultResult, preventDefault } from "@cossackframework/renderer";
 import { Cossack, Component, ClientState } from "@cossackframework/core";
 
-export interface ToggleProps {
-    /** Pressed state. */
+import type { ButtonAttributes, ControlEvent } from '../native-attributes';
+
+export type ToggleProps = Omit<ButtonAttributes, 'type' | 'role' | 'aria-pressed' | 'popovertarget' | 'popovertargetaction'> & {
     pressed?: boolean;
-    /** Default pressed for uncontrolled mode. */
     defaultPressed?: boolean;
-    /** Size. Defaults to "default". */
-    size?: "default" | "sm" | "lg" | "icon";
-    /** Callback when pressed state changes. */
-    onPressedChange?: (pressed: boolean) => void;
-    [key: string]: any;
-}
+    size?: 'default' | 'sm' | 'lg' | 'icon';
+    onPressedChange?: (pressed: boolean) => unknown;
+};
 
 const SIZES: Record<string, string> = {
     sm: "h-8 px-2 text-sm",
@@ -30,22 +27,31 @@ const SIZES: Record<string, string> = {
 export class Toggle extends Cossack {
     declare props: ToggleProps;
 
-    @ClientState() internalPressed = false;
-    @ClientState() userInteracted = false;
-
+    @ClientState() private localPressed: boolean | undefined;
+    private initialPressed?: boolean;
+    private currentPressed() {
+        this.initialPressed ??= !!this.props.defaultPressed;
+        return this.props.pressed ?? this.localPressed ?? this.initialPressed;
+    }
     render() {
-        const { size = "default", ...rest } = this.props;
-        let pressed: boolean;
-        if (this.props.pressed !== undefined) pressed = !!this.props.pressed;
-        else if (this.userInteracted) pressed = this.internalPressed;
-        else { pressed = !!this.props.defaultPressed; this.internalPressed = pressed; }
+        const { size = 'default', pressed: _pressed, defaultPressed: _default, onPressedChange: _change, '@click': supplied, ...rest } = this.props;
+        if (!Object.hasOwn(SIZES, size)) throw new Error('Toggle size must be default, sm, lg or icon.');
+        const pressed = this.currentPressed();
+        const click: EventListener = event => {
+            if (typeof supplied === 'function') supplied(event as ControlEvent<HTMLButtonElement, PointerEvent>);
+            else if (supplied instanceof PreventDefaultResult) supplied.handler.call(event.currentTarget, event);
+            if (event.defaultPrevented || (event.currentTarget as HTMLButtonElement).matches(':disabled')) return;
+            const next = !this.currentPressed();
+            if (this.props.pressed === undefined) this.localPressed = next;
+            this.props.onPressedChange?.(next);
+        };
 
         const classes = classMap({
             "cs-toggle": true,
             [SIZES[size]]: true,
             "inline-flex items-center justify-center gap-2 rounded-md cursor-pointer select-none": true,
             "transition-colors outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]": true,
-            "[&_svg]:size-4 [&_svg]:shrink-0": true,
+            "[&_svg]:size-4 [&_svg]:shrink-0 disabled:opacity-50 disabled:cursor-not-allowed": true,
             "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90": pressed,
             "bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground": !pressed,
         });
@@ -55,17 +61,7 @@ export class Toggle extends Cossack {
                 type="button"
                 class=${classes}
                 aria-pressed=${pressed ? "true" : "false"}
-                @click=${() => {
-                    const next = !pressed;
-                    if (this.props.pressed !== undefined) {
-                        this.props.onPressedChange?.(next);
-                    } else {
-                        this.userInteracted = true;
-                        this.internalPressed = next;
-                        this.props.onPressedChange?.(next);
-                    }
-                }}
-                ...=${rest}
+                ...=${{ ...rest, '@click': supplied instanceof PreventDefaultResult ? preventDefault(click, { novalidate: supplied.novalidate }) : click }}
             >${this.children}</button>
         `;
     }

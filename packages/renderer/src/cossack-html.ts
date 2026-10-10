@@ -1,3 +1,4 @@
+import { serializeFormValues } from './ssr-form-values';
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
@@ -53,11 +54,23 @@ export type SanitizerFactory = (
   type: 'property' | 'attribute',
 ) => ValueSanitizer;
 
-export const component = <T extends CossackElement>(
+// A supplied object gets its own overload so an optional union discriminator can
+// contextually type callbacks without the optional parameter's undefined branch.
+export function component<T extends CossackElement>(
   clazz: new () => T,
-  props?: T['props'] & Record<string, unknown>,
+  props: T['props'],
   children?: unknown,
-): TemplateResult<1> => {
+): TemplateResult<1>;
+export function component<T extends CossackElement>(
+  clazz: new () => T,
+  props?: T['props'],
+  children?: unknown,
+): TemplateResult<1>;
+export function component<T extends CossackElement>(
+  clazz: new () => T,
+  props?: T['props'],
+  children?: unknown,
+): TemplateResult<1> {
   const raw: ComponentResult = {
     _type: 'COMPONENT',
     clazz,
@@ -66,7 +79,7 @@ export const component = <T extends CossackElement>(
     parent: CossackElement.currentRenderingInstance,
   };
   return html`${raw}`;
-};
+}
 
 export const isTemplateResult = (value: unknown): value is TemplateResult => {
   return typeof value === 'object' && value !== null && (value as any)._cossack_template_result === true;
@@ -168,18 +181,19 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     instance.connectedCallback();
 
     pushCurrentInstance(instance);
-    (instance as any).willUpdate(new Map());
-    const template = instance._finalizeRenderOutput(instance.render());
-    let res = '';
-    if (template) {
-      if (isTemplateResult(template)) {
-        res = renderToString(template, opts);
-      } else {
-        res = renderToString(html`${template}`, opts);
-      }
+    try {
+      (instance as any).willUpdate(new Map());
+      // Framework components own render guards, loading output and development
+      // boundary wrappers. SSR must use the same template as their client render.
+      const wrappedRender = (instance as CossackElement & { _getWrappedTemplate?: () => unknown })._getWrappedTemplate;
+      const template = typeof wrappedRender === 'function'
+        ? wrappedRender.call(instance)
+        : instance._finalizeRenderOutput(instance.render());
+      if (!template) return '';
+      return renderToString(isTemplateResult(template) ? template : html`${template}`, opts);
+    } finally {
+      popCurrentInstance();
     }
-    popCurrentInstance();
-    return res;
   }
   if (isUnsafeHTML(value)) {
     return value.value;
@@ -235,7 +249,7 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       continue;
     }
     if (k.startsWith('.')) {
-      name = k.slice(1);
+      name = k === '.value' ? '.value' : k.slice(1);
       // Unwrap result-wrapper directives routed through the spread (e.g.
       // component(Input, { '.value': bind(this, 'name') }) or
       // { '.value': live(x) }) so SSR emits the underlying value instead of
@@ -249,10 +263,19 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       if (val === nothing) {
         continue;
       }
+      if (name === '.value') {
+        ctx.result += ` .value="${escapeHtml(String(val ?? ''))}"`;
+        continue;
+      }
       if (BOOLEAN_ATTRS.has(name)) {
         if (val) ctx.result += ` ${name}`;
         continue;
       }
+    }
+
+    if ((name === 'class' || name === 'className') && val instanceof IfDefinedResult) {
+      if (val.value === undefined) continue;
+      val = String(val.value);
     }
 
     // `class` / `className` merging: when a component template already has a
@@ -262,7 +285,7 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
     // keep only the first, dropping one set). The merge rewrites `ctx.result`
     // in place, so it composes correctly even when `class` is not the first
     // key in the spread (earlier keys have already been appended to result).
-    if ((name === 'class' || name === 'className') && typeof val === 'string' && val) {
+    if ((name === 'class' || name === 'className') && typeof val === 'string') {
       const merged = mergeClassIntoResult(ctx.result, val);
       if (merged !== null) {
         ctx.result = merged;
@@ -329,15 +352,13 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   const prefix = match[1];
   const existing = match[2];
   const suffix = match[3];
-  const extra = extraClass.trim();
+  const extra = escapeHtml(extraClass.trim());
   if (!extra) return result;
   const merged = existing ? `${existing} ${extra}` : extra;
-  // Don't escape the merged class value: it's developer-controlled (component
-  // props, not user input), and CSS class names can legitimately contain quotes
-  // (e.g. Tailwind arbitrary values like `before:content-['hello']`). Escaping
-  // would mangle those into `&#039;` and break the CSS selector. The existing
-  // class text from the template is already raw (unescaped) HTML.
-  const rewrittenTag = tagSlice.replace(match[0], `${prefix}class="${merged}"${suffix}`);
+  // Existing markup is already serialized. Escape only the incoming value;
+  // HTML parsing restores literal quotes/entities in the resulting class text.
+  // A replacement callback also preserves literal $& and other dollar patterns.
+  const rewrittenTag = tagSlice.replace(match[0], () => `${prefix}class="${merged}"${suffix}`);
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
@@ -598,13 +619,17 @@ class SSRScanner {
             } else {
               propVal = val;
             }
-            const attrName = name.slice(1);
+            const attrName = name === '.value' ? '.value' : name.slice(1);
             // For `bind()` on a known boolean attribute (.checked/.disabled),
             // emit a bare attribute when truthy — matching how a checkbox
             // serializes. Plain (non-bind) property bindings keep their
             // original behavior (value="...") to avoid changing existing usage.
             const isBooleanAttr = isBind && BOOLEAN_ATTRS.has(attrName);
-            if (isBooleanAttr) {
+            if (attrName === '.value') {
+              const current = propVal instanceof LiveResult ? propVal.value : propVal;
+              this.result = this.result.trimEnd();
+              this.result += ` .value="${escapeHtml(String(current ?? ''))}"`;
+            } else if (isBooleanAttr) {
               this.result = this.result.trimEnd();
               if (propVal) this.result += ` ${attrName}`;
             } else if (propVal !== null && propVal !== undefined && propVal !== false) {
@@ -679,7 +704,7 @@ class SSRScanner {
       }
       this.stringIdx++;
     }
-    return this.result;
+    return serializeFormValues(this.result);
   }
 }
 
@@ -690,9 +715,97 @@ export const renderToString = (result: TemplateResult, opts: { hydrate?: boolean
 
 // --- Client-Side Implementation ---
 
+/** Development-only context; source files must be project-relative. Values are never captured. */
+export interface HydrationDiagnosticMetadata {
+  component?: string;
+  source?: { file: string; line?: number; column?: number };
+  statePath?: string;
+  fields?: Record<number, string>;
+  /** Suppress expected differences at this boundary while still reconciling DOM. */
+  expectedClientOnly?: boolean;
+}
+const HYDRATION_DEV = !!(import.meta as any).env?.DEV;
+const hydrationMetadata = HYDRATION_DEV ? new WeakMap<object, HydrationDiagnosticMetadata & { boundary?: 'root' | 'component' }>() : undefined;
+const bindHydrationMetadata = (parts: Part[], metadata?: HydrationDiagnosticMetadata) => {
+  if (!HYDRATION_DEV || !metadata) return;
+  for (let i = 0; i < parts.length; i++) if (parts[i]) hydrationMetadata!.set(parts[i], {
+    ...metadata, fields: undefined, statePath: metadata.fields?.[i] ?? metadata.statePath,
+  });
+};
+
 interface Part {
   update(value: unknown): void;
 }
+
+type DraftTree = { identity: object; parts: (PartDraft | undefined)[] };
+type PartDraft = {
+  component?: { instance: CossackElement; clazz: Function; parent: CossackElement | null | undefined; scope: unknown; token?: object; fork?: (token: object) => object | undefined };
+  template?: DraftTree;
+  cached: Map<object, DraftTree>;
+  children: (PartDraft | undefined)[];
+  keys: unknown[];
+  keySet: boolean;
+  key: unknown;
+};
+type DraftContext = { active: boolean; current: () => boolean; owners: Map<CossackElement, CossackElement> };
+type DraftBranch = { tree: DraftTree; context: DraftContext };
+const forkDraftTree = (tree: DraftTree, context: DraftContext): DraftTree => ({
+  identity: tree.identity,
+  parts: tree.parts.map(snapshot => {
+    if (!snapshot) return undefined;
+    let component = snapshot.component;
+    if (component) {
+      const token = component.token ? component.fork?.(component.token) : undefined;
+      // Unknown or consumed capabilities cannot be shared with another checkpoint.
+      if (component.token && !token) return undefined;
+      component = { ...component, token,
+        instance: context.owners.get(component.instance) ?? component.instance,
+        parent: component.parent ? context.owners.get(component.parent) ?? component.parent : component.parent };
+    }
+    return { ...snapshot, component,
+      template: snapshot.template ? forkDraftTree(snapshot.template, context) : undefined,
+      cached: new Map([...snapshot.cached].map(([identity, cached]) => [identity, forkDraftTree(cached, context)])),
+      children: forkDraftTree({ identity: tree.identity, parts: snapshot.children }, context).parts,
+      keys: [...snapshot.keys] };
+  }),
+});
+const pendingDrafts = new WeakMap<Node, DraftBranch>();
+const captureParts = (parts: Part[]): (PartDraft | undefined)[] => parts.map(part => part instanceof NodePart ? part.captureDraft() : undefined);
+const applyDrafts = (parts: Part[], branch: DraftBranch | undefined, identity: object) => {
+  if (!branch || branch.tree.identity !== identity || !branch.context.active || !branch.context.current()) return;
+  parts.forEach((part, index) => {
+    if (part instanceof NodePart) part.restoreDraft(branch.tree.parts[index], branch.context);
+  });
+};
+
+/** @internal Local, one-use draft checkpoint. Contains no serializable state or live DOM restoration. */
+export const captureRenderDrafts = (container: Node) => {
+  const cached = containerCache.get(container);
+  let tree = cached ? { identity: cached.identity, parts: captureParts(cached.parts) } : undefined;
+  let context: DraftContext | undefined;
+  return {
+    restore(current: () => boolean, owners: Iterable<readonly [CossackElement, CossackElement]> = []) {
+      if (!tree || context) return;
+      context = { active: true, current, owners: new Map(owners) };
+      pendingDrafts.set(container, { tree, context });
+      tree = undefined;
+    },
+    discard() {
+      tree = undefined;
+      if (!context) return;
+      context.active = false;
+      context.owners.clear();
+      if (pendingDrafts.get(container)?.context === context) pendingDrafts.delete(container);
+    },
+  };
+};
+
+const disposeFailedParts = (parts: Part[]) => {
+  for (const part of parts) {
+    try { (part as any)?.dispose?.(); }
+    catch (error) { console.error('[cossack] Failed render cleanup:', error); }
+  }
+};
 
 const templateIdentities = new WeakMap<TemplateStringsArray, Map<string, object>>();
 const templateIdentity = (result: TemplateResult): object => {
@@ -711,6 +824,52 @@ const templateIdentity = (result: TemplateResult): object => {
 };
 
 class NodePart implements Part {
+  private _draft?: { snapshot: PartDraft; context: DraftContext };
+  private _componentDraft?: DraftBranch;
+  private _cacheDrafts = new Map<object, DraftBranch>();
+
+  captureDraft(): PartDraft {
+    const instance = this.componentInstance as any;
+    const cached = new Map<object, DraftTree>();
+    for (const [identity, branch] of this._cacheDrafts) {
+      if (branch.context.active && branch.context.current()) cached.set(identity, forkDraftTree(branch.tree, branch.context));
+    }
+    for (const [identity, entry] of this._cacheMap) {
+      if (identity !== this._cachedTemplateIdentity) cached.set(identity, { identity, parts: captureParts(entry.parts) });
+    }
+    return {
+      component: instance ? { instance, clazz: instance.constructor, parent: instance.__parent, scope: instance._getServiceScope?.(), token: instance._frameworkCaptureClientDraft?.(), fork: instance.constructor._frameworkForkClientDraft?.bind(instance.constructor) } : undefined,
+      template: this._cachedParts && this._cachedTemplateIdentity ? { identity: this._cachedTemplateIdentity, parts: captureParts(this._cachedParts) } : undefined,
+      cached,
+      children: this._childParts.map(part => part.captureDraft()), keys: [...this._partKeys],
+      keySet: this._keySet, key: this._key,
+    };
+  }
+
+  restoreDraft(snapshot: PartDraft | undefined, context: DraftContext) {
+    this._draft = snapshot && context.active && context.current() ? { snapshot, context } : undefined;
+  }
+
+  private restoreComponentDraft(instance: CossackElement) {
+    const draft = this._draft;
+    this._componentDraft = undefined;
+    if (!draft || !draft.context.active || !draft.context.current()) return;
+    const previous = draft.snapshot.component;
+    if (!previous || previous.clazz !== instance.constructor) return;
+    const parent = previous.parent && (draft.context.owners.get(previous.parent) ?? previous.parent);
+    if (parent !== instance.__parent || previous.scope !== (instance as any)._getServiceScope?.()) return;
+    if (instance !== previous.instance && previous.token && !(instance as any)._frameworkRestoreClientDraft?.(previous.token)) return;
+    draft.context.owners.set(previous.instance, instance);
+    if (draft.snapshot.template) this._componentDraft = { tree: draft.snapshot.template, context: draft.context };
+  }
+
+  private updateComponentTemplate(template: unknown) {
+    const branch = this._componentDraft;
+    this._componentDraft = undefined;
+    // An unmatched component must not inherit the enclosing part's checkpoint,
+    // even when a custom connection hook publishes a template synchronously.
+    this.updateNode(template, branch ?? null);
+  }
   private componentInstance: CossackElement | null = null;
   private renderListener: ((t: TemplateResult | unknown | null) => void) | null = null;
   private _childParts: NodePart[] = [];
@@ -757,71 +916,81 @@ class NodePart implements Part {
   }
 
   update(value: unknown) {
-    if (this._hydrating) {
-      this._hydrating = false;
-      this._hydrateValue(value);
-      return;
-    }
-    // `guard`: resolve to its (possibly cached) inner value before any other
-    // dispatch. The factory only runs when the deps change; otherwise the
-    // previously-produced value is reused, which keeps template part caches
-    // intact (in-place update) instead of recomputing.
-    if (value instanceof GuardResult) {
-      value = this._resolveGuard(value);
-    }
-    // `cache`: keep previously-rendered template subtrees alive across swaps so
-    // toggling back to a cached template reattaches its DOM/parts rather than
-    // rebuilding. Non-template values are unwrapped and handled normally.
-    let fromCache = false;
-    if (value instanceof CacheResult) {
-      const inner = value.value;
-      if (isTemplateResult(inner)) {
-        // The cache fast-path returns early, which would otherwise skip the
-        // component/child-part teardown below. Tear down any prior render
-        // state held by this part (a previously-rendered component, repeat, or
-        // array) so switching INTO cache() does not leak it.
-        if (this.componentInstance) this.disposeComponent();
-        if (this._childParts.length > 0) this.clearChildParts();
-        this.updateCache(inner);
+    try {
+      if (!(value instanceof CacheResult) && !(value instanceof GuardResult)) this._cacheDrafts.clear();
+      if (this._hydrating) {
+        this._hydrating = false;
+        this._hydrateValue(value);
         return;
       }
-      value = inner;
-      fromCache = true;
-    } else if (this._cacheMap.size > 0 || this._cacheCurrent) {
-      // Switching AWAY from cache() to an entirely non-cache value: the
-      // stashed subtrees are no longer reachable, so dispose their parts
-      // (components/listeners/etc.) instead of retaining them until dispose().
-      for (const entry of this._cacheMap.values()) {
-        for (const part of entry.parts) {
-          if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
-        }
+      // `guard`: resolve to its (possibly cached) inner value before any other
+      // dispatch. The factory only runs when the deps change; otherwise the
+      // previously-produced value is reused, which keeps template part caches
+      // intact (in-place update) instead of recomputing.
+      if (value instanceof GuardResult) {
+        value = this._resolveGuard(value);
+        if (!(value instanceof CacheResult)) this._cacheDrafts.clear();
       }
-      this._cacheMap.clear();
-      this._cacheCurrent = null;
-    }
-    // Switching from a cached template to a non-template value: detach & stash
-    // the current subtree so it can be restored later, then clear bookkeeping.
-    if (fromCache && this._cacheCurrent) {
-      this._stashCurrent();
-      this._cacheCurrent = null;
-    }
-    if (this.componentInstance && (!isComponentResult(value) || value.clazz !== this.componentInstance.constructor)) {
-      this.disposeComponent();
-    }
-    if (!(value instanceof RepeatResult) && !Array.isArray(value) && this._childParts.length > 0) {
-      this.clearChildParts();
-    }
-    if (isComponentResult(value)) {
-      this.updateComponent(value);
-    } else if (value instanceof RepeatResult) {
-      this.updateRepeat(value);
-    } else if (value instanceof KeyResult) {
-      this.updateKey(value);
-    } else if (Array.isArray(value)) {
-      this.updateArray(value);
-    } else {
-      this.updateNode(value);
-    }
+      // `cache`: keep previously-rendered template subtrees alive across swaps so
+      // toggling back to a cached template reattaches its DOM/parts rather than
+      // rebuilding. Non-template values are unwrapped and handled normally.
+      let fromCache = false;
+      if (value instanceof CacheResult) {
+        this.prepareCacheDrafts();
+        const inner = value.value;
+        if (isTemplateResult(inner)) {
+          // The cache fast-path returns early, which would otherwise skip the
+          // component/child-part teardown below. Tear down any prior render
+          // state held by this part (a previously-rendered component, repeat, or
+          // array) so switching INTO cache() does not leak it.
+          if (this.componentInstance) this.disposeComponent();
+          if (this._childParts.length > 0) this.clearChildParts();
+          this.updateCache(inner);
+          return;
+        }
+        value = inner;
+        fromCache = true;
+      } else if (this._cacheMap.size > 0 || this._cacheCurrent) {
+        // Switching AWAY from cache() to an entirely non-cache value: the
+        // stashed subtrees are no longer reachable, so dispose their parts
+        // (components/listeners/etc.) instead of retaining them until dispose().
+        for (const entry of this._cacheMap.values()) {
+          for (const part of entry.parts) {
+            if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
+          }
+        }
+        this._cacheMap.clear();
+        this._cacheCurrent = null;
+      }
+      // Switching from a cached template to a non-template value: detach & stash
+      // the current subtree so it can be restored later, then clear bookkeeping.
+      if (fromCache && this._cacheCurrent) {
+        this._stashCurrent();
+        if (this._draft) {
+          for (const entry of this._cacheMap.values()) disposeFailedParts(entry.parts);
+          this._cacheMap.clear();
+        }
+        this._cacheCurrent = null;
+      }
+      if (this.componentInstance && (!isComponentResult(value) || value.clazz !== this.componentInstance.constructor)) {
+        this.disposeComponent();
+      }
+      if (!(value instanceof RepeatResult) && !Array.isArray(value) && this._childParts.length > 0) {
+        this.clearChildParts();
+      }
+      if (!(value instanceof KeyResult) && this._draft?.snapshot.keySet) this._draft = undefined;
+      if (isComponentResult(value)) {
+        this.updateComponent(value);
+      } else if (value instanceof RepeatResult) {
+        this.updateRepeat(value);
+      } else if (value instanceof KeyResult) {
+        this.updateKey(value);
+      } else if (Array.isArray(value)) {
+        this.updateArray(value);
+      } else {
+        this.updateNode(value);
+      }
+    } finally { this._draft = undefined; }
   }
 
   /**
@@ -949,7 +1118,10 @@ class NodePart implements Part {
       const text = String(value);
       const node = this.startNode.nextSibling;
       if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
-        if (node.nodeValue !== text) node.nodeValue = text;
+        if (node.nodeValue !== text) {
+          if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', domHydrationPath(node), 'text', 'text'), hydrationMetadata!.get(this)?.boundary ?? 'root', undefined, hydrationMetadata!.get(this), 'text-reconcile');
+          node.nodeValue = text;
+        }
       } else {
         this.clear();
         this.startNode.parentNode!.insertBefore(document.createTextNode(text), this.endNode);
@@ -988,6 +1160,13 @@ class NodePart implements Part {
       if (this.componentInstance.__parent) {
         this.componentInstance._id = `${this.componentInstance.__parent._id}:${(this.componentInstance.__parent as any)._childCounter++}`;
       }
+      if (HYDRATION_DEV) {
+        const ownMetadata = (this.componentInstance as CossackElement & { hydrationMetadata?: HydrationDiagnosticMetadata }).hydrationMetadata;
+        const inherited = hydrationMetadata!.get(this);
+        hydrationMetadata!.set(this, { ...inherited, ...ownMetadata,
+          component: ownMetadata?.component ?? result.clazz.name ?? inherited?.component,
+          statePath: ownMetadata?.statePath, fields: ownMetadata?.fields, boundary: 'component' });
+      }
       let firstRender = true;
       this.renderListener = (template) => {
         if (firstRender) {
@@ -1004,9 +1183,10 @@ class NodePart implements Part {
               this._adoptTemplate(template);
             } catch (e) {
               if (e instanceof HydrateMismatch) {
+                if (HYDRATION_DEV) reportHydrationMismatch(e, 'component', result.clazz.name || 'anonymous', hydrationMetadata!.get(this));
                 this.clear();
                 this._clearTemplateCache();
-                this.updateNode(template);
+                this.updateComponentTemplate(template);
               } else {
                 throw e;
               }
@@ -1014,10 +1194,10 @@ class NodePart implements Part {
           } else if (template === null || template === undefined) {
             this.clear();
           } else {
-            this.updateNode(template);
+            this.updateComponentTemplate(template);
           }
         } else {
-          this.updateNode(template);
+          this.updateComponentTemplate(template);
         }
       };
       this.componentInstance.addRenderListener(this.renderListener);
@@ -1026,9 +1206,17 @@ class NodePart implements Part {
         (this.componentInstance as any).props = result.props;
       }
       this.componentInstance.children = result.children;
-      this.componentInstance.connectedCallback();
+      try {
+        (this.componentInstance as any)._frameworkRendererAttached?.();
+        this.restoreComponentDraft(this.componentInstance);
+        this.componentInstance.connectedCallback();
+      } catch (error) {
+        this.disposeComponent();
+        throw error;
+      }
     }
     const instance = this.componentInstance;
+    if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);
     Object.assign(instance, result.props);
     if ('props' in instance) {
       (instance as any).props = result.props;
@@ -1048,15 +1236,14 @@ class NodePart implements Part {
     const pairs = findSequencePairs(nodes);
     // If the SSR item count doesn't match, we can't safely adopt — rebuild.
     if (pairs.length !== items.length) {
-      throw new HydrateMismatch(
-        `sequence length mismatch: SSR has ${pairs.length} items, client has ${items.length}`,
-      );
+      throw new HydrateMismatch('sequence-length', 'sequence', `${items.length} client items`, `${pairs.length} SSR items`);
     }
     this._childParts = [];
     this._partKeys = keys ? [] : this._partKeys;
     for (let i = 0; i < items.length; i++) {
       const [start, end] = pairs[i];
       const part = new NodePart(start, end);
+      if (HYDRATION_DEV) { const metadata = hydrationMetadata!.get(this); if (metadata) hydrationMetadata!.set(part, metadata); }
       part._beginHydration();
       this._childParts.push(part);
       if (keys) this._partKeys.push(keys[i]);
@@ -1071,15 +1258,21 @@ class NodePart implements Part {
    */
   private _adoptTemplate(value: TemplateResult) {
     const { fragment: blueprint, parts } = compileTemplate(value);
-    const existing = this._nodesBetween();
-    const map = new Map<Node, Node>();
-    reconcileNodeLists(blueprint.childNodes, existing, map);
-    rebindParts(parts, map);
-    for (let i = 0; i < value.values.length; i++) {
-      if (parts[i]) parts[i]!.update(value.values[i]);
+    try {
+      const existing = this._nodesBetween();
+      const map = new Map<Node, Node>();
+      reconcileNodeLists(blueprint.childNodes, existing, map, 'root', HYDRATION_DEV ? hydrationMetadata!.get(this) : undefined);
+      rebindParts(parts, map);
+      bindHydrationMetadata(parts, HYDRATION_DEV ? hydrationMetadata!.get(this) : undefined);
+      for (let i = 0; i < value.values.length; i++) {
+        if (parts[i]) parts[i]!.update(value.values[i]);
+      }
+      this._cachedTemplateIdentity = templateIdentity(value);
+      this._cachedParts = parts;
+    } catch (error) {
+      disposeFailedParts(parts);
+      throw error;
     }
-    this._cachedTemplateIdentity = templateIdentity(value);
-    this._cachedParts = parts;
   }
 
   private _nodesBetween(): Node[] {
@@ -1097,15 +1290,17 @@ class NodePart implements Part {
       instance.removeRenderListener(this.renderListener);
       this.renderListener = null;
     }
-    instance.disconnectedCallback();
-    // Full Cossack-level cleanup (WebSockets, IntersectionObservers, event
-    // listeners). Without this, child components removed via repeat/key/
-    // conditional rendering leak live connections for the page's lifetime.
-    if (typeof instance.destroy === 'function') {
+    try {
+      instance.disconnectedCallback();
+    } catch (error) {
+      console.error('[cossack] Component disconnection failed:', error);
+    } finally {
       try {
-        instance.destroy();
+        if (typeof instance.destroy === 'function') instance.destroy();
       } catch {
-        // Component may already be destroyed (phase guard); ignore.
+        // Preserve the renderer's existing best-effort destruction behavior.
+      } finally {
+        instance._frameworkRendererDetached?.();
       }
     }
   }
@@ -1133,7 +1328,7 @@ class NodePart implements Part {
         this.componentInstance._id = `${this.componentInstance.__parent._id}:${this.componentInstance.__parent._childCounter++}`;
       }
       this.renderListener = (template) => {
-        this.updateNode(template);
+        this.updateComponentTemplate(template);
       };
       this.componentInstance.addRenderListener(this.renderListener);
       Object.assign(this.componentInstance, result.props);
@@ -1141,9 +1336,17 @@ class NodePart implements Part {
         (this.componentInstance as any).props = result.props;
       }
       this.componentInstance.children = result.children;
-      this.componentInstance.connectedCallback();
+      try {
+        (this.componentInstance as any)._frameworkRendererAttached?.();
+        this.restoreComponentDraft(this.componentInstance);
+        this.componentInstance.connectedCallback();
+      } catch (error) {
+        this.disposeComponent();
+        throw error;
+      }
     }
     const instance = this.componentInstance;
+    if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);
     Object.assign(instance, result.props);
     if ('props' in instance) {
       (instance as any).props = result.props;
@@ -1162,29 +1365,37 @@ class NodePart implements Part {
     const newParts: NodePart[] = [];
     const newKeys: unknown[] = [];
     let insertAfterNode: Node = this.startNode;
-    items.forEach((item, index) => {
-      const key = keyFn(item, index);
-      newKeys.push(key);
-      let part = oldPartsMap.get(key);
-      if (part) {
-        oldPartsMap.delete(key);
-        if (part.startNode.previousSibling !== insertAfterNode) {
-          this.movePart(part, insertAfterNode);
+    try {
+      items.forEach((item, index) => {
+        const key = keyFn(item, index);
+        newKeys.push(key);
+        let part = oldPartsMap.get(key);
+        if (part) {
+          oldPartsMap.delete(key);
+          if (part.startNode.previousSibling !== insertAfterNode) this.movePart(part, insertAfterNode);
+        } else {
+          part = this.createChildPart(insertAfterNode);
         }
+        // Record ownership before user templates/connection hooks can throw.
+        newParts.push(part);
+        const draftIndex = this._draft?.snapshot.keys.findIndex(value => Object.is(value, key)) ?? -1;
+        if (this._draft && draftIndex !== -1) part.restoreDraft(this._draft.snapshot.children[draftIndex], this._draft.context);
         part.update(templateFn(item, index));
-      } else {
-        part = this.createChildPart(insertAfterNode);
-        part.update(templateFn(item, index));
-      }
-      newParts.push(part);
-      insertAfterNode = part.endNode;
-    });
-    oldPartsMap.forEach((part) => part.dispose());
-    this._childParts = newParts;
-    this._partKeys = newKeys;
+        insertAfterNode = part.endNode;
+      });
+      oldPartsMap.forEach((part) => part.dispose());
+      this._childParts = newParts;
+      this._partKeys = newKeys;
+    } catch (error) {
+      disposeFailedParts([...new Set([...this._childParts, ...newParts])]);
+      this._childParts = [];
+      this._partKeys = [];
+      throw error;
+    }
   }
 
   private updateKey(result: KeyResult) {
+    if (this._draft && (!this._draft.snapshot.keySet || !Object.is(this._draft.snapshot.key, result.value))) this._draft = undefined;
     const changed = !this._keySet || !Object.is(this._key, result.value);
     this._keySet = true;
     this._key = result.value;
@@ -1198,6 +1409,26 @@ class NodePart implements Part {
       this.clear();
     }
     this.updateNode(result.template);
+  }
+
+  private prepareCacheDrafts() {
+    for (const [key, branch] of this._cacheDrafts) {
+      if (!branch.context.active || !branch.context.current()) this._cacheDrafts.delete(key);
+    }
+    if (this._draft && this._draft.context.active && this._draft.context.current()) {
+      const { snapshot, context } = this._draft;
+      // Hidden instances still belong to the outgoing tree. Keep their captured
+      // drafts, not live tasks/DOM owned by a page that may now be retired.
+      for (const [key, entry] of this._cacheMap) {
+        if (key === this._cachedTemplateIdentity) continue;
+        disposeFailedParts(entry.parts);
+        this._cacheMap.delete(key);
+      }
+      for (const [key, tree] of snapshot.cached) {
+        this._cacheDrafts.set(key, { tree, context });
+      }
+      if (snapshot.template) this._cacheDrafts.set(snapshot.template.identity, { tree: snapshot.template, context });
+    }
   }
 
   /**
@@ -1216,8 +1447,11 @@ class NodePart implements Part {
    */
   private updateCache(result: TemplateResult) {
     const identity = templateIdentity(result);
+    const recovery = this._cacheDrafts.get(identity);
+    this._cacheDrafts.delete(identity);
     if (this._cacheCurrent === identity && this._cachedParts) {
       // Same template → update parts in place.
+      applyDrafts(this._cachedParts, recovery, identity);
       this._cachedParts.forEach((part, i) => {
         part.update(result.values[i]);
       });
@@ -1229,6 +1463,13 @@ class NodePart implements Part {
     // cache-routed) render that a previous value left here.
     if (this._cacheCurrent || this._cachedParts) {
       this._stashCurrent();
+      if (this._draft) {
+        for (const [key, entry] of this._cacheMap) {
+          if (key === identity) continue;
+          disposeFailedParts(entry.parts);
+          this._cacheMap.delete(key);
+        }
+      }
     }
 
     const entry = this._cacheMap.get(identity);
@@ -1243,6 +1484,7 @@ class NodePart implements Part {
       }
       this._cachedTemplateIdentity = identity;
       this._cachedParts = entry.parts;
+      applyDrafts(entry.parts, recovery, identity);
       for (let i = 0; i < result.values.length; i++) {
         if (entry.parts[i]) entry.parts[i]!.update(result.values[i]);
       }
@@ -1252,7 +1494,7 @@ class NodePart implements Part {
       // (_cachedParts/Strings); we must NOT call _clearTemplateCache() here
       // because that would also wipe the just-stashed `cache()` entries.
       this.clear();
-      this.updateNode(result);
+      this.updateNode(result, recovery ?? null);
     }
     this._cacheCurrent = identity;
   }
@@ -1288,6 +1530,7 @@ class NodePart implements Part {
     this._partKeys = [];
     const minLength = Math.min(values.length, this._childParts.length);
     for (let i = 0; i < minLength; i++) {
+      if (this._draft && this._draft.snapshot.keys.length === 0) this._childParts[i].restoreDraft(this._draft.snapshot.children[i], this._draft.context);
       this._childParts[i].update(values[i]);
     }
     if (values.length > this._childParts.length) {
@@ -1296,6 +1539,7 @@ class NodePart implements Part {
       for (let i = minLength; i < values.length; i++) {
         const part = this.createChildPart(lastNode);
         this._childParts.push(part);
+        if (this._draft && this._draft.snapshot.keys.length === 0) part.restoreDraft(this._draft.snapshot.children[i], this._draft.context);
         part.update(values[i]);
         lastNode = part.endNode;
       }
@@ -1338,6 +1582,9 @@ class NodePart implements Part {
   }
 
   dispose() {
+    this._draft = undefined;
+    this._componentDraft = undefined;
+    this._cacheDrafts.clear();
     this.clear();
     this._clearTemplateCache();
     // Tear down the `cache()` stash: its parts hold detached subtrees (and any
@@ -1361,12 +1608,16 @@ class NodePart implements Part {
     }
   }
 
-  private updateNode(value: unknown) {
+  private updateNode(value: unknown, recovery?: DraftBranch | null) {
+    const branch = recovery === undefined
+      ? (this._draft?.snapshot.template ? { tree: this._draft.snapshot.template, context: this._draft.context } : undefined)
+      : recovery ?? undefined;
     if (!this.startNode.parentNode) return;
     if (isTemplateResult(value)) {
       // Check if we have a cached template with the same strings
       if (this._cachedTemplateIdentity === templateIdentity(value) && this._cachedParts) {
         // Template structure is the same, just update the parts
+        applyDrafts(this._cachedParts, branch, templateIdentity(value));
         this._cachedParts.forEach((part, i) => {
           part.update(value.values[i]);
         });
@@ -1375,6 +1626,7 @@ class NodePart implements Part {
         this._clearTemplateCache();
         this.clear();
         const container = document.createDocumentFragment();
+        if (branch) pendingDrafts.set(container, branch);
         render(value, container);
         this.startNode.parentNode!.insertBefore(container, this.endNode);
         // Cache the template strings and parts for future updates
@@ -1387,9 +1639,22 @@ class NodePart implements Part {
     } else if (isUnsafeHTML(value)) {
       this._clearTemplateCache();
       this.clear();
-      const temp = document.createElement('template');
-      temp.innerHTML = value.value;
-      this.startNode.parentNode!.insertBefore(temp.content, this.endNode);
+      const parent = this.startNode.parentNode!;
+      const owner = this.startNode.ownerDocument!;
+      if (parent instanceof Element && parent.namespaceURI === 'http://www.w3.org/2000/svg'
+        && !['foreignObject', 'desc', 'title'].includes(parent.localName)) {
+        // Parse in the actual SVG context, including foreignObject's HTML integration.
+        // innerHTML preserves the existing inert-script behavior of unsafeHTML.
+        const context = owner.createElementNS(parent.namespaceURI, parent.localName);
+        context.innerHTML = value.value;
+        const fragment = owner.createDocumentFragment();
+        while (context.firstChild) fragment.appendChild(context.firstChild);
+        parent.insertBefore(fragment, this.endNode);
+      } else {
+        const temp = owner.createElement('template');
+        temp.innerHTML = value.value;
+        parent.insertBefore(temp.content, this.endNode);
+      }
     } else if (
       isComponentResult(value) ||
       (typeof value === 'object' && value !== null && !(value instanceof Node) && !Array.isArray(value))
@@ -1411,7 +1676,9 @@ class NodePart implements Part {
       const text = String(value);
       const node = this.startNode.nextSibling;
       if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
-        if (node.nodeValue !== text) node.nodeValue = text;
+        if (node.nodeValue !== text) {
+          node.nodeValue = text;
+        }
       } else {
         this._clearTemplateCache();
         this.clear();
@@ -1452,6 +1719,7 @@ class NodePart implements Part {
 }
 
 class SpreadPart implements Part {
+  private selectCommit = new SelectValueCommit();
   private previousValues: Record<string, unknown> = {};
   // Per-key state for `bind()` directives routed through the spread (e.g.
   // component(Input, { '.value': bind(this, 'name') })). Mirrors the per-part
@@ -1471,6 +1739,7 @@ class SpreadPart implements Part {
   update(value: unknown) {
     if (value !== nothing && (typeof value !== 'object' || value === null)) return;
     const props = value === nothing ? {} : value as Record<string, unknown>;
+    const selectPending = this.selectCommit.cancel();
 
     for (const key of Object.keys(this.previousValues)) {
       if (!(key in props)) {
@@ -1550,6 +1819,19 @@ class SpreadPart implements Part {
           (this.element as any)[propName] = undefined;
         } else if (val instanceof BindResult && (propName === 'value' || propName === 'checked')) {
           this.applySpreadBind(key, propName, val);
+        } else if (propName === 'value' && (this.element instanceof HTMLSelectElement ||
+          this.element instanceof HTMLTextAreaElement || this.element instanceof HTMLInputElement)) {
+          const isLive = val instanceof LiveResult;
+          const current = isLive ? val.value : val;
+          const strValue = current == null ? '' : String(current);
+          const previous = this.previousValues[key];
+          const previousValue = previous instanceof LiveResult ? previous.value : previous;
+          const changed = !(key in this.previousValues) || previous instanceof BindResult ||
+            previous === nothing || String(previousValue ?? '') !== strValue;
+          if (isLive ? this.element.value !== strValue : changed) this.element.value = strValue;
+          if (this.element instanceof HTMLSelectElement && (isLive || changed || selectPending)) {
+            this.selectCommit.schedule(this.element, strValue);
+          }
         } else if (val instanceof LiveResult && (propName === 'value' || propName === 'checked')) {
           // live() via the spread: compare against the live DOM value (not the
           // last-rendered value) so an in-progress user edit isn't clobbered,
@@ -1585,7 +1867,9 @@ class SpreadPart implements Part {
         // literal attribute string, mirroring the AttributePart path. Checked
         // before the `typeof val === 'boolean'` branch so `false` renders as
         // "false".
-        if (val.value === undefined) {
+        if (key === 'class' || key === 'className') {
+          this.applySpreadClass(val.value === undefined ? '' : String(val.value));
+        } else if (val.value === undefined) {
           this.element.removeAttribute(key);
         } else {
           this.element.setAttribute(key, String(val.value));
@@ -1707,6 +1991,7 @@ interface MultiMarkerState {
 }
 
 class AttributePart implements Part {
+  private selectCommit = new SelectValueCommit();
   // N+1 static segments for N markers. For single-marker (N=1),
   // segments is [prefix, suffix].
   private segments: string[];
@@ -1758,6 +2043,7 @@ class AttributePart implements Part {
     this.multiState = multiState ?? null;
   }
   update(value: unknown) {
+    const selectPending = this.selectCommit.cancel();
     if (value === nothing) {
       if (this.bindListener) this._detachBindListener();
       if (this.isMulti && this.multiState) {
@@ -1901,14 +2187,17 @@ class AttributePart implements Part {
             this.lastFormKind = 'checked';
           }
         } else {
-          const strValue = String(value);
+          const strValue = value == null ? '' : String(value);
           const shouldWrite = isLive
             ? (this.element as any).value !== strValue // compare against live DOM
             : this.lastFormKind !== 'value' || String(this.lastFormValue) !== strValue; // dirty check
           if (shouldWrite) {
             (this.element as any).value = strValue;
-            this.lastFormValue = value;
+            this.lastFormValue = strValue;
             this.lastFormKind = 'value';
+          }
+          if (this.element instanceof HTMLSelectElement && (isLive || shouldWrite || selectPending)) {
+            this.selectCommit.schedule(this.element, strValue);
           }
         }
       } else {
@@ -2044,6 +2333,27 @@ class AttributePart implements Part {
     // `.value`/`.checked` are not real HTML attributes — strip the binding
     // marker so it never appears in the DOM.
     if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+  }
+}
+
+/** Owns a pending plain/live select write across synchronous template updates. */
+class SelectValueCommit {
+  private pending: object | null = null;
+
+  cancel(): boolean {
+    const hadPending = this.pending !== null;
+    this.pending = null;
+    return hadPending;
+  }
+
+  schedule(element: HTMLSelectElement, value: string): void {
+    const token = {};
+    this.pending = token;
+    queueMicrotask(() => {
+      if (this.pending !== token) return;
+      this.pending = null;
+      if (element.value !== value) element.value = value;
+    });
   }
 }
 
@@ -2235,9 +2545,12 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
 };
 
 export const render = (result: TemplateResult, container: Node) => {
+  const draft = pendingDrafts.get(container);
+  pendingDrafts.delete(container);
   const existing = containerCache.get(container);
   const identity = templateIdentity(result);
   if (existing && existing.identity === identity) {
+    applyDrafts(existing.parts, draft, identity);
     existing.parts.forEach((part, i) => {
       part.update(result.values[i]);
     });
@@ -2248,33 +2561,40 @@ export const render = (result: TemplateResult, container: Node) => {
   // torn down before we wipe the DOM and rebuild — otherwise re-rendering a
   // container with a different template leaks every old child component.
   if (existing) {
+    containerCache.delete(container);
     for (const part of existing.parts) {
       if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
     }
   }
 
   const { fragment, parts } = compileTemplate(result);
+  applyDrafts(parts, draft, identity);
   const values = result.values;
 
-  for (let i = 0; i < values.length; i++) {
-    if (parts[i]) {
-      parts[i].update(values[i]);
+  try {
+    for (let i = 0; i < values.length; i++) {
+      if (parts[i]) {
+        parts[i].update(values[i]);
+      }
     }
-  }
 
-  if (
-    (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) ||
-    (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot)
-  ) {
-    container.innerHTML = '';
-  } else {
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
+    if (
+      (typeof HTMLElement !== 'undefined' && container instanceof HTMLElement) ||
+      (typeof ShadowRoot !== 'undefined' && container instanceof ShadowRoot)
+    ) {
+      container.innerHTML = '';
+    } else {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
     }
-  }
-  container.appendChild(fragment);
+    container.appendChild(fragment);
 
-  containerCache.set(container, { identity, parts });
+    containerCache.set(container, { identity, parts });
+  } catch (error) {
+    disposeFailedParts(parts);
+    throw error;
+  }
 };
 
 /**
@@ -2282,14 +2602,54 @@ export const render = (result: TemplateResult, container: Node) => {
  * template (structural mismatch). Caught by `hydrate()` which falls back to a
  * full `render()` so correctness is guaranteed even when adoption gives up.
  */
-class HydrateMismatch extends Error {}
+type HydrateMismatchCategory = 'text-content' | 'sequence-length' | 'missing-node' | 'element-tag' | 'element-namespace' | 'node-type'
+  | 'unexpected-node' | 'missing-part-anchor' | 'missing-part-element';
+
+class HydrateMismatch extends Error {
+  constructor(
+    readonly category: HydrateMismatchCategory,
+    readonly path: string,
+    readonly expected: string,
+    readonly actual: string,
+  ) {
+    super(`${category} at ${path}: expected ${expected}; found ${actual}`);
+  }
+}
 
 const describeNode = (n: Node | undefined): string => {
   if (!n) return '<none>';
   if (n.nodeType === Node.ELEMENT_NODE) return `<${(n as Element).nodeName.toLowerCase()}>`;
-  if (n.nodeType === Node.COMMENT_NODE) return `<!--${n.nodeValue}-->`;
-  if (n.nodeType === Node.TEXT_NODE) return `text"${(n.nodeValue || '').slice(0, 30)}"`;
+  if (n.nodeType === Node.COMMENT_NODE) return 'comment';
+  if (n.nodeType === Node.TEXT_NODE) return 'text';
   return `nodeType:${n.nodeType}`;
+};
+
+const reportHydrationMismatch = (
+  mismatch: HydrateMismatch,
+  boundary: 'root' | 'component',
+  component?: string,
+  metadata?: HydrationDiagnosticMetadata,
+  action = 'full-render-fallback',
+) => {
+  if (!HYDRATION_DEV || metadata?.expectedClientOnly) return;
+  component = component ?? metadata?.component;
+  const safePath = metadata?.statePath && /^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*|\[\d+\])*$/.test(metadata.statePath) ? metadata.statePath.slice(0, 160) : undefined;
+  const file = metadata?.source?.file;
+  const source = typeof file === 'string' && file.length <= 240 && !file.startsWith('/') && !file.includes('\\') && !file.split('/').includes('..') && !/^[a-zA-Z]+:/.test(file)
+    ? { file, ...(Number.isSafeInteger(metadata?.source?.line) && metadata!.source!.line! > 0 ? { line: metadata!.source!.line } : {}), ...(Number.isSafeInteger(metadata?.source?.column) && metadata!.source!.column! > 0 ? { column: metadata!.source!.column } : {}) } : undefined;
+  const safeComponent = component?.replace(/[^a-zA-Z0-9_$]/g, '_').slice(0, 80);
+  console.warn({
+    event: 'cossack.hydration.mismatch',
+    boundary,
+    ...(safeComponent ? { component: safeComponent } : {}),
+    ...(source ? { source } : {}),
+    ...(safePath ? { statePath: safePath } : {}),
+    category: mismatch.category,
+    path: mismatch.path,
+    expected: mismatch.expected,
+    actual: mismatch.actual,
+    action,
+  });
 };
 
 /**
@@ -2349,11 +2709,21 @@ const findSequencePairs = (nodes: Node[]): [Comment, Comment][] => {
  * marker comments. Whitespace-only text nodes are skipped on both sides so
  * that minified SSR output aligns with the unminified client blueprint.
  */
+const domHydrationPath = (node: Node): string => {
+  const parts: string[] = [];
+  for (let current: Node | null = node; current?.parentNode && parts.length < 12; current = current.parentNode) {
+    const index = Array.prototype.indexOf.call(current.parentNode.childNodes, current);
+    parts.unshift(`${current.nodeType === Node.ELEMENT_NODE ? (current as Element).nodeName.toLowerCase() : 'node'}[${index}]`);
+  }
+  return `root/${parts.join('/')}`;
+};
+
 const reconcileNodeLists = (
   bpNodes: NodeListOf<ChildNode> | Node[],
   exNodes: Node[],
   map: Map<Node, Node>,
   path = 'root',
+  metadata?: HydrationDiagnosticMetadata & { boundary?: 'root' | 'component' },
 ) => {
   let ei = 0;
   for (let bi = 0; bi < bpNodes.length; bi++) {
@@ -2362,28 +2732,39 @@ const reconcileNodeLists = (
     // Skip existing filler to stay aligned with the next meaningful node.
     while (ei < exNodes.length && isFiller(exNodes[ei])) ei++;
     const exNode = exNodes[ei];
-    if (!exNode) throw new HydrateMismatch(`existing shorter than blueprint at ${path} (expected ${describeNode(bpNode)})`);
+    const nodePath = `${path}/${bpNode.nodeType === Node.ELEMENT_NODE ? (bpNode as Element).nodeName.toLowerCase() : 'node'}[${bi}]`;
+    if (!exNode) throw new HydrateMismatch('missing-node', nodePath, describeNode(bpNode), '<none>');
     // Elements must match by tag; text/comment nodes by type. Without the
     // tag check a <p> in the DOM would silently absorb a <div> template's
     // parts, producing a corrupted tree.
     if (bpNode.nodeType === Node.ELEMENT_NODE) {
-      if (
-        exNode.nodeType !== Node.ELEMENT_NODE ||
-        bpNode.nodeName !== exNode.nodeName ||
-        (bpNode as Element).namespaceURI !== (exNode as Element).namespaceURI
-      ) {
-        throw new HydrateMismatch(`tag mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
+      if (exNode.nodeType !== Node.ELEMENT_NODE || bpNode.nodeName !== exNode.nodeName) {
+        throw new HydrateMismatch('element-tag', nodePath, describeNode(bpNode), describeNode(exNode));
+      }
+      if ((bpNode as Element).namespaceURI !== (exNode as Element).namespaceURI) {
+        throw new HydrateMismatch('element-namespace', nodePath, describeNode(bpNode), describeNode(exNode));
       }
       map.set(bpNode, exNode);
+      if (bpNode.nodeName === 'TEXTAREA') {
+        // Native textarea values are text in SSR and properties on the client.
+        // There are no child comment anchors inside this raw-text element.
+        ei++;
+        continue;
+      }
       reconcileNodeLists(
         bpNode.childNodes,
         Array.from(exNode.childNodes),
         map,
         `${path}/${bpNode.nodeName.toLowerCase()}[${bi}]`,
+        metadata,
       );
     } else {
       if (bpNode.nodeType !== exNode.nodeType) {
-        throw new HydrateMismatch(`type mismatch: blueprint ${describeNode(bpNode)} vs existing ${describeNode(exNode)}`);
+        throw new HydrateMismatch('node-type', nodePath, describeNode(bpNode), describeNode(exNode));
+      }
+      if (bpNode.nodeType === Node.TEXT_NODE && bpNode.nodeValue !== exNode.nodeValue) {
+        if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', nodePath, 'text', 'text'), metadata?.boundary ?? 'root', undefined, metadata, 'text-reconcile');
+        exNode.nodeValue = bpNode.nodeValue;
       }
       map.set(bpNode, exNode);
     }
@@ -2414,7 +2795,7 @@ const reconcileNodeLists = (
   // render is the safe outcome.
   while (ei < exNodes.length && isFiller(exNodes[ei])) ei++;
   if (ei < exNodes.length) {
-    throw new HydrateMismatch(`existing longer than blueprint (unexpected ${describeNode(exNodes[ei])})`);
+    throw new HydrateMismatch('unexpected-node', `${path}/node[${ei}]`, 'end of template', describeNode(exNodes[ei]));
   }
 };
 
@@ -2430,13 +2811,13 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
     if (part instanceof NodePart) {
       const start = map.get(part.startNode);
       const end = map.get(part.endNode);
-      if (!start || !end) throw new HydrateMismatch('node part anchors not found');
+      if (!start || !end) throw new HydrateMismatch('missing-part-anchor', 'part', 'start and end anchors', 'missing anchor');
       part.startNode = start as Comment;
       part.endNode = end as Comment;
       part._beginHydration();
     } else if (part instanceof AttributePart || part instanceof SpreadPart) {
       const el = map.get((part as any).element);
-      if (!el) throw new HydrateMismatch('attribute part element not found');
+      if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
       (part as any).element = el;
     }
   }
@@ -2452,7 +2833,7 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
  * If the existing DOM cannot be confidently matched to the template, falls
  * back to a full `render()` so behaviour is always correct.
  */
-export const hydrate = (result: TemplateResult, container: Node) => {
+export const hydrate = (result: TemplateResult, container: Node, metadata?: HydrationDiagnosticMetadata) => {
   // Nothing to hydrate (e.g. client-only render) — fall back to render.
   if (!container.hasChildNodes()) {
     return render(result, container);
@@ -2465,28 +2846,31 @@ export const hydrate = (result: TemplateResult, container: Node) => {
     return;
   }
   if (cached) {
+    containerCache.delete(container);
     for (const part of cached.parts) {
       if (part && typeof (part as any).dispose === 'function') (part as any).dispose();
     }
   }
 
-  let parts: Part[];
+  let parts: Part[] = [];
   try {
     const { fragment: blueprint, parts: compiled } = compileTemplate(result);
     parts = compiled;
     const map = new Map<Node, Node>();
-    reconcileNodeLists(blueprint.childNodes, Array.from(container.childNodes), map);
+    reconcileNodeLists(blueprint.childNodes, Array.from(container.childNodes), map, 'root', HYDRATION_DEV ? metadata : undefined);
     rebindParts(parts, map);
+    bindHydrationMetadata(parts, metadata);
     for (let i = 0; i < result.values.length; i++) {
       if (parts[i]) parts[i]!.update(result.values[i]);
     }
   } catch (e) {
+    disposeFailedParts(parts);
     if (e instanceof HydrateMismatch) {
       // Mismatch between SSR output and client template (divergent render
       // output, manual DOM edits, etc.). Safe fall back to a full render so
       // behaviour is always correct. Warn so the lost hydration is visible —
       // a silent fallback here would hide a real SSR/client divergence.
-      console.warn('[cossack] hydration mismatch, falling back to render:', (e as Error).message);
+      if (HYDRATION_DEV) reportHydrationMismatch(e, 'root', undefined, metadata);
       return render(result, container);
     }
     throw e;

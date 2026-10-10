@@ -1,6 +1,7 @@
 // --- Result Wrappers ---
 
 export class LiveResult {
+  declare private readonly __cossackDirectiveBrand: void;
   constructor(public readonly value: unknown) {}
 }
 
@@ -20,6 +21,7 @@ export class KeyResult {
 }
 
 export class BindResult {
+  declare private readonly __cossackDirectiveBrand: void;
   constructor(
     // The component instance that owns the state field. The directive reads
     // the current value from it on render and writes user edits back to it.
@@ -30,6 +32,7 @@ export class BindResult {
 }
 
 export class PreventDefaultResult {
+  declare private readonly __cossackDirectiveBrand: void;
   constructor(
     // The wrapped event handler.
     public readonly handler: EventListener,
@@ -40,6 +43,7 @@ export class PreventDefaultResult {
 }
 
 export class IfDefinedResult {
+  declare private readonly __cossackDirectiveBrand: void;
   constructor(public readonly value: unknown) {}
 }
 

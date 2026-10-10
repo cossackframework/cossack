@@ -11,6 +11,101 @@ Cossack's primary goal is to unify client and server state management. For real-
 
 **Note:** The patterns described here:Automatic State Synchronization and Event-Driven Re-fetch:are features of the real-time transport and require components to be decorated with `@Page({ transport: 'durable-object' })`.
 
+## Calling actions over WebSockets (GLM, 2026-10-02)
+
+`@Server()` methods on WebSocket-transport components are **request-scoped RPC
+calls**, not fire-and-forget messages. Every call dispatches one action frame
+with a unique request id and follows the same contract as HTTP/SSE:
+
+- `await this.myAction(...)` resolves the method's return value; generator
+  methods stream their yields through `for await`.
+- Failures reject with `RpcError` (`code`, `requestId`): client-visible errors
+  keep their message (`COSSACK_RPC_CLIENT_ERROR`), internal errors are redacted
+  (`COSSACK_RPC_INTERNAL_ERROR`), forbidden actions answer
+  `COSSACK_RPC_FORBIDDEN`.
+- `call.cancel()` sends a cancel frame, closes the generator server-side, and
+  rejects with `COSSACK_RPC_CANCELLED`. Consuming the same call twice never
+  dispatches a second mutation.
+- `@Server({ timeout: ms })` adds a deadline. Exceeding it rejects with
+  `COSSACK_RPC_TIMEOUT` — the server outcome stays **unknown** and is never
+  retried automatically. `ms` must be an integer from 1 through 2,147,483,647.
+- If the socket closes mid-call, the call rejects with
+  `COSSACK_RPC_TRANSPORT_CLOSED` (uncertain outcome). The transport reconnects
+  automatically with bounded exponential backoff (0.5 s doubling to 30 s) and
+  resets after a successful open.
+
+Connection health is exposed on every component as `this.realtime`:
+
+```typescript
+render() {
+    const status = this.realtime.websockets.page; // one entry per provider
+    return html`<span class=${status.state}>${status.state}</span>`; // connecting | open | reconnecting | closed
+}
+```
+
+Each status entry tracks `state`, `attempts` (reconnects since the last open),
+`lastEventId`, `lastError`, and `resynced`. SSE pages expose the same fields on
+`this.realtime.sse`; `resynced` becomes true when a reconnect had to replace
+expired history with an authoritative snapshot.
+
+Retiring a component or replacing its provider connections sets the old statuses
+to `closed`, clears heartbeat/reconnect timers and rejects pending socket calls
+with `COSSACK_RPC_TRANSPORT_CLOSED`. Queued callbacks from an old socket cannot
+publish state, invoke actions/events or change its replacement's status. Destroyed
+components cannot open new sockets. Closing an old socket never schedules a
+second reconnect or replays a mutation.
+
+## Application component registry and lost replies
+
+The default AppDurableObject resolves pages and layouts through the compiler's
+application registry. Its keys match the router's source paths, including route
+groups and dynamic segments. Modules need a default Cossack component export.
+Named helpers and native HTTP handler modules do not become socket targets.
+The framework does not scan its bundled example pages for application targets.
+
+A socket can close after the server commits a write but before its reply arrives.
+The client removes that call's preview and releases its loading count once.
+The error remains `COSSACK_RPC_TRANSPORT_CLOSED`, and reconnect does not retry the mutation.
+Stateful connections receive persisted public state when the new socket opens.
+ClientState and ClientStore drafts remain local.
+Use a declared resource read when public component state does not describe the persisted record.
+Read [optimistic recovery](./optimistic.md#handle-an-uncertain-result) for that contract.
+
+Socket actions on one component execute in a queue.
+Two pending browser calls do not mean that both server writes started.
+Closing a socket cancels registered queued work before invocation.
+An already committed write remains committed.
+Stream failure or cancellation after a yield also cannot establish rollback of a prior write.
+Keep application reads and write consistency explicit.
+Actual SSE resync, late-snapshot ordering, retained service consumers and optimistic
+stream failure/cancellation now have browser/native acceptance. The optimistic
+criterion audit is complete. Broader execution and session gates remain separate. See [SSE snapshot ordering](./sse.md#optimistic-confirmation-and-snapshot-order).
+
+## Action identity and request context
+
+Actions use the verified identity and request context of their originating
+socket. Another connection sharing a component cannot replace that context.
+`this.user`, `this.c.get('user')`, and custom rate keys use the same peer;
+client-supplied message identity is ignored. Anonymous Cloudflare sockets have
+no synthetic user and their default rate key uses captured IP headers.
+
+Cloudflare keeps the upgrade URL, page route params and selected headers in
+native socket attachments. Each action reconstructs its own context, retaining
+query/header access through generator completion and component restoration.
+Cookie/Authorization, common credential headers and internal auth assertions
+are excluded. Custom headers and query values are retained; they are not a
+place for credentials. A snapshot is not the full original HTTP middleware
+scope: arbitrary middleware variables, request bodies, response cookies and
+session revalidation are not reconstructed. The identity is a handshake snapshot.
+
+Oversized metadata returns `COSSACK_WS_CONTEXT_TOO_LARGE` with status 413 before
+accepting the socket. Malformed identity assertions return
+`COSSACK_WS_CONTEXT_INVALID` (400). Connections created by an older version
+without request metadata reject actions and close with code 1012 to reconnect.
+The Node adapter passes each connection's upgrade context into its shared
+runtime; the framework includes decoded page route params. See
+[rate limiting](./rate-limiting.md) for counter-store guarantees.
+
 ## Stateless vs Stateful Durable Objects
 
 By default, `transport: 'durable-object'` creates a **stateless** DO that acts as a WebSocket hub only. State is ephemeral : it lives in-memory during the session but is not persisted to DO storage. This is ideal for applications that use a database (D1, R2, etc.) as the source of truth.

@@ -78,23 +78,12 @@ export function generateMigration(
   const statements = operations.flatMap((operation) => renderOperation(operation, dialect));
   const downStatements = (options.downOperations ?? [])
     .flatMap((operation) => renderOperation(operation, dialect));
-  const body = statements.length
-    ? statements.map((statement) => `    schema.raw(sql.unsafe(${JSON.stringify(statement)}));`).join("\n")
-    : "    // Schema is already up to date.";
-  const downBody = options.reversible === false
-    ? `    throw new Error("Squashed baseline migrations cannot be reverted automatically.");`
-    : downStatements.length
-      ? downStatements.map((statement) =>
-          `    schema.raw(sql.unsafe(${JSON.stringify(statement)}));`).join("\n")
-      : "    // Schema was already empty.";
+  const declaration = (items: readonly string[]) => `[${items.map(statement => `sql.unsafe(${JSON.stringify(statement)})`).join(", ")}]`;
   return `import { sql, type Migration } from "@cossackframework/database";\n\n` +
     `export default {\n` +
     `  name: ${JSON.stringify(name)},\n` +
-    (options.replaces?.length
-      ? `  replaces: ${JSON.stringify(options.replaces)},\n`
-      : "") +
-    `  async up({ schema }) {\n${body}\n  },\n` +
-    `  async down({ schema }) {\n${downBody}\n` +
-    `  },\n` +
-    `} satisfies Migration;\n`;
+    (options.replaces?.length ? `  replaces: ${JSON.stringify(options.replaces)},\n` : "") +
+    `  operations: {\n    up: ${declaration(statements)},\n` +
+    (options.reversible === false ? "" : `    down: ${declaration(downStatements)},\n`) +
+    `  },\n} satisfies Migration;\n`;
 }

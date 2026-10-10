@@ -1,46 +1,95 @@
+import { getModuleDefault } from '../module-default.js';
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance, isOriginAllowed, type PageOptions } from '@cossackframework/core';
+import { SseRuntime, Cossack, createInstance, getLocale, isOriginAllowed, sanitizeClientState, createRootServiceScope, createLayoutServiceScope, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
-import type { RouterContext } from '../route-ids.js';
+import { resolveLayoutPaths, type RouterContext } from '../route-ids.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
-
-/** Active async generator being iterated by the SSE endpoint. */
-interface PendingGenerator {
-    iterator: AsyncIterator<any>;
-    streamId: string;
-    done: boolean;
-    /** The component instance that owns the generator — used to sync state after each pull. */
-    sourceInstance: any;
-    /** True while an iterator.next() is in flight — prevents concurrent pulls from multiple SSE drivers. */
-    pulling: boolean;
-}
+import { captureRealtimeIdentity, revalidateRealtimeIdentity, RealtimeIdentityConfigurationError, snapshotRealtimeRequest } from '../realtime-context.js';
+import { resolveRealtimeScopeKey } from '../realtime-scope.js';
+export { resolveRealtimeScopeKey as resolveSseScopeKey } from '../realtime-scope.js';
 
 interface SseStoreEntry {
     componentInstance: any;
     runtime: SseRuntime;
-    /** Active async generator being iterated by the SSE endpoint. */
-    pendingGenerator: PendingGenerator | null;
     /** Incremented by /crpc after each action. SSE endpoint polls this to detect changes. */
     stateVersion: number;
+    requestId?: string;
     /** Number of open SSE connections subscribed to this entry. */
     connectionCount: number;
     /** Last time an entry was touched (created or connected). Used for LRU eviction. */
     lastActive: number;
 }
 
-/** In-memory state store for SSE transport pages. Keyed by componentRouteId:scopeKey. */
+/**
+ * Process-local state store for SSE transport pages on runtimes without the
+ * Cloudflare coordinator (Node). Keyed by componentRouteId:scopeKey.
+ * This state is neither durable nor shared across processes or machines.
+ */
 const SSE_STORE_MAX = 500;
+/**
+ * Entries without a live connection expire after this grace period. SSR
+ * registers an entry before the browser opens its EventSource, and
+ * EventSource reconnects after a short delay, so the grace covers both.
+ */
+export const SSE_STORE_IDLE_TTL_MS = 60_000;
 const sseStateStore = new Map<string, SseStoreEntry>();
+/** Process-local long-poll waiters per store key, woken on SSR replacement and sync. */
+const localSseWaiters = new Map<string, Set<() => void>>();
 
-/** Evict the oldest entry when the store exceeds its bound. */
-function enforceSseStoreBound(): void {
+function notifyLocalSse(storeKey: string): void {
+    const waiters = localSseWaiters.get(storeKey);
+    if (!waiters) return;
+    localSseWaiters.delete(storeKey);
+    for (const wake of waiters) wake();
+}
+
+/** Resolve after a local change to storeKey, the wait elapsing, or abort. */
+function waitForLocalSse(storeKey: string, waitMs: number, signal: AbortSignal): Promise<void> {
+    return new Promise(resolve => {
+        if (signal.aborted) return resolve();
+        let waiters = localSseWaiters.get(storeKey);
+        if (!waiters) localSseWaiters.set(storeKey, waiters = new Set());
+        const wake = () => {
+            clearTimeout(timer);
+            signal.removeEventListener('abort', wake);
+            const current = localSseWaiters.get(storeKey);
+            if (current?.delete(wake) && current.size === 0) localSseWaiters.delete(storeKey);
+            resolve();
+        };
+        const timer = setTimeout(wake, waitMs);
+        signal.addEventListener('abort', wake, { once: true });
+        waiters.add(wake);
+    });
+}
+// Process-local publication order survives replacement/eviction of an entry.
+// This contains no request facilities, identity or user state. Workers use the
+// persisted coordinator cursor instead and never call this backend.
+let localSseCursor = 0;
+function nextLocalSseCursor(): number {
+    if (localSseCursor === Number.MAX_SAFE_INTEGER) throw new Error('Process-local SSE cursor exhausted');
+    return ++localSseCursor;
+}
+
+/**
+ * Drop entries idle (no live connection) past the TTL, then evict the least
+ * recently active entry — preferring ones without connections — while the
+ * store exceeds its bound. Runs on every insert and disconnect.
+ */
+function enforceSseStoreBound(now = Date.now(), keep?: string): void {
+    for (const [key, entry] of sseStateStore) {
+        if (entry.connectionCount === 0 && now - entry.lastActive >= SSE_STORE_IDLE_TTL_MS) sseStateStore.delete(key);
+    }
     while (sseStateStore.size > SSE_STORE_MAX) {
         let oldestKey: string | undefined;
         let oldestTime = Infinity;
+        let oldestIdle = false;
         for (const [k, v] of sseStateStore) {
-            if (v.lastActive < oldestTime) {
+            if (k === keep) continue;
+            const idle = v.connectionCount === 0;
+            if ((idle && !oldestIdle) || (idle === oldestIdle && v.lastActive < oldestTime)) {
                 oldestTime = v.lastActive;
                 oldestKey = k;
+                oldestIdle = idle;
             }
         }
         if (oldestKey === undefined) break;
@@ -53,30 +102,175 @@ export function __sseStoreSize(): number {
     return sseStateStore.size;
 }
 
+/** @internal Test seam: run the idle-TTL sweep and bound at a given time. */
+export function __sweepSseStore(now = Date.now()): number {
+    enforceSseStoreBound(now);
+    return sseStateStore.size;
+}
+
+/** @internal Test seam: clear the process-local SSE store. */
+export function __resetSseStore(): void {
+    sseStateStore.clear();
+}
+
 function sseStoreKey(componentRouteId: string, scopeKey: string): string {
     return `${componentRouteId}:${scopeKey}`;
 }
 
+// ---------------------------------------------------------------------------
+// Cloudflare coordinator backend
+//
+// The distributed backend is a native SQLite Durable Object exported from the
+// Cloudflare-only entry `@cossackframework/framework/SseDurableObject`. This
+// neutral module never imports `cloudflare:workers`: it reaches the coordinator
+// only through the generated `COSSACK_SSE` binding, so the Node and
+// browser import graphs stay free of native Workers imports.
+// ---------------------------------------------------------------------------
 
-/**
- * Evaluate the scope function from PageOptions, or return the default SSE scope.
- * Default: per-user (`user:${user?.id || 'anonymous'}`).
- */
-export async function resolveSseScopeKey(
-    c: Context,
-    pageOptions: PageOptions | undefined,
-): Promise<string> {
-    if (pageOptions?.scope) {
-        return pageOptions.scope(c);
-    }
-    const user = c.get('user');
-    return `user:${user?.id || 'anonymous'}`;
+/** Binding name generated by the scaffold and required on Cloudflare. */
+export const SSE_COORDINATOR_BINDING = 'COSSACK_SSE';
+
+/** Structural contract of one SseDurableObject namespace binding. */
+export interface SseCoordinatorNamespace {
+    getByName(name: string): SseCoordinatorStub;
+}
+
+/** Structural contract of one SseDurableObject scope stub. */
+export interface SseCoordinatorStub {
+    initialize(state: string): Promise<{ state: string; cursor: number; fresh: boolean }>;
+    currentState(): Promise<{ state: string; cursor: number } | null>;
+    /**
+     * Long-poll: with `waitMs > 0` and no newer events, the coordinator holds
+     * the call until an event is appended, `cancelWait(waiterId)`, or the wait
+     * (capped by the coordinator) elapses. `retryAfterMs` signals a full
+     * waiter table.
+     */
+    updates(after: number, waitMs?: number, waiterId?: string): Promise<{
+        snapshot: { state: string; cursor: number };
+        resync: boolean;
+        events: Array<{ cursor: number; event: string; data: string }>;
+        retryAfterMs?: number;
+    }>;
+    /** Release a held long-poll after the subscriber disconnected. */
+    cancelWait(waiterId: string): Promise<void>;
+    publish(state: string, requestId?: string): Promise<{ state: string; cursor: number }>;
+    broadcast(event: string, data: string): Promise<unknown>;
+    execute(action: (state: string) => Promise<Response>, operationId?: string, abort?: () => Promise<void>): Promise<Response>;
+    cancel(operationId: string): Promise<void>;
+    /** Atomically claim a signed flash token until its server-checked expiry. */
+    claimFlash(nonce: string, expiresAt: number): Promise<boolean>;
+}
+
+/** Workers exposes itself through the navigator API; Node does not. */
+export function isCloudflareRuntime(): boolean {
+    return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+}
+
+/** The coordinator binding, when the environment actually provides one. */
+export function getSseCoordinator(env: unknown): SseCoordinatorNamespace | undefined {
+    const binding = (env as Record<string, unknown> | null | undefined)?.[SSE_COORDINATOR_BINDING];
+    return binding !== null && typeof binding === 'object' && typeof (binding as SseCoordinatorNamespace).getByName === 'function'
+        ? (binding as SseCoordinatorNamespace)
+        : undefined;
+}
+
+/** Collision-safe Durable Object name for one [componentRouteId, scopeKey] scope. */
+export function sseScopeName(componentRouteId: string, scopeKey: string): string {
+    return JSON.stringify([componentRouteId, scopeKey]);
+}
+
+/** Scope stub backed by the coordinator, or undefined without the binding. */
+export function getSseScopeStub(
+    env: unknown,
+    componentRouteId: string,
+    scopeKey: string,
+): SseCoordinatorStub | undefined {
+    return getSseCoordinator(env)?.getByName(sseScopeName(componentRouteId, scopeKey));
+}
+
+export function sseBindingMissingMessage(): string {
+    return `[Cossack] This application uses SSE transport pages on Cloudflare, but the ${SSE_COORDINATOR_BINDING} ` +
+        'Durable Object binding is missing. Export SseDurableObject from your Worker entry ' +
+        "('@cossackframework/framework/SseDurableObject') and add a durable_objects binding plus a " +
+        'new_sqlite_classes migration for SseDurableObject to wrangler.jsonc, then rebuild.';
+}
+
+/** Actionable diagnostic for Cloudflare applications without the coordinator binding. */
+export function sseBindingMissingResponse(): Response {
+    return Response.json({ code: 'COSSACK_SSE_BINDING_MISSING', error: sseBindingMissingMessage() }, { status: 500 });
 }
 
 /**
- * Register or reset an SSE store entry during SSR.
- * The fresh component instance replaces any existing entry so that state is
- * re-initialized via init() instead of reusing stale in-memory state.
+ * Server runtime that routes component broadcasts through the coordinator so
+ * every subscribed Worker instance receives them. Broadcast events do not
+ * change the authoritative scope state; only action results publish state.
+ */
+class CoordinatorSseRuntime implements CossackServerRuntime {
+    private pendingBroadcasts: Promise<unknown>[] = [];
+    constructor(private readonly stub: SseCoordinatorStub) {}
+
+    private enqueue(event: string, data: string): void {
+        const pending = this.stub.broadcast(event, data);
+        void pending.catch(() => {});
+        this.pendingBroadcasts.push(pending);
+    }
+
+    async flush(): Promise<void> {
+        while (this.pendingBroadcasts.length) await Promise.all(this.pendingBroadcasts.splice(0));
+    }
+
+    async onClientMessage(): Promise<void> {
+        // SSE is server → client only; client messages arrive through /crpc.
+    }
+
+    broadcastState(_partialState: Record<string, any>): void {
+        // Action results and stream frames publish the full snapshot inside
+        // their serialization slot. A delayed partial-state microtask must
+        // never replace that snapshot or publish stale fields after release.
+    }
+
+    broadcastEvent(eventName: string, payload: any[]): void {
+        this.enqueue('event', JSON.stringify({ eventName, payload }));
+    }
+
+    sendClientAction(_client: unknown, action: string, payload: any[]): void {
+        this.enqueue('client-action', JSON.stringify({ action, payload }));
+    }
+
+    async persistState(): Promise<void> {
+        // State persists through the coordinator when actions publish it.
+    }
+}
+
+/** Attach coordinator broadcasts to a request-constructed SSE component instance. */
+export function attachCoordinatorRuntime(instance: any, stub: SseCoordinatorStub): CoordinatorSseRuntime {
+    const runtime = new CoordinatorSseRuntime(stub);
+    instance._runtime = runtime;
+    return runtime;
+}
+
+/**
+ * Apply a scope snapshot to a component instance. Only keys the component
+ * declares as state (or already exposes as public state) are applied, so a
+ * snapshot produced by another acting component cannot inject foreign keys.
+ */
+export function hydrateSseScopeState(instance: any, state: Record<string, unknown> | undefined | null): void {
+    if (!state || typeof state !== 'object') return;
+    const safeState = sanitizeClientState(instance.constructor, state);
+    for (const key in safeState) instance[key] = safeState[key];
+    const publicStateKeys = new Set(Object.keys(instance.getPublicState()));
+    for (const key of Object.keys(state)) {
+        if (key in safeState) continue;
+        if (key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
+        if (publicStateKeys.has(key)) instance[key] = (state as Record<string, unknown>)[key];
+    }
+}
+
+/**
+ * Register or reset a process-local SSE store entry during SSR (Node
+ * backend only). The fresh component instance replaces any existing entry so
+ * that state is re-initialized via init() instead of reusing stale in-memory
+ * state. On Cloudflare, SSR initializes the coordinator scope instead.
  */
 export function registerSseStoreEntry(
     ctx: RouterContext,
@@ -91,18 +285,24 @@ export function registerSseStoreEntry(
         sseStateStore.set(storeKey, {
             componentInstance: pageInstance,
             runtime,
-            pendingGenerator: null,
-            stateVersion: 0,
-            connectionCount: 0,
+            stateVersion: nextLocalSseCursor(),
+            connectionCount: sseStateStore.get(storeKey)?.connectionCount ?? 0,
             lastActive: Date.now(),
         });
+        enforceSseStoreBound(Date.now(), storeKey);
+        notifyLocalSse(storeKey);
     }
 }
+
+const SSE_HEADERS = {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+};
 
 /** SSE endpoint handler — long-lived connection that pushes state updates to the client. */
 export function handleSseEndpoint(ctx: RouterContext) {
     return async (c: Context) => {
-        // SECURITY: validate Origin to prevent cross-site abuse of the SSE
         // SECURITY: validate Origin to prevent cross-site abuse of the SSE
         // endpoint. Unlike WebSocket, EventSource does NOT send an Origin
         // header for same-origin requests (only `referer`), so we only enforce
@@ -127,7 +327,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         const module = ctx.pages[componentPath] || ctx.layouts[componentPath];
         if (!module) return new Response('Component not found', { status: 404 });
-        const PageComponent = Object.values(module as object)[0] as new () => Cossack;
+        const PageComponent = getModuleDefault(module as object) as new () => Cossack;
         if (!PageComponent || typeof PageComponent !== 'function') return new Response('Invalid component', { status: 500 });
 
         // Scope keys are identifiers, not credentials. Re-evaluate custom scopes
@@ -139,10 +339,31 @@ export function handleSseEndpoint(ctx: RouterContext) {
         } catch {
             return new Response('Invalid route params', { status: 400 });
         }
-        const effectiveScopeKey = await resolveSseScopeKey(withRuntimeRouteParams(c, params), pageOptions);
+        const effectiveScopeKey = await resolveRealtimeScopeKey(withRuntimeRouteParams(c, params), pageOptions);
         if (!requestedScopeKey || requestedScopeKey !== effectiveScopeKey) {
             return new Response('Forbidden: scopeKey does not match the authenticated scope', { status: 403 });
         }
+
+        let identity: Awaited<ReturnType<typeof captureRealtimeIdentity>>;
+        try { identity = await captureRealtimeIdentity(c); }
+        catch (error) {
+            if (error instanceof RealtimeIdentityConfigurationError) return c.json({ code: 'COSSACK_REALTIME_AUTH_REQUIRED',
+                error: 'Realtime authentication needs a valid revalidation provider.' }, 409);
+            return c.json({ code: 'COSSACK_REALTIME_AUTH_UNAVAILABLE', error: 'Realtime authentication is unavailable. Reload to try again.' }, 503);
+        }
+        const originalUserId = c.get('user')?.id;
+        const locale = getLocale();
+        const authSnapshot = snapshotRealtimeRequest(c, params, locale);
+        const authorize = () => revalidateRealtimeIdentity(authSnapshot, params, identity, ctx.getMiddlewares?.(componentPath) ?? [], async fresh =>
+            fresh.get('user')?.id === originalUserId && await resolveRealtimeScopeKey(fresh, pageOptions) === effectiveScopeKey, locale);
+
+        const coordinator = getSseCoordinator(c.env);
+        if (coordinator) {
+            return handleCoordinatorSubscription(c, ctx, componentRouteId, effectiveScopeKey, PageComponent, authorize);
+        }
+        // Cloudflare must not silently fall back to process-local state: the
+        // store is not shared between isolates and resets on eviction.
+        if (isCloudflareRuntime()) return sseBindingMissingResponse();
 
         // Look up or create SSE state store entry
         const storeKey = sseStoreKey(componentRouteId, effectiveScopeKey);
@@ -162,9 +383,9 @@ export function handleSseEndpoint(ctx: RouterContext) {
             componentInstance._render();
 
             const runtime = new SseRuntime(componentInstance);
-            entry = { componentInstance, runtime, pendingGenerator: null, stateVersion: 0, connectionCount: 0, lastActive: Date.now() };
+            entry = { componentInstance, runtime, stateVersion: nextLocalSseCursor(), connectionCount: 0, lastActive: Date.now() };
             sseStateStore.set(storeKey, entry);
-            enforceSseStoreBound();
+            enforceSseStoreBound(Date.now(), storeKey);
         }
 
         // Track this connection against the entry so the store can be trimmed
@@ -174,166 +395,250 @@ export function handleSseEndpoint(ctx: RouterContext) {
 
         const { componentInstance } = entry;
 
-        // Use TransformStream — the writable end accepts SSE frames,
-        // the readable end is returned as the HTTP response body.
-        // All setInterval callbacks run in THIS request's I/O context.
-        const { readable, writable } = new TransformStream();
-        const writer = writable.getWriter();
-        const encoder = new TextEncoder();
-
-        const send = (eventType: string, data: any) => {
-            writer.write(encoder.encode(`event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`)).catch(() => {});
-        };
-
-        // Send initial state + connected
-        send('state-update', componentInstance.getPublicState());
-        send('connected', {});
-
-        // Heartbeat every 15s (Cloudflare Workers close idle connections ~30s)
-        const heartbeat = setInterval(() => {
-            writer.write(encoder.encode(': heartbeat\n\n')).catch(() => {});
-        }, 15000);
-
-        // Main driver: polls shared state for changes and writes to this stream.
-        // - stateVersion bumps from /crpc → push state-update to this client
-        // - pendingGenerator from /crpc → pull one value per tick and push as SSE yield event
-        //
-        // IMPORTANT: look up the entry from the Map on each tick rather than using a
-        // captured reference. This ensures the driver always uses the current entry
-        // even if another request replaced it in the Map.
+        const pending: SseFrame[] = [
+            { event: 'state-update', data: JSON.stringify(componentInstance.getPublicState()), cursor: entry.stateVersion },
+            { event: 'connected', data: '{}' },
+        ];
         let lastVersion = entry.stateVersion;
-
-        const driver = setInterval(async () => {
-            const currentEntry = sseStateStore.get(storeKey);
-            if (!currentEntry) return;
-
-            // 1. Detect state changes signalled by /crpc (version counter)
-            if (currentEntry.stateVersion !== lastVersion) {
-                lastVersion = currentEntry.stateVersion;
-                send('state-update', currentEntry.componentInstance.getPublicState());
-            }
-
-            // 2. Pull next value from active generator (only one driver pulls at a time)
-            if (currentEntry.pendingGenerator && !currentEntry.pendingGenerator.done && !currentEntry.pendingGenerator.pulling) {
-                const gen = currentEntry.pendingGenerator;
-                gen.pulling = true;
-                try {
-                    const { value, done } = await gen.iterator.next();
-                    gen.pulling = false;
-                    // Sync state changes from the generator's source instance to the SSE entry
-                    const sourceState = gen.sourceInstance.getPublicState();
-                    for (const k in sourceState) {
-                        currentEntry.componentInstance[k] = sourceState[k];
-                    }
-                    // Bump version — do NOT update lastVersion here.
-                    // Each driver detects the bump on its next tick and sends
-                    // state-update to its own connection (including this one).
-                    currentEntry.stateVersion++;
-
-                    if (done) {
-                        gen.done = true;
-                        send('stream-done', { streamId: gen.streamId });
-                        currentEntry.pendingGenerator = null;
-                    } else {
-                        send('yield', { streamId: gen.streamId, value });
-                    }
-                } catch (err) {
-                    gen.pulling = false;
-                    gen.done = true;
-                    send('stream-error', { streamId: gen.streamId, error: String(err) });
-                    currentEntry.stateVersion++;
-                    currentEntry.pendingGenerator = null;
-                }
-            }
-        }, 200);
-
+        const read = (): SseFrame[] => {
+            const current = sseStateStore.get(storeKey);
+            if (!current || current.stateVersion === lastVersion) return [];
+            lastVersion = current.stateVersion;
+            return [{ event: 'state-update', cursor: lastVersion, data: JSON.stringify({ ...current.componentInstance.getPublicState(),
+                ...(current.requestId === undefined ? {} : { _cossack_request_id: current.requestId }) }) }];
+        };
+        const poll: SsePoll = async (waitMs, pollSignal) => {
+            const events = read();
+            if (events.length || waitMs <= 0) return events;
+            await waitForLocalSse(storeKey, waitMs, pollSignal);
+            return read();
+        };
         const cleanup = () => {
-            clearInterval(heartbeat);
-            clearInterval(driver);
             const e = sseStateStore.get(storeKey);
             if (e) {
                 e.connectionCount = Math.max(0, e.connectionCount - 1);
                 e.lastActive = Date.now();
             }
+            enforceSseStoreBound();
         };
-        (c.req.raw as any).signal?.addEventListener('abort', cleanup);
-
-        return new Response(readable, {
-            headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
-        });
+        return new Response(authorizedSseStream(c.req.raw.signal, pending, poll, authorize, cleanup), { headers: SSE_HEADERS });
     };
 }
 
 /**
- * Handle SSE-specific logic in the /crpc handler — streaming detection and state sync.
- * Uses the pre-computed scopeKey for targeted store entry lookup.
+ * Coordinator-backed subscription: forwards the scope's bounded event log to
+ * the browser. Event cursors become SSE ids, so an EventSource reconnect sends
+ * `Last-Event-ID` and resumes without replaying delivered events. When the
+ * history expired (or the cursor is unknown), the client receives a fresh
+ * authoritative snapshot instead of a gap.
  */
-export function handleSseCrpc(
+async function handleCoordinatorSubscription(
+    c: Context,
+    ctx: RouterContext,
     componentRouteId: string,
     scopeKey: string,
-    actionResult: any,
-    responseData: Record<string, any>,
-    targetInstance: any,
-): { handled: boolean; response?: any } {
-    function isAsyncIterable(obj: any): boolean {
-        return obj != null && typeof obj[Symbol.asyncIterator] === 'function';
+    PageComponent: new () => Cossack,
+    authorize: () => Promise<boolean>,
+): Promise<Response> {
+    const stub = getSseScopeStub(c.env, componentRouteId, scopeKey)!;
+    const rawCursor = c.req.header('last-event-id') ?? c.req.query('cursor');
+    const cursor = rawCursor === undefined || rawCursor === '' ? undefined : Number(rawCursor);
+    if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 0)) {
+        return new Response('Invalid SSE cursor', { status: 400 });
     }
 
-    const storeKey = sseStoreKey(componentRouteId, scopeKey);
-
-    // If the action returned an async iterable, set up streaming
-    if (isAsyncIterable(actionResult)) {
-        const streamId = `stream_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const entry = sseStateStore.get(storeKey);
-
-        if (entry) {
-            // Signal SSE client that state changed so far (e.g. isStreaming = true)
-            for (const k in responseData) {
-                entry.componentInstance[k] = responseData[k];
+    let snapshot = await stub.currentState();
+    if (!snapshot) {
+        // Subscription cold starts need the same layout declarations as SSR
+        // and RPC. Construct and dispose the temporary instance in this request.
+        const rootScope = createRootServiceScope();
+        const facilities = { context: c, user: c.get('user'), env: c.env };
+        rootScope.bindRequest(facilities);
+        let instance: Cossack | undefined;
+        try {
+            let active = rootScope;
+            const path = ctx.routeIdMap.get(componentRouteId)!;
+            for (const layout of resolveLayoutPaths(path, Object.keys(ctx.layouts))) {
+                const Layout = getModuleDefault(ctx.layouts[layout] as object) as new () => Cossack;
+                active = createLayoutServiceScope(active, Layout, {
+                    ownerRouteId: ctx.routePathToIdMap.get(layout), ownerRoutePath: layout, scopeKey,
+                });
+                active.bindRequest(facilities);
             }
-            entry.stateVersion++;
-
-            // Register the generator on the SSE store entry.
-            entry.pendingGenerator = {
-                iterator: actionResult[Symbol.asyncIterator](),
-                streamId,
-                done: false,
-                sourceInstance: targetInstance,
-                pulling: false,
-            };
+            instance = createInstance(PageComponent, { serviceScope: active });
+            await instance.bootstrap({ ...facilities, runtime: await ctx.runtimeInfo?.(), skipInit: true });
+            instance._render();
+            snapshot = await stub.initialize(JSON.stringify(instance.getPublicState()));
+        } finally {
+            try { await instance?.destroyAsync(); }
+            finally { await rootScope.disposeAsync(); }
         }
-
-        return {
-            handled: true,
-            response: {
-                ...responseData,
-                _cossack_stream_id: streamId,
-            },
-        };
     }
 
-    // Non-streaming: sync SSE state
-    syncSseState(storeKey, responseData);
+    const signal = c.req.raw.signal;
+    let after = cursor ?? snapshot.cursor;
+    const initial = await stub.updates(after);
+    // Replay in increasing cursor order before advancing to the latest
+    // snapshot. Advertising its cursor first would acknowledge broadcasts
+    // the browser has not received if it disconnects during the replay.
+    const pending: SseFrame[] = [];
+    if (initial.resync) pending.push({ event: 'resync', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
+    else pending.push(...initial.events);
+    pending.push({ event: 'state-update', data: initial.snapshot.state, cursor: initial.snapshot.cursor });
+    pending.push({ event: 'connected', data: JSON.stringify({ cursor: initial.snapshot.cursor }) });
+    after = initial.snapshot.cursor;
 
-    return { handled: false };
+    const poll: SsePoll = async (waitMs, pollSignal) => {
+        if (pollSignal.aborted) return [];
+        // One long-poll per subscriber: the coordinator holds the call until a
+        // new event or the wait elapses, instead of a fixed-interval poll.
+        const waiterId = crypto.randomUUID();
+        const call = stub.updates(after, waitMs, waiterId);
+        let release: (() => void) | undefined;
+        const aborted = new Promise<null>(resolve => {
+            release = () => {
+                resolve(null);
+                // Best effort: free the coordinator's waiter slot now rather
+                // than at its timeout.
+                try { void stub.cancelWait(waiterId).catch(() => {}); } catch { /* stub gone */ }
+            };
+            pollSignal.addEventListener('abort', release, { once: true });
+        });
+        let updates: Awaited<typeof call> | null;
+        try { updates = await Promise.race([call, aborted]); }
+        finally { pollSignal.removeEventListener('abort', release!); }
+        if (!updates) { void call.catch(() => {}); return []; }
+        if (updates.resync) {
+            after = updates.snapshot.cursor;
+            return [{ event: 'resync', data: JSON.stringify({ cursor: updates.snapshot.cursor }) },
+                { event: 'state-update', data: updates.snapshot.state, cursor: updates.snapshot.cursor }];
+        }
+        after = updates.events.at(-1)?.cursor ?? after;
+        return updates.events;
+    };
+    return new Response(authorizedSseStream(signal, pending, poll, authorize), { headers: SSE_HEADERS });
+}
+
+type SseFrame = { event: string; data: string; cursor?: number };
+/** Return frames after the current cursor, waiting up to waitMs for new ones. */
+type SsePoll = (waitMs: number, signal: AbortSignal) => Promise<SseFrame[]>;
+
+/** Idle interval after which a heartbeat (and its authorization check) is sent. */
+export const SSE_HEARTBEAT_MS = 15_000;
+/** A batch drained slowly by its reader is re-authorized after this age. */
+export const SSE_AUTH_MAX_AGE_MS = 5_000;
+/** Minimum spacing of polls that returned nothing before their wait elapsed. */
+const SSE_EMPTY_POLL_BACKOFF_MS = 1_000;
+
+/**
+ * No delivery, including replay and heartbeat, bypasses the live middleware
+ * check. Authorization runs once per delivered batch (the initial replay or
+ * one poll result), once per heartbeat, and again when a batch is still
+ * draining after SSE_AUTH_MAX_AGE_MS.
+ */
+function authorizedSseStream(
+    signal: AbortSignal,
+    pending: SseFrame[],
+    poll: SsePoll,
+    authorize: () => Promise<boolean>,
+    onClose: () => void = () => {},
+): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    const local = new AbortController();
+    let closed = false;
+    let lastWrite = Date.now();
+    let lastAuth = 0;
+    let batchAuthorized = false;
+    let streamController: ReadableStreamDefaultController<Uint8Array>;
+    const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        signal.removeEventListener('abort', abort);
+        local.abort();
+        onClose();
+    };
+    const abort = () => {
+        if (closed) return;
+        cleanup();
+        streamController.close();
+    };
+    const sleep = (ms: number) => new Promise<void>(resolve => {
+        if (local.signal.aborted) return resolve();
+        const done = () => { clearTimeout(timer); local.signal.removeEventListener('abort', done); resolve(); };
+        const timer = setTimeout(done, ms);
+        local.signal.addEventListener('abort', done, { once: true });
+    });
+    return new ReadableStream<Uint8Array>({
+        start(controller) {
+            streamController = controller;
+            signal.addEventListener('abort', abort, { once: true });
+            if (signal.aborted) abort();
+        },
+        async pull(controller) {
+            try {
+                while (!closed) {
+                    const heartbeat = Date.now() - lastWrite >= SSE_HEARTBEAT_MS;
+                    if (pending.length || heartbeat) {
+                        if (!batchAuthorized || heartbeat || Date.now() - lastAuth >= SSE_AUTH_MAX_AGE_MS) {
+                            const allowed = await authorize();
+                            if (closed) return;
+                            if (!allowed) {
+                                controller.enqueue(encoder.encode('event: authorization-error\ndata: {"code":"COSSACK_REALTIME_AUTH_CHANGED"}\n\n'));
+                                cleanup(); controller.close(); return;
+                            }
+                            lastAuth = Date.now();
+                            batchAuthorized = true;
+                        }
+                        const event = pending.shift();
+                        controller.enqueue(encoder.encode(event
+                            ? `event: ${event.event}\n${event.cursor === undefined ? '' : `id: ${event.cursor}\n`}data: ${event.data}\n\n`
+                            : ': heartbeat\n\n'));
+                        lastWrite = Date.now();
+                        return;
+                    }
+                    // Long-poll until the next heartbeat is due.
+                    const waitMs = Math.max(0, SSE_HEARTBEAT_MS - (Date.now() - lastWrite));
+                    const started = Date.now();
+                    const events = await poll(waitMs, local.signal);
+                    if (closed) return;
+                    if (events.length) {
+                        pending.push(...events);
+                        batchAuthorized = false;
+                        continue;
+                    }
+                    // An empty answer before the wait elapsed (busy coordinator,
+                    // a non-blocking backend) must not become a hot loop.
+                    const backoff = Math.min(waitMs, SSE_EMPTY_POLL_BACKOFF_MS) - (Date.now() - started);
+                    if (backoff > 0) await sleep(backoff);
+                }
+            } catch (error) {
+                if (closed) return;
+                cleanup();
+                controller.error(error);
+            }
+        },
+        cancel() { cleanup(); },
+    }, { highWaterMark: 0 });
 }
 
 /** Sync state changes to the SSE store entry identified by storeKey. */
 export function syncSseState(
     storeKey: string,
     responseData: Record<string, any>,
-): void {
+    requestId?: string,
+): number | undefined {
     const entry = sseStateStore.get(storeKey);
     if (entry) {
+        const cursor = nextLocalSseCursor();
         for (const k in responseData) {
             if (k !== '_cossack_return') {
                 entry.componentInstance[k] = responseData[k];
             }
         }
-        entry.stateVersion++;
+        entry.stateVersion = cursor;
+        entry.requestId = requestId;
+        entry.lastActive = Date.now();
+        notifyLocalSse(storeKey);
+        return entry.stateVersion;
     }
 }

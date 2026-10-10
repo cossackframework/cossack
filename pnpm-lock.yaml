@@ -86,7 +86,7 @@ importers:
         specifier: ^8.18.0
         version: 8.18.1
       electron:
-        specifier: ^43.5.0
+        specifier: ^43.7.0
         version: 43.7.6(supports-color@10.2.2)
       typescript:
         specifier: ^7.0.2
@@ -140,13 +140,31 @@ importers:
       '@cossackframework/scaffold':
         specifier: workspace:*
         version: link:../scaffold
+      '@modelcontextprotocol/server':
+        specifier: ^2.3.0
+        version: 2.3.0
       prompts:
         specifier: ^2.4.2
         version: 2.4.2
       tsx:
         specifier: ^4.23.0
         version: 4.23.0
+      typescript-api:
+        specifier: npm:typescript@6.0.3
+        version: typescript@6.0.3
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
+      '@jridgewell/trace-mapping':
+        specifier: 0.3.31
+        version: 0.3.31
+      '@modelcontextprotocol/client':
+        specifier: ^2.3.0
+        version: 2.3.0
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.0.0)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -188,39 +206,17 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@22.20.1)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
 
-  packages/deno-adapter:
+  packages/desktop:
     dependencies:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@cossackframework/framework':
-        specifier: workspace:*
-        version: link:../framework
-      hono:
-        specifier: ^4.13.7
-        version: 4.13.11
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-      vite:
-        specifier: ^8.1.4
-        version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.0.0)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
-
-  packages/desktop:
-    dependencies:
-      '@cossackframework/framework':
-        specifier: workspace:*
-        version: link:../framework
-    devDependencies:
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
       electron:
-        specifier: ^43.5.0
+        specifier: ^43.7.0
         version: 43.7.6(supports-color@10.2.2)
       typescript:
         specifier: ^7.0.2
@@ -234,46 +230,18 @@ importers:
 
   packages/framework:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1075.0
+        version: 3.1075.0
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
       '@cossackframework/renderer':
         specifier: workspace:*
         version: link:../renderer
-    devDependencies:
-      '@aws-sdk/client-s3':
-        specifier: ^3.1075.0
-        version: 3.1075.0
-      '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1075.0
-        version: 3.1075.0
-      '@cloudflare/vite-plugin':
-        specifier: ^1.47.0
-        version: 1.47.0(@types/node@26.0.0)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))(wrangler@4.114.0(@types/node@26.0.0))
-      '@cossackframework/solar-icons':
-        specifier: ^0.7.1
-        version: 0.7.1
-      '@cossackframework/ui':
-        specifier: workspace:*
-        version: link:../ui
-      '@playwright/test':
-        specifier: ^1.61.1
-        version: 1.61.1
-      '@tailwindcss/vite':
-        specifier: ^4.3.3
-        version: 4.3.3(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
-      cossack:
-        specifier: workspace:*
-        version: link:../cossack
-      hono:
-        specifier: ^4.13.7
-        version: 4.13.11
-      reflect-metadata:
-        specifier: ^0.2.2
-        version: 0.2.2
       rehype-raw:
         specifier: ^7.0.0
         version: 7.0.0
@@ -301,18 +269,46 @@ importers:
       remark-toc:
         specifier: ^9.0.0
         version: 9.0.0
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-      tsx:
-        specifier: ^4.23.0
-        version: 4.23.0
       unified:
         specifier: ^11.0.5
         version: 11.0.5
       vfile-matter:
         specifier: ^5.0.1
         version: 5.0.1
+    devDependencies:
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1075.0
+        version: 3.1075.0
+      '@cloudflare/vite-plugin':
+        specifier: ^1.47.0
+        version: 1.47.0(@types/node@26.0.0)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))(wrangler@4.114.0(@types/node@26.0.0))
+      '@cossackframework/solar-icons':
+        specifier: ^0.7.1
+        version: 0.7.1
+      '@cossackframework/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
+      cossack:
+        specifier: workspace:*
+        version: link:../cossack
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.11
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
       vite:
         specifier: ^8.1.4
         version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
@@ -328,6 +324,9 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
+      '@hono/node-server':
+        specifier: ^2.1.0
+        version: 2.1.0(hono@4.13.11)
       nodemailer:
         specifier: ^10.0.6
         version: 10.0.12
@@ -359,6 +358,9 @@ importers:
       css-tree:
         specifier: ^3.2.1
         version: 3.2.1
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
     devDependencies:
       happy-dom:
         specifier: ^20.11.1
@@ -378,6 +380,9 @@ importers:
 
   packages/scaffold:
     dependencies:
+      '@cossackframework/core':
+        specifier: workspace:*
+        version: link:../core
       prompts:
         specifier: ^2.4.2
         version: 2.4.2
@@ -461,13 +466,25 @@ importers:
       '@cossackframework/core':
         specifier: workspace:*
         version: link:../core
+      hono:
+        specifier: ^4.13.7
+        version: 4.13.11
     devDependencies:
+      '@cossackframework/renderer':
+        specifier: workspace:*
+        version: link:../renderer
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1
       vite:
         specifier: ^8.1.4
-        version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
+        version: 8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.11
-        version: 4.1.11(@types/node@26.0.0)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 4.1.11(@types/node@22.20.1)(happy-dom@20.11.1)(jsdom@29.1.1)(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
 
   packages/ui:
     devDependencies:
@@ -478,11 +495,20 @@ importers:
         specifier: workspace:*
         version: link:../renderer
       '@cossackframework/solar-icons':
-        specifier: 0.7.1
+        specifier: ^0.7.1
         version: 0.7.1
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.61.1
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(vite@8.1.4(@types/node@22.20.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0))
       '@types/node':
         specifier: ^22.19.0
         version: 22.20.1
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -1271,6 +1297,18 @@ packages:
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
     engines: {node: '>= 12.13.0'}
+
+  '@modelcontextprotocol/client@2.3.0':
+    resolution: {integrity: sha512-pbHtGj6EeFCHngFE8gtNPaKrsj8Mb1IMw45BLcaPML/m2WTxI7pyYmeNQvaux88Lw8BSO5r7nyRbUyIkICmGrg==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/core@2.3.0':
+    resolution: {integrity: sha512-09BHFaNVBe5pB2AhzCfLj0cqmsKLERvZQ4FblzP90UMGLaXVqdZPByFjURwsUYCmxonUW2yAwgTTvle+8O2/8w==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/server@2.3.0':
+    resolution: {integrity: sha512-+6b0LdsQLmHsvS7J6sQJ4weTpzUn61fU1JKS+321/+IyDYoHW5CR2Tgqcs6GgAAQvlesCo6yX3xttgmx+XGtJw==}
+    engines: {node: '>=20'}
 
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
@@ -2392,6 +2430,14 @@ packages:
     resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
     engines: {node: '>=0.8.x'}
 
+  eventsource-parser@3.1.1:
+    resolution: {integrity: sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ==}
+    engines: {node: '>=18.0.0'}
+
+  eventsource@3.0.7:
+    resolution: {integrity: sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==}
+    engines: {node: '>=18.0.0'}
+
   execa@1.0.0:
     resolution: {integrity: sha512-adbxcyWV46qiHyvSp50TKt05tB4tK3HcmF7/nxfAdhnox83seTDbwnaqKO4sXRy7roHAIFqJP/Rw/AuEbX61LA==}
     engines: {node: '>=6'}
@@ -2759,6 +2805,9 @@ packages:
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
+
+  jose@6.2.12:
+    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
   jsdom@29.1.1:
     resolution: {integrity: sha512-ECi4Fi2f7BdJtUKTflYRTiaMxIB0O6zfR1fX0GXpUrf6flp8QIYn1UT20YQqdSOfk2dfkCwS8LAFoJDEppNK5Q==}
@@ -3436,6 +3485,10 @@ packages:
     resolution: {integrity: sha512-udgsAY+fTnvv7kI7aaxbqwWNb0AHiB0qBO89PZKPkoTmGOgdbrHDKD+0B2X4uTfJ/FT1R09r9gTsjUjNJotuog==}
     engines: {node: '>=0.10.0'}
 
+  pkce-challenge@5.0.1:
+    resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
+    engines: {node: '>=16.20.0'}
+
   playwright-core@1.61.1:
     resolution: {integrity: sha512-h7Qlt6m4REp25qvIdvbDtVmD4LqVXfpRxhORv9L0jzETM05p4fuPJ3dKyuSXQxDSbXnmS79HAgi9589lGSpLkg==}
     engines: {node: '>=18'}
@@ -3910,6 +3963,11 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
     engines: {node: '>=16.20.0'}
@@ -4260,6 +4318,9 @@ packages:
 
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
+
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -5291,6 +5352,25 @@ snapshots:
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
       cross-spawn: 7.0.6
+
+  '@modelcontextprotocol/client@2.3.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.3.0
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.1
+      jose: 6.2.12
+      pkce-challenge: 5.0.1
+      zod: 4.6.5
+
+  '@modelcontextprotocol/core@2.3.0':
+    dependencies:
+      zod: 4.6.5
+
+  '@modelcontextprotocol/server@2.3.0':
+    dependencies:
+      '@modelcontextprotocol/core': 2.3.0
+      zod: 4.6.5
 
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
@@ -6364,6 +6444,12 @@ snapshots:
 
   events@3.3.0: {}
 
+  eventsource-parser@3.1.1: {}
+
+  eventsource@3.0.7:
+    dependencies:
+      eventsource-parser: 3.1.1
+
   execa@1.0.0:
     dependencies:
       cross-spawn: 6.0.6
@@ -6806,6 +6892,8 @@ snapshots:
   jiti@2.6.1: {}
 
   jiti@2.7.0: {}
+
+  jose@6.2.12: {}
 
   jsdom@29.1.1:
     dependencies:
@@ -7613,6 +7701,8 @@ snapshots:
 
   pify@2.3.0: {}
 
+  pkce-challenge@5.0.1: {}
+
   playwright-core@1.61.1: {}
 
   playwright@1.61.1:
@@ -8128,6 +8218,8 @@ snapshots:
 
   typescript@5.4.5: {}
 
+  typescript@6.0.3: {}
+
   typescript@7.0.2:
     optionalDependencies:
       '@typescript/typescript-aix-ppc64': 7.0.2
@@ -8619,5 +8711,7 @@ snapshots:
       '@speed-highlight/core': 1.2.17
       cookie: 1.1.1
       youch-core: 0.3.3
+
+  zod@4.6.5: {}
 
   zwitch@2.0.4: {}

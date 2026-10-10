@@ -1,43 +1,5 @@
-export type Adapter = 'cloudflare' | 'node' | 'deno';
-export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
-export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop';
-export type AuthMethod = 'credentials' | 'oauth';
-export type DatabaseProvider = 'd1' | 'sqlite' | 'turso' | 'postgres' | 'mysql' | 'hyperdrive-postgres' | 'hyperdrive-mysql';
-export type OAuthProvider = 'github' | 'google' | 'gitlab' | 'facebook' | 'microsoft';
-export type UITheme = 'default' | 'neutral' | 'zinc' | 'stone' | 'gray' | 'slate' | 'blue' | 'green' | 'red';
-export type DashboardModule = 'users' | 'sessions' | 'settings' | 'roles';
-
-export interface ScaffoldRecipe {
-  adapter: Adapter;
-  preset: Preset;
-  explicitFeatures: Feature[];
-  resolvedFeatures: Feature[];
-  dashboardModules: DashboardModule[];
-  config: {
-    database: DatabaseProvider;
-    authMethods: AuthMethod[];
-    oauth: OAuthProvider[];
-    theme: UITheme;
-  };
-}
-
-export interface CreateAppOptions {
-  adapter?: Adapter;
-  preset?: Preset;
-  features?: Feature[] | string;
-  database?: DatabaseProvider;
-  runtime?: Adapter;
-  authMethods?: AuthMethod[] | string;
-  oauth?: OAuthProvider[] | string;
-  theme?: UITheme;
-  dashboardModules?: DashboardModule[] | string;
-  dashboardFeatures?: DashboardModule[] | string;
-  interactive?: boolean;
-  confirm?: boolean;
-  yes?: boolean;
-  cwd?: string;
-  force?: boolean;
-}
+export * from './registry.js';
+import type { Adapter, CreateAppOptions, DashboardModule, DatabaseProvider, Feature, ScaffoldRecipe } from './registry.js';
 
 export interface AddFeatureOptions extends Omit<CreateAppOptions, 'preset' | 'features'> {
   features?: DashboardModule[] | string;
@@ -53,22 +15,9 @@ export interface SwitchAdapterOptions {
   dryRun?: boolean;
 }
 
-export declare const ADAPTERS: readonly Adapter[];
-export declare const FEATURES: readonly Feature[];
-export declare const AUTH_METHODS: readonly AuthMethod[];
-export declare const OAUTH_PROVIDERS: readonly OAuthProvider[];
-export declare const UI_THEMES: readonly UITheme[];
-export declare const DASHBOARD_MODULES: readonly DashboardModule[];
-export declare const FEATURE_REGISTRY: Record<Feature, { requires: Feature[] }>;
-export declare const PRESET_REGISTRY: Record<Preset, { features: Feature[]; dashboardModules?: readonly DashboardModule[] }>;
-export declare const DATABASE_PROVIDERS: Record<DatabaseProvider, { adapters: readonly Adapter[] }>;
-export declare function parseList(value: unknown): string[];
-export declare function resolveFeatures(features: Feature[] | string): Feature[];
-export declare function removeFeature(features: Feature[] | string, feature: Feature): Feature[];
-export declare function resolveDashboardModules(value: DashboardModule[] | string | undefined, dashboardSelected: boolean): DashboardModule[];
-export declare function resolveRecipe(options?: CreateAppOptions): ScaffoldRecipe;
 export declare function createApp(projectName: string, options?: CreateAppOptions): Promise<{
-  status: 'created' | 'cancelled';
+  status: 'created' | 'cancelled' | 'dry-run';
+  changes?: ChangeSet;
   projectDir: string;
   adapter: Adapter;
   manifestPath: string;
@@ -124,6 +73,18 @@ export declare function renderRecipe(recipe: ScaffoldRecipe, options?: { project
   content: Buffer;
   capability: string;
 }>>;
+export type DependencyBaseline = Partial<Record<'dependencies' | 'devDependencies' | 'optionalDependencies' | 'peerDependencies', Record<string, string>>>;
+export declare function dependencyBaseline(pkg: DependencyBaseline): DependencyBaseline;
+export declare function planDependencyChanges(current: DependencyBaseline, desired: DependencyBaseline,
+  previous?: DependencyBaseline, options?: { force?: boolean }): {
+  next: DependencyBaseline;
+  baseline: DependencyBaseline;
+  updates: Array<{ name: string; section: string; from: string; to: string; changed: true }>;
+  additions: Array<{ name: string; section: string; to: string }>;
+  removals: Array<{ name: string; section: string; from: string }>;
+  preserved: Array<{ name: string; reason: string; sections: string[] }>;
+  conflicts: Array<{ name: string; reason: string; resolution: 'preserve' }>;
+};
 export declare function migratePnpmBuildSettings(
   projectDir: string,
   recipe: ScaffoldRecipe,
@@ -134,6 +95,7 @@ export declare function migratePnpmBuildSettings(
   workspaceChanged: boolean;
 }>;
 export declare function planChanges(projectDir: string, recipe: ScaffoldRecipe, manifest?: unknown): Promise<ChangeSet>;
+export declare function resolveManifestRecipe(manifest: unknown): ScaffoldRecipe;
 export declare function readManifest(projectDir: string): Promise<any | null>;
 export declare function detectProjectRuntime(projectDir: string, manifest?: unknown): Promise<Adapter | undefined>;
 export declare function writeManifest(

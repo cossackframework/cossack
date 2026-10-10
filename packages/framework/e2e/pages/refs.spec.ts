@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 
 test.describe('Refs Page', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,11 +9,9 @@ test.describe('Refs Page', () => {
     const input = page.getByPlaceholder('I was focused automatically');
     await expect(input).toBeVisible();
 
-    // Wait for hydration and onMount to run
-    await page.waitForTimeout(100);
-
-    // The input should be focused on mount
+    // onMount focuses the input through the ref (auto-retries until it runs).
     await expect(input).toBeFocused();
+    await expect(page.locator('.status')).toHaveText('Input focused via Ref!');
   });
 
   test('should animate element via @Ref when button clicked', async ({ page }) => {
@@ -30,23 +28,15 @@ test.describe('Refs Page', () => {
     // risks firing on an un-hydrated button (no listener) and flakes the test.
     await expect(targetBox).toHaveCSS('border-color', 'rgb(0, 128, 0)', { timeout: 5000 });
 
-    // Click the animate button
     await animateButton.click();
 
-    // Wait for animation to complete
-    await page.waitForTimeout(600);
-
-    // Check that the status text updated (meaning the ref worked)
-    const statusText = await page.locator('.status').textContent();
-    expect(statusText).toContain('animated');
+    // The handler reached the element through boxRef and started a Web Animation.
+    await expect(page.locator('.status')).toHaveText('Box animated via direct DOM access!');
+    expect(await targetBox.evaluate(el => el.getAnimations().length)).toBeGreaterThan(0);
   });
 
   test('should have working refs that allow direct DOM access', async ({ page }) => {
-    // Wait for refs to be set
-    await page.waitForTimeout(200);
-
-    // The refs should be working - status should be updated
-    const statusText = await page.locator('.status').textContent();
-    expect(statusText).not.toBe('Waiting for input...');
+    // onMount updates the status through a ref once hydration completes.
+    await expect(page.locator('.status')).not.toHaveText('Waiting for input...');
   });
 });

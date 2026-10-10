@@ -226,3 +226,5 @@ export class ValidationDemo extends Cossack {
         `;
     }
 }
+
+export default ValidationDemo;

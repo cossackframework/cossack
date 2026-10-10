@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+import { transformWithOxc } from 'vite';
 /**
  * Unit tests for vite-security-plugin
  * Tests the code stripping functionality to ensure server-only code is properly removed from client bundles.
@@ -9,8 +11,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   transformCossackClass,
+  inspectCompilerMethods,
   injectAutomaticServerMethodMetadata,
   isClientSafeMethod,
+  BUILTIN_METHODS,
   stripSsgGenerateStaticParams,
   isServerOnlyModule,
   generateServerOnlyStub,
@@ -175,16 +179,33 @@ describe('server$ compiler macro', () => {
       }`;
     const result = transformServerResources(source, '/src/pages/users/index.ts');
     expect(result).toContain('get users()');
+    expect(result).toContain('static readonly __cossackResourceFields = ["users"]');
     expect(result).toContain('this.__serverResource("users"');
     expect(result).toContain('this.__serverResource("render:0"');
     expect(result).toContain("import { Server as __CossackServerResource } from '@cossackframework/core'");
     expect(result).toContain('@__CossackServerResource({ serverResource: true })');
     expect(result).toContain('return this.find(id)');
+    expect(result).toContain('return this.__serverResourceResult("users", await');
   });
 
   it('requires initial for fields', () => {
     const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack { x = server$(() => 1); }`;
     expect(() => transformServerResources(source, 'a.ts')).toThrow('requires { initial }');
+  });
+
+  it('rejects a resource compiler registry collision instead of overwriting application members', () => {
+    const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack {
+      static __cossackResourceFields = ['other'];
+      x = server$(() => 1, { initial: 0 });
+    }`;
+    expect(() => transformServerResources(source, 'a.ts')).toThrow('__cossackResourceFields is reserved');
+  });
+
+  it('rejects generator resource loaders with an authored resource diagnostic', () => {
+    const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack {
+      items = server$(async function*() { yield 1; }, { initial: [] });
+    }`;
+    expect(() => transformServerResources(source, 'a.ts')).toThrow('items loader must return data; use @Server for generators');
   });
 
   it('rejects calls in arbitrary methods and ignores unrelated names', () => {
@@ -226,16 +247,7 @@ describe('server$ compiler macro', () => {
 
 describe('vite-security-plugin', () => {
   describe('isClientSafeMethod', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    // Create a local version for testing
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should mark @Client decorated methods as client-safe', () => {
       expect(isClientSafeMethod(['@Client()'], 'myMethod', BUILTIN_METHODS)).toBe(true);
@@ -284,10 +296,15 @@ describe('vite-security-plugin', () => {
       expect(isClientSafeMethod([], 'onNavigateComplete', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'escapeHtml', BUILTIN_METHODS)).toBe(true);
       expect(isClientSafeMethod([], 'loadingTemplate', BUILTIN_METHODS)).toBe(true);
+      for (const name of ['clientInit', 'getError', 'hasError', 'validateProperty', 'validateAll', 'clearErrors', 'startViewTransition']) {
+        expect(isClientSafeMethod([], name, BUILTIN_METHODS)).toBe(true);
+      }
     });
 
     it('should mark @Server decorated methods as server-only', () => {
       expect(isClientSafeMethod(['@Server()'], 'myMethod', BUILTIN_METHODS)).toBe(false);
+      expect(isClientSafeMethod(['@ServerTask()'], 'myMethod', BUILTIN_METHODS)).toBe(false);
+      expect(isClientSafeMethod(['@ClientTask()'], 'myMethod', BUILTIN_METHODS)).toBe(true);
     });
 
     it('should mark methods without decorators as server-only (secure by default)', () => {
@@ -298,15 +315,7 @@ describe('vite-security-plugin', () => {
   });
 
   describe('Transform Methods', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should keep @Client decorated methods', () => {
       const code = `
@@ -617,15 +626,7 @@ export class TestPage extends Cossack {
   });
 
   describe('Edge Cases', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should handle deeply nested code blocks correctly', () => {
       const code = `
@@ -718,7 +719,7 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       // Constructor should be preserved
       expect(result).toContain('constructor() {');
-      expect(result).toContain('super()');
+      expect(result).toMatch(/super\(/);
       expect(result).toContain("this.value = 'init'");
     });
 
@@ -897,15 +898,7 @@ export class CounterPage extends Cossack {
   });
 
   describe('Security Tests', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should remove database query strings from client bundle', () => {
       const code = `
@@ -972,15 +965,7 @@ export class TestPage extends Cossack {
   });
 
   describe('Real-world Patterns', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('should handle the counter-http pattern', () => {
       const code = `
@@ -1178,15 +1163,7 @@ export default class LifecycleDemo extends Cossack {
   });
 
   describe('transitive preservation / loud failure', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
 
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('preserves a helper called from onMount (transitive, depth 1)', () => {
       const code = `
@@ -1481,14 +1458,6 @@ export class B extends Cossack {}`;
   });
 
   it('integration: real ssg-demo/users/[username] shape — class methods stripped AND generateStaticParams stripped', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     const code = `
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -1541,14 +1510,6 @@ export class UserProfile extends Cossack {
   });
 
   describe('constructor metadata injection (no duplicate constructor)', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     /**
      * Count top-level `constructor(` occurrences in the transformed class body.
@@ -1594,7 +1555,7 @@ export class TestPage extends Cossack {
       // The existing constructor body must be preserved.
       expect(result).toContain("console.log('custom ctor')");
       // The registration call must be injected (once).
-      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      const regCount = (result.match(/new\.target as any\)\.__registerServerOnlyMethods\?\.\(\)/g) || []).length;
       expect(regCount).toBe(1);
     });
 
@@ -1612,7 +1573,7 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       // Exactly one constructor injected.
       expect(countTopLevelConstructors(result)).toBe(1);
-      expect(result).toContain('super()');
+      expect(result).toMatch(/super\(/);
       expect(result).toContain('__registerServerOnlyMethods');
     });
 
@@ -1647,7 +1608,7 @@ export class TestPage extends Cossack {
       expect(countTopLevelConstructors(result)).toBe(1);
       // The __registerServerOnlyMethods call must run inside the constructor.
       expect(result).toContain('doThing'); // method name listed in registration
-      const regCount = (result.match(/__registerServerOnlyMethods\?\.\(\)/g) || []).length;
+      const regCount = (result.match(/new\.target as any\)\.__registerServerOnlyMethods\?\.\(\)/g) || []).length;
       expect(regCount).toBe(1);
       // Constructor params preserved.
       expect(result).toContain('public foo: string');
@@ -1669,14 +1630,6 @@ export class TestPage extends Cossack {
   });
 
   describe('regex literals in method bodies (no brace corruption)', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('strips a server method whose body contains a regex with a closing brace', () => {
       // The `}` inside /}/ previously decremented the method's brace depth,
@@ -1761,14 +1714,6 @@ export class TestPage extends Cossack {
   });
 
   describe('member-kind stripping (generators, fields, computed names)', () => {
-    const BUILTIN_METHODS = new Set(['render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml', 'loadingTemplate', 'toString', 'valueOf']);
-    function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-      const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-      if (hasClientDecorator) return true;
-      if (builtinMethods.has(methodName)) return true;
-      if (decorators.some((d) => /@Server\b/.test(d))) return false;
-      return false;
-    }
 
     it('strips generator methods', () => {
       const code = `
@@ -1890,20 +1835,7 @@ export class TestPage extends Cossack {
 // rewrite fixes them. These guard against regressions if the discovery logic
 // ever moves back to text scanning.
 describe('vite-security-plugin — AST-driven bug fixes', () => {
-  const BUILTIN_METHODS = new Set([
-    'render', 'head', 'onMount', 'onCleanup', 'onNavigateComplete', 'escapeHtml',
-    'loadingTemplate', 'toString', 'valueOf', 'clientInit',
-    'getError', 'hasError', 'validateProperty', 'validateAll', 'clearErrors',
-    'startViewTransition',
-  ]);
 
-  function isClientSafeMethod(decorators: string[], methodName: string, builtinMethods: Set<string>): boolean {
-    const hasClientDecorator = decorators.some((d) => /@(?:Client|Optimistic|Computed|Shared|On(?:Event|Document|Window)?|PreventNavigation|Validate|VisibleTask|Task)\b/.test(d));
-    if (hasClientDecorator) return true;
-    if (builtinMethods.has(methodName)) return true;
-    if (decorators.some((d) => /@Server\b/.test(d))) return false;
-    return false;
-  }
 
   it('stubs a single-statement @Server method body', () => {
     // Previously: a one-line body like `{ this.count++; }` was not detected
@@ -1936,23 +1868,28 @@ export class Counter extends Cossack {
     expect(result).not.toContain('this.count++');
   });
 
-  it('preserves transitive this.foo() chains to the documented depth-3 cap', () => {
-    // The preservation closure runs 3 rounds, covering the common chain
-    // onMount -> setup -> wire -> listen (3 hops). The deepest helper's body
-    // must survive. (Deeper chains are intentionally not guaranteed.)
+  it('preserves deep client chains and cycles without traversing server boundaries', () => {
     const code = `
 @Page()
 export class Page extends Cossack {
-  onMount() { this.setup(); }
-  setup() { this.wire(); }
-  wire() { this.listen(); }
-  listen() { const secret = 'DEEP_SECRET'; return secret; }
+  onMount() { this.first(); }
+  first() { this.second(); }
+  second() { this.third(); }
+  third() { this.fourth(); }
+  fourth() { this.fifth(); }
+  fifth() { this.second(); this.save(); return 'DEEP_CLIENT_BODY'; }
+  @Server() save() { return this.secretHelper(); }
+  secretHelper() { return 'SERVER_ONLY_BODY'; }
   render() { return html\`<p>x</p>\`; }
 }`;
     const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
-    // The deepest helper's body survives (it was transitively preserved).
-    expect(result).toContain('DEEP_SECRET');
-    expect(result).toContain('listen()');
+    expect(result).toContain('DEEP_CLIENT_BODY');
+    for (const name of ['first', 'second', 'third', 'fourth', 'fifth']) {
+      expect(result).not.toContain(`__cossack_proxies?.get('${name}')`);
+    }
+    expect(result).toContain("__cossack_proxies?.get('save')");
+    expect(result).not.toContain('return this.secretHelper()');
+    expect(result).not.toContain('SERVER_ONLY_BODY');
   });
 
   it('handles @Server with options object', () => {
@@ -2207,5 +2144,376 @@ describe('server-only module detection', () => {
     it('handles backslash paths', () => {
       expect(moduleLabelFromId('C:\\app\\src\\services\\users.ts')).toBe('services/users');
     });
+  });
+});
+
+describe('client result typing (RT-01)', () => {
+  const transform = (code: string) => transformCossackClass(code, 'page.ts', isClientSafeMethod, BUILTIN_METHODS, false);
+  const callType = (type: string, name = 'RpcCall') => `${name}<import('@cossackframework/core').RpcResult<${type}>, import('@cossackframework/core').RpcYield<${type}>>`;
+
+  it('parses nested generic arguments and removes async generator modifiers', () => {
+    const result = transform(`import { Cossack, Server } from '@cossackframework/core';
+      class Sample extends Cossack {
+        @Server() /* async * annotation comment */ async *stream(): AsyncGenerator<Record<string, number>, { ok: boolean }, void> { yield {}; return { ok: true }; }
+      }`);
+    expect(result).toContain('stream(): ' + callType('AsyncGenerator<Record<string, number>, { ok: boolean }, void>'));
+    expect(result).not.toContain('async *stream');
+    expect(result).toContain('/* async * annotation comment */');
+  });
+
+  it('reuses an aliased RpcCall import and leaves function fields syntactically intact', () => {
+    const result = transform(`import { Cossack, Server, type RpcCall as Call } from '@cossackframework/core';
+      class Sample extends Cossack {
+        @Server() async value(): Promise<number> { return 1; }
+        @Server() load = async (): Promise<number> => 1;
+      }`);
+    expect(result).toContain('value(): ' + callType('Promise<number>', 'Call'));
+    expect(result).not.toContain('import type { RpcCall }');
+    expect(result).toContain('load = async (...args) =>');
+    expect(result).not.toContain('=> 1');
+  });
+
+  it('removes server-only validation closures from client decorators', () => {
+    const result = transform(`import { Cossack, Server as Action } from '@cossackframework/core';
+      class Sample extends Cossack {
+        @Action({ timeout: 30, input: { title: { validate: () => "SECRET_VALIDATOR" } } })
+        async value(): Promise<number> { return 1; }
+      }`);
+    expect(result).not.toContain('SECRET_VALIDATOR');
+    expect(result).toContain('timeout: 30');
+    expect(result).toContain('input: undefined');
+  });
+
+  it('rewrites generator signatures to RpcCall<Return, Yield>', () => {
+    const result = transform(`
+      import { Cossack, Server } from '@cossackframework/core';
+      export class Page extends Cossack {
+        @Server()
+        async *stream(): AsyncGenerator<string, number> { yield 'a'; return 1; }
+      }
+    `);
+    expect(result).toContain('stream(): ' + callType('AsyncGenerator<string, number>'));
+    expect(result).toContain("import type { RpcCall } from '@cossackframework/core'");
+    expect(result).not.toContain('async *stream');
+  });
+
+  it('maps one-argument generators, async iterables, and promises', () => {
+    const result = transform(`
+      import { Cossack, Server } from '@cossackframework/core';
+      export class Page extends Cossack {
+        @Server() async *one(): AsyncGenerator<string> { yield 'a'; }
+        @Server() async *iter(): AsyncIterableIterator<string> { yield 'a'; }
+        @Server() async plain(): Promise<boolean> { return true; }
+      }
+    `);
+    expect(result).toContain('one(): ' + callType('AsyncGenerator<string>'));
+    expect(result).toContain('iter(): ' + callType('AsyncIterableIterator<string>'));
+    expect(result).toContain('plain(): ' + callType('Promise<boolean>'));
+  });
+
+  it('leaves unrecognized or missing annotations untouched', () => {
+    const result = transform(`
+      import { Cossack, Server } from '@cossackframework/core';
+      export class Page extends Cossack {
+        @Server() async custom(): CustomResult { return result(); }
+        @Server() async untyped() { return 1; }
+      }
+    `);
+    expect(result).toContain('custom(): CustomResult');
+    expect(result).toContain('untyped()');
+    expect(result).not.toContain('RpcCall<any');
+  });
+});
+
+
+describe('compiler inspection facts', () => {
+  it.each([['server', 'implicit'], ['server', 'explicit'], ['client', 'implicit'], ['client', 'explicit']])('executes %s inherited automatic RPC registration with %s constructors', async (target, mode) => {
+    const code = `
+      class Parent extends Cossack {
+        parentAction() { return 1; }
+        render() { return html\`<button @click=\"\${this.parentAction}\"></button>\`; }
+      }
+      class Child extends Parent {
+        ${mode === 'explicit' ? 'constructor(value) { super(value); }' : ''}
+        childAction() { return 2; }
+        render() { return html\`<button @click=\"\${this.childAction}\"></button>\`; }
+      }
+    `;
+    const transformed = target === 'server'
+      ? injectAutomaticServerMethodMetadata(code, 'inheritance.ts', isClientSafeMethod, new Set(['render']))
+      : transformCossackClass(code, 'inheritance.ts', isClientSafeMethod, new Set(['render']), false);
+    const js = await transformWithOxc(transformed, 'inheritance.ts');
+    class Root {
+      args: unknown[];
+      metadata: Record<string, unknown>;
+      constructor(...args: unknown[]) {
+        this.args = args;
+        this.metadata = Reflect.getMetadata('cossack:server-methods', this.constructor) ?? {};
+      }
+    }
+    const classes = new Function('Cossack', `${js.code}; return { Parent, Child };`)(Root);
+    Reflect.defineMetadata('cossack:server-methods', { parentAction: { timeout: 42, channel: 'private', provider: 'page' } }, classes.Parent);
+    const child = new classes.Child('dependency');
+    expect(child.args).toEqual(['dependency']);
+    expect(Object.keys(child.metadata).sort()).toEqual(['childAction', 'parentAction']);
+    expect(child.metadata.parentAction).toMatchObject({ timeout: 42, channel: 'private' });
+    if (target === 'client') child.__cossack_proxies = new Map([['parentAction', () => 10], ['childAction', () => 20]]);
+    expect(child.parentAction()).toBe(target === 'client' ? 10 : 1);
+    expect(child.childAction()).toBe(target === 'client' ? 20 : 2);
+    const parent = new classes.Parent('parent dependency');
+    expect(parent.args).toEqual(['parent dependency']);
+    expect(Object.keys(parent.metadata)).toEqual(['parentAction']);
+  });
+
+  it('excludes erased declare fields and marks constructor parameter properties incomplete', () => {
+    const result = inspectCompilerMethods('@Page() class Demo { declare value: string; constructor(public value2: string) {} }', 'members.ts');
+    expect(result.classes[0].members).toEqual([]);
+    expect(result.classes[0].membersComplete).toBe(false);
+  });
+
+  it('records fields, accessors, static and private members needed for dispatch resolution', () => {
+    const result = inspectCompilerMethods(`@Page() class Demo {
+      value = 1;
+      handler = () => 2;
+      get display() { return this.value; }
+      set display(value) { this.value = value; }
+      static factory() { return 3; }
+      #hidden() { return 4; }
+      [dynamic]() { return 5; }
+    }`, 'members.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].members).toEqual([
+      { name: 'value', kind: 'field', static: false, private: false },
+      { name: 'handler', kind: 'field', static: false, private: false },
+      { name: 'display', kind: 'get', static: false, private: false },
+      { name: 'display', kind: 'set', static: false, private: false },
+      { name: 'factory', kind: 'method', static: true, private: false },
+      { name: 'hidden', kind: 'method', static: false, private: true },
+      { name: null, kind: 'method', static: false, private: false },
+    ]);
+  });
+
+  it('reports local inheritance declarations without flattening runtime dispatch', () => {
+    const result = inspectCompilerMethods(`import { Cossack as Base } from '@cossackframework/core';
+      class Parent extends Base { @Server() inherited() { return 1; } }
+      @Page() class Child extends Parent { @Client() own() { return 2; } }
+      @Page() class External extends ImportedBase { render() { return 3; } }
+      @Page() class Dynamic extends mixin(Parent) { render() { return 4; } }
+    `, 'inheritance.ts');
+    expect(result.diagnostics).toEqual([]);
+    const child = result.classes.find(c => c.name === 'Child');
+    expect(child?.inheritance).toEqual({ status: 'resolved', bases: ['Parent'] });
+    expect(child?.methods.map(m => m.name)).toEqual(['own']);
+    expect(result.classes.find(c => c.name === 'Parent')?.methods[0]?.rpc).toBe('explicit');
+    expect(result.classes.find(c => c.name === 'External')?.inheritance).toEqual({ status: 'unresolved', bases: ['ImportedBase'] });
+    expect(result.classes.find(c => c.name === 'Dynamic')?.inheritance.status).toBe('unresolved');
+  });
+
+  it('maps expanded resource methods and following methods to authored bodies', () => {
+    const code = `import { server$ as resource } from '@cossackframework/core';
+@Page() class Demo {
+  data = resource(() => 'PRIVATE_LOADER', { initial: '' });
+  render() { return resource(() => 42); }
+  @Client() after() { return 'CLIENT_AFTER'; }
+}`;
+    const result = inspectCompilerMethods(code, 'resource.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].members).toContainEqual({ name: 'data', kind: 'get', static: false, private: false });
+    const methods = result.classes[0].methods;
+    expect(methods.find(m => m.resource === 'data')).toMatchObject({
+      clientBody: 'stripped', rpc: 'explicit', source: { file: 'resource.ts', line: 3, column: 25 },
+    });
+    expect(methods.find(m => m.resource === 'render:0')).toMatchObject({ source: { line: 4 } });
+    expect(methods.find(m => m.name === 'after')).toMatchObject({ source: { line: 5, column: 21 } });
+    const expanded = transformServerResources(code, 'resource.ts');
+    const client = transformCossackClass(expanded, 'resource.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(client).not.toContain('PRIVATE_LOADER');
+    expect(client).toContain('CLIENT_AFTER');
+    for (const fact of methods.filter(m => m.resource)) expect(client).toContain(`__cossack_proxies?.get('${fact.name}')`);
+  });
+
+  it('does not mistake server$ text in comments for resource syntax', () => {
+    const result = inspectCompilerMethods('@Page() class Demo { /* server$ */ render() { return 1; } }', 'text.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].methods[0].name).toBe('render');
+  });
+
+  it('classifies namespace decorators and strips server function fields and validators', () => {
+    const code = `
+import * as Core from '@cossackframework/core';
+@Core.Page()
+class Demo extends Core.Cossack {
+  @Core.Client() local() { return 'CLIENT_NAMESPACE'; }
+  @Core.Server({ input: Core.input.string().refine(() => 'SECRET_VALIDATOR' === '') }) remote = (value:string) => 'SECRET_NAMESPACE';
+  @Core.Server() regular() { return 'SECRET_REGULAR'; }
+  render() { return 'view'; }
+}`;
+    const result = inspectCompilerMethods(code, 'namespace.ts');
+    expect(result.diagnostics).toEqual([]);
+    expect(result.classes[0].methods).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'local', clientBody: 'retained', rpc: null }),
+      expect.objectContaining({ name: 'remote', clientBody: 'stripped', rpc: 'explicit' }),
+      expect.objectContaining({ name: 'regular', clientBody: 'stripped', rpc: 'explicit' }),
+    ]));
+    const transformed = transformCossackClass(code, 'namespace.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(transformed).toContain('CLIENT_NAMESPACE');
+    expect(transformed).not.toContain('SECRET_NAMESPACE');
+    expect(transformed).not.toContain('SECRET_VALIDATOR');
+    expect(transformed).not.toContain('SECRET_REGULAR');
+    expect(transformed).toContain("__cossack_proxies?.get('remote')");
+    expect(transformed).toContain("__cossack_proxies?.get('regular')");
+  });
+
+  it('removes private schema declarations and transitive callbacks while preserving shared form rules', async () => {
+    const code = `import { Cossack, Page, Server, input, storeRules, type InputOf } from '@cossackframework/core';
+const shared = storeRules({name:{required:true}});
+const SECRET = 'PRIVATE_VALIDATOR_TOKEN', visible = 'VIEW';
+function check(value:string) { return value !== SECRET; }
+const contract = input.object({name:input.string(shared.name).refine(check)});
+type Data = InputOf<typeof contract>;
+@Page() class Demo extends Cossack {
+  @Server({input:contract as typeof contract}) save(value:Data) { return value.name; }
+  render() { return visible + String(shared.name.required); }
+}`;
+    const client = transformCossackClass(code, 'schema.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(client).not.toContain('PRIVATE_VALIDATOR_TOKEN'); expect(client).not.toContain('function check');
+    expect(client).not.toContain('const contract'); expect(client).not.toContain('input.object');
+    expect(client).toContain('visible'); expect(client).toContain('storeRules'); expect(client).toContain('shared.name.required');
+    const emitted = await transformWithOxc(client, 'schema.ts', {target:'es2022'});
+    expect(emitted.code).not.toContain('PRIVATE_VALIDATOR_TOKEN'); expect(emitted.code).not.toContain('contract');
+  });
+
+  it.each([
+    'export const contract = input.string().refine(() => true);',
+    'const contract = input.string().refine(() => true); export {contract};',
+    'const contract = input.string().refine(() => true);',
+  ])('rejects exported or client-reachable schema contracts (%#)', declaration => {
+    const code = `import { input, Page, Server } from '@cossackframework/core';
+${declaration}
+@Page() class Demo { @Server({input:contract}) save(value:string) {return value;} render() {return contract;} }`;
+    expect(() => transformCossackClass(code, 'schema.ts', isClientSafeMethod, new Set(['render']), false))
+      .toThrow(/Server input binding/);
+  });
+
+  it('retains shared form rules without reintroducing a private action schema', () => {
+    const code = `import {storeRules, input, Page, Server} from '@cossackframework/core';
+const rules = storeRules({name:{required:true}});
+const contract=input.object({name:input.string(rules.name)});
+@Page() class Demo { @Server({input:contract}) save(value:{name:string}) {return value;} render(){return rules.name.required;} }`;
+    const client = transformCossackClass(code, 'rules.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(client).toContain('storeRules'); expect(client).toContain('rules.name.required');
+    expect(client).not.toContain('input.object');
+  });
+  it('removes wholly private imports and rejects a foreign contract module also retained by the client', () => {
+    const privateOnly = `import {contract} from './server-contract';
+@Page() class Demo { @Server({input:contract}) save(value:string) {return value;} render(){return 'view';} }`;
+    const client=transformCossackClass(privateOnly, 'imports.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(client).not.toContain('./server-contract');
+    for(const retained of [
+      "import {label} from './server-contract';",
+      "import './server-contract';",
+    ]) {
+      const source=privateOnly.replace("@Page()", `${retained}\n@Page()`).replace("return 'view'", 'return label');
+      expect(()=>transformCossackClass(source,'imports.ts',isClientSafeMethod,new Set(['render']),false)).toThrow(/Server input module/);
+    }
+  });
+  it.each([
+    "import {contract,persist,type Data as SchemaData} from './private-contract';",
+    "import {contract,persist} from './private-contract';import type {Data as SchemaData} from './private-contract';",
+    "import {contract,persist} from './private-contract';import {type Data as SchemaData} from './private-contract';",
+    "import {contract,persist,type/* annotation */Data as SchemaData} from './private-contract';",
+  ])('does not retain a private contract module through type-only imports (%#)',async declaration=>{
+    const source=`import {Page,Server,Client} from '@cossackframework/core';
+${declaration}
+import {type Other} from './client-initializer';
+@Page()class Demo{
+  @Server({input:contract})save=(value:SchemaData)=>persist(value);
+  @Client()local(value:SchemaData){return value;}
+  render(){return 'view';}
+}`;
+    const client=transformCossackClass(source,'private-types.ts',isClientSafeMethod,new Set(['render']),false);
+    expect(client).toContain('import type {');expect(client).toContain('Data as SchemaData');
+    const emitted=await transformWithOxc(client,'private-types.ts',{target:'es2022',tsconfig:{compilerOptions:{verbatimModuleSyntax:true}}});
+    expect(emitted.code).not.toContain('./private-contract');expect(emitted.code).not.toContain('persist(value)');
+    expect(emitted.code).toContain('./client-initializer');
+  });
+  it('does not keep a private schema alive through unrelated local parameters or variables', () => {
+    const source=`import {input,Page,Server,Client} from '@cossackframework/core';
+const contract=input.string().refine(value=>value!=='PRIVATE_SHADOWED_SCHEMA');
+@Page() class Demo {
+  @Server({input:contract}) save(value:string){return value;}
+  @Client() local(contract:string){return contract;}
+  render(){const contract='public';return contract;}
+}`;
+    const client=transformCossackClass(source,'shadow.ts',isClientSafeMethod,new Set(['render']),false);
+    expect(client).not.toContain('PRIVATE_SHADOWED_SCHEMA'); expect(client).not.toContain('input.string');
+    expect(client).toContain("const contract='public'"); expect(client).toContain('return contract');
+  });
+  it('removes destructured private contracts together and rejects a client-retained sibling', () => {
+    const source=`import {input,Page,Server} from '@cossackframework/core';
+function make(){return {contract:input.string().refine(()=>false,'PRIVATE_DESTRUCTURED_VALIDATOR'),label:'public'};}
+const {contract,label}=make();
+@Page() class Demo { @Server({input:contract}) save(value:string){return value;} render(){return 'view';} }`;
+    const client=transformCossackClass(source,'destructure.ts',isClientSafeMethod,new Set(['render']),false);
+    expect(client).not.toContain('PRIVATE_DESTRUCTURED_VALIDATOR'); expect(client).not.toContain('make()');
+    expect(()=>transformCossackClass(source.replace("return 'view'",'return label'),'destructure.ts',isClientSafeMethod,new Set(['render']),false))
+      .toThrow(/Server input binding/);
+  });
+  it('fails closed for private runtime TypeScript dependencies it cannot safely strip', () => {
+    const source=`import {input,Page,Server} from '@cossackframework/core';
+enum Private {Value='PRIVATE_ENUM_SENTINEL'}
+const contract=input.string().refine(value=>value!==Private.Value);
+@Page() class Demo { @Server({input:contract}) save(value:string){return value;} render(){return 'view';} }`;
+    expect(()=>transformCossackClass(source,'enum.ts',isClientSafeMethod,new Set(['render']),false))
+      .toThrow(/runtime TypeScript declaration/);
+  });
+
+  it('rejects unsupported server accessors behind namespace aliases', () => {
+    const code = `import * as Core from '@cossackframework/core';
+      @Core.Page() class Demo { @Core.Server() get value() { return 'SECRET'; } }`;
+    expect(inspectCompilerMethods(code, 'namespace.ts').diagnostics).toHaveLength(1);
+    expect(() => transformCossackClass(code, 'namespace.ts', isClientSafeMethod, new Set(['render']), false))
+      .toThrow('@Server requires');
+  });
+
+  it('matches client bodies and RPC registration without executing source', () => {
+    const code = `
+@Page()
+class Demo extends Cossack {
+  constructor() { throw new Error('must not run'); }
+  render() { this.helper(); return html\`<button @click=\"\${this.save}\">Save</button>\`; }
+  helper() { return 'CLIENT_HELPER'; }
+  save() { return 'AUTOMATIC_SERVER'; }
+  @Server() explicit() { return 'EXPLICIT_SERVER'; }
+  unused() { return 'UNREACHABLE_SERVER'; }
+  field = () => 'RETAINED_FIELD';
+}`;
+    const facts = inspectCompilerMethods(code, 'demo.ts');
+    expect(facts.diagnostics).toEqual([]);
+    const methods = Object.fromEntries(facts.classes[0].methods.map((m) => [m.name, m]));
+    expect(methods.helper).toMatchObject({ clientBody: 'retained', rpc: null });
+    expect(methods.save).toMatchObject({ clientBody: 'stripped', rpc: 'automatic' });
+    expect(methods.explicit).toMatchObject({ clientBody: 'stripped', rpc: 'explicit' });
+    expect(methods.unused).toMatchObject({ clientBody: 'stripped', rpc: null });
+    expect(methods.field).toMatchObject({ clientBody: 'retained', rpc: null });
+    expect(methods.helper.source).toEqual({ file: 'demo.ts', line: 6, column: 12 });
+    const transformed = transformCossackClass(code, 'demo.ts', isClientSafeMethod, new Set(['render']), false);
+    expect(transformed).toContain('CLIENT_HELPER');
+    expect(transformed).toContain('RETAINED_FIELD');
+    for (const body of ['AUTOMATIC_SERVER', 'EXPLICIT_SERVER', 'UNREACHABLE_SERVER']) {
+      expect(transformed).not.toContain(body);
+    }
+  });
+
+  it.each([
+    'class Broken {',
+    '@Page() class Demo { @Server() get secret() { return 1; } }',
+    "import { server$ } from '@cossackframework/core'; @Page() class Demo { value = server$(() => 1); }",
+  ])('reports unknown input without partial facts or source excerpts', (source) => {
+    const result = inspectCompilerMethods(source, 'demo.ts');
+    expect(result.classes).toEqual([]);
+    expect(result.diagnostics).toEqual([expect.objectContaining({
+      code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: 'demo.ts',
+    })]);
   });
 });

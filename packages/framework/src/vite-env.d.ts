@@ -67,6 +67,8 @@ declare module 'virtual:cossack-config' {
   import type { ConfigFactory } from './config';
   /** Config factories from `src/config/*.ts`, keyed by file name (no extension). */
   const configs: Record<string, ConfigFactory>;
+  export const requirements: import('./config-requirements').ConfigRequirementCollection;
+  export const environment: string | null;
   export default configs;
 }
 
@@ -80,7 +82,7 @@ declare module 'tsx/esm/api' {
 // `__('key')`, `setLocale('es')`, `getLocale()`, and `isLocale('es')` work
 // in render() without explicit imports. This file is a global script (no
 // top-level import/export), so plain `declare function` is globally visible.
-declare function __(key: string, params?: Record<string, string | number>): string;
+declare const __: typeof import('@cossackframework/core')['__'];
 declare function setLocale(locale: string): Promise<void>;
 declare function getLocale(): string;
 declare function isLocale(locale: string): boolean;

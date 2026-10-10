@@ -437,7 +437,7 @@ function coerceValue(
  * a `coerce` rule applied, otherwise the original input. `validateObject` uses
  * it to write coerced values back into the returned `data`.
  */
-export function validateValue(value: any, rules: ValidationRule): ValidationResult {
+export function validateValue(value: any, rules: ValidationRule, options: { empty?: 'skip' | 'validate' } = {}): ValidationResult {
   // Check required first (against the raw input — emptiness is never coerced).
   if (rules.required) {
     if (!validators.required(value)) {
@@ -450,7 +450,7 @@ export function validateValue(value: any, rules: ValidationRule): ValidationResu
 
   // Skip other validations if value is empty and not required. Coercion does
   // NOT run here, so `""` stays `""` (it never becomes `0` / `false`).
-  if (value === null || value === undefined || value === '') {
+  if (options.empty !== 'validate' && (value === null || value === undefined || value === '')) {
     return { valid: true, value };
   }
 
@@ -967,4 +967,3 @@ export function clearErrors(component: any): void {
         }
     }
 }
-

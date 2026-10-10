@@ -1,181 +1,104 @@
 ---
 title: "Reactive Store"
-description: "Share reactive state across components with createStore."
+description: "Share browser state with createStore and disconnect subscriptions with component cleanup."
 ---
 
 # Reactive Store
 
-A component that reads a value with Cossack's `provide` and `consume` context
-API does not receive updates when the value changes. Use `createStore` when
-unrelated components need to share changing state, such as a toast queue, theme,
-or command palette state.
+`createStore` holds a value and notifies its subscribers when that value changes.
+It can connect unrelated components such as a message list or theme selector.
+It does not add the deep proxy behavior of the `@Store` decorator.
+It does not serialize values or synchronize them with a server.
 
-A reactive store contains a value and a list of listeners. When the value
-changes, the store calls each listener. Components subscribe in `onMount()` or
-with `connectStore`. They can update a `@ClientState` field to trigger a render.
+## Replace the stored value
 
-## Import
+Use `set` to replace a value or `update` to calculate a replacement.
+Both methods compare the result with the current value using `Object.is`.
+If the result is the same value or reference, subscribers receive no notification.
+Return a new object or array when you change a collection.
 
-```typescript
-import { createStore, connectStore, type ReactiveStore } from '@cossackframework/core';
-```
-
-## Browser-only store modules
-
-Name stores that initialize browser libraries or access browser globals at the
-top level with the `.client.ts` (or `.client.mts`) suffix:
-
-```typescript
-// stores.client.ts
+```ts
 import { createStore } from '@cossackframework/core';
 
-const savedTheme = window.localStorage.getItem('theme');
-export const themeStore = createStore(savedTheme ?? 'light');
+const messages = createStore<string[]>([]);
+messages.set(['Saved']);
+messages.update(current => [...current, 'Published']);
+
+// These mutate data without notifying subscribers.
+messages.get().push('Unobserved');
+messages.update(current => { current.push('Also unobserved'); return current; });
 ```
 
-Shared components can statically import the module using its `.client`
-basename. Client builds load the original module. SSR substitutes lazy
-placeholders, so merely importing it on the server is safe:
+A subscriber receives the current value immediately.
+It then receives each distinct replacement.
+Call the returned unsubscribe function when the consumer no longer needs updates.
+Repeated subscriptions and retained callbacks otherwise keep their consumers alive.
 
-```typescript
-import { themeStore } from './stores.client';
+```ts
+const disconnect = messages.subscribe(value => console.log(value));
+messages.set(['Updated']);
+disconnect();
+```
 
+## Connect a component
+
+Declare the component field with `@ClientState`.
+Connect it during `onMount`, then disconnect it during `onCleanup`.
+`connectStore` assigns each published value to that field.
+The field's normal reactivity requests the render.
+
+[Messages](./examples/reactive-store.client.ts) is a complete example compiled by the release tests.
+Its module contains the store, the `showMessage` function, and the component.
+The following lifecycle methods own the subscription:
+
+```ts
 onMount() {
-    themeStore.set(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    this.disconnect = connectStore(messages, this, 'items');
+}
+onCleanup() {
+    this.disconnect?.();
 }
 ```
 
-Do not read, call, construct, or access properties on client-only exports in an
-SSR path. This includes `render()`, `init()`, server-side field initializers,
-and module top-level code. Use them from `onMount()`, `clientInit()`, or an
-`@Client()` method instead. Client-only modules must use explicit runtime
-exports. The framework rejects runtime `export *` because it cannot determine the SSR placeholder interface
-cannot be determined from the local file.
+Do not call a browser store from a server method.
+After a server action succeeds, call `showMessage` from the client handler that awaited it.
+A native server call to that module has no browser subscriber.
+Separate server state from browser UI messages.
 
-## `createStore<T>(initial)`
+## Use browser-only modules
 
-Creates a reactive store with an initial value. Returns a `ReactiveStore<T>`
-with `get()`, `set()`, `update()`, and `subscribe()`.
+Name a module `messages.client.ts` when it owns browser state or accesses browser APIs at module initialization.
+A shared component can statically import `./messages.client`.
+The server build substitutes lazy placeholders for explicit runtime exports.
+Importing those placeholders is safe, but reading or calling them during SSR fails.
 
-```typescript
-import { createStore } from '@cossackframework/core';
+Use such exports from `onMount`, `clientInit`, or a client method.
+Do not read them in `render`, `init`, a server field initializer, or module initialization on the server.
+Runtime `export *` is rejected because the compiler cannot determine the local placeholder interface.
+Explicit value exports and type-only exports are supported.
 
-// Create a module-level singleton — any code in the app can import and use it.
-export const themeStore = createStore<'light' | 'dark'>('light');
+A module-level store shares one value within its JavaScript runtime.
+On the server, that can share request data between users.
+Cloudflare also documents this risk for [request data in global scope](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/#do-not-store-request-scoped-state-in-global-scope).
+If server code needs a store, create it for the request or its owned service scope.
+A browser-only module avoids server initialization of its UI singleton.
 
-// Anywhere: read the current value.
-console.log(themeStore.get()); // 'light'
+## Choose between state APIs
 
-// Anywhere: replace the value (notifies all subscribers).
-themeStore.set('dark');
+These APIs have separate ownership and notification rules.
+Use component fields for local rendering state.
+Use a declared layout service when components share business logic during that layout's lifetime.
+A context value supplies data from an ancestor without subscribing to changes.
 
-// Anywhere: update via a function.
-themeStore.update((current) => (current === 'light' ? 'dark' : 'light'));
-```
+| API | Ownership and update behavior |
+| --- | --- |
+| `@State` / `@Store` | Public component state, with shallow/deep updates |
+| `@ClientState` / `@ClientStore` | Browser component state, with shallow/deep updates |
+| `createStore` | Application-owned value and explicit subscribers |
+| `provide` / `consume` | Ancestor context lookup without reactive subscription |
+| Layout-scoped `@Service` | Declared service state and methods owned by a layout scope |
 
-## `store.subscribe(listener)`
-
-Subscribe to value changes. The listener is called immediately with the current
-value (so the consumer is in sync from the start), then on every change.
-Returns an unsubscribe function.
-
-```typescript
-const unsub = themeStore.subscribe((value) => {
-    console.log('Theme changed to:', value);
-});
-
-// Later:
-unsub(); // stop listening
-```
-
-## `connectStore(store, target, key)`
-
-Convenience: auto-wire a reactive store to a component's `@ClientState` field.
-The field is updated whenever the store changes. Returns an unsubscribe
-function (call it in `onCleanup`).
-
-```typescript
-import { Cossack, ClientState, createStore, connectStore } from '@cossackframework/core';
-
-// Global toast queue singleton.
-export const toastStore = createStore<ToastItem[]>([]);
-
-@Component()
-export class Toaster extends Cossack {
-    @ClientState() toasts: ToastItem[] = [];
-    private _unsub?: () => void;
-
-    onMount() {
-        this._unsub = connectStore(toastStore, this as any, 'toasts');
-    }
-
-    onCleanup() {
-        this._unsub?.();
-    }
-
-    render() {
-        return html`<div>${this.toasts.map(t => html`<div>${t.message}</div>`)}</div>`;
-    }
-}
-```
-
-## Global imperative API pattern
-
-A common use case is a global imperative API like `toast.success("Saved!")` :
-callable from anywhere (server methods, event handlers, services). The pattern:
-
-1. Create a module-level store.
-2. Export an imperative API that calls `store.set()` / `store.update()`.
-3. Mount a single component (e.g. `<Toaster />`) that subscribes and renders.
-
-```typescript
-// toast.client.ts
-import { createStore } from '@cossackframework/core';
-
-export interface ToastItem {
-    id: string;
-    message: string;
-    variant?: 'default' | 'success' | 'warning' | 'destructive';
-}
-
-export const toastStore = createStore<ToastItem[]>([]);
-
-function push(message: string, variant?: ToastItem['variant']) {
-    const id = `toast-${Date.now()}`;
-    toastStore.update((queue) => [...queue, { id, message, variant }]);
-    setTimeout(() => {
-        toastStore.update((queue) => queue.filter(t => t.id !== id));
-    }, 4000);
-}
-
-export const toast = {
-    show: (msg: string) => push(msg),
-    success: (msg: string) => push(msg, 'success'),
-    warning: (msg: string) => push(msg, 'warning'),
-    error: (msg: string) => push(msg, 'destructive'),
-    dismiss: (id: string) => toastStore.update(q => q.filter(t => t.id !== id)),
-};
-```
-
-```typescript
-// Anywhere in the app:
-import { toast } from './toast';
-
-@Server()
-async saveSettings() {
-    await Setting.update({ id }, patch);
-    toast.success('Settings saved!');
-}
-```
-
-## When to use `createStore` vs `provide`/`consume` vs `@State`
-
-| Pattern | Use case |
-|---|---|
-| `@State` / `@ClientState` | Component-local reactive state |
-| `provide` / `consume` | Static values injected from ancestor (env, user, request context) : one-time read |
-| `createStore` | Global mutable state shared across unrelated components : re-renders on change |
-| `@Service({ scope })` | Dependency-injected business logic shared across components |
-
-Use `createStore` for global state that components across the tree share.
-For parent→child data flow, props and `provide`/`consume` are usually enough.
+Read [State Management](./states.md) for mutation examples, JSON rules, and diagnostics.
+Read [Tasks](./tasks.md) before starting asynchronous work that can outlive a component.
+A subscription can also return its disconnect function from a client task.
+Use tracked inputs for that task so it reconnects only when its dependencies change.

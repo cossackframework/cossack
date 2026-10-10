@@ -1,213 +1,175 @@
-import { html, classMap, component } from "@cossackframework/renderer";
-import {
-    Cossack,
-    Component,
-    Client,
-    ClientState,
-    createRef,
-    type RefObject,
-} from "@cossackframework/core";
-import { Icon } from "../icons/Icon";
-import { AltArrowLeftIcon as altArrowLeftIcon } from "@cossackframework/solar-icons/alt-arrow-left";
-import { AltArrowRightIcon as altArrowRightIcon } from "@cossackframework/solar-icons/alt-arrow-right";
-import { CalendarIcon as calendarIcon } from "@cossackframework/solar-icons/calendar";
+import { html, component, live, PreventDefaultResult, preventDefault, type nothing } from "@cossackframework/renderer";
+import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
+import type { GlobalAttributes, ControlEvent } from "../native-attributes";
+import { Calendar } from "./Calendar";
+import { parseDate, dateRange, dateLabel } from "../internal/date";
 
-export interface DatePickerProps {
-    /** Selected date (ISO yyyy-mm-dd). */
+export type DatePickerProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'role'> & {
+    /** Stable page-unique input ID. Label with for=id or aria-label. */
+    id: string;
+    /** Controlled Gregorian date, yyyy-mm-dd or empty. Accept onChange to retain edits. */
     value?: string;
-    /** Input placeholder. */
-    placeholder?: string;
-    /** Earliest selectable date (ISO). */
+    defaultValue?: string;
     min?: string;
-    /** Latest selectable date (ISO). */
     max?: string;
-    /** Called when a date is picked. */
-    onChange?: (iso: string) => void;
-    [key: string]: any;
-}
+    name?: string;
+    form?: string;
+    required?: boolean;
+    disabled?: boolean;
+    readonly?: boolean;
+    /** Called for a changed native input or calendar selection, including empty after clearing. */
+    onChange?: (iso: string) => unknown;
+    /** Locale for the custom calendar; the native date field follows browser settings. */
+    locale?: string;
+    weekStartsOn?: number;
+    today?: string;
+    openLabel?: string;
+    calendarLabel?: string;
+    previousLabel?: string;
+    nextLabel?: string;
+};
+type InputListener = ((event: ControlEvent<HTMLInputElement, InputEvent>) => unknown) | PreventDefaultResult | null | typeof nothing | undefined;
 
-/** Human-readable date label, e.g. "Jan 5, 2025". */
-function formatLabel(iso?: string): string {
-    if (!iso) return "";
-    const [y, m, d] = iso.split("-").map(Number);
-    if (!y || !m || !d) return "";
-    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-    });
-}
-
-/**
- * Cossack UI DatePicker — a Calendar inside a native popover.
- *
- * Click the input to open a positioned calendar; picking a date closes it and
- * fires `onChange` with an ISO `yyyy-mm-dd` string.
- *
- *   ${component(DatePicker, {
- *       value: this.dueDate,
- *       onChange: (iso) => { this.dueDate = iso; },
- *   })}
- */
+/** Native date field with a shared Calendar in a nonmodal popover. */
 @Component()
 export class DatePicker extends Cossack {
     declare props: DatePickerProps;
-
-    @ClientState() private isOpen = false;
-    @ClientState() private inner: string | undefined = undefined;
-
-    inputRef: RefObject<HTMLButtonElement> = createRef<HTMLButtonElement>();
-    private popoverId = `cs-datepicker-${Math.random().toString(36).slice(2, 9)}`;
+    @ClientState() private draft: string | undefined;
+    @ClientState() private open = false;
+    private initialValue?: string;
+    private input?: HTMLInputElement;
+    private trigger?: HTMLButtonElement;
+    private popup?: HTMLElement;
+    private cleanup?: () => void;
+    private get currentValue() { this.initialValue ??= this.props.defaultValue ?? ''; return this.props.value ?? this.draft ?? this.initialValue; }
 
     render() {
-        const { placeholder = "Pick a date" } = this.props;
-        const current = this.inner ?? this.props.value;
-
-        return html`
-            <div class="cs-datepicker relative inline-block w-full">
-                <button
-                    type="button"
-                    ref=${this.inputRef}
-                    popovertarget=${this.popoverId}
-                    class=${classMap({
-                        "cs-datepicker__trigger": true,
-                        "w-full inline-flex items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm cursor-pointer transition-colors shadow-xs": true,
-                        "text-muted-foreground": !current,
-                        "text-foreground": !!current,
-                        "hover:bg-accent hover:text-accent-foreground": true,
-                    })}
-                    @click=${() => this.position()}
-                >
-                    <span>${current ? formatLabel(current) : placeholder}</span>
-                    <span class="inline-flex items-center justify-center text-muted-foreground [&_svg]:size-4">${component(Icon, { entry: calendarIcon, size: 16 })}</span>
-                </button>
-                <div
-                    id=${this.popoverId}
-                    popover="auto"
-                    class="cs-datepicker__panel"
-                    style="position:fixed;margin:0;background:transparent;border:none;padding:0;"
-                    @toggle=${(e: Event) => this.onToggle(e)}
-                >
-                    <div class="bg-popover text-popover-foreground border rounded-lg shadow-lg p-2 mt-1">
-                        ${this.renderCalendar(current)}
-                    </div>
-                </div>
+        const { id, value: _value, defaultValue: _default, min, max, name, form, required = false, disabled = false, readonly = false,
+            onChange: _change, locale = 'en-US', weekStartsOn, today, openLabel = 'Choose date', calendarLabel = 'Choose date',
+            previousLabel, nextLabel, ...rest } = this.props;
+        if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('DatePicker requires a nonempty, whitespace-free id.');
+        parseDate(this.currentValue, 'value'); parseDate(today, 'today'); dateRange(min, max);
+        if (weekStartsOn !== undefined && (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6)) throw new RangeError('DatePicker weekStartsOn must be an integer from 0 to 6.');
+        const supplied: InputListener = rest['@input'];
+        const inputListener: EventListener = event => {
+            const inputEvent = event as ControlEvent<HTMLInputElement, InputEvent>;
+            if (typeof supplied === 'function') supplied(inputEvent);
+            else if (supplied instanceof PreventDefaultResult) supplied.handler.call(event.currentTarget, event);
+            if (!event.defaultPrevented) this.commit(inputEvent);
+        };
+        const events = { '@input': supplied instanceof PreventDefaultResult ? preventDefault(inputListener, { novalidate: supplied.novalidate }) : inputListener };
+        const expanded = this.open && !disabled && !readonly;
+        return html`<div class="cs-datepicker relative inline-flex w-full items-center gap-1">
+            <input ref=${(element: Element) => this.connect(element as HTMLInputElement)} id=${id} type="date" name=${name} form=${form}
+                min=${min} max=${max} ?required=${required} ?disabled=${disabled} ?readonly=${readonly} .value=${live(this.currentValue)}
+                class="cs-datepicker__input min-w-0 flex-1 rounded-md border border-input bg-background text-foreground px-3 py-2 text-sm shadow-xs focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 disabled:cursor-not-allowed"
+                ...=${{ ...rest, ...events }} />
+            <button ref=${(element: Element) => { this.trigger = element as HTMLButtonElement; }} type="button" ?disabled=${disabled || readonly}
+                aria-label=${this.currentValue ? `${openLabel}: ${dateLabel(this.currentValue, locale)}` : openLabel} aria-haspopup="dialog" aria-controls=${`${id}-popup`} aria-expanded=${String(expanded)}
+                class="cs-datepicker__trigger shrink-0 rounded-md border border-input bg-background text-foreground px-3 py-2 text-sm shadow-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 disabled:cursor-not-allowed"
+                @click=${() => this.toggle()}>${openLabel}</button>
+            <div ref=${(element: Element) => { this.popup = element as HTMLElement; }} id=${`${id}-popup`} role="dialog" aria-label=${calendarLabel} popover="auto"
+                class="cs-datepicker__panel bg-popover text-popover-foreground rounded-lg border shadow-lg max-h-[90vh] overflow-auto"
+                style="position:fixed;margin:0;padding:0;"
+                @keydown=${(event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void this.close(true); } }}
+                @focusout=${(event: FocusEvent) => { const target = event.relatedTarget as Node | null; if (target && !this.popup?.contains(target) && target !== this.trigger) void this.close(false); }}
+                @toggle=${(event: Event) => { if ((event as ToggleEvent).newState === 'closed' && this.popup && !this.popup.matches(':popover-open')) { this.open = false; } }}>
+                ${expanded ? component(Calendar, { id: `${id}-calendar`, value: this.currentValue, min, max, locale, weekStartsOn, today, previousLabel, nextLabel,
+                    disabled, readonly, onSelect: iso => this.pick(iso) }) : null}
             </div>
-        `;
+        </div>`;
     }
 
-    /** Inline calendar markup — avoids a circular import with Calendar.ts. */
-    private renderCalendar(current: string | undefined) {
-        const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-        const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        const sel = current ? new Date(Number(current.slice(0, 4)), Number(current.slice(5, 7)) - 1, Number(current.slice(8, 10))) : null;
-
-        const first = new Date(this.viewYear, this.viewMonth, 1);
-        const startWd = first.getDay();
-        const dim = new Date(this.viewYear, this.viewMonth + 1, 0).getDate();
-        const cells: Array<{ d: number; date: Date } | null> = [];
-        for (let i = 0; i < startWd; i++) cells.push(null);
-        for (let d = 1; d <= dim; d++) cells.push({ d, date: new Date(this.viewYear, this.viewMonth, d) });
-
-        return html`
-            <div class="inline-block p-1 select-none">
-                <div class="flex items-center justify-between mb-2 px-1">
-                    <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent" @click=${() => this.prevMonth()}>
-                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { entry: altArrowLeftIcon, size: 16 })}</span>
-                    </button>
-                    <span class="text-sm font-medium text-foreground">${MONTHS[this.viewMonth]} ${this.viewYear}</span>
-                    <button type="button" class="inline-flex items-center justify-center w-7 h-7 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer border-none bg-transparent" @click=${() => this.nextMonth()}>
-                        <span class="inline-flex items-center justify-center [&_svg]:size-3.5">${component(Icon, { entry: altArrowRightIcon, size: 16 })}</span>
-                    </button>
-                </div>
-                <div class="grid grid-cols-7 gap-0.5 mb-1">
-                    ${WEEKDAYS.map((wd) => html`<span class="text-[10px] font-medium text-muted-foreground text-center w-7 h-6 flex items-center justify-center">${wd}</span>`)}
-                </div>
-                <div class="grid grid-cols-7 gap-0.5">
-                    ${cells.map((c) => {
-                        if (!c) return html`<span class="w-7 h-7"></span>`;
-                        const isSel = !!(sel && sel.getFullYear() === c.date.getFullYear() && sel.getMonth() === c.date.getMonth() && sel.getDate() === c.date.getDate());
-                        return html`
-                            <button
-                                type="button"
-                                class=${classMap({
-                                    "w-7 h-7 rounded-md text-xs cursor-pointer border-none transition-colors": true,
-                                    "bg-primary text-primary-foreground": isSel,
-                                    "hover:bg-accent hover:text-accent-foreground": !isSel,
-                                })}
-                                @click=${() => this.pick(c.date)}
-                            >${c.d}</button>
-                        `;
-                    })}
-                </div>
-            </div>
-        `;
+    @Client()
+    private editable() { return !!this.input && !this.input.matches(':disabled') && !this.input.readOnly; }
+    @Client()
+    private commit(event: ControlEvent<HTMLInputElement, InputEvent>) {
+        if (!this.editable()) { event.currentTarget.value = this.currentValue; return; }
+        const value = event.currentTarget.value, previous = this.currentValue;
+        // Native date inputs provide either a real date or empty while incomplete.
+        parseDate(value, 'value');
+        this.draft = value;
+        if (value !== previous) this.props.onChange?.(value);
+        void this.requestUpdate();
     }
-
-    @ClientState() private viewYear: number = new Date().getFullYear();
-    @ClientState() private viewMonth: number = new Date().getMonth();
-
-    onMount() {
-        if (this.props.value) {
-            const [y, m] = this.props.value.split("-").map(Number);
-            this.viewYear = y;
-            this.viewMonth = m - 1;
+    @Client()
+    private pick(iso: string) {
+        const range = dateRange(this.props.min, this.props.max);
+        if (!this.editable() || iso < range.first || iso > range.last) return;
+        this.input!.value = iso;
+        this.input!.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }));
+        void this.close(true);
+    }
+    @Client()
+    private async toggle() {
+        if (!this.editable()) return;
+        if (this.open) { await this.close(false); return; }
+        this.open = true;
+        const trigger = this.trigger;
+        await this.requestUpdate();
+        if (!this.open || !this.editable() || !trigger?.isConnected || !this.popup?.isConnected) return;
+        const document = trigger.ownerDocument;
+        if (document.activeElement !== trigger && document.activeElement !== this.input) { this.open = false; return; }
+        if (!this.popup.matches(':popover-open')) this.popup.showPopover();
+        this.position();
+        this.popup.querySelector<HTMLButtonElement>('button[data-date][tabindex="0"]:not(:disabled)')?.focus();
+    }
+    @Client()
+    private async close(restoreFocus: boolean) {
+        const popup = this.popup, trigger = this.trigger;
+        const document = trigger?.ownerDocument;
+        const ownedFocus = !!document && (document.activeElement === trigger || !!popup?.contains(document.activeElement));
+        this.open = false;
+        if (popup?.matches(':popover-open')) popup.hidePopover();
+        await this.requestUpdate();
+        if (restoreFocus && ownedFocus && trigger?.isConnected && trigger === this.trigger && this.editable()
+            && (document!.activeElement === document!.body || document!.activeElement === trigger || !!popup?.contains(document!.activeElement))) trigger.focus();
+    }
+    @Client()
+    private connect(input: HTMLInputElement) {
+        if (this.input !== input) {
+            this.cleanup?.();
+            this.input = input;
+            const document = input.ownerDocument, window = document.defaultView;
+            let active = true;
+            const reset = (event: Event) => {
+                if (event.target !== input.form) return;
+                queueMicrotask(() => { if (active && !event.defaultPrevented) { this.draft = undefined; void this.close(false); } });
+            };
+            const position = () => this.position();
+            document.addEventListener('reset', reset, true);
+            document.addEventListener('scroll', position, true);
+            window?.addEventListener('resize', position);
+            const observer = new MutationObserver(() => { if (this.open && !this.editable()) void this.close(false); });
+            observer.observe(input, { attributes: true, attributeFilter: ['disabled', 'readonly'] });
+            queueMicrotask(() => {
+                if (!active) return;
+                for (let parent = input.parentElement; parent; parent = parent.parentElement) if (parent.tagName === 'FIELDSET') observer.observe(parent, { attributes: true, attributeFilter: ['disabled'] });
+            });
+            const resizeObserver = new ResizeObserver(position);
+            resizeObserver.observe(input);
+            this.cleanup = () => {
+                active = false; observer.disconnect(); resizeObserver.disconnect();
+                document.removeEventListener('reset', reset, true);
+                document.removeEventListener('scroll', position, true);
+                window?.removeEventListener('resize', position);
+            };
         }
+        queueMicrotask(() => {
+            if (this.input !== input || !input.isConnected) return;
+            if (!this.editable() && this.popup?.matches(':popover-open')) void this.close(false);
+            else this.position();
+        });
     }
-
-    @Client()
-    private prevMonth() {
-        if (this.viewMonth === 0) { this.viewMonth = 11; this.viewYear -= 1; }
-        else { this.viewMonth -= 1; }
-    }
-
-    @Client()
-    private nextMonth() {
-        if (this.viewMonth === 11) { this.viewMonth = 0; this.viewYear += 1; }
-        else { this.viewMonth += 1; }
-    }
-
-    @Client()
-    private pick(date: Date) {
-        const y = date.getFullYear();
-        const m = String(date.getMonth() + 1).padStart(2, "0");
-        const d = String(date.getDate()).padStart(2, "0");
-        const iso = `${y}-${m}-${d}`;
-        this.inner = iso;
-        this.props.onChange?.(iso);
-        this.hidePopover();
-    }
-
-    @Client()
-    private togglePopover() {
-        const el = document.getElementById(this.popoverId) as any;
-        el?.togglePopover?.();
-        requestAnimationFrame(() => this.position());
-    }
-
-    @Client()
-    private hidePopover() {
-        const el = document.getElementById(this.popoverId) as any;
-        el?.hidePopover?.();
-    }
-
-    @Client()
-    private onToggle(e: Event) {
-        const el = e.target as HTMLElement;
-        if (el.id === this.popoverId && el.matches(":popover-open")) {
-            requestAnimationFrame(() => this.position());
-        }
-    }
-
     @Client()
     private position() {
-        const trigger = this.inputRef.value;
-        const popover = document.getElementById(this.popoverId);
-        if (!trigger || !popover || !popover.matches(":popover-open")) return;
-        const rect = trigger.getBoundingClientRect();
-        popover.style.position = "fixed";
-        popover.style.top = `${rect.bottom + 4}px`;
-        popover.style.left = `${rect.left}px`;
-        popover.style.margin = "0";
+        const input = this.input, popup = this.popup, window = input?.ownerDocument.defaultView;
+        if (!input || !popup?.matches(':popover-open') || !window) return;
+        const rect = (input.parentElement ?? input).getBoundingClientRect(), gap = 4;
+        const bounds = popup.getBoundingClientRect(), below = window.innerHeight - rect.bottom - gap;
+        popup.style.maxWidth = `${window.innerWidth}px`;
+        popup.style.left = `${Math.max(0, Math.min(rect.left, window.innerWidth - bounds.width))}px`;
+        popup.style.top = below < bounds.height && rect.top > below ? `${Math.max(0, rect.top - gap - bounds.height)}px` : `${rect.bottom + gap}px`;
     }
+    onCleanup() { this.cleanup?.(); this.cleanup = undefined; this.input = undefined; this.trigger = undefined; this.popup = undefined; }
 }

@@ -1,63 +1,40 @@
-import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component } from "@cossackframework/core";
+import { html, classMap, ifDefined } from '@cossackframework/renderer';
+import { Cossack, Component } from '@cossackframework/core';
+import type { GlobalAttributes } from '../native-attributes';
 
-export interface ProgressProps {
-    /** Current value, clamped to 0..max. Non-finite values fall back to 0. */
-    value?: number;
-    /** Positive, finite maximum value. Invalid values fall back to 100. */
+export type ProgressProps = Omit<GlobalAttributes<HTMLDivElement>,
+    'role' | 'aria-label' | 'aria-labelledby' | 'aria-valuenow' | 'aria-valuemin' | 'aria-valuemax' | 'aria-valuetext' |
+    'tabindex' | 'autofocus' | '?autofocus' | 'contenteditable'> & {
+    /** Required accessible name, independent of the current value. */
+    label: string;
+    /** Omit or use null for unknown progress. Finite values clamp to 0..max. */
+    value?: number | null;
+    /** Positive finite maximum; defaults to 100. */
     max?: number;
-    /** Size token: sm | md | lg. Controls height. */
-    size?: "sm" | "md" | "lg";
-    /** Allow arbitrary HTML attributes to spread onto the root. */
-    [key: string]: any;
-}
-
-const SIZES: Record<NonNullable<ProgressProps["size"]>, string> = {
-    sm: "h-1",
-    md: "h-2",
-    lg: "h-3",
+    /** Optional human-readable value, such as "3 of 8 files". */
+    valueText?: string;
+    size?: 'sm' | 'md' | 'lg';
 };
+const SIZES = { sm: 'h-1', md: 'h-2', lg: 'h-3' };
 
-/**
- * Cossack UI Progress — token-styled progress bar.
- *
- * Uses a native `<div role="progressbar">` (not the `<progress>` element) for
- * consistent cross-browser token theming. The native `<progress>` is hard to
- * style across browsers; a div with `aria-valuenow`/`aria-valuemax` gives the
- * same semantics with full control.
- *
- *   ${component(Progress, { value: 60, max: 100 })}
- */
+/** Named, noninteractive progress indicator. The parent owns work and announcements. */
 @Component()
 export class Progress extends Cossack {
     declare props: ProgressProps;
-
     render() {
-        const { value = 0, max = 100, size = "md", ...rest } = this.props;
-        const maximum = Number.isFinite(max) && max > 0 ? max : 100;
-        const current = Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : 0;
-        const pct = (current / maximum) * 100;
-
-        const classes = classMap({
-            "cs-progress": true,
-            [SIZES[size]]: true,
-            "w-full overflow-hidden rounded-full bg-muted": true,
-        });
-
-        return html`
-            <div
-                class=${classes}
-                role="progressbar"
-                aria-valuenow=${current}
-                aria-valuemin="0"
-                aria-valuemax=${maximum}
-                ...=${rest}
-            >
-                <div
-                    class="cs-progress__bar h-full rounded-full bg-primary transition-all duration-300"
-                    style=${`width:${pct}%`}
-                ></div>
-            </div>
-        `;
+        const { label, value, max = 100, valueText, size = 'md', ...rest } = this.props;
+        if (typeof label !== 'string' || !label.trim()) throw new Error('Progress requires a nonempty label.');
+        if (!Number.isFinite(max) || max <= 0) throw new Error('Progress max must be positive and finite.');
+        if (value != null && !Number.isFinite(value)) throw new Error('Progress value must be finite, null or omitted.');
+        if (!Object.hasOwn(SIZES, size)) throw new Error('Progress size must be sm, md or lg.');
+        if (valueText !== undefined && (typeof valueText !== 'string' || !valueText.trim())) throw new Error('Progress valueText must be nonempty when supplied.');
+        const current = value == null ? undefined : Math.min(max, Math.max(0, value));
+        const classes = classMap({ 'cs-progress w-full overflow-hidden rounded-full bg-muted': true, [SIZES[size]]: true });
+        return html`<div class=${classes} role="progressbar" aria-label=${label}
+            aria-valuenow=${ifDefined(current)} aria-valuemin="0" aria-valuemax=${max}
+            aria-valuetext=${ifDefined(valueText)} data-state=${current === undefined ? 'indeterminate' : 'determinate'} ...=${rest}>
+            <div class="cs-progress__bar h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
+                style=${`width:${current === undefined ? 100 : current / max * 100}%`}></div>
+        </div>`;
     }
 }

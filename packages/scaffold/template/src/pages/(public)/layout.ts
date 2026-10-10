@@ -1,5 +1,5 @@
 import { Cossack, Page, State, Client, HeadContext, HeadValue, OnDocument, server$ } from '@cossackframework/core';
-import { NavigationMenu, Sheet, Icon } from '@cossackframework/ui';
+import { NavigationMenu, Sheet, Icon, type NavigationMenuSection } from '@cossackframework/ui';
 import { html, component, type TemplateResult } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
 import { SunIcon as sunIconSvg } from '@cossackframework/solar-icons/sun/line';
@@ -30,7 +30,7 @@ export default class PublicLayout extends Cossack {
     @State() mobileNavOpen = false;
     /** Auth-aware nav data — computed server-side in init() so it serializes
      *  and the client never re-derives it from this.user (undefined on client). */
-    @State() navSections: any[] = [];
+    @State() navSections: NavigationMenuSection[] = [];
     @State() mobileLinks: any[] = [];
     @State() primaryCta: { label: string; href: string } = { label: '', href: '' };
 
@@ -63,21 +63,21 @@ export default class PublicLayout extends Cossack {
         // (request-scoped) but NOT on client re-renders, so derive here and
         // store as @State.
         const isLoggedIn = !!this.user;
-        const docsItems = [{ label: __('Docs'), href: 'https://cossack.dev/docs', description: __('Guides, API reference, examples') }];
+        const docsItems = [{ value: 'docs', label: __('Docs'), href: 'https://cossack.dev/docs', description: __('Guides, API reference, examples') }];
         const starterItems = [
-            { label: __('Blog'), href: '/blog', description: __('Read the starter post') },
-            { label: __('Contact'), href: '/contact', description: __('Send us a message') },
+            { value: 'blog', label: __('Blog'), href: '/blog', description: __('Read the starter post') },
+            { value: 'contact', label: __('Contact'), href: '/contact', description: __('Send us a message') },
         ];
         const authItems = isLoggedIn
-            ? [{ label: __('Dashboard'), href: '/dashboard', description: __('Your account overview') }]
+            ? [{ value: 'dashboard', label: __('Dashboard'), href: '/dashboard', description: __('Your account overview') }]
             : [
-                { label: __('Login'), href: '/auth/login', description: __('Sign in to your account') },
-                { label: __('Register'), href: '/auth/register', description: __('Create a new account') },
+                { value: 'login', label: __('Login'), href: '/auth/login', description: __('Sign in to your account') },
+                { value: 'register', label: __('Register'), href: '/auth/register', description: __('Create a new account') },
             ];
         this.navSections = [
-            { label: __('Explore'), items: starterItems },
-            { label: __('Docs'), items: docsItems },
-            { label: isLoggedIn ? __('Account') : __('Get started'), items: authItems },
+            { value: 'explore', label: __('Explore'), items: starterItems },
+            { value: 'docs', label: __('Docs'), items: docsItems },
+            { value: 'account', label: isLoggedIn ? __('Account') : __('Get started'), items: authItems },
         ];
         this.mobileLinks = [
             { label: __('Blog'), href: '/blog' },
@@ -126,6 +126,8 @@ export default class PublicLayout extends Cossack {
                             <!-- Desktop nav (NavigationMenu) -->
                             <div class="hidden sm:block">
                                 ${component(NavigationMenu, {
+                                    id: 'public-navigation',
+                                    label: __('Main navigation'),
                                     trigger: 'hover',
                                     sections: this.navSections,
                                 })}
@@ -168,6 +170,7 @@ export default class PublicLayout extends Cossack {
                     open: this.mobileNavOpen,
                     side: 'right',
                     onClose: () => this.closeMobileNav(),
+                    'aria-label': 'Navigation',
                 }, html`
                     <nav class="flex flex-col gap-1 pt-4">
                         ${this.mobileLinks.map((link) => html`

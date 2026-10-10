@@ -1,7 +1,23 @@
-import type { Migration } from '@cossackframework/database';
+import { sql, type Migration } from '@cossackframework/database';
 
 export default {
   name: '0007_create_user_roles',
+  // Operations are authoritative for read-only plans and migration execution.
+  operations: {
+    up: [
+      sql.unsafe(`
+      CREATE TABLE user_roles (
+        user_id VARCHAR(191) NOT NULL,
+        role_id VARCHAR(191) NOT NULL,
+        created_at VARCHAR(32) NOT NULL,
+        CONSTRAINT user_roles_pkey PRIMARY KEY (user_id, role_id)
+      )
+    `),
+    ],
+    down: [
+      { kind: 'drop-table', tableName: 'user_roles' },
+    ],
+  },
   up({ orm, schema }) {
     schema.raw(orm.sql.unsafe(`
       CREATE TABLE user_roles (

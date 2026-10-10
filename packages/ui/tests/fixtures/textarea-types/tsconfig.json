@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "bundler",
+    "strict": true, "noEmit": true, "skipLibCheck": true,
+    "experimentalDecorators": true, "lib": ["ES2022", "DOM"], "types": [],
+    "paths": { "@cossackframework/ui": ["../../../src/index.ts"] }
+  },
+  "files": ["index.ts"]
+}

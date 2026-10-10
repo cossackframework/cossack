@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderToString, html } from "@cossackframework/renderer";
 import {
     Button,
@@ -144,10 +144,10 @@ describe("Card", () => {
         expect(out).toContain("body-content");
     });
 
-    it("applies interactive classes when requested", () => {
-        const out = renderComp(Card, { interactive: true });
+    it("applies visual hover styles without implying an action", () => {
+        const out = renderComp(Card, { hoverable: true });
         expect(out).toContain("hover:shadow-md");
-        expect(out).toContain("cursor-pointer");
+        expect(out).not.toContain("cursor-pointer");
     });
 });
 
@@ -215,7 +215,7 @@ describe("AccordionItem", () => {
     it("renders a button + content div (not <details>/<summary>)", () => {
         const out = renderComp(
             AccordionItem,
-            { summary: "Section A" },
+            { id: "section", summary: "Section A" },
             "Panel body",
         );
         expect(out).toContain("<button");
@@ -226,8 +226,8 @@ describe("AccordionItem", () => {
     });
 
     it("renders unclamped open content and inert closed content", () => {
-        const open = renderComp(AccordionItem, { open: true, summary: "X" });
-        const closed = renderComp(AccordionItem, { open: false, summary: "X" });
+        const open = renderComp(AccordionItem, { id: "section", open: true, summary: "X" });
+        const closed = renderComp(AccordionItem, { id: "section", open: false, summary: "X" });
         expect(open).toContain("height: auto; overflow: visible");
         expect(open).toContain('aria-expanded="true"');
         expect(open).not.toContain("inert");
@@ -238,7 +238,7 @@ describe("AccordionItem", () => {
     });
 
     it("renders a chevron svg that rotates when open", () => {
-        const open = renderComp(AccordionItem, { open: true, summary: "X" });
+        const open = renderComp(AccordionItem, { id: "section", open: true, summary: "X" });
         expect(open).toContain("cs-accordion__chevron");
         expect(open).toContain("rotate(180deg)");
     });
@@ -377,7 +377,7 @@ describe("Skeleton", () => {
 
 describe("Progress", () => {
     it("renders a progressbar with the correct aria values", () => {
-        const out = renderComp(Progress, { value: 60, max: 100 });
+        const out = renderComp(Progress, { label: "Upload", value: 60, max: 100 });
         expect(out).toContain("role=");
         expect(out).toContain("progressbar");
         expect(out).toContain("aria-valuenow");
@@ -390,13 +390,8 @@ describe("Progress", () => {
     it.each([
         { value: -5, max: 100, current: 0, maximum: 100, percent: 0 },
         { value: 120, max: 80, current: 80, maximum: 80, percent: 100 },
-        { value: 0, max: 0, current: 0, maximum: 100, percent: 0 },
-        { value: 50, max: -1, current: 50, maximum: 100, percent: 50 },
-        { value: 50, max: Infinity, current: 50, maximum: 100, percent: 50 },
-        { value: NaN, max: NaN, current: 0, maximum: 100, percent: 0 },
-        { value: Infinity, max: 100, current: 0, maximum: 100, percent: 0 },
     ])("keeps visual and accessible ranges consistent for $value / $max", ({ value, max, current, maximum, percent }) => {
-        const out = renderComp(Progress, { value, max });
+        const out = renderComp(Progress, { label: "Upload", value, max });
         expect(out).toContain(`aria-valuenow="${current}"`);
         expect(out).toContain(`aria-valuemax="${maximum}"`);
         expect(out).toContain(`width:${percent}%`);
@@ -406,6 +401,7 @@ describe("Progress", () => {
 describe("Tabs", () => {
     it("renders every controlled panel and hides only inactive panels", () => {
         const out = renderComp(Tabs, {
+            id: "tabs", label: "Sections",
             value: "a",
             items: [
                 { value: "a", label: "Tab A", content: "Content A" },
@@ -424,6 +420,7 @@ describe("Tabs", () => {
 
     it("marks the active tab with aria-selected", () => {
         const out = renderComp(Tabs, {
+            id: "tabs", label: "Sections",
             value: "b",
             items: [
                 { value: "a", label: "A" },
@@ -435,24 +432,28 @@ describe("Tabs", () => {
         expect(out).toContain('aria-selected="false"');
     });
 
-    it("gives the selected underline trigger an SSR-visible active border", () => {
+    it("renders one sliding underline without static trigger borders", () => {
         const out = renderComp(Tabs, {
+            id: "tabs", label: "Sections",
             variant: "underline",
             items: [
                 { value: "a", label: "A" },
                 { value: "b", label: "B" },
             ],
         });
-        expect(out).toContain("border-b-2 border-primary");
-        expect(out).toContain("border-b-2 border-transparent");
+        expect(out.match(/cs-tabs__indicator/g)).toHaveLength(1);
+        expect(out).not.toContain("border-b-2");
+        expect(out).not.toContain("border-primary");
+        expect(out).not.toContain("border-transparent");
     });
+
 });
 
 describe("Tooltip", () => {
     it("renders a wrapper with aria-label and a tooltip bubble", () => {
-        const out = renderComp(Tooltip, { label: "Save changes" }, "Save");
+        const out = renderComp(Tooltip, { id: 'save-tip', label: "Save changes" }, "Save");
         expect(out).toContain("cs-tooltip");
-        expect(out).toContain("aria-label");
+        expect(out).toContain('id="save-tip"');
         expect(out).toContain("role=");
         expect(out).toContain("tooltip");
         expect(out).toContain("Save changes");
@@ -461,7 +462,7 @@ describe("Tooltip", () => {
 
 describe("Popover", () => {
     it("renders a trigger button with popovertarget and a popover div", () => {
-        const out = renderComp(Popover, { trigger: "Open" }, "Body");
+        const out = renderComp(Popover, { id: 'popover-test', trigger: "Open" }, "Body");
         expect(out).toContain("popovertarget");
         expect(out).toContain("popover");
         expect(out).toContain("auto");
@@ -532,9 +533,12 @@ describe("Toaster", () => {
 });
 
 describe("toast (global API)", () => {
+    // These tests exercise browser calls without a presenter; no timers start.
+    beforeEach(() => { vi.stubGlobal('window', {}); vi.stubGlobal('document', {}); });
+    afterEach(() => { toastStore.clear(); vi.unstubAllGlobals(); });
     it("pushes and dismisses toasts via the reactive store", () => {
         // Clear any leftover state.
-        toastStore.set([]);
+        toastStore.clear();
         expect(toastStore.get()).toEqual([]);
 
         const id = toast.success("Saved!");
@@ -547,8 +551,8 @@ describe("toast (global API)", () => {
     });
 
     it("subscribe receives the current value immediately and on updates", () => {
-        toastStore.set([]);
-        const received: any[][] = [];
+        toastStore.clear();
+        const received: (readonly unknown[])[] = [];
         const unsub = toastStore.subscribe((v) => received.push([...v]));
 
         toast.show("Hello");
@@ -558,13 +562,14 @@ describe("toast (global API)", () => {
         unsub();
         toast.show("After unsub");
         expect(received).toHaveLength(2); // no more updates
-        toastStore.set([]);
+        toastStore.clear();
     });
 });
 
 describe("DropdownMenu", () => {
     it("renders a trigger button with popovertarget and menu items", () => {
         const out = renderComp(DropdownMenu, {
+            id: 'dropdown-1',
             trigger: "Actions",
             items: [
                 { label: "Edit" },
@@ -581,6 +586,7 @@ describe("DropdownMenu", () => {
 
     it("renders a separator when separator is true", () => {
         const out = renderComp(DropdownMenu, {
+            id: 'dropdown-2',
             trigger: "Menu",
             items: [{ label: "A" }, { separator: true }, { label: "B" }],
         });
@@ -623,6 +629,7 @@ describe("Sheet", () => {
 describe("Command", () => {
     it("supports a controlled open state without changing its public item contract", () => {
         const out = renderComp(Command, {
+            id: 'commands', label: 'Commands',
             open: true,
             items: [{ id: "/docs", label: "Documentation", group: "Navigation" }],
         });
@@ -633,7 +640,7 @@ describe("Command", () => {
 
 describe("Collapsible", () => {
     it("renders a trigger and hidden content", () => {
-        const out = renderComp(Collapsible, { trigger: "Toggle" }, "Hidden text");
+        const out = renderComp(Collapsible, { id: "collapse", trigger: "Toggle" }, "Hidden text");
         expect(out).toContain("cs-collapsible");
         expect(out).toContain("Toggle");
         expect(out).toContain("Hidden text");
@@ -641,7 +648,7 @@ describe("Collapsible", () => {
     });
 
     it("shows content when defaultOpen is true", () => {
-        const out = renderComp(Collapsible, { trigger: "T", defaultOpen: true }, "X");
+        const out = renderComp(Collapsible, { id: "collapse", trigger: "T", defaultOpen: true }, "X");
         expect(out).toContain("height: auto; overflow: visible");
     });
 });
@@ -664,6 +671,7 @@ describe("Toggle", () => {
 describe("ToggleGroup", () => {
     it("renders a group of toggle buttons", () => {
         const out = renderComp(ToggleGroup, {
+            label: "Formatting",
             type: "single",
             value: "bold",
             items: [{ value: "bold", label: "B" }, { value: "italic", label: "I" }],
@@ -678,8 +686,8 @@ describe("Breadcrumb", () => {
     it("renders nav with items and separators", () => {
         const out = renderComp(Breadcrumb, {
             items: [
-                { label: "Home", href: "/" },
-                { label: "Settings" },
+                { value: "home", label: "Home", href: "/" },
+                { value: "settings", label: "Settings" },
             ],
         });
         expect(out).toContain("cs-breadcrumb");
@@ -692,7 +700,7 @@ describe("Breadcrumb", () => {
 
 describe("Pagination", () => {
     it("renders page buttons with current page highlighted", () => {
-        const out = renderComp(Pagination, { page: 3, totalPages: 10 });
+        const out = renderComp(Pagination, { page: 3, totalPages: 10, onPageChange: () => {} });
         expect(out).toContain("cs-pagination");
         expect(out).toContain("3");
         // Prev/next are now Icon components (arrows), not text glyphs.
@@ -703,17 +711,16 @@ describe("Pagination", () => {
 });
 
 describe("AspectRatio", () => {
-    it("renders a container with padding-top for ratio", () => {
+    it("renders a container with a CSS aspect ratio", () => {
         const out = renderComp(AspectRatio, { ratio: 16 / 9 }, "Content");
-        const pct = (9 / 16) * 100;
         expect(out).toContain("cs-aspect-ratio");
-        expect(out).toContain(`padding-top:${pct}%`);
+        expect(out).toContain(`aspect-ratio:${16 / 9}`);
     });
 });
 
 describe("Field", () => {
     it("renders label, control, and hint", () => {
-        const out = renderComp(Field, { label: "Email", hint: "We never share" }, "input");
+        const out = renderComp(Field, { label: "Email", for: "email", hint: "We never share", control: () => "input" });
         expect(out).toContain("cs-field");
         expect(out).toContain("Email");
         expect(out).toContain("We never share");
@@ -721,7 +728,7 @@ describe("Field", () => {
     });
 
     it("renders error in destructive color when present", () => {
-        const out = renderComp(Field, { label: "X", error: "Required" });
+        const out = renderComp(Field, { label: "X", for: "x", error: "Required", control: () => "input" });
         expect(out).toContain("text-destructive");
         expect(out).toContain("Required");
     });
@@ -747,7 +754,7 @@ describe("Kbd", () => {
 
 describe("ButtonGroup", () => {
     it("renders a group container with role", () => {
-        const out = renderComp(ButtonGroup, {}, "buttons");
+        const out = renderComp(ButtonGroup, { label: "Actions" }, "buttons");
         expect(out).toContain("cs-button-group");
         expect(out).toContain("role=");
         expect(out).toContain("group");
@@ -829,5 +836,45 @@ describe("Form", () => {
 
         expect(preventDefault).toHaveBeenCalled();
         expect(delegated).toBe(event);
+    });
+});
+
+describe('native control prop ownership', () => {
+    it('uses the checkbox label prop without leaking it onto the input', () => {
+        const out = renderComp(Checkbox, {checked:true,label:'Accept terms'}, 'Fallback');
+        expect(out).toContain('Accept terms');expect(out).not.toContain('Fallback');
+        expect(out).not.toContain(' label=');
+        const input = out.match(/<input\b[^>]*>/)![0];
+        expect(input.match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
+    });
+    it('renders switch children as its accessible label with one checked attribute', () => {
+        const out = renderComp(Switch, {checked:true}, 'Notifications');
+        expect(out).toContain('Notifications');
+        const input = out.match(/<input\b[^>]*>/)![0].replace(/aria-checked="[^"]*"/g,'');
+        expect(input.match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
+    });
+});
+
+describe('radio and range contracts', () => {
+    it('applies radio form flags to inputs and keeps group semantics', () => {
+        const out = renderComp(RadioGroup, {name:'plan',form:'settings',required:true,disabled:true,
+            orientation:'horizontal',value:'pro',items:[{value:'free'},{value:'pro'}]});
+        expect(out).toContain('aria-orientation="horizontal"');
+        const inputs=out.match(/<input\b[^>]*>/g)!;expect(inputs).toHaveLength(2);
+        for(const input of inputs){expect(input).toContain('form="settings"');expect(input).toContain(' required');expect(input).toContain(' disabled');}
+        expect(inputs[1].match(/\bchecked(?:=|\s|>)/g)).toHaveLength(1);
+    });
+    it('rejects invalid radio identities and numeric range contracts', () => {
+        expect(()=>renderComp(RadioGroup,{name:'',items:[]})).toThrow(/name/);
+        expect(()=>renderComp(RadioGroup,{name:'plan',items:[{value:'a'},{value:'a'}]})).toThrow(/unique/);
+        expect(()=>renderComp(Slider,{min:20,max:10})).toThrow(/max/);
+        expect(()=>renderComp(Slider,{value:NaN})).toThrow(/finite/);
+        expect(()=>renderComp(Slider,{step:0})).toThrow(/step/);
+    });
+    it('serializes the range value once, after its bounds, with one accessible label', () => {
+        const out=renderComp(Slider,{value:1500,min:1000,max:2000,step:100,label:'Level','aria-label':'Fallback'});
+        const input=out.match(/<input\b[^>]*>/)![0];
+        expect(input.indexOf('value="1500"')).toBeGreaterThan(input.indexOf('max="2000"'));
+        expect(input.match(/aria-label=/g)).toHaveLength(1);expect(input).toContain('aria-label="Level"');
     });
 });

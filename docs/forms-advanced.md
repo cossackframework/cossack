@@ -5,6 +5,161 @@ description: "Build forms with nested fields, arrays, and validation rules in Co
 
 # Advanced Forms Handling
 
+## Headless typed form state
+
+For a standalone client-side form, use `createFormController()` with an
+`InputSchema`. The controller owns raw field values, typed dot-path updates,
+field errors, touched state, validation, reset, and single-submit behavior. The
+schema converts raw strings into the types your submit handler receives. This
+API has no DOM dependency, so a page or UI package can connect its own labels,
+inputs, and error announcements.
+
+```typescript
+import { createFormController, input, type InputOf } from '@cossackframework/core';
+
+const profileSchema = input.object({
+  name: input.string({ required: true }),
+  address: input.object({
+    city: input.string({ required: true }),
+    age: input.number({ coerce: true, min: 18 }),
+  }),
+  enabled: input.boolean({ coerce: true }),
+  attachment: input.file().optional(),
+  attachments: input.array(input.file()),
+  tags: input.array(input.string()),
+  items: input.array(input.object({ name: input.string({ required: true }) })),
+});
+
+const profileForm = createFormController(profileSchema, {
+  name: 'Ada',
+  address: { city: 'London', age: '17' },
+  enabled: 'on',
+  attachment: undefined, attachments: [], tags: [], items: [{ name: 'One' }],
+});
+
+profileForm.markTouched('address.age');
+const checked = await profileForm.validate();
+
+if (!checked.valid) {
+  showError('address.age', profileForm.fieldError('address.age'));
+}
+
+profileForm.setFieldValue('address.age', '42');
+const result = await profileForm.submit(async data => saveProfile(data));
+if (result.status === 'submitted') console.log('Profile saved.');
+
+// Keep a successful submission's edited values, or restore the initial values.
+profileForm.reset();
+
+function saveProfile(data: InputOf<typeof profileSchema>) {
+  console.log(data);
+}
+
+function showError(field: string, message: string | undefined) {
+  console.error(field, message);
+}
+```
+
+`validate()` returns parsed data only when valid. A later edit cancels an
+in-flight validation and ignores its stale result. `submit()` prevents a second
+concurrent submit and copies field errors from Cossack validation failures. If
+the values change while the submit handler is pending, the result is reported
+as `stale`; the handler's external effects may already have completed.
+Call `setFieldError()` or `setFormError()` for other server responses. The
+controller does not render markup. Use `createFormBindings()` to connect native
+controls, labels, errors and keyboard submission. Array values work as whole
+fields or indexed paths such as `items.0.name`. Indices must be nonnegative
+integers; writes may edit an existing item or append at the array length, without
+creating sparse gaps. File and Blob identities survive local reads and resets.
+
+### Accessible native controls
+
+Create bindings once for the form owner. Supply a stable, unique HTML id. Subscribe
+the component to controller updates and dispose both subscriptions when it leaves.
+The controller stays independent of the DOM; only the binding adapter handles
+browser controls and focus.
+
+```typescript
+import { createFormBindings } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
+
+const fields = createFormBindings(profileForm, { id: 'profile' });
+const unsubscribe = profileForm.subscribe(() => { void owner.requestUpdate(); });
+
+function renderProfile() {
+  const name = fields.field('name', { descriptionId: 'profile-name-help' });
+  return html`
+    <form ...=${fields.form(data => saveProfile(data))}>
+      <label ...=${name.label}>Name</label>
+      <input ref=${name.ref} ...=${name.input} />
+      <p id="profile-name-help">Use your preferred name.</p>
+      <p ...=${name.error}>${name.errorMessage ?? ''}</p>
+      <p id=${fields.summary.id} role="alert" tabindex="-1">${fields.summary.message ?? ''}</p>
+      <button type="submit">Save</button>
+      <button type="reset">Reset</button>
+    </form>
+  `;
+}
+
+// In the owner's disposal hook:
+unsubscribe();
+fields.dispose();
+```
+
+Field bindings expose raw `value`, `touched` and `dirty` state. `input` owns the
+native value/change/blur handlers and ARIA attributes. `label` and `error` provide
+matching label and error ids. The error id joins the existing `descriptionId` in
+`aria-describedby` only when that field has an error. `id` and `name` options
+preserve authored control identities. Default names use bracket notation, so
+`items.0.name` becomes `items[0][name]` in native FormData.
+
+`fields.form(handler)` prevents a page reload and validates through the shared
+schema. Native Enter submission and submit buttons use the same handler. Invalid
+submission focuses the first enabled control with a field error, in DOM order.
+A form-only error focuses the rendered summary. Pass `{ focusInvalid: false }` to
+manage focus yourself, and `onResult` to receive the controller's submission
+status. The form's `aria-busy` follows submission state when its owner rerenders.
+Concurrent submissions return `busy`; stale results do not overwrite later edits.
+
+Choose a binding kind for non-text controls:
+
+```typescript
+fields.field('enabled', { kind: 'checkbox' });
+fields.field('attachment', { kind: 'file' });
+fields.field('attachments', { kind: 'files' });
+fields.field('tags', { kind: 'select-multiple' });
+```
+
+Checkboxes store booleans. File bindings read actual File objects from the input,
+never assign a filename to it, and clear an owned control when its controller
+resets to an empty value. Use `ref=${field.ref}` to establish ownership before the
+first interaction, especially for a multiple-select control; otherwise input,
+change and blur events establish ownership. Dispose bindings to release their DOM
+references. Browsers cannot restore a selected file from controller initial data;
+resetting a native form clears its file picker even if initial data contains a
+File. Use empty initial file values for an editable browser form.
+
+Text and number controls provide raw strings; use coercion in a numeric schema
+when needed. Sending controller data to a decorated HTTP server method uses the
+existing RPC transport: nested files trigger multipart encoding, while field and
+form validation errors map back automatically. Native POST submissions can use
+bracket names with `getFormData()` instead; controller bindings are optional for
+that path. Files require HTTP transport, since WebSocket JSON cannot represent
+native file contents.
+
+### UI package adapter
+
+`createUiFormBindings()` from `@cossackframework/ui` shares the same controller and
+accessible identities. Its fields provide `inputProps` for `Input` and
+`checkboxProps` for `Checkbox`. Render `field.label` and `field.error` alongside
+the control. Pass `bindings.form(handler)` as the UI `Form` component's `bindings`
+prop. Omit its separate `submit` prop when typed bindings own submission.
+Existing native Form behavior remains available without either prop. Explicit
+native attributes and `novalidate` overrides remain supported.
+
+This controller is separate from the existing `@Store()`/`@Validate()` page
+workflow below. Use that workflow when page reactivity should own the state.
+
 Use `@Store()` when a form has many fields, nested values, arrays, or client-side interactions. It groups the form values in one state object.
 
 ## Defining Complex Fields

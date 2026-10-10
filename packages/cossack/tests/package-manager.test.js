@@ -10,7 +10,6 @@ describe('package manager commands', () => {
     ['pnpm/10.29.3 npm/? node/v24', 'pnpm', 'pnpm install', 'pnpm dev', 'pnpm exec cossack upgrade'],
     ['yarn/4.9.2 npm/? node/v24', 'yarn', 'yarn install', 'yarn dev', 'yarn cossack upgrade'],
     ['bun/1.2.20 npm/? node/v24', 'bun', 'bun install', 'bun run dev', 'bun run cossack upgrade'],
-    ['deno/2.4.0', 'deno', 'deno install', 'deno task dev', 'deno x -A npm:cossack upgrade'],
   ])('maps %s invocation to %s commands', (
     userAgent,
     manager,
@@ -28,17 +27,12 @@ describe('package manager commands', () => {
     expect(packageManagerCommands(detected)).toEqual({ install, dev, upgrade });
   });
 
-  it('detects Bun and Deno without npm invocation metadata', () => {
+  it('detects Bun without npm invocation metadata', () => {
     expect(detectInvokedPackageManager({
       env: {},
       versions: { bun: '1.2.20' },
       execPath: '/usr/bin/bun',
     })).toBe('bun');
-    expect(detectInvokedPackageManager({
-      env: { DENO_VERSION: '2.4.0' },
-      versions: {},
-      execPath: '/usr/bin/deno',
-    })).toBe('deno');
   });
 
   it('falls back to npm for unknown invocations', () => {

@@ -1,4 +1,6 @@
 import type { ORM } from "../orm.js";
+import type { SQLFragment } from "../sql/fragment.js";
+import type { DatabasePlanTarget, MigrationPlanStatement } from "../migration/types.js";
 import type { SQLTag } from "../sql/tag.js";
 
 export type SeederTransaction = "auto" | "required" | "none";
@@ -12,7 +14,9 @@ export interface SeederContext {
 export interface Seeder {
   readonly name: string;
   readonly transaction?: SeederTransaction;
-  run(context: SeederContext): void | Promise<void>;
+  /** When supplied, these statements drive both planning and execution. */
+  readonly operations?: readonly SQLFragment[];
+  run?(context: SeederContext): void | Promise<void>;
 }
 
 /**
@@ -39,4 +43,15 @@ export interface SeederResult extends SeederInfo {
 
 export function defineSeeder<const T extends Seeder>(seeder: T): Readonly<T> {
   return Object.freeze(seeder);
+}
+
+export interface SeederPlanEntry extends SeederInfo {
+  readonly direction: "seed";
+  readonly target: DatabasePlanTarget;
+  readonly statements: readonly MigrationPlanStatement[];
+  readonly affectedObjects: readonly string[];
+  readonly complete: boolean;
+  readonly reason?: string;
+  readonly atomicity: "transaction" | "batch" | "none";
+  readonly limitations: readonly string[];
 }

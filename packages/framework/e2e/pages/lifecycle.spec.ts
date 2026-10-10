@@ -1,44 +1,38 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
+
+const ITEMS = ['Cossack', 'Hono', 'Cloudflare', 'Durable Objects'];
 
 test.describe('Lifecycle Page', () => {
-  test.beforeEach(async ({ page }) => {
+  test('SSR skips init() and responds with the loadingTemplate', async ({ request }) => {
+    const response = await request.get('/lifecycle');
+    expect(response.ok()).toBe(true);
+    const html = await response.text();
+    expect(html).toContain('Loading Data...');
+    expect(html).not.toContain('Data Loaded!');
+  });
+
+  test('clientInit() fetches data via RPC after hydration', async ({ page }) => {
     await page.goto('/lifecycle');
+    await waitForHydration(page);
+
+    // init() sleeps 2s on the server before resolving.
+    await expect(page.getByRole('heading', { name: 'Data Loaded!' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Loading Data...' })).toHaveCount(0);
+    for (const item of ITEMS) {
+      await expect(page.getByRole('listitem').filter({ hasText: new RegExp(`^${item}$`) })).toBeVisible();
+    }
   });
 
-  test('should display loading skeleton initially', async ({ page }) => {
-    await page.goto('/lifecycle', { waitUntil: 'domcontentloaded' });
+  test('re-running init() shows the loadingTemplate again, then the data', async ({ page }) => {
+    await page.goto('/lifecycle');
+    await waitForHydration(page);
+    const refresh = page.getByRole('button', { name: /Refresh Data/ });
+    await expect(refresh).toBeVisible({ timeout: 10_000 });
 
-    await expect(page.locator('body')).toBeVisible();
-  });
-
-  test('should load and display data', async ({ page }) => {
-    await page.waitForFunction(() => {
-      const body = document.body.textContent || '';
-      return body.length > 100;
-    }, { timeout: 5000 });
-  });
-
-  test('should call init on server', async ({ page }) => {
-    await expect(page.locator('body')).toBeVisible();
-  });
-
-  test('should call clientInit after hydration', async ({ page }) => {
-    await page.waitForFunction(() => {
-      const body = document.body.textContent || '';
-      return body.length > 50;
-    }, { timeout: 5000 });
-  });
-
-  test('should show loadingTemplate during data fetch', async ({ page }) => {
-    await page.goto('/lifecycle', { waitUntil: 'domcontentloaded' });
-
-    await page.waitForTimeout(100);
-  });
-
-  test('should handle onMount lifecycle', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
-
-    const body = await page.locator('body').textContent();
-    expect(body).toBeDefined();
+    await refresh.click();
+    await expect(page.getByRole('heading', { name: 'Loading Data...' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Data Loaded!' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('listitem').filter({ hasText: /^Durable Objects$/ })).toBeVisible();
   });
 });

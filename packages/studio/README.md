@@ -41,6 +41,33 @@ before `orm.config.ts` is imported; existing shell variables keep precedence.
 
 Studio merges physical introspection with `orm.schema()`, displays logical
 types and relation provenance, surfaces drift, and hides migration bookkeeping.
+Its schema response also includes `inspection`: the shared read-only database
+facts used by `cossack orm schema inspect --json`. These facts include the
+selected target and environment, driver/dialect capabilities, physical and
+model schema, known relationships, and applied, pending or changed migrations.
+Inspection does not create migration bookkeeping tables or apply migrations.
+Credential fields and temporary connection identities are excluded.
+
+For programmatic inspection of a configured project:
+
+```ts
+import { inspectStudioProject } from '@cossackframework/studio';
+
+const facts = await inspectStudioProject({
+  projectRoot: process.cwd(),
+  environment: 'staging',
+  target: 'local',
+  binding: 'STAGING_DB',
+});
+```
+
+The project adapter receives the selected environment and target with
+`readOnly: true`. The optional binding must match the inspected target.
+Named environments must select their own configured binding; an absent binding
+must fail rather than use an unrelated top-level database. Temporary inspection
+connections close after success or failure. An existing local Studio connection
+keeps ownership of its borrowed ORM until Studio closes it.
+
 This means storage-oriented SQLite declarations can retain richer application
 semantics through model decorators:
 

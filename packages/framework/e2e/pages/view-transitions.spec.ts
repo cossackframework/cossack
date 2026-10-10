@@ -1,9 +1,10 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('View Transitions', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/view-transitions');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
   });
 
   test('list page renders cards with data-transition-types', async ({ page }) => {
@@ -95,6 +96,48 @@ test.describe('View Transitions', () => {
     await page.goBack();
     await expect(page.locator('a[data-transition-types="nav-forward"]')).toHaveCount(4, { timeout: 5000 });
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(800);
+  });
+
+  test('navigation completes when the transition API is unavailable', async ({ page }) => {
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'startViewTransition', { configurable: true, value: undefined });
+      (window as any).__navigationEvidence = [];
+      document.addEventListener('cossack:navigation-diagnostic', (event) => {
+        (window as any).__navigationEvidence.push((event as CustomEvent).detail);
+      });
+    });
+    await page.locator('a[data-transition-types="nav-forward"]').first().click();
+    await expect(page.locator('a[data-transition-types="nav-back"]')).toBeVisible();
+    // Navigation diagnostics are only emitted by development builds.
+    if (process.env.COSSACK_E2E_SERVER === 'dev') await expect.poll(() => page.evaluate(() => (window as any).__navigationEvidence)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ phase: 'transition', decision: 'unsupported' }),
+        expect.objectContaining({ phase: 'finish', outcome: 'completed', committed: true }),
+      ]),
+    );
+    // A document reload would lose the listener and collected evidence above.
+    await page.locator('a[data-transition-types="nav-back"]').click();
+    await expect(page.locator('a[data-transition-types="nav-forward"]')).toHaveCount(4);
+  });
+
+  test('fragment navigation scrolls to the committed target and missing fragments use the top', async ({ page }) => {
+    await page.addStyleTag({ content: 'body { min-height: 4000px; } #item-preview { margin-top: 1200px; }' });
+    await page.locator('a[data-transition-types="nav-forward"]').first().evaluate((element) => {
+      element.setAttribute('href', '/view-transitions/1#item-preview');
+      (element as HTMLAnchorElement).click();
+    });
+    await expect(page).toHaveURL(/\/view-transitions\/1#item-preview$/);
+    await expect(page.locator('#item-preview')).toBeVisible();
+    await expect.poll(() => page.locator('#item-preview').evaluate(element => Math.round(element.getBoundingClientRect().top))).toBe(0);
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(1000);
+
+    await page.locator('a[data-transition-types="nav-back"]').evaluate((element) => {
+      element.setAttribute('href', '/view-transitions#missing-fragment');
+      (element as HTMLAnchorElement).click();
+    });
+    await expect(page.locator('a[data-transition-types="nav-forward"]')).toHaveCount(4);
+    await expect(page).toHaveURL(/#missing-fragment$/);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   });
 
   test('tab switch uses this.startViewTransition (same-route)', async ({ page }) => {

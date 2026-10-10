@@ -18,17 +18,19 @@ function renderBlock(
 
 describe('@cossackframework/ui/blocks', () => {
   it('renders every public block on the server', () => {
-    expect(renderBlock(AuthForm, { social: false })).toContain('cs-auth-form');
+    expect(renderBlock(AuthForm, { id: 'auth', onSubmit: () => {} })).toContain('cs-auth-form');
     expect(renderBlock(CommandPalette, {
+      id: 'palette', label: 'Commands', onSelect: () => {}, onOpenChange: () => {},
       commands: [{ id: 'home', label: 'Home' }],
       open: true,
     })).toContain('cs-command-palette');
     expect(renderBlock(DashboardStat, {
-      stats: [{ label: 'Users', value: 42 }],
+      stats: [{ id: 'users', label: 'Users', value: 42 }],
     })).toContain('Users');
     expect(renderBlock(SettingsPanel, {
+      id: 'settings',
       sections: [{
-        title: 'Account',
+        id: 'account', title: 'Account',
         rows: [{ label: 'Name', type: 'text', key: 'name' }],
       }],
     })).toContain('Account');

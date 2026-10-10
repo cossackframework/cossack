@@ -57,6 +57,16 @@ export interface ScopeStorage<T> {
 export interface Adapter {
   readonly driver: Driver;
   readonly scope?: ScopeStorage<unknown>;
+  /** Public connection identity for tooling. Never include URLs with credentials or secret values. */
+  readonly tooling?: {
+    readonly provider: string;
+    readonly target: "local" | "remote";
+    readonly accountId?: string;
+    readonly environment?: string;
+    readonly binding?: string;
+    readonly databaseName?: string;
+    readonly databaseId?: string;
+  };
 }
 
 export interface DialectCapabilities {
@@ -80,7 +90,10 @@ export interface LoggerEvent {
   readonly durationMs: number;
   readonly dialect: DialectName;
   readonly operation: QueryOperation;
-  readonly error?: unknown;
+  readonly provider: string;
+  readonly outcome: "success" | "failure";
+  /** Arbitrary driver exceptions are never passed to diagnostic observers. */
+  readonly code?: "COSSACK_DATABASE_QUERY_FAILED";
 }
 
 export interface ORMLogger {

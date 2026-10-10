@@ -3,12 +3,13 @@ import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
 // @cossack:cloudflare-start
 import { cloudflare } from '@cloudflare/vite-plugin';
+import { cossackBuildBudgets } from '@cossackframework/framework/vite-plugin';
 // @cossack:cloudflare-end
 import { cossackPages, cossackLang, cossackMiddlewares, cossackConfig } from '@cossackframework/framework/vite-plugin';
 import { cossackSecurityPlugin } from '@cossackframework/framework/vite-security-plugin';
 import { cossackSsg } from '@cossackframework/framework/vite-ssg-plugin';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode, command }) => ({
   // Local D1 updates its WAL/SHM files for authenticated reads and writes.
   // Those runtime files are not source code and must never trigger Vite HMR.
   server: {
@@ -19,9 +20,9 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     tailwindcss(),
     // @cossack:cloudflare-start
-    cloudflare({
+    ...(mode === 'desktop' ? [] : [cloudflare({
       viteEnvironment: { name: 'ssr' },
-    }),
+    }), cossackBuildBudgets()]),
     // @cossack:cloudflare-end
     cossackSecurityPlugin({ devWarning: true }),
     cossackPages(),
@@ -75,7 +76,12 @@ export default defineConfig(({ mode }) => ({
       },
     },
     ssr: {
-      resolve: mode === 'desktop'
+      build: {
+        // Keep authored server locations in private build artifacts for diagnosis.
+        // Client maps remain opt-in; Desktop keeps its existing build defaults.
+        sourcemap: mode !== 'desktop',
+      },
+      resolve: mode === 'desktop' && command === 'build'
         ? {
             // Forge omits node_modules from packaged applications. Bundle the
             // complete main-process graph while preserving Electron's native
@@ -96,13 +102,17 @@ export default defineConfig(({ mode }) => ({
           },
       // Cloudflare starts the SSR worker eagerly in development. Pre-bundling
       // the large shared packages avoids transforming their full dependency
-      // graphs one module at a time on every cold start.
+      // graphs one module at a time on every cold start. Route API handlers and
+      // page inspectors load these entries after the initial scan; include them
+      // here so late discovery does not replace the SSR cache under the worker.
       optimizeDeps: {
         include: [
           '@cossackframework/ui',
           '@cossackframework/auth',
           '@cossackframework/database',
           '@cossackframework/framework/cache',
+          '@cossackframework/framework/api',
+          '@cossackframework/framework/client/devtools',
           'hono/cookie',
         ],
       },

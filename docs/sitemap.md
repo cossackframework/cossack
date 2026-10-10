@@ -50,9 +50,9 @@ The base URL is resolved in the following order (first match wins):
 
 1. **`APP_URL` shell env** : explicit override, useful for CI:
    ```bash
-   APP_URL=https://my-site.com pnpm run build:ssg
+   APP_URL=https://my-site.com pnpm run build
    ```
-2. **`vars.APP_URL` in `wrangler.jsonc`** (or `APP_URL` in the `[vars]`
+2. **`vars.APP_URL` in `wrangler.jsonc` or `wrangler.json`** (or `APP_URL` in the `[vars]`
  table of `wrangler.toml`). This is the recommended approach : the value
  is also available to your Worker at runtime via `config('app.url')`:
    ```jsonc
@@ -62,11 +62,15 @@ The base URL is resolved in the following order (first match wins):
      }
    }
    ```
-3. **`APP_URL` in `.env`**.
+3. **`APP_URL` in dotenv files**. Later files override earlier ones:
+   `.env`, `.env.<environment>`, `.env.local`, `.env.<environment>.local`.
+   Without an environment, only `.env` and `.env.local` are used.
 4. **`https://example.com`** : final default.
 
-Because the SSG build script reads these sources directly, no extra CLI flags
-are required.
+When `CLOUDFLARE_ENV` is set, Wrangler values come from that environment's
+`vars` object or `[env.<environment>.vars]` table. Top-level variables are not
+inherited. The shell `APP_URL` override still takes precedence. An explicit
+`baseUrl` on the `cossackSsg()` plugin overrides this resolution entirely.
 
 ### Sitemap Options
 

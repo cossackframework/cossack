@@ -1,5 +1,6 @@
 // tests/rate-limit.test.ts
 import 'reflect-metadata';
+import { RateLimitStorageFixture } from './helpers/rate-limit-storage';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
     InMemoryRateLimitStore,
@@ -13,6 +14,7 @@ import {
     configureRateLimitFromEnv,
     __resetRateLimitForTests,
     getClientIp,
+    setClientAddress,
     defaultRateLimitKey,
     enforceRateLimit,
     enforceMethodRateLimit,
@@ -25,11 +27,17 @@ import {
 } from '../src/shared/rate-limit';
 
 // Build a minimal fake Hono Context.
-function makeContext(opts: { ip?: string; user?: { id: string }; path?: string; method?: string } = {}): any {
+function makeContext(opts: { ip?: string; user?: { id: string }; path?: string; method?: string;
+    headers?: Record<string, string>; env?: Record<string, unknown> } = {}): any {
     const headers: Record<string, string> = {};
-    if (opts.ip) headers['cf-connecting-ip'] = opts.ip;
+    for (const [name, value] of Object.entries(opts.headers ?? {})) headers[name.toLowerCase()] = value;
+    const raw = new Request('http://localhost/');
+    // `ip` is the transport peer address an adapter records for the request.
+    if (opts.ip) setClientAddress(raw, opts.ip);
     return {
+        ...(opts.env ? { env: opts.env } : {}),
         req: {
+            raw,
             method: opts.method ?? 'GET',
             path: opts.path ?? '/api/test',
             header: (name: string) => headers[name.toLowerCase()] ?? null,
@@ -73,9 +81,20 @@ describe('InMemoryRateLimitStore', () => {
         const s = new InMemoryRateLimitStore(5);
         s.hit('k1', 10);
         await new Promise((r) => setTimeout(r, 20));
-        // Add entries beyond maxEntries to trigger prune; expired k1 should drop.
-        for (let i = 0; i < 10; i++) s.hit(`fresh${i}`, 10_000);
+        // Fill the capacity, pruning the expired bucket before admitting the last.
+        for (let i = 0; i < 5; i++) s.hit(`fresh${i}`, 10_000);
         expect((s as any).entries.has('k1')).toBe(false);
+        expect((s as any).entries.size).toBe(5);
+    });
+
+    it('evicts the oldest live buckets instead of rejecting new callers when full', () => {
+        const s = new InMemoryRateLimitStore(3);
+        s.hit('a', 60_000); s.hit('b', 60_000); s.hit('c', 60_000);
+        s.hit('a', 60_000); // a's count rises but its window still started first
+        for (let i = 0; i < 100; i++) expect(s.hit(`flood${i}`, 60_000).count).toBe(1);
+        expect((s as any).entries.size).toBe(3);
+        expect(s.hit('victim', 60_000).count).toBe(1);
+        expect(s.hit('victim', 60_000).count).toBe(2);
     });
 });
 
@@ -125,11 +144,12 @@ describe('KvRateLimitStore', () => {
         expect((await store.hit('a', 20)).count).toBe(1);
     });
 
-    it('survives corrupt KV values', async () => {
+    it('rejects corrupt KV values without restoring a budget', async () => {
         const kv = new FakeKv();
-        await kv.put('cossack:rl:corrupt', '{not json');
+        await kv.put(JSON.stringify(['cossack:rl:', 'corrupt']), '{not json');
         const store = new KvRateLimitStore(kv);
-        expect((await store.hit('corrupt', 60_000)).count).toBe(1);
+        await expect(store.hit('corrupt', 60_000)).rejects.toThrow(/counter/);
+        expect(await kv.get(JSON.stringify(['cossack:rl:', 'corrupt']))).toBe('{not json');
     });
 
     it('honours a custom key namespace', async () => {
@@ -137,8 +157,8 @@ describe('KvRateLimitStore', () => {
         const store = new KvRateLimitStore(kv, { namespace: 'myapp:' });
         await store.hit('x', 60_000);
         // The KV key uses the custom prefix.
-        expect(await kv.get('myapp:x')).not.toBeNull();
-        expect(await kv.get('cossack:rl:x')).toBeNull();
+        expect(await kv.get(JSON.stringify(['myapp:', 'x']))).not.toBeNull();
+        expect(await kv.get(JSON.stringify(['cossack:rl:', 'x']))).toBeNull();
     });
 
     it('integrates with enforceRateLimit via setRateLimitStore', async () => {
@@ -198,14 +218,14 @@ describe('enforceRateLimit', () => {
         expect(res.status).toBe(429);
         expect(res.headers.get('Retry-After')).toBeTruthy();
         const body = await res.json();
-        expect(body).toEqual({ error: 'Too Many Requests' });
+        expect(body).toEqual({ error: 'Too Many Requests', code: 'COSSACK_RPC_RATE_LIMITED' });
     });
 
     it('respects a custom message', async () => {
         const c = makeContext({ ip: '1.2.3.4' });
         const res = (await enforceRateLimit(c, 's', { window: 60_000, max: 0, message: 'Chill out' }))!;
         expect(res.status).toBe(429);
-        expect(await res.json()).toEqual({ error: 'Chill out' });
+        expect(await res.json()).toEqual({ error: 'Chill out', code: 'COSSACK_RPC_RATE_LIMITED' });
     });
 
     it('namespaces counters by scopeKey so limits do not leak across endpoints', async () => {
@@ -234,8 +254,38 @@ describe('enforceRateLimit', () => {
 });
 
 describe('key extraction', () => {
-    it('reads cf-connecting-ip first', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('uses the adapter-recorded socket address', () => {
         expect(getClientIp(makeContext({ ip: '5.5.5.5' }))).toBe('5.5.5.5');
+    });
+
+    it('ignores spoofable proxy headers outside Cloudflare without opt-in', () => {
+        const headers = { 'cf-connecting-ip': '6.6.6.6', 'x-real-ip': '7.7.7.7', 'x-forwarded-for': '8.8.8.8' };
+        expect(getClientIp(makeContext({ ip: '5.5.5.5', headers }))).toBe('5.5.5.5');
+        expect(getClientIp(makeContext({ headers }))).toBe('anonymous');
+    });
+
+    it('reads the @hono/node-server incoming socket binding', () => {
+        const incoming = { socket: { remoteAddress: '::1' } };
+        expect(getClientIp(makeContext({ env: { incoming }, headers: { 'x-forwarded-for': '1.1.1.1' } }))).toBe('::1');
+        expect(getClientIp(makeContext({ env: { server: { incoming } } }))).toBe('::1');
+    });
+
+    it('trusts cf-connecting-ip only on Cloudflare Workers', () => {
+        vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' });
+        expect(getClientIp(makeContext({ ip: '5.5.5.5', headers: { 'cf-connecting-ip': '6.6.6.6', 'x-forwarded-for': '8.8.8.8' } }))).toBe('6.6.6.6');
+        expect(getClientIp(makeContext({ headers: { 'x-real-ip': '7.7.7.7' } }))).toBe('anonymous');
+    });
+
+    it('trusts only the explicitly configured proxy header', () => {
+        const headers = { 'x-real-ip': '7.7.7.7', 'x-forwarded-for': 'spoofed, 10.0.0.1 , 9.9.9.9' };
+        expect(getClientIp(makeContext({ ip: '127.0.0.1', headers, env: { RATE_LIMIT_TRUST_PROXY: 'X-Real-IP' } }))).toBe('7.7.7.7');
+        // The right-most hop is the one appended by the trusted proxy.
+        expect(getClientIp(makeContext({ ip: '127.0.0.1', headers, env: { rateLimitTrustProxy: 'x-forwarded-for' } }))).toBe('9.9.9.9');
+        // Missing header falls back to the socket address.
+        expect(getClientIp(makeContext({ ip: '127.0.0.1', env: { RATE_LIMIT_TRUST_PROXY: 'x-real-ip' } }))).toBe('127.0.0.1');
+        expect(() => getClientIp(makeContext({ env: { RATE_LIMIT_TRUST_PROXY: 'bad header' } }))).toThrow(/RATE_LIMIT_TRUST_PROXY/);
     });
 
     it('falls back to anonymous', () => {
@@ -338,18 +388,21 @@ describe('RateLimit handler wrapper (functional API routes)', () => {
 
 describe('RateLimitDurableObject', () => {
     it('counts hits within a window and resets after it elapses', async () => {
-        const dobj = new RateLimitDurableObject({} as any, {});
+        let now = 1_700_000_000_000;
+        const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+        const dobj = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
         const hit = (w: number) =>
             dobj.fetch(new Request(`https://rl/?window=${w}`)).then((r) => r.json() as Promise<{ count: number }>);
-        expect((await hit(20)).count).toBe(1);
-        expect((await hit(20)).count).toBe(2);
-        expect((await hit(20)).count).toBe(3);
-        await new Promise((r) => setTimeout(r, 30)); // 30ms > 20ms window
-        expect((await hit(20)).count).toBe(1); // window elapsed -> fresh
+        try {
+            expect((await hit(20)).count).toBe(1);
+            expect((await hit(20)).count).toBe(2);
+            now += 19; expect((await hit(20)).count).toBe(3);
+            now++; expect((await hit(20)).count).toBe(1); // Exact reset boundary.
+        } finally { clock.mockRestore(); }
     });
 
     it('defaults to a 60s window when none is given', async () => {
-        const dobj = new RateLimitDurableObject({} as any, {});
+        const dobj = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
         const r = await dobj.fetch(new Request('https://rl/'));
         expect(((await r.json()) as { count: number }).count).toBe(1);
     });
@@ -364,7 +417,7 @@ describe('DurableObjectRateLimitStore', () => {
                 const key = id as string;
                 let inst = instances.get(key);
                 if (!inst) {
-                    inst = new RateLimitDurableObject({} as any, {});
+                    inst = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
                     instances.set(key, inst);
                 }
                 return { fetch: (input: RequestInfo | URL) => inst!.fetch(new Request(input)) };
@@ -393,7 +446,7 @@ describe('DurableObjectRateLimitStore', () => {
                 const key = id as string;
                 let inst = instances.get(key);
                 if (!inst) {
-                    inst = new RateLimitDurableObject({} as any, {});
+                    inst = new RateLimitDurableObject(new RateLimitStorageFixture().state(), {});
                     instances.set(key, inst);
                 }
                 return { fetch: (input: RequestInfo | URL) => inst!.fetch(new Request(input)) };
@@ -425,37 +478,35 @@ describe('RedisRateLimitStore (Upstash REST, zero-dep)', () => {
         const res = await store.hit('k', 60_000);
         expect(res.count).toBe(3);
         expect(res.resetAt).toBeGreaterThan(Date.now());
-        // EVAL command shape: ['EVAL', script, '1', key, ttl]
+        // EVAL command shape: ['EVAL', script, '1', key, ttlMs]
         expect(sentBody[0]).toBe('EVAL');
         expect(sentBody[2]).toBe('1');
-        expect(sentBody[3]).toBe('cossack:rl:k');
-        expect(sentBody[4]).toBe('60');
+        expect(sentBody[3]).toBe(JSON.stringify(['cossack:rl:', 'k']));
+        expect(sentBody[4]).toBe('60000');
     });
 
     it('throws on missing credentials', () => {
-        expect(() => new RedisRateLimitStore({})).toThrow(/Upstash/);
+        expect(() => new RedisRateLimitStore({})).toThrow(/endpoint|token/);
     });
 
-    it('surfaces Upstash error payloads', async () => {
+    it('rejects Upstash error payloads without echoing their body', async () => {
         const fakeFetch = async () =>
             new Response(JSON.stringify({ error: 'invalid token' }), { status: 200 });
-        const store = new RedisRateLimitStore({ url: 'u', token: 't', fetch: fakeFetch });
-        await expect(store.hit('k', 1000)).rejects.toThrow(/invalid token/);
+        const store = new RedisRateLimitStore({ url: 'https://redis.test', token: 't', fetch: fakeFetch });
+        await expect(store.hit('k', 1000)).rejects.toThrow(/error response/);
     });
 
     it('throws on non-OK HTTP status', async () => {
         const fakeFetch = async () => new Response('gateway', { status: 502 });
-        const store = new RedisRateLimitStore({ url: 'u', token: 't', fetch: fakeFetch });
+        const store = new RedisRateLimitStore({ url: 'https://redis.test', token: 't', fetch: fakeFetch });
         await expect(store.hit('k', 1000)).rejects.toThrow(/502/);
     });
 
-    it('falls back to windowMs when PTTL is missing', async () => {
+    it('rejects a counter with no Redis expiry', async () => {
         const fakeFetch = async () =>
             new Response(JSON.stringify({ result: [1, -1] }), { status: 200 });
-        const store = new RedisRateLimitStore({ url: 'u', token: 't', fetch: fakeFetch });
-        const res = await store.hit('k', 5_000);
-        expect(res.count).toBe(1);
-        expect(res.resetAt).toBeGreaterThan(Date.now());
+        const store = new RedisRateLimitStore({ url: 'https://redis.test', token: 't', fetch: fakeFetch });
+        await expect(store.hit('k', 5_000)).rejects.toThrow(/TTL/);
     });
 
     it('honours a custom namespace prefix', async () => {
@@ -464,13 +515,13 @@ describe('RedisRateLimitStore (Upstash REST, zero-dep)', () => {
             sentKey = (JSON.parse(init!.body as string))[3];
             return new Response(JSON.stringify({ result: [1, 1000] }), { status: 200 });
         };
-        const store = new RedisRateLimitStore({ url: 'u', token: 't', namespace: 'rl:', fetch: fakeFetch });
+        const store = new RedisRateLimitStore({ url: 'https://redis.test', token: 't', namespace: 'rl:', fetch: fakeFetch });
         await store.hit('k', 1000);
-        expect(sentKey).toBe('rl:k');
+        expect(sentKey).toBe(JSON.stringify(['rl:', 'k']));
     });
 
     it('redisRateLimitStoreFromEnv reads env vars', () => {
-        const s = redisRateLimitStoreFromEnv({ UPSTASH_REDIS_REST_URL: 'u', UPSTASH_REDIS_REST_TOKEN: 't' });
+        const s = redisRateLimitStoreFromEnv({ UPSTASH_REDIS_REST_URL: 'https://redis.test', UPSTASH_REDIS_REST_TOKEN: 't' });
         expect(s).toBeInstanceOf(RedisRateLimitStore);
         expect(() => redisRateLimitStoreFromEnv({})).toThrow(/Upstash/);
     });
@@ -479,7 +530,7 @@ describe('RedisRateLimitStore (Upstash REST, zero-dep)', () => {
         let n = 0;
         const fakeFetch = async () =>
             new Response(JSON.stringify({ result: [++n, 60_000] }), { status: 200 });
-        setRateLimitStore(new RedisRateLimitStore({ url: 'u', token: 't', fetch: fakeFetch }));
+        setRateLimitStore(new RedisRateLimitStore({ url: 'https://redis.test', token: 't', fetch: fakeFetch }));
         try {
             const c = makeContext({ ip: '4.4.4.4' });
             expect(await enforceRateLimit(c, 's', { window: 60_000, max: 2 })).toBeNull();
@@ -502,17 +553,18 @@ describe('configureRateLimitFromEnv (zero-code config)', () => {
 
     it('builds a KvRateLimitStore from rateLimit="kv" + RATE_LIMITS binding', () => {
         const fakeKv = { async get() { return null; }, async put() {} };
-        configureRateLimitFromEnv({ rateLimit: 'kv', RATE_LIMITS: fakeKv });
-        expect(getRateLimitStore()).toBeInstanceOf(KvRateLimitStore);
+        const env = { rateLimit: 'kv', RATE_LIMITS: fakeKv };
+        configureRateLimitFromEnv(env);
+        expect(getRateLimitStore(env)).toBeInstanceOf(KvRateLimitStore);
     });
 
     it('builds a RedisRateLimitStore from rateLimit="redis"', () => {
-        configureRateLimitFromEnv({
+        const store = configureRateLimitFromEnv({
             rateLimit: 'redis',
-            UPSTASH_REDIS_REST_URL: 'u',
+            UPSTASH_REDIS_REST_URL: 'https://redis.test',
             UPSTASH_REDIS_REST_TOKEN: 't',
         });
-        expect(getRateLimitStore()).toBeInstanceOf(RedisRateLimitStore);
+        expect(store).toBeInstanceOf(RedisRateLimitStore);
     });
 
     it('builds a DurableObjectRateLimitStore from rateLimit="durable-object"', () => {
@@ -520,46 +572,36 @@ describe('configureRateLimitFromEnv (zero-code config)', () => {
             idFromName: () => 0,
             get: () => ({ fetch: async () => new Response('{}') }),
         };
-        configureRateLimitFromEnv({ rateLimit: 'durable-object', RATE_LIMIT_DO: fakeNs });
-        expect(getRateLimitStore()).toBeInstanceOf(DurableObjectRateLimitStore);
+        expect(configureRateLimitFromEnv({ rateLimit: 'durable-object', RATE_LIMIT_DO: fakeNs }))
+            .toBeInstanceOf(DurableObjectRateLimitStore);
     });
 
     it('accepts the RATE_LIMIT alias and is case-insensitive', () => {
-        configureRateLimitFromEnv({
+        const store = configureRateLimitFromEnv({
             RATE_LIMIT: 'Redis',
-            UPSTASH_REDIS_REST_URL: 'u',
+            UPSTASH_REDIS_REST_URL: 'https://redis.test',
             UPSTASH_REDIS_REST_TOKEN: 't',
         });
-        expect(getRateLimitStore()).toBeInstanceOf(RedisRateLimitStore);
+        expect(store).toBeInstanceOf(RedisRateLimitStore);
     });
 
-    it('stays on the default when a binding is missing (logs an error)', () => {
-        const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        configureRateLimitFromEnv({ rateLimit: 'kv' }); // no RATE_LIMITS binding
+    it('rejects a missing binding without changing the process default', () => {
+        const before = getRateLimitStore();
+        expect(() => configureRateLimitFromEnv({ rateLimit: 'kv' })).toThrow(/RATE_LIMITS/);
+        expect(getRateLimitStore()).toBe(before);
+    });
+
+    it('rejects an unknown explicit mode', () => {
+        expect(() => configureRateLimitFromEnv({ rateLimit: 'memcached' })).toThrow(/Unknown/);
+    });
+
+    it('memoizes an environment selection without replacing other environments', () => {
+        const env = { rateLimit: 'kv', RATE_LIMITS: { async get() { return null; }, async put() {} } };
+        const first = configureRateLimitFromEnv(env);
+        expect(configureRateLimitFromEnv({ rateLimit: 'redis', UPSTASH_REDIS_REST_URL: 'https://redis.test',
+            UPSTASH_REDIS_REST_TOKEN: 't' })).toBeInstanceOf(RedisRateLimitStore);
+        expect(getRateLimitStore(env)).toBe(first);
         expect(getRateLimitStore()).toBeInstanceOf(InMemoryRateLimitStore);
-        expect(spy).toHaveBeenCalledWith(expect.stringContaining('RATE_LIMITS'));
-        spy.mockRestore();
-    });
-
-    it('stays on the default for an unknown mode', () => {
-        const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        configureRateLimitFromEnv({ rateLimit: 'memcached' });
-        expect(getRateLimitStore()).toBeInstanceOf(InMemoryRateLimitStore);
-        expect(spy).toHaveBeenCalledWith(expect.stringContaining('Unknown'));
-        spy.mockRestore();
-    });
-
-    it('is memoized — configures only once', () => {
-        const fakeKv = { async get() { return null; }, async put() {} };
-        configureRateLimitFromEnv({ rateLimit: 'kv', RATE_LIMITS: fakeKv });
-        const first = getRateLimitStore();
-        configureRateLimitFromEnv({
-            rateLimit: 'redis',
-            UPSTASH_REDIS_REST_URL: 'u',
-            UPSTASH_REDIS_REST_TOKEN: 't',
-        });
-        expect(getRateLimitStore()).toBe(first); // unchanged by the second call
-        expect(getRateLimitStore()).toBeInstanceOf(KvRateLimitStore);
     });
 
     it('a manual setRateLimitStore() wins over env config', () => {
@@ -577,6 +619,6 @@ describe('configureRateLimitFromEnv (zero-code config)', () => {
         const c = makeContext({ ip: '1.1.1.1' });
         (c as any).env = { rateLimit: 'kv', RATE_LIMITS: fakeKv };
         await enforceRateLimit(c, 's', { window: 60_000, max: 5 });
-        expect(getRateLimitStore()).toBeInstanceOf(KvRateLimitStore);
+        expect(getRateLimitStore(c.env)).toBeInstanceOf(KvRateLimitStore);
     });
 });

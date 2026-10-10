@@ -1,8 +1,15 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
-import type { Context } from 'hono';
-import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, __sseStoreSize } from '../src/transports/sse';
+import { Context } from 'hono';
+import { handleSseEndpoint, registerSseStoreEntry, resolveSseScopeKey, syncSseState, __sseStoreSize, __sweepSseStore, __resetSseStore, SSE_STORE_IDLE_TTL_MS } from '../src/transports/sse';
 import type { RouterContext } from '../src/route-ids';
+vi.mock('virtual:cossack-config', () => ({ requirements: {}, environment: null, default: {} }));
+
+vi.mock('virtual:cossack-middlewares', () => ({ default: [async (c: Context, next: () => Promise<void>) => {
+    const identity = c.get('cossack.realtimeIdentity');
+    if (identity?.provider === 'fixture.session') c.set('user', identity.data);
+    await next();
+}] }));
 
 // A Page component carrying the default scope (no scope() in pageOptions).
 // resolveSseScopeKey will fall back to `user:${user?.id || 'anonymous'}`.
@@ -20,19 +27,14 @@ function makeCtx(overrides: Partial<RouterContext> = {}): RouterContext {
     };
 }
 
-function makeContext(user: unknown, scopeKey: string | null): Context {
-    const url = 'http://localhost/sse/sse_page';
-    return {
-        req: {
-            param: (name?: string) => (name === 'componentRouteId' ? 'sse_page' : { componentRouteId: 'sse_page' }),
-            query: (name: string) => (name === 'scopeKey' ? scopeKey : undefined),
-            header: (name: string) => (name.toLowerCase() === 'origin' ? 'http://localhost' : undefined),
-            url,
-            raw: { signal: undefined } as any,
-        },
-        get: (key: string) => (key === 'user' ? user : undefined),
-        env: {},
-    } as unknown as Context;
+function makeContext(user: unknown, scopeKey: string | null, signal?: AbortSignal): Context {
+    const url = new URL('http://localhost/sse/sse_page');
+    if (scopeKey !== null) url.searchParams.set('scopeKey', scopeKey);
+    const c = new Context(new Request(url, { signal, headers: { origin: 'http://localhost' } }), { env: {} });
+    c.req.param = ((name?: string) => name === 'componentRouteId' ? 'sse_page' : { componentRouteId: 'sse_page' }) as typeof c.req.param;
+    c.set('user', user);
+    if (user) c.set('cossack.captureRealtimeIdentity', async () => ({ version: 1, provider: 'fixture.session', data: user }));
+    return c;
 }
 
 describe('handleSseEndpoint scope validation (cross-user eavesdropping guard)', () => {
@@ -66,20 +68,19 @@ describe('handleSseEndpoint scope validation (cross-user eavesdropping guard)', 
         expect(res.status).toBe(403);
     });
 
-    it('does NOT reject when the scopeKey matches the authenticated user', async () => {
-        // When the scope matches, the handler proceeds past the gate. With this
-        // minimal mock the subsequent cold-start bootstrap may throw or return a
-        // non-403 status — either way proves the scope gate let an honest
-        // client through.
-        const handler = handleSseEndpoint(makeCtx());
-        let result: { threw: boolean; status?: number };
-        try {
-            const res = await handler(makeContext({ id: 'alice' }, 'user:alice'));
-            result = { threw: false, status: res.status };
-        } catch {
-            result = { threw: true };
-        }
-        expect(result.threw || result.status !== 403).toBe(true);
+    it('rejects authenticated subscribers without a revalidation provider', async () => {
+        const c = makeContext({ id: 'alice' }, 'user:alice'); c.set('cossack.captureRealtimeIdentity', undefined);
+        const response = await handleSseEndpoint(makeCtx())(c);
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({ code: 'COSSACK_REALTIME_AUTH_REQUIRED' });
+    });
+
+    it('reports capture storage failures separately without exposing the exception', async () => {
+        const c = makeContext({ id: 'alice' }, 'user:alice');
+        c.set('cossack.captureRealtimeIdentity', async () => { throw new Error('PRIVATE_CAPTURE_STORAGE'); });
+        const response = await handleSseEndpoint(makeCtx())(c);
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({ code: 'COSSACK_REALTIME_AUTH_UNAVAILABLE', error: 'Realtime authentication is unavailable. Reload to try again.' });
     });
 
     it('rejects an unknown componentRouteId', async () => {
@@ -93,18 +94,7 @@ describe('handleSseEndpoint scope validation (cross-user eavesdropping guard)', 
 
 describe('SSE store bounding (connection counting)', () => {
     function makeSignalContext(user: unknown, scopeKey: string, controller: AbortController): Context {
-        const url = 'http://localhost/sse/sse_page';
-        return {
-            req: {
-                param: (name?: string) => (name === 'componentRouteId' ? 'sse_page' : { componentRouteId: 'sse_page' }),
-                query: (name: string) => (name === 'scopeKey' ? scopeKey : undefined),
-                header: (name: string) => (name.toLowerCase() === 'origin' ? 'http://localhost' : undefined),
-                url,
-                raw: { signal: controller.signal } as any,
-            },
-            get: (key: string) => (key === 'user' ? user : undefined),
-            env: {},
-        } as unknown as Context;
+        return makeContext(user, scopeKey, controller.signal);
     }
 
     it('decrements (but keeps) the store entry when a connection disconnects', async () => {
@@ -127,5 +117,113 @@ describe('SSE store bounding (connection counting)', () => {
         // Disconnect → entry kept (connection count decremented).
         controller.abort();
         expect(__sseStoreSize()).toBe(1);
+    });
+
+    it('publishes a newer cursor to an existing subscriber after SSR replaces its entry', async () => {
+        vi.useFakeTimers();
+        const ctx = makeCtx();
+        const scopeKey = 'user:ssr-replacement';
+        const controller = new AbortController();
+        const instance = (count: number) => ({ count, getPublicState() { return { count: this.count }; } });
+        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(0) as any);
+        const before = syncSseState(`sse_page:${scopeKey}`, { count: 1 });
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'ssr-replacement' }, scopeKey, controller));
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        try {
+            const initial = decoder.decode((await reader.read()).value);
+            expect(initial).toContain(`id: ${before}\n`);
+            expect(initial).toContain('data: {"count":1}');
+            expect(decoder.decode((await reader.read()).value)).toContain('event: connected');
+
+            registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(6) as any);
+            const replacementRead = reader.read();
+            await vi.advanceTimersByTimeAsync(200);
+            const replacement = decoder.decode((await replacementRead).value);
+            const replacementCursor = Number(/id: (\d+)/.exec(replacement)?.[1]);
+            expect(replacementCursor).toBeGreaterThan(before!);
+            expect(replacement).toContain('data: {"count":6}');
+
+            const after = syncSseState(`sse_page:${scopeKey}`, { count: 7 }, 'after-ssr');
+            expect(after).toBeGreaterThan(replacementCursor);
+            const updateRead = reader.read();
+            await vi.advanceTimersByTimeAsync(200);
+            const update = decoder.decode((await updateRead).value);
+            expect(update).toContain(`id: ${after}\n`);
+            expect(update).toContain('data: {"count":7,"_cossack_request_id":"after-ssr"}');
+        } finally {
+            controller.abort();
+            await reader.cancel();
+            vi.useRealTimers();
+        }
+    });
+
+    const ssrPage = '/src/pages/sse/index.ts';
+    const instance = (count = 0) => ({ count, getPublicState() { return { count: this.count }; } }) as any;
+
+    it('bounds the store on SSR registration', () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        for (let i = 0; i < 520; i++) registerSseStoreEntry(ctx, ssrPage, `user:bound-${i}`, instance());
+        expect(__sseStoreSize()).toBe(500);
+        __resetSseStore();
+    });
+
+    it('expires SSR entries that never get a connection after the idle TTL', () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        registerSseStoreEntry(ctx, ssrPage, 'user:never-connected', instance());
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS - 1000)).toBe(1);
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS + 1)).toBe(0);
+    });
+
+    it('keeps entries with live connections and expires them after the last disconnect', async () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        const scopeKey = 'user:ttl';
+        registerSseStoreEntry(ctx, ssrPage, scopeKey, instance());
+        const controller = new AbortController();
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'ttl' }, scopeKey, controller));
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS * 10)).toBe(1);
+        controller.abort();
+        await response.body?.cancel().catch(() => {});
+        // Grace period after the last disconnect, then removal.
+        expect(__sweepSseStore(Date.now() + 1000)).toBe(1);
+        expect(__sweepSseStore(Date.now() + SSE_STORE_IDLE_TTL_MS + 1)).toBe(0);
+    });
+
+    it('evicts idle entries before entries with live connections when full', async () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        const controller = new AbortController();
+        // The oldest entry has a live connection; later idle ones go first.
+        registerSseStoreEntry(ctx, ssrPage, 'user:live', instance(1));
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'live' }, 'user:live', controller));
+        for (let i = 0; i < 510; i++) registerSseStoreEntry(ctx, ssrPage, `user:idle-${i}`, instance());
+        expect(__sseStoreSize()).toBe(500);
+        expect(syncSseState('sse_page:user:live', { count: 2 })).toBeTypeOf('number');
+        controller.abort();
+        await response.body?.cancel().catch(() => {});
+        __resetSseStore();
+    });
+
+    it('wakes a waiting Node subscriber on sync without a polling interval', async () => {
+        __resetSseStore();
+        const ctx = makeCtx();
+        const scopeKey = 'user:wake';
+        registerSseStoreEntry(ctx, ssrPage, scopeKey, instance());
+        const controller = new AbortController();
+        const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'wake' }, scopeKey, controller));
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        await reader.read(); await reader.read();
+        const next = reader.read();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        const started = Date.now();
+        syncSseState(`sse_page:${scopeKey}`, { count: 5 });
+        expect(decoder.decode((await next).value)).toContain('data: {"count":5}');
+        expect(Date.now() - started).toBeLessThan(150);
+        controller.abort();
+        await reader.cancel();
     });
 });

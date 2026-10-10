@@ -65,8 +65,8 @@ export default class NewRolePage extends Cossack {
                             submit: (e: Event) => this.handleSubmit(e),
                         }, html`
                             <div class="flex flex-col space-y-6">
-                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name') },
-                                component(Input, { id: 'name', type: 'text', placeholder: 'editor', '.value': bind(this.form, 'name') }))}
+                            ${component(Field, { label: __('Name'), for: 'name', error: this.getError('form.name'),
+                                control: attributes => component(Input, { ...attributes, type: 'text', placeholder: 'editor', '.value': bind(this.form, 'name') }) })}
 
                             <div>
                                 <p class="text-sm font-medium text-foreground mb-2">${__('Permissions')}</p>

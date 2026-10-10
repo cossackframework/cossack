@@ -1,18 +1,17 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 
 test.describe('Docs Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/docs');
   });
 
-  test('should display documentation content', async ({ page }) => {
-    await expect(page.locator('body')).toBeVisible();
-  });
-
   test('should render MDX content', async ({ page }) => {
-    const body = await page.locator('body').textContent();
-
-    expect(body!.length).toBeGreaterThan(50);
+    const main = page.locator('main.mdx-content');
+    await expect(main.getByRole('heading', { level: 1, name: 'Welcome to Cossack Docs' })).toBeVisible();
+    await expect(main.getByRole('listitem').filter({ hasText: 'File-based routing' })).toContainText(
+      'Create routes from files in the pages directory.',
+    );
+    await expect(main.locator('strong', { hasText: 'Real-time updates' })).toBeVisible();
   });
 
   test('should display frontmatter title', async ({ page }) => {
@@ -26,8 +25,6 @@ test.describe('Docs Page', () => {
   });
 
   test('should render markdown headings', async ({ page }) => {
-    await page.waitForLoadState('networkidle');
-
     const headings = page.locator('h1, h2, h3');
     const count = await headings.count();
 
@@ -49,18 +46,12 @@ test.describe('Docs Page', () => {
     );
     expect(highlightBackground).not.toBe('transparent');
     expect(highlightBackground).not.toBe('rgba(0, 0, 0, 0)');
+    // `// highlight-next-line` is a directive, not rendered content.
+    await expect(page.locator('.docs-container > main.mdx-content')).not.toContainText('highlight-next-line');
   });
 
   test('should apply layout to MDX content', async ({ page }) => {
     await expect(page.locator('.docs-container > main.mdx-content')).toBeVisible();
     await expect(page.locator('[data-docs-raw-html]')).toHaveText('Raw HTML remains available.');
-  });
-
-  test('should handle code blocks', async ({ page }) => {
-    const codeBlocks = page.locator('pre, code');
-    const count = await codeBlocks.count();
-
-    expect(count).toBeGreaterThanOrEqual(2);
-    await expect(page.locator('.docs-container > main.mdx-content')).not.toContainText('highlight-next-line');
   });
 });

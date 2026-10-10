@@ -1,11 +1,12 @@
+import type { FormAttributes, ControlEvent } from "../native-attributes";
 import { html } from "@cossackframework/renderer";
-import { Cossack, Component } from "@cossackframework/core";
+import { Cossack, Component, type FormBindingAttributes } from "@cossackframework/core";
 
-export interface FormProps {
+export type FormProps = Omit<FormAttributes, "novalidate" | "?novalidate"> & {
     /**
      * Submit handler — typically a `@Server()` method. When provided, the form's
      * submit default is prevented (no page reload) and `novalidate` is added by
-     * default, so you can use `@Validate`/custom validation instead of the
+     * default, so you can use server action schemas/custom validation instead of the
      * browser's native HTML5 checks. The handler reads field values from bound
      * `@State`/`@Store` (use `bind()`), exactly like the bare
      * `<form @submit="${preventDefault(this.handleSubmit)}">` pattern.
@@ -13,15 +14,15 @@ export interface FormProps {
      * Omit `submit` for a native `<form method="post">` submission read with
      * `getFormData()` in a page `post()` handler.
      */
-    submit?: (event: SubmitEvent) => unknown;
+    /** Typed controller submit/reset bindings from createFormBindings or createUiFormBindings. */
+    bindings?: FormBindingAttributes;
+    submit?: (event: ControlEvent<HTMLFormElement, SubmitEvent>) => unknown;
     /**
      * Whether to add the native `novalidate` attribute. Defaults to `true` when
      * `submit` is set (RPC path uses custom validation); `false` otherwise (so
      * native-POST forms keep HTML5 validation unless you opt out).
      */
     novalidate?: boolean;
-    /** Pass-through HTML attributes (method, action, class, ...). */
-    [key: string]: any;
 }
 
 /**
@@ -29,8 +30,8 @@ export interface FormProps {
  *
  * Removes the `@submit="${preventDefault(...)}"` + `novalidate` boilerplate for
  * the RPC (`@Server`) form pattern. Field values are still managed with
- * `bind()`/`@State`/`@Store` and validation with `@Validate`/`hasError`/
- * `getError` — this component only wraps the `<form>` element itself.
+ * `bind()`/`@State`/`@Store`; server action schemas own validation.
+ * This component only wraps the `<form>` element itself.
  *
  *   // RPC (@Server) pattern — submit prevented, novalidate added:
  *   component(Form, { submit: this.handleSubmit },
@@ -48,19 +49,26 @@ export class Form extends Cossack {
      * prevented before the delegate runs. Extracted from `render()` so the
      * preventDefault contract is unit-testable without DOM/event plumbing.
      */
-    private wrapSubmit(submit: (event: SubmitEvent) => unknown) {
-        return (event: SubmitEvent) => {
+    private wrapSubmit(submit: (event: ControlEvent<HTMLFormElement, SubmitEvent>) => unknown) {
+        return (event: ControlEvent<HTMLFormElement, SubmitEvent>) => {
             event.preventDefault();
             submit(event);
         };
     }
 
     render() {
-        const { submit, novalidate, ...rest } = this.props;
+        const { submit, bindings, novalidate, ...attributes } = this.props;
+        if (bindings && submit) throw new TypeError('[Cossack] Form accepts either typed bindings or submit, not both.');
+        const rest: FormAttributes = { ...bindings, ...attributes };
+        if (bindings) {
+            rest['@submit'] = bindings['@submit'];
+            rest['@reset'] = bindings['@reset'];
+            rest['aria-busy'] = bindings['aria-busy'];
+        }
 
         // Default novalidate: true only for the RPC path (custom validation);
         // false for native POST so HTML5 checks are kept unless opted out.
-        const wantsNovalidate = novalidate ?? submit !== undefined;
+        const wantsNovalidate = novalidate ?? (submit !== undefined || bindings !== undefined);
 
         // When a submit handler is provided, wrap it to prevent the native
         // submit (page reload) before delegating. Routed through the `@submit`
@@ -74,6 +82,8 @@ export class Form extends Cossack {
             // emit a boolean `true` as the bare attribute name (`novalidate`),
             // not `novalidate="true"`.
             rest["novalidate"] = true;
+        } else {
+            delete rest["novalidate"];
         }
 
         return html`

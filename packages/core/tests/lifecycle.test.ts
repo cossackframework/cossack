@@ -103,7 +103,7 @@ describe('Lifecycle Hooks', () => {
         vi.clearAllMocks();
         global.window = {
             __INITIAL_STATE__: {},
-            location: { host: 'localhost' },
+            location: { host: 'localhost', href: 'http://localhost/', pathname: '/' },
         } as any;
         global.document = {
             head: {
@@ -136,6 +136,190 @@ describe('Lifecycle Hooks', () => {
         delete global.document;
         // @ts-ignore
         delete global.IntersectionObserver;
+    });
+
+    describe('terminal disposal', () => {
+        it('renders navigation without joining a stuck application update promise', async () => {
+            const c = new LifecycleComponent();
+            const pending = new Promise<boolean>(() => {});
+            c.requestUpdate = () => pending;
+            Object.defineProperty(c, 'updateComplete', { get: () => pending });
+            (c as any).__updatePromise = pending;
+            expect(await c._frameworkRenderNavigation(() => true)).toBe(true);
+            expect(c.renderCount).toBe(1);
+            expect((c as any).__updatePromise).toBeNull();
+            c.destroy();
+        });
+
+        it('propagates navigation render errors and permits a subsequent render', async () => {
+            class Broken extends Cossack { render(): any { throw new Error('broken render'); } }
+            const c = new Broken();
+            await expect(c._frameworkRenderNavigation(() => true)).rejects.toThrow('broken render');
+            c.render = () => renderer.html``;
+            expect(await c._frameworkRenderNavigation(() => true)).toBe(true);
+            c.destroy();
+        });
+
+        it('does not publish a template that revoked its navigation during render', async () => {
+            let current = true;
+            class Redirecting extends Cossack { render() { current = false; return renderer.html``; } }
+            const c = new Redirecting();
+            const notify = vi.spyOn(c as any, '__notifyListeners');
+            expect(await c._frameworkRenderNavigation(() => current)).toBe(false);
+            expect(notify).not.toHaveBeenCalled();
+            c.destroy();
+        });
+
+        it.each(['controller', 'willUpdate', 'listener'])('stops later hooks after revocation in %s', async boundary => {
+            let current = true;
+            const c = new LifecycleComponent();
+            const later = vi.fn();
+            const updated = vi.spyOn(c, 'updated');
+            (c as any).__controllers = [
+                { hostUpdate: () => { if (boundary === 'controller') current = false; }, hostUpdated: later },
+                { hostUpdate: () => { if (!current) later(); }, hostUpdated: later },
+            ];
+            if (boundary === 'willUpdate') vi.spyOn(c, 'willUpdate').mockImplementation(() => { current = false; });
+            if (boundary === 'listener') vi.spyOn(c as any, '__notifyListeners').mockImplementation(() => { current = false; });
+            expect(await c._frameworkRenderNavigation(() => current)).toBe(false);
+            expect(later).not.toHaveBeenCalled();
+            expect(updated).not.toHaveBeenCalled();
+            if (boundary === 'controller') expect(c.taskRunCount).toBe(0);
+            c.destroy();
+        });
+
+        it('defers tasks, service binding, transport and mount until staged publication', async () => {
+            const mounted = vi.fn();
+            class Page extends Cossack {
+                @Task()
+                task() { mounted('task'); }
+                onMount() { mounted('mount'); }
+                async clientInit() { mounted('init'); }
+            }
+            const c = new Page();
+            const binding = vi.fn();
+            (c as any)._serviceScope = { bindRequest: binding };
+            const socket = vi.spyOn(c as any, 'connectWebSocket').mockImplementation(() => {});
+            await c.bootstrap({ stageNavigation: true });
+            expect(binding).not.toHaveBeenCalled();
+            expect(socket).not.toHaveBeenCalled();
+            expect(mounted).not.toHaveBeenCalled();
+            await Promise.all([c._frameworkPublishNavigation(), c._frameworkPublishNavigation()]);
+            expect(binding).toHaveBeenCalled();
+            expect(socket).toHaveBeenCalledTimes(1);
+            expect(mounted.mock.calls.flat()).toEqual(['task', 'mount', 'init']);
+            c.destroy();
+        });
+
+        it('does not activate an abandoned staged component', async () => {
+            const c = new LifecycleComponent();
+            const mount = vi.spyOn(c, 'onMount');
+            const socket = vi.spyOn(c as any, 'connectWebSocket').mockImplementation(() => {});
+            await c.bootstrap({ stageNavigation: true });
+            c.destroy();
+            await c._frameworkPublishNavigation();
+            expect(c.taskRunCount).toBe(0);
+            expect(mount).not.toHaveBeenCalled();
+            expect(socket).not.toHaveBeenCalled();
+        });
+
+        function observe(c: Cossack) {
+            return {
+                socket: vi.spyOn(c as any, 'connectWebSocket').mockImplementation(() => {}),
+                sse: vi.spyOn(c as any, 'connectSSE').mockImplementation(() => {}),
+                mount: vi.spyOn(c, 'onMount'),
+                cleanup: vi.spyOn(c, 'onCleanup'),
+                render: vi.spyOn(c, 'render'),
+            };
+        }
+
+        async function expectDisposed(c: Cossack, hooks: ReturnType<typeof observe>, sockets = 0) {
+            await c.bootstrap();
+            c.connectedCallback();
+            expect(await (c as any).performUpdate()).toBe(false);
+            c.destroy();
+            expect(hooks.cleanup).toHaveBeenCalledTimes(1);
+            expect(hooks.socket).toHaveBeenCalledTimes(sockets);
+            expect(hooks.sse).not.toHaveBeenCalled();
+            expect(hooks.render).not.toHaveBeenCalled();
+            expect((c as any).isBootstrapping).toBe(false);
+        }
+
+        it('does not restart an already destroyed component', async () => {
+            const hooks = observe(component);
+            component.destroy();
+            await expectDisposed(component, hooks);
+            expect(hooks.mount).not.toHaveBeenCalled();
+            expect(component.taskRunCount).toBe(0);
+        });
+
+        it.each(['websocket', 'sse', 'http'])('does not activate %s after disposal during bootstrap', async transport => {
+            class Page extends Cossack {
+                public taskRunCount = 0;
+                @Task()
+                runTask() { this.taskRunCount++; }
+            }
+            Reflect.defineMetadata('page:options', { transport }, Page);
+            const c = new Page();
+            const hooks = observe(c);
+            const pending = c.bootstrap({ initialState: { componentRouteId: 'page' } });
+            c.destroy();
+            await pending;
+            await expectDisposed(c, hooks);
+            expect(hooks.mount).not.toHaveBeenCalled();
+            expect(c.taskRunCount).toBe(1);
+        });
+
+        it('does not revive after a task destroys its component synchronously', async () => {
+            class Page extends Cossack {
+                @Task()
+                dispose() { this.destroy(); }
+            }
+            const c = new Page();
+            const hooks = observe(c);
+            await c.bootstrap();
+            await expectDisposed(c, hooks);
+            expect(hooks.mount).not.toHaveBeenCalled();
+        });
+
+        it('does not run clientInit after onMount destroys its component', async () => {
+            const init = vi.fn();
+            class Page extends Cossack {
+                onMount() { this.destroy(); }
+                async clientInit() { init(); }
+            }
+            const c = new Page();
+            const hooks = observe(c);
+            await c.bootstrap();
+            await expectDisposed(c, hooks, 1);
+            expect(hooks.mount).toHaveBeenCalledTimes(1);
+            expect(init).not.toHaveBeenCalled();
+        });
+
+        it.each(['get', 'init'] as const)('keeps disposal terminal while server %s is pending', async hook => {
+            let release!: () => void;
+            let started!: () => void;
+            const gate = new Promise<void>(resolve => { release = resolve; });
+            const entered = new Promise<void>(resolve => { started = resolve; });
+            const init = vi.fn();
+            class Page extends Cossack {
+                async get() { if (hook === 'get') { started(); await gate; } }
+                async init() { init(); if (hook === 'init') { started(); await gate; } }
+            }
+            const c = new Page();
+            (c as any).isServer = true;
+            const hooks = observe(c);
+            const pending = c.bootstrap({ context: {
+                req: { url: 'http://localhost/', method: 'GET', path: '/' },
+                res: { headers: new Headers() },
+            } as any });
+            await entered;
+            c.destroy();
+            release();
+            await pending;
+            await expectDisposed(c, hooks);
+            expect(init).toHaveBeenCalledTimes(hook === 'init' ? 1 : 0);
+        });
     });
 
     describe('@Task', () => {

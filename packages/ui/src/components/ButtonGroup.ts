@@ -1,41 +1,21 @@
-import { html, classMap } from "@cossackframework/renderer";
-import { Cossack, Component } from "@cossackframework/core";
+import { html } from '@cossackframework/renderer';
+import { Cossack, Component } from '@cossackframework/core';
+import type { GlobalAttributes } from '../native-attributes';
 
-export interface ButtonGroupProps {
-    /** Layout direction. */
-    orientation?: "horizontal" | "vertical";
-    [key: string]: any;
-}
+export type ButtonGroupProps = Omit<GlobalAttributes<HTMLDivElement>, 'role' | 'aria-label' | 'aria-labelledby' | 'tabindex'> & {
+    /** Accessible group name. Children retain their own names and behavior. */
+    label: string;
+    orientation?: 'horizontal' | 'vertical';
+    'data-orientation'?: never;
+};
 
-/**
- * Cossack UI ButtonGroup — visually connected group of buttons.
- *
- * Pass buttons as children. They'll be visually joined with shared borders.
- *
- *   ${component(ButtonGroup, {},
- *       html\`${component(Button, { variant: 'outline' }, 'Left')}
- *            ${component(Button, { variant: 'outline' }, 'Center')}
- *            ${component(Button, { variant: 'outline' }, 'Right')}\`)}
- */
+/** Named visual group of direct native buttons/links; no toolbar or selection behavior. */
 @Component()
 export class ButtonGroup extends Cossack {
     declare props: ButtonGroupProps;
-
     render() {
-        const { orientation = "horizontal" } = this.props;
-
-        const classes = classMap({
-            "cs-button-group": true,
-            "inline-flex": orientation === "horizontal",
-            "inline-flex flex-col": orientation === "vertical",
-            "isolate": true,
-        });
-
-        // We style children via CSS (base.css) targeting [data-group-child].
-        return html`
-            <div class=${classes} role="group" data-orientation=${orientation} ...=${this.props}>
-                ${this.children}
-            </div>
-        `;
+        const { orientation = 'horizontal', label, ...rest } = this.props;
+        if (!['horizontal', 'vertical'].includes(orientation) || typeof label !== 'string' || !label.trim()) throw new Error('ButtonGroup requires a nonempty label and horizontal/vertical orientation.');
+        return html`<div class="cs-button-group inline-flex isolate" role="group" aria-label=${label} data-orientation=${orientation} ...=${rest}>${this.children}</div>`;
     }
 }

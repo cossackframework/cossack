@@ -10,20 +10,44 @@
     // Consumer applications keep emitDecoratorMetadata enabled for constructor
     // injection into their own pages and services.
     "emitDecoratorMetadata": false,
+    "types": ["reflect-metadata", "./.cossack/library-worker-configuration.d.ts"],
     "outDir": "dist/esm",
     "rootDir": "src"
   },
   "include": [
+    "src/workflows-inspection.ts",
+    "src/vite-workflows.ts",
+    "src/storage/r2.ts",
+    "src/storage/s3-provider.ts",
+    "src/workflows/index.ts",
+    "src/workflows/provider.ts",
+    "src/jobs/d1-store.ts",
+    "src/notifications/index.ts",
+    "src/schedules-inspection.ts",
+    "src/markdown-processor.ts",
     "src/api-handler.ts",
+    "src/api.ts",
     "src/cache.ts",
     "src/client/devtools.ts",
+    "src/client/development-trace-bridge.ts",
+    "src/development-traces.ts",
     "src/client/index.ts",
     "src/config.ts",
+    "src/config-inspection.ts",
+    "src/config-preflight.ts",
+    "src/build-budgets.ts",
+    "src/budget-receipts.ts",
+    "src/deployment-artifact.ts",
+    "src/config-requirements.ts",
     "src/DurableObject.ts",
+    "src/SseDurableObject.ts",
     "src/middlewares/cors.ts",
     "src/public.ts",
     "src/root.ts",
     "src/route-ids.ts",
+    "src/page-inspection.ts",
+    "src/runtime-capabilities.ts",
+    "src/storage-capabilities.ts",
     "src/session.ts",
     "src/router.ts",
     "src/sitemap-generator.ts",
@@ -34,7 +58,7 @@
     "src/vite-security-plugin.ts",
     "src/vite-ssg-plugin.ts",
     "src/vite-env.d.ts",
-    "worker-configuration.d.ts"
+    ".cossack/library-worker-configuration.d.ts"
   ],
   "exclude": [
     "src/App.ts",
@@ -44,10 +68,9 @@
     "src/examples/**",
     "src/index.ts",
     "src/lang/**",
-    "src/markdown-processor.ts",
     "src/models/**",
     "src/pages/**",
     "src/services/**",
-    "src/storage/**"
+    "src/storage/s3.ts"
   ]
 }

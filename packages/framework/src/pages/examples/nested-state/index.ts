@@ -20,3 +20,5 @@ export class NestedStatePage extends Cossack {
         `;
     }
 }
+
+export default NestedStatePage;

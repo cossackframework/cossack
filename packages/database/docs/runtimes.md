@@ -1,6 +1,6 @@
 ---
 title: Runtimes
-description: Configure runtime adapters, custom drivers, and multiple database connections across Node.js, Bun, Workers, and Deno.
+description: Configure runtime adapters, custom drivers, and multiple database connections across Node.js, Bun, and Workers.
 ---
 
 # Runtimes
@@ -10,11 +10,10 @@ eagerly include Node built-ins, native SQLite packages, or unused drivers.
 
 | Runtime entry | Adapters |
 | --- | --- |
-| `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, Turso |
-| `@cossackframework/database/deno` | Turso embedded SQLite, PostgreSQL, MySQL, remote Turso, or an injected driver |
+| `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, Turso, automatic `SQL` client |
 | `@cossackframework/database/bun` | Native Bun SQL for SQLite, PostgreSQL, MySQL |
 | `@cossackframework/database/cloudflare` | D1 and Hyperdrive PostgreSQL/MySQL |
-| `@cossackframework/database/deno` | Injected SQLite, PostgreSQL, MySQL-compatible drivers |
+| `@cossackframework/database/cloudflare-turso` | Remote Turso for Workers |
 | `@cossackframework/database/adapter` | Public contracts for custom adapters |
 
 ## Node.js
@@ -83,7 +82,7 @@ Turso (choose the client matching the connection):
 
 ```sh
 pnpm add @tursodatabase/database   # embedded SQLite / Desktop
-pnpm add @tursodatabase/serverless # remote Turso / Deno Deploy
+pnpm add @tursodatabase/serverless # remote Turso
 ```
 
 ```ts
@@ -96,6 +95,10 @@ const adapter = await turso({
   authToken: process.env.TURSO_AUTH_TOKEN!,
 });
 ```
+
+Workers that use remote Turso should import `turso` from
+`@cossackframework/database/cloudflare-turso`. Keeping that optional provider in
+its own entry lets a D1-only Worker bundle without the Turso client installed.
 
 Node adapters install `AsyncLocalStorage` request scopes automatically.
 
@@ -135,16 +138,19 @@ by that client.
 Create the adapter from a D1 binding:
 
 ```ts
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createORM } from "@cossackframework/database";
 import { d1 } from "@cossackframework/database/cloudflare";
+import { createAsyncLocalScope } from "@cossackframework/database/adapter";
 
 interface Env {
   DB: D1Database;
 }
 
 export async function createRequestORM(env: Env) {
+  const adapter = await d1(env.DB);
   return createORM({
-    adapter: await d1(env.DB),
+    adapter: { ...adapter, scope: createAsyncLocalScope(new AsyncLocalStorage()) },
     entities,
   });
 }
@@ -158,10 +164,45 @@ does not emulate them unsafely.
 Migration schema operations and migration bookkeeping are submitted in one D1
 batch. General callback-based transactions remain unsupported.
 
-The adapter uses async-local request scoping through `node:async_hooks`. Enable
+The application factory adds async-local request scoping through `node:async_hooks`.
+Generated Cloudflare applications include this scope. Enable
 the Workers compatibility support required by the deployment's compatibility
 date, such as
 [`nodejs_als`](https://developers.cloudflare.com/workers/runtime-apis/nodejs/asynclocalstorage/).
+
+`ormMiddleware()` owns databases created by its request factory. Component RPC
+streams retain these databases until completion, failure, or cancellation. The
+framework captures the SQL scope when it creates the response, so Active Record
+and global `sql` calls can run between yielded values. Ordinary responses close
+their owned ORM when middleware finishes. Caller-owned ORM instances remain
+the caller's responsibility.
+
+### D1 tooling
+
+Keep tooling separate from the request adapter. Generated D1 applications use:
+
+```ts
+import type { ORMToolingContext } from "@cossackframework/database";
+import { createD1ToolingAdapter } from "@cossackframework/database/tooling";
+
+export function createToolingAdapter(context: ORMToolingContext) {
+  return createD1ToolingAdapter(context, { binding: "DB" });
+}
+```
+
+The helper resolves Wrangler from the application and uses its configuration
+parser. Local tooling disables remote bindings and shares the application's
+`.wrangler/state/v3` storage used by Wrangler and the Cloudflare Vite plugin.
+Remote tooling forces the selected D1 binding to use the remote resource,
+requires a real `database_id`, and closes the proxy when the ORM closes. The
+helper does not provision a remote database. JSON results include the selected
+account ID, environment, binding and D1 identity when Wrangler provides them;
+they never include credential values.
+
+Named environments use their own binding declarations. Missing environments
+fail instead of falling back to production. CLI and Studio share this binding
+discovery through `readD1ToolingBindings()`. These exports are Node tooling;
+Worker request code continues to import `d1()` from the Cloudflare entry.
 
 ## Cloudflare Hyperdrive
 
@@ -197,35 +238,6 @@ Hyperdrive owns the global connection pool. The adapters create request-local
 clients and release them deterministically. Enable `nodejs_compat` for the
 official `pg` and `mysql2` drivers. See Cloudflare's
 [Hyperdrive driver guidance](https://developers.cloudflare.com/hyperdrive/).
-
-## Deno
-
-Deno accepts an injected driver rather than importing a specific database
-library into the neutral package:
-
-```ts
-import { createORM } from "@cossackframework/database";
-import {
-  deno,
-  type InjectedDenoDriver,
-} from "@cossackframework/database/deno";
-
-declare const driver: InjectedDenoDriver;
-
-const orm = createORM({
-  adapter: deno(driver),
-  entities,
-});
-```
-
-The injected driver declares its dialect, executes parameterized statements,
-normalizes rows affected and insert IDs, and optionally supplies transactions.
-An application can also inject a runtime-appropriate `ScopeStorage`.
-
-Deno can connect through npm-compatible PostgreSQL/MySQL clients or an
-application-provided SQLite driver. See Deno's
-[database connection guide](https://docs.deno.com/examples/connecting_to_databases_tutorial/)
-for runtime permissions and driver choices.
 
 ## Custom Runtime
 
@@ -424,3 +436,32 @@ if (orm.driver.capabilities.transactions) {
 
 Capabilities include transactions, savepoints, returning clauses, batches,
 connection reservation, cancellation, parameter limits, and batch limits.
+
+## Provider capabilities
+
+`orm.inspectCapabilities()` returns frozen driver declarations, including provider,
+dialect, transaction modes, schema operations, generated values, returning support,
+connection reservation, cancellation, and parameter/batch limits. These facts do
+not establish remote connectivity or a server version. Custom drivers must declare
+accurate limits and implement the advertised methods.
+
+| Operation | SQLite / embedded Turso | PostgreSQL | MySQL | D1 |
+| --- | --- | --- | --- | --- |
+| Interactive transactions | Yes | Yes | Yes | No |
+| Nested savepoints | Yes | Yes | Yes | No |
+| Transactional DDL rollback | Yes | Yes | No | No |
+| Generated increment key | Integer primary key | Identity column | AUTO_INCREMENT | Integer primary key |
+| Explicit generated identity | No | Yes | No | No |
+| Direct column type alteration | No | Yes | Yes | No |
+
+UUID generation happens in the client. PostgreSQL and MySQL column alterations
+support type changes only; changes to defaults or constraints need explicit SQL.
+SQLite type changes need a table-rebuild migration. Schema queues compile every
+operation before execution, so unsupported later operations cannot publish earlier
+DDL. MySQL DDL can implicitly commit and must not be described as rollback-safe.
+
+D1 supports its driver's atomic batch facility, not interactive callbacks or
+nested transactions. Remote Turso and injected drivers use their own declared
+capabilities. Unsupported interactive/nested operations reject before entering the
+callback. Queries over the declared parameter limit reject before driver execution.
+Unsupported generated identity and native array metadata reject during ORM setup.

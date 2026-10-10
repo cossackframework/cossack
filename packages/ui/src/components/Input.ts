@@ -1,13 +1,12 @@
+import type { InputAttributes } from "../native-attributes";
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
-export interface InputProps {
+export type InputProps = InputAttributes & {
     /** Visual style. "error" applies destructive borders/ring. */
     variant?: "default" | "error";
     /** Control size. Defaults to "default" (h-9). */
     size?: "default" | "sm" | "lg";
-    /** Pass-through HTML input attributes (type, placeholder, value, name, ...). */
-    [key: string]: any;
 }
 
 const VARIANTS: Record<NonNullable<InputProps["variant"]>, string> = {

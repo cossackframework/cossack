@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { html, render } from './cossack-html';
-import { live } from './directives';
+import { html, render, nothing } from './cossack-html';
+import { live, bind } from './directives';
 
 // These tests exercise the CLIENT-SIDE behavior of `live`, which was
 // previously uncovered (only SSR tests existed in ssr-fixes.test.ts).
@@ -184,4 +184,123 @@ describe('live directive (client-side)', () => {
     render(tpl('b'), container);
     expect(div.title).toBe('b');
   });
+});
+
+for (const spread of [false, true]) {
+  describe(`${spread ? 'spread' : 'direct'} select value with dynamic options`, () => {
+    const template = (value: unknown, values = ['a', 'b']) => {
+      const options = values.map(v => html`<option value=${v}>${v}</option>`);
+      return spread
+        ? html`<select ...=${{ '.value': value }}>${options}</select>`
+        : html`<select .value=${value}>${options}</select>`;
+    };
+
+    for (const controlled of [false, true]) {
+      it(`applies ${controlled ? 'live' : 'plain'} values after options commit`, async () => {
+        const container = document.createElement('div');
+        render(template(controlled ? live('b') : 'b'), container);
+        await Promise.resolve();
+        expect(container.querySelector('select')!.value).toBe('b');
+      });
+    }
+
+    it('preserves a manual choice on an unrelated plain rerender', async () => {
+      const container = document.createElement('div');
+      render(template('b'), container);
+      await Promise.resolve();
+      const select = container.querySelector('select')!;
+      select.value = 'a';
+      render(template('b'), container);
+      await Promise.resolve();
+      expect(select.value).toBe('a');
+    });
+
+    it('keeps the newest value across synchronous rerenders', async () => {
+      const container = document.createElement('div');
+      render(template('a'), container);
+      render(template('b'), container);
+      render(template('b'), container);
+      await Promise.resolve();
+      expect(container.querySelector('select')!.value).toBe('b');
+    });
+
+    it('cancels a queued write when the property is cleared', async () => {
+      const container = document.createElement('div');
+      render(template(live('b')), container);
+      render(template(nothing), container);
+      const select = container.querySelector('select')!;
+      select.value = 'a';
+      await Promise.resolve();
+      expect(select.value).toBe('a');
+    });
+
+    it('transfers pending ownership to and from bind()', async () => {
+      const container = document.createElement('div');
+      const model = { choice: 'a' };
+      render(template(live('b')), container);
+      render(template(bind(model, 'choice')), container);
+      await Promise.resolve();
+      const select = container.querySelector('select')!;
+      expect(select.value).toBe('a');
+      render(template(bind(model, 'choice')), container);
+      render(template('b'), container);
+      await Promise.resolve();
+      expect(select.value).toBe('b');
+      select.value = 'b';
+      select.dispatchEvent(new Event('change'));
+      expect(model.choice).toBe('a');
+    });
+
+    it('restores live selection when option children replace the selected value', async () => {
+      const container = document.createElement('div');
+      render(template(live('b')), container);
+      await Promise.resolve();
+      render(template(live('b'), ['b', 'a']), container);
+      await Promise.resolve();
+      expect(container.querySelector('select')!.value).toBe('b');
+    });
+  });
+}
+
+
+it('cancels a pending spread select value when the key is removed', async () => {
+  const container = document.createElement('div');
+  const template = (props: Record<string, unknown>) => html`<select ...=${props}>
+    ${['a', 'b'].map(value => html`<option value=${value}>${value}</option>`)}
+  </select>`;
+  render(template({ '.value': live('b') }), container);
+  render(template({}), container);
+  const select = container.querySelector('select')!;
+  select.value = 'a';
+  await Promise.resolve();
+  expect(select.value).toBe('a');
+});
+
+
+for (const textarea of [false, true]) {
+  it(`preserves a manual ${textarea ? 'textarea' : 'input'} edit through plain spread rerenders`, () => {
+    const container = document.createElement('div');
+    const template = (value: unknown) => textarea ? html`<textarea ...=${{'.value':value}}></textarea>` : html`<input ...=${{'.value':value}}>`;
+    render(template('initial'), container);
+    const control = container.querySelector('input,textarea') as HTMLInputElement | HTMLTextAreaElement;
+    control.value = 'user edit';
+    render(template('initial'), container);
+    expect(control.value).toBe('user edit');
+    render(template(live('initial')), container);
+    expect(control.value).toBe('initial');
+    render(template('updated'), container);
+    expect(control.value).toBe('updated');
+  });
+}
+
+
+it('normalizes a null plain value before dirty checking', () => {
+  const container = document.createElement('div');
+  const template = () => html`<textarea .value=${null}></textarea>`;
+  render(template(), container);
+  const control = container.querySelector('textarea')!;
+  expect(control.value).toBe('');
+  control.value = 'user edit';
+  render(template(), container);
+  expect(control.value).toBe('user edit');
 });

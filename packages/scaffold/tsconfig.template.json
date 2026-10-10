@@ -20,6 +20,9 @@
       ],
       "~/*": [
         "./*"
+      ],
+      "virtual:cossack-routes": [
+        "./.cossack/routes.ts"
       ]
     }
   },

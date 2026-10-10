@@ -5,6 +5,9 @@ const sourceRoot = path.resolve(__dirname, 'src');
 
 // https://vite.dev/config/
 export default defineConfig({
+  // The consuming application's Vite mode selects diagnostics. A library build
+  // must not erase development checks before the app can select its mode.
+  define: { 'import.meta.env.DEV': 'import.meta.env?.DEV' },
   resolve: {
     tsconfigPaths: true,
   },
@@ -13,11 +16,19 @@ export default defineConfig({
     lib: {
       entry: {
         index: path.resolve(__dirname, 'src/index.ts'),
-        // `User` is intentionally type-only, but Deno resolves the `.js`
-        // specifier in emitted declarations before loading `user.d.ts`.
-        // Keep an empty runtime module beside the declaration for strict ESM
-        // consumers such as `deno check`.
+        'storage/index': path.resolve(__dirname, 'src/storage/index.ts'),
+        'workflows/index': path.resolve(__dirname, 'src/workflows/index.ts'),
+        'jobs/index': path.resolve(__dirname, 'src/jobs/index.ts'),
+        'schedules/index': path.resolve(__dirname, 'src/schedules/index.ts'),
+        'notifications/index': path.resolve(__dirname, 'src/notifications/index.ts'),
+        input: path.resolve(__dirname, 'src/input.ts'),
+        devtools: path.resolve(__dirname, 'src/devtools.ts'),
+        'shared/server-diagnostics': path.resolve(__dirname, 'src/shared/server-diagnostics.ts'),
+        // These contracts are type-only. Keep an empty runtime module beside
+        // the declaration so strict ESM consumers can resolve the `.js`
+        // specifier used in emitted declarations.
         'shared/user': path.resolve(__dirname, 'src/shared/user.ts'),
+        'shared/runtime-adapter': path.resolve(__dirname, 'src/shared/runtime-adapter.ts'),
       },
       name: '@cossackframework/core',
       formats: ['es'],

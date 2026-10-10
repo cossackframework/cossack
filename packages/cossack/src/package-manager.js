@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { exists, readJsonIfExists } from './fs-utils.js';
 
-const SUPPORTED_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'deno']);
-const EXEC_PATH_ORDER = ['pnpm', 'yarn', 'bun', 'deno', 'npm'];
+const SUPPORTED_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+const EXEC_PATH_ORDER = ['pnpm', 'yarn', 'bun', 'npm'];
 
 export function normalizePackageManager(value) {
   const manager = String(value ?? '').trim().toLowerCase().split(/[/@]/)[0];
@@ -24,7 +24,6 @@ export function detectInvokedPackageManager({
   }
 
   if (versions?.bun || env.BUN_INSTALL) return 'bun';
-  if (env.DENO_VERSION || /(?:^|[/\\])deno(?:\.exe)?$/i.test(execPath)) return 'deno';
   return 'npm';
 }
 
@@ -48,12 +47,6 @@ export function packageManagerCommands(manager) {
         dev: 'bun run dev',
         upgrade: 'bun run cossack upgrade',
       };
-    case 'deno':
-      return {
-        install: 'deno install',
-        dev: 'deno task dev',
-        upgrade: 'deno x -A npm:cossack upgrade',
-      };
     default:
       return {
         install: 'npm install',
@@ -68,7 +61,6 @@ export async function detectProjectPackageManager(root) {
   if (await exists(path.join(root, 'yarn.lock'))) return 'yarn';
   if (await exists(path.join(root, 'bun.lock')) ||
       await exists(path.join(root, 'bun.lockb'))) return 'bun';
-  if (await exists(path.join(root, 'deno.lock'))) return 'deno';
   if (await exists(path.join(root, 'package-lock.json'))) return 'npm';
 
   const pkg = await readJsonIfExists(path.join(root, 'package.json'));

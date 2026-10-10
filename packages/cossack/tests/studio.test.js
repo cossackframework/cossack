@@ -25,10 +25,10 @@ function context(flags = {}) {
 describe('studio command', () => {
   it('documents the public flags', () => {
     expect(studioHelp()).toContain('--remote');
-    expect(studioHelp()).toContain('--database <d1-binding>');
-    expect(studioHelp()).toContain('--driver <driver>');
-    expect(studioHelp()).toContain('--env <wrangler-environment>');
-    expect(studioHelp()).toContain('--port <number>');
+    expect(studioHelp()).toContain('--database <value>');
+    expect(studioHelp()).toContain('--driver <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>');
+    expect(studioHelp()).toContain('--env <value>');
+    expect(studioHelp()).toContain('--port <value>');
     expect(studioHelp()).toContain('--no-open');
   });
 
@@ -78,7 +78,7 @@ describe('studio command', () => {
     expect(await studioCommand([], context({
       remote: true,
       database: 'DB',
-      driver: 'postgres',
+      driver: 'd1',
       env: 'production',
       port: '5001',
       'no-open': true,
@@ -87,7 +87,7 @@ describe('studio command', () => {
       projectRoot: root,
       remote: true,
       database: 'DB',
-      provider: 'postgres',
+      provider: 'd1',
       env: 'production',
       port: 5001,
       open: false,

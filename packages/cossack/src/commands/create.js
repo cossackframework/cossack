@@ -1,3 +1,5 @@
+import { showCommandHelp, validateCommand } from '../command-spec.js';
+import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import { createApp } from '@cossackframework/scaffold';
 import { renderBanner } from '../banner.js';
@@ -9,37 +11,25 @@ import {
   packageManagerCommands,
 } from '../package-manager.js';
 import { checkForCossackUpdate } from '../update-notice.js';
+import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from '../output.js';
 
 export async function createCommand(args, ctx) {
+  if (showCommandHelp(commandSpecs.create, args, ctx, createHelp)) return 0;
+  if (!validateCommand(commandSpecs.create, args, ctx)) return 1;
   const [projectName] = args;
-  if (!projectName) {
-    console.error('Missing project name. Usage: cossack create <project-name>');
-    return 1;
-  }
-
   const adapter = flagString(ctx.flags.adapter);
-  if (adapter && adapter !== 'cloudflare' && adapter !== 'node' && adapter !== 'deno') {
-    console.error(`Invalid --adapter "${adapter}". Use cloudflare, node, or deno.`);
-    return 1;
-  }
   const requestedPackageManager = flagString(ctx.flags['package-manager']);
   const selectedPackageManager = normalizePackageManager(requestedPackageManager);
-  if (requestedPackageManager && !selectedPackageManager) {
-    console.error(
-      `Invalid --package-manager "${requestedPackageManager}". ` +
-      'Use npm, pnpm, yarn, bun, or deno.',
-    );
-    return 1;
-  }
 
   try {
     const currentVersion = readPackageVersion();
     const packageManager = selectedPackageManager ?? detectInvokedPackageManager();
     const commands = packageManagerCommands(packageManager);
-    const update = checkForCossackUpdate(currentVersion);
-    console.log(`${renderBanner({ version: currentVersion })}\n`);
+    const json = ctx.flags.json === true;
+    const update = ctx.dryRun || json ? Promise.resolve(null) : checkForCossackUpdate(currentVersion);
+    if (!json) console.log(`${renderBanner({ version: currentVersion })}\n`);
     const yes = ctx.flags.yes === true || ctx.flags.y === true;
-    const { projectDir, adapter: used, recipe, status } = await createApp(projectName, {
+    const result = await createApp(projectName, {
       cwd: ctx.cwd,
       adapter,
       preset: flagString(ctx.flags.preset),
@@ -50,9 +40,24 @@ export async function createCommand(args, ctx) {
       theme: flagString(ctx.flags.theme),
       dashboardModules: ctx.flags['dashboard-features'],
       yes,
-      interactive: !yes,
+      interactive: !yes && !ctx.dryRun && !json && Boolean(process.stdin.isTTY),
+      dryRun: ctx.dryRun,
       force: ctx.force,
     });
+    if (json) {
+      writeResult('create', { data: { ...result,
+        nextActions: result.status === 'created' ? [commands.install, commands.dev] : [],
+        nextActionCwd: result.projectDir,
+      } });
+      return 0;
+    }
+    const { projectDir, adapter: used, recipe, status, changes } = result;
+    if (status === 'dry-run') {
+      console.log(`Dry run: ${projectDir} (${used}, ${recipe.preset})`);
+      for (const write of changes.writes) console.log(`  write ${write.path}`);
+      console.log('No files were changed.');
+      return 0;
+    }
     if (status === 'cancelled') {
       console.log('Cancelled. No files were changed.');
       return 0;
@@ -72,26 +77,15 @@ export async function createCommand(args, ctx) {
     }
     return 0;
   } catch (error) {
-    if (error?.code === 'COSSACK_PROMPT_ABORTED') return 130;
-    console.error('Error creating Cossack app:', error.message);
-    return 1;
+    const code = diagnosticCode(error, 'COSSACK_CREATE_FAILED');
+    return commandFailure(ctx, 'create', code,
+      ctx.flags.json === true ? diagnosticMessage(error, code) : `Error creating Cossack app: ${error.message}`,
+      error?.code === 'COSSACK_PROMPT_ABORTED' ? 130 : 1);
   }
 }
 
 export function createHelp() {
-  return `cossack create <project-name>
+  return commandSpecs.create.help(`cossack create <project-name>
 
-Scaffold a new Cossack project.
-
-Options:
-  --adapter <cloudflare|node|deno>
-  --package-manager <manager>   npm|pnpm|yarn|bun|deno
-  --preset <minimal|database|auth|full-stack>
-  --features <ui,database,studio,auth,dashboard,markdown,examples,desktop>
-  --database <d1|sqlite|turso|postgres|mysql|hyperdrive-postgres|hyperdrive-mysql>
-  --auth-methods <credentials,oauth>
-  --oauth <github,google,gitlab,facebook,microsoft>
-  --theme <default|neutral|zinc|stone|gray|slate|blue|green|red>
-  --dashboard-features <users,sessions,settings,roles>
-  --yes                         Accept defaults and write without confirmation.`;
+Scaffold a new Cossack project.`);
 }

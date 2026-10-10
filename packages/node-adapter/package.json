@@ -1,6 +1,6 @@
 {
   "name": "@cossackframework/node-adapter",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "type": "module",
   "description": "Node.js runtime adapter for the Cossack Framework",
   "license": "MIT",
@@ -16,22 +16,36 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    },
+    "./notifications": {
+      "types": "./dist/notifications.d.ts",
+      "import": "./dist/notifications.js"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.js"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "agent-docs.json"
   ],
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.declarations.json",
+    "build": "vite build && tsc -p tsconfig.declarations.json && node ../../scripts/rewrite-declaration-imports.mjs dist",
     "test": "vitest --run"
   },
   "dependencies": {
     "@cossackframework/core": "workspace:*",
     "nodemailer": "^10.0.6",
-    "ws": ">=8.21.0"
+    "ws": ">=8.21.0",
+    "@hono/node-server": "^2.1.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1",
@@ -42,6 +56,12 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "hono": "^4.13.7"
+    "hono": "^4.13.7",
+    "vite": "^8.1.4"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   }
 }

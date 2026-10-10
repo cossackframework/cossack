@@ -1,8 +1,26 @@
-import type { Plugin } from 'vite';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
-import { resolve, dirname, join, relative, sep } from 'path';
-import { computeRouteIds, buildRoutesManifest } from './route-ids.js';
+export { cossackWorkflows } from './vite-workflows.js';
+export { cossackSchedules } from './vite-schedules.js';
+export { cossackBuildBudgets } from './vite-build-budgets.js';
+import { checkConfigBuildRequirements } from './config-preflight.js';
+import type { ConfigRuntime } from './config-requirements.js';
+import { CONFIG_GLOB, generateConfigTypes, discoverConfigFactories } from './config-codegen.js';
+import { parseSync, type Plugin } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
+import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { resolve, dirname, relative } from 'path';
+import { generateRoutes, scanPagesDir, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
+export { scanPagesDir } from './route-codegen.js';
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
+import { checkCapabilityRequirements, type CapabilityUse, type RuntimeName } from './runtime-capabilities.js';
+import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspection.js';
+import { readBuildBindingNames } from './build-bindings.js';
+import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
+import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -15,15 +33,8 @@ const resolvedLangVirtualModuleId = '\0' + langVirtualModuleId;
 const PAGE_GLOB_EXCLUDES = [
   '!/src/pages/**/layout.ts',
   '!/src/pages/**/loading.ts',
-  '!/src/pages/**/*.d.ts',
-  '!/src/pages/**/*.test.*',
-  '!/src/pages/**/*.spec.*',
-  '!/src/pages/**/__tests__/**',
-  '!/src/pages/**/__fixtures__/**',
-  '!/src/pages/**/fixtures/**',
+  ...ROUTE_GLOB_EXCLUDES,
 ];
-
-const TEST_DIRECTORIES = new Set(['__tests__', '__fixtures__', 'fixtures']);
 
 function escapeHtmlText(value: string): string {
   return value
@@ -57,7 +68,7 @@ function injectMarkdownByline(html: string, author: string, date: string): strin
  */
 export interface MarkdownResult {
   html: string;
-  frontmatter: Record<string, unknown>;
+  frontmatter: unknown;
 }
 
 export type MarkdownProcessor = (
@@ -66,6 +77,18 @@ export type MarkdownProcessor = (
 ) => MarkdownResult | Promise<MarkdownResult>;
 
 export interface CossackPagesOptions {
+  /** Cloudflare source config for build binding checks; relative to the Vite root. */
+  configPath?: string;
+  /** Opt in to project-local browser trace records for CLI/MCP. Development only. */
+  developmentTraces?: boolean;
+  /** Selected build features. Bindings are names only, never secret values. */
+  capabilities?: {
+    runtime: Exclude<RuntimeName, 'unknown'>;
+    bindings?: readonly string[];
+    /** Defaults to CLOUDFLARE_ENV when reading project bindings. */
+    environment?: string;
+    requirements?: readonly CapabilityUse[];
+  };
   /**
    * Application-owned Markdown compiler. Install one with
    * `cossack add markdown`.
@@ -81,6 +104,9 @@ export function getConfiguredMarkdownProcessor(): MarkdownProcessor | undefined 
 }
 
 export function cossackPages(options: CossackPagesOptions = {}): Plugin {
+  let projectRoot = process.cwd();
+  let developmentBase = '/';
+  let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
   if (options.markdownProcessor) {
     configuredMarkdownProcessor = options.markdownProcessor;
   }
@@ -88,13 +114,46 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let warnedAboutMarkdown = false;
   const warnIfMarkdownIsUnconfigured = (warn: (message: string) => void) => {
     if (markdownEnabled || warnedAboutMarkdown) return;
-    const { markdownKeys } = scanPagesDir(resolve(process.cwd(), 'src', 'pages'), false);
+    const { markdownKeys } = scanPagesDir(resolve(projectRoot, 'src', 'pages'), false);
     if (markdownKeys.length === 0) return;
     warnedAboutMarkdown = true;
     warn(
       '[cossack] Markdown routes were omitted because no markdownProcessor is configured. ' +
       'Run `cossack add markdown` to enable .md and .mdx pages.',
     );
+  };
+
+  let capabilityPages = new Set<string>();
+  let capabilityBindings: readonly string[] = [];
+  const refreshCapabilityPages = () => {
+    capabilityPages = new Set(scanPagesDir(resolve(projectRoot, 'src/pages'), markdownEnabled)
+      .pageKeys.map(key => resolve(projectRoot, key.slice(1)).replaceAll('\\', '/')));
+  };
+  const pageRequirement = async (file: string) => {
+    const key = '/' + relative(projectRoot, file).replaceAll('\\', '/');
+    let transport = 'http';
+    let stateful = false;
+    let line: number | undefined;
+    if (file.endsWith('.ts')) {
+      const source = readFileSync(file, 'utf8');
+      if (classifyRoute(filePathToHttpRoute(key)) === 'api' && await isHttpHandlerModule(source)) return {};
+      const facts = await extractPageOptionsFromAst(source);
+      if (facts?.method !== 'ast' || !facts.options) return {
+        parseError: !!(facts && 'parseError' in facts && facts.parseError),
+        diagnostic: {
+          code: 'COSSACK_CAPABILITY_REQUIREMENTS_UNKNOWN', id: file,
+          message: `${key}: page transport requirements are unknown. ${facts?.reason ?? 'Source parser unavailable.'}`,
+        },
+      };
+      transport = facts.options.transport ?? 'http';
+      stateful = facts.options.stateful === true;
+      line = facts.decoratorLine ?? undefined;
+    }
+    // The Markdown transform fixes its generated transport to HTTP.
+    const requirement: CapabilityUse = { feature: 'page transport', source: { file, line },
+      requires: { transports: [transport as 'http' | 'sse' | 'durable-object'],
+        ...(transport === 'durable-object' && stateful ? { durableState: true } : {}) } };
+    return { requirement };
   };
 
   return {
@@ -130,15 +189,63 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         },
       };
     },
-    buildStart() {
+    configResolved(config) {
+      projectRoot = config.root;
+      developmentBase = config.base;
+      generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+    },
+    async buildStart() {
+      generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+      if (options.capabilities) {
+        const { runtime } = options.capabilities;
+        const bindings = options.capabilities.bindings ?? (runtime === 'cloudflare'
+          ? await readBuildBindingNames(projectRoot, options.capabilities.environment ?? process.env.CLOUDFLARE_ENV, options.configPath) : []);
+        const requirements: CapabilityUse[] = [...(options.capabilities.requirements ?? [])];
+        capabilityBindings = bindings;
+        refreshCapabilityPages();
+        for (const file of [...capabilityPages].sort()) {
+          this.addWatchFile(file);
+          const result = await pageRequirement(file);
+          if (result.diagnostic) {
+            // Syntax still fails transformation. Preserve the development
+            // watcher so source repair can recover; builds remain fail-closed.
+            if (this.environment?.mode === 'dev' && result.parseError) {
+              this.warn(result.diagnostic);
+              continue;
+            }
+            this.error(result.diagnostic);
+          }
+          if (result.requirement) requirements.push(result.requirement);
+        }
+        const diagnostics = checkCapabilityRequirements(runtime, requirements, bindings);
+        const first = diagnostics[0];
+        if (first) this.error({
+          code: first.code,
+          message: diagnostics.map(diagnostic => `${diagnostic.source.file}${diagnostic.source.line ? `:${diagnostic.source.line}` : ''}: ${diagnostic.message}`).join('\n'),
+          id: first.source.file,
+          ...(first.source.line ? { loc: { file: first.source.file, line: first.source.line, column: first.source.column ?? 0 } } : {}),
+        });
+      }
       warnIfMarkdownIsUnconfigured((message) => this.warn(message));
     },
     resolveId(id) {
+      if (id === TRACE_BRIDGE_MODULE) return '\0' + id;
+      if (id === ROUTES_MODULE_ID) return resolve(projectRoot, ROUTES_SOURCE_PATH);
       if (id === virtualModuleId) {
         return resolvedVirtualModuleId;
       }
     },
     load(id) {
+      if (id === '\0' + TRACE_BRIDGE_MODULE) {
+        if (!traceBridge) return 'export {};';
+        const entry = fileURLToPath(new URL('./client/development-trace-bridge.js', import.meta.url)).replaceAll('\\', '/');
+        // Resolve the inspector through the same public import as application
+        // code. A filesystem import here creates a second copy beside Vite's
+        // optimized dependency, splitting the toolbar and capture ownership.
+        return `import { enableDevTools } from '@cossackframework/framework/client/devtools';
+          import { connectDevelopmentTraceBridge } from ${JSON.stringify(entry)};
+          connectDevelopmentTraceBridge(${JSON.stringify(traceBridge.token)}, import.meta.hot, enableDevTools());`;
+      }
       if (id === resolvedVirtualModuleId) {
         // Detect environment via the Vite 6 Environment API
         // SSR/worker environment: eager loading (synchronous access needed for server routes)
@@ -151,7 +258,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ...PAGE_GLOB_EXCLUDES,
         ]);
 
+        // Worker-rendered HTML may bypass transformIndexHtml. The client
+        // registry is the shared bootstrap path for generated applications.
         return `
+          ${!isSsrEnvironment && traceBridge ? `import ${JSON.stringify(TRACE_BRIDGE_MODULE)};` : ''}
           const pages = import.meta.glob(${pagePatterns}${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Layouts: eager on SSR (synchronous server rendering), lazy on the
@@ -160,10 +270,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           // every layout on the client would force those deps onto routes that
           // don't use them (e.g. the public landing page loading the dashboard
           // sidebar). The client resolves layouts via dynamic import in app.ts.
-          const layouts = import.meta.glob('/src/pages/**/layout.ts'${isSsrEnvironment ? ', { eager: true }' : ''});
+          const layouts = import.meta.glob(${JSON.stringify(['/src/pages/**/layout.ts', ...ROUTE_GLOB_EXCLUDES])}${isSsrEnvironment ? ', { eager: true }' : ''});
 
           // Loading states: always eager (small, needed immediately for UX)
-          const loadings = import.meta.glob('/src/pages/**/loading.ts', { eager: true });
+          const loadings = import.meta.glob(${JSON.stringify(['/src/pages/**/loading.ts', ...ROUTE_GLOB_EXCLUDES])}, { eager: true });
 
           // Components resolve by direct class reference (component(Card, ...)
           // captures the constructor), so no registry glob is needed. Eagerly
@@ -175,17 +285,99 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         `;
       }
     },
+    transformIndexHtml() {
+      if (!traceBridge) return;
+      return [{ tag: 'script', attrs: { type: 'module', src: developmentBase + '@id/__x00__' + TRACE_BRIDGE_MODULE }, injectTo: 'body' }];
+    },
+    closeBundle() { traceBridge?.dispose(); traceBridge = undefined; },
+    configureServer: {
+      // Native Cloudflare handlers install their request proxy in a returned hook.
+      // Install our error boundary after that proxy and before Vite's HTML renderer.
+      order: 'post',
+      handler(server) {
+        const restoreReloadPrivacy = installPublicReloadPrivacy(server);
+        server.httpServer?.once('close', restoreReloadPrivacy);
+        if (options.developmentTraces) traceBridge = installDevelopmentTraceBridge(server, projectRoot);
+        const pagesDirectory = resolve(projectRoot, 'src/pages');
+        const update = (file: string) => {
+          const path = relative(pagesDirectory, file);
+          if (path.startsWith('..') || path.startsWith('/') || !/\.(?:ts|mdx?)$/.test(path)) return;
+          try {
+            if (options.capabilities) refreshCapabilityPages();
+            const generated = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+            if (!generated.changed) return;
+            const module = server.moduleGraph.getModuleById(generated.file);
+            if (module) server.moduleGraph.invalidateModule(module);
+          } catch (error) { server.config.logger.error(String(error)); }
+        };
+        server.watcher.on('add', update).on('unlink', update).on('change', update);
+        server.httpServer?.once('close', () => {
+          server.watcher.off('add', update).off('unlink', update).off('change', update);
+        });
+        if (options.capabilities?.runtime !== 'cloudflare') return;
+        const requestStarts = new WeakMap<IncomingMessage, number>();
+        server.middlewares.use((request, _response, next) => {
+          requestStarts.set(request, performance.now());
+          next();
+        });
+        return () => {
+          // ModuleRunner compiler results use the private hot channel. Only HTTP
+          // request exceptions are caught here; retain full compiler diagnostics
+          // in the developer's terminal without serializing them into HTML.
+          server.middlewares.use((error: unknown, request: IncomingMessage, response: ServerResponse, next: (error?: unknown) => void) => {
+            if (response.headersSent) { next(error); return; }
+            const requestId = randomUUID();
+            server.config.logger.error(error instanceof Error ? error.stack ?? error.message : String(error));
+            logRuntimeFailure({ requestId, runtime: 'cloudflare', startedAt: requestStarts.get(request) }, 'dispatch');
+            response.statusCode = 500;
+            response.setHeader('Content-Type', 'application/json; charset=utf-8');
+            response.setHeader('Cache-Control', 'no-store');
+            response.setHeader('X-Cossack-Request-Id', requestId);
+            response.end(JSON.stringify({ error: 'Internal Server Error', code: 'COSSACK_RUNTIME_FAILED', requestId }));
+          });
+        };
+      },
+    },
     async transform(code, id) {
       // Inject source metadata for DevTools (only in dev mode for client environment)
       const isDev = this.environment?.mode === 'dev';
-      if (isDev && id.endsWith('.ts') && code.includes('extends Cossack')) {
-        const regex = /(export\s+default\s+|export\s+)?class\s+(\w+)\s+extends\s+Cossack\s*(<[^>]+>)?\s*\{/;
-        const match = code.match(regex);
-        if (match) {
-          const insertionIndex = match.index! + match[0].length;
-          const sourceInfo = JSON.stringify({ file: id });
-          const injection = `\n  static __source = ${sourceInfo};\n`;
-          code = code.slice(0, insertionIndex) + injection + code.slice(insertionIndex);
+      const file = id.split('?')[0].replaceAll('\\', '/');
+      if (isDev && options.capabilities && capabilityPages.has(file)) {
+        // Recheck repaired and edited pages, using original source before
+        // another plugin strips decorators or server-only dependencies.
+        const result = await pageRequirement(file);
+        if (result.diagnostic && !result.parseError) this.error(result.diagnostic);
+        if (result.requirement) {
+          const first = checkCapabilityRequirements(options.capabilities.runtime,
+            [result.requirement], capabilityBindings)[0];
+          if (first) this.error({ code: first.code, id: file,
+            message: `${file}${first.source.line ? `:${first.source.line}` : ''}: ${first.message}` });
+        }
+      }
+      if (isDev && id.endsWith('.ts') && file.startsWith(resolve(projectRoot, 'src').replaceAll('\\', '/') + '/')) {
+        // Parse declarations: text inside comments or string literals is not a class.
+        const parsed = parseSync(id, code);
+        if (!parsed.errors.length) {
+          const edits: { offset: number; text: string }[] = [];
+          const visit = (node: any) => {
+            if (!node || typeof node !== 'object') return;
+            if ((node.type === 'ClassDeclaration' || node.type === 'ClassExpression') && node.superClass
+              && !node.body.body.some((member: any) => member.key?.name === '__source')) {
+              const classStart = node.start;
+              const offset = node.body.start + 1;
+              const beforeClass = code.slice(0, classStart);
+              const sourceInfo = JSON.stringify({ file: relative(projectRoot, id).replaceAll('\\', '/'),
+                line: beforeClass.split('\n').length, column: beforeClass.length - beforeClass.lastIndexOf('\n') });
+              edits.push({ offset, text: `\n  static __source = ${sourceInfo};\n` });
+            }
+            for (const [key, value] of Object.entries(node)) {
+              if (key === 'parent') continue;
+              if (Array.isArray(value)) value.forEach(visit);
+              else if (value && typeof value === 'object') visit(value);
+            }
+          };
+          visit(parsed.program);
+          for (const edit of edits.sort((a, b) => b.offset - a.offset)) code = code.slice(0, edit.offset) + edit.text + code.slice(edit.offset);
         }
       }
 
@@ -194,7 +386,15 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           warnIfMarkdownIsUnconfigured((message) => this.warn(message));
           return;
         }
-        const { html: htmlContent, frontmatter } = await options.markdownProcessor(code, id);
+        const result = await options.markdownProcessor(code, id);
+        const frontmatter = isValidatedMarkdownFrontmatter(result.frontmatter) ? result.frontmatter
+          : validateMarkdownFrontmatter(result.frontmatter, { source: code, filename: id, extensions: (options.markdownProcessor as any).frontmatterExtensions });
+        const sourceRoute = filePathToRoutePath('/' + relative(projectRoot, id).replaceAll('\\', '/'));
+        if (frontmatter.aliases?.length && /\[|:[A-Za-z_]/.test(sourceRoute)) {
+          this.error({ code: 'COSSACK_MARKDOWN_ALIAS_DYNAMIC', id,
+            message: 'Markdown output aliases require a static source route.' });
+        }
+        const htmlContent = result.html;
         const author = typeof frontmatter.author === 'string' ? frontmatter.author : '';
         const date = typeof frontmatter.date === 'string' ? frontmatter.date : '';
         const renderedMarkdown = injectMarkdownByline(htmlContent, author, date);
@@ -207,11 +407,13 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             const markdownContent = ${JSON.stringify(renderedMarkdown)};
 
             class MdxPage extends Cossack {
+              static markdownFrontmatter = Object.freeze(${JSON.stringify(frontmatter)});
               head() {
                 return {
                   title: ${JSON.stringify(frontmatter.title || '')},
                   description: ${JSON.stringify(frontmatter.description || '')},
-                  image: ${JSON.stringify(frontmatter.image || '')}
+                  image: ${JSON.stringify(frontmatter.image || '')},
+                  links: [{ tag: 'link', attributes: { rel: 'canonical', href: new URL(${JSON.stringify(frontmatter.canonical ?? sourceRoute)} , this.isServer ? this.c.req.url : globalThis.location.href).href } }]
                 };
               }
 
@@ -227,7 +429,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
             // static content (no server logic), so pre-render them by default —
             // they can't opt in via @Page({ ssg: true }) like .ts pages because
             // they aren't TypeScript.
-            Reflect.defineMetadata('page:options', { transport: 'http', ssg: true }, MdxPage);
+            Reflect.defineMetadata('page:options', { transport: 'http', ssg: ${frontmatter.ssg !== false} }, MdxPage);
 
             export default MdxPage;
           `,
@@ -248,7 +450,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // environment where the manifest has just been emitted.
       if (this.environment?.name !== 'client') return;
 
-      const clientOutDir = resolve(process.cwd(), 'dist', 'client');
+      const clientOutDir = resolve(projectRoot, 'dist', 'client');
       const src = resolve(clientOutDir, '.vite', 'manifest.json');
       if (!existsSync(src)) return;
 
@@ -268,7 +470,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // reads it instead of re-scanning `src/pages` and re-deriving IDs, so the
       // IDs can never drift from what the SSR router assigns here.
       try {
-        emitRoutesManifest(clientOutDir, markdownEnabled);
+        emitRoutesManifest(projectRoot, clientOutDir, markdownEnabled);
       } catch (e) {
         // Non-fatal: SSG will surface a clear error if the manifest is missing.
         console.warn('[cossack] Could not emit routes manifest:', e);
@@ -277,59 +479,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   };
 }
 
-/**
- * Scan `src/pages` reproducing the same key set as the `import.meta.glob`
- * patterns above (pages = `*.ts`/`*.mdx` excluding `layout.ts`/`loading.ts`;
- * layouts = `layout.ts`). Keys use the `/src/pages/<rel>` format with forward
- * slashes, exactly like Vite's glob keys.
- */
-export function scanPagesDir(
-  pagesDir: string,
-  includeMarkdown: boolean,
-): { pageKeys: string[]; layoutKeys: string[]; markdownKeys: string[] } {
-  const pageKeys: string[] = [];
-  const layoutKeys: string[] = [];
-  const markdownKeys: string[] = [];
-  if (!existsSync(pagesDir)) return { pageKeys, layoutKeys, markdownKeys };
-
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (TEST_DIRECTORIES.has(entry.name)) continue;
-        walk(fullPath);
-      } else if (entry.isFile()) {
-        if (/\.(?:test|spec)\.[^.]+$/.test(entry.name) || entry.name.endsWith('.d.ts')) {
-          continue;
-        }
-        const rel = relative(pagesDir, fullPath).split(sep).join('/');
-        const key = `/src/pages/${rel}`;
-        if (entry.name === 'layout.ts') {
-          layoutKeys.push(key);
-        } else if (entry.name === 'loading.ts') {
-          // Excluded — matches the glob's `!/src/pages/**/loading.ts`.
-        } else if (entry.name.endsWith('.mdx') || entry.name.endsWith('.md')) {
-          markdownKeys.push(key);
-          if (includeMarkdown) pageKeys.push(key);
-        } else if (entry.name.endsWith('.ts')) {
-          pageKeys.push(key);
-        }
-      }
-    }
-  };
-
-  walk(pagesDir);
-  return { pageKeys, layoutKeys, markdownKeys };
-}
-
-function emitRoutesManifest(clientOutDir: string, includeMarkdown: boolean) {
-  const pagesDir = resolve(process.cwd(), 'src', 'pages');
-  const { pageKeys, layoutKeys } = scanPagesDir(pagesDir, includeMarkdown);
-  const maps = computeRouteIds(pageKeys, layoutKeys);
-  const manifest = buildRoutesManifest(pageKeys, layoutKeys, maps);
+function emitRoutesManifest(projectRoot: string, clientOutDir: string, includeMarkdown: boolean) {
+  const { manifest } = generateRoutes(projectRoot, { includeMarkdown });
   if (!existsSync(clientOutDir)) mkdirSync(clientOutDir, { recursive: true });
-  const dest = resolve(clientOutDir, 'cossack-routes.json');
-  writeFileSync(dest, JSON.stringify(manifest, null, 2));
+  writeFileSync(resolve(clientOutDir, 'cossack-routes.json'), JSON.stringify(manifest, null, 2));
 }
 
 /**
@@ -482,10 +635,47 @@ const resolvedConfigVirtualModuleId = '\0' + configVirtualModuleId;
  * export default configs;
  * ```
  */
-export function cossackConfig(): Plugin {
+export function cossackConfig(options: { runtime?: ConfigRuntime; environment?: string; configPath?: string } = {}): Plugin {
+  let projectRoot = '';
+  let selectedEnvironment: string | undefined;
+  let isBuild = false;
+  const preflight = async () => {
+    const result = await checkConfigBuildRequirements(projectRoot, { runtime: options.runtime, environment: selectedEnvironment, configPath: options.configPath });
+    if (!result.valid) { const first = result.diagnostics.find(diagnostic => diagnostic.severity === 'error')!; throw Object.assign(new Error(result.diagnostics.map(diagnostic => `${diagnostic.code}: ${diagnostic.message}`).join('\n')), { code: first.code }); }
+  };
   return {
     name: 'cossack-config',
     enforce: 'pre',
+    async configResolved(config) {
+      projectRoot = config.root;
+      isBuild = config.command === 'build';
+      selectedEnvironment = options.environment ?? process.env.CLOUDFLARE_ENV;
+      if (isBuild) await preflight();
+      generateConfigTypes(projectRoot);
+    },
+    async buildStart() {
+      if (!isBuild) return;
+      for (const file of ['src/config', 'package.json', '.cossack/scaffold.json', 'wrangler.jsonc', 'wrangler.json', 'wrangler.toml']) this.addWatchFile(resolve(projectRoot, file));
+      const selectedConfig = options.configPath ?? process.env.CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH;
+      if (selectedConfig) this.addWatchFile(resolve(projectRoot, selectedConfig));
+      for (const file of discoverConfigFactories(projectRoot)) this.addWatchFile(resolve(projectRoot, 'src/config', file));
+      await preflight();
+      generateConfigTypes(projectRoot);
+    },
+    configureServer(server) {
+      const directory = resolve(projectRoot, 'src/config');
+      const update = (file: string) => {
+        if (dirname(resolve(file)) === directory && file.endsWith('.ts')) {
+          try { generateConfigTypes(projectRoot); }
+          catch (error) { server.config.logger.error(String(error)); }
+        }
+      };
+      server.watcher.add(directory);
+      for (const event of ['add', 'unlink', 'change'] as const) server.watcher.on(event, update);
+      server.httpServer?.once('close', () => {
+        for (const event of ['add', 'unlink', 'change'] as const) server.watcher.off(event, update);
+      });
+    },
     resolveId(id) {
       if (id === configVirtualModuleId) return resolvedConfigVirtualModuleId;
     },
@@ -494,17 +684,21 @@ export function cossackConfig(): Plugin {
       const isSsrEnvironment = this.environment?.name !== 'client';
       if (!isSsrEnvironment) {
         // Config reads env bindings — server-only. Never ship to the client.
-        return `const configs = {};\nexport default configs;\n`;
+        return `const configs = {};\nexport const requirements = {};\nexport const environment = null;\nexport default configs;\n`;
       }
       return `
         // Loads src/config/*.ts (if present). Globs the well-known config
         // directory so an absent folder resolves to {} (no-op).
-        const modules = import.meta.glob('/src/config/*.ts', { eager: true });
+        const modules = import.meta.glob(${JSON.stringify(CONFIG_GLOB)}, { eager: true });
         const configs = {};
+        const requirements = {};
         for (const [filePath, mod] of Object.entries(modules)) {
           const name = filePath.split('/').pop().replace(/\\.ts$/, '');
           configs[name] = mod.default;
+          if (mod.requirements !== undefined) requirements[name] = mod.requirements;
         }
+        export { requirements };
+        export const environment = ${JSON.stringify(selectedEnvironment ?? null)};
         export default configs;
       `;
     },

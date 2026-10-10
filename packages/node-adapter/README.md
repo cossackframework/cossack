@@ -10,11 +10,12 @@ Cossack and its packages.
 
 ## Exports
 
-- `CossackNodeAdapter` : handles WebSocket upgrades and component bootstrapping on a Node `http.Server`.
-- `nodeRuntimeAdapter` : pass to `createApp()` so SSR emits Node process-local WebSocket targets.
+- `createNodeAdapter` : connects framework-guarded WebSocket upgrades to a Node server, shares process-local scope instances, and manages cleanup.
+- `CossackNodeAdapter` and `nodeRuntimeAdapter` : legacy registry adapter and metadata-only adapter; generated apps use `createNodeAdapter`.
 - `serveStatic` : Node `fs`-based Hono middleware for serving static assets.
 - `NodeWebSocketRuntime` : the WebSocket runtime used by the adapter.
 - `createNodeEmailSender` : Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
+- `cossackNode` from `/vite`: standalone Vite HTTP development integration; see the lifecycle limits below.
 
 ## Unified `env.EMAIL` (Cloudflare email binding polyfill)
 
@@ -29,23 +30,23 @@ Cloudflare Workers expose `env.EMAIL.send({ to, from, subject, html, text })` wh
 Then `await env.EMAIL.send({ to, from, subject, html, text })` works directly.
 
 ### Node.js
-Build the sender from SMTP env vars and inject it into `env`, then pass `env` both to `app.fetch` (HTTP transport) and to `CossackNodeAdapter` (WebSocket transport):
+Build the sender from SMTP env vars and inject it into `env`, then pass `env` `app.fetch` for both HTTP requests and WebSocket authorization:
 
 ```ts
 import { serve } from '@hono/node-server';
 import { createApp } from '@cossackframework/framework/router';
 import {
-  CossackNodeAdapter,
+  createNodeAdapter,
   createNodeEmailSender,
-  nodeRuntimeAdapter,
 } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 
+const runtime = createNodeAdapter();
 const app = createApp({
   AppComponent: App,
   htmlTemplate: template,
-  runtimeAdapter: nodeRuntimeAdapter,
+  runtimeAdapter: runtime,
 });
 
 const env = {
@@ -64,14 +65,8 @@ const server = serve(
   (info) => console.log(`Listening on http://localhost:${info.port}`),
 );
 
-// WebSocket: pass the same env so `@Server` methods over WS see `this.env.EMAIL`.
-new CossackNodeAdapter({
-  server,
-  // Keys match the routePath metadata emitted by Cossack, for example
-  // new Map([['/account/:id', AccountPage]]).
-  componentRegistry,
-  env,
-});
+// Run upgrades through the same middleware, bindings, scope checks, and services.
+runtime.attach(server, (request) => app.fetch(request, env));
 ```
 
 ### Environment variables
@@ -87,3 +82,74 @@ Configure via `.dev.vars` (Cloudflare dev) or your shell/`.env` (Node):
 | `MAIL_FROM` | Default `from` address when omitted | `no-reply@example.com` |
 
 Now `await this.env.EMAIL.send(...)` works identically in `@Server` methods on both Cloudflare Workers and Node.js.
+
+## WebSocket lifetime
+
+`runtime.attach(server, fetch)` handles `/ws/` upgrade requests. Other upgrade
+paths remain available to the host. Authentication, origin checks, route lookup,
+and scope authorization run through the framework before the handshake. Response
+cookies and application headers reach the handshake. Components for the same
+route/provider/scope share one initialization and process-local state.
+
+`maxInstances` defaults to 512 and includes pending initialization.
+`idleTimeoutMs` defaults to 15 minutes; pruning runs on socket activity.
+Call `await runtime.dispose()` before closing an embedded server. It detaches
+upgrade listeners, ends sockets, waits for pending initialization and active
+actions, and destroys components/services. Repeated calls share the same result.
+A native server `close` event also triggers disposal. Actions must settle for
+cleanup to finish. Disposed adapters cannot be attached again.
+
+The request scheme follows the actual Node socket (HTTP or TLS); the adapter does
+not trust forwarded scheme headers. Configure origin policy for a trusted proxy
+in the application. Generated production and development entries attach the adapter automatically.
+The dev server disposes the previous runtime on source reload while Vite retains
+its HMR connection; clients reconnect to a fresh process-local scope.
+
+## Vite development HTTP server
+
+Generated Node Vite configurations include the separate tooling entry:
+
+```ts
+import { cossackNode } from '@cossackframework/node-adapter/vite';
+
+// Add to the existing Vite plugins, alongside the Cossack framework plugins.
+cossackNode();
+```
+
+This makes `cossack dev` and plain `vite dev` serve the exported `app` from
+`/src/index.ts`. The entry can also export `env` and a runtime with `dispose()`
+and `attach()`. The adapter imports no framework code. Vite remains an optional
+peer dependency and is not imported by the main runtime entry.
+
+The HTTP middleware runs after Vite's public asset and module handlers. A separate
+`/ws/` listener loads the same application before the first WebSocket upgrade,
+including when no application HTTP request has run. Other upgrade paths remain
+with Vite. Server-source edits replace the server module graph, detach and dispose
+the old runtime, and close its sockets. The browser HMR connection stays open.
+Cleanup can continue while the replacement runtime starts; source reload does
+not undo in-flight application effects.
+An edit during asynchronous initialization discards the stale entry before it can
+accept a request. Initialization failures retry with a fresh entry.
+
+Generated entries export `createEnv(variables)`. The plugin passes values from
+Vite's environment files, with process variables taking precedence. The factory
+preserves arbitrary bindings, supplies the `DB_PATH` default, and configures
+`EMAIL` when `SMTP_HOST` is present. SMTP configuration requires `SMTP_USER` and
+`SMTP_PASS`. The same factory supplies production bindings. Private bindings are
+not added to Vite's client environment; the existing `VITE_` public-prefix rule
+still applies. Custom entries without a factory retain their exported `env`.
+
+The generated `scripts/dev.js` is a thin Vite launcher. It retains the optional
+`COSSACK_LOCAL` overlay and its `PORT`/3000 default; application routing, upgrades,
+bindings and cleanup all use the plugin. Plain `vite dev` and `cossack dev` use
+Vite's usual port options. Both normal and JSON CLI development commands supervise
+the child process and bound requested shutdown.
+
+Closing Vite waits up to five seconds for runtime cleanup; use
+`cossackNode({ entry: '/src/custom.ts', shutdownTimeoutMs: 2000 })` to change the
+entry or deadline. A deadline stops waiting; it cannot terminate application I/O.
+Embedded Vite servers (`server.middlewareMode`) retain ownership of their listener
+and lifecycle and are not installed by this plugin.
+
+This plugin applies only to development. Production keeps the generated Node
+server and static-file middleware. The plugin is omitted from Desktop mode.

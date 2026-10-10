@@ -39,14 +39,78 @@ cossack <command> [args] [options]
 
 ### Global options
 
-These work across every command:
+File-changing commands support `--force` and `--dry-run` where documented.
+Lifecycle commands (`dev`, `build`, `start`, and `ssg`) forward options to
+their underlying tool. Command help is handled before starting that tool.
 
 | Option | Description |
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files or skip confirmation prompts. |
 | `--dry-run` | Show planned changes without writing them. |
+| `--json` | Emit a machine-readable result envelope; dev/start/Studio emit lifecycle events (see below). |
+| `--yes`, `-y` | Apply changes without confirmation (noninteractive mode). |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
+
+### Machine-readable output contract (Codex, 2026-10-02)
+
+Under `--json`, a finite command prints **exactly one** result envelope on
+stdout and nothing else. Dev, start, and Studio use the same envelope for their
+lifecycle events:
+
+```json
+{ "schemaVersion": 1, "command": "generate", "ok": true,
+  "data": { "effects": [{ "action": "planned", "path": "src/components/X.ts" }] },
+  "diagnostics": [] }
+```
+
+- Success carries `data` (file effects with `created|overwritten|planned|planned-delete|skipped|deleted`
+  actions, planned paths for dry runs, structured facts for inspection).
+- Failure carries `ok: false`, a nonzero exit code, and `diagnostics` with
+  stable codes such as `COSSACK_OPTION_UNKNOWN` (including the supported
+  alternatives), `COSSACK_OPTION_VALUE_REQUIRED`, `COSSACK_OPTION_REPEATED`,
+  `COSSACK_ARGUMENT_MISSING`, `COSSACK_ARGUMENT_UNEXPECTED`,
+  `COSSACK_FILE_EXISTS`, and command-specific failure codes. Human-oriented
+  notes go to stderr or are suppressed; they never mix into stdout.
+- Exit codes: `0` success, `1` failure, `130` an interactive prompt was
+  canceled, or a supervised command was interrupted before completion.
+  JSON/non-TTY execution never prompts. Supply required choices or use documented
+  defaults. Scaffold creation defaults to Cloudflare/full-stack; adding a feature
+  to an unrecognized legacy project requires an explicit runtime.
+- `dev --json` and `start --json` emit newline-delimited JSON. `data.event:
+  "started"` confirms child process creation and includes its PID and tool;
+  it does **not** claim HTTP readiness. A clean exit or requested graceful stop
+  emits `"stopped"`. Spawn/runtime/shutdown failures emit `"failed"` with
+  coded diagnostics and a nonzero exit. SIGINT/SIGTERM requests cleanup;
+  unresponsive children are force-stopped after a bounded grace period.
+  Tool argv, URLs, and raw logs do not enter events. `build` and `ssg` emit one envelope
+  with `exitCode` and coded failures. Raw project/tool logs are omitted because
+  they can contain credentials. Run human mode to inspect those logs locally.
+- `studio --json` emits newline-delimited JSON: a `data.event: "ready"`
+  envelope after the server starts, then `"stopped"` on clean shutdown or a
+  failed envelope with a nonzero exit. A startup failure produces one failed
+  envelope. Project logs and launch tokens are isolated in a child process.
+  The ready event contains the loopback origin and remote/local selection.
+  Studio stays running after readiness; send SIGINT or SIGTERM to stop it.
+  `--timeout <milliseconds>` bounds startup (default 30000, maximum 300000).
+  JSON mode never opens a browser. Use human mode to open its authenticated UI.
+- JSON execution uses an isolated process with ignored stdin/stdout/stderr.
+  Only validated framework envelopes cross IPC; project imports, inherited
+  subprocess logs, thrown connection values, and parser excerpts are excluded.
+  Database results use the public command `seeder` for both `seed` and `seeder`,
+  with the ORM action in `data.action`. Database failures identify
+  `data.phase` and provide a follow-up action; detailed SQL/cause chains remain
+  available in human mode. Public target metadata excludes extra factory fields.
+- Finite commands have a default 300000 ms execution deadline. Set
+  `COSSACK_COMMAND_TIMEOUT_MS` to an integer from 1 to 86400000 to change it.
+  Dev/start have a startup deadline of at most 30000 ms, then run until stopped.
+  Studio uses its `--timeout` readiness deadline, also bounded by the execution
+  deadline. Deadline failures use `COSSACK_COMMAND_TIMEOUT`; unexpected process
+  exits use `COSSACK_COMMAND_PROCESS_FAILED`. Cancellation reclaims process
+  descendants (POSIX process groups; Windows taskkill).
+- File-changing dry runs perform no writes: `generate component X --dry-run
+  --json` emits planned paths and leaves the filesystem untouched. Deployment
+  dry runs write generated types and build artifacts while preventing uploads.
 
 ---
 
@@ -54,7 +118,7 @@ These work across every command:
 
 ### `cossack create <name>`
 
-Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers, Node.js, or Deno) unless `--adapter` is provided.
+Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers or Node.js) unless `--adapter` is provided.
 
 ```bash
 cossack create my-app
@@ -65,6 +129,21 @@ cossack create my-app --adapter cloudflare --preset minimal --features desktop
 `cossack create` writes a `.cossack/scaffold.json` manifest used by
 `cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
 
+Use `--dry-run` to inspect planned files without creating the project or its
+manifest. It does not prompt or check for CLI updates. Use `--json` for scripts
+and coding agents:
+
+```sh
+cossack create my-app --adapter node --preset minimal --dry-run --json
+```
+
+JSON mode writes one object to stdout with `schemaVersion: 1`, `command`,
+`ok`, `data`, and `diagnostics`. Creation data includes the status, public
+recipe, project directory, manifest path, and planned file changes. It excludes
+generated secret values. Errors use stable diagnostic codes and a nonzero exit
+code. JSON mode does not prompt; specify the desired recipe through flags.
+Without a terminal, creation also uses flag values and defaults without prompts.
+
 ### `cossack add desktop`
 
 Add the independent Electron target without changing the web adapter. The
@@ -72,7 +151,117 @@ command writes `src/desktop/index.ts`, `forge.config.ts`, platform icons,
 Electron/Forge dependencies, and `desktop:dev`, `desktop:package`, and
 `desktop:make` scripts. Electron installers are built on their native host.
 
-### `cossack adapter <node|cloudflare|deno>`
+### `cossack inspect routes` and `cossack check routes`
+
+```bash
+cossack inspect routes --json
+cossack inspect routes /team
+cossack check routes --json
+```
+
+Inspection lists route facts or explains a selected route. Method facts come
+from the compiler: retained client implementations, explicit or automatic RPC,
+and stripped methods without RPC registration are separate categories.
+
+Checks return a nonzero exit code when static options are unknown, compiler
+method facts are unavailable, or a transport is invalid. JSON diagnostics use
+`COSSACK_ROUTE_OPTIONS_UNKNOWN`, `COSSACK_ROUTE_METHODS_UNKNOWN`, or
+`COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Unresolved base
+declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Unknown declared member
+precedence produces `COSSACK_ROUTE_DISPATCH_UNKNOWN`. Inspection can
+still succeed for those files so an agent can examine the available facts.
+
+Functional API modules under `src/pages/api/` are marked
+`routeStyle: "http-handlers"`. Recognized named method exports and local default
+functions use HTTP without requiring component decorators or a default component
+class. Component dispatch/classification fields are `not-applicable`, and layout
+service scopes are not applied to these functional routes. These facts describe
+source declarations; inspection does not execute handler factories.
+
+Component pages and layouts include `moduleExport`: `resolved` means its default export
+is a local class declaration, `missing` means no default export exists, and
+`unknown` means the export cannot be resolved without executing or importing it.
+Checks fail with `COSSACK_ROUTE_DEFAULT_EXPORT_MISSING` or
+`COSSACK_ROUTE_DEFAULT_EXPORT_UNKNOWN`. A resolved class is not proof that its
+constructor or lifecycle succeeds.
+
+Services remain listed as source expressions on their declaring layouts. The
+`serviceOwnership` field also uses a static TypeScript source resolver to resolve
+identifier/member expressions through import aliases, re-exports and inherited
+layout decorators to the class declaration file and line. It does not import or
+execute project modules. Each token reports whether an imported core `@Service()`
+decorator is declared, missing, or unknown; static syntax does not prove that
+decorator execution or the runtime lifecycle succeeds. Dynamic lookups remain
+unknown. Page-level service declarations fail with
+`COSSACK_PAGE_SERVICES_UNSUPPORTED`: pages use layout scopes rather than creating
+their own. Layout/page middleware counts follow outer-to-inner layout order,
+then the page, and exclude global bootstrap middleware. An unknown count makes
+the combined total unknown.
+
+Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
+through the scaffold recipe registry, including feature dependencies and provider
+compatibility. Missing manifests have status `unrecorded`; malformed or unsupported
+manifests have status `invalid` and make checks fail with
+`COSSACK_SCAFFOLD_METADATA_INVALID`. Arbitrary manifest fields and secret values
+are excluded. Recorded recipes do not prove that generated files are unchanged.
+
+Local base declarations appear under `inheritedDeclarations`, grouped by declaring
+class with compiler facts and source locations. They are not flattened into own
+methods or presented as a resolved runtime dispatch table. Relative TypeScript imports and explicit re-exports resolve through source files.
+Package imports, path aliases, wildcard exports, dynamic bases, and ambiguous
+extensionless paths remain unresolved. `declarationDispatch` resolves declared instance-field and prototype precedence,
+including overrides and accessor replacement, with declaring owners and sources.
+Unknown computed keys, unresolved bases, or constructor parameter properties
+produce an unknown result. Erased TypeScript `declare` fields are excluded. Constructor,
+decorator, initializer side effects, and later property mutations are not evaluated;
+this is not a guarantee of runtime method availability.
+
+These commands do not execute page constructors or server methods. Current
+checks cover static metadata only. Inheritance resolution and runtime behavior
+are reported as `not-checked`; success does not prove that the application runs.
+Resource macros expose generated RPC method names, resource names, and authored
+loader locations. Unsupported resource declarations produce unknown method facts.
+Route commands accept `--env <name>` for Cloudflare configuration selection, or
+use `CLOUDFLARE_ENV` when the flag is absent. Their `runtime` metadata evaluates
+route transports with the shared framework capability model. Missing required
+transport bindings or unsupported transports make checks fail. Configuration
+presence does not prove remote resources exist or adapter setup is correct.
+Node supports the `durable-object` transport name through process-local
+adapters; this does not provide durable cross-instance coordination.
+
+### `cossack inspect cloudflare` and `cossack check cloudflare`
+
+```sh
+cossack inspect cloudflare --env staging --json
+cossack check cloudflare --env staging --json
+```
+
+These commands use the application's Wrangler to resolve the selected
+environment. They report Worker and binding identities, required secret names,
+and local configuration diagnostics without building or deploying.
+`inspect` returns success when configuration can be read; `check` returns a
+nonzero exit code for deployment errors. JSON output marks build and remote
+readiness as `not-checked` and omits variable and secret values.
+
+### `cossack deploy`
+
+Build and deploy a Cloudflare application with the project's installed tools:
+
+```sh
+cossack deploy --env staging --dry-run --json
+```
+
+The environment is selected before Vite builds the application. The CLI checks
+configuration, generates binding types, builds, verifies the built environment,
+and calls Wrangler on that artifact. `--mode` selects a Vite mode independently.
+Unlike creation dry runs, deployment dry runs write local build artifacts and
+generated types. They validate deployment without uploading or provisioning.
+
+`--json` emits one versioned result with diagnostics and step results. Raw tool
+output is suppressed. Required remote secrets are not checked during a local
+dry run. See [Deployment](./deployment.md) for environment and secret setup.
+
+### `cossack adapter <node|cloudflare>`
 
 Switch an existing schema-v3 scaffolded project to one active runtime. The
 command re-renders the complete recorded recipe, previews the change set,
@@ -292,9 +481,20 @@ Run deterministic ORM migrations registered by `orm.config.ts`.
 cossack migration up        # Apply all pending migrations
 cossack migration down      # Roll back the most recent migration
 cossack migration status    # Show applied/pending migrations
+cossack migration plan --env staging --target remote --json
 ```
 
-> The migration commands import your TypeScript files, so the CLI respawns itself under `tsx` automatically.
+The database tooling loads TypeScript configuration through `tsx`. Use
+`--env` and `--target local|remote` to select the database. `--dry-run` previews
+queued migration SQL or generated files without applying them. Incomplete
+plans are marked explicitly. See [Migrations](./migrations.md).
+
+JSON database commands run configuration, adapters, and callbacks in a child
+process with isolated output. Connection logs, console calls, and subprocess
+output cannot mix with the single result on stdout. If the child exits before
+returning a result, the command emits `COSSACK_ORM_PROCESS_FAILED`. Run without
+`--json` to see raw tool diagnostics. This isolates output and process state;
+application callbacks remain trusted code.
 
 ### `cossack seeder` (alias: `seed`)
 
@@ -348,11 +548,16 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
 | --- | --- |
 | `--format <webp\|avif>` | Output format (default: `webp`). |
 | `--quality <0-100>` | Output quality (default: `80`). |
-| `--dry-run` | List the image variants without writing them. |
+| `--dry-run` | List the image variants without writing them or launching ImageMagick. |
+
+`--json` reports file effects and optimized/planned/skipped counts. Quality must
+be an integer from 0 through 100. Missing sources, unsafe paths, and conversion
+failures return coded diagnostics and a nonzero exit; converter output does not
+enter the JSON result. Empty projects succeed without requiring ImageMagick.
 
 **Installing ImageMagick**
 
-If the binary is missing, the command prints platform-specific instructions:
+Install ImageMagick before applying an optimization plan:
 
 ```bash
 # macOS
@@ -372,6 +577,15 @@ On Cloudflare deployments, runtime resizing via `/cdn-cgi/image/...` is preferre
 ### `cossack routes`
 
 List all routes discovered in the project (pages, layouts, API routes).
+
+Run `cossack routes --generate` to write `.cossack/routes.ts` before a standalone
+TypeScript check. Use `--generate --dry-run --json` to preview generation without
+writes. Plain route inspection stays read-only. JSON output includes the shared
+structural manifest and the effective inspection facts.
+
+Markdown requires a recorded scaffold feature or explicit `--markdown` selection.
+For a custom processor, configure the same feature in Vite.
+See [typed URLs](./routing.md#typed-urls) for imports, parameters, and existing-project setup.
 
 ### `cossack info`
 
@@ -406,10 +620,44 @@ cossack upgrade --force-file <path>   # surgically overwrite one file, even if e
 | `--force-file <path>` | Force-update one specific file even if you modified it. You can use this option more than once. |
 | `--dry-run` | Show planned changes without writing them. |
 
-Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
+Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `canDelete` (unchanged locally and removed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
+
+Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
+It includes dependency updates, additions and removals, selected file writes and
+deletions, preserved edits, conflicts, manifest changes, build-setting migration,
+installation requirements, and follow-up actions. `--tag` resolves the scaffold
+release used for both templates and recipe dependencies; `templateVersion` is
+that exact version. Foreign releases are installed into temporary storage with
+pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application
+files unchanged; pnpm may populate its package cache.
+
+The manifest records `dependencyBaseline` separately from the merged package.
+Unchanged owned versions follow the target recipe, including additions, removals,
+and moves between dependency sections. Local pins, intentionally deleted
+dependencies, and user-added packages remain intact. Existing schema-v3 manifests
+without this field reconstruct it from their recorded exact scaffold release;
+the plan labels this ownership source as `reconstructed`. An unavailable baseline
+or target release fails before project writes. Custom URL/path specifiers are
+redacted from JSON plans.
+
+`--apply-template` also deletes unchanged owned files removed by the target
+recipe. Edited obsolete files remain preserved conflicts. `--force-file` cannot
+replace package/runtime configuration or local secret files. Symbolic links in
+owned paths are rejected before effects.
+
+An unknown `--force-file` or an unresolved package version fails before writes.
+If an owned file, package, workspace configuration, or ownership manifest changes
+during target resolution, the plan fails as stale.
+An installation failure returns `status: "partial-failure"`, the changes already
+applied, and a retry command. It does not report a successful upgrade. Raw package
+manager output stays outside the machine-readable protocol.
 
 ---
 
 ## Exit codes
 
 Every command returns `0` on success and a non-zero code on failure, making the CLI safe to use in scripts, CI, and `&&` chains.
+
+Cloudflare `cossack build` and `cossack deploy` can enforce literal project
+`cossack.buildBudgets` settings in `package.json`. Machine results report public
+measurements without binding output. See [Build budgets](./build-budgets.md).

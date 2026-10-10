@@ -64,16 +64,20 @@ function postgresIndexColumn(value: string): string | undefined {
   return /^[a-z_][a-z0-9_$]*$/.test(trimmed) ? trimmed : undefined;
 }
 
-export async function introspectSQLite(execute: Execute): Promise<OrmSchema> {
+export async function introspectSQLite(
+  execute: Execute,
+  options: { readonly excludedTablePrefixes?: readonly string[] } = {},
+): Promise<OrmSchema> {
   const tables = await execute<{ name: string }>(
-    "SELECT name FROM sqlite_master " +
-      "WHERE type = 'table' " +
-      "AND name NOT LIKE 'sqlite_%' " +
-      "AND name <> '_cossack_migrations' " +
-      "ORDER BY name",
+    // Keep catalog filtering outside SQL: workerd's SQLite authorizer rejects
+    // some filtered catalog queries used by D1. This query also works on Node.
+    "SELECT name FROM sqlite_master WHERE type = 'table'",
   );
   const entities = [];
-  for (const table of tables.rows) {
+  const visibleTables = tables.rows.filter(table => table.name !== "_cossack_migrations" &&
+    !["sqlite_", ...(options.excludedTablePrefixes ?? [])].some(prefix => table.name.startsWith(prefix)))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const table of visibleTables) {
     const escaped = table.name.replaceAll('"', '""');
     const columnsResult = await execute<{
       name: string;

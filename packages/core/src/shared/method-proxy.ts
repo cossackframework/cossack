@@ -1,8 +1,20 @@
+import { beginDevelopmentRpcTrace, type DevelopmentRpcTrace, type DevelopmentRpcOutcome } from './development-trace';
+import { collectReactiveMetadata } from './reactive-metadata';
+import { createStateApplier, snapshotTransportState, rpcSseCursor } from './rpc-state';
+export { applyStateToComponent } from './rpc-state';
+import { beginOptimisticCall, optimisticRequestState, finishOptimisticCall, optimisticHandlers as collectOptimisticHandlers, optimisticHandler, optimisticKeys, type OptimisticCall } from './optimistic-state';
+import { collectServerMethodMetadata, validateServerMethodTimeout } from './server-method-metadata';
 // src/shared/method-proxy.ts
 import type { PageOptions } from './decorators';
 import { RootContext } from './cossack';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
+import { createRpcCall, describeUnsupportedValue, snapshotRpcValue, readRpcNativeResponse, RPC_NATIVE_RESPONSE_HEADER, readRpcStream, RPC_STREAM_CONTENT_TYPE, RpcError, type RpcStreamFrame } from './rpc-stream';
+import { readRpcJsonResponse, readRpcHttpError } from './rpc-json';
+import { awaitRpcResponse } from './rpc-response';
+import { sendRpcUpload } from './rpc-upload';
+import { rpcFormData } from './rpc-files';
+import { wsPendingCalls } from './transport-connections';
 
 interface ServerMethodBase {
     name: string;
@@ -19,32 +31,23 @@ interface ServerMethodWs extends ServerMethodBase {
  * and client-only state too, not just `@State` keys.
  */
 function getAllReactiveStateKeys(constructor: any): string[] {
-    const keys = new Set<string>();
-    const stateMeta = Reflect.getMetadata('cossack:state', constructor) || {};
-    const storeMeta = Reflect.getMetadata('cossack:store', constructor) || {};
-    for (const k of Object.keys(stateMeta)) keys.add(k);
-    for (const k of Object.keys(storeMeta)) keys.add(k);
-    for (const k of (Reflect.getMetadata('cossack:client-state', constructor) || [])) keys.add(k);
-    for (const k of (Reflect.getMetadata('cossack:client-store', constructor) || [])) keys.add(k);
-    return Array.from(keys);
+    return optimisticKeys(constructor);
 }
 
 /**
  * Decide whether an argument can be sent as JSON over a WebSocket. Keeps
- * primitives, plain objects, and arrays; drops DOM nodes, Event/File/Blob
- * instances, and functions (none of which are JSON-transportable).
+ * primitives, plain objects, and arrays; drops DOM nodes and Event
+ * instances. Unsupported data values are rejected with a diagnostic.
  */
 function isWsTransportable(arg: unknown): boolean {
     if (arg === null) return true;
     const t = typeof arg;
-    if (t === 'function') return false;
     if (t !== 'object') return true; // primitive (string/number/boolean/undefined/bigint)
-    // Object: reject DOM nodes, Events, Files, Blobs.
+    // UI event arguments are ignored. Binary arguments must reach validation,
+    // which rejects them before dispatch instead of silently changing arity.
     const obj = arg as { nodeType?: unknown };
     if (typeof obj.nodeType === 'number') return false; // DOM node
     if (typeof Event !== 'undefined' && arg instanceof Event) return false;
-    if (typeof File !== 'undefined' && arg instanceof File) return false;
-    if (typeof Blob !== 'undefined' && arg instanceof Blob) return false;
     return true; // plain object / array / Date — JSON.stringify-able
 }
 
@@ -75,11 +78,14 @@ function extractFilesFromArg(arg: any, files: Map<string, File>): any {
     if (arg instanceof FileList) {
         return Array.from(arg).map(file => extractFilesFromArg(file, files));
     }
+    // Dates serialize to ISO strings through JSON on every transport; keep
+    // the value itself so the upload boundary matches WS/service behavior.
+    if (arg instanceof Date) return arg;
     if (Array.isArray(arg)) {
         return arg.map(item => extractFilesFromArg(item, files));
     }
     if (arg && typeof arg === 'object' && arg !== null) {
-        const newObj: any = {};
+        const newObj: any = Object.create(null);
         for (const key in arg) {
             newObj[key] = extractFilesFromArg(arg[key], files);
         }
@@ -90,90 +96,19 @@ function extractFilesFromArg(arg: any, files: Map<string, File>): any {
 
 /**
  * Run an optimistic UI handler (if registered for `name`) on `target`, then
- * snapshot/diff the component's @State keys to lock the ones the handler
- * changed. Shared by the SSE, HTTP, and WebSocket proxies. Errors in the
+ * snapshot/diff all reactive fields with separate ownership for each call.
+ * Shared by the SSE, HTTP, and WebSocket proxies. Errors in the
  * handler are logged but never propagated (the server action still runs).
  */
 function runOptimisticHandler(
     target: any,
     name: string,
     args: any[],
-    optimisticHandlerName: string | undefined,
+    optimisticHandlerName: string | symbol | undefined,
     stateKeys: string[],
-): void {
-    if (!optimisticHandlerName || !target.hasMethod(optimisticHandlerName)) return;
-    try {
-        const optimisticMethod = target.getMethod(optimisticHandlerName);
-        const snapshot: Record<string, any> = {};
-        for (const key of stateKeys) {
-            snapshot[key] = target[key];
-        }
-        (optimisticMethod as any)(...args);
-        if (!target._optimisticLockedKeys[name]) {
-            target._optimisticLockedKeys[name] = new Set();
-        }
-        for (const key of stateKeys) {
-            if (target[key] !== snapshot[key]) {
-                target._optimisticLockedKeys[name].add(key);
-            }
-        }
-        target.requestUpdate();
-    } catch (e) {
-        console.error(`Error in optimistic handler for '${name}':`, e);
-    }
-}
-
-/**
- * Apply a server-sent state object to a component instance, respecting the
- * optimistic-lock protocol: locked keys are buffered in _optimisticPendingState
- * (applied once the action completes); other keys are set directly. Internal
- * reserved keys (_cossack_*, loading, isServer, params) are skipped. Does NOT
- * call requestUpdate — callers schedule a render as appropriate to their
- * transport. When requestState is provided for a direct /crpc response (HTTP
- * or SSE), fields changed locally since that request began are skipped as stale.
- */
-export function applyStateToComponent(
-    component: any,
-    data: Record<string, any>,
-    requestState?: Record<string, any>,
-): void {
-    for (const key in data) {
-        if (key.startsWith('_cossack_')) continue;
-        if (RESERVED_STATE_KEYS.has(key)) continue;
-        // Direct /crpc responses contain the server's complete public state,
-        // including fields merely echoed from the request. If the local value
-        // no longer matches what this request sent, the client edited it while
-        // the call was in flight (or a newer response already won), so this
-        // field is stale and must not be applied.
-        if (
-            requestState &&
-            Object.prototype.hasOwnProperty.call(requestState, key) &&
-            !transportValuesEqual(component[key], requestState[key])
-        ) {
-            continue;
-        }
-        if (component._isOptimisticLocked(key)) {
-            component._optimisticPendingState[key] = data[key];
-        } else {
-            component.setProperty(key, data[key]);
-        }
-    }
-}
-
-/** Clone state exactly as JSON transport will represent it. */
-function snapshotTransportState(state: Record<string, any>): Record<string, any> {
-    return JSON.parse(JSON.stringify(state));
-}
-
-/** Compare a live value with its JSON-transport snapshot. */
-function transportValuesEqual(liveValue: unknown, sentValue: unknown): boolean {
-    try {
-        return JSON.stringify(liveValue) === JSON.stringify(sentValue);
-    } catch {
-        // The request snapshot is JSON-safe, but the live field can become
-        // cyclic or contain a bigint while the request is in flight.
-        return Object.is(liveValue, sentValue);
-    }
+): OptimisticCall {
+    const handler = optimisticHandler(target, optimisticHandlerName, args);
+    return beginOptimisticCall(target, name, handler, stateKeys);
 }
 
 /**
@@ -185,575 +120,299 @@ function invalidateClientPageCache(): void {
     (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
-/**
- * Create HTTP fetch proxies for @Server methods (client-side only).
- *
- * Two variants:
- * - SSE transport: returns a hybrid object that is BOTH thenable and async-iterable,
- *   so callers can `await proxy()` OR `for await (const x of proxy())`.
- * - HTTP transport: standard async proxy.
- *
- * Both variants support optimistic UI handlers and file uploads.
- */
+/** Per-call loading and optimistic-lock lifecycle shared by the transport proxies. */
+function createCallLifecycle(component: any, name: string, call: OptimisticCall, trace?: DevelopmentRpcTrace) {
+    let cleaned = false;
+    let success = false;
+    let outcome: DevelopmentRpcOutcome = 'failed';
+    const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        try {
+            finishOptimisticCall(call, success);
+            if (component.loading[name] > 0) component.loading[name]--;
+            if (!component.loading[name]) {
+                delete component.loading[name];
+                const lockedKeys = component._optimisticLockedKeys[name];
+                delete component._optimisticLockedKeys[name];
+                if (lockedKeys) {
+                    for (const key of lockedKeys) {
+                        if (component._isOptimisticLocked(key)) continue;
+                        if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
+                            component.setProperty(key, component._optimisticPendingState[key]);
+                        }
+                        delete component._optimisticPendingState[key];
+                    }
+                }
+            }
+            component.requestUpdate();
+        } catch (error) {
+            trace?.finish('failed');
+            throw error;
+        } finally { trace?.finish(success ? 'succeeded' : outcome); }
+    };
+    return { cleanup, succeed: () => { success = true; }, fail: (code: string) => {
+        outcome = code === 'COSSACK_RPC_CANCELLED' ? 'cancelled' : code === 'COSSACK_RPC_TIMEOUT' ? 'timeout'
+            : code === 'COSSACK_RPC_TRANSPORT_CLOSED' ? 'disconnected' : 'failed';
+    } };
+
+}
+
+/** Ordered frame queue for request-scoped realtime calls. */
+class SocketFrameQueue {
+    constructor(private onFailure?: (frame: Extract<RpcStreamFrame, { type: 'error' }>) => void) {}
+    private frames: Array<{ frame: RpcStreamFrame; bytes: number }> = [];
+    private bytes = 0;
+    private failed = false;
+    private resolvers: Array<(result: IteratorResult<RpcStreamFrame>) => void> = [];
+
+    push(frame: RpcStreamFrame): void {
+        if (this.failed) return;
+        const resolve = this.resolvers.shift();
+        if (resolve) resolve({ value: frame, done: false });
+        else {
+            const bytes = new TextEncoder().encode(JSON.stringify(frame)).length;
+            if (this.frames.length >= 256 || this.bytes + bytes > 4 * 1024 * 1024) {
+                this.fail({ v: 1, type: 'error', requestId: frame.requestId,
+                    code: 'COSSACK_RPC_BUFFER_EXCEEDED', message: 'RPC consumer fell behind the bounded realtime buffer.' });
+                return;
+            }
+            this.frames.push({ frame, bytes });
+            this.bytes += bytes;
+        }
+    }
+
+    fail(frame: RpcStreamFrame): void {
+        if (this.failed) return;
+        this.failed = true;
+        this.frames = [{ frame, bytes: 0 }];
+        this.bytes = 0;
+        for (const resolve of this.resolvers.splice(0)) resolve({ value: frame, done: false });
+        if (frame.type === 'error') this.onFailure?.(frame);
+    }
+
+    next(): Promise<IteratorResult<RpcStreamFrame>> {
+        const queued = this.frames.shift();
+        if (queued) {
+            this.bytes -= queued.bytes;
+            return Promise.resolve({ value: queued.frame, done: false });
+        }
+        return new Promise(resolve => this.resolvers.push(resolve));
+    }
+}
+
+/** A call that rejects without dispatching anything (for example, no socket). */
+function rejectedRpcCall(code: string, message: string, name: string): ReturnType<typeof createRpcCall> {
+    return createRpcCall((async function* () { throw new RpcError(code, message); })(), () => {},
+        error => console.error(`Error calling server action '${name}':`, error));
+}
+
+/** Resolve the @Server({ timeout }) deadline declared for a method, if any. */
+function serverMethodTimeout(constructor: any, name: string): number | undefined {
+    const metadata = collectServerMethodMetadata(constructor);
+    return validateServerMethodTimeout(metadata[name]?.timeout);
+}
+
+/** HTTP and SSE actions share a single response-local promise/iterator call. */
 export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[]): void {
     const initialState = component.getInitialStateFromWindow();
-
-    // For App component (global component), use appRouteId
-    // Check constructor name - App component will have name 'App'
-    const isAppComponent = component.constructor.name === 'App';
-    const componentRouteId = isAppComponent
+    const componentRouteId = component.constructor.name === 'App'
         ? initialState?.appRouteId
         : component.__cossack_componentRouteId || initialState?.componentRouteId;
-
     if (!componentRouteId) {
         console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
         return;
     }
-
-    const scopeKey = initialState?.scopeKey;
-    const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
+    const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const stateKeys = getAllReactiveStateKeys(component.constructor);
-
-    // SSE transport: server methods may be async generators, so the proxy must
-    // support both `await` (thenable) and `for await...of` (async iterable).
-    const isSse = initialState?.transport === 'sse';
-
-    for (const method of serverMethods) {
-        const { name } = method;
+    for (const { name } of serverMethods) {
         if (isSharedMethod(component.constructor, name)) continue;
-
-        if (isSse) {
-            // SSE hybrid proxy — works with both `await` and `for await...of`
-            const self = component;
-            const sseProxy = (...args: any[]) => {
-                // === Optimistic handler (sync) ===
-                // Optimistic UI Handler
-                runOptimisticHandler(self, name, args, optimisticHandlers[name], stateKeys);
-
-                self.loading[name] = (self.loading[name] || 0) + 1;
-                self.requestUpdate();
-
-                // === Shared cleanup ===
-                const cleanup = () => {
-                    if (self.loading[name] > 0) {
-                        self.loading[name]--;
-                    }
-                    if (!self.loading[name] || self.loading[name] <= 0) {
-                        delete self.loading[name];
-                        const lockedKeys = self._optimisticLockedKeys[name];
-                        if (lockedKeys) {
-                            for (const key of lockedKeys) delete self._optimisticPendingState[key];
-                            delete self._optimisticLockedKeys[name];
-                        }
-                    }
-                    self.requestUpdate();
-                };
-
-                // === File extraction (shared) ===
+        const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
+        const proxy = (...args: any[]) => {
+            const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
+            component.loading[name] = (component.loading[name] || 0) + 1;
+            component.requestUpdate();
+            let requestId: string = crypto.randomUUID();
+            optimisticCall.requestId = requestId;
+            const controller = new AbortController();
+            let timedOut = false;
+            let timeoutMs = defaultTimeoutMs;
+            let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+            const setDeadline = (timeout: number) => {
+                if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                timeoutMs = timeout;
+                deadlineTimer = setTimeout(() => {
+                    timedOut = true;
+                    controller.abort();
+                }, timeout);
+            };
+            // A deadline aborts the call but never retries it: the mutation may
+            // have completed server-side, so its outcome stays unknown.
+            if (timeoutMs !== undefined) setDeadline(timeoutMs);
+            const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'http', requestId) : undefined;
+            const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
+            const cleanup = () => {
+                if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                finish();
+            };
+            let requestState: Record<string, any> = {};
+            let payload: unknown[] = args;
+            let request: Promise<Response>;
+            // Validate the RAW arguments before the walker runs: the upload
+            // walker replaces DOM/Event values with null and Files with
+            // references by design, but would silently EMPTY Maps, Sets, and
+            // class instances (for..in copies nothing). Reject those with the
+            // original path so every transport behaves identically — and
+            // reject the CALL rather than throwing synchronously, matching
+            // the realtime proxies' contract.
+            const handledByUpload = (value: object) =>
+                value instanceof File || value instanceof FileList ||
+                value instanceof Node || value instanceof Event || value === (globalThis as any);
+            try {
                 const files = new Map<string, File>();
-                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
-                // Must be captured after the optimistic handler: the stale-response
-                // guard compares live state with this post-optimistic snapshot.
-                const requestState = snapshotTransportState(self.getPublicState());
-
-                // === Shared apply-state helper ===
-                const applyState = (data: Record<string, any>) => {
-                    applyStateToComponent(self, data, requestState);
-                    self.requestUpdate();
-                };
-
-                // === Path A: thenable (for `await proxy()`) ===
-                // Makes the fetch, handles both streaming and non-streaming responses.
-                const promiseOperation = async (): Promise<any> => {
-                    try {
-                        if (files.size > 0) {
-                            // File upload via XHR — no streaming
-                            const formData = new FormData();
-                            formData.append('componentRouteId', componentRouteId);
-                            if (self._id) formData.append('target', self._id);
-                            formData.append('action', name);
-                            formData.append('state', JSON.stringify(requestState));
-                            formData.append('payload', JSON.stringify(processedArgs));
-                            files.forEach((file, id) => { formData.append(id, file); });
-
-                            return await new Promise<any>((resolve, reject) => {
-                                const xhr = new XMLHttpRequest();
-                                xhr.open('POST', `/upload${window.location.search}`, true);
-                                xhr.upload.onprogress = (e) => {
-                                    if (e.lengthComputable) {
-                                        const percentComplete = (e.loaded / e.total) * 100;
-                                        const progressProp = `${name}Progress`;
-                                        const progressValue = self.getProperty(progressProp);
-                                        if (typeof progressValue === 'number') {
-                                            self.setProperty(progressProp, percentComplete);
-                                            self.requestUpdate();
-                                        }
-                                    }
-                                };
-                                xhr.onload = () => {
-                                    if (xhr.status >= 200 && xhr.status < 300) {
-                                        try {
-                                            const data = JSON.parse(xhr.responseText);
-                                            invalidateClientPageCache();
-                                            if (data._cossack_redirect) {
-                                                window.location.href = data._cossack_redirect;
-                                                resolve(undefined);
-                                                return;
-                                            }
-                                            let returnValue;
-                                            if ('_cossack_return' in data) {
-                                                returnValue = data._cossack_return;
-                                                delete data._cossack_return;
-                                            }
-                                            applyState(data);
-                                            resolve(returnValue);
-                                        } catch (e) { reject(e); }
-                                    } else {
-                                        reject(new Error(`HTTP error! status: ${xhr.status}`));
-                                    }
-                                };
-                                xhr.onerror = () => reject(new Error('Network error'));
-                                xhr.send(formData);
-                            });
-                        }
-
-                        const response = await fetch(`/crpc${window.location.search}`,  {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                componentRouteId,
-                                target: self._id,
-                                action: name,
-                                state: requestState,
-                                payload: processedArgs,
-                                _cossack_stream: true,
-                                scopeKey,
-                                pageParams: initialState?.metadata?.params || {},
-                            }),
+                const normalizedArgs = snapshotRpcValue(args, 'payload', { handled: handledByUpload }) as unknown[];
+                payload = normalizedArgs.map(arg => extractFilesFromArg(arg, files));
+                const liveState = optimisticRequestState(component, component.getPublicState());
+                requestState = liveState;
+                requestState = snapshotTransportState(liveState);
+                if (files.size) {
+                    const formData = rpcFormData({ componentRouteId, target: component._id, action: name,
+                        state: requestState, payload, scopeKey: initialState?.scopeKey,
+                        pageParams: initialState?.metadata?.params || {} }, files);
+                    const property = `${name}Progress`;
+                    // Fetch keeps native response streaming/backpressure. XHR
+                    // is required only when the author requests upload progress.
+                    request = typeof component.getProperty?.(property) === 'number'
+                        ? sendRpcUpload(`/upload${window.location.search}`, formData, controller.signal, event => {
+                            if (event.lengthComputable) {
+                                component.setProperty(property, event.loaded / event.total * 100);
+                                component.requestUpdate();
+                            }
+                        }, requestId, trace?.requestHeaders)
+                        : fetch(`/upload${window.location.search}`, {
+                            method: 'POST', body: formData, signal: controller.signal,
+                            headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
                         });
-
-                        if (!response.ok) {
-                            // The server returns { error: <message> } for thrown
-                            // @Server errors — surface that message so form
-                            // handlers can display it instead of a generic status.
-                            let msg = `HTTP error! status: ${response.status}`;
-                            try {
-                                const errBody = await response.json() as Record<string, any>;
-                                if (errBody?.error) msg = String(errBody.error);
-                            } catch { /* body wasn't JSON; keep the status message */ }
-                            throw new Error(msg);
-                        }
-
-                        const data = await response.json() as Record<string, any>;
+                } else {
+                    request = fetch(`/crpc${window.location.search}`, {
+                        method: 'POST',
+                        headers: { ...trace?.requestHeaders, 'X-Cossack-Request-Id': requestId, 'Content-Type': 'application/json', Accept: `${RPC_STREAM_CONTENT_TYPE}, application/json` },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            componentRouteId, target: component._id, action: name,
+                            state: requestState, payload, scopeKey: initialState?.scopeKey,
+                            pageParams: initialState?.metadata?.params || {},
+                        }),
+                    });
+                }
+            } catch (cause) {
+                // Pre-dispatch validation already produced a path-accurate
+                // diagnostic; never bury it under a generic message.
+                if (cause instanceof RpcError && cause.code === 'COSSACK_RPC_SERIALIZATION_FAILED') {
+                    request = Promise.reject(cause);
+                } else {
+                    const where = describeUnsupportedValue(payload) ?? describeUnsupportedValue(requestState);
+                    request = Promise.reject(new RpcError('COSSACK_RPC_SERIALIZATION_FAILED',
+                        `Cannot serialize arguments or state for '${name}'` +
+                        `${where ? `: unsupported value at ${where}` : ''}.`, { cause }));
+                }
+            }
+            // The request starts immediately; selecting a result consumer never dispatches it again.
+            request = awaitRpcResponse(request, controller.signal, () => requestId);
+            void request.catch(() => {});
+            const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
+            const operation = async function* (): AsyncGenerator<unknown, unknown> {
+                try {
+                    if (controller.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
+                    const response = await request;
+                    requestId = response.headers?.get('X-Cossack-Request-Id') ?? requestId;
+                    optimisticCall.requestId = requestId;
+                    trace?.response(requestId);
+                    trace?.server(response);
+                    if (!response.ok) {
+                        throw await readRpcHttpError(response, controller.signal);
+                    }
+                    if (response.headers?.get(RPC_NATIVE_RESPONSE_HEADER) === 'native') {
+                        const result = await readRpcNativeResponse(response, controller.signal);
                         invalidateClientPageCache();
-
-                        if (data._cossack_redirect) {
+                        succeed();
+                        return result;
+                    }
+                    if (response.headers?.get('Content-Type')?.split(';', 1)[0] === RPC_STREAM_CONTENT_TYPE) {
+                        let invalidated = false;
+                        for await (const frame of readRpcStream(response, controller.signal)) {
+                            if (frame.requestId !== requestId) {
+                                requestId = frame.requestId;
+                                optimisticCall.requestId = requestId;
+                                trace?.response(requestId);
+                            }
+                            trace?.stream(frame);
+                            if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
+                                { requestId: frame.requestId, fieldErrors: frame.fieldErrors });
+                            if (!invalidated) { invalidateClientPageCache(); invalidated = true; }
+                            apply(frame.state);
+                            if (frame.type === 'done') { succeed(); return frame.value; }
+                            yield frame.value;
+                        }
+                    } else {
+                        const data = await readRpcJsonResponse(response, 'component', controller.signal);
+                        invalidateClientPageCache();
+                        if (typeof data._cossack_redirect === 'string') {
+                            succeed();
                             window.location.href = data._cossack_redirect;
                             return;
                         }
-
-                        // Apply initial state from response
-                        applyState(data);
-
-                        // If server started a stream, wait for it to complete
-                        if (data._cossack_stream_id) {
-                            // Streaming: don't wait for completion here.
-                            // SSE state sync drives the UI — when isStreaming flips
-                            // to false via SSE, the client recovers automatically.
-                            return undefined;
-                        }
-
-                        // Non-streaming return
-                        let returnValue;
-                        if ('_cossack_return' in data) {
-                            returnValue = data._cossack_return;
-                        }
-                        return returnValue;
-                    } catch (error) {
-                        console.error(`Error calling server action '${name}':`, error);
-                    } finally {
-                        cleanup();
+                        const cursor = rpcSseCursor(response);
+                        apply(cursor === undefined ? data : { ...data, _cossack_sse_cursor: cursor });
+                        succeed();
+                        return data._cossack_return;
                     }
-                };
-
-                const promise = promiseOperation();
-
-                // === Path B: async iterator (for `for await...of proxy()`) ===
-                // Makes its own fetch so it can consume SSE yield events independently.
-                const createStreamIterator = () => {
-                    const fetchPromise = fetch(`/crpc${window.location.search}`,  {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            componentRouteId,
-                            target: self._id,
-                            action: name,
-                            state: requestState,
-                            payload: processedArgs,
-                            _cossack_stream: true,
-                            scopeKey,
-                                pageParams: initialState?.metadata?.params || {},
-                        }),
-                    });
-
-                    let resolveYield: ((result: IteratorResult<any>) => void) | null = null;
-                    // Reject fn for the pending `next()` promise. A `stream-error` SSE
-                    // event calls this to surface server-side errors (e.g. a thrown
-                    // ClientVisibleError) into the consumer's `for await...of` loop,
-                    // instead of silently ending the iterator as a successful completion.
-                    let rejectYield: ((reason: any) => void) | null = null;
-                    // A stream error that arrived while next() was NOT awaiting is stashed
-                    // here and thrown by the next next() call, so the consumer's loop still
-                    // sees it regardless of timing.
-                    let pendingStreamError: Error | null = null;
-                    let streamId: string | null = null;
-                    let pendingValues: any[] = [];
-                    let streamDone = false;
-                    let initComplete = false;
-
-                    const yieldHandler = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.streamId !== streamId) return;
-                            if (!initComplete) return;
-
-                            if (resolveYield) {
-                                resolveYield({ value: data.value, done: false });
-                                resolveYield = null;
-                                rejectYield = null;
-                            } else {
-                                pendingValues.push(data.value);
-                            }
-                        } catch (e) {
-                            console.error('[Cossack] Error parsing SSE yield event:', e);
-                        }
-                    };
-
-                    const doneHandler = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.streamId !== streamId) return;
-                            streamDone = true;
-                            if (resolveYield) {
-                                resolveYield({ value: undefined, done: true });
-                                resolveYield = null;
-                                rejectYield = null;
-                            }
-                        } catch (e) {
-                            console.error('[Cossack] Error parsing SSE stream-done event:', e);
-                        }
-                    };
-
-                    const errorEventHandler = (event: MessageEvent) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            if (data.streamId !== streamId) return;
-                            streamDone = true;
-                            // Surface the server-side error to the consumer's
-                            // `for await...of` loop by rejecting the pending
-                            // next() promise (throws inside the loop, the usual
-                            // place to try/catch streaming errors), or stashing
-                            // it for the next next() call if none is awaiting.
-                            const err = new Error(
-                                typeof data.error === 'string' && data.error
-                                    ? data.error
-                                    : 'Stream error',
-                            );
-                            if (rejectYield) {
-                                rejectYield(err);
-                                rejectYield = null;
-                                resolveYield = null;
-                            } else {
-                                pendingStreamError = err;
-                            }
-                            console.error('[Cossack] Stream error:', data.error);
-                        } catch (e) {
-                            console.error('[Cossack] Error parsing SSE stream-error event:', e);
-                        }
-                    };
-
-                    const sse = self._sseConnection;
-                    if (sse) {
-                        sse.addEventListener('yield', yieldHandler as any);
-                        sse.addEventListener('stream-done', doneHandler as any);
-                        sse.addEventListener('stream-error', errorEventHandler as any);
+                } catch (cause) {
+                    fail(controller.signal.aborted ? (timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED')
+                        : cause instanceof RpcError ? cause.code : 'COSSACK_RPC_NETWORK_FAILED');
+                    if (controller.signal.aborted) {
+                        if (timedOut) throw new RpcError('COSSACK_RPC_TIMEOUT',
+                            `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { cause, requestId });
+                        throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { cause, requestId });
                     }
-
-                    const iterator: AsyncIterator<any> & { [Symbol.asyncIterator](): AsyncIterator<any> } = {
-                        async next() {
-                            // A stream-error that arrived while next() wasn't awaiting
-                            // is stashed; throw it now so the consumer's for-await loop
-                            // sees it instead of completing silently.
-                            if (pendingStreamError) {
-                                const e = pendingStreamError;
-                                pendingStreamError = null;
-                                throw e;
-                            }
-                            if (!initComplete) {
-                                const response = await fetchPromise;
-                                if (!response.ok) {
-                                    let msg = `HTTP error! status: ${response.status}`;
-                                    try {
-                                        const errBody = await response.json() as Record<string, any>;
-                                        if (errBody?.error) msg = String(errBody.error);
-                                    } catch { /* not JSON */ }
-                                    throw new Error(msg);
-                                }
-                                const data = await response.json() as Record<string, any>;
-                                invalidateClientPageCache();
-
-                                if (data._cossack_redirect) {
-                                    window.location.href = data._cossack_redirect;
-                                    return { value: undefined, done: true };
-                                }
-
-                                streamId = data._cossack_stream_id;
-                                initComplete = true;
-
-                                // Apply initial state from the response
-                                applyState(data);
-
-                                // Check if there are already queued values
-                                if (pendingValues.length > 0) {
-                                    return { value: pendingValues.shift(), done: false };
-                                }
-
-                                // Stream may already be done (fast completion)
-                                if (streamDone) {
-                                    return { value: undefined, done: true };
-                                }
-
-                                // If server didn't start a stream, this is a non-streaming method
-                                // called with for-await-of. Yield the return value once, then done.
-                                if (!data._cossack_stream_id) {
-                                    let returnValue;
-                                    if ('_cossack_return' in data) {
-                                        returnValue = data._cossack_return;
-                                    }
-                                    if (returnValue !== undefined) {
-                                        return { value: returnValue, done: false };
-                                    }
-                                    return { value: undefined, done: true };
-                                }
-                            }
-
-                            if (streamDone && pendingValues.length === 0) {
-                                return { value: undefined, done: true };
-                            }
-
-                            if (pendingValues.length > 0) {
-                                return { value: pendingValues.shift(), done: false };
-                            }
-
-                            // Wait for next SSE event. Capture both resolve and
-                            // reject so a `stream-error` event can reject (throw
-                            // into the consumer's for-await loop) rather than
-                            // resolve-as-done (silent success).
-                            return new Promise<IteratorResult<any>>((resolve, reject) => {
-                                resolveYield = resolve;
-                                rejectYield = reject;
-                            });
-                        },
-
-                        return() {
-                            const sse = self._sseConnection;
-                            if (sse) {
-                                sse.removeEventListener('yield', yieldHandler as any);
-                                sse.removeEventListener('stream-done', doneHandler as any);
-                                sse.removeEventListener('stream-error', errorEventHandler as any);
-                            }
-                            return Promise.resolve({ value: undefined, done: true });
-                        },
-
-                        [Symbol.asyncIterator]() { return this; },
-                    };
-
-                    return iterator;
-                };
-
-                // === Return hybrid object ===
-                return {
-                    then(onFulfilled: any, onRejected: any) {
-                        return promise.then(onFulfilled, onRejected);
-                    },
-                    catch(onRejected: any) {
-                        return promise.catch(onRejected);
-                    },
-                    [Symbol.asyncIterator]() {
-                        return createStreamIterator();
-                    },
-                };
+                    if (cause instanceof RpcError) throw cause;
+                    throw new RpcError('COSSACK_RPC_NETWORK_FAILED',
+                        'RPC request failed. The server outcome is unknown and is never retried.', { cause, requestId });
+                } finally { cleanup(); }
             };
-
-            component.__cossack_proxies.set(name, sseProxy);
-            component.setProperty(name, sseProxy);
-            continue;
-        }
-
-        // HTTP transport: standard async proxy
-        const proxy = async (...args: any[]) => {
-            // Optimistic UI Handler
-            runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
-
-            component.loading[name] = (component.loading[name] || 0) + 1;
-            component.requestUpdate();
-
-            try {
-                // Check for files in arguments
-                const files = new Map<string, File>();
-
-                const processedArgs = args.map(arg => extractFilesFromArg(arg, files));
-                // Must be captured after the optimistic handler: the stale-response
-                // guard compares live state with this post-optimistic snapshot.
-                const requestState = snapshotTransportState(component.getPublicState());
-
-                if (files.size > 0) {
-                    const formData = new FormData();
-                    formData.append('componentRouteId', componentRouteId);
-                    if (component._id) formData.append('target', component._id);
-                    formData.append('action', name);
-                    formData.append('state', JSON.stringify(requestState));
-                    formData.append('payload', JSON.stringify(processedArgs));
-
-                    files.forEach((file, id) => {
-                        formData.append(id, file);
-                    });
-
-                    return await new Promise<any>((resolve, reject) => {
-                        const xhr = new XMLHttpRequest();
-                        xhr.open('POST', `/upload${window.location.search}`, true);
-
-                        // Upload Progress
-                        xhr.upload.onprogress = (e) => {
-                            if (e.lengthComputable) {
-                                const percentComplete = (e.loaded / e.total) * 100;
-                                const progressProp = `${name}Progress`;
-                                const progressValue = component.getProperty(progressProp);
-                                if (typeof progressValue === 'number') {
-                                    component.setProperty(progressProp, percentComplete);
-                                    component.requestUpdate();
-                                }
-                            }
-                        };
-
-                        xhr.onload = () => {
-                            if (xhr.status >= 200 && xhr.status < 300) {
-                                try {
-                                    const data = JSON.parse(xhr.responseText);
-                                    invalidateClientPageCache();
-                                    if (data._cossack_redirect) {
-                                        window.location.href = data._cossack_redirect;
-                                        resolve(undefined);
-                                        return;
-                                    }
-
-                                    let returnValue;
-                                    if ('_cossack_return' in data) {
-                                        returnValue = data._cossack_return;
-                                        delete data._cossack_return;
-                                    }
-
-                                    applyStateToComponent(component, data, requestState);
-                                    resolve(returnValue);
-                                } catch (e) {
-                                    reject(e);
-                                }
-                            } else {
-                                reject(new Error(`HTTP error! status: ${xhr.status}`));
-                            }
-                        };
-
-                        xhr.onerror = () => reject(new Error('Network error'));
-                        xhr.send(formData);
-                    });
-
-                } else {
-                    const response = await fetch(`/crpc${window.location.search}`,  {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            componentRouteId,
-                            target: component._id,
-                            action: name,
-                            state: requestState,
-                            payload: processedArgs,
-                            scopeKey,
-                                pageParams: initialState?.metadata?.params || {},
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        let msg = `HTTP error! status: ${response.status}`;
-                        try {
-                            const errBody = await response.json() as Record<string, any>;
-                            if (errBody?.error) msg = String(errBody.error);
-                        } catch { /* not JSON */ }
-                        throw new Error(msg);
-                    }
-
-                    const data = await response.json() as Record<string, any>;
-                    invalidateClientPageCache();
-
-                    if (data._cossack_redirect) {
-                        window.location.href = data._cossack_redirect;
-                        return;
-                    }
-
-                    let returnValue;
-                    if ('_cossack_return' in data) {
-                        returnValue = data._cossack_return;
-                        delete data._cossack_return;
-                    }
-
-                    applyStateToComponent(component, data, requestState);
-                    return returnValue;
-                }
-            } catch (error) {
-                console.error(`Error calling server action '${name}':`, error);
-            } finally {
-                // Decrement loading counter (don't wipe — other calls may be pending)
-                if (component.loading[name] > 0) {
-                    component.loading[name]--;
-                }
-                if (!component.loading[name] || component.loading[name] <= 0) {
-                    delete component.loading[name];
-                    // Release the lock and discard stale buffered state.
-                    // The HTTP response already contains the final server state
-                    // (processed above in the try block), so no flush is needed.
-                    const lockedKeys = component._optimisticLockedKeys[name];
-                    if (lockedKeys) {
-                        for (const key of lockedKeys) {
-                            delete component._optimisticPendingState[key];
-                        }
-                        delete component._optimisticLockedKeys[name];
-                    }
-                }
-                component.requestUpdate();
-            }
+            return createRpcCall(operation(), () => {
+                controller.abort();
+                fail(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED');
+                cleanup();
+            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId, {
+                signal: controller.signal,
+                error: () => new RpcError(timedOut ? 'COSSACK_RPC_TIMEOUT' : 'COSSACK_RPC_CANCELLED',
+                    timedOut ? `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.` : 'RPC call was cancelled.', { requestId }),
+                setTimeout: setDeadline,
+            });
         };
-
-        // Store proxy in the map so stubbed methods can find it
         component.__cossack_proxies.set(name, proxy);
-
-        // Set the method on the instance
         component.setProperty(name, proxy);
     }
 }
 
 /**
  * Create WebSocket-based proxies for @Server methods (client-side only).
- * Sends actions over the provider's WebSocket and integrates optimistic handlers.
+ * Every call is one request-scoped realtime RPC: correlated yield/done/error
+ * frames by request id, promise-or-iterator consumption, cancellation, and
+ * the same optimistic and loading lifecycle as HTTP/SSE calls.
  */
 export function proxyServerMethods(component: any, serverMethods: ServerMethodWs[]): void {
-    const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
+    const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const stateKeys = getAllReactiveStateKeys(component.constructor);
 
     for (const method of serverMethods) {
         const { name, channel, provider } = method;
         if (isSharedMethod(component.constructor, name)) continue;
+        const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
+            const requestId = crypto.randomUUID();
+            const trace = import.meta.env?.DEV ? beginDevelopmentRpcTrace(component, 'websocket', requestId) : undefined;
             let ws = component.websockets.get(provider);
             if (!ws) {
                 const root = component.consume(RootContext);
@@ -761,38 +420,120 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     ws = (root as any).websockets.get(provider);
                 }
             }
-
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                // Optimistic UI Handler
-                runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
-
-                component.loading[name] = (component.loading[name] || 0) + 1;
-                component.requestUpdate();
-
-                // Keep serializable args (primitives, plain objects, arrays),
-                // drop non-transportable ones (DOM nodes, Event, File, Blob,
-                // functions). The previous implementation dropped ALL objects,
-                // so calling e.g. this.updateItem({ id: 5 }) over WebSocket
-                // sent an empty payload.
-                const payload = args.filter(isWsTransportable);
-                let message;
-                try {
-                    message = JSON.stringify({
-                        type: 'action',
-                        action: name,
-                        payload: payload,
-                        channel: channel,
-                        target: component._id,
-                    });
-                } catch (e) {
-                    console.error(`[Cossack] Failed to serialise WS payload for '${name}':`, e);
-                    return;
-                }
-                ws.send(message);
-                invalidateClientPageCache();
-            } else {
-                console.error(`WebSocket for provider '${provider}' not connected. Cannot call server method '${name}'.`);
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                trace?.finish('failed');
+                return rejectedRpcCall('COSSACK_RPC_TRANSPORT_UNAVAILABLE',
+                    `Realtime connection for provider '${provider}' is not open, so '${name}' was not dispatched.`, name);
             }
+
+            const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
+            component.loading[name] = (component.loading[name] || 0) + 1;
+            component.requestUpdate();
+
+            optimisticCall.requestId = requestId;
+            const controller = new AbortController();
+            let interruptionError: RpcError | undefined;
+            let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+            let timeoutMs = defaultTimeoutMs;
+            const setDeadline = (timeout: number) => {
+                if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+                timeoutMs = timeout;
+                deadlineTimer = setTimeout(() => {
+                    interruptionError = new RpcError('COSSACK_RPC_TIMEOUT',
+                        `The call exceeded its ${timeoutMs}ms deadline. The server outcome is unknown and is never retried.`, { requestId });
+                    controller.abort();
+                }, timeout);
+            };
+            const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
+            const cleanup = () => { if (deadlineTimer !== undefined) clearTimeout(deadlineTimer); finish(); };
+            // Keep serializable args (primitives, plain objects, arrays), drop
+            // non-transportable UI objects (DOM nodes, Event).
+            let payload = args.filter(isWsTransportable);
+            const queue = new SocketFrameQueue(frame => {
+                if (controller.signal.aborted) return;
+                interruptionError = new RpcError(frame.code, frame.message, { requestId, fieldErrors: frame.fieldErrors });
+                controller.abort();
+            });
+            let message: string;
+            let requestState: Record<string, unknown> = {};
+            try {
+                requestState = optimisticRequestState(component, component.getPublicState());
+                payload = snapshotRpcValue(payload, 'payload') as unknown[];
+                requestState = snapshotTransportState(requestState);
+                message = JSON.stringify({
+                    v: 1,
+                    type: 'action',
+                    requestId,
+                    ...(import.meta.env.DEV && trace ? { developmentTrace: trace.callId } : {}),
+                    action: name,
+                    payload: payload,
+                    channel: channel,
+                    target: component._id,
+                });
+            } catch (cause) {
+                cleanup();
+                if (cause instanceof RpcError) return rejectedRpcCall(cause.code, cause.message, name);
+                const where = describeUnsupportedValue(payload, 'payload') ?? describeUnsupportedValue(requestState, 'state');
+                return rejectedRpcCall('COSSACK_RPC_SERIALIZATION_FAILED',
+                    `Cannot serialize the realtime request for '${name}'` +
+                    `${where ? `: unsupported value at ${where}` : ''}.`, name);
+            }
+            const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
+            wsPendingCalls(ws).set(requestId, (frame, interrupted) => {
+                // Application error frames follow their earlier yields; only local
+                // transport failures discard queued data and interrupt a paused call.
+                if (interrupted && frame.type === 'error') { trace?.response(requestId); queue.fail(frame); }
+                else queue.push(frame);
+            });
+            try {
+                ws.send(message);
+            } catch (cause) {
+                wsPendingCalls(ws).delete(requestId);
+                cleanup();
+                return rejectedRpcCall('COSSACK_RPC_TRANSPORT_FAILED',
+                    `Cannot send the realtime request for '${name}'.`, name);
+            }
+            invalidateClientPageCache();
+
+            if (timeoutMs !== undefined) setDeadline(timeoutMs);
+            const operation = async function* (): AsyncGenerator<unknown, unknown> {
+                try {
+                    while (true) {
+                        const next = await queue.next();
+                        const frame = next.value;
+                        trace?.response(requestId);
+                        trace?.socket(frame);
+                        if (frame.type === 'error') throw new RpcError(frame.code, frame.message,
+                            { requestId, fieldErrors: frame.fieldErrors });
+                        apply(frame.state);
+                        if (frame.type === 'done') { succeed(); return frame.value; }
+                        yield frame.value;
+                    }
+                } catch (error) {
+                    fail(error instanceof RpcError ? error.code : 'COSSACK_RPC_TRANSPORT_FAILED');
+                    throw error;
+                } finally {
+                    wsPendingCalls(ws).delete(requestId);
+                    cleanup();
+                }
+            };
+            return createRpcCall(operation(), () => {
+                // Fail local consumption immediately; server cancellation remains best effort.
+                interruptionError ??= new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId });
+                controller.abort();
+                queue.fail({ v: 1, type: 'error', requestId, code: interruptionError.code, message: interruptionError.message });
+                wsPendingCalls(ws).delete(requestId);
+                fail(interruptionError.code);
+                cleanup();
+                if (['COSSACK_RPC_CANCELLED', 'COSSACK_RPC_TIMEOUT', 'COSSACK_RPC_BUFFER_EXCEEDED',
+                    'COSSACK_RPC_STREAM_INVALID', 'COSSACK_RPC_STREAM_TOO_LARGE'].includes(interruptionError.code)) {
+                    try { ws.send(JSON.stringify({ type: 'cancel', requestId })); } catch { /* socket already gone */ }
+                }
+            }, error => console.error(`Error calling server action '${name}':`, error), () => requestId, {
+                signal: controller.signal,
+                error: () => interruptionError ?? new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.', { requestId }),
+                setTimeout: setDeadline,
+            });
         };
 
         // Store proxy in the map so stubbed methods can find it
@@ -814,7 +555,7 @@ export function setupServerMethodProxies(component: any): void {
     }
 
     // Get server methods directly from Reflect metadata
-    const serverMethodsMetadata = Reflect.getMetadata('cossack:server-methods', component.constructor) || {};
+    const serverMethodsMetadata = collectServerMethodMetadata(component.constructor);
 
     // Build the server methods list from metadata
     const serverMethods = Object.entries(serverMethodsMetadata)
@@ -829,7 +570,7 @@ export function setupServerMethodProxies(component: any): void {
     const clientSafeMethods = new Set(
         Object.keys(Reflect.getMetadata('cossack:client-methods', component.constructor) || {})
     );
-    const optimisticHandlers = Reflect.getMetadata('cossack:optimistic-handlers', component.constructor) || {};
+    const optimisticHandlers = collectOptimisticHandlers(component.constructor);
     const computedMethods = Reflect.getMetadata('computed', component.constructor) || {};
 
     // Add client-safe methods to the set
@@ -940,26 +681,8 @@ export function sanitizeClientState(
     const clean: Record<string, unknown> = {};
     if (!state || typeof state !== 'object') return clean;
 
-    const allowed = new Set<string>();
-    let proto: object | null = typeof constructor === 'function' ? constructor : null;
-    while (proto !== null && proto !== Function.prototype) {
-        // Allow push-back for public state only: @State and @Store.
-        // @ClientState and @ClientStore are client-only by design and must
-        // never be accepted from an inbound client request.
-        const stateMeta = Reflect.getOwnMetadata('cossack:state', proto) as
-            | Record<string, unknown>
-            | undefined;
-        if (stateMeta) {
-            for (const key of Object.keys(stateMeta)) allowed.add(key);
-        }
-        const storeMeta = Reflect.getOwnMetadata('cossack:store', proto) as
-            | Record<string, unknown>
-            | undefined;
-        if (storeMeta) {
-            for (const key of Object.keys(storeMeta)) allowed.add(key);
-        }
-        proto = Object.getPrototypeOf(proto);
-    }
+    const { state: publicState, store } = collectReactiveMetadata(constructor);
+    const allowed = new Set([...Object.keys(publicState), ...Object.keys(store)]);
 
     const source = state as Record<string, unknown>;
     for (const key of Object.keys(source)) {

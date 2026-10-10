@@ -70,7 +70,7 @@ export {
   type FindWhere,
 } from "./query/types.js";
 export { ExpressionBuilder } from "./query/expression.js";
-export { defineConfig, type ORMConfig } from "./config.js";
+export { defineConfig, type ORMConfig, type ORMToolingContext } from "./config.js";
 export { SchemaBuilder } from "./schema/builder.js";
 export { diffSchemas, describeOperation, reverseSchemaOperations } from "./schema/diff.js";
 export { renderOperation, createTableDDL, columnDDL } from "./schema/ddl.js";
@@ -89,6 +89,10 @@ export { MigrationRunner } from "./migration/runner.js";
 export type {
   Migration,
   MigrationContext,
+  MigrationOperation,
+  DatabasePlanTarget,
+  MigrationPlanEntry,
+  MigrationPlanStatement,
   AppliedMigration,
   MigrationStatus,
 } from "./migration/types.js";
@@ -99,6 +103,7 @@ export {
   type SeederContext,
   type SeederFunction,
   type SeederInfo,
+  type SeederPlanEntry,
   type SeederInput,
   type SeederResult,
   type SeederRunOptions,
@@ -124,3 +129,6 @@ export type {
   QueryOperation,
   ORMLogger,
 } from "./adapter/types.js";
+
+export { inspectProviderCapabilities, type ProviderCapabilityReport } from './runtime-capabilities.js';
+export { inspectFinalizedMetadata, type EntityInspection } from './metadata/inspection.js';

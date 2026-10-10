@@ -327,3 +327,5 @@ export class StoreValidationDemo extends Cossack {
         `;
     }
 }
+
+export default StoreValidationDemo;

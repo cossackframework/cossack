@@ -1,0 +1,74 @@
+/** Node-only budget gate for Cloudflare's completed Vite application build. */
+import type { Plugin } from 'vite';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { readBuildBudgets, checkBuildBudgets, type BuildBudgets } from './build-budgets.js';
+import { findCloudflareConfig, readCloudflareDeclarationConfig, resolveConfigRuntime } from './config-preflight.js';
+import { inspectBuiltDeployment } from './deployment-artifact.js';
+import { BUDGET_RUN_ENV, clearBudgetReceipt, fingerprintBudgetBatch, writeBudgetBatchReceipt } from './budget-receipts.js';
+import { readAuxiliaryBuildBudgets, prepareAuxiliaryBudgetTargets, checkAuxiliaryBuildBudgets, inspectAuxiliaryBudgetArtifacts, type AuxiliaryBudgetTarget } from './auxiliary-deployment.js';
+import type { ConfigRuntime } from './config-requirements.js';
+
+/** Place after cloudflare(). Budgets apply to the primary deployment Worker. */
+export function cossackBuildBudgets(options: { runtime?: ConfigRuntime; environment?: string; configPath?: string } = {}): Plugin {
+  let root = '';
+  let environment: string | undefined;
+  let budgets: BuildBudgets = {};
+  let auxiliary: AuxiliaryBudgetTarget[] = [];
+  let expected: Record<string, any> | undefined;
+  const fail = (code: string, message: string): never => { throw Object.assign(new Error(`${code}: ${message}`), { code }); };
+  const rejectWatch = (config: { build?: { watch?: unknown }; environments?: Record<string, { build?: { watch?: unknown } }> }) => {
+    if (config.build?.watch || Object.values(config.environments ?? {}).some(item => item.build?.watch)) {
+      fail('COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED', 'Build budgets require a completed application build. Use vite build without --watch.');
+    }
+  };
+  return {
+    name: 'cossack-build-budgets',
+    enforce: 'post',
+    apply: 'build',
+    async configResolved(config) {
+      root = config.root;
+      environment = options.environment ?? process.env.CLOUDFLARE_ENV;
+      budgets = await readBuildBudgets(root);
+      const policies = await readAuxiliaryBuildBudgets(root);
+      if (process.env[BUDGET_RUN_ENV]) await clearBudgetReceipt(root);
+      if (!Object.keys(budgets).length && !policies.length) return;
+      rejectWatch(config);
+      if (await resolveConfigRuntime(root, options.runtime) !== 'cloudflare') {
+        fail('COSSACK_BUILD_BUDGET_RUNTIME_UNSUPPORTED', 'Configured build budgets require a Cloudflare Worker artifact.');
+      }
+      const file = await findCloudflareConfig(root, options.configPath);
+      if (!file) fail('COSSACK_DEPLOY_CONFIG_MISSING', 'Cloudflare configuration is required for build budgets.');
+      expected = await readCloudflareDeclarationConfig(root, file!, environment);
+      auxiliary = await prepareAuxiliaryBudgetTargets(root, policies, environment);
+      // A failed or custom build cannot reuse metadata from an earlier build.
+      await rm(join(root, '.wrangler/deploy/config.json'), { force: true });
+    },
+    buildApp: {
+      order: 'post',
+      async handler(builder) {
+        if (!Object.keys(budgets).length && !auxiliary.length) return;
+        rejectWatch(builder.config);
+        if (Object.values(builder.environments).some(item => item.config.build?.watch)) {
+          fail('COSSACK_BUILD_BUDGET_WATCH_UNSUPPORTED', 'Build budgets require a completed application build. Use vite build without --watch.');
+        }
+        const workers = Object.values(builder.environments).filter(item => item.config.consumer === 'server');
+        if (!workers.length || workers.some(item => !item.isBuilt)) {
+          fail('COSSACK_BUILD_BUDGET_BUILD_INCOMPLETE', 'Cloudflare Worker environments must finish before budget measurement.');
+        }
+        const artifact = await inspectBuiltDeployment(root, expected!);
+        const key = process.env[BUDGET_RUN_ENV];
+        const before = key ? await fingerprintBudgetBatch(root, artifact, budgets, environment, auxiliary) : undefined;
+        const auxiliaryResult = await checkAuxiliaryBuildBudgets(root, auxiliary, environment);
+        const result = Object.keys(budgets).length ? await checkBuildBudgets(root, artifact, budgets, { env: { CLOUDFLARE_ENV: environment ?? '' } }) : { valid: true, measurements: [], diagnostics: [] };
+        if (auxiliary.length) await inspectAuxiliaryBudgetArtifacts(root, auxiliary, environment);
+        await inspectBuiltDeployment(root, expected!);
+        await writeBudgetBatchReceipt(root, artifact, budgets, environment, key, before, { primary: result, auxiliary: auxiliaryResult }, auxiliary);
+        for (const diagnostic of [...result.diagnostics, ...auxiliaryResult.diagnostics]) {
+          if (diagnostic.severity === 'warning') builder.config.logger.warn(`${diagnostic.code}: ${diagnostic.message}`);
+        }
+        if (!result.valid || !auxiliaryResult.valid) fail('COSSACK_BUILD_BUDGET_FAILED', [...result.diagnostics, ...auxiliaryResult.diagnostics].map(item => `${item.code}: ${item.message}`).join('\n'));
+      },
+    },
+  };
+}

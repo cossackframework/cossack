@@ -1,11 +1,10 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
+import { waitForHydration } from '../fixtures/helpers';
 
 test.describe('Tailwind Demo Page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/tailwind-demo');
-    await page.waitForFunction(() => (
-      window as typeof window & { __cossackReady?: boolean }
-    ).__cossackReady === true);
+    await waitForHydration(page);
   });
 
   test('should render with Tailwind classes in the DOM', async ({ page }) => {
@@ -75,11 +74,11 @@ test.describe('Tailwind Demo Page', () => {
 
     // Navigate away using a link in the Layout sidebar
     await page.click('a[href="/"]');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     // Navigate back to tailwind-demo
     await page.goto('/tailwind-demo');
-    await page.waitForLoadState('networkidle');
+    await waitForHydration(page);
 
     // Verify Tailwind classes are still present after navigation
     const h1After = page.locator('h1');

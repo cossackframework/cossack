@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Type-generation target for the published library. The demo's generated
+  // types import src/index.ts, which must never enter the library's emit graph.
+  "name": "cossack-library-types",
+  "compatibility_date": "2025-08-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "binding": "ASSETS", "run_worker_first": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "COSSACK_OBJECT", "class_name": "AppDurableObject" },
+      { "name": "COSSACK_SSE", "class_name": "SseDurableObject" }
+    ]
+  },
+  "migrations": [
+    { "tag": "library-types-v1", "new_classes": ["AppDurableObject"] },
+    { "tag": "library-types-v2", "new_sqlite_classes": ["SseDurableObject"] }
+  ]
+}

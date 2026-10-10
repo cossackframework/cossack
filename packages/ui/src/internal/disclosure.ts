@@ -1,4 +1,32 @@
-import type { ReactiveControllerHost } from "@cossackframework/renderer";
+import { PreventDefaultResult, preventDefault, type ReactiveControllerHost } from '@cossackframework/renderer';
+import type { GlobalAttributes, ButtonAttributes, ControlEvent } from '../native-attributes';
+
+export type DisclosureTriggerProps = Omit<ButtonAttributes, 'id' | 'type' | 'role' | 'disabled' | '?disabled' | 'aria-expanded' | 'aria-controls' | 'popovertarget' | 'popovertargetaction'>;
+export type DisclosurePanelProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'style' | 'inert' | '?inert' | 'hidden' | '?hidden' | 'aria-hidden'>;
+export type DisclosureProps = Omit<GlobalAttributes<HTMLDivElement>, 'id'> & {
+    id: string;
+    open?: boolean;
+    defaultOpen?: boolean;
+    disabled?: boolean;
+    onToggle?: (open: boolean) => unknown;
+    triggerProps?: DisclosureTriggerProps;
+    panelProps?: DisclosurePanelProps;
+};
+export function validateDisclosure(id: string, label: string) {
+    if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Disclosure requires a nonempty, whitespace-free id.');
+    if (typeof label !== 'string' || !label.trim()) throw new Error('Disclosure requires nonempty trigger text.');
+}
+export function disclosureClick(supplied: DisclosureTriggerProps['@click'], toggle: () => void) {
+    const listener: EventListener = event => {
+        if (typeof supplied === 'function') supplied(event as ControlEvent<HTMLButtonElement, PointerEvent>);
+        else if (supplied instanceof PreventDefaultResult) supplied.handler.call(event.currentTarget, event);
+        if (!event.defaultPrevented) toggle();
+    };
+    return supplied instanceof PreventDefaultResult ? preventDefault(listener, { novalidate: supplied.novalidate }) : listener;
+}
+export function restoreDisclosureFocus(open: boolean, panel?: HTMLElement, trigger?: HTMLButtonElement) {
+    if (!open && panel?.contains(panel.ownerDocument.activeElement) && trigger?.isConnected && !trigger.matches(':disabled')) trigger.focus({ preventScroll: true });
+}
 
 /** The resting style also works during SSR, before any DOM measurements. */
 export function disclosureStyle(open: boolean): string {

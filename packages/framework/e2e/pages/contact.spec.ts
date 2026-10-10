@@ -1,64 +1,37 @@
-import { test, expect } from '../fixtures';
+import { test, expect } from '@playwright/test';
 
 test.describe('Contact Page', () => {
-  test.beforeEach(async ({ page }) => {
+  test('should display contact form with the default greeting', async ({ page }) => {
     await page.goto('/contact');
+    await expect(page).toHaveTitle(/Contact/);
+    await expect(page.getByText('Hello Tan', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Name')).toHaveValue('Tan');
+    await expect(page.locator('form[method="post"][action="/contact"]')).toBeVisible();
   });
 
-  test('should display contact form', async ({ page }) => {
-    // Wait for page to load
-    await page.waitForLoadState('networkidle');
+  test('should submit form via POST and follow the redirect', async ({ page }) => {
+    await page.goto('/contact');
+    await page.getByLabel('Name').fill('Test User');
+    const post = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/contact');
+    await page.getByRole('button', { name: 'Submit' }).click();
+    expect((await post).status()).toBe(302);
 
-    // The contact page has a form with name input
-    const form = page.locator('form');
-    const input = page.locator('input[name="name"]');
-
-    // Either the form or input should be visible
-    const formVisible = await form.isVisible().catch(() => false);
-    const inputVisible = await input.isVisible().catch(() => false);
-
-    expect(formVisible || inputVisible).toBe(true);
+    await page.waitForURL(/\/contact\?name=Test%20User$/);
+    await expect(page.getByText('Hello Test User', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Name')).toHaveValue('Test User');
   });
 
-  test('should submit form via POST', async ({ page }) => {
-    const nameInput = page.locator('input[name="name"], input[placeholder*="name" i]').first();
-    const emailInput = page.locator('input[name="email"], input[type="email"]').first();
-    const messageInput = page.locator('textarea[name="message"], textarea').first();
-
-    if (await nameInput.isVisible()) {
-      await nameInput.fill('Test User');
-    }
-
-    if (await emailInput.isVisible()) {
-      await emailInput.fill('test@example.com');
-    }
-
-    if (await messageInput.isVisible()) {
-      await messageInput.fill('This is a test message.');
-    }
-
-    const submitButton = page.locator('button[type="submit"], button:has-text("Send"), button:has-text("Submit")');
-    if (await submitButton.isVisible()) {
-      await submitButton.click();
-      await page.waitForTimeout(500);
-    }
+  test('should initialize state from query parameters in init()', async ({ page }) => {
+    await page.goto('/contact?name=QueryName');
+    await expect(page.getByText('Hello QueryName', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Name')).toHaveValue('QueryName');
   });
 
-  test('should handle query parameters', async ({ page }) => {
-    await page.goto('/contact?subject=TestSubject');
-
-    const subjectInput = page.locator('input[name="subject"]').first();
-    if (await subjectInput.isVisible()) {
-      const value = await subjectInput.inputValue();
-    }
-  });
-
-  test('should validate required fields', async ({ page }) => {
-    const submitButton = page.locator('button[type="submit"]').first();
-
-    if (await submitButton.isVisible()) {
-      await submitButton.click();
-      await page.waitForTimeout(200);
-    }
+  test('should fall back to the default greeting for an empty submission', async ({ page }) => {
+    await page.goto('/contact?name=Someone');
+    await page.getByLabel('Name').fill('');
+    await page.getByRole('button', { name: 'Submit' }).click();
+    await page.waitForURL(/\/contact\?name=Tan$/);
+    await expect(page.getByText('Hello Tan', { exact: true })).toBeVisible();
   });
 });

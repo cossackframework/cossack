@@ -1,14 +1,36 @@
-import path from 'node:path';
-import { buildRouteModel, layoutStackForPage } from '../scan-routes.js';
+import { commandSpecs } from '../command-specs.js';
+import { generateRoutes } from '@cossackframework/framework/route-codegen';
+import { buildRouteModel, buildEffectiveRouteModel, layoutStackForPage } from '../scan-routes.js';
 import { findProjectRoot } from '../fs-utils.js';
+import { runWithSpec } from '../command-spec.js';
+
+const spec = commandSpecs.routes;
 
 export async function routesCommand(args, ctx) {
+  return runWithSpec(spec, args, ctx, async () => {
   const root = await findProjectRoot(ctx.cwd);
-  const model = buildRouteModel(root);
+  // Effective metadata (RT-07): params, layout ancestry, boundaries, and
+  // source-level @Page options come from the effective model; the compact
+  // model still drives the human table.
+  const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV, includeMarkdown: ctx.flags.markdown });
+  const model = buildRouteModel(root, effective.discovery);
+  let generation;
+  if (ctx.flags.generate === true) {
+    const dryRun = ctx.dryRun === true;
+    const result = generateRoutes(root, { ...effective.discovery, write: !dryRun });
+    generation = { file: '.cossack/routes.ts', changed: result.changed, written: !dryRun && result.changed, dryRun };
+    if (ctx.flags.json !== true) console.log(`${dryRun ? 'Would generate' : 'Generated'} .cossack/routes.ts`);
+  }
+
+
+  if (ctx.flags.json === true) {
+    return { routes: effective.pages, pages: effective.pages.length, layouts: effective.layouts.length, scaffold: effective.scaffold, runtime: effective.runtime, manifest: effective.manifest, discovery: effective.discovery, ...(generation ? { generation } : {}) };
+  }
 
   if (model.pages.length === 0 && model.layouts.length === 0) {
+    if (ctx.flags.json === true) return { routes: [], pages: 0, layouts: 0 };
     console.log('No routes found under src/pages/.');
-    return 0;
+    return null;
   }
 
   const pagesByRoute = new Map();
@@ -49,9 +71,15 @@ export async function routesCommand(args, ctx) {
   }
 
   if (ctx.flags.verbose) {
+    for (const page of effective.pages) {
+      if (page.params.length) {
+        console.log(formatRow('PARAM', page.route, page.params.map(p => p.name + (p.catchAll ? '*' : '')).join(', ')));
+      }
+    }
     console.log(`\n${model.pages.length} page(s), ${model.layouts.length} layout(s).`);
   }
-  return 0;
+  return null;
+  });
 }
 
 function formatRow(method, route, filePath) {
@@ -61,10 +89,8 @@ function formatRow(method, route, filePath) {
 }
 
 export function routesHelp() {
-  return `cossack routes
+  return commandSpecs.routes.help(`cossack routes
 
 List all routes discovered under src/pages/.
-
-Options:
-  --verbose   Show counts and extra detail.`;
+Use --generate to emit typed URLs before a standalone TypeScript check.`);
 }

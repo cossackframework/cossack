@@ -8,7 +8,8 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     prune: false,
-    ignore: [/^\/node_modules(?:\/|$)/, /^\/src(?:\/|$)/, /^\/public(?:\/|$)/],
+    // Package only runtime artifacts; never copy project secrets or web-server output.
+    ignore: (file) => file !== '' && !/^\/(?:package\.json$|dist$|dist\/(?:client|desktop)(?:\/|$)|desktop-assets(?:\/|$))/.test(file),
     name: 'Cossack Counter',
     executableName: 'cossack-counter',
     appBundleId: 'dev.cossack.counter',

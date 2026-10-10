@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import 'reflect-metadata';
 import { describe, expect, it, vi } from 'vitest';
 import type { Context } from 'hono';
@@ -80,6 +81,34 @@ describe('layout-scoped services', () => {
 
     const missing = createInstance(Child, { serviceScope: root });
     expect(() => missing.read()).toThrow('no active layout declares it');
+  });
+
+  it('names the requester, ancestry, and declarations when injection fails', () => {
+    @Service()
+    class Declared {}
+    @Service()
+    class Missing {}
+    class Child extends Cossack {
+      @Inject(Missing) private missing!: Missing;
+      read() { return this.missing; }
+    }
+
+    const root = createRootServiceScope();
+    const outer = new ServiceScope(root, [Declared], { ownerRoutePath: '/src/pages/layout.ts' });
+    const inner = new ServiceScope(outer, [], { ownerRoutePath: '/src/pages/dashboard/layout.ts' });
+    const child = createInstance(Child, { serviceScope: inner });
+
+    expect(() => child.read()).toThrow('Cannot inject Missing into Child: no active layout declares it.');
+    expect(() => child.read()).toThrow('/src/pages/dashboard/layout.ts declares no services');
+    expect(() => child.read()).toThrow('/src/pages/layout.ts declares [Declared]');
+    expect(() => child.read()).toThrow('request root scope (no service declarations)');
+    expect(() => child.read()).toThrow('@Page({ services: [Missing] })');
+    // Ancestry is innermost-first and available for inspection without failing.
+    expect(inner.describeScopeChain()).toEqual([
+      '  - /src/pages/dashboard/layout.ts declares no services',
+      '  - /src/pages/layout.ts declares [Declared]',
+      '  - request root scope (no service declarations)',
+    ]);
   });
 
   it('keeps constructor injection compatible while preferring scoped declarations', () => {
