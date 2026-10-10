@@ -420,7 +420,7 @@ async function verifyReleaseStripping(projectDir) {
   if (!sources.some(source => source.includes(marker))) throw new Error('Server-only fixture was not present in production server artifacts');
 }
 
-async function verifyScaffoldApplications(minimalProjectDir) {
+async function verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs) {
   await run('pnpm', ['run', 'build'], { cwd: minimalProjectDir });
   await verifyMinimalProductionBundles(minimalProjectDir);
   await assertStarterBundleBudgets(minimalProjectDir);
@@ -684,7 +684,7 @@ try {
   } else if (publishedReleaseOnly) {
     await verifyPublishedRelease(minimalProjectDir);
   } else if (scaffoldOnly) {
-    await verifyScaffoldApplications(minimalProjectDir);
+    await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
   } else if (desktopRuntimeOnly) {
     await writeDesktopRuntimeAcceptance(minimalProjectDir);
     const configFile = path.join(minimalProjectDir, 'vite.config.ts');
@@ -708,7 +708,7 @@ try {
     }
   }
   if (!deploymentGuideOnly && !publishedReleaseOnly && !scaffoldOnly && !desktopRuntimeOnly && !nodeDevelopmentOnly && !agentDocsOnly) {
-    await verifyScaffoldApplications(minimalProjectDir);
+    await verifyScaffoldApplications(temporaryRoot, minimalProjectDir, tarballs);
   }
 } finally {
   if (keep) {

@@ -129,7 +129,9 @@ const s3=createS3StorageProvider({bucket:'fixture',client:{async send(command){c
 await s3.put('empty',new ReadableStream({start(c){c.close();}}),{size:0});
 assert.deepEqual(commands,['PutObjectCommand']);
 const calls=[];
-const workflows=createCloudflareWorkflowProvider({async create(value){calls.push(value.id);},async get(){return {async status(){return {status:'waiting'};},async sendEvent(value){calls.push(value.type);},async pause(){calls.push('pause');}};}});
+// Like the native binding, get() rejects ids that were never created (the provider checks for duplicates).
+const createdWorkflows=new Set();
+const workflows=createCloudflareWorkflowProvider({async create(value){createdWorkflows.add(value.id);calls.push(value.id);},async get(id){if(!createdWorkflows.has(id))throw new Error('Not found');return {async status(){return {status:'waiting'};},async sendEvent(value){calls.push(value.type);},async pause(){calls.push('pause');}};}});
 await workflows.create({identity:{id:'fixture'}});assert.equal(await workflows.inspect('fixture'),'waiting');
 await workflows.sendEvent('fixture','ready',{});await workflows.control('fixture','pause');
 assert.deepEqual(calls,['fixture','ready','pause']);

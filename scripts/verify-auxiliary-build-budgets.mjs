@@ -37,7 +37,13 @@ export async function verifyAuxiliaryBuildBudgets(projectDir) {
       assert.ok(report.data.auxiliaryBuildBudgets.workers[0].buildBudgets.measurements[0].value > 0);
       assert.ok(report.diagnostics.some(item => item.code === 'COSSACK_BUILD_BUDGET_EXCEEDED' && item.severity === 'warning'));
       assert.ok(!stdout.includes('PRIVATE_AUXILIARY_SENTINEL'));
-      await assert.rejects(fs.access(path.join(projectDir, '.cossack/build-budget-receipt.json')));
+      // A complete auxiliary batch is recorded in a signed v2 receipt without private values.
+      const receipt = await fs.readFile(path.join(projectDir, '.cossack/build-budget-receipt.json'), 'utf8');
+      const parsed = JSON.parse(receipt);
+      assert.equal(parsed.version, 2);
+      assert.equal(parsed.workers[0].outcome, 'measured');
+      assert.match(parsed.signature, /^[a-f\d]{64}$/);
+      assert.ok(!receipt.includes('PRIVATE_AUXILIARY_SENTINEL'));
     }
     manifest.cossack.auxiliaryBuildBudgets[0].budgets = { uploadKiB: { error: 0.001 } };
     await fs.writeFile(path.join(projectDir, files[0]), JSON.stringify(manifest));
@@ -46,7 +52,8 @@ export async function verifyAuxiliaryBuildBudgets(projectDir) {
       assert.equal(error.code, 1);
       const report = JSON.parse(error.stdout);
       assert.equal(report.ok, false);
-      assert.equal(report.diagnostics[0].code, 'COSSACK_BUILD_FAILED');
+      // The signed batch keeps the specific budget failure rather than a generic build error.
+      assert.equal(report.diagnostics[0].code, 'COSSACK_BUILD_BUDGET_EXCEEDED');
       assert.ok(!error.stdout.includes('PRIVATE_AUXILIARY_SENTINEL'));
     }
     console.log('Installed auxiliary-only multi-Worker build/deploy validation, warning measurements, privacy and hard failure verified; no auxiliary upload.');
