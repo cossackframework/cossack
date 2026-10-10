@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withoutNodeSqliteWarning } from './acceptance-stderr.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -105,7 +106,7 @@ dom?.window.close();
     const outputs = [];
     for (const item of entries) {
       const result = await node([runtime, JSON.stringify(item)]).catch(error => { throw new Error(item.guide + '\n' + String(error.stdout) + String(error.stderr), { cause: error }); });
-      assert.equal(result.stderr, ''); outputs.push(result.stdout.trim()); console.log(result.stdout.trim());
+      assert.equal(withoutNodeSqliteWarning(result.stderr), ''); outputs.push(result.stdout.trim()); console.log(result.stdout.trim());
     }
     // MCP reads the same installed metadata; this does not execute examples.
     const mcpRequire = createRequire(path.join(repository, 'packages/cossack/package.json'));

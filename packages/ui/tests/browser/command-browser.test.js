@@ -34,12 +34,19 @@ it('coordinates command shortcuts, modal focus and stable searchable results', a
 import './style.css';
 import {html,hydrate,render,component} from '@cossackframework/renderer';
 import {Command as BaseCommand} from '@cossackframework/ui';
-class Command extends BaseCommand {constructor(){super();}}
+class Command extends BaseCommand {constructor(){super();(window.instances??=[]).push(this);}}
 const template=${templateSource},container=document.querySelector('#app'),initial=container.querySelector('#command');
 let Control=Command,props={shortcut:true},second={};window.events=[];window.selections=[];window.accept=false;window.veto=false;
 const callbacks={onSelect:id=>window.selections.push(id),onOpenChange:open=>{window.events.push(open);if(window.accept){props.open=open;draw();}},'@cancel':event=>{if(window.veto)event.preventDefault();}};
 function draw(){render(template(Control,{...props,...callbacks},second),container);}
-window.update=next=>{props={...props,...next};draw();};window.updateSecond=next=>{second={...second,...next};draw();};
+// Await native dialog close tasks and component rendering before another key.
+window.settle=async()=>{
+  await Promise.all(window.instances.map(instance=>instance.updateComplete));
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  await Promise.all(window.instances.map(instance=>instance.updateComplete));
+};
+window.update=async next=>{props={...props,...next};draw();await window.settle();};
+window.updateSecond=async next=>{second={...second,...next};draw();await window.settle();};
 hydrate(template(Control,{...props,...callbacks},second),container);window.retained=initial===container.querySelector('#command');
 window.unmount=()=>render(html\`<p>Removed</p>\`,container);
 window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;window.events=[];window.selections=[];draw();};
@@ -74,9 +81,12 @@ window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;windo
     await page.evaluate(()=>{window.veto=true;});await page.keyboard.press('Escape');await browserExpect(dialog).toBeVisible();await page.evaluate(()=>{window.veto=false;});await page.keyboard.press('Escape');await browserExpect(dialog).not.toBeVisible();
     await page.evaluate(()=>window.update({open:false}));await page.keyboard.press('Control+k');await browserExpect(dialog).not.toBeVisible();expect(await page.evaluate(()=>window.events.at(-1))).toBe(true);
     await page.evaluate(()=>{window.accept=true;});await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();await page.mouse.click(2,2);await browserExpect(dialog).not.toBeVisible();
-    await page.evaluate(()=>window.update({open:true}));await browserExpect(dialog).toBeVisible();const beforeRejectedClose=await page.evaluate(()=>{window.accept=false;return window.events.length;});await page.keyboard.press('Escape');await page.waitForFunction(count=>window.events.length>count,beforeRejectedClose);expect(await page.evaluate(()=>window.events.at(-1))).toBe(false);await browserExpect(dialog).toBeVisible();await page.evaluate(()=>{window.accept=true;});await page.keyboard.press('Escape');await browserExpect(dialog).not.toBeVisible();
-    await page.evaluate(()=>window.updateSecond({shortcut:true}));await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();await browserExpect(second).not.toBeVisible();await page.keyboard.press('Control+k');await browserExpect(dialog).not.toBeVisible();await browserExpect(second).not.toBeVisible();
-    await page.evaluate(()=>window.update({shortcut:false}));await page.keyboard.press('Control+k');await browserExpect(second).toBeVisible();await browserExpect(dialog).not.toBeVisible();await page.keyboard.press('Escape');await browserExpect(second).not.toBeVisible();
+    await page.evaluate(()=>window.update({open:true}));await browserExpect(dialog).toBeVisible();const beforeRejectedClose=await page.evaluate(()=>{window.accept=false;return window.events.length;});await page.keyboard.press('Escape');await page.waitForFunction(count=>window.events.length>count,beforeRejectedClose);expect(await page.evaluate(()=>window.events.at(-1))).toBe(false);await browserExpect(dialog).toBeVisible();await page.evaluate(()=>{window.accept=true;});await page.keyboard.press('Escape');
+    // The native dialog can hide before its close callback accepts controlled state.
+    await page.waitForFunction(()=>window.instances.find(instance=>instance.props.id==='command').props.open===false);
+    await browserExpect(dialog).not.toBeVisible();
+    await page.evaluate(()=>window.updateSecond({shortcut:true}));await outside.focus();await browserExpect(outside).toBeFocused();await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();await browserExpect(second).not.toBeVisible();await page.keyboard.press('Control+k');await browserExpect(dialog).not.toBeVisible();await browserExpect(second).not.toBeVisible();
+    await page.evaluate(()=>window.update({shortcut:false}));await outside.focus();await browserExpect(outside).toBeFocused();await page.keyboard.press('Control+k');await browserExpect(second).toBeVisible();await browserExpect(dialog).not.toBeVisible();await page.keyboard.press('Escape');await browserExpect(second).not.toBeVisible();
     await page.evaluate(()=>{window.accept=false;window.fresh({defaultOpen:true});});await browserExpect(dialog).toBeVisible();await dialog.getByRole('option',{name:'Locked'}).click({force:true});expect(await page.evaluate(()=>window.selections)).toEqual([]);await dialog.getByRole('option',{name:'Settings'}).click();await browserExpect(dialog).not.toBeVisible();expect(await page.evaluate(()=>window.selections)).toEqual(['settings']);
     await page.evaluate(()=>{window.fresh({shortcut:true});window.unmount();});await page.keyboard.press('Control+k');expect(await page.locator(':modal').count()).toBe(0);
     await page.evaluate(()=>{window.fresh({shortcut:true});const foreign=document.createElement('dialog');foreign.id='foreign';foreign.innerHTML='<button>Other modal</button>';document.body.append(foreign);foreign.showModal();});await page.keyboard.press('Control+k');await browserExpect(dialog).not.toBeVisible();await browserExpect(page.locator('#foreign')).toBeVisible();await page.evaluate(()=>{document.querySelector('#foreign').close();document.querySelector('#foreign').remove();});await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();expect(await page.locator(':modal').count()).toBe(1);await page.evaluate(()=>window.unmount());expect(await page.locator(':modal').count()).toBe(0);

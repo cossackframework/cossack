@@ -37,8 +37,8 @@ counts and receipts are not substituted for verification of the reviewed source.
 
 - [x] Non-Desktop release build (`pnpm run build:release`) and database bundle audit (32 neutral modules; Workers-safe entry).
 - [x] Root `pnpm tsc --noEmit` and `pnpm run typecheck -- --exclude-desktop`.
-- [x] Non-Desktop unit suites: 6,390 passed, five skipped; includes the CLI unit project (806 passed, three skipped).
-- [ ] Installed-package/scaffold acceptance with current 0.9.0 tarballs.
+- [x] Non-Desktop unit suites: 6,393 passed, five skipped; includes the CLI unit project (809 passed, three skipped).
+- [x] Local installed-package/scaffold acceptance with current 0.9.0 tarballs: declaration/runtime imports, offline CLI/MCP, configuration secrecy, budgets, native D1 migrations, generated recipes and bidirectional Node RPC. This includes private test-utils as a local artifact and excludes Desktop platform checks.
 - [ ] GitHub PR checks: CLI integration shards, UI browser and framework E2E.
 - [ ] PR merged into master and 0.9.0 release created at the verified revision.
 - [ ] npm publication verified for all eleven public workspace packages.
@@ -47,6 +47,11 @@ The first clean-checkout CI attempt exposed an omitted internal test-utils build
 The normal workspace build now includes it; publication still excludes it.
 The affected guidance inventory (two tests), executable guide coverage (four
 tests), publication coverage (two tests) and typechecks passed after the fix.
+Additional CI findings corrected the acceptance harness: RPC cancellation reads
+a complete frame across arbitrary network chunks; example checks allow only
+Node 22's exact built-in SQLite warning; Command fixtures await accepted
+controlled close state before subsequent prop changes and keyboard events.
+Focused deployment, palette, Command browser and warning-filter tests passed.
 
 ## Publishing
 
