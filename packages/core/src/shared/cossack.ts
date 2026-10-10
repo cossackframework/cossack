@@ -1497,6 +1497,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string,
         requestContext?: Context, development?: DevelopmentSocketDispatch): Promise<void> {
+        if (!isServer) return Promise.reject(new Error('[Cossack] Server actions can only execute on the server.'));
         const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
@@ -1542,6 +1543,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
         requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context, development?: DevelopmentSocketDispatch,
         releaseQueue?: () => void): Promise<void> {
+        // Class methods remain reachable through the component prototype.
+        // Guard this implementation too, so retaining Cossack does not retain
+        // the server dispatcher and its validation/rate-limit dependencies.
+        if (!isServer) throw new Error('[Cossack] Server actions can only execute on the server.');
         const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {

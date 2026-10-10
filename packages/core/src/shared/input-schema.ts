@@ -1,7 +1,7 @@
 import { ActionValidationError } from './errors';
 import { validateValue, type ValidationRule } from './validation';
 
-const BRAND = Symbol.for('cossack:input-schema:v1');
+const BRAND = /* @__PURE__ */ Symbol.for('cossack:input-schema:v1');
 const INVALID = Symbol('invalid-input');
 const FIELD = /^[a-zA-Z_][a-zA-Z0-9_]{0,127}$/;
 const MAX_ITEMS = 1024;
@@ -174,7 +174,7 @@ export function isInputSchema(value: unknown): value is InputSchema<any, any> {
 }
 
 /** Explicit server input grammar. Use InputOf<typeof schema> on the method parameter. */
-export const input = Object.freeze({
+export const input = /* @__PURE__ */ Object.freeze({
     string(options: Rules = {}): InputSchema<string> {
         const rules = rulesSnapshot(options);
         return schema(async (value, state, path) => typeof value === 'string' ? checked(value, rules, state, path) : error(state, path, 'Expected a string.'));

@@ -177,6 +177,17 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
           ],
         },
         environments: {
+          client: {
+            optimizeDeps: {
+              // Vite treats linked packages as application source by default.
+              // Bundle the library barrels in development instead of loading
+              // every re-export as a separate browser request. The framework
+              // entry stays in Vite's graph for its virtual modules and HMR.
+              // Devtools shares the component inspector registry with core;
+              // optimizing both entries keeps a single copy of that state.
+              include: ['@cossackframework/core', '@cossackframework/core/devtools', '@cossackframework/renderer'],
+            },
+          },
           ssr: {
             resolve: {
               noExternal: [

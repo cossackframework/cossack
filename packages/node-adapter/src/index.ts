@@ -9,7 +9,7 @@ import { URL } from 'url';
 export * from './runtime';
 /** Pass to `createApp({ runtimeAdapter })` so SSR emits process-runtime targets. */
 export const nodeRuntimeAdapter = { name: 'node' } as const;
-export { serveStatic, type StaticServeOptions } from './static-serve';
+export { serveStatic, createStaticAssets, type StaticServeOptions } from './static-serve';
 export {
     createNodeEmailSender,
     type NodeEmailOptions,

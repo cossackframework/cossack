@@ -178,6 +178,11 @@ remain separate from the private typed action contract.
 
 ## Route generation boundary
 
+The SSR router reads the client manifest and inline CSS through `ASSETS.fetch`
+on every runtime. Generated Node applications provide `createStaticAssets` from
+`node-adapter`, rooted at their client output directory. Filesystem imports stay
+in that adapter and never enter the Workers router module graph.
+
 Core owns the portable URL constructor at `core/routes`. It encodes declared
 parameters and rejects unsupported patterns. It imports no framework or Node APIs.
 Framework owns the pure route identity and source ancestry model at `route-ids`.
@@ -1130,6 +1135,27 @@ SSR parser even when core retains its synchronous `_render()` method. Node,
 worker and workerd export conditions retain the full root serializer. The explicit
 `/server` entry remains available in every environment. Unmatched single-select values cannot encode an
 empty selection in static HTML; a matching option is required for SSR parity.
+
+## Client dependency boundaries
+
+Core's published modules import the private `#cossack-environment` entry.
+The browser condition exports `isServer = false`, which lets application
+bundlers remove server action dispatch and its input-validation and rate-limit
+dependencies. Node, worker, and workerd conditions keep the portable runtime
+check. Server conditions precede browser because Workers tooling can enable
+both. Library compilation preserves this choice for the consuming application.
+
+Renderer components depend on a small style registry. The `css` and `unsafeCSS`
+factories register the existing synchronous CSS finalizer when they construct
+styles. Components without styles do not retain css-tree or its source-map
+dependency. Public CSS interpolation rules and SSR/client scoping remain shared.
+
+`cossackPages` pre-bundles linked core and renderer libraries in development.
+Core's devtools entry shares that build so trace capture and component
+registration use one inspector registry. Framework client modules remain in
+Vite's graph for virtual modules and HMR. Production bundles remove unused
+exports; default SPA navigation and translation globals still retain their
+runtime dependencies.
 
 ## Project-local development trace records
 

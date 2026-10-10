@@ -865,7 +865,7 @@ import { Hono } from 'hono';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setClientAddress } from '@cossackframework/core';
 import { createApp } from '@cossackframework/framework/router';
-import { createNodeAdapter, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
+import { createNodeAdapter, createStaticAssets, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
@@ -889,6 +889,7 @@ export async function createEnv(variables: Record<string, string | undefined> = 
   const bindings: Record<string, unknown> = {
     ...variables,
     DB_PATH: variables.DB_PATH ?? './database.sqlite',
+    ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false }),
   };
   if (variables.SMTP_HOST) {
     const { SMTP_USER: user, SMTP_PASS: pass } = variables;

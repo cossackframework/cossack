@@ -95,6 +95,7 @@ export type {
   MigrationPlanStatement,
   AppliedMigration,
   MigrationStatus,
+  MigrationRehashResult,
 } from "./migration/types.js";
 export { SeederRunner } from "./seeding/runner.js";
 export {

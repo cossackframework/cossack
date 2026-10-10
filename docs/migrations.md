@@ -45,6 +45,7 @@ cossack migration generate add_posts
 cossack migration up
 cossack migration down
 cossack migration status
+cossack migration rehash 0010_create_addresses 0011_create_outreach_records
 cossack migration check
 cossack migration baseline
 cossack schema pull
@@ -57,6 +58,35 @@ Changed applied files fail checks. Schema commands compare physical
 introspection with the logical schema emitted by decorators.
 
 There are no postinstall, dev-start, or request-start migration hooks.
+
+## Accepting an intentional migration edit
+
+A checksum records the migration definition that you applied. The default commands
+reject changes to applied definitions. Add a new migration for normal schema changes.
+
+If you intentionally reset or rebuild affected objects, review the current definitions
+and the database before accepting them. Preview the named checksum updates first:
+
+```sh
+pnpm exec cossack migration status
+pnpm exec cossack migration rehash 0010_create_addresses 0011_create_outreach_records --dry-run --json
+pnpm exec cossack migration rehash 0010_create_addresses 0011_create_outreach_records
+```
+
+`rehash` updates only the stored checksums for the named applied migrations.
+It preserves their batch numbers, application dates, and all other history rows.
+It does not run `up` or `down`, change the schema, or establish that the schema matches the edited definitions.
+Future rollbacks use the edited `down` definition. Review that definition before accepting the edit.
+
+The command requires at least one name. It rejects unknown names, pending migrations,
+and duplicate names before writing any checksum. Other changed migrations continue
+to block normal migration commands. Adapters with transactions use one transaction.
+Adapters with native batches use one batch, within the provider limit.
+
+`migration status` prints stored and current checksums for changed entries.
+JSON status results already include the current `checksum` and the stored `applied.checksum`.
+The runner also exposes `rehash(names, { dryRun: true })` for previews and
+`rehash(names)` to accept the selected definitions.
 
 ## Environments and plans
 

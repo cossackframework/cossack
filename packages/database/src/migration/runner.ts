@@ -1,7 +1,7 @@
 import { MigrationError } from "../errors.js";
 import type { ORM } from "../orm.js";
 import { SchemaBuilder } from "../schema/builder.js";
-import type { AppliedMigration, Migration, MigrationStatus, MigrationPlanEntry } from "./types.js";
+import type { AppliedMigration, Migration, MigrationStatus, MigrationPlanEntry, MigrationRehashResult } from "./types.js";
 import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import type { SchemaOperation } from "../schema/operations.js";
@@ -79,6 +79,40 @@ export class MigrationRunner {
       });
     }
     return result;
+  }
+
+  /** Accept current definitions for named applied migrations without running them. */
+  async rehash(
+    names: readonly string[], options: { readonly dryRun?: boolean } = {},
+  ): Promise<readonly MigrationRehashResult[]> {
+    if (!names.length) throw new MigrationError("Rehash requires at least one migration name.");
+    if (new Set(names).size !== names.length) throw new MigrationError("Rehash migration names must be unique.");
+    const update = async (): Promise<readonly MigrationRehashResult[]> => {
+      const statuses = new Map((await this.status({ readOnly: true })).map(status => [status.migration.name, status]));
+      // Validate the entire selection before changing any history row.
+      const entries = names.map(name => {
+        const status = statuses.get(name);
+        if (!status) throw new MigrationError(`Unknown migration ${name}.`);
+        if (!status.applied) throw new MigrationError(`Migration ${name} is not applied and cannot be rehashed.`);
+        return { name, previousChecksum: status.applied.checksum, checksum: status.checksum };
+      });
+      if (options.dryRun) return entries;
+      const statements = entries.filter(entry => entry.previousChecksum !== entry.checksum).map(entry =>
+        this.orm.sql.fragment`UPDATE ${this.orm.sql.id(this.tableName)} SET ${this.orm.sql.id("checksum")} = ${entry.checksum} WHERE ${this.orm.sql.id("name")} = ${entry.name}`);
+      if (!statements.length) return entries;
+      if (!this.orm.driver.capabilities.transactions && this.orm.driver.capabilities.batch && this.orm.driver.batch) {
+        if (statements.length > this.orm.driver.capabilities.batchLimit) {
+          throw new MigrationError(`Rehash exceeds the provider batch limit of ${this.orm.driver.capabilities.batchLimit}.`);
+        }
+        const dialect = dialectFor(this.orm.driver.dialect);
+        await this.orm.driver.batch(statements.map(statement => ({ query: compileSQL(statement, dialect), operation: "update" })));
+      } else {
+        for (const statement of statements) await this.orm.executeFragment(statement, "update");
+      }
+      return entries;
+    };
+    return !options.dryRun && this.orm.driver.capabilities.transactions
+      ? this.orm.transaction(update) : update();
   }
 
   /** Inspect declarative operations only. Application callbacks are never invoked. */

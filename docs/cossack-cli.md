@@ -481,6 +481,8 @@ Run deterministic ORM migrations registered by `orm.config.ts`.
 cossack migration up        # Apply all pending migrations
 cossack migration down      # Roll back the most recent migration
 cossack migration status    # Show applied/pending migrations
+cossack migration rehash 0010_create_addresses 0011_create_outreach_records --dry-run
+cossack migration rehash 0010_create_addresses 0011_create_outreach_records
 cossack migration plan --env staging --target remote --json
 ```
 

@@ -484,7 +484,8 @@ export function redisRateLimitStoreFromEnv(
     });
 }
 
-let defaultStore: RateLimitStore = new InMemoryRateLimitStore();
+let defaultStore: RateLimitStore | undefined;
+const processDefaultStore = (): RateLimitStore => defaultStore ??= new InMemoryRateLimitStore();
 let manualStore: RateLimitStore | undefined;
 interface StoreSelection {
     mode: 'durable-object' | 'redis' | 'kv';
@@ -511,7 +512,7 @@ export function getRateLimitStore(env?: Record<string, unknown>): RateLimitStore
 
 /** @internal Reset all module state — tests only. */
 export function __resetRateLimitForTests(): void {
-    defaultStore = new InMemoryRateLimitStore();
+    defaultStore = undefined;
     manualStore = undefined;
     configuredStores = new WeakMap();
 }
@@ -528,12 +529,12 @@ export function __resetRateLimitForTests(): void {
  */
 export function configureRateLimitFromEnv(env: Record<string, unknown> | undefined): RateLimitStore {
     if (manualStore) return manualStore;
-    if (env == null) return defaultStore;
+    if (env == null) return processDefaultStore();
     if (typeof env !== 'object' || Array.isArray(env)) {
         throw new Error('[Cossack] Rate-limit environment must be an object.');
     }
     const raw = env.rateLimit === undefined ? env.RATE_LIMIT : env.rateLimit;
-    if (raw === undefined) return defaultStore;
+    if (raw === undefined) return processDefaultStore();
     if (typeof raw !== 'string' || !raw.trim()) {
         throw new Error('[Cossack] rateLimit must name a supported backend.');
     }

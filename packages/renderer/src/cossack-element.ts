@@ -1,7 +1,7 @@
 import { TemplateResult, render, hydrate, html, isTemplateResult, type HydrationDiagnosticMetadata } from './cossack-html';
 import { Context } from './context';
-import { getFinalizedStyles } from './css';
-import type { CSSResultGroup, FinalizedStyles } from './css';
+import { getFinalizedStyles, type FinalizedStyles } from './style-runtime';
+import type { CSSResultGroup } from './css-result';
 
 export type PropertyDeclaration = {
   type?: unknown;

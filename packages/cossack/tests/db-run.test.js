@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadORMTooling, runORMToolingCommand } from '../src/commands/db-run.js';
+import { migrationCommand } from '../src/commands/migration.js';
 
 const temporaryDirectories = [];
 
@@ -41,6 +42,17 @@ afterEach(async () => {
 });
 
 describe('application ORM tooling loading', () => {
+  it('forwards all rehash names and database options to the installed tooling', async () => {
+    const root = await createProject('export async function runORMCommand(argv, options) { options.stdout(JSON.stringify({ schemaVersion: 1, command: argv[0], ok: true, data: { argv }, diagnostics: [] })); return 0; }');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await migrationCommand(['rehash', '001_first', '002_second'], { cwd: root,
+      flags: { 'dry-run': true, env: 'staging', target: 'remote', json: true },
+    })).toBe(0);
+    expect(JSON.parse(log.mock.calls[0][0]).data.argv).toEqual([
+      'migration', 'rehash', '001_first', '002_second', '--dry-run', '--env=staging', '--target=remote', '--json',
+    ]);
+  });
+
   it('loads runORMCommand from the application ORM package', async () => {
     const root = await createProject(
       'export async function runORMCommand() { return 0; }\n',

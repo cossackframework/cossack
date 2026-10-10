@@ -1,4 +1,4 @@
-const encoder = new TextEncoder();
+const encoder = /* @__PURE__ */ new TextEncoder();
 
 export function assertRateLimitKey(key: unknown): asserts key is string {
     if (typeof key !== 'string' || !key.trim() || encoder.encode(key).length > 512 ||

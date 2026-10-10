@@ -130,6 +130,7 @@ export const commandSpecs = {
       squash: { positionals: ['name'], flags: { output: str('Migration output path.'),
         prune: bool('Replace the migration files and barrel.') } },
       up: {}, latest: {}, down: {}, status: {}, check: {}, baseline: {},
+      rehash: { positionals: ['name...'], minPositionals: 1, variadic: true },
       plan: { flags: { direction: choices('Plan direction (default: up).', ['up', 'down']) } },
     }, check: targetDiagnostics }),
   seeder: new CommandSpec({ name: 'seeder', aliases: ['seed'], globals: dbGlobals,

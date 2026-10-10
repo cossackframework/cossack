@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { serveStatic } from '../src/static-serve.js';
+import { createStaticAssets, serveStatic } from '../src/static-serve.js';
 
 const temporaryDirectories: string[] = [];
 
@@ -26,6 +26,30 @@ afterEach(() => {
 });
 
 describe('serveStatic', () => {
+    it('provides the SSR ASSETS interface for manifests, CSS, and missing files', async () => {
+        const root = fixture();
+        const manifest = { 'src/client/entry-client.ts': {
+            file: 'assets/entry.abc12345.js', css: ['assets/style.abc12345.css'],
+        } };
+        fs.writeFileSync(path.join(root, 'cossack-manifest.json'), JSON.stringify(manifest));
+        const assets = createStaticAssets({ root, index: false });
+        const response = await assets.fetch(new Request('https://assets.local/cossack-manifest.json'));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual(manifest);
+        const css = await assets.fetch(new Request('https://assets.local/assets/style.abc12345.css'));
+        expect(await css.text()).toBe('body { color: red; }');
+        expect((await assets.fetch(new Request('https://assets.local/missing.css'))).status).toBe(404);
+        expect((await assets.fetch(new Request('https://assets.local/'))).status).toBe(404);
+    });
+
+    it('keeps filesystem containment checks on the ASSETS interface', async () => {
+        const root = fixture();
+        const outside = fixture();
+        fs.symlinkSync(path.join(outside, 'logo.svg'), path.join(root, 'leak.svg'));
+        const assets = createStaticAssets({ root, index: false });
+        expect((await assets.fetch(new Request('https://assets.local/leak.svg'))).status).toBe(404);
+    });
+
     it('serves generated and public client files with MIME and cache headers', async () => {
         const root = fixture();
         const app = new Hono();

@@ -14,6 +14,24 @@ accidentally leaking to the browser.
 This document explains the rule, the escape hatches, and what happens when you
 call a method that was stripped.
 
+## Development requests and production dependencies
+
+Vite serves application modules separately in development. `cossackPages()`
+pre-bundles core and renderer, including linked local packages, to reduce the
+number of browser requests. This does not make the dev bundle a measure of
+production size. After rebuilding a linked package, restart with
+`pnpm dev --force` to refresh Vite's dependency cache.
+
+Production builds remove unused library exports. The browser runtime also
+excludes the server action dispatcher, its input validation, and rate-limit
+providers unless the application explicitly imports those APIs. Components
+without `static styles` do not include the CSS parser. Using `css` or `unsafeCSS`
+keeps the parser so component styles work during rendering and hydration.
+
+Default SPA navigation retains navigation draft handling. The client app also
+installs translation globals, so it retains the i18n runtime. These are current
+client app features even when a page contains only static text.
+
 ## The Rule
 
 During the client build, the Cossack Vite security plugin walks every class that
