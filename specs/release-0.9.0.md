@@ -32,31 +32,44 @@ supported API changes. Architecture and feature specifications remain under
 
 ## Final verification — Codex, 2026-10-10
 
-Results are recorded here after the corresponding checks finish. Earlier task
-counts and receipts are not substituted for verification of the reviewed source.
+Verified implementation revision: `a298265b4099bf98c80498600e5224926c8d650b`.
+Later release-record edits do not change package behavior.
 
-- [x] Non-Desktop release build (`pnpm run build:release`) and database bundle audit (32 neutral modules; Workers-safe entry).
+- [x] Non-Desktop release build and database bundle audit (32 neutral modules; Workers-safe entry).
 - [x] Root `pnpm tsc --noEmit` and `pnpm run typecheck -- --exclude-desktop`.
-- [x] Non-Desktop unit suites: 6,393 passed, five skipped; includes the CLI unit project (809 passed, three skipped).
-- [ ] Final installed-package/scaffold acceptance after the MultiSelect runtime fix (the earlier artifact set passed): declaration/runtime imports, offline CLI/MCP, configuration secrecy, budgets, native D1 migrations, generated recipes and bidirectional Node RPC. This includes private test-utils as a local artifact and excludes Desktop platform checks.
-- [ ] GitHub PR checks: CLI integration shards, UI browser and framework E2E.
+- [x] Non-Desktop unit suites: 6,393 passed and five skipped locally. Final clean-checkout CI: 6,387 passed and eleven skipped; the six artifact-dependent SSG cases skipped during unit execution were covered by the subsequent SSG output suite.
+- [x] Final installed-package/scaffold acceptance: declaration/runtime imports, offline CLI/MCP, configuration secrecy, budgets, native D1 migrations, generated recipes and bidirectional Node RPC. Private test-utils is a local acceptance artifact; Desktop platform checks are excluded.
+- [x] Final [CLI integration and UI browser run](https://github.com/cossackframework/cossack/actions/runs/38030885483): 397 CLI tests passed, eleven skipped; all 35 UI browser tests passed.
+- [x] Final [Framework/Studio run](https://github.com/cossackframework/cossack/actions/runs/38030885475): 281 Framework E2E tests, 14 SSG output tests and the complete Studio browser scenario passed, together with build, typechecks, units and installed acceptance.
 - [ ] PR merged into master and 0.9.0 release created at the verified revision.
 - [ ] npm publication verified for all eleven public workspace packages.
 
-The first clean-checkout CI attempt exposed an omitted internal test-utils build.
-The normal workspace build now includes it; publication still excludes it.
-The affected guidance inventory (two tests), executable guide coverage (four
-tests), publication coverage (two tests) and typechecks passed after the fix.
-Additional CI findings corrected the acceptance harness: RPC cancellation reads
-a complete frame across arbitrary network chunks; example checks allow only
-Node 22's exact built-in SQLite warning; Command fixtures await accepted
-controlled close state before subsequent prop changes and keyboard events.
-Focused deployment, palette, Command browser and warning-filter tests passed.
-MessageScroller now requires a fresh scroll event before capturing an anchor.
-A real MultiSelect race is fixed: an already-closed popup's queued toggle cannot
-clear newly reported validation. Its deterministic browser regression, 13
-component tests, root and non-Desktop typechecks passed; final artifact and
-hosted checks must verify this runtime fix before release.
+Codex fixed three runtime issues exposed during acceptance: late popup-close
+notifications clearing MultiSelect validation; short transcripts resuming
+following after upward keyboard intent; and a background tooltip consuming
+Escape intended for a foreground modal. Deterministic browser regressions,
+component tests, rebuilt Studio and the final combined hosted checks passed.
+
+The normal workspace build now includes internal test-utils. Acceptance fixtures
+read complete RPC frames across network chunks, allow only Node 22's exact
+SQLite experimental warning, await controlled/native callback state, save
+malformed authored pages atomically, and exercise Worker API contracts through
+the native HTTP listener. Studio creates migration history through the public
+MigrationRunner; its full scenario uses a two-minute budget with individual
+assertion limits unchanged. Temporary debug instrumentation was removed.
+
+Installed documentation checks cover 108 guides and 114 examples, including
+35 changed examples. That helper's native Workflow execution was not run;
+its server fixture check is helper-contract-only and its browser fixture check
+uses jsdom. These are not represented as hosted provider or browser acceptance.
+Separate installed/native browser suites passed as listed above.
+
+Historical plans/handoffs remain at `36df3388`. Seven obsolete working journals
+and 353 owned historical temporary artifacts were removed. This compact record
+replaces the checklist, plan, verification archive and handoff for the release.
+The only outstanding release tasks are merge/release creation and registry
+publication verification; no implementation task or Desktop platform check is
+reopened.
 
 ## Publishing
 

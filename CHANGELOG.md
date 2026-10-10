@@ -102,6 +102,8 @@ See the [release notes](specs/release-notes-0.9.0.md) and
 
 ### Fixed
 
+- MultiSelect validation survives delayed popup close events; transcript Home/upward scrolling preserves reading position; background tooltips do not intercept a foreground modal’s Escape key.
+
 - Request disconnect/cancellation and disposal ownership; concurrent Durable Object
   initialization/restoration; session/OAuth replay and rotation boundaries.
 - Navigation/cache/scroll ownership, realtime resynchronization, optimistic loading
