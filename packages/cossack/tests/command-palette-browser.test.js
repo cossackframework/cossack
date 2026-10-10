@@ -51,7 +51,15 @@ const template=${templateSource},container=document.querySelector('#app'),initia
 let Control=Command,props={shortcut:true},second={};window.events=[];window.selections=[];window.targets=[];window.accept=false;window.veto=false;
 const callbacks={onSelect:id=>window.selections.push(id),onOpenChange:open=>{window.events.push(open);if(window.accept){props.open=open;draw();}},'@cancel':event=>{window.targets.push(event.currentTarget.tagName);if(window.veto)event.preventDefault();}};
 function draw(){render(template(Control,{...props,...callbacks},second),container);}
-window.update=next=>{props={...props,...next};draw();};window.updateSecond=next=>{second={...second,...next};draw();};
+// Native dialog close events and nested component updates can finish after a
+// prop render returns. Wait for their rendering turns before another shortcut.
+window.settle=async()=>{
+  await Promise.all(window.instances.map(instance=>instance.updateComplete));
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  await Promise.all(window.instances.map(instance=>instance.updateComplete));
+};
+window.update=async next=>{props={...props,...next};draw();await window.settle();};
+window.updateSecond=async next=>{second={...second,...next};draw();await window.settle();};
 hydrate(template(Control,{...props,...callbacks},second),container);window.retained=initial===container.querySelector('#command');
 window.unmount=()=>render(html\`<p>Removed</p>\`,container);
 window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;window.events=[];window.selections=[];draw();};
@@ -80,12 +88,7 @@ window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;windo
     await page.evaluate(()=>window.updateSecond({shortcut:true,shortcutInEditable:true}));
     await page.locator('#editor').focus();await page.keyboard.press('Control+k');await browserExpect(second).toBeVisible();await browserExpect(dialog).not.toBeVisible();
     await page.keyboard.press('Escape');await browserExpect(second).not.toBeVisible();
-    await page.evaluate(async()=>{
-      window.updateSecond({shortcut:false});
-      // Disabling a nested Command shortcut renders through its palette owner.
-      // Wait for that update before sending the next keyboard event.
-      await Promise.all(window.instances.map(instance=>instance.updateComplete));
-    });
+    await page.evaluate(()=>window.updateSecond({shortcut:false}));
     await outside.focus();await page.keyboard.press('Control+Shift+k');await browserExpect(dialog).not.toBeVisible();
     await outside.dispatchEvent('keydown',{key:'k',ctrlKey:true,repeat:true});await browserExpect(dialog).not.toBeVisible();
     await outside.focus();await page.keyboard.press('Control+k');await browserExpect(dialog).toBeVisible();await browserExpect(second).not.toBeVisible();await browserExpect(input).toBeFocused();

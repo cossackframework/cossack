@@ -299,9 +299,11 @@ export async function checkWorkerRpcAcceptance(server, serverUrl, sessionCookie,
     }
     const cancelledKey = 'cancelled-' + transport;
     const response = await invoke('files', [{ title: 'Draft', key: cancelledKey, nested: { files: [{ _cossack_file_id: 'file_0' }] } }]);
-    const reader = response.body.getReader();
-    expect(new TextDecoder().decode((await reader.read()).value)).toContain('привет🙂');
-    await reader.cancel(); await release(cancelledKey); await expectClosed(cancelledKey, false);
+    // Network reads may split a frame anywhere, including inside UTF-8 text.
+    // Parse the first complete yield before cancelling the response stream.
+    const cancelledStream = readRpcStream(response);
+    expect(await cancelledStream.next()).toMatchObject({ value: { type: 'yield', value: 'привет🙂' } });
+    await cancelledStream.return(); await release(cancelledKey); await expectClosed(cancelledKey, false);
     if (transport === 'sse') {
       const refreshed = await server.fetch('/rpc-check/sse', { headers });
       expect(readHydration(await refreshed.text()).public.count).toBeGreaterThanOrEqual(2);

@@ -2,6 +2,7 @@ import { verifyNodeDevelopmentApplication } from '../packages/cossack/tests/fixt
 import { verifyDevelopmentTraceApplication } from '../packages/cossack/tests/fixtures/development-trace-acceptance.js';
 import { verifyApplicationGuidance } from '../packages/cossack/tests/fixtures/application-guidance-acceptance.js';
 import { verifyAgentGuideBatch } from './verify-agent-guide-batch.mjs';
+import { withoutNodeSqliteWarning } from './acceptance-stderr.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -181,7 +182,7 @@ for (const { entry, outfile } of ${JSON.stringify(bundleEntries)}) esbuild.build
     for (const file of examples) {
       const executable = bundledUiExamples.get(file) ?? path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js');
       const result = await exec(process.execPath, [...nodeArgs, executable], { cwd: projectDir, env, timeout: 30_000 });
-      assert.equal(result.stderr, '');
+      assert.equal(withoutNodeSqliteWarning(result.stderr), '');
     }
     const d1Example = await import(pathToFileURL(path.join(scratch, 'compiled', 'cloudflare-d1-bound-query-bound-query.js')).href);
     const hostileD1Value = "' OR 1=1 --";
