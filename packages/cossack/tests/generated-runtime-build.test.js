@@ -1883,9 +1883,16 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
   }finally{await backend.close();}
 },120000);
 
-const traceRuntimeCases = ['cloudflare', 'node', ...(skipWithoutDeno ? [] : ['deno'])].flatMap(runtime =>
-  (runtime === 'deno' ? [false, true] : [false]).flatMap(https =>
-    ['http', 'sse', 'durable-object'].map(transport => [runtime, transport, https])));
+// HTTP and SSE pages share the client HTTP proxy and the /crpc evidence path;
+// SSE only diverges server-side through the Cloudflare coordinator Durable
+// Object. Every runtime keeps its own WebSocket host (durable-object). HTTPS
+// only affects the Deno development proxy (URL protocol and wss upgrade), so
+// one Deno case runs over TLS through the socket transport.
+const traceRuntimeCases = [
+  ['cloudflare', 'http', false], ['cloudflare', 'sse', false], ['cloudflare', 'durable-object', false],
+  ['node', 'http', false], ['node', 'durable-object', false],
+  ...(skipWithoutDeno ? [] : [['deno', 'http', false], ['deno', 'durable-object', true]]),
+];
 it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP (HTTPS: %s)', async (runtime, transport, https) => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');

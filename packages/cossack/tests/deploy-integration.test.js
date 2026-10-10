@@ -562,20 +562,4 @@ it('builds a generated staging app and validates deployment without uploading', 
     expect((await client.text()).length).toBeGreaterThan(0);
   } catch(error) { log.mockRestore(); server.debug(); throw error; }
   finally { await server.close(); }
-  // A protected SSG route must fail the real Vite build before any generated
-  // page HTML or sitemap is published. The previously successful output is
-  // cleared by Vite rather than surviving as a deployable stale page.
-  await fs.writeFile(path.join(projectDir, 'src/bootstrap/middlewares.ts'), `
-    export default [async (c, next) => {
-      if (c.req.path === '/') return c.redirect('/login');
-      await next();
-    }];
-  `);
-  log.mockClear();
-  const failedCode = await deployCommand([], { cwd: projectDir, flags: { env: 'staging', json: true }, dryRun: true });
-  expect(failedCode).toBe(1);
-  expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({ ok: false,
-    diagnostics: [{ code: 'COSSACK_DEPLOY_BUILD_FAILED' }] });
-  await expect(fs.access(path.join(projectDir, 'dist/client/index.html'))).rejects.toThrow();
-  await expect(fs.access(path.join(projectDir, 'dist/client/sitemap.xml'))).rejects.toThrow();
 }, 180_000);

@@ -95,3 +95,32 @@ it.each(['invalid parameters', 'duplicate output', 'protected output'])('rejects
     expect(JSON.stringify(report)).not.toContain('Private sentinel');
   } finally { vi.unstubAllEnvs(); rmSync(root, { recursive: true, force: true }); }
 }, 60_000);
+
+// A global bootstrap middleware that redirects the anonymous request (for
+// example to a login page) makes the public route non-public. The real build
+// fails before any HTML or sitemap is published, and the previous successful
+// output is cleared rather than surviving as a deployable stale page.
+it('rejects a route redirected by global bootstrap middleware without publishing HTML or a sitemap', async () => {
+  const { root, outDir, write } = fixture();
+  vi.stubEnv('VITEST', '');
+  try { await productionBuild(root); } finally { vi.unstubAllEnvs(); }
+  expect(existsSync(path.join(outDir, 'public/index.html'))).toBe(true);
+  expect(existsSync(path.join(outDir, 'sitemap.xml'))).toBe(true);
+  write('src/bootstrap/middlewares.ts', `export default [async (c: any, next: () => Promise<void>) => {
+  if (c.req.path === '/public') return c.redirect('/login');
+  await next();
+}];`);
+  try {
+    vi.stubEnv('VITEST', '');
+    const error = await productionBuild(root).catch(error => error);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('COSSACK_SSG_NOT_PUBLIC');
+    expect(error.message).toContain('/src/pages/public/index.ts');
+    expect(existsSync(path.join(outDir, 'public/index.html'))).toBe(false);
+    expect(existsSync(path.join(outDir, 'sitemap.xml'))).toBe(false);
+    const report = JSON.parse(readFileSync(path.join(outDir, 'cossack-ssg-report.json'), 'utf8'));
+    expect(report.outcomes).toEqual(expect.arrayContaining([expect.objectContaining({
+      sourceFile: '/src/pages/public/index.ts', status: 'failed', diagnostic: expect.objectContaining({ code: 'COSSACK_SSG_NOT_PUBLIC' }),
+    })]));
+  } finally { vi.unstubAllEnvs(); rmSync(root, { recursive: true, force: true }); }
+}, 60_000);

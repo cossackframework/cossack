@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import { createBudgetModuleGraphFixture } from './fixtures/budget-module-graphs-native.js';
 
 const installedRoot = process.env.COSSACK_BUDGET_GRAPH_INSTALLED_ROOT;
-it.each(['dynamic', 'rebundled', 'external'])('enforces real native Wrangler budgets for the %s module graph', async mode => {
+it.each(['dynamic', 'rebundled'])('enforces real native Wrangler budgets for the %s module graph', async mode => {
   const fixture = await createBudgetModuleGraphFixture(mode, installedRoot);
   try {
     const warned = await fixture.invoke();
@@ -22,8 +22,8 @@ it.each(['dynamic', 'rebundled', 'external'])('enforces real native Wrangler bud
     expect(calls.filter(call => call.command === 'deploy' && call.phase === 'vite')).toHaveLength(1);
     expect(calls.filter(call => call.command === 'deploy' && call.phase === 'cli')).toHaveLength(mode === 'dynamic' ? 0 : 1);
     if (mode !== 'dynamic') expect(config.no_bundle).toBe(false);
-    if (mode === 'external') expect(await fs.readFile(path.resolve(path.dirname(artifact), config.main), 'utf8')).toContain('outside-output.js');
-    await fixture.setBudgets({ [mode === 'rebundled' ? 'gzipUploadKiB' : 'uploadKiB']: { error: 0.001 } });
+    if (mode === 'rebundled') expect(await fs.readFile(path.resolve(path.dirname(artifact), config.main), 'utf8')).toContain('outside-output.js');
+    await fixture.setBudgets(mode === 'rebundled' ? { gzipUploadKiB: { error: 0.001 }, uploadKiB: { error: 0.001 } } : { uploadKiB: { error: 0.001 } });
     const rejected = await fixture.invoke(); expect(rejected.code).toBe(1);
     // Unsupported receipt identity must preserve the failed build classification;
     // it cannot authenticate even a genuine Vite budget failure.
@@ -45,7 +45,7 @@ it.each(['dynamic', 'rebundled', 'external'])('enforces real native Wrangler bud
   } finally { await fixture.cleanup(); }
 }, 240000);
 
-it.each(['dynamic', 'rebundled', 'external'])('enforces real native local startup budgets for the %s module graph', async mode => {
+it.each(['dynamic', 'rebundled'])('enforces real native local startup budgets for the %s module graph', async mode => {
   const fixture = await createBudgetModuleGraphFixture(mode, installedRoot, { startup: true });
   const localMetrics = ['localStartupProfileMs', 'localStartupActiveMs'];
   const assertPrivateFilesRemoved = async () => {
@@ -79,15 +79,17 @@ it.each(['dynamic', 'rebundled', 'external'])('enforces real native local startu
     expect(entries.some(name => /budget-lazy.*\.js$/.test(name))).toBe(true);
     expect(entries.some(name => name.endsWith('.map'))).toBe(true);
     if (mode !== 'dynamic') expect(config.no_bundle).toBe(false);
-    if (mode === 'external') expect(await fs.readFile(path.resolve(path.dirname(artifact), config.main), 'utf8')).toContain('outside-output.js');
+    if (mode === 'rebundled') expect(await fs.readFile(path.resolve(path.dirname(artifact), config.main), 'utf8')).toContain('outside-output.js');
     const calls = await fixture.counts();
     for (const command of ['deploy', 'check']) {
       expect(calls.filter(call => call.command === command && call.phase === 'vite')).toHaveLength(1);
       expect(calls.filter(call => call.command === command && call.phase === 'cli')).toHaveLength(mode === 'dynamic' ? 0 : 1);
     }
     await assertPrivateFilesRemoved();
-    const errorMetric = mode === 'rebundled' ? 'localStartupActiveMs' : 'localStartupProfileMs';
-    await fixture.setBudgets({ [errorMetric]: { error: 0.001 } });
+    // Rebundled carries both local metrics through the CLI re-measurement path.
+    const errorMetrics = mode === 'rebundled' ? ['localStartupActiveMs', 'localStartupProfileMs'] : ['localStartupProfileMs'];
+    const errorMetric = errorMetrics[0];
+    await fixture.setBudgets(Object.fromEntries(errorMetrics.map(metric => [metric, { error: 0.001 }])));
     const rejected = await fixture.invoke(); expect(rejected.code).toBe(1);
     expect(rejected.report.diagnostics).toContainEqual(expect.objectContaining({
       code: mode === 'dynamic' ? 'COSSACK_BUILD_BUDGET_EXCEEDED' : 'COSSACK_BUILD_FAILED', severity: 'error',
@@ -99,7 +101,7 @@ it.each(['dynamic', 'rebundled', 'external'])('enforces real native local startu
     } else {
       const direct = await fixture.invokeVite(); expect(direct.code).toBe(1);
       expect(direct.stdout + direct.stderr).toContain('COSSACK_BUILD_BUDGET_EXCEEDED');
-      expect(direct.stdout + direct.stderr).toContain(`${errorMetric} measured`);
+      for (const metric of errorMetrics) expect(direct.stdout + direct.stderr).toContain(`${metric} measured`);
       expect(direct.stdout + direct.stderr).not.toMatch(/PRIVATE_GRAPH_CONFIG|PRIVATE_EXTERNAL_SOURCE|functionName|cpuprofile|startTime/);
     }
     expect(rejected.stdout).not.toMatch(/PRIVATE_GRAPH|PRIVATE_EXTERNAL|functionName|cpuprofile|startTime/);
