@@ -85,7 +85,7 @@ await client.sendEvent(identity, 'approved', { approved: true });
 const status = await client.inspect(identity);
 ```
 
-Do not import the native entry module in server API helpers. Node and Deno need
+Do not import the native entry module in server API helpers. Node needs
 an explicitly configured durable provider; the local adapter is not a production
 replacement.
 

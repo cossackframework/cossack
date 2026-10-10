@@ -5,7 +5,7 @@ description: Package a shared Cossack application with Electron.
 
 # Desktop applications
 
-Cossack Desktop adds Electron to a Cloudflare, Node.js, or Deno web project.
+Cossack Desktop adds Electron to a Cloudflare or Node.js web project.
 Run `cossack add desktop`. Electron runs on Node.js and uses the same page tree
 as the web application.
 

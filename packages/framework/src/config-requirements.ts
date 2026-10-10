@@ -38,7 +38,7 @@ export class ConfigRequirementError extends Error {
   }
 }
 
-const RUNTIMES = new Set(['cloudflare', 'node', 'deno', 'desktop', 'unknown', 'ssg']);
+const RUNTIMES = new Set(['cloudflare', 'node', 'desktop', 'unknown', 'ssg']);
 const VARIABLE_TYPES = new Set(['string', 'number', 'boolean']);
 const BINDING_KINDS = new Set(['object', 'd1', 'kv', 'r2', 'durable-object', 'service']);
 function invalidMetadata(): never {

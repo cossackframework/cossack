@@ -65,7 +65,7 @@ it('allows unverified remote secrets and keeps values, metadata and factories ou
   expect(output).not.toContain('TOKEN');
   expect(output).not.toContain('FACTORY_EXECUTED_SENTINEL');
 });
-it.each(['node', 'deno'] as const)('uses %s package metadata despite leftover Wrangler configuration', async runtime => {
+it.each(['node'] as const)('uses %s package metadata despite leftover Wrangler configuration', async runtime => {
   const root = fixture('{ bindings: { DB: { kind: "d1", runtimes: ["cloudflare"] } }, variables: { PORT: { type: "number" } } }', {}, { cossack: { runtime } });
   await expect(actualBuild(root)).resolves.toBeDefined();
 });

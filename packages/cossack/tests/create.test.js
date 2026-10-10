@@ -56,7 +56,6 @@ describe('create command', () => {
     ['node', 'npm/11.4.0 node/v24', 'npm install', 'npm run dev'],
     ['node', 'yarn/4.9.2 npm/? node/v24', 'yarn install', 'yarn dev'],
     ['node', 'bun/1.2.20 npm/? node/v24', 'bun install', 'bun run dev'],
-    ['node', 'deno/2.4.0', 'deno install', 'deno task dev'],
   ])(
     'prints matching next steps for the %s adapter invoked by %s',
     async (adapter, userAgent, install, dev) => {
@@ -132,7 +131,7 @@ describe('create command', () => {
       force: false,
     })).toBe(1);
     expect(error).toHaveBeenCalledWith(expect.stringContaining(
-      'Option --package-manager accepts: npm, pnpm, yarn, bun, deno',
+      'Option --package-manager accepts: npm, pnpm, yarn, bun',
     ));
     expect(createAppMock).not.toHaveBeenCalled();
   });

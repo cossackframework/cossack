@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 export const publishedPackageNames = [
-  'renderer', 'core', 'node-adapter', 'deno-adapter', 'auth', 'ui',
+  'renderer', 'core', 'node-adapter', 'auth', 'ui',
   'framework', 'database', 'studio', 'scaffold', 'test-utils',
 ].map(name => `@cossackframework/${name}`).concat('cossack');
 
@@ -83,7 +83,6 @@ export async function verifyPublishedRelease(projectDir) {
     if (!entry.targets.some(target => target.status === 'present' && !target.conditions.includes('types') && /\.(?:js|mjs|cjs)$/.test(target.target))) continue;
     let deferred;
     if (generatedFrameworkEntries.has(entry.import)) deferred = 'generated application or native Cloudflare graph';
-    else if (entry.package === '@cossackframework/deno-adapter' && entry.import === entry.package) deferred = 'native Deno graph';
     else if (entry.package === '@cossackframework/ui') deferred = 'generated browser graph';
     else if (entry.package === 'cossack' && entry.import !== 'cossack/vitest-reporter') deferred = 'CLI invocation and guide fixtures';
     else if (entry.import === '@cossackframework/database/cli') deferred = 'generated database CLI invocation';

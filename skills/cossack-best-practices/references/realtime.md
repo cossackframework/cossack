@@ -46,7 +46,7 @@ Users or tabs resolving to the same component and scope share its backend. The c
 
 ## SSE transport
 
-Cloudflare SSE requires the `COSSACK_SSE` Durable Object coordinator and `SseDurableObject` Worker export. Node/Deno coordination is process-local. Actions are sent via HTTP POST (`/crpc`); state updates are pushed over a long-lived SSE connection.
+Cloudflare SSE requires the `COSSACK_SSE` Durable Object coordinator and `SseDurableObject` Worker export. Node coordination is process-local. Actions are sent via HTTP POST (`/crpc`); state updates are pushed over a long-lived SSE connection.
 
 ```typescript
 import { Page, State, Server, Cossack } from '@cossackframework/core';
@@ -218,7 +218,7 @@ Scope keys identify a backend; they do not authorize access. Derive tenant/user
 ownership from trusted context and recheck record access for RPC and delivered
 socket operations. Do not treat browser scope/state or an open socket as authority.
 Cloudflare durable state requires actual bindings and native restart acceptance;
-Node/Deno realtime state is process-local and resets with its process. Read the
+Node realtime state is process-local and resets with its process. Read the
 installed Core `rpc-streams-and-transport-policy` and
 `server-action-access-policy` guides in `cossack docs --package @cossackframework/core --json`, selecting
 `guidance.guides` by ID. This is offline guidance, not a

@@ -22,7 +22,6 @@
       "@cossackframework/database/bun": ["./src/runtime/bun.ts"],
       "@cossackframework/database/cloudflare": ["./src/runtime/cloudflare.ts"],
       "@cossackframework/database/cloudflare-turso": ["./src/runtime/cloudflare-turso.ts"],
-      "@cossackframework/database/deno": ["./src/runtime/deno.ts"],
       "@cossackframework/database/cossack": ["./src/cossack/index.ts"],
       "@cossackframework/database/tooling": ["./src/tooling/index.ts"]
     },

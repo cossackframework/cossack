@@ -173,7 +173,7 @@ try {
 
 In Node.js, URL or path inference supports PostgreSQL, MySQL, Turso HTTPS URLs, and
 SQLite. Bun delegates to native Bun SQL. The package root's `SQL` export accepts
-explicit adapters and remains runtime neutral. Workers and Deno should use an
+explicit adapters and remains runtime neutral. Workers should use an
 explicit adapter rather than URL guessing:
 
 ```ts

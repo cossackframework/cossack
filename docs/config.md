@@ -389,13 +389,13 @@ secret existence remain unverified. The check never executes application factori
 Use `cossackConfig({ runtime: 'cloudflare', environment: 'staging' })` to select
 the target explicitly. Otherwise project metadata selects the runtime and
 `CLOUDFLARE_ENV` selects the named environment. Build watch cycles recheck factory
-metadata and Wrangler configuration. Node and Deno builds validate metadata,
+metadata and Wrangler configuration. Node builds validate metadata,
 conflicting declarations and runtime compatibility, but do not read `.env` or
 process values. Their runtime values remain unchecked until request preparation.
 Development startup allows incomplete values so configuration can be completed.
 
-For Node and Deno, the literal `requirements` export is the declaration source.
-There is no Wrangler binding catalog for those runtimes. `cossack config --json`
+For Node, the literal `requirements` export is the declaration source.
+There is no Wrangler binding catalog for that runtime. `cossack config --json`
 reports that metadata without executing factories. `cossack config --check`
 returns `COSSACK_CONFIG_CHECK_UNAVAILABLE`; it cannot prove which variables or
 objects a production process will supply. Direct Vite builds still reject invalid
@@ -403,7 +403,7 @@ metadata, conflicting requirements and bindings that the selected runtime cannot
 support. A successful build does not prove that production values are present.
 
 The generated Node entry supplies process variables through `createEnv()`.
-The generated Deno entry supplies `Deno.env.toObject()`. A custom host can pass
+A custom host can pass
 its own binding object to the application. Request preparation checks that object
 against every active requirement before calling any configuration factory or
 application middleware. Required variables, scalar coercion and binding shapes
@@ -426,7 +426,7 @@ server work; expose only the public result that the page needs.
 
 `secret: true` records classification. It does not prevent application code from
 putting the value into public state, HTML, head tags, RPC results or responses.
-Release acceptance exercises private reads across native Node and Deno SSR,
+Release acceptance exercises private reads across native Node SSR,
 parallel environments, browser hydration and real RPC. It also checks that invalid
 values stop before factory and page use, that named diagnostics omit values, and
 that production client JavaScript and source maps omit the private configuration.

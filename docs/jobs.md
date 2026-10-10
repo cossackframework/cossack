@@ -155,7 +155,7 @@ removes them. Deleting them also removes that deduplication protection. Keep the
 ledger's lease longer than the complete handler/cleanup duration. Read-only
 inspection never initializes the schema.
 
-The generated jobs recipe requires Cloudflare bindings and rejects Node/Deno
+The generated jobs recipe requires Cloudflare bindings and rejects Node
 composition before writing files. Other runtimes can use explicit durable queue
 and store adapters through the portable contracts. `LocalJobAdapter` is for local
 tests; it does not provide durable production scheduling or autonomous execution.

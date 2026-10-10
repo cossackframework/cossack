@@ -109,8 +109,8 @@ WebSocket identity comes from the runtime's verified upgrade rather than action
 arguments. Anonymous Durable Object peers have no synthetic user ID, so the
 default key uses the captured IP headers. Each socket supplies its own headers,
 query and decoded page route params to actions and custom keys, including after
-component reconstruction. Node and Deno also pass the connecting peer context
-when sharing a component; they do not reuse the first connection's headers.
+component reconstruction. Node also passes the connecting peer context
+when sharing a component; it does not reuse the first connection's headers.
 
 Cloudflare retains a request snapshot in the native WebSocket attachment.
 Cookie/Authorization, common credential headers, handshake noise and internal
@@ -152,7 +152,7 @@ export default class SearchPage extends Cossack {
 By default a caller is bucketed by the authenticated user id, falling back to the client IP. Client-supplied proxy headers are not trusted by default:
 
 - **Cloudflare Workers**: `cf-connecting-ip`, which Cloudflare sets and clients cannot forge.
-- **Node.js / Deno**: the TCP peer address. `createDenoAdapter().serve()` records it automatically. A custom Node entry records it with `setClientAddress(request, incoming.socket.remoteAddress)`, or passes `@hono/node-server`'s `{ incoming }` bindings through as `env`.
+- **Node.js**: the TCP peer address. A custom Node entry records it with `setClientAddress(request, incoming.socket.remoteAddress)`, or passes `@hono/node-server`'s `{ incoming }` bindings through as `env`.
 - **Behind a reverse proxy**: set `RATE_LIMIT_TRUST_PROXY` (or `rateLimitTrustProxy`) in the environment to the one header your proxy overwrites, e.g. `x-real-ip` or `x-forwarded-for`. For `x-forwarded-for` the right-most entry (appended by your proxy) is used. Only enable this when the app is reachable exclusively through that proxy.
 
 Without any of these, anonymous callers share one `ip:anonymous` bucket. Bucket by anything else with `key`:

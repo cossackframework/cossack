@@ -118,7 +118,7 @@ lifecycle events:
 
 ### `cossack create <name>`
 
-Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers, Node.js, or Deno) unless `--adapter` is provided.
+Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers or Node.js) unless `--adapter` is provided.
 
 ```bash
 cossack create my-app
@@ -226,7 +226,7 @@ use `CLOUDFLARE_ENV` when the flag is absent. Their `runtime` metadata evaluates
 route transports with the shared framework capability model. Missing required
 transport bindings or unsupported transports make checks fail. Configuration
 presence does not prove remote resources exist or adapter setup is correct.
-Node/Deno support the `durable-object` transport name through process-local
+Node supports the `durable-object` transport name through process-local
 adapters; this does not provide durable cross-instance coordination.
 
 ### `cossack inspect cloudflare` and `cossack check cloudflare`
@@ -261,7 +261,7 @@ generated types. They validate deployment without uploading or provisioning.
 output is suppressed. Required remote secrets are not checked during a local
 dry run. See [Deployment](./deployment.md) for environment and secret setup.
 
-### `cossack adapter <node|cloudflare|deno>`
+### `cossack adapter <node|cloudflare>`
 
 Switch an existing schema-v3 scaffolded project to one active runtime. The
 command re-renders the complete recorded recipe, previews the change set,

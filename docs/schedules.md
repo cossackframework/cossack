@@ -83,8 +83,8 @@ catch-up runs, promise every tick will execute, or interpret deployment downtime
 as a backlog. Deliberately replay a known missed occurrence with `runOnce` and
 its original timestamp. Consult provider operational events for delivery evidence.
 
-Node and Deno do not receive an autonomous timer from this portable module.
-They require an explicit scheduler adapter or an external scheduler that calls
+Node does not receive an autonomous timer from this portable module.
+It requires an explicit scheduler adapter or an external scheduler that calls
 `runOnce`/`scheduled`. The local one-shot API is for controlled execution, not
 durable production scheduling. Never retain an HTTP request or its facilities
 in a schedule definition; resolve scoped facilities in the job handler.

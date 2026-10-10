@@ -10,7 +10,7 @@
 //   adapter-required A separate integration is needed; the built-in adapter does not provide it.
 //   unsupported      The current runtime profile does not support it.
 
-export type RuntimeName = 'cloudflare' | 'node' | 'deno' | 'desktop' | 'unknown';
+export type RuntimeName = 'cloudflare' | 'node' | 'desktop' | 'unknown';
 
 export type CapabilityStatus = 'available' | 'missing-binding' | 'adapter-required' | 'unsupported';
 
@@ -64,18 +64,6 @@ const PROFILES: Record<Exclude<RuntimeName, 'unknown'>, RuntimeProfile> = {
         },
     },
     node: {
-        cloudflareBindings: false,
-        adapterRequirements: ['scheduledHandlers'],
-        transports: ['http', 'sse', 'durable-object'],
-        realtimeCoordination: false,
-        processLocalRealtime: true,
-        durableState: false,
-        scheduledHandlers: true,
-        serverlessStorage: false,
-        filesystem: true,
-        bindingRequirements: {},
-    },
-    deno: {
         cloudflareBindings: false,
         adapterRequirements: ['scheduledHandlers'],
         transports: ['http', 'sse', 'durable-object'],

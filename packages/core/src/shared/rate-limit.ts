@@ -578,8 +578,8 @@ const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9a-z-]+$/;
  * Record the transport peer address for `request` (the TCP socket's remote
  * address). Runtime adapters call this before dispatching so
  * {@link getClientIp} can bucket anonymous callers without trusting
- * client-controlled headers. `createDenoAdapter().serve()` does this
- * automatically; Node entries pass `incoming.socket.remoteAddress`.
+ * client-controlled headers. Node entries pass
+ * `incoming.socket.remoteAddress`.
  */
 export function setClientAddress(request: Request, address: string | undefined | null): void {
     if (typeof address === 'string' && address) clientAddresses.set(request, address);

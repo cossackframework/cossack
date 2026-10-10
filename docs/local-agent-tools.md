@@ -229,8 +229,8 @@ executes them under the offline guard. This does not prove plain Node imports, r
 login/cookie issuance or framework RPC authorization.
 Framework guides now cover runtime-capability planning and cache guarantees,
 including Cloudflare binding names, the process locality of memory cache, and KV's
-eventual consistency. Node and Deno adapter guides cover upgrade/fetch lifecycles,
-binding precedence, cleanup and their separate Vite development plugins. The
+eventual consistency. The Node adapter guide covers upgrade/fetch lifecycles,
+binding precedence, cleanup and its separate Vite development plugin. The
 internal `test-utils` workspace package is not part of the published tarball set,
 so it is deliberately excluded from installed package guidance.
 Studio guidance explains local versus live D1 access and how embedded startup
@@ -255,14 +255,12 @@ Standalone examples prove Node execution. The application checks cover local
 Cloudflare and Node development and production client stripping. They do not
 prove live deployment or every transport and runtime combination. Other APIs,
 components, recipes and runtime targets still need their own coverage.
-The latest tarball gate typechecks and executes all 69 standalone examples from
-published package exports plus four separately bundled auth examples, for 73
-examples across 66 package guides. Database guidance now exercises the installed
+The latest tarball gate typechecks and executes all 67 standalone examples from
+published package exports plus four separately bundled auth examples, for 71
+examples across 65 package guides. Database guidance now exercises the installed
 Node SQLite migration apply/status/rollback and repeatable seeder lifecycle as
 well as bound Node SQLite and Cloudflare D1 queries. Core guidance includes locale
-negotiation, `q=0` exclusions and CLDR plural formatting. The Deno fetch example uses a small
-Node compatibility shim for Hono's Deno static-file import; this checks the installed
-adapter path and binding precedence, not native Deno or Deno Deploy readiness.
+negotiation, `q=0` exclusions and CLDR plural formatting.
 
 
 ## Component prop declarations

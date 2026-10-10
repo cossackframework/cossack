@@ -57,7 +57,7 @@ it('fails Desktop SSE before emitting a bundle and identifies the selected featu
 it('fails Cloudflare SSE without its binding', async () => {
   await expect(buildFixture('cloudflare', 'sse')).rejects.toMatchObject({ message: expect.stringContaining('COSSACK_SSE') });
 });
-it.each(['cloudflare', 'node', 'deno', 'desktop'] as const)('builds portable HTTP for %s without pulling optional Cloudflare imports', async runtime => {
+it.each(['cloudflare', 'node', 'desktop'] as const)('builds portable HTTP for %s without pulling optional Cloudflare imports', async runtime => {
   const result = await buildFixture(runtime, 'http');
   const outputs = (Array.isArray(result) ? result : [result]).flatMap(output => 'output' in output ? output.output : []);
   expect(outputs.some(output => output.type === 'chunk')).toBe(true);
@@ -67,7 +67,7 @@ it('builds selected Cloudflare SSE with its declared binding', async () => {
   await expect(buildFixture('cloudflare', 'sse', ['COSSACK_SSE'])).resolves.toBeDefined();
 });
 
-it.each(['node', 'deno'] as const)('rejects scheduled dispatch without an integration on %s', async runtime => {
+it.each(['node'] as const)('rejects scheduled dispatch without an integration on %s', async runtime => {
   const source = { file: 'src/schedules/report.ts', line: 2 };
   expect(checkCapabilityRequirements(runtime, [{ feature: 'daily report', source, requires: { scheduledHandlers: true } }]))
     .toEqual([expect.objectContaining({ code: 'COSSACK_CAPABILITY_ADAPTER_REQUIRED', feature: 'daily report', source })]);
@@ -109,7 +109,7 @@ it('accepts discovered named HTTP handler modules without component decorators',
     'export const POST = factory(); export async function GET(c) { return c.json({ ok: true }); }', undefined, 'src/pages/api/chat.ts')).resolves.toBeDefined();
 });
 
-it.each(['node', 'deno'] as const)('rejects durable state before bundling on %s but allows process-local pages', async runtime => {
+it.each(['node'] as const)('rejects durable state before bundling on %s but allows process-local pages', async runtime => {
   const page = (stateful: string) => `@Page({ transport: 'durable-object', stateful: ${stateful} }) export default class Chat {}`;
   await expect(buildFixture(runtime, 'http', [], {}, page('true')))
     .rejects.toMatchObject({ message: expect.stringMatching(/chat\/index.ts:1: page transport requires durableState/) });

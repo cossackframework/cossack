@@ -103,7 +103,6 @@ describe('upgrade package manager detection', () => {
     ['yarn.lock', 'yarn'],
     ['bun.lock', 'bun'],
     ['bun.lockb', 'bun'],
-    ['deno.lock', 'deno'],
     ['package-lock.json', 'npm'],
   ])('detects %s', async (lockfile, manager) => {
     await fs.writeFile(path.join(temporaryParent, lockfile), '');

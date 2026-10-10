@@ -15,7 +15,7 @@ it('generates native Workflow setup with equivalent create/add and idempotent pr
  expect(await fs.readFile(path.join(direct.projectDir,'vite.config.ts'),'utf8')).toContain('cossackWorkflows()');
  const file=path.join(composed.projectDir,'src/workflows/approval.ts');const authored=(await fs.readFile(file,'utf8'))+'\n// application-owned';await fs.writeFile(file,authored);await addFeature(composed.projectDir,'workflows',{interactive:false});expect(await fs.readFile(file,'utf8')).toBe(authored);
 });
-it.each(['node','deno'])('rejects native Workflow recipe on %s before writing',async adapter=>{
+it.each(['node'])('rejects native Workflow recipe on %s before writing',async adapter=>{
  const root=await directory();await expect(createApp('app',{cwd:root,adapter,preset:'minimal',features:['workflows'],interactive:false})).rejects.toThrow();expect(await fs.readdir(root)).toEqual([]);
 });
 it('declares the required Workflow binding without claiming remote readiness',()=>{const recipe=resolveRecipe({adapter:'cloudflare',preset:'minimal',features:['workflows']});expect(recipeCapabilityRequirements(recipe)).toContainEqual(expect.objectContaining({feature:'workflows/cloudflare',requires:{cloudflareBindings:['WORKFLOWS']}}));});

@@ -91,7 +91,7 @@ describe('metadata-backed command validation', () => {
 
   it('allows repeated list options but rejects repeated scalar options', () => {
     expect(parseFlags(['app', '--features=ui', '--features=auth'], commandSpecs.create).flags.features).toEqual(['ui', 'auth']);
-    expect(() => parseFlags(['app', '--adapter=node', '--adapter=deno'], commandSpecs.create)).toThrow('one value');
+    expect(() => parseFlags(['app', '--adapter=node', '--adapter=cloudflare'], commandSpecs.create)).toThrow('one value');
     expect(parseFlags(['--force-file=a', '--force-file=b'], commandSpecs.upgrade).flags['force-file']).toEqual(['a', 'b']);
     expect(parseFlags(['plan', '--local', '--remote=false'], commandSpecs.migration).flags)
       .toMatchObject({ local: true, remote: false });

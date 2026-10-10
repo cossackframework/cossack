@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { scaffoldLinkedApp } from './fixtures/linked-app.js';
-import { denoBinary, skipWithoutDeno } from './fixtures/deno.js';
 import { writeConfigReleaseAcceptance, checkConfigReleaseTooling, startConfigReleaseServer,
   checkConfigReleaseAcceptance, CONFIG_RELEASE_MARKERS } from './fixtures/config-release-acceptance.js';
 
@@ -16,7 +15,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root
 async function generatedProject(adapter) {
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-config-release-'));
   roots.push(parent);
-  const root = await scaffoldLinkedApp(parent, { adapter, packages: ['framework', 'core', 'renderer', 'scaffold', 'node-adapter', 'deno-adapter'] });
+  const root = await scaffoldLinkedApp(parent, { adapter, packages: ['framework', 'core', 'renderer', 'scaffold', 'node-adapter'] });
   await writeConfigReleaseAcceptance(root);
   // This deliberately invalid development file must never be read by config inspection
   // or production request preparation. The harness supplies values explicitly.
@@ -30,14 +29,11 @@ async function build(root, args) {
   });
   for (const marker of CONFIG_RELEASE_MARKERS) expect(result.stdout + result.stderr).not.toContain(marker);
 }
-for (const adapter of ['node', 'deno']) {
-  it.skipIf(adapter === 'deno' && skipWithoutDeno)(`keeps configuration private, typed and isolated in a generated production ${adapter} app`, async () => {
-    const binary = denoBinary;
-    const root = await generatedProject(adapter);
-    await checkConfigReleaseTooling(root, path.join(repository, 'packages/cossack/bin/cossack.js'));
-    await build(root, []); await build(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-    const server = await startConfigReleaseServer(root, adapter, binary);
-    try { await checkConfigReleaseAcceptance(root, server); }
-    finally { await server.close(); }
-  }, 180000);
-}
+it('keeps configuration private, typed and isolated in a generated production node app', async () => {
+  const root = await generatedProject('node');
+  await checkConfigReleaseTooling(root, path.join(repository, 'packages/cossack/bin/cossack.js'));
+  await build(root, []); await build(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
+  const server = await startConfigReleaseServer(root);
+  try { await checkConfigReleaseAcceptance(root, server); }
+  finally { await server.close(); }
+}, 180000);

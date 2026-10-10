@@ -31,7 +31,6 @@ const EXCLUDE_FROM_SYNC = new Set([
   'yarn.lock',
   'bun.lock',
   'bun.lockb',
-  'deno.lock',
   'tsconfig.json',
   'tsconfig.declarations.json',
   'wrangler.jsonc',

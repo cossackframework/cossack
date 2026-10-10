@@ -1,5 +1,5 @@
 // Generated development servers: Node dev WebSockets/HMR, state docs, DataTable,
-// browser RPC traces shared with the CLI and MCP, cossack dev, and Deno runtimes.
+// browser RPC traces shared with the CLI and MCP, and cossack dev.
 // Split from one file so the four groups run in parallel; shared helpers live in
 // fixtures/generated-app.js.
 import { writeTestUtilitiesAcceptance, checkTestUtilitiesAcceptance } from './fixtures/test-utils-acceptance.js';
@@ -34,7 +34,6 @@ import { writeUrlStateAcceptance, checkUrlStateBrowser, createUrlStateBackend } 
 import { createRuntimeProxy, checkRuntimeOwnership } from './fixtures/runtime-owner-acceptance.js';
 import { writeNavigationOwnershipAcceptance, checkNavigationOwnershipBrowser } from './fixtures/navigation-ownership-acceptance.js';
 import { cleanupRoots, project, sharedApps, run, cossack, typecheck, vite, assertPortableChunks, productionServer, repository, writeStateExample, checkStateExample } from './fixtures/generated-app.js';
-import { skipWithoutDeno } from './fixtures/deno.js';
 
 afterEach(cleanupRoots);
 
@@ -106,21 +105,17 @@ it.each(['node', 'cloudflare'])('integrates the DataTable with URL state and ser
 
 // HTTP and SSE pages share the client HTTP proxy and the /crpc evidence path;
 // SSE only diverges server-side through the Cloudflare coordinator Durable
-// Object. Every runtime keeps its own WebSocket host (durable-object). HTTPS
-// only affects the Deno development proxy (URL protocol and wss upgrade), so
-// one Deno case runs over TLS through the socket transport.
+// Object. Every runtime keeps its own WebSocket host (durable-object).
 const traceRuntimeCases = [
-  ['cloudflare', 'http', false], ['cloudflare', 'sse', false], ['cloudflare', 'durable-object', false],
-  ['node', 'http', false], ['node', 'durable-object', false],
-  ...(skipWithoutDeno ? [] : [['deno', 'http', false], ['deno', 'durable-object', true]]),
+  ['cloudflare', 'http'], ['cloudflare', 'sse'], ['cloudflare', 'durable-object'],
+  ['node', 'http'], ['node', 'durable-object'],
 ];
-it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP (HTTPS: %s)', async (runtime, transport, https) => {
+it.each(traceRuntimeCases)('shares a generated %s development browser RPC trace over %s with the CLI and MCP', async (runtime, transport) => {
   const {Client}=await import('@modelcontextprotocol/client');
   const {StdioClientTransport}=await import('@modelcontextprotocol/client/stdio');
   const root=await project(runtime);
   await verifyDevelopmentTraceApplication(root,{
-    additionalAllowedPaths:[repository],transport,runtime,https,
-    launcher:runtime==='deno'?{entry:path.join(repository,'packages/cossack/bin/cossack.js'),binDirectory:path.join(repository,'node_modules/.bin'),json:https}:undefined,
+    additionalAllowedPaths:[repository],transport,runtime,
     async onRecorded({snapshot,recorded}) {
       const {stdout,stderr:cliStderr}=await promisify(execFile)(process.execPath,[path.join(repository,'packages/cossack/bin/cossack.js'),'traces','--json','--session',snapshot.sessionId],{cwd:root,timeout:15000,maxBuffer:2*1024*1024});
       const cli=JSON.parse(stdout);
@@ -185,23 +180,3 @@ it.each([true, false])('serves generated Node pages, native requests, cookies an
     await expect.poll(() => fetch(origin).then(() => true, () => false)).toBe(false);
   }
 }, 60000);
-
-it.skipIf(!process.env.COSSACK_DENO_BINARY)('executes a generated Deno application with HTTP, SSE, WebSockets and browser hydration', async () => {
-  const {writeDenoRuntimeAcceptance,verifyDenoRuntimeApplication,verifyDenoCliStartup}=await import('./fixtures/deno-runtime-acceptance.js');
-  const root=await project('deno');
-  await writeDenoRuntimeAcceptance(root);
-  try { await promisify(execFile)('pnpm', ['exec', 'tsc', '--noEmit'], { cwd: root }); }
-  catch (error) { throw new Error(`${error.stdout}\n${error.stderr}`); }
-  await vite(root, []);
-  await vite(root, ['--ssr','src/index.ts','--outDir','dist/server']);
-  await assertPortableChunks(path.join(root,'dist/server'));
-  await verifyDenoRuntimeApplication(root);
-  await verifyDenoCliStartup(root, process.env.COSSACK_DENO_BINARY);
-},120000);
-
-it.skipIf(!process.env.COSSACK_DENO_BINARY).each([false, true])('serves generated Deno development through a native module runner (crash=%s)', async crash => {
-  const { writeDenoRuntimeAcceptance, verifyDenoDevelopmentApplication } = await import('./fixtures/deno-runtime-acceptance.js');
-  const root = await project('deno');
-  await writeDenoRuntimeAcceptance(root);
-  await verifyDenoDevelopmentApplication(root, crash);
-},120000);

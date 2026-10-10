@@ -30,7 +30,7 @@ const INTEGRATION_FILES = [
   '*-guide-coverage.test.js',
   // Chromium tests for the CLI's scaffolded UI templates (component tests live in packages/ui/tests/browser).
   '*-browser.test.js',
-  // Generated apps: vite build, Node/Deno runtimes, shutdown.
+  // Generated apps: vite build, Node runtime, shutdown.
   'generated-*.test.js',
   'production-source-maps.test.js',
   'hydration-diagnostics-runtime.test.js',

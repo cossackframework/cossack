@@ -360,7 +360,7 @@ export interface CreateAppOptions {
   i18n?: {
     autoDetectBrowser?: boolean;
   };
-  /** Optional process runtime integration (for example the Deno adapter). */
+  /** Optional process runtime integration (for example the Node adapter). */
   runtimeAdapter?: CossackRuntimeAdapter;
 }
 
@@ -444,7 +444,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // request, not once at module load.
   app.use('*', async (c, next) => {
     const envBindings = c.env as unknown as Record<string, unknown>;
-    const configContext = { runtime: (options.runtimeAdapter ? ['cloudflare', 'node', 'deno', 'desktop'].includes(options.runtimeAdapter.name) ? options.runtimeAdapter.name : 'unknown' : 'cloudflare') as ConfigRuntime,
+    const configContext = { runtime: (options.runtimeAdapter ? ['cloudflare', 'node', 'desktop'].includes(options.runtimeAdapter.name) ? options.runtimeAdapter.name : 'unknown' : 'cloudflare') as ConfigRuntime,
       ...(configEnvironment ? { environment: configEnvironment } : {}) };
     const store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings, {
       requirements: configRequirements, context: configContext,
@@ -606,7 +606,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // For SSE transport, connect the shared scope before rendering so SSR
         // renders the authoritative state. On Cloudflare the coordinator owns
         // the scope: first initialization wins and later requests hydrate the
-        // snapshot instead of overwriting it. Node and Deno keep the
+        // snapshot instead of overwriting it. Node keeps the
         // process-local store entry for the SSE endpoint and /crpc.
         if (pageOptions?.transport === 'sse') {
           const componentRouteId = routePathToIdMap.get(path);
@@ -1024,7 +1024,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
 
     // Cloudflare's distributed backend serializes scope actions inside the
     // coordinator Durable Object and hydrates them from the authoritative
-    // snapshot instead of the browser's state. Node and Deno keep executing
+    // snapshot instead of the browser's state. Node keeps executing
     // against the process-local store.
     const sseStub = targetPageOptions?.transport === 'sse'
       ? getSseScopeStub(c.env, componentRouteId, effectiveScopeKey) : undefined;

@@ -85,7 +85,7 @@ export async function dispatchSocketRpcMessage(
     closeUnauthorizedSocket(client as any);
 }
 
-/** Minimal socket surface shared by process runtimes such as Node and Deno. */
+/** Minimal socket surface shared by process runtimes such as Node. */
 export interface InMemoryWebSocketClient {
     readonly readyState: number;
     send(data: string): void;

@@ -23,7 +23,7 @@ middleware, startup, or background task execution.
 
 Core component actions, iterator cleanup, server tasks, asynchronous component
 cleanup, server update catches and service rollback/disposal emit
-`cossack.runtime.failure`. Durable Object and Node/Deno transport failures use
+`cossack.runtime.failure`. Durable Object and Node transport failures use
 the portable `@cossackframework/core/server-diagnostics` entry. Callers supply
 bounded authored identifiers, never actual URLs or arbitrary input. Missing or
 non-UUID IDs become `unavailable`. In-memory callbacks use generic dispatch
@@ -37,12 +37,7 @@ matched route template and allowlisted HTTP method, omitting concrete paths and
 queries. SSG loader/render/cleanup diagnostics use fixed events and failed-page
 messages; controlled public-route failures retain `COSSACK_SSG_NOT_PUBLIC`.
 
-Deno Vite transport/startup/reload/proxy catches also emit fixed events and safe
-HTTP failures; they do not forward arbitrary exceptions into Vite's public error
-renderer. Compiler results stay on the authenticated private ModuleRunner channel.
-
-This is partial release acceptance. Native Deno development startup/cleanup,
-remote Workers Logs ingestion, production source-map resolution and configurable
+This is partial release acceptance. Remote Workers Logs ingestion, production source-map resolution and configurable
 startup budgets remain unverified by these source tests. CLI Cloudflare upload
 size budgets are described in [Build budgets](./build-budgets.md). Local workerd
 checks prove local emission and redaction, not remote logging service ingestion.
@@ -52,7 +47,7 @@ checks prove local emission and redaction, not remote logging service ingestion.
 
 New web projects emit server maps through the generated
 `environments.ssr.build.sourcemap` setting. Cloudflare artifacts use `dist/ssr`;
-standalone Node/Deno builds use `dist/server`. Client maps remain opt-in. Cloudflare
+standalone Node builds use `dist/server`. Client maps remain opt-in. Cloudflare
 projects also set `upload_source_maps: true`; deploy the built Wrangler artifact
 so this setting and the matching server maps stay together. Existing applications
 preserve their owned configuration during upgrades: add these settings explicitly.

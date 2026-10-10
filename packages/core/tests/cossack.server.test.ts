@@ -104,7 +104,7 @@ describe('Cossack Core: Server-Side', () => {
     const mockContext = { req: { param: vi.fn() } } as unknown as Context;
     await component.bootstrap({
       context: mockContext,
-      runtime: { adapter: 'deno', platform: 'desktop' },
+      runtime: { adapter: 'node', platform: 'desktop' },
     });
 
     expect(component.runtimePlatform()).toBe('desktop');

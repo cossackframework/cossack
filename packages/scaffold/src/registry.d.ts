@@ -1,7 +1,7 @@
 /** Pure recipe metadata without Node ambient types. */
 import type { CapabilityDiagnostic } from '@cossackframework/core/runtime-capabilities';
 
-export type Adapter = 'cloudflare' | 'node' | 'deno';
+export type Adapter = 'cloudflare' | 'node';
 export type Preset = 'minimal' | 'database' | 'auth' | 'full-stack';
 export type Feature = 'ui' | 'database' | 'studio' | 'auth' | 'dashboard' | 'markdown' | 'examples' | 'desktop' | 'resource' | 'mutation' | 'scoped-service' | 'protected-route' | 'jobs' | 'turnstile' | 'schedules' | 'notifications' | 'workflows';
 export type AuthMethod = 'credentials' | 'oauth';

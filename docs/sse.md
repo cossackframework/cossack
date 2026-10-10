@@ -1,6 +1,6 @@
 ---
 title: "Server-Sent Events (SSE) Transport"
-description: "Real-time transport with distributed scope coordination on Cloudflare and a process-local backend for Node and Deno."
+description: "Real-time transport with distributed scope coordination on Cloudflare and a process-local backend for Node."
 ---
 
 # Server-Sent Events (SSE) Transport
@@ -15,7 +15,7 @@ SSE pages use one of two backends, selected by the runtime:
   SQLite-backed Durable Object (`SseDurableObject`, binding `COSSACK_SSE`).
   State is shared across Worker instances, survives restarts, and actions are
   serialized per scope.
-- **Node and Deno — process-local backend.** State lives in an in-memory store
+- **Node — process-local backend.** State lives in an in-memory store
   inside one process. This is a development convenience, not durable
   coordination; see [Runtime backends](#runtime-backends).
 
@@ -223,7 +223,7 @@ newer public state. A higher cursor supplies authority even for equal values aft
 settlement. ClientState and ClientStore drafts remain local. A reopened EventSource
 resets the client's cursor baseline before the server's snapshot is applied.
 
-Node/Deno use increasing process publication IDs across SSR replacement and entry
+Node uses increasing process publication IDs across SSR replacement and entry
 recreation. Scopes can observe gaps in these IDs. A restart loses this order, and the
 backend has no durable history or cross-process coordination. Cloudflare retains its
 per-scope SQLite event history and resynchronizes when history expires.
@@ -233,14 +233,14 @@ per-scope SQLite event history and resynchronizes when history expires.
 | Runtime | Backend | Guarantees |
 | --- | --- | --- |
 | Cloudflare Workers | `SseDurableObject` via the `COSSACK_SSE` binding | Shared across instances and requests; SQLite-persisted across restarts; per-scope action serialization; bounded event history with cursor reconnect. |
-| Node.js / Deno | Process-local in-memory store | Same endpoint and `/crpc` contracts, but state is per-process: it is not shared across machine boundaries, does not survive restarts, and SSR resets the stored entry. Actions still hydrate the client-sent state because there is no authoritative server-side snapshot. |
+| Node.js | Process-local in-memory store | Same endpoint and `/crpc` contracts, but state is per-process: it is not shared across machine boundaries, does not survive restarts, and SSR resets the stored entry. Actions still hydrate the client-sent state because there is no authoritative server-side snapshot. |
 
 The process-local backend is deliberately **not** a Cloudflare fallback. If an
 SSE page runs on Cloudflare without the `COSSACK_SSE` binding, requests fail
 with an actionable diagnostic instead of silently degrading to per-isolate
-state. Applications that need cross-process coordination on Node or Deno should
+state. Applications that need cross-process coordination on Node should
 front multiple instances with a single process or wait for a distributed
-adapter for those runtimes.
+adapter for that runtime.
 
 ## Scope
 

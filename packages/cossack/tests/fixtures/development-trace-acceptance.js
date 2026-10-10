@@ -228,7 +228,7 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
       }
     }
   };
-  if(runtime==='node'||runtime==='deno')await promisify(execFile)(process.execPath,[vite,'build','--ssr','src/index.ts','--outDir','dist/server'],{
+  if(runtime==='node')await promisify(execFile)(process.execPath,[vite,'build','--ssr','src/index.ts','--outDir','dist/server'],{
     cwd:root,env:{...process.env,NODE_ENV:'production',VITEST:''},timeout:120000,maxBuffer:8*1024*1024,
   });
   await checkProduction(path.join(root,'dist/client/assets'));await checkProduction(path.join(root,runtime==='cloudflare'?'dist/ssr':'dist/server'));

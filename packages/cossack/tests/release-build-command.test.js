@@ -5,16 +5,16 @@ import { fileURLToPath } from 'node:url';
 import { createReleaseBuildPlan, buildRelease } from '../../../scripts/build-release.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const folders = ['renderer', 'core', 'ui', 'database', 'auth', 'framework', 'node-adapter', 'deno-adapter', 'test-utils', 'studio'];
+const folders = ['renderer', 'core', 'ui', 'database', 'auth', 'framework', 'node-adapter', 'test-utils', 'studio'];
 const manifests = Object.fromEntries(await Promise.all(folders.map(async name => [name, JSON.parse(await fs.readFile(path.join(root, 'packages', name, 'package.json'), 'utf8'))])));
 
 describe('non-Desktop release build command', () => {
   it('preserves native root stages in serial dependency order and builds test-utils', () => {
     const plan = createReleaseBuildPlan(manifests);
-    expect(plan.map(stage => stage.directory)).toEqual(['renderer', 'core', 'ui', 'database', 'framework', 'node-adapter', 'deno-adapter', 'test-utils', 'studio']);
+    expect(plan.map(stage => stage.directory)).toEqual(['renderer', 'core', 'ui', 'database', 'framework', 'node-adapter', 'test-utils', 'studio']);
     const before = (dependency, consumer) => expect(plan.findIndex(stage => stage.directory === dependency)).toBeLessThan(plan.findIndex(stage => stage.directory === consumer));
     before('renderer', 'core'); before('core', 'ui'); before('ui', 'framework');
-    before('framework', 'node-adapter'); before('framework', 'deno-adapter');
+    before('framework', 'node-adapter');
     before('core', 'test-utils'); before('database', 'studio'); before('ui', 'studio'); before('framework', 'studio');
     expect(plan.find(stage => stage.directory === 'framework').script).toBe('build:types');
     expect(plan.some(stage => stage.packageName.includes('desktop'))).toBe(false);

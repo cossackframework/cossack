@@ -1,6 +1,6 @@
 # Electron Desktop
 
-Add Desktop beside any Cloudflare, Node, or Deno web adapter with
+Add Desktop beside any Cloudflare or Node web adapter with
 `cossack add desktop`. Routes remain in `src/pages/`; Electron's Node-based
 main entry lives at `src/desktop/index.ts` and packages with Forge.
 

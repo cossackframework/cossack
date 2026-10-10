@@ -4,13 +4,13 @@ import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from '../sr
 import { createApp } from '../src/router';
 
 describe('runtime adapter contract', () => {
-  const deno = { name: 'deno' } satisfies CossackRuntimeAdapter;
+  const processAdapter = { name: 'node' } satisfies CossackRuntimeAdapter;
 
   it('accepts process-local WebSockets and rejects durable state', () => {
-    expect(() => assertRuntimeTransportSupport(deno, {
+    expect(() => assertRuntimeTransportSupport(processAdapter, {
       transport: 'durable-object', stateful: false,
     })).not.toThrow();
-    expect(() => assertRuntimeTransportSupport(deno, {
+    expect(() => assertRuntimeTransportSupport(processAdapter, {
       transport: 'durable-object', stateful: true,
     })).toThrow('process-local');
   });
@@ -35,14 +35,14 @@ describe('runtime adapter contract', () => {
   });
 
   it('preserves existing adapter behavior when capabilities are omitted', () => {
-    expect(() => assertRuntimeTransportSupport(deno, { transport: 'sse' })).not.toThrow();
-    expect(() => assertRuntimeTransportSupport(deno, { transport: 'durable-object' })).not.toThrow();
+    expect(() => assertRuntimeTransportSupport(processAdapter, { transport: 'sse' })).not.toThrow();
+    expect(() => assertRuntimeTransportSupport(processAdapter, { transport: 'durable-object' })).not.toThrow();
   });
 
   it('hydrates the adapter runtime identity for shared components', async () => {
     const app = createApp({
       runtimeAdapter: {
-        name: 'deno',
+        name: 'node',
         getClientMetadata: () => ({ platform: 'desktop', capability: 'test-token' }),
       },
     });
@@ -50,6 +50,6 @@ describe('runtime adapter contract', () => {
     const response = await app.request('/this-page-does-not-exist');
     const html = await response.text();
 
-    expect(html).toContain('"runtime":{"platform":"desktop","capability":"test-token","adapter":"deno"}');
+    expect(html).toContain('"runtime":{"platform":"desktop","capability":"test-token","adapter":"node"}');
   });
 });

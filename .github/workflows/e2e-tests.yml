@@ -41,7 +41,6 @@ jobs:
               packages/renderer \
               packages/framework \
               packages/node-adapter \
-              packages/deno-adapter \
               packages/auth \
               packages/database \
               packages/test-utils \
@@ -73,11 +72,6 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
-      - name: Setup Deno 2.9
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.9.x
-
       - name: Install dependencies
         run: pnpm install
 
@@ -92,11 +86,6 @@ jobs:
 
       - name: Run all unit tests
         run: pnpm run test:unit
-
-      - name: Check Deno web adapter
-        run: |
-          deno check packages/deno-adapter/src/index.ts
-          deno test -A packages/deno-adapter/tests/deno-smoke.test.ts
 
       - name: Build Desktop counter web target
         if: steps.changes.outputs.desktop == 'true'

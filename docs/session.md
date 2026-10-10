@@ -143,11 +143,10 @@ On the following page request, read `old('name')`, `old('address.city')` and
 replaying a copied cookie does not repeat its data. Generated Cloudflare
 projects include this binding and its SQLite migration. A Cloudflare app without
 the binding fails closed for flash reads and writes. Without that coordinator,
-Node and Deno claim each signed nonce once in a bounded, module-local store in
-the current JavaScript process or isolate. Expired claims are
+Node claims each signed nonce once in a bounded, module-local store in
+the current JavaScript process. Expired claims are
 purged; if the store is full, flash reads fail closed with a 503 instead of
-evicting a live claim. This guard does not coordinate across processes or
-isolates and does not survive a restart.
+evicting a live claim. This guard does not coordinate across processes and does not survive a restart.
 Valid incoming flash survives background RPC/upload/realtime requests. Failed
 outgoing RPC writes preserve unrelated incoming flash.
 

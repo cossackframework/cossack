@@ -39,7 +39,7 @@ Last reviewed: July 2026.
 | First-party seeding support | Ordered `SeederRunner` with transaction policy | `drizzle-seed` data generator | Application or community tooling | Application code | CLI seed command runs an application script |
 | SQL database coverage | SQLite, PostgreSQL, MySQL; D1 and current Turso adapters | Broad PostgreSQL, MySQL, SQLite, SingleStore, MSSQL, and CockroachDB ecosystem | Broad SQL driver set | Official PostgreSQL, MySQL, MSSQL, SQLite, and PGlite dialects | PostgreSQL, MySQL/MariaDB, SQLite, SQL Server, and CockroachDB |
 | MongoDB/NoSQL | No | No | MongoDB support | No | MongoDB support |
-| Edge/serverless focus | First-class Bun, D1, Hyperdrive, and injected Deno entry points | Strong, with many serverless drivers | Driver-dependent | Runtime-neutral; dialect/driver-dependent | Supported through driver adapters and supported deployments |
+| Edge/serverless focus | First-class Bun, D1, and Hyperdrive entry points | Strong, with many serverless drivers | Driver-dependent | Runtime-neutral; dialect/driver-dependent | Supported through driver adapters and supported deployments |
 | Multiple connections | Multiple isolated `ORM` instances | Multiple database instances | Multiple `DataSource` instances | Multiple `Kysely` instances | Separate schemas/generated clients |
 | Cross-database relations or transactions | No | No general cross-database unit of work | Limited multi-database querying; no general distributed transaction | No | No general distributed transaction |
 | Maturity and ecosystem | New v1 package | Established ecosystem | Long-established, feature-rich ORM | Established and deliberately focused | Long-established ecosystem and tooling |
@@ -60,7 +60,7 @@ Choose Cossack ORM when most of these are true:
  current transaction.
 - Relations should be requested explicitly and loaded in batches rather than
  hidden behind lazy properties.
-- The same model layer must run through isolated Node, Bun, Cloudflare, or Deno
+- The same model layer must run through isolated Node, Bun, or Cloudflare
  adapters.
 - Cossack Studio or other framework tooling needs serializable logical schema
  metadata, including virtual relations.
@@ -178,7 +178,7 @@ The most important differences are not syntax:
  startup synchronization.
 - Automated integration coverage in this repository is currently strongest for
  Node SQLite. The runtime adapters and public contracts exist, but PostgreSQL,
- MySQL, Bun, Deno, and Hyperdrive do not yet have the same public integration
+ MySQL, Bun, and Hyperdrive do not yet have the same public integration
  evidence as mature competitors.
 - Cossack provides schema metadata for Studio integration, not a standalone
  database GUI in this package.

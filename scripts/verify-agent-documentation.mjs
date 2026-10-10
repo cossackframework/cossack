@@ -82,12 +82,10 @@ require('node:module').syncBuiltinESMExports();
     const installedRequire = createRequire(path.join(projectDir, 'package.json'));
     const examples = [];
     const uiExamples = [];
-    const denoExamples = [];
     const testedGuides = new Set();
     for (const [name, id] of [...['route-urls', 'typed-url-state', 'validated-input', 'nested-form-input', 'development-rpc-traces', 'component-actions', 'server-resources', 'lifecycle-tasks', 'safe-old-input', 'localization-and-worker-isolation'].map(id => ['@cossackframework/core', id]), ...['server-html', 'conditional-templates', 'keyed-lists', 'server-form-values', 'safe-component-css'].map(id => ['@cossackframework/renderer', id]),
       ...['runtime-capability-planning', 'cache-storage-guarantees', 'request-scoped-configuration'].map(id => ['@cossackframework/framework', id]),
       ...['node-runtime-lifecycle'].map(id => ['@cossackframework/node-adapter', id]),
-      ...['deno-fetch-and-assets'].map(id => ['@cossackframework/deno-adapter', id]),
       ...['safe-studio-workflows'].map(id => ['@cossackframework/studio', id]),
       ['@cossackframework/database', 'parameterized-node-sqlite'],
       ['@cossackframework/database', 'cloudflare-d1-bound-query'],
@@ -147,7 +145,6 @@ require('node:module').syncBuiltinESMExports();
         await fs.writeFile(file, example.source);
         examples.push(file);
         if (name === '@cossackframework/ui') uiExamples.push(file);
-        if (name === '@cossackframework/deno-adapter') denoExamples.push(file);
       }
     }
     const config = path.join(scratch, 'tsconfig.json');
@@ -181,18 +178,9 @@ for (const { entry, outfile } of ${JSON.stringify(bundleEntries)}) esbuild.build
 `);
       await exec(process.execPath, [...nodeArgs, bundleScript], { cwd: projectDir, env, timeout: 30_000 });
     }
-    const denoShim = path.join(scratch, 'deno-node-import-shim.cjs');
-    await fs.writeFile(denoShim, `class NotFound extends Error {}
-globalThis.Deno = {
-  errors: { NotFound },
-  lstatSync() { throw new NotFound(); },
-  async open() { throw new NotFound(); },
-};
-`);
     for (const file of examples) {
       const executable = bundledUiExamples.get(file) ?? path.join(scratch, 'compiled', path.basename(file, '.ts') + '.js');
-      const args = denoExamples.includes(file) ? [...nodeArgs, '--require', denoShim, executable] : [...nodeArgs, executable];
-      const result = await exec(process.execPath, args, { cwd: projectDir, env, timeout: 30_000 });
+      const result = await exec(process.execPath, [...nodeArgs, executable], { cwd: projectDir, env, timeout: 30_000 });
       assert.equal(result.stderr, '');
     }
     const d1Example = await import(pathToFileURL(path.join(scratch, 'compiled', 'cloudflare-d1-bound-query-bound-query.js')).href);
@@ -216,7 +204,7 @@ globalThis.Deno = {
     assert.ok(!preparedD1[0].text.includes(hostileD1Value), 'D1 values must not be interpolated into SQL text');
     assert.deepEqual(preparedD1[0].values, [hostileD1Value]);
     // Derive the native fixture's date from the installed public Cloudflare
-    // profile, including when the consumer itself targets Node or Deno.
+    // profile, including when the consumer itself targets Node.
     // Creation writes files only; the existing offline guard prevents requests.
     const nativeProfileName = 'agent-docs-native-profile';
     const nativeProfileResult = await exec(process.execPath, [...nodeArgs, cli,
@@ -472,8 +460,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     // The app and dev server use installed packages; CLI/MCP readers retain the
     // network guard while the browser drives real component and service actions.
     for(const transport of ['http','sse','durable-object'])await verifyDevelopmentTraceApplication(projectDir,{
-      transport,runtime,https:runtime==='deno',
-      launcher:runtime==='deno'?{entry:cli,json:true}:undefined,
+      transport,runtime,
       async onRecorded({snapshot,recorded}) {
         const trace=await invoke(['traces','--json','--session',snapshot.sessionId]);
         assert.equal(trace.ok,true);

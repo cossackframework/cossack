@@ -31,7 +31,7 @@ export async function verifyBackgroundReleaseScenario(installedRoot) {
         maxBuffer: 8 * 1024 * 1024,
         env: {
           ...Object.fromEntries(
-            Object.entries(process.env).filter(([name]) => !/^(CLOUDFLARE_|CF_|DENO_DEPLOY_)/.test(name)),
+            Object.entries(process.env).filter(([name]) => !/^(CLOUDFLARE_|CF_)/.test(name)),
           ),
           NODE_ENV: 'production',
           VITEST: '',

@@ -70,10 +70,10 @@ Keep current notes compact and preserve failed/historical receipts in that archi
   identity provider only; real authentication has separate RT-13 evidence.
   RT-12's metadata/lifecycle acceptance is complete in the verification archive.
   Incoming TCP abort now has separate Node/direct-workerd acceptance.
-- RT-11 session/cookie acceptance is complete. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node/Deno claims are limited to one loaded module instance in its JavaScript process or isolate. They are not distributed or restart durable. Native calls require explicit parsing and authorization.
+- RT-11 session/cookie acceptance is complete. Cloudflare flash is durable one-use through `COSSACK_SSE`; Node claims are limited to one loaded module instance in its JavaScript process. They are not distributed or restart durable. Native calls require explicit parsing and authorization.
   UI visibility does not authorize access.
 - Cancellation and optimistic rollback do not terminate ignored application I/O, undo external effects or replay uncertain mutations.
-- Cloudflare SSE uses the coordinator. Node/Deno retain documented process-local behavior.
+- Cloudflare SSE uses the coordinator. Node retains documented process-local behavior.
   See [architecture](./sse.md) and [usage](../docs/sse.md).
 - Upgrades preserve existing Wrangler files. Existing apps must add `enable_request_signal` explicitly where required.
 - Desktop installed OS integration, Windows/macOS packaging and conditional
@@ -87,7 +87,7 @@ Keep current notes compact and preserve failed/historical receipts in that archi
 ## Working rules
 
 - Read `AGENTS.md`, [architecture](./architecture.md) and applicable task specs. Use pnpm. Alpha-stage API breaks are acceptable.
-- Keep libraries independent of framework/application. Keep `cloudflare:workers` imports out of core and Node/Deno runtime import graphs.
+- Keep libraries independent of framework/application. Keep `cloudflare:workers` imports out of core and Node runtime import graphs.
 - Use installed Cloudflare skills and current official documentation for Workers, Durable Objects or Wrangler changes.
   Workspace baseline: Wrangler 4.114.0, Cloudflare Vite plugin 1.47.0, Vite 8.1.4.
   Installed trace acceptance also passes with Wrangler 4.147.0, plugin 1.62.5 and Vite 8.3.2.

@@ -3,7 +3,7 @@
 Create a verifier in server-only code with `createTurnstileVerifier` from
 `@cossackframework/auth/turnstile`. Supply the secret through private server
 configuration. The public sitekey belongs in the browser; the secret never does.
-The helper uses Web APIs and works with Workers, Node.js, and Deno fetch.
+The helper uses Web APIs and works with Workers and Node.js fetch.
 
 `expectedHostname` and `expectedAction` are required server-owned values. Configure
 the browser widget with the same action. Do not derive either expected value from

@@ -6,7 +6,7 @@ description: Learn the design, core concepts, and first steps of Cossack ORM.
 # Introduction
 
 Cossack ORM is an ESM-only, serverless-first SQL ORM for Node.js, Bun,
-Cloudflare Workers, and Deno. It combines decorated models, Active Record
+and Cloudflare Workers. It combines decorated models, Active Record
 methods, a typed query builder, safe SQL fragments, migrations, introspection,
 and explicit runtime adapters.
 

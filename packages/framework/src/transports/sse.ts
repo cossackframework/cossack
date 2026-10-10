@@ -22,7 +22,7 @@ interface SseStoreEntry {
 
 /**
  * Process-local state store for SSE transport pages on runtimes without the
- * Cloudflare coordinator (Node, Deno). Keyed by componentRouteId:scopeKey.
+ * Cloudflare coordinator (Node). Keyed by componentRouteId:scopeKey.
  * This state is neither durable nor shared across processes or machines.
  */
 const SSE_STORE_MAX = 500;
@@ -123,7 +123,7 @@ function sseStoreKey(componentRouteId: string, scopeKey: string): string {
 // The distributed backend is a native SQLite Durable Object exported from the
 // Cloudflare-only entry `@cossackframework/framework/SseDurableObject`. This
 // neutral module never imports `cloudflare:workers`: it reaches the coordinator
-// only through the generated `COSSACK_SSE` binding, so the Node, Deno, and
+// only through the generated `COSSACK_SSE` binding, so the Node and
 // browser import graphs stay free of native Workers imports.
 // ---------------------------------------------------------------------------
 
@@ -161,7 +161,7 @@ export interface SseCoordinatorStub {
     claimFlash(nonce: string, expiresAt: number): Promise<boolean>;
 }
 
-/** Workers exposes itself through the navigator API; Node and Deno do not. */
+/** Workers exposes itself through the navigator API; Node does not. */
 export function isCloudflareRuntime(): boolean {
     return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
 }
@@ -267,7 +267,7 @@ export function hydrateSseScopeState(instance: any, state: Record<string, unknow
 }
 
 /**
- * Register or reset a process-local SSE store entry during SSR (Node/Deno
+ * Register or reset a process-local SSE store entry during SSR (Node
  * backend only). The fresh component instance replaces any existing entry so
  * that state is re-initialized via init() instead of reusing stale in-memory
  * state. On Cloudflare, SSR initializes the coordinator scope instead.

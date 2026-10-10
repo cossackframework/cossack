@@ -20,7 +20,6 @@ export const GUIDANCE_FAMILIES = Object.freeze({
     'durable jobs and notifications': ['durable-job-ledger', 'notification-providers-durable-store'],
   },
   'node-adapter': { 'native lifecycle, SMTP and storage': ['node-runtime-lifecycle', 'notification-smtp-adapter', 'authorized-local-storage'] },
-  'deno-adapter': { 'native lifecycle and assets': ['deno-fetch-and-assets'] },
   auth: { 'sessions, credentials, policies, OAuth and Turnstile': ['session-and-role-guards', 'credential-and-session-primitives', 'resource-policies', 'oauth-failure-stages', 'turnstile-server-verification'] },
   database: { 'adapters, typed queries, migrations, seeders and transactions': ['parameterized-node-sqlite', 'cloudflare-d1-bound-query', 'typed-model-queries', 'node-sqlite-migrations-and-seeding', 'node-sqlite-transaction-rollback'] },
   scaffold: { 'all recipe registries and conflict-safe composition': ['recipe-registry-planning', 'conflict-safe-composition', 'resource-recipe', 'mutation-recipe', 'scoped-service-recipe', 'protected-route-recipe'] },

@@ -22,7 +22,7 @@ An exceeded error limit stops before upload. Warning limits report diagnostics
 and allow continuation. `deploy --dry-run` reuses this validation without a
 second deployment invocation. Without budgets, normal commands retain their
 existing measurement behavior. These settings currently require Cloudflare
-artifacts; they do not govern Node/Deno builds.
+artifacts; they do not govern Node builds.
 
 New Cloudflare projects include this plugin. For an existing project, add it after
 `cloudflare()` to enforce budgets through direct `vite build`:

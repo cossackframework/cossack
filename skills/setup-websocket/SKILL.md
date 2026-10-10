@@ -32,7 +32,7 @@ export class LiveCounter extends Cossack {
 }
 ```
 
-SSE supports per-user / per-team / per-room / shared scoping via `scope: (c) => '...'`, and async-generator streaming methods (`async *`). Cloudflare requires the generated `COSSACK_SSE` binding and `SseDurableObject` export. Inspect the generated scaffold wiring; SQLite-backed migrations use `new_sqlite_classes`. Node/Deno SSE uses process-local coordination. Skip to Step 8 (Verify).
+SSE supports per-user / per-team / per-room / shared scoping via `scope: (c) => '...'`, and async-generator streaming methods (`async *`). Cloudflare requires the generated `COSSACK_SSE` binding and `SseDurableObject` export. Inspect the generated scaffold wiring; SQLite-backed migrations use `new_sqlite_classes`. Node SSE uses process-local coordination. Skip to Step 8 (Verify).
 
 ### If the user chose `durable-object`
 
@@ -309,7 +309,7 @@ Scope keys identify a backend; they do not authorize access. Derive tenant/user
 ownership from trusted context and recheck record access for RPC and delivered
 socket operations. Do not treat browser scope/state or an open socket as authority.
 Cloudflare durable state requires actual bindings and native restart acceptance;
-Node/Deno realtime state is process-local and resets with its process. Read the
+Node realtime state is process-local and resets with its process. Read the
 installed Core `rpc-streams-and-transport-policy` and
 `server-action-access-policy` guides in `cossack docs --package @cossackframework/core --json`, selecting
 `guidance.guides` by ID. This is offline guidance, not a

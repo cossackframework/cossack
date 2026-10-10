@@ -262,14 +262,14 @@ serializes the requirement store. Full hydration secrecy remains release work.
 Deployment failures stop before types, build, artifact deletion or upload.
 Checks do not read process/development values, evaluate factories, or contact
 remote resources. Secret existence and values remain unverified, even if a
-required secret name is declared. Node/Deno declaration preflight is explicitly
+required secret name is declared. Node declaration preflight is explicitly
 unavailable; runtime checks work with their supplied bindings. Direct Vite builds
 now perform Cloudflare declaration preflight through `cossackConfig()` before
 config type generation, transforms and output cleanup. Explicit runtime and
 environment options override project metadata and `CLOUDFLARE_ENV`. Runtime
 inference prefers scaffold metadata, then package metadata, adapter dependencies,
 and Cloudflare tooling/configuration. Every build/watch cycle rechecks declarations.
-Node/Deno/unknown targets validate static metadata, conflicts and runtime
+Node/unknown targets validate static metadata, conflicts and runtime
 compatibility only; their supplied values remain unverified. Development startup
 allows incomplete declarations. Failed build/render hooks suppress SSG cleanup
 publication for that environment; the next build cycle clears its failure state.

@@ -1,7 +1,7 @@
 # SSE Transport and Distributed Scope Coordination
 
 This document describes the SSE transport backends, the coordinator Durable
-Object, shared-state semantics, and the runtime contract for Node and Deno.
+Object, shared-state semantics, and the runtime contract for Node.
 It was written by GLM on 2026-10-02 and updated by Codex after reviewing the
 implementation. See the [Codex review](./release-0.9.0.md#codex-review-2026-10-02)
 for fixes, verification, and remaining release acceptance work.
@@ -18,7 +18,7 @@ ordinary `/crpc` POSTs. Two backends implement the same endpoint contracts:
 | Runtime | Backend | Selection |
 | --- | --- | --- |
 | Cloudflare Workers | `SseDurableObject` namespace via the `COSSACK_SSE` binding | Binding present in `env`; also provides durable one-use claims for signed flash cookies. |
-| Node.js / Deno | Process-local in-memory store in `framework/src/transports/sse.ts` | No binding and not running under Workers. |
+| Node.js | Process-local in-memory store in `framework/src/transports/sse.ts` | No binding and not running under Workers. |
 | Cloudflare without the binding | None | `COSSACK_SSE_BINDING_MISSING` diagnostic (HTTP 500) for `/crpc`, `/sse`, and SSR; valid flash reads fail closed with HTTP 503 and flash writes require the binding. Process-local state must not become the Cloudflare fallback. |
 
 Cloudflare detection uses `navigator.userAgent === 'Cloudflare-Workers'` (the
@@ -66,7 +66,7 @@ is still open RT-11 work. See the [provider and migration contract](../docs/sse.
 - `framework/src/transports/sse.ts` and `framework/src/router.ts` are neutral.
   They reach the coordinator only through `env.COSSACK_SSE` (a structural
   `SseCoordinatorStub` contract) and never import native Workers modules, so
-  the Node, Deno, and browser import graphs stay clean. `pnpm audit:bundle`
+  the Node and browser import graphs stay clean. `pnpm audit:bundle`
   covers this boundary.
 - The scaffold generates the binding with a `new_sqlite_classes` migration in
   `wrangler.jsonc` and the Worker entry export in `src/index.ts`.
@@ -202,7 +202,7 @@ publish that wakes waiters is processed normally, and the output gate holds
 the woken replies until that write is durable. Held calls bill wall-clock
 duration on the object; the 25 s cap keeps each call far below RPC limits.
 
-## Node and Deno backend contract
+## Node backend contract
 
 The process-local backend is a **development convenience with the same endpoint
 contracts**:
@@ -222,13 +222,13 @@ contracts**:
   authorization and heartbeat. Instead of polling, a waiting subscriber is
   woken by SSR replacement or `syncSseState` through a process-local notifier. Broadcasts use process-local `SseRuntime`.
   RT-19/RT-25 follow-ups must verify adapter parity explicitly.
-- Flash cookies are signed and server-expiring, but Node/Deno have no durable
+- Flash cookies are signed and server-expiring, but Node has no durable
   replay store. A copied cookie can be consumed repeatedly until its signed
   expiry. Cloudflare uses the Durable Object claim described above.
 - It is deliberately not a Cloudflare fallback: on Workers without
   `COSSACK_SSE`, requests fail with `COSSACK_SSE_BINDING_MISSING`.
 
-Applications needing cross-process coordination on Node or Deno must front
+Applications needing cross-process coordination on Node must front
 requests through one process while retaining the limits described above. A
 distributed adapter is future work; single-process routing does not provide
 persistence or restart recovery.
@@ -289,7 +289,7 @@ A matching publication removes only its confirmed public preview. Terminal respo
 ownership still controls loading. Older replies confirm their own contribution without
 replacing a newer base. Higher revisions restore authority after settlement; duplicate
 revisions preserve surviving local edits. Reopening resets the client's baseline.
-Node/Deno publication IDs increase within the process across SSR replacement and
+Node publication IDs increase within the process across SSR replacement and
 entry recreation. Replacement preserves active connection counts. These IDs provide
 neither durable history nor ordering across process restarts.
 

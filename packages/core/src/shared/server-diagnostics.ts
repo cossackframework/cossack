@@ -13,7 +13,7 @@ export type RuntimeFailureStage = 'action' | 'action-cleanup' | 'parse' | 'dispa
 export type RuntimeFailureCode = 'COSSACK_RUNTIME_FAILED' | 'COSSACK_RPC_INTERNAL_ERROR' | 'COSSACK_RPC_CLEANUP_FAILED' | 'COSSACK_WEBSOCKET_MESSAGE_INVALID' | 'COSSACK_TASK_FAILED' | 'COSSACK_TASK_CLEANUP_FAILED' | 'COSSACK_COMPONENT_CLEANUP_FAILED' | 'COSSACK_SERVICE_CLEANUP_FAILED';
 const stages = new Set<RuntimeFailureStage>(['action', 'action-cleanup', 'parse', 'dispatch', 'delivery', 'task-setup', 'task-cleanup', 'component-cleanup', 'service-setup-cleanup', 'service-cleanup', 'authentication', 'scope', 'upgrade', 'initialization', 'initial-state', 'socket', 'runtime-cleanup']);
 const codes = new Set<RuntimeFailureCode>(['COSSACK_RUNTIME_FAILED', 'COSSACK_RPC_INTERNAL_ERROR', 'COSSACK_RPC_CLEANUP_FAILED', 'COSSACK_WEBSOCKET_MESSAGE_INVALID', 'COSSACK_TASK_FAILED', 'COSSACK_TASK_CLEANUP_FAILED', 'COSSACK_COMPONENT_CLEANUP_FAILED', 'COSSACK_SERVICE_CLEANUP_FAILED']);
-const runtimes = new Set(['cloudflare', 'cloudflare-workers', 'node', 'deno', 'browser', 'web', 'unknown']);
+const runtimes = new Set(['cloudflare', 'cloudflare-workers', 'node', 'browser', 'web', 'unknown']);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function field(context: RuntimeFailureContext, name: keyof RuntimeFailureContext): unknown {
   try { const descriptor = Object.getOwnPropertyDescriptor(context, name); return descriptor && 'value' in descriptor ? descriptor.value : undefined; }

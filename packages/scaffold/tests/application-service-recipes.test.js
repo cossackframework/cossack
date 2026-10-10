@@ -40,7 +40,7 @@ it('schedules compose jobs and render validated registry, provider entry, Cron c
   expect(await read(root, 'vite.config.ts')).toContain('cossackSchedules()');
   for (const file of ['src/index.ts', 'src/schedules/index.ts', 'vite.config.ts']) await expect(transform(await read(root, file), { loader: 'ts' })).resolves.toBeDefined();
 });
-it.each(['node', 'deno'])('schedules require an explicit supported scheduler before any %s project writes', async adapter => {
+it.each(['node'])('schedules require an explicit supported scheduler before any %s project writes', async adapter => {
   const cwd = await directory(); await expect(createApp('service', { cwd, adapter, preset: 'minimal', features: 'schedules', interactive: false })).rejects.toThrow(/cloudflare|scheduler|adapter/i); expect(await fs.readdir(cwd)).toEqual([]);
   const { projectDir: root } = await createApp('service', { cwd, adapter, preset: 'minimal', interactive: false }); const before = await snapshot(root);
   await expect(addFeature(root, 'schedules', { interactive: false })).rejects.toThrow(/cloudflare|scheduler|adapter/i); expect(await snapshot(root)).toEqual(before);

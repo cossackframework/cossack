@@ -93,7 +93,7 @@ describe('Cossack Core: Client-Side', () => {
       routePath: '/test',
       channels: ['global', 'private'],
       providerTargets: { page: 'durable-object-id-123' },
-      runtime: { adapter: 'deno', platform: 'desktop' },
+      runtime: { adapter: 'node', platform: 'desktop' },
   };
 
   beforeEach(() => {

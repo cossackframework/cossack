@@ -1,6 +1,6 @@
 import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
 
-export const ADAPTERS = ['cloudflare', 'node', 'deno'];
+export const ADAPTERS = ['cloudflare', 'node'];
 export const FEATURES = ['ui', 'database', 'studio', 'auth', 'dashboard', 'markdown', 'examples', 'desktop', 'resource', 'mutation', 'scoped-service', 'protected-route', 'jobs', 'turnstile', 'schedules', 'notifications', 'workflows'];
 export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
@@ -39,10 +39,10 @@ export const PRESET_REGISTRY = {
 
 export const DATABASE_PROVIDERS = {
   d1: { adapters: ['cloudflare'] },
-  sqlite: { adapters: ['node', 'deno'] },
+  sqlite: { adapters: ['node'] },
   turso: { adapters: ADAPTERS },
-  postgres: { adapters: ['node', 'deno'] },
-  mysql: { adapters: ['node', 'deno'] },
+  postgres: { adapters: ['node'] },
+  mysql: { adapters: ['node'] },
   'hyperdrive-postgres': { adapters: ['cloudflare'] },
   'hyperdrive-mysql': { adapters: ['cloudflare'] },
 };
@@ -119,7 +119,7 @@ export function resolveRecipe(options = {}) {
   const resolvedFeatures = resolveFeatures(explicitFeatures);
 
   const database = options.database ??
-    (adapter === 'cloudflare' ? 'd1' : adapter === 'deno' ? 'turso' : 'sqlite');
+    (adapter === 'cloudflare' ? 'd1' : 'sqlite');
   if (!DATABASE_PROVIDERS[database]) {
     throw new Error(`Unknown database provider "${database}". Supported values: ${Object.keys(DATABASE_PROVIDERS).join(', ')}`);
   }

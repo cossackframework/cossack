@@ -22,11 +22,11 @@ export async function writeConfigReleaseAcceptance(root) {
   await write('src/config/release_private.ts', `
 import {requireConfigVariable, type ConfigRequirements, type EnvFunction} from '@cossackframework/framework/config';
 export const requirements={variables:{
-  RT24_PRIVATE_TOKEN:{type:'string',secret:true,runtimes:['node','deno']},
-  RT24_PROFILE:{type:'string',runtimes:['node','deno']},
-  RT24_LIMIT:{type:'number',coerce:true,runtimes:['node','deno']},
-  RT24_FLAG:{type:'boolean',coerce:true,runtimes:['node','deno']}
-},bindings:{RT24_BINDING:{kind:'object',runtimes:['node','deno']}}} as const satisfies ConfigRequirements;
+  RT24_PRIVATE_TOKEN:{type:'string',secret:true,runtimes:['node']},
+  RT24_PROFILE:{type:'string',runtimes:['node']},
+  RT24_LIMIT:{type:'number',coerce:true,runtimes:['node']},
+  RT24_FLAG:{type:'boolean',coerce:true,runtimes:['node']}
+},bindings:{RT24_BINDING:{kind:'object',runtimes:['node']}}} as const satisfies ConfigRequirements;
 export default ({env}:{env:EnvFunction})=>{
   (globalThis as any).__rt24FactoryCount=((globalThis as any).__rt24FactoryCount??0)+1;
   return {token:env('RT24_PRIVATE_TOKEN'),source:'${CONFIG_RELEASE_MARKERS[2]}',
@@ -60,7 +60,7 @@ import {config,requireConfigVariable} from '@cossackframework/framework/config';
 }
 
 /** Exercise the generated application through its real native adapter. */
-export async function startConfigReleaseServer(root, runtime, binary = process.env.COSSACK_DENO_BINARY ?? 'deno') {
+export async function startConfigReleaseServer(root) {
   const profiles = {
     alpha: { RT24_PROFILE: 'alpha', RT24_PRIVATE_TOKEN: CONFIG_RELEASE_MARKERS[0], RT24_LIMIT: '7', RT24_FLAG: 'true' },
     beta: { RT24_PROFILE: 'beta', RT24_PRIVATE_TOKEN: CONFIG_RELEASE_MARKERS[1], RT24_LIMIT: '19', RT24_FLAG: 'false' },
@@ -76,17 +76,14 @@ export async function startConfigReleaseServer(root, runtime, binary = process.e
       if(selection==='invalid')bindings.RT24_LIMIT=${JSON.stringify(CONFIG_RELEASE_MARKERS[3])};
       if(selection==='missing-binding')delete bindings.RT24_BINDING;
       if(selection==='invalid-binding')bindings.RT24_BINDING='not-an-object';
-      const response=await ${runtime === 'deno' ? 'runtime.fetch(app,request,bindings)' : 'app.fetch(request,bindings)'};
+      const response=await app.fetch(request,bindings);
       const headers=new Headers(response.headers);
       headers.set('x-fixture-factory-count',String(globalThis.__rt24FactoryCount??0));
       headers.set('x-fixture-page-count',String(globalThis.__rt24PageCount??0));
       return new Response(response.body,{status:response.status,headers});
     };
   `;
-  const source = runtime === 'deno' ? common + `
-    const server=Deno.serve({hostname:'127.0.0.1',port:0,onListen:({port})=>{env.APP_URL='http://127.0.0.1:'+port;console.log('CONFIG_RELEASE_ORIGIN='+env.APP_URL);}},dispatch);
-    Deno.addSignalListener('SIGTERM',async()=>{await runtime.dispose();await server.shutdown();});
-  ` : common + `
+  const source = common + `
     const {serve}=await import('@hono/node-server');
     const server=serve({fetch:dispatch,hostname:'127.0.0.1',port:0},()=>{
       env.APP_URL='http://127.0.0.1:'+server.address().port;
@@ -95,8 +92,7 @@ export async function startConfigReleaseServer(root, runtime, binary = process.e
     runtime.attach(server,dispatch);
     process.once('SIGTERM',async()=>{await runtime.dispose();server.close(()=>process.exit(0));});
   `;
-  const child = spawn(runtime === 'deno' ? binary : process.execPath,
-    runtime === 'deno' ? ['eval', '--ext=js', source] : ['--input-type=module', '-e', source],
+  const child = spawn(process.execPath, ['--input-type=module', '-e', source],
     { cwd: root, env: { ...process.env, NODE_ENV: 'production', VITEST: '', APP_URL: 'http://localhost', PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });

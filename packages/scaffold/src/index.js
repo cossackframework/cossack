@@ -73,7 +73,6 @@ const ADAPTER_PATHS = new Set([
   '.github/workflows/preview.yml',
   '.env.example',
   '.dev.vars.example',
-  'deno.json',
   'package.json',
   'scripts/dev.js',
   'orm.config.ts',
@@ -491,8 +490,6 @@ function packageJson(recipe, projectName) {
     dependencies['reflect-metadata'] = '^0.2.2';
     if (recipe.config.database === 'turso') {
       dependencies['@tursodatabase/serverless'] = dependencyVersion('@tursodatabase/serverless');
-    } else if (recipe.adapter === 'deno' && recipe.config.database === 'sqlite') {
-      dependencies['@tursodatabase/database'] = dependencyVersion('@tursodatabase/database');
     } else if (
       recipe.config.database === 'postgres' ||
       recipe.config.database === 'hyperdrive-postgres'
@@ -510,8 +507,6 @@ function packageJson(recipe, projectName) {
     dependencies['@cossackframework/node-adapter'] = `^${templateVersion}`;
     dependencies['@hono/node-server'] = dependencyVersion('@hono/node-server');
     dependencies.ws = dependencyVersion('ws');
-  } else if (recipe.adapter === 'deno') {
-    dependencies['@cossackframework/deno-adapter'] = `^${templateVersion}`;
   }
   if (recipe.resolvedFeatures.includes('desktop')) {
     dependencies['@cossackframework/desktop'] = `^${templateVersion}`;
@@ -526,9 +521,6 @@ function packageJson(recipe, projectName) {
     vite: dependencyVersion('vite'),
     vitest: dependencyVersion('vitest'),
   };
-  if (recipe.adapter === 'deno') {
-    devDependencies['@types/deno'] = '^2.3.0';
-  }
   if (recipe.resolvedFeatures.includes('desktop')) {
     devDependencies.electron = dependencyVersion('electron');
     for (const name of [
@@ -580,14 +572,7 @@ function packageJson(recipe, projectName) {
         build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
         start: 'node --env-file-if-exists=.env dist/server/index.js',
       }
-    : recipe.adapter === 'deno'
-      ? {
-          dev: 'vite dev',
-          build: 'vite build && vite build --ssr src/index.ts --outDir dist/server',
-          start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
-          deploy: 'deno task build && deno deploy',
-        }
-      : {
+    : {
         dev: 'vite dev',
         build: 'vite build',
         'build:ssg': 'vite build',
@@ -605,9 +590,7 @@ function packageJson(recipe, projectName) {
   if (recipe.resolvedFeatures.includes('database')) {
     scripts.migrate = recipe.adapter === 'node'
       ? 'node --env-file-if-exists=.env ./node_modules/cossack/bin/cossack.js migration up'
-      : recipe.adapter === 'deno'
-        ? 'deno run -A npm:cossack migration up'
-        : 'cossack migration up';
+      : 'cossack migration up';
     scripts['schema:check'] = 'cossack schema check';
   }
   if (recipe.resolvedFeatures.includes('studio')) {
@@ -650,47 +633,6 @@ function pnpmWorkspace(recipe) {
 
 function ormFactory(recipe) {
   const provider = recipe.config.database;
-  if (recipe.adapter === 'deno') {
-    const adapterImport = provider === 'sqlite'
-      ? 'denoSQLite'
-      : provider === 'turso'
-        ? 'turso'
-        : provider;
-    const adapterExpression = provider === 'sqlite'
-      ? "denoSQLite({ filename: env.DB_PATH ?? './database.sqlite' })"
-      : provider === 'turso'
-        ? `turso({
-      url: required(env.TURSO_DATABASE_URL, 'TURSO_DATABASE_URL'),
-      authToken: env.TURSO_AUTH_TOKEN,
-    })`
-        : provider === 'postgres'
-          ? "postgres(required(env.DATABASE_URL, 'DATABASE_URL'))"
-          : "mysql(required(env.DATABASE_URL, 'DATABASE_URL'))";
-    return `import { createORM, type ORM } from '@cossackframework/database';
-import { ${adapterImport} } from '@cossackframework/database/deno';
-import { models } from '../models';
-
-export type ORMEnvironment = Record<string, string | undefined>;
-
-function required(value: string | undefined, name: string): string {
-  if (!value) throw new Error(\`\${name} is required\`);
-  return value;
-}
-
-export function createToolingAdapter(env: ORMEnvironment = Deno.env.toObject()) {
-  return ${adapterExpression};
-}
-
-export function createRequestORM(env: ORMEnvironment) {
-  return createToolingAdapter(env).then((adapter) => createORM({ adapter, entities: models }));
-}
-
-let singleton: Promise<ORM> | undefined;
-export function getORM(env: ORMEnvironment = Deno.env.toObject()): Promise<ORM> {
-  return singleton ??= createRequestORM(env);
-}
-`;
-  }
   if (recipe.adapter === 'node') {
     const adapterImport = provider === 'sqlite'
       ? 'nodeSQLite'
@@ -820,7 +762,7 @@ export async function createToolingAdapter(context: ORMToolingContext): Promise<
 }
 
 function ormConfiguration(recipe) {
-  const toolingImport = recipe.adapter === 'node' || recipe.adapter === 'deno'
+  const toolingImport = recipe.adapter === 'node'
     ? "import { createToolingAdapter } from './src/orm/factory';"
     : "import { createToolingAdapter } from './src/orm/tooling';";
   return `import { defineConfig } from '@cossackframework/database';
@@ -843,10 +785,7 @@ function ormMiddlewareModule(recipe) {
   const runtime = recipe.adapter === 'node'
     ? `const orm = await getORM();
 export const ormRequestMiddleware = ormMiddleware(orm);`
-    : recipe.adapter === 'deno'
-      ? `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
-  createRequestORM(context.env as ORMEnvironment));`
-      : `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
+    : `export const ormRequestMiddleware = ormMiddleware((context: Context) =>
   createRequestORM(context.env as ORMEnvironment));`;
   const factoryImport = recipe.adapter === 'node'
     ? "import { getORM } from '../orm/factory';"
@@ -983,61 +922,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 `;
 }
 
-function denoEntry(providers = []) {
-  const oauthImport = providers.length
-    ? "import { oauth, handleOAuthUser } from './auth';\n"
-    : '';
-  const routes = oauthRouteBlock(providers, 'app');
-  return `import { createApp } from '@cossackframework/framework/router';
-import { createDenoAdapter, installDenoShutdown } from '@cossackframework/deno-adapter';
-import { App } from './App';
-import { template } from './root';
-${oauthImport}
-export const env: Record<string, unknown> = Deno.env.toObject();
-export const runtime = createDenoAdapter({ env, port: Number(env.PORT ?? 8000), hostname: String(env.HOST ?? '0.0.0.0') });
-export const app = createApp({
-  AppComponent: App,
-  htmlTemplate: template,
-  runtimeAdapter: runtime,
-});
-${routes}
-export default {
-  fetch: (request: Request, requestEnv?: Record<string, unknown>) =>
-    runtime.fetch(app, request, requestEnv),
-};
-
-if (import.meta.main) {
-  const server = runtime.serve(app);
-  installDenoShutdown(server, {
-    onComplete: result => Deno.exit(result.forced || result.cleanupFailed ? 1 : 0),
-  });
-}
-`;
-}
-
 function desktopIdentifier(projectName) {
   const slug = path.basename(projectName)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return `dev.cossack.${slug || 'app'}`;
-}
-
-function denoConfiguration() {
-  const tasks = {
-    dev: 'pnpm run dev',
-    build: 'pnpm run build',
-    start: 'deno run --allow-env --allow-net --allow-read dist/server/index.js',
-    deploy: 'deno task build && deno deploy',
-  };
-  return JSON.stringify({
-    nodeModulesDir: 'manual',
-    imports: {
-      hono: `npm:hono@${dependencyVersion('hono')}`,
-      vite: `npm:vite@${dependencyVersion('vite')}`,
-    },
-    tasks,
-  }, null, 2) + '\n';
 }
 
 function desktopEntry(projectName) {
@@ -1517,7 +1407,7 @@ function mergeEnvironmentContent(existing, values) {
 }
 
 function nodeEnvironmentValues(recipe, projectName, example = false) {
-  const port = recipe.adapter === 'deno' ? '8000' : '3000';
+  const port = '3000';
   const values = [
     ['APP_NAME', projectName],
     ['APP_ENV', 'development'],
@@ -1693,7 +1583,7 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods,
       ));
     }
-    if ((recipe.adapter === 'node' || recipe.adapter === 'deno') &&
+    if ((recipe.adapter === 'node') &&
         ['wrangler.jsonc', 'worker-configuration.d.ts'].includes(rel)) continue;
     if (recipe.adapter !== 'node' && rel === 'scripts/dev.js') continue;
     if (recipe.adapter === 'node' && rel === 'src/index.ts') {
@@ -1701,12 +1591,7 @@ export async function renderRecipe(recipe, options = {}) {
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
       ));
     }
-    if (recipe.adapter === 'deno' && rel === 'src/index.ts') {
-      content = text(denoEntry(
-        recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
-      ));
-    }
-    if ((recipe.adapter === 'node' || recipe.adapter === 'deno') && rel === 'vite.config.ts') {
+    if ((recipe.adapter === 'node') && rel === 'vite.config.ts') {
       content = text(content.toString('utf8').replace(/\/\/ @cossack:cloudflare-start[\s\S]*?\/\/ @cossack:cloudflare-end\n?/g, ''));
     }
     if (rel === 'vite.config.ts') {
@@ -1714,10 +1599,6 @@ export async function renderRecipe(recipe, options = {}) {
       if (recipe.adapter === 'node') {
         viteConfig = "import { cossackNode } from '@cossackframework/node-adapter/vite';\n" + viteConfig;
         viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackNode()]),");
-      }
-      if (recipe.adapter === 'deno') {
-        viteConfig = "import { cossackDeno } from '@cossackframework/deno-adapter/vite';\n" + viteConfig;
-        viteConfig = viteConfig.replace('plugins: [', "plugins: [\n    ...(mode === 'desktop' ? [] : [cossackDeno()]),");
       }
       const webRequirements = JSON.stringify(recipeCapabilityRequirements(recipe));
       const desktopRequirements = JSON.stringify(recipeCapabilityRequirements(recipe, 'desktop'));
@@ -1763,14 +1644,7 @@ export async function renderRecipe(recipe, options = {}) {
       ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')),
       compilerOptions: {
         ...JSON.parse(await fs.readFile(path.join(packageDir, 'tsconfig.template.json'), 'utf8')).compilerOptions,
-        types: [
-          ...(recipe.adapter === 'node'
-            ? ['vite/client', 'node']
-            : recipe.adapter === 'deno'
-              ? ['vite/client', 'node']
-              : ['vite/client', 'node']),
-          ...(recipe.adapter === 'deno' ? ['@types/deno'] : []),
-        ],
+        types: ['vite/client', 'node'],
       },
       include: [
         'src/**/*.ts',
@@ -1904,12 +1778,6 @@ export async function renderRecipe(recipe, options = {}) {
     const config = vite.content.toString('utf8').replace('cossackConfig }', 'cossackConfig, cossackSchedules }').replace('    cossackConfig(),', '    cossackConfig(),\n    cossackSchedules(),');
     files.set('vite.config.ts', { ...vite, content: text(config) });
   }
-  if (recipe.adapter === 'deno') {
-    files.set('deno.json', {
-      content: text(denoConfiguration()),
-      capability: 'base',
-    });
-  }
   if (recipe.resolvedFeatures.includes('desktop')) {
     files.set('src/desktop/index.ts', {
       content: text(desktopEntry(options.projectName ?? 'my-cossack-app')),
@@ -1939,7 +1807,7 @@ export async function renderRecipe(recipe, options = {}) {
       );
     files.set('src/index.ts', { ...entry, content: text(source) });
   }
-  if (recipe.adapter === 'node' || recipe.adapter === 'deno') {
+  if (recipe.adapter === 'node') {
     const projectName = options.projectName ?? 'my-cossack-app';
     const values = nodeEnvironmentValues(recipe, projectName);
     files.set('.env', {
@@ -2007,7 +1875,6 @@ export async function detectProjectRuntime(projectDir, manifest = undefined) {
   const packageRuntime = pkg?.cossack?.runtime;
   if (ADAPTERS.includes(packageRuntime)) return packageRuntime;
   const dependencies = { ...(pkg?.dependencies ?? {}), ...(pkg?.devDependencies ?? {}) };
-  if (dependencies['@cossackframework/deno-adapter']) return 'deno';
   if (dependencies['@cossackframework/node-adapter']) return 'node';
   if (dependencies['@cloudflare/vite-plugin'] || dependencies.wrangler) return 'cloudflare';
   if (await access(path.join(projectDir, 'wrangler.jsonc'))) return 'cloudflare';
@@ -2388,7 +2255,6 @@ async function promptCreationOptions(options, previous = {}, startAtLast = false
       choices: [
         { title: 'Cloudflare Workers', value: 'cloudflare' },
         { title: 'Node.js', value: 'node' },
-        { title: 'Deno', value: 'deno' },
       ],
     },
     !options.preset && {
@@ -2790,7 +2656,7 @@ export async function switchAdapter(projectDir, target, options = {}) {
   }
 
   const databaseInstalled = current.resolvedFeatures.includes('database');
-  const targetDefault = target === 'cloudflare' ? 'd1' : target === 'deno' ? 'turso' : 'sqlite';
+  const targetDefault = target === 'cloudflare' ? 'd1' : 'sqlite';
   const currentCompatible = DATABASE_PROVIDERS[current.config.database]
     ?.adapters.includes(target);
   const mustSelectDatabase = databaseInstalled &&
@@ -2997,7 +2863,6 @@ async function promptAddOptions(
       choices: [
         { title: 'Cloudflare Workers', value: 'cloudflare' },
         { title: 'Node.js', value: 'node' },
-        { title: 'Deno', value: 'deno' },
       ],
       when: (answers) => {
         const database = options.database ?? answers.database;

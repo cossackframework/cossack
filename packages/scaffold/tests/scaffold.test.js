@@ -141,10 +141,6 @@ describe('recipe resolution', () => {
     ['node', 'database'],
     ['node', 'auth'],
     ['node', 'full-stack'],
-    ['deno', 'minimal'],
-    ['deno', 'database'],
-    ['deno', 'auth'],
-    ['deno', 'full-stack'],
   ])('renders the %s/%s combination', async (adapter, preset) => {
     const recipe = resolveRecipe({ adapter, preset });
     const files = await renderRecipe(recipe);
@@ -215,7 +211,6 @@ describe('recipe resolution', () => {
       .toBe(recipe.resolvedFeatures.includes('auth'));
     expect(files.has('.env')).toBe(adapter !== 'cloudflare');
     expect(files.has('.env.example')).toBe(adapter !== 'cloudflare');
-    expect(files.has('deno.json')).toBe(adapter === 'deno');
     expect(files.get('vite.config.ts').content.toString())
       .toContain('minify: true');
     expect(files.get('vite.config.ts').content.toString())
@@ -575,7 +570,7 @@ describe('composition', () => {
     );
   });
 
-  it.each(['node', 'cloudflare', 'deno'])('composes the %s sessions dashboard without unselected RBAC dependencies', async adapter => {
+  it.each(['node', 'cloudflare'])('composes the %s sessions dashboard without unselected RBAC dependencies', async adapter => {
     const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features: ['dashboard'], dashboardModules: ['sessions'] }));
     const seeder = files.get('src/seeders/application.seeder.ts').content.toString();
     expect(seeder).toContain('defineSeeder');
@@ -747,10 +742,6 @@ describe('composition', () => {
       ['node', 'turso', 'turso', '@tursodatabase/serverless', undefined],
       ['node', 'postgres', 'postgres', 'pg', undefined],
       ['node', 'mysql', 'mysql', 'mysql2', undefined],
-      ['deno', 'sqlite', 'denoSQLite', '@tursodatabase/database', undefined],
-      ['deno', 'turso', 'turso', '@tursodatabase/serverless', undefined],
-      ['deno', 'postgres', 'postgres', 'pg', undefined],
-      ['deno', 'mysql', 'mysql', 'mysql2', undefined],
       ['cloudflare', 'd1', 'd1', undefined, 'nodejs_als'],
       ['cloudflare', 'turso', 'turso', '@tursodatabase/serverless', 'nodejs_als'],
       ['cloudflare', 'hyperdrive-postgres', 'hyperdrivePostgres', 'pg', 'nodejs_compat'],
@@ -784,7 +775,7 @@ describe('composition', () => {
   });
 
   it('adds an Electron Desktop target beside every web adapter', async () => {
-    for (const adapter of ['cloudflare', 'node', 'deno']) {
+    for (const adapter of ['cloudflare', 'node']) {
       const target = resolveRecipe({ adapter, preset: 'minimal', features: 'desktop' });
       const targetFiles = await renderRecipe(target, { projectName: `${adapter}-desktop` });
       const targetPackage = JSON.parse(targetFiles.get('package.json').content.toString());
@@ -829,29 +820,7 @@ describe('composition', () => {
       const trayPng = Buffer.from(targetFiles.get('desktop-assets/tray-linux-22.png').content);
       expect(trayPng.readUInt8(24)).toBe(8);
       expect(trayPng.readUInt8(25)).toBe(6);
-      if (adapter !== 'deno') expect(targetFiles.has('deno.json')).toBe(false);
     }
-
-    const recipe = resolveRecipe({ adapter: 'deno', preset: 'database', features: 'desktop' });
-    const files = await renderRecipe(recipe, { projectName: 'desktop-app' });
-    const pkg = JSON.parse(files.get('package.json').content.toString());
-    expect(recipe.config.database).toBe('turso');
-    expect(pkg.dependencies['@tursodatabase/serverless']).toBeDefined();
-    expect(pkg.dependencies['@tursodatabase/database']).toBeUndefined();
-    expect(pkg.scripts['desktop:dev']).toBe('cossack-desktop');
-    expect(pkg.scripts.deploy).toBe('deno task build && deno deploy');
-    const deno = JSON.parse(files.get('deno.json').content.toString());
-    expect(deno.nodeModulesDir).toBe('manual');
-    expect(files.get('vite.config.ts').content.toString()).toContain("mode === 'desktop' ? [] : [cossackDeno()]");
-    expect(files.get('src/index.ts').content.toString()).toContain('export const app = createApp(');
-    expect(files.get('src/index.ts').content.toString()).toContain('port: Number(env.PORT ?? 8000)');
-    expect(files.get('src/index.ts').content.toString()).toContain("hostname: String(env.HOST ?? '0.0.0.0')");
-    expect(deno.tasks.build).toBe('pnpm run build');
-    expect(deno.imports.hono).toMatch(/^npm:hono@/);
-    expect(deno.imports.vite).toMatch(/^npm:vite@/);
-    expect(deno.desktop).toBeUndefined();
-    expect(files.has('src/desktop/index.ts')).toBe(true);
-    expect(files.get('src/orm/factory.ts').content.toString()).toContain('TURSO_DATABASE_URL');
   });
 
   it('copies project guidance files and scaffolds actionable auth/database metadata', async () => {
@@ -929,7 +898,7 @@ describe('composition', () => {
     }));
     expect(await detectProjectRuntime(root)).toBeUndefined();
     await expect(addFeature(root, 'ui', { interactive: false }))
-      .rejects.toThrow('Pass --runtime=cloudflare or --runtime=node or --runtime=deno');
+      .rejects.toThrow('Pass --runtime=cloudflare or --runtime=node');
   });
 
   it('adds only newly requested dashboard modules on a later run', async () => {
@@ -1303,7 +1272,7 @@ describe('prompt navigation and cancellation', () => {
   });
 });
 
-it.each(['cloudflare', 'node', 'deno'])('enables build capability discovery for generated %s recipes and their Desktop target', async adapter => {
+it.each(['cloudflare', 'node'])('enables build capability discovery for generated %s recipes and their Desktop target', async adapter => {
   for (const features of [[], ['markdown']]) {
     const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal', features }));
     const config = files.get('vite.config.ts').content.toString();

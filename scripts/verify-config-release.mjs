@@ -10,7 +10,7 @@ import { writeConfigReleaseAcceptance, checkConfigReleaseTooling, startConfigRel
   checkConfigReleaseAcceptance, CONFIG_RELEASE_MARKERS } from '../packages/cossack/tests/fixtures/config-release-acceptance.js';
 
 /** Fresh native apps use the supplied installed gate's exact published package overrides. */
-export async function verifyConfigRelease(installedProjectDir, { runtimes = ['node', 'deno'], denoBinary = process.env.COSSACK_DENO_BINARY ?? 'deno', retain = false } = {}) {
+export async function verifyConfigRelease(installedProjectDir, { runtimes = ['node'], retain = false } = {}) {
   installedProjectDir = path.resolve(installedProjectDir);
   const scaffoldFile = fileURLToPath((await promisify(execFile)(process.execPath,
     ['--input-type=module', '-e', "process.stdout.write(import.meta.resolve('@cossackframework/scaffold'))"],
@@ -20,7 +20,7 @@ export async function verifyConfigRelease(installedProjectDir, { runtimes = ['no
   const gatePackage = JSON.parse(await fs.readFile(path.join(installedProjectDir, 'package.json'), 'utf8'));
   const overrides = Object.fromEntries(Object.entries({ ...gatePackage.dependencies, ...gatePackage.devDependencies })
     .filter(([name, value]) => (name.startsWith('@cossackframework/') || name === 'cossack') && value.startsWith('file:')));
-  for (const name of ['@cossackframework/core', '@cossackframework/framework', '@cossackframework/renderer', '@cossackframework/node-adapter', '@cossackframework/deno-adapter', 'cossack']) {
+  for (const name of ['@cossackframework/core', '@cossackframework/framework', '@cossackframework/renderer', '@cossackframework/node-adapter', 'cossack']) {
     assert.ok(overrides[name], `Missing installed tarball override ${name}`);
   }
   const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-installed-config-release-'));
@@ -28,8 +28,7 @@ export async function verifyConfigRelease(installedProjectDir, { runtimes = ['no
   const results = [];
   try {
     for (const runtime of runtimes) {
-      assert.ok(['node', 'deno'].includes(runtime), 'Native config acceptance supports Node and Deno');
-      if (runtime === 'deno') await run(denoBinary, ['--version'], { timeout: 10000 });
+      assert.ok(runtime === 'node', 'Native config acceptance supports Node');
       const { projectDir: root } = await createApp(`app-${runtime}`, { cwd: parent, adapter: runtime, preset: 'minimal', interactive: false });
       const manifestFile = path.join(root, 'package.json');
       const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
@@ -51,7 +50,7 @@ export async function verifyConfigRelease(installedProjectDir, { runtimes = ['no
           env: { ...process.env, NODE_ENV: 'production', VITEST: '', CLOUDFLARE_ENV: '', WRANGLER_SEND_METRICS: 'false' } });
         for (const marker of CONFIG_RELEASE_MARKERS) assert.ok(!(built.stdout + built.stderr).includes(marker), 'Private build diagnostics');
       }
-      const server = await startConfigReleaseServer(root, runtime, denoBinary);
+      const server = await startConfigReleaseServer(root);
       try { await checkConfigReleaseAcceptance(root, server); }
       finally { await server.close(); }
       results.push({ runtime, projectDir: root });

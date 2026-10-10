@@ -11,7 +11,6 @@ Cossack ORM is ESM-only and targets:
 
 - Node.js 22 or newer
 - A current stable Bun release
-- A current stable Deno release
 - Modern Cloudflare Workers compatibility dates
 - TypeScript with decorator metadata enabled
 
@@ -64,7 +63,6 @@ for the runtime where the application executes:
 | Runtime | Import | Available adapters |
 | --- | --- | --- |
 | Node.js | `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `turso` |
-| Deno | `@cossackframework/database/deno` | `deno`, `denoSQLite`, `postgres`, `mysql`, `turso` |
 | Bun | `@cossackframework/database/bun` | `bun` for SQLite, PostgreSQL, or MySQL |
 | Cloudflare Workers | `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL`, `turso` |
 

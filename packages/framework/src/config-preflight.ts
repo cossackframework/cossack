@@ -7,7 +7,7 @@ import { cloudflareConfigCandidates } from './cloudflare-config-path.js';
 import { inspectConfigRequirements } from './config-inspection.js';
 import { checkConfigRequirements, type BindingKind, type ConfigRuntime, type ConfigRequirementDiagnostic } from './config-requirements.js';
 
-const RUNTIMES = ['cloudflare', 'node', 'deno', 'desktop'] as const;
+const RUNTIMES = ['cloudflare', 'node', 'desktop'] as const;
 export class ConfigPreflightError extends Error {
   constructor(readonly code: string, message: string) { super(message); this.name = 'ConfigPreflightError'; }
 }
@@ -25,7 +25,6 @@ export async function resolveConfigRuntime(root: string, explicit?: ConfigRuntim
   const pkg = await json(join(root, 'package.json'));
   if (RUNTIMES.includes(pkg?.cossack?.runtime)) return pkg.cossack.runtime;
   const dependencies = { ...pkg?.dependencies, ...pkg?.devDependencies };
-  if (dependencies['@cossackframework/deno-adapter']) return 'deno';
   if (dependencies['@cossackframework/node-adapter']) return 'node';
   if (dependencies['@cloudflare/vite-plugin'] || dependencies.wrangler || await findCloudflareConfig(root)) return 'cloudflare';
   return 'unknown';

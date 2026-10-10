@@ -143,11 +143,9 @@ are never replayed across an in-memory object graph.
 | Runtime entry | Adapters |
 | --- | --- |
 | `@cossackframework/database/node` | `nodeSQLite`, `betterSQLite`, `postgres`, `mysql`, `turso`, `SQL` |
-| `@cossackframework/database/deno` | `deno`, `denoSQLite`, `postgres`, `mysql`, `turso` |
 | `@cossackframework/database/bun` | `bun` over the documented Bun SQL core API |
 | `@cossackframework/database/cloudflare` | `d1`, `hyperdrivePostgres`, `hyperdriveMySQL` |
 | `@cossackframework/database/cloudflare-turso` | `turso` (remote Turso on Workers) |
-| `@cossackframework/database/deno` | `deno` with an injected remote or SQLite driver |
 | `@cossackframework/database/adapter` | public dialect, driver, result, scope, and capability contracts |
 | `@cossackframework/database/cossack` | middleware plus database cache/session stores |
 

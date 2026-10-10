@@ -14,8 +14,8 @@ describe('runtime capability model (RT-25)', () => {
         expect(evaluateTransportCapability).toBe(coreCapabilities.evaluateTransportCapability);
         expect(describeRuntimeCapabilities).toBe(coreCapabilities.describeRuntimeCapabilities);
     });
-    it('does not advertise scheduled dispatch from the built-in Node or Deno adapters', () => {
-        for (const runtime of ['node', 'deno'] as const) {
+    it('does not advertise scheduled dispatch from the built-in Node adapter', () => {
+        for (const runtime of ['node'] as const) {
             const result = evaluateCapability(runtime, 'scheduledHandlers', {});
             expect(result).toEqual({ capability: 'scheduledHandlers', status: 'adapter-required', missingBindings: [] });
             expect(formatCapabilityResult(result)).toContain('not provided by the built-in runtime adapter');
@@ -31,8 +31,8 @@ describe('runtime capability model (RT-25)', () => {
         expect(withBinding).toMatchObject({ status: 'available', missingBindings: [] });
     });
 
-    it('node and deno expose process-local realtime but not durable coordination', () => {
-        for (const runtime of ['node', 'deno'] as const) {
+    it('node exposes process-local realtime but not durable coordination', () => {
+        for (const runtime of ['node'] as const) {
             expect(evaluateCapability(runtime, 'realtimeCoordination', {})).toMatchObject({ status: 'unsupported' });
             expect(evaluateCapability(runtime, 'processLocalRealtime', {})).toMatchObject({ status: 'available' });
             expect(evaluateCapability(runtime, 'filesystem', {})).toMatchObject({ status: 'available' });
@@ -49,7 +49,6 @@ describe('runtime capability model (RT-25)', () => {
     it('transport support differs per runtime', () => {
         expect(supportsTransport('cloudflare', 'durable-object')).toBe(true);
         expect(supportsTransport('node', 'durable-object')).toBe(true);
-        expect(supportsTransport('deno', 'durable-object')).toBe(true);
         expect(supportsTransport('unknown', 'http')).toBe(false);
     });
 
@@ -58,7 +57,7 @@ describe('runtime capability model (RT-25)', () => {
         expect(evaluateTransportCapability('cloudflare', 'sse', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_SSE'] });
         expect(evaluateTransportCapability('cloudflare', 'durable-object', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_OBJECT'] });
         expect(evaluateTransportCapability('cloudflare', 'sse', { COSSACK_SSE: {} })).toMatchObject({ status: 'available' });
-        for (const runtime of ['node', 'deno'] as const) {
+        for (const runtime of ['node'] as const) {
             expect(evaluateTransportCapability(runtime, 'durable-object', {})).toMatchObject({ status: 'available' });
             expect(evaluateCapability(runtime, 'realtimeCoordination', {})).toMatchObject({ status: 'unsupported' });
         }
@@ -85,7 +84,7 @@ describe('runtime capability model (RT-25)', () => {
 });
 
 it('distinguishes durable page storage from process-local WebSocket support', () => {
-  for (const runtime of ['node', 'deno', 'desktop'] as const) {
+  for (const runtime of ['node', 'desktop'] as const) {
     expect(evaluateCapability(runtime, 'durableState', {})).toMatchObject({ status: 'unsupported' });
   }
   expect(evaluateCapability('cloudflare', 'durableState', {})).toMatchObject({ status: 'missing-binding', missingBindings: ['COSSACK_OBJECT'] });
@@ -97,7 +96,7 @@ it('requires native named bindings and rejects process runtime polyfill assumpti
     .toMatchObject({ status: 'missing-binding', missingBindings: ['DB', 'HYPERDRIVE'] });
   expect(evaluateCapability('cloudflare', 'cloudflareBindings', { DB: 'private' }, ['DB']))
     .toEqual({ capability: 'cloudflareBindings', status: 'available', missingBindings: [] });
-  for (const runtime of ['node', 'deno', 'desktop'] as const) {
+  for (const runtime of ['node', 'desktop'] as const) {
     expect(evaluateCapability(runtime, 'cloudflareBindings', { DB: {} }, ['DB'])).toMatchObject({ status: 'unsupported' });
   }
 });

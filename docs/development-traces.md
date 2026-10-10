@@ -24,11 +24,7 @@ if (import.meta.env.DEV) {
 Generated Node applications include the
 [Node Vite plugin](../packages/node-adapter/README.md#vite-development-http-server),
 which serves HTTP/SSE calls and WebSocket upgrades through `cossack dev`.
-Generated Deno applications use the
-[Deno Vite plugin](../packages/deno-adapter/docs/installation.md#develop-with-vite-and-deno)
-with the same commands and trace schema. Deno executes server modules in its own
-process and sends native-response cleanup evidence through a private runner event
-channel. Vite HTTPS/WSS configurations retain public origin checks.
+Vite HTTPS/WSS configurations retain public origin checks.
 Desktop applications use `pnpm desktop:dev` with Vite running inside Electron.
 Their HTTP actions, streamed results and native bodies use the same capture
 schema and shared CLI/MCP readers. The renderer remains on `cossack://app`;

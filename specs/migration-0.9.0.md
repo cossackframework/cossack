@@ -84,8 +84,8 @@ part of the application. Presence in a tarball does not make every entry suitabl
 for every runtime.
 
 Auth intentionally publishes TypeScript consumed by the framework build pipeline;
-do not assume its root is a plain native Node ESM entry. Deno and Node development
-plugins live in the adapters' separate `/vite` entries, not their production entry.
+do not assume its root is a plain native Node ESM entry. Node development
+plugins live in the adapter's separate `/vite` entry, not their production entry.
 Native Cloudflare Workflow entry classes stay separate from pure provider helpers,
 as described under [Workflows](#storage-images-and-workflows). Use installed
 [package guidance](../docs/local-agent-tools.md#package-owned-usage-guides) and
@@ -117,12 +117,11 @@ factory or application middleware executes, including scalar coercion and local
 binding shapes. Missing/conflicting/invalid values fail instead of silently
 falling back to a different provider.
 
-Cloudflare build checks use the selected Wrangler environment. Node/Deno build
+Cloudflare build checks use the selected Wrangler environment. Node build
 checks validate metadata and compatibility but do not read production process
 values or arbitrary `.env` files. Their `cossack config --check` returns
 `COSSACK_CONFIG_CHECK_UNAVAILABLE`; supply values to the production host and
-verify request preparation. Generated Node uses `createEnv()`; generated Deno uses
-`Deno.env.toObject()`. A structurally valid binding object does not prove remote
+verify request preparation. Generated Node uses `createEnv()`. A structurally valid binding object does not prove remote
 connectivity. Async configuration factories remain unsupported; put I/O in
 request-owned services. See [requirement checks](../docs/config.md#build-time-requirement-checks).
 
@@ -210,7 +209,7 @@ Cloudflare SSE now needs the `COSSACK_SSE` binding, an exported
 DO migration tags intact; add the required class migration through Wrangler's
 normal history rather than replacing old tags. Repeat coordinator bindings in
 named environments. Worker SSE shares scoped state/broadcasts through that
-coordinator; Node/Deno SSE remains local to a process/module instance.
+coordinator; Node SSE remains local to a process/module instance.
 
 Select `--env` before dev/build/SSG/deploy so Vite, generated URLs, bindings and
 migrations agree. Deployment-only environment selection cannot fix an artifact
@@ -236,37 +235,23 @@ locally but does not establish remote permissions, secrets or resource availabil
 Use [resource selection](../docs/cloudflare-resources.md) and the configured live
 migration target before a real deployment.
 
-## Node and Deno development and shutdown
+## Node development and shutdown
 
 An adapter's runtime support is distinct from the application's build tools.
 The current Vite 8 package declares Node `^20.19.0 || >=22.12.0`; use a compatible
-Node version for Node-hosted build/development tooling, including Deno applications.
-Repository acceptance used Node 24.19.0; that observation is not a new minimum
-for every runtime API. The Deno adapter documents Deno 2.9+, Hono 4.12+ and ESM;
-keep the application's installed dependency/runtime versions compatible with its
-[adapter requirements](../packages/deno-adapter/README.md).
+Node version for build/development tooling. Repository acceptance used Node
+24.19.0; that observation is not a new minimum for every runtime API. Keep the
+application's installed dependency/runtime versions compatible with its
+[adapter requirements](../packages/node-adapter/README.md).
 
-Port `cossackNode()` or `cossackDeno()` from the relevant adapter `/vite` entry
-into the owned web Vite configuration. Vite remains Node-hosted and owns browser
-assets/HMR. Node loads the server graph through Vite's runner; Deno executes it
-in its separate native child and replaces that process on server edits. A reload
-resets process-local state and does not reverse external effects. Deno's Vite
-integration rejects embedded middleware mode; use the documented standalone
-host. See [Node development](../packages/node-adapter/README.md) and
-[Deno installation/development](../packages/deno-adapter/docs/installation.md).
+Port `cossackNode()` from the adapter `/vite` entry into the owned web Vite
+configuration. Vite remains Node-hosted and owns browser assets/HMR. Node loads
+the server graph through Vite's runner. A reload resets process-local state and
+does not reverse external effects. See
+[Node development](../packages/node-adapter/README.md).
 
-Generated Deno projects use `nodeModulesDir: 'manual'`; install their pnpm-managed
-dependencies before building/starting, and preserve the committed `deno.lock`.
-The production entry reads process environment, not `.env` files. Grant the
-application's required Deno permissions explicitly; `cossack start` uses its
-documented environment/network/read permissions, while the authored `deno.json`
-task can supply a deliberate permission policy. `COSSACK_DENO_BINARY` selects the
-native executable. The [Deno web guide](../packages/deno-adapter/docs/web.md)
-describes fetch, origin and asset contracts; uploaded compiled-artifact acceptance
-does not establish a provider source-build workflow.
-
-For generated standalone entries, retain explicit `installNodeShutdown` or
-`installDenoShutdown` ownership. SIGTERM/SIGINT share one shutdown operation that
+For generated standalone entries, retain explicit `installNodeShutdown`
+ownership. SIGTERM/SIGINT share one shutdown operation that
 stops admitting HTTP, drains accepted responses and disposes runtime resources.
 One deadline covers all work (10 seconds by default); forced/failed generated
 shutdown exits 1. Importing an adapter or embedding the app installs no process
@@ -274,13 +259,41 @@ signal handlers. Embedded hosts explicitly own disposal and any shutdown policy.
 A deadline can stop waiting/abort the listener, but cannot undo accepted mutations
 or prove completion of ignored application I/O.
 
-Node/Deno WebSocket component state is process-local and is lost on restart.
-Do not enable durable `stateful: true` on Deno; choose a durable backend for data
-that must survive. Multiple processes do not gain shared SSE state or broadcasts
-from the common adapter interface. Preserve authentication/origin/scope checks
-through the framework upgrade handler. Configure trusted proxy/public origins
-intentionally, and use the current socket's identity for shared-component actions,
-as described under [socket request context](#websocket-actions-use-each-connections-request-context).
+Node WebSocket component state is process-local and is lost on restart.
+Choose a durable backend for data that must survive. Multiple processes do not
+gain shared SSE state or broadcasts from the common adapter interface. Preserve
+authentication/origin/scope checks through the framework upgrade handler.
+Configure trusted proxy/public origins intentionally, and use the current
+socket's identity for shared-component actions, as described under
+[socket request context](#websocket-actions-use-each-connections-request-context).
+
+## Deno support removed
+
+0.9.0 removes Deno support. Supported web runtimes are Cloudflare Workers and
+Node.js; Desktop remains a side target. Removed:
+
+- the `@cossackframework/deno-adapter` package (including `cossackDeno()` and
+  `installDenoShutdown`);
+- `cossack create --adapter deno`, `cossack adapter deno`, the `deno`
+  package-manager option and `COSSACK_DENO_BINARY`;
+- the `@cossackframework/database/deno` export (`deno()`, `denoSQLite()`,
+  `DenoDriver`, `InjectedDenoDriver`, `DenoSQLiteOptions`);
+- `'deno'` in core `RuntimeName`, framework `ConfigRuntime` and configuration
+  requirement `runtimes`, and the renderer `"deno"` export condition.
+
+Move an 0.8.x Deno application to Node before upgrading:
+
+1. On 0.8.x, run `cossack adapter node` (or recreate the application with
+   `--adapter node` and port application-owned files).
+2. Replace `Deno.env` reads with `createEnv()` or the Node process environment.
+3. Delete `deno.json` and `deno.lock`; use the package manager's lockfile.
+4. Replace `installDenoShutdown` with `installNodeShutdown` and `cossackDeno()`
+   with `cossackNode()` in the Vite configuration.
+5. Replace `@cossackframework/database/deno` with the Node runtime
+   (`@cossackframework/database/node`) for SQLite, Turso, PostgreSQL or MySQL.
+6. Remove `'deno'` from configuration requirement `runtimes`.
+
+Then upgrade to 0.9.0 and follow the [Node section](#node-development-and-shutdown).
 
 ## Cloudflare diagnostics, budgets and preview credentials
 
@@ -926,7 +939,7 @@ None of these client rejections undo a completed server mutation or retry it.
 
 Anonymous Cloudflare sockets no longer become `user:anonymous` for rate limiting;
 they have no user and use their captured IP headers. Custom keys can read the
-socket's own headers and page params. Node/Deno shared components also use the
+socket's own headers and page params. Node shared components also use the
 originating connection's context instead of their first peer's headers.
 
 Cloudflare reconstructs action context from the native socket attachment;
@@ -1131,7 +1144,7 @@ Promise-returning synchronous handlers and throwing handlers restore captured
 changes; their server action can still dispatch. Started application effects cannot
 be canceled by this rule. Native collections/classes remain scalar values.
 
-Node/Deno WebSocket connection snapshots now carry flat public state, matching
+Node WebSocket connection snapshots now carry flat public state, matching
 Cloudflare and later broadcasts. Update hand-written adapter tests from
 `state.public.count` to `state.count` for those frames; SSR hydration still uses
 `initial.public`. The process runtime getPublicState checks that record shape.
@@ -1241,7 +1254,7 @@ restore the requested value. `bind()` retains native two-way updates.
 The default browser entry now reports an error when calling root `renderToString`.
 Use `render()` or `hydrate()` for DOM updates. If browser code deliberately needs
 HTML serialization, import `renderToString` from `@cossackframework/renderer/server`.
-That explicit import includes the SSR parser. Node, Deno, Workers and workerd keep
+That explicit import includes the SSR parser. Node, Workers and workerd keep
 the existing root serializer.
 
 

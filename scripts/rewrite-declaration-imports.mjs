@@ -1,17 +1,18 @@
 /**
- * Post-process TypeScript declaration output for Deno compatibility.
+ * Post-process TypeScript declaration output for strict ESM consumers.
  *
- * Deno's strict ESM resolver requires relative declaration imports to include
- * their runtime extension (for example, `./shared/cossack.js` instead of
- * `./shared/cossack`). TypeScript can emit those imports without extensions,
- * which makes the published `core` and `renderer` types fail when they are
- * traversed by the Deno adapter or a Deno application.
+ * Strict ESM resolvers (for example TypeScript `moduleResolution: "NodeNext"`
+ * consumers such as `@cossackframework/database`) require relative declaration
+ * imports to include their runtime extension (for example,
+ * `./shared/cossack.js` instead of `./shared/cossack`). TypeScript can emit
+ * those imports without extensions, which makes the published types fail to
+ * resolve for those consumers.
  *
  * This build-time script scans only `.d.ts`, `.d.mts`, and `.d.cts` files and
  * appends `.js` to extensionless relative import/export/require specifiers. It
  * does not modify runtime JavaScript or application source files. It runs from
- * the `core`, `renderer`, `node-adapter` and `deno-adapter` builds because
- * those packages own declarations consumed by strict ESM clients.
+ * the `core`, `renderer`, `node-adapter` and `ui` builds because those packages
+ * own declarations consumed by strict ESM clients.
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';

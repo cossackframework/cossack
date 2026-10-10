@@ -109,7 +109,7 @@ export async function detectInstallCommand(root) {
 }
 
 export function adapterHelp() {
-  return commandSpecs.adapter.help(`cossack adapter <node|cloudflare|deno>
+  return commandSpecs.adapter.help(`cossack adapter <node|cloudflare>
 
 Switch a schema-v3 scaffolded project to one runtime adapter. The complete
 recorded recipe is re-rendered; application features and unrelated edits are

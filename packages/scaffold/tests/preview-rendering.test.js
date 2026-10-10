@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { renderRecipe, resolveRecipe } from '../src/index.js';
-it.each(['cloudflare', 'node', 'deno'])('renders preview CI only for supported %s applications', async adapter => {
+it.each(['cloudflare', 'node'])('renders preview CI only for supported %s applications', async adapter => {
  const files = await renderRecipe(resolveRecipe({ adapter, preset: 'minimal' }));
  expect(files.has('.github/workflows/preview.yml')).toBe(adapter === 'cloudflare');
  if (adapter === 'cloudflare') {

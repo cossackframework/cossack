@@ -324,7 +324,7 @@ See [rate-limit ownership](./rate-limiting.md) for caller keys and store limits.
 
 WebSocket actions and custom rate keys use the originating peer's verified
 upgrade context, even when several peers share one component. Cloudflare keeps
-a filtered request snapshot in the native attachment; Node/Deno pass each
+a filtered request snapshot in the native attachment; Node passes each
 connection's context. See [action identity and context](./websockets.md#action-identity-and-request-context)
 for retained headers, old-peer reconnects, capacity errors and session limits.
 
@@ -363,8 +363,7 @@ Local proxies can suppress the incoming disconnect signal. The pinned Wrangler/
 Miniflare service-entry proxy does so before headers; direct native workerd
 application sockets and Node TCP reset tests prove the underlying runtime path.
 Do not infer a server-side abort from a client-side promise rejection, or retry
-an uncertain mutation automatically. Native Deno interruption remains a separate
-release verification gate.
+an uncertain mutation automatically.
 
 A shared Durable Object component is published only after its bootstrap,
 initialization and initial persistence finish. Concurrent joins and restoration

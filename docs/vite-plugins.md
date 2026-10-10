@@ -56,7 +56,7 @@ transform. Layout, loading, declaration, and test files are excluded from page
 transport discovery using the same route scanner as the plugin.
 
 Discovered WebSocket pages with `stateful: true` also require `durableState`.
-Node and Deno WebSockets hold process-local state, so their builds reject that
+Node WebSockets hold process-local state, so Node builds reject that
 setting before bundle output. Cloudflare requires `COSSACK_OBJECT`. Dynamic
 `stateful` expressions produce an unknown-requirements diagnostic instead of
 being assumed safe. Use a static boolean in the page declaration.
@@ -75,8 +75,8 @@ Each explicit requirement identifies its feature and source declaration.
 Optional `line` and `column` fields improve diagnostic locations. Missing bindings
 produce `COSSACK_CAPABILITY_BINDING_MISSING`; unsupported requirements produce
 `COSSACK_CAPABILITY_UNSUPPORTED`. Requirements needing a separate integration
-produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED`. For example, built-in Node and Deno
-adapters do not dispatch scheduled handlers. Desktop supports HTTP transport only.
+produce `COSSACK_CAPABILITY_ADAPTER_REQUIRED`. For example, the built-in Node
+adapter does not dispatch scheduled handlers. Desktop supports HTTP transport only.
 
 These checks do not validate remote resources or install adapters. Runtime selection is explicit. Cloudflare uses `capabilities.environment` or
 `CLOUDFLARE_ENV` to choose bindings; an unknown environment fails the build.

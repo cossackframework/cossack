@@ -31,7 +31,7 @@ const readonly = ['json', 'help'];
 const dbGlobals = ['dry-run', 'json', 'help'];
 const createFlags = {
   adapter: choices('Web runtime adapter.', ADAPTERS),
-  'package-manager': choices('Package manager.', ['npm', 'pnpm', 'yarn', 'bun', 'deno']),
+  'package-manager': choices('Package manager.', ['npm', 'pnpm', 'yarn', 'bun']),
   preset: choices('Application preset.', Object.keys(PRESET_REGISTRY)),
   features: list('Application features, comma separated.', FEATURES),
   database: { ...database, aliases: [] },

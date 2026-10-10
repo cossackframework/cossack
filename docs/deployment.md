@@ -71,7 +71,7 @@ sets visitor cookies must use SSR. See [Static Site Generation](./static-site-ge
 SSE pages use the `COSSACK_SSE` Durable Object binding to coordinate scoped
 state and broadcasts across Worker requests. Generated apps export
 `SseDurableObject` and configure its SQLite migration. Declare this binding
-in each named environment too. Node and Deno use a process-local SSE backend;
+in each named environment too. Node uses a process-local SSE backend;
 multiple server processes need a shared coordinator for cross-process state.
 
 Generated Cloudflare configurations include `enable_request_signal` in
@@ -318,12 +318,6 @@ signals share the same shutdown operation. The default deadline is 10 seconds;
 forced shutdown or failed cleanup exits with status 1. Disposal can cancel framework
 work, but external I/O that ignores cancellation may still complete. Shutdown does
 not roll back database writes or other side effects.
-
-Generated standalone Deno entries use the same signal and deadline policy through
-`installDenoShutdown()`. They call native graceful HTTP shutdown and dispose the
-runtime together, then abort outstanding connections if the deadline expires.
-The default exported fetch handler and embedded imports install no process
-handlers. See [Deno serving](../packages/deno-adapter/docs/web.md).
 
 ---
 

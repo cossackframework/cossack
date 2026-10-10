@@ -1,10 +1,10 @@
 name: Integration Tests
 
 # Heavy tests that scaffold, build and run generated applications on Node,
-# Deno, workerd and Chromium. They run:
+# workerd and Chromium. They run:
 # - on PRs that touch the CLI, scaffold, adapters or UI components,
 # - on every push to master (covers core/framework changes after merge),
-# - nightly (catches drift in Wrangler, workerd, Deno and browsers),
+# - nightly (catches drift in Wrangler, workerd and browsers),
 # - before every release (called from publish.yml).
 # Fast checks (typecheck, unit, e2e) run on every PR in e2e-tests.yml.
 
@@ -17,7 +17,6 @@ on:
       - packages/cossack/**
       - packages/scaffold/**
       - packages/node-adapter/**
-      - packages/deno-adapter/**
       - packages/ui/**
       - .github/workflows/integration-tests.yml
   schedule:
@@ -51,11 +50,6 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-
-      - name: Setup Deno 2.9
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.9.x
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

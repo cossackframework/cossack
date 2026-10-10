@@ -102,7 +102,7 @@ Oversized metadata returns `COSSACK_WS_CONTEXT_TOO_LARGE` with status 413 before
 accepting the socket. Malformed identity assertions return
 `COSSACK_WS_CONTEXT_INVALID` (400). Connections created by an older version
 without request metadata reject actions and close with code 1012 to reconnect.
-Node/Deno adapters pass each connection's upgrade context into their shared
+The Node adapter passes each connection's upgrade context into its shared
 runtime; the framework includes decoded page route params. See
 [rate limiting](./rate-limiting.md) for counter-store guarantees.
 

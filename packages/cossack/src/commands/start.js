@@ -31,12 +31,9 @@ export async function startCommand(args, ctx) {
       });
     }
 
-    const tool = adapter === 'deno' ? 'deno' : 'node';
-    const executable = adapter === 'deno' ? process.env.COSSACK_DENO_BINARY || 'deno' : process.execPath;
-    const runtimeArgs =
-      adapter === 'deno' ? ['run', '--allow-env', '--allow-net', '--allow-read', entry, ...args] : [entry, ...args];
+    const tool = 'node';
     if (!ctx.flags.json) console.log(`  start   ${tool} dist/server/index.js`);
-    return runLifecycle('start', executable, runtimeArgs, {
+    return runLifecycle('start', process.execPath, [entry, ...args], {
       cwd: root,
       metadata: { adapter, tool },
       json: !!ctx.flags.json,
@@ -54,8 +51,6 @@ export function startHelp() {
 Start the production server.
   - Cloudflare adapter: \`wrangler dev\`
   - Node adapter: \`node dist/server/index.js\`
-  - Deno adapter: \`deno run --allow-env --allow-net --allow-read dist/server/index.js\`
-Deno is resolved from PATH, or COSSACK_DENO_BINARY when set.
 Extra arguments follow the server entry and are application arguments.
 Adapter is read from the scaffold manifest or package metadata, with
 adapter-specific files used as a legacy fallback.

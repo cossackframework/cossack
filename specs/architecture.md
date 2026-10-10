@@ -38,19 +38,8 @@ selection with its feature, target, and manifest source instead of discarding it
 
 The shared `CossackRuntimeAdapter` and `RuntimeWebSocketUpgrade` type contracts
 live in core. Framework re-exports them and owns transport policy enforcement.
-Deno and Desktop consume core directly; they do not depend on framework to define
-an adapter. Core publishes an empty runtime module beside these type declarations
-so Deno's strict ESM resolver can load their `.js` references during type checking.
-
-Deno development tooling is isolated in `@cossackframework/deno-adapter/vite`.
-Vite transforms the SSR module graph in Node; its module runner evaluates that
-code in a Deno child. Authenticated loopback channels carry module requests and
-proxied application traffic. The native Deno request is preserved for WebSocket
-upgrades while its public URL and headers reflect the original Vite request.
-Server edits replace the process; browser assets and HMR remain Vite-owned.
-Both parent and child bound shutdown, including loss of the parent's ownership
-pipe. This is a local development lifecycle, not durable state or rollback of
-external effects. The production adapter entry does not import this Node tooling.
+Desktop consumes core directly; it does not depend on framework to define
+an adapter.
 
 The storage capability model lives at
 `@cossackframework/core/storage-capabilities`, also re-exported by framework.
@@ -465,8 +454,8 @@ Static core typed-decorator factory aliases use the same classification/strippin
 `@cossackframework/desktop` is the sole native application runtime. Its
 Electron main process serves renderer assets and framework SSR/RPC through the
 private `cossack://app` protocol and injects `ASSETS` plus a window-scoped
-`COSSACK_DESKTOP` binding. It is a side target independent of the Cloudflare,
-Node, or Deno web adapter and supports HTTP page transport only.
+`COSSACK_DESKTOP` binding. It is a side target independent of the Cloudflare
+or Node web adapter and supports HTTP page transport only.
 
 Managed windows share a Cossack-owned persistent Electron session. The runtime
 verifies native initiator origin and webContents ownership before dispatch,
@@ -773,7 +762,7 @@ identity and the originating socket's request context. Cloudflare persists
 upgrade URL/params/filtered headers in native attachments and creates a fresh
 Hono context per action, without HTTP credentials or arbitrary middleware
 variables. Oversized context fails before acceptance; legacy sockets without
-metadata must reconnect. Node/Deno retain their own verified upgrade contexts,
+metadata must reconnect. Node retains its own verified upgrade contexts,
 including framework-decoded page params, instead of borrowing the first peer's
 headers. The rate-limit Durable Object persists each bucket's counter and deadline
 in a storage transaction, preserving spent windows through reconstruction.
@@ -841,7 +830,7 @@ Generator iteration and cleanup run in an AsyncLocalStorage snapshot captured
 from the action request. Components, their descendants, and layout scopes remain
 alive through the stream. SSE subscriptions only receive state updates; they
 never retain or pull an action generator. Distributed SSE scopes use a SQLite
-snapshot and bounded event log in `SseDurableObject`; Node/Deno stay process-local.
+snapshot and bounded event log in `SseDurableObject`; Node stays process-local.
 
 Request-context middleware exposes a structural response lifetime under
 `cossack:response-lifetime`. A middleware can call
@@ -885,7 +874,7 @@ Signing authenticates cookie bytes; it does not encrypt data. On Cloudflare,
 flash middleware atomically consumes each signed nonce through the
 `COSSACK_SSE` SQLite Durable Object, with one named object per token and expiry
 cleanup by alarm. A Cloudflare app without that binding fails closed for flash
-reads and writes. Node/Deno have no durable replay store, so a copied cookie can
+reads and writes. Node has no durable replay store, so a copied cookie can
 be read again until its signed expiry. Generic flash/error messages remain
 application-owned.
 
@@ -1023,7 +1012,7 @@ request ownership and use event cursors to order ambient and action snapshots.
 Older replies remove their own confirmed contribution without replacing newer public
 state. A higher revision restores authority after settlement, even for equal values.
 Child-local replies remain outside the page cursor domain. SQLite persists per-scope
-cursors; Node/Deno use process publication IDs across SSR entry replacement. Reopen
+cursors; Node uses process publication IDs across SSR entry replacement. Reopen
 resets the client baseline; this does not establish cross-process generation ordering.
 Actual native SSE resync and socket reconnect acceptance now pass. Wider optimistic
 stream/service cases remain RT-06 work.
@@ -1135,7 +1124,7 @@ The parser uses parse5 8.0.1 without Node APIs. Its source-location behavior is
 Option text semantics follow the [HTML standard](https://html.spec.whatwg.org/multipage/form-elements.html).
 The renderer's browser export replaces root `renderToString` with a diagnostic
 that directs deliberate serialization to `/server`. This lets bundlers remove the
-SSR parser even when core retains its synchronous `_render()` method. Node, Deno,
+SSR parser even when core retains its synchronous `_render()` method. Node,
 worker and workerd export conditions retain the full root serializer. The explicit
 `/server` entry remains available in every environment. Unmatched single-select values cannot encode an
 empty selection in static HTML; a matching option is required for SSR parity.
@@ -1212,29 +1201,6 @@ entry's `createEnv` factory receives server-only environment-file values and
 process overrides; generated production entries use the same factory. The
 script launcher uses this plugin too. Embedded servers retain their own listener
 and lifecycle.
-
-
-### Deno Vite development boundary
-
-The Deno adapter's Node-only `/vite` entry transforms application modules with
-Vite and evaluates them in a separate Deno module runner. The source entry exports
-`app.fetch`, `env`, and optionally `runtime.dispose`. Authenticated loopback HTTP
-carries module requests and forwarded application traffic. A separate authenticated
-WebSocket carries custom runner events and native-body trace acknowledgements;
-the framework continues to own trace validation and browser publication.
-
-Vite owns public HTTP/HTTPS and WebSocket/WSS listeners. Forwarding retains the
-public scheme and authority, including HTTP/2 requests without a Host header.
-The child wraps the original native request so Deno WebSocket upgrade ownership
-survives forwarding. Private bridge headers and configuration are removed from
-the application-facing request headers and environment.
-
-Source changes replace the Deno process instead of re-evaluating its modules.
-The private event channel filters update/reload frames, and disconnect removes
-its Vite listeners. Parent and child bound shutdown; stdin EOF ends an orphaned
-child after parent failure. This is trusted local development, not a sandbox.
-Reload resets process-local state and does not undo external effects. Desktop
-web configurations exclude this plugin; embedded Vite middleware mode is rejected.
 
 Generated standalone Node entries explicitly install the Node adapter's process
 shutdown owner. SIGTERM/SIGINT share one operation: stop listening, drain accepted
@@ -1349,10 +1315,3 @@ components are disposed once; retries start with a fresh component. The first
 socket is accepted before releasing fresh ownership so stateless joins cannot
 mistake pending readiness for idle state. Restored state comes from storage;
 state-query metadata cannot create an unused extra component or replace its owner.
-
-Generated standalone Deno entries explicitly install the Deno adapter's signal
-owner only under `import.meta.main`. SIGTERM/SIGINT share one operation that
-stops admitting HTTP, drains accepted responses and disposes the runtime. A
-single 10-second deadline covers those operations; expiration aborts the native
-listener and generated entries exit 1. Embedded imports install no handlers.
-Ignored application work is neither completed nor rolled back by forced shutdown.

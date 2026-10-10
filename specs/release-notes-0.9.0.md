@@ -66,9 +66,9 @@ See [input](../docs/validation.md), [policies](../docs/authorization.md),
 Shared transport contracts now preserve request context, cancellation and
 one-time cleanup across supported runtimes. Durable Object publication waits
 for initialization/persistence or restoration, so concurrent consumers do not
-observe a partially initialized owner. Node and Deno development tooling supports
+observe a partially initialized owner. Node development tooling supports
 cold upgrades and server reload while Vite owns browser HMR. Generated standalone
-Node/Deno entries drain accepted HTTP and dispose the runtime within one shared
+Node entries drain accepted HTTP and dispose the runtime within one shared
 deadline; embedded imports install no process signal owner. Work that ignores
 cancellation may still complete external effects.
 
@@ -166,6 +166,11 @@ Read [deployment](../docs/deployment.md), [resource planning](../docs/cloudflare
 
 ## Breaking changes to review
 
+- **Deno support removed:** the Deno adapter package, `deno` scaffold/CLI adapter,
+  `@cossackframework/database/deno` export and `'deno'` runtime name are gone.
+  Supported web runtimes are Cloudflare Workers and Node.js. Switch 0.8.x Deno
+  applications to the Node adapter before upgrading.
+  [Migration](migration-0.9.0.md#deno-support-removed).
 - **RPC results and types:** await ordinary results; only generators yield.
   Serialized client types represent Dates as strings and omit native prototypes.
   Invalid JSON/native values and malformed stream completion reject. Use the
@@ -181,7 +186,7 @@ Read [deployment](../docs/deployment.md), [resource planning](../docs/cloudflare
   state consumption, and old input requires explicit public selection.
   [Migration](migration-0.9.0.md#shared-credential-and-session-primitives).
 - **Streaming and state:** late headers/cookies reject. Resource hydration includes
-  dependency identity; Node/Deno socket snapshots use flat public state. Optimistic
+  dependency identity; Node socket snapshots use flat public state. Optimistic
   previews are excluded from server input, and uncertain mutations need an
   authoritative read. [Migration](migration-0.9.0.md#typed-server-resources-and-dependency-aware-hydration).
 - **Configuration and limits:** required variables/bindings fail before factories;
@@ -201,9 +206,7 @@ Read [deployment](../docs/deployment.md), [resource planning](../docs/cloudflare
 The implementation includes source, installed-consumer, generated-application,
 native runtime and browser evidence. Actual hosted Worker acceptance establishes
 failure correlation in native tail/stored Logs, authored-source remapping and
-provider startup. Hosted Deno Deploy acceptance covers uploaded compiled installed
-artifacts, request bodies/cookies, assets/hydration and HTTP/SSE/WebSocket mutation;
-it does not prove provider source builds.
+provider startup.
 
 Workflow completion uses the [user-approved scope](release-0.9.0-workflow-acceptance.md):
 native local interruption/restart/step reuse/retry/events/failure and real hosted
@@ -213,7 +216,7 @@ Final 0.9.0 builds/types/package units/providers, installed imports/examples,
 generated applications/configuration/migrations and affected runtime checks pass.
 REL-03/04/05 are complete. [Final verification](release-0.9.0-verification-archive.md#codex-final-release-acceptance-2026-10-09).
 
-Earlier hosted Workflow/preview/staging/logging/Deno and 297-case browser receipts
+Earlier hosted Workflow/preview/staging/logging and 297-case browser receipts
 retain their original versions and scope through reviewed unchanged runtime graphs;
 they are not claimed as fresh 0.9.0 hosted runs. Owned hosted resources/repositories
 were independently confirmed absent. Changed database tooling now activates its
@@ -223,7 +226,7 @@ installed migration acceptance pass. Native Cloudflare acceptance uses Wrangler
 not passing evidence. Ordinary newer-tool generated builds pass separately.
 
 Desktop scope is closed for this release by user decision. Its remaining platform
-checks are waived, not passing evidence. Node/Deno component/SSE locality and
+checks are waived, not passing evidence. Node component/SSE locality and
 provider-specific storage/transaction limits remain documented contracts, not
 new distributed guarantees.
 

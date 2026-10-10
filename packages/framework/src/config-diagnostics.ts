@@ -7,7 +7,7 @@ const CODES = new Set([
   'COSSACK_CONFIG_RUNTIME_UNSUPPORTED', 'COSSACK_CONFIG_REQUIREMENT_UNDECLARED',
   'COSSACK_CONFIG_VARIABLE_TYPE_MISMATCH',
 ]);
-const RUNTIMES = new Set(['cloudflare', 'node', 'deno', 'desktop', 'unknown', 'ssg']);
+const RUNTIMES = new Set(['cloudflare', 'node', 'desktop', 'unknown', 'ssg']);
 const KINDS = new Set(['variable', 'binding', 'metadata']);
 const declaredIdentifier = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)

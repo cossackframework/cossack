@@ -66,13 +66,13 @@ export async function verifyConfigHydration(projectDir) {
     const devVars = path.join(projectDir, '.dev.vars');
     await save(devVars);
     await write(devVars, (backups.get(devVars)?.toString('utf8') ?? '') + `\n${CLASSIFICATION}=${JSON.stringify(SECRET)}\n`);
-    // Node/Deno adapters use Vite dotenv instead of Workers dev.vars.
+    // The Node adapter uses Vite dotenv instead of Workers dev.vars.
     const dotenv = path.join(projectDir, '.env.local');
     await save(dotenv);
     await write(dotenv, (backups.get(dotenv)?.toString('utf8') ?? '') + `\n${CLASSIFICATION}=${JSON.stringify(SECRET)}\n`);
     await write(path.join(projectDir, 'src/config/config_hydration_private.ts'), `
 import type { ConfigRequirements, EnvFunction } from '@cossackframework/framework/config';
-export const requirements = { variables: { ${CLASSIFICATION}: { type: 'string', secret: true, runtimes: ['cloudflare', 'node', 'deno'] } } } as const satisfies ConfigRequirements;
+export const requirements = { variables: { ${CLASSIFICATION}: { type: 'string', secret: true, runtimes: ['cloudflare', 'node'] } } } as const satisfies ConfigRequirements;
 export default ({ env }: { env: EnvFunction }) => ({ token: env('${CLASSIFICATION}'), source: '${SOURCE}' });
 `);
     await write(path.join(projectDir, 'src/pages/config-hydration-acceptance/index.ts'), `

@@ -52,10 +52,6 @@
       "types": "./dist/runtime/cloudflare-turso.d.ts",
       "import": "./dist/runtime/cloudflare-turso.js"
     },
-    "./deno": {
-      "types": "./dist/runtime/deno.d.ts",
-      "import": "./dist/runtime/deno.js"
-    },
     "./cossack": {
       "types": "./dist/cossack/index.d.ts",
       "import": "./dist/cossack/index.js"

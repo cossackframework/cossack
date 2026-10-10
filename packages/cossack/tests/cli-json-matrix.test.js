@@ -382,34 +382,14 @@ describe('lifecycle process event contract', () => {
     expect(() => process.kill(pid, 0)).toThrow();
   });
 
-  it('reports a missing Deno build before starting a runtime', async () => {
+  it('reports a missing Node build before starting a runtime', async () => {
     await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
-      dependencies: { '@cossackframework/deno-adapter': '0.8.3' },
+      dependencies: { '@cossackframework/node-adapter': '0.8.3' },
     }));
     const result = envelope(await execute(['start', '--json']), 'start', false);
     expect(result.diagnostics[0]).toMatchObject({
       code: 'COSSACK_SERVER_ENTRY_MISSING', message: expect.stringContaining('pnpm run build'),
     });
-  });
-
-  it.each([false, true])('reports a missing Deno executable without a false started event (json=%s)', async json => {
-    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({
-      dependencies: { '@cossackframework/deno-adapter': '0.8.3' },
-    }));
-    await fs.mkdir(path.join(root, 'dist/server'), { recursive: true });
-    await fs.writeFile(path.join(root, 'dist/server/index.js'), '');
-    const result = await execute(['start', ...(json ? ['--json'] : [])], {
-      env: { COSSACK_DENO_BINARY: path.join(root, 'missing-private-value-deno') },
-    });
-    expect(result.code).toBe(1);
-    if (json) {
-      const data = envelope(result, 'start', false);
-      expect(data).toMatchObject({ data: { event: 'failed', adapter: 'deno', tool: 'deno' },
-        diagnostics: [{ code: 'COSSACK_START_FAILED' }] });
-    } else {
-      expect(result.stderr).toContain('ENOENT');
-      expect(result.stdout).not.toContain('"schemaVersion"');
-    }
   });
 
   it.each(['dev', 'start'])('%s emits started/stopped events and reclaims its process on cancellation', async command => {

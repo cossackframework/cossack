@@ -13,7 +13,6 @@ const stages = [
   // Preserve the root build's library declaration stage, not the demo Worker.
   ['framework', 'build:types'],
   ['node-adapter', 'build'],
-  ['deno-adapter', 'build'],
   ['test-utils', 'build'],
   ['studio', 'build'],
 ];

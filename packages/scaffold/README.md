@@ -219,7 +219,7 @@ infrastructure, not durable background execution. See [jobs guidance](../../docs
 `cossack add turnstile` adds UI and the focused auth verifier without adding
 full authentication or the ORM. Set the public `TURNSTILE_SITE_KEY` and expected
 `TURNSTILE_HOSTNAME`, then provide `TURNSTILE_SECRET_KEY` privately through
-`.dev.vars` on Cloudflare or `.env` on Node/Deno. Use Cloudflare test keys for
+`.dev.vars` on Cloudflare or `.env` on Node. Use Cloudflare test keys for
 local development. The generated contact page publishes only the site key in
 hydrated state and validates the token on the server before the protected
 operation. Replace its acceptance placeholder with your authorized mutation.

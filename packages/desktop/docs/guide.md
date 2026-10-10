@@ -1,6 +1,6 @@
 # Cossack Desktop guide
 
-Add an Electron target to a Cloudflare, Node.js, or Deno web application:
+Add an Electron target to a Cloudflare or Node.js web application:
 
 ```sh
 cossack add desktop
@@ -10,7 +10,7 @@ pnpm desktop:dev
 
 The scaffold creates `src/desktop/index.ts`, `forge.config.ts`, platform icons,
 and build/package/make scripts. The Electron process always runs on Node even
-when the web adapter is Deno or Cloudflare. Bindings such as D1 do not exist in
+when the web adapter is Cloudflare. Bindings such as D1 do not exist in
 Electron unless the application supplies an Electron-compatible equivalent.
 
 `createDesktopApp()` registers and serves `cossack://app`, injects `ASSETS` and

@@ -86,13 +86,27 @@ See the [release notes](specs/release-notes-0.9.0.md) and
   declared package exports are stricter. Port application-owned files deliberately;
   scaffold upgrades preserve them. [Full migration guide](specs/migration-0.9.0.md).
 
+### Removed — migration required
+
+- Deno support is removed; supported web runtimes are Cloudflare Workers and
+  Node.js, and Desktop remains a side target. Removed: the
+  `@cossackframework/deno-adapter` package; `cossack create --adapter deno`,
+  `cossack adapter deno`, the `deno` package-manager option and
+  `COSSACK_DENO_BINARY`; the `@cossackframework/database/deno` export (`deno()`,
+  `denoSQLite()`, `DenoDriver`, `InjectedDenoDriver`, `DenoSQLiteOptions`);
+  `'deno'` in core `RuntimeName` and in framework `ConfigRuntime` and
+  configuration requirement `runtimes`; and the renderer `"deno"` export
+  condition. Before upgrading, run `cossack adapter node` on 0.8.x, or recreate
+  the application with `--adapter node`.
+  [Deno migration](specs/migration-0.9.0.md#deno-support-removed).
+
 ### Fixed
 
 - Request disconnect/cancellation and disposal ownership; concurrent Durable Object
   initialization/restoration; session/OAuth replay and rotation boundaries.
 - Navigation/cache/scroll ownership, realtime resynchronization, optimistic loading
   and rollback, hydration mismatch diagnostics and server-only code stripping.
-- Node/Deno development reload and cold WebSocket startup; generated standalone
+- Node development reload and cold WebSocket startup; generated standalone
   shutdown drains accepted HTTP and disposes runtime work within one deadline.
 - Native UI keyboard/focus/form behavior, chat scrolling and Sidebar ownership;
   package export/dependency and SSG regressions exposed by reports and
@@ -100,7 +114,7 @@ See the [release notes](specs/release-notes-0.9.0.md) and
 
 ### Limits retained
 
-Cancellation does not undo committed effects. Node/Deno SSE and component state
+Cancellation does not undo committed effects. Node SSE and component state
 remain process-local. Queue deduplication is not exactly-once delivery. Preview
 cleanup retains external staging storage, and code rollback does not restore data.
 Desktop's remaining platform checks are waived by the user's release decision,

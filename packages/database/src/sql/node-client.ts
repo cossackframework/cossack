@@ -16,15 +16,10 @@ async function resolveAutoAdapter(
   options: string | Readonly<Record<string, unknown>>,
 ): Promise<Adapter> {
   const url = typeof options === "string" ? options : String(options["url"] ?? "");
-  const runtime = globalThis as typeof globalThis & { Bun?: unknown; Deno?: unknown };
+  const runtime = globalThis as typeof globalThis & { Bun?: unknown };
   if (runtime.Bun) {
     const module = await import("../runtime/bun.js");
     return module.bun(typeof options === "string" ? options : { ...options, url });
-  }
-  if (runtime.Deno) {
-    throw new ConfigurationError(
-      "Deno SQL requires an injected driver. Use deno(driver) from @cossackframework/database/deno.",
-    );
   }
   const module = await import("../runtime/node.js");
   if (url.startsWith("postgres:") || url.startsWith("postgresql:")) return module.postgres(options);

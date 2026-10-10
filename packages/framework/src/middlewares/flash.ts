@@ -85,7 +85,7 @@ function purgeExpiredProcessFlashClaims(now: number): void {
     }
 }
 
-/** Process/isolate-local replay guard for Node and Deno when no durable store is configured. */
+/** Process/isolate-local replay guard for Node when no durable store is configured. */
 function claimProcessFlash(nonce: string, expiresAt: number): 'claimed' | 'replayed' | 'full' {
     const now = Date.now();
     purgeExpiredProcessFlashClaims(now);

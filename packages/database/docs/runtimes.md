@@ -1,6 +1,6 @@
 ---
 title: Runtimes
-description: Configure runtime adapters, custom drivers, and multiple database connections across Node.js, Bun, Workers, and Deno.
+description: Configure runtime adapters, custom drivers, and multiple database connections across Node.js, Bun, and Workers.
 ---
 
 # Runtimes
@@ -11,11 +11,9 @@ eagerly include Node built-ins, native SQLite packages, or unused drivers.
 | Runtime entry | Adapters |
 | --- | --- |
 | `@cossackframework/database/node` | Node SQLite, better-sqlite3, PostgreSQL, MySQL, Turso, automatic `SQL` client |
-| `@cossackframework/database/deno` | Turso embedded SQLite, PostgreSQL, MySQL, remote Turso, or an injected driver |
 | `@cossackframework/database/bun` | Native Bun SQL for SQLite, PostgreSQL, MySQL |
 | `@cossackframework/database/cloudflare` | D1 and Hyperdrive PostgreSQL/MySQL |
 | `@cossackframework/database/cloudflare-turso` | Remote Turso for Workers |
-| `@cossackframework/database/deno` | Injected SQLite, PostgreSQL, MySQL-compatible drivers |
 | `@cossackframework/database/adapter` | Public contracts for custom adapters |
 
 ## Node.js
@@ -84,7 +82,7 @@ Turso (choose the client matching the connection):
 
 ```sh
 pnpm add @tursodatabase/database   # embedded SQLite / Desktop
-pnpm add @tursodatabase/serverless # remote Turso / Deno Deploy
+pnpm add @tursodatabase/serverless # remote Turso
 ```
 
 ```ts
@@ -240,35 +238,6 @@ Hyperdrive owns the global connection pool. The adapters create request-local
 clients and release them deterministically. Enable `nodejs_compat` for the
 official `pg` and `mysql2` drivers. See Cloudflare's
 [Hyperdrive driver guidance](https://developers.cloudflare.com/hyperdrive/).
-
-## Deno
-
-Deno accepts an injected driver rather than importing a specific database
-library into the neutral package:
-
-```ts
-import { createORM } from "@cossackframework/database";
-import {
-  deno,
-  type InjectedDenoDriver,
-} from "@cossackframework/database/deno";
-
-declare const driver: InjectedDenoDriver;
-
-const orm = createORM({
-  adapter: deno(driver),
-  entities,
-});
-```
-
-The injected driver declares its dialect, executes parameterized statements,
-normalizes rows affected and insert IDs, and optionally supplies transactions.
-An application can also inject a runtime-appropriate `ScopeStorage`.
-
-Deno can connect through npm-compatible PostgreSQL/MySQL clients or an
-application-provided SQLite driver. See Deno's
-[database connection guide](https://docs.deno.com/examples/connecting_to_databases_tutorial/)
-for runtime permissions and driver choices.
 
 ## Custom Runtime
 

@@ -726,14 +726,6 @@ describe('shared generated production Cloudflare app', () => {
   }, 120000);
 });
 
-it('builds a generated deno app through its real Vite configuration', async () => {
-  const root = await project('deno');
-  await vite(root, []);
-  await vite(root, ['--ssr', 'src/index.ts', '--outDir', 'dist/server']);
-  await assertPortableChunks(path.join(root, 'dist/server'));
-  expect(await fs.readdir(path.join(root, 'dist/client/assets'))).not.toHaveLength(0);
-}, 120000);
-
 it.each(['node', 'cloudflare'])('selects and hydrates source boundaries in a generated production %s app', async adapter => {
   const root = await project(adapter); await writeRouteBoundaryAcceptance(root);
   await vite(root, []);
