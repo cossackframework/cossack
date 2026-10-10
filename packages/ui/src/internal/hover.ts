@@ -55,6 +55,10 @@ export class HoverController {
             const blur = () => { const generation = this.generation; queueMicrotask(() => { if (generation === this.generation) this.reconcile(); }); };
             const escape = (event: KeyboardEvent) => {
                 if (event.key !== 'Escape' || event.defaultPrevented || (!panel.matches(':popover-open') && !this.opening)) return;
+                // A tooltip left behind the active modal must not consume the
+                // Escape intended for that modal's native dismissal.
+                const modal = document.activeElement?.closest('dialog:modal');
+                if (modal && !modal.contains(wrapper) && !modal.contains(panel)) { this.hide(); return; }
                 event.preventDefault(); this.hide();
             };
             const outside = (event: PointerEvent) => { if (!wrapper.contains(event.target as Node) && !panel.contains(event.target as Node)) this.hide(); };

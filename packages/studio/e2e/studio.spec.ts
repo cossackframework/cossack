@@ -6,6 +6,7 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  MigrationRunner,
   OneToMany,
   PrimaryColumn,
   createORM,
@@ -84,7 +85,7 @@ test.beforeAll(async () => {
     'INSERT INTO legacy_users (id, name) VALUES (NULL, ?), (NULL, ?)',
     ['Repair me', 'Delete me'],
   );
-  await connection.execute('CREATE TABLE _cossack_migrations (name TEXT PRIMARY KEY)');
+  await new MigrationRunner(orm, []).ensureTable();
   for (let index = 1; index <= 55; index++) {
     await connection.execute(
       'INSERT INTO people (name, nickname, age, created_at, department_id) VALUES (?, ?, ?, ?, ?)',
@@ -120,6 +121,9 @@ test.afterAll(async () => {
 });
 
 test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) => {
+  // This complete scenario mounts several Monaco editors and exercises schema,
+  // query, insertion and mutation flows. Keep the individual assertion limits.
+  test.setTimeout(120_000);
   const faviconUrl = new URL('/logo.svg', launchUrl).href;
   const faviconResponse = await page.request.get(faviconUrl);
   expect(faviconResponse.status()).toBe(200);
@@ -287,6 +291,7 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   await expect(countHistory.getByRole('button', { name: 'Remove from saved queries' }))
     .toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(queryHistory).toBeHidden();
   await page.reload();
   await page.getByTestId('open-query-history').click();
   await expect(
@@ -294,7 +299,11 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
       name: 'Remove from saved queries',
     }),
   ).toBeVisible();
+  const savedQueryButton = page.getByTestId('query-history').getByRole('button', { name: 'Remove from saved queries' });
+  await savedQueryButton.focus();
+  await expect(savedQueryButton).toBeFocused();
   await page.keyboard.press('Escape');
+  await expect(page.getByTestId('query-history')).toBeHidden();
 
   await replaceEditorValue(
     page,

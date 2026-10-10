@@ -84,6 +84,11 @@ window.fresh=()=>{window.unmount();tip={};card={};draw();};
     await page.evaluate(()=>window.fresh());await after.focus();await page.evaluate(()=>window.update({delay:500},{}));await save.hover();await page.evaluate(()=>window.unmount());await page.waitForTimeout(550);await page.evaluate(()=>{window.card.show();window.card.hide();window.dispatchEvent(new Event('resize'));});
     await page.evaluate(()=>{window.fresh();window.unmount();window.fresh();});await save.focus();await browserExpect(tip).toBeVisible();
     await page.evaluate(()=>window.fresh());await after.focus();await trigger.hover();await browserExpect(card).toBeVisible();await page.getByLabel('Card field').click();await page.keyboard.press('Escape');await browserExpect(trigger).toBeFocused();await browserExpect(card).not.toBeVisible();
+    await after.focus();await save.hover();await browserExpect(tip).toBeVisible();
+    await page.evaluate(()=>{const dialog=document.createElement('dialog');dialog.id='foreground-dialog';dialog.innerHTML='<button>Foreground action</button>';document.body.append(dialog);dialog.showModal();});
+    await browserExpect(page.getByRole('button',{name:'Foreground action'})).toBeFocused();
+    expect(await tip.evaluate(el=>el.matches(':popover-open'))).toBe(true);
+    await page.keyboard.press('Escape');await browserExpect(page.locator('#foreground-dialog')).not.toBeVisible();await browserExpect(tip).not.toBeVisible();
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();
