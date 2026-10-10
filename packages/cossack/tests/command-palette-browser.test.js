@@ -88,6 +88,9 @@ window.fresh=(next={},other={})=>{window.unmount();props=next;second=other;windo
     await page.evaluate(()=>window.updateSecond({shortcut:true,shortcutInEditable:true}));
     await page.locator('#editor').focus();await page.keyboard.press('Control+k');await browserExpect(second).toBeVisible();await browserExpect(dialog).not.toBeVisible();
     await page.keyboard.press('Escape');await browserExpect(second).not.toBeVisible();
+    // Uncontrolled state also changes in the queued native close callback.
+    // Drawing new props before it runs can reopen the still-open owner.
+    await page.waitForFunction(()=>window.instances.find(instance=>instance.props.id==='second').isOpen===false);
     await page.evaluate(()=>window.updateSecond({shortcut:false}));
     await outside.focus();await page.keyboard.press('Control+Shift+k');await browserExpect(dialog).not.toBeVisible();
     await outside.dispatchEvent('keydown',{key:'k',ctrlKey:true,repeat:true});await browserExpect(dialog).not.toBeVisible();
