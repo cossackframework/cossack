@@ -98,7 +98,9 @@ hydrate(template(current()),container);window.retained=initial.every(element=>el
     const oldHeight=await vp.evaluate(el=>el.scrollHeight);await page.evaluate(()=>window.update({ids:Array.from({length:24},(_,i)=>i),text:'Streaming text '.repeat(100)}));await browserExpect.poll(()=>vp.evaluate(el=>el.scrollHeight)).toBeGreaterThan(oldHeight);await bottom();
     await vp.focus();await page.keyboard.press('Home');await browserExpect.poll(()=>vp.evaluate(el=>el.scrollTop)).toBeLessThan(1);await browserExpect(jump).toBeVisible();
     await page.evaluate(()=>window.update({vetoKey:true}));await page.keyboard.press('End');expect(await vp.evaluate(el=>el.scrollTop)).toBe(0);await page.evaluate(()=>window.update({vetoKey:false}));
-    await vp.evaluate(el=>{el.scrollTop=650;});await browserExpect.poll(()=>page.evaluate(()=>window.targets.includes('DIV#transcript-viewport'))).toBe(true);
+    // Earlier Home/End events already populated targets. Require the new scroll
+    // event before saving an anchor or prepending history.
+    await vp.evaluate(el=>{window.targets=[];el.scrollTop=650;});await browserExpect.poll(()=>page.evaluate(()=>window.targets.includes('DIV#transcript-viewport'))).toBe(true);
     const saved=(await anchor())[0];await page.evaluate(()=>window.update({ids:[-2,-1,...Array.from({length:24},(_,i)=>i)]}));await anchored(saved);
     await page.evaluate(()=>window.update({image:true}));await page.waitForFunction(()=>document.querySelector('#late-image')?.complete);await anchored(saved);
     await page.evaluate(()=>window.update({height:'220px',width:'290px',dir:'rtl'}));await anchored(saved);
