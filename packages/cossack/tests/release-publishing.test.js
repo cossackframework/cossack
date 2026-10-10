@@ -27,6 +27,8 @@ describe('release publishing coverage', () => {
     const commands = steps.map(step => step.run ?? '').join('\n');
     const internal = JSON.parse(readFileSync(path.join(root, 'packages/test-utils/package.json'), 'utf8'));
     expect(internal.private).toBe(true);
+    const workspace = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+    expect(workspace.scripts.build).toContain('pnpm --filter @cossackframework/test-utils run build');
     expect(commands).not.toContain('pnpm publish --filter @cossackframework/test-utils');
     expect(commands).not.toMatch(/--filter @cossackframework\/desktop (?:test|build:desktop)/);
     expect(workflow.jobs.publish.environment).toBe('Publish to npm');

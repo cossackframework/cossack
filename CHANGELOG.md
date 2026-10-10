@@ -49,7 +49,7 @@ See the [release notes](specs/release-notes-0.9.0.md) and
   [previews](docs/cloudflare-previews.md).
 - Build-time runtime/feature capability checks and removal of tracked credential
   values. External credential rotation remains an operator action.
-- Published production-fetch/RPC, credential, hydration and DI test helpers;
+- Internal workspace production-fetch/RPC, credential, hydration and DI test helpers;
   generated configuration/translation types; request-scoped SSR/SSG locale and
   configuration handling. [Test helpers](docs/test-utils.md),
   [configuration](docs/config.md), [localization](docs/localization.md).

@@ -70,8 +70,10 @@ Cache facades/config declarations and limiter guards check requirements before
 operations. Cache factories may still construct resources during resolution.
 CLI provider inspection uses the compiler parser and selected Wrangler settings,
 without executing configuration or contacting a backend. Dynamic declarations
-and possible registration overrides remain unknown. Memory limiter capacity
-never erases live quotas; framed scope/caller and namespace/key tuples keep
+and possible registration overrides remain unknown. The memory limiter prunes
+expired windows, then evicts the oldest live windows at capacity. Eviction forgets
+spent quota; strict limits require a shared provider or enough capacity for all
+live callers. Framed scope/caller and namespace/key tuples keep
 distinct identities separate. See the cache/rate-limiting guides for the
 breaking key migration and precise resource/operation limits.
 

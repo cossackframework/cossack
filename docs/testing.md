@@ -29,7 +29,7 @@ auth, UI, adapters, database, Studio, scaffold, CLI, and framework. The
 is included. For watch mode or a
 focused test, use `pnpm --filter <package-name> exec vitest <test-file>`.
 
-See [Test utilities](./test-utils.md) for public browser hydration and awaitable
+See [Test utilities](./test-utils.md) for internal browser hydration and awaitable
 cleanup helpers, production fetch/RPC dispatch, credential fixtures, and
 controlled asynchronous work.
 

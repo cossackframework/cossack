@@ -263,13 +263,9 @@ export class UserProfile extends Cossack {
 
 ## Testing
 
-Use `@cossackframework/test-utils` to test components in isolation.
-
-### Installation
-
-```bash
-pnpm add -D @cossackframework/test-utils
-```
+The following examples use the private `@cossackframework/test-utils` workspace
+package inside this repository. It is not published to npm in 0.9.0. See
+[Test utilities](./test-utils.md) for its internal component and request helpers.
 
 ### Basic Example
 

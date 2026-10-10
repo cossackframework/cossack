@@ -37,11 +37,16 @@ counts and receipts are not substituted for verification of the reviewed source.
 
 - [x] Non-Desktop release build (`pnpm run build:release`) and database bundle audit (32 neutral modules; Workers-safe entry).
 - [x] Root `pnpm tsc --noEmit` and `pnpm run typecheck -- --exclude-desktop`.
-- [ ] Non-Desktop unit suites, including the CLI's unit project.
+- [x] Non-Desktop unit suites: 6,390 passed, five skipped; includes the CLI unit project (806 passed, three skipped).
 - [ ] Installed-package/scaffold acceptance with current 0.9.0 tarballs.
 - [ ] GitHub PR checks: CLI integration shards, UI browser and framework E2E.
 - [ ] PR merged into master and 0.9.0 release created at the verified revision.
 - [ ] npm publication verified for all eleven public workspace packages.
+
+The first clean-checkout CI attempt exposed an omitted internal test-utils build.
+The normal workspace build now includes it; publication still excludes it.
+The affected guidance inventory (two tests), executable guide coverage (four
+tests), publication coverage (two tests) and typechecks passed after the fix.
 
 ## Publishing
 
