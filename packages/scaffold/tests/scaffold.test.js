@@ -692,6 +692,17 @@ describe('composition', () => {
       .toContain('APP_URL=http://localhost:3000');
   });
 
+  it('imports the Workers Turso adapter from its dedicated entry point', async () => {
+    const files = await renderRecipe(resolveRecipe({
+      adapter: 'cloudflare',
+      preset: 'database',
+      database: 'turso',
+    }), { projectName: 'turso-app' });
+    const runtimeConfig = files.get('src/orm/factory.ts').content.toString();
+    expect(runtimeConfig).toContain("import { turso } from '@cossackframework/database/cloudflare-turso';");
+    expect(runtimeConfig).not.toContain("from '@cossackframework/database/cloudflare';");
+  });
+
   it('uses Wrangler local D1 for migrations without native SQLite dependencies', async () => {
     const files = await renderRecipe(resolveRecipe({
       adapter: 'cloudflare',

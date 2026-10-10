@@ -690,6 +690,9 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
       : provider === 'hyperdrive-postgres'
         ? 'hyperdrivePostgres(env.HYPERDRIVE)'
         : 'hyperdriveMySQL(env.HYPERDRIVE)';
+  const runtimeModule = provider === 'turso'
+    ? '@cossackframework/database/cloudflare-turso'
+    : '@cossackframework/database/cloudflare';
   const envShape = provider === 'd1'
     ? 'DB: D1Database;'
     : provider === 'turso'
@@ -699,7 +702,7 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
 import { createORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
 import { createAsyncLocalScope } from '@cossackframework/database/adapter';
-import { ${runtimeImport} } from '@cossackframework/database/cloudflare';
+import { ${runtimeImport} } from '${runtimeModule}';
 import { models } from '../models';
 
 export interface ORMEnvironment {
