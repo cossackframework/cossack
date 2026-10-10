@@ -45,7 +45,7 @@ run(
     'exec',
     'vitest',
     'run',
-    'tests/generated-runtime-build.test.js',
+    'tests/generated-runtime-recipes.test.js',
     '-t',
     'executes a generated Desktop application|executes Desktop development',
   ],

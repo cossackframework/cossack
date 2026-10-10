@@ -149,7 +149,8 @@ declares HTTP capability, and preserves edited pages during repeat composition.
 
 Generated production browser acceptance runs in the CLI package with Playwright.
 Install its Chromium browser with `pnpm --filter cossack exec playwright install chromium`
-before running `pnpm --filter cossack exec vitest run tests/generated-runtime-build.test.js`.
+before running `pnpm --filter cossack exec vitest run tests/generated-runtime-`
+(the `generated-runtime-*.test.js` files: production, auth, recipes and development).
 
 ## Layout-scoped service recipe
 

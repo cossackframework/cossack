@@ -21,6 +21,6 @@ try {
 // Build dependencies, then verify the actual installed packages in Deno.
 run(process.execPath, ['scripts/test-local-scaffold.mjs', '--deno-runtime-only']);
 run(binary, ['test', '--allow-env', '--allow-net', '--allow-read', 'packages/deno-adapter/tests/deno-smoke.test.ts']);
-run('pnpm', ['--filter', 'cossack', 'exec', 'vitest', 'run', 'tests/generated-runtime-build.test.js', '-t', 'executes a generated Deno application|serves generated Deno development|shares a generated deno development']);
+run('pnpm', ['--filter', 'cossack', 'exec', 'vitest', 'run', 'tests/generated-runtime-development.test.js', '-t', 'executes a generated Deno application|serves generated Deno development|shares a generated deno development']);
 
 run('pnpm', ['--filter', 'cossack', 'exec', 'vitest', 'run', 'tests/generated-deno-shutdown.test.js']);
