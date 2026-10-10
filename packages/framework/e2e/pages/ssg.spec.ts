@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { waitForHydration } from '../fixtures/helpers';
+import { readFile } from 'node:fs/promises';
 
 /**
  * End-to-end tests for Static Site Generation (SSG).
  *
- * These run against a preview server that serves the output of
- * `pnpm run build:ssg`. They are gated behind COSSACK_TEST_SSG=1 so the
- * default `playwright test` run (which uses `pnpm dev`) is not slowed down
- * by a full SSG build.
+ * These run against the production preview server. Development runs skip this
+ * suite because they do not generate static output. COSSACK_TEST_SSG=1 selects
+ * only this suite.
  *
  * Run explicitly with:
  *   pnpm run test:e2e:ssg
@@ -40,18 +40,16 @@ test.describe('SSG serving (preview server)', () => {
     // rendered value contiguously (SSR wraps dynamic values in markers).
     const visible = html.replace(/<!--\/?CRP[\s\S]*?-->/g, '');
 
-    const match = visible.match(/Build date:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+    const timestamp = /Build date:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/;
+    const match = visible.match(timestamp);
     expect(match, 'expected an ISO build-date timestamp in the HTML').not.toBeNull();
 
-    const renderedAt = new Date(match![1]);
-    const now = new Date();
-    const ageMinutes = (now.getTime() - renderedAt.getTime()) / 60000;
-    // The build happened recently. This alone doesn't prove SSG (an SSR page
-    // would also be recent), but combined with the static-asset response
-    // test below it confirms the page was generated at build time, not per
-    // request.
-    expect(ageMinutes).toBeGreaterThanOrEqual(0);
-    expect(ageMinutes).toBeLessThan(24 * 60);
+    // A valid cached build can be older than 24 hours. Compare the served
+    // timestamp with the generated file instead of requiring a recent build.
+    const built = await readFile(new URL('../../dist/client/ssg-demo/index.html', import.meta.url), 'utf8');
+    const builtMatch = built.replace(/<!--\/?CRP[\s\S]*?-->/g, '').match(timestamp);
+    expect(builtMatch).not.toBeNull();
+    expect(match![1]).toBe(builtMatch![1]);
   });
 
   test('pre-renders /ssg-demo/users/alice with the user profile', async ({ request }) => {

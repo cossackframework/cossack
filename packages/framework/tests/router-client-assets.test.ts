@@ -1,5 +1,7 @@
 import 'reflect-metadata';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { Cossack, Page } from '@cossackframework/core';
+import { html } from '@cossackframework/renderer';
 
 const { registry } = vi.hoisted(() => ({ registry: {
   pages: {} as Record<string, unknown>, layouts: {}, loadings: {},
@@ -8,23 +10,29 @@ vi.mock('virtual:cossack-pages', () => ({ default: registry }));
 vi.mock('virtual:cossack-middlewares', () => ({ default: [] }));
 vi.mock('virtual:cossack-config', () => ({ default: {}, requirements: {}, environment: undefined }));
 
-afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
-
-async function createTestApp() {
-  const { Cossack, Page } = await import('@cossackframework/core');
-  const { html } = await import('@cossackframework/renderer');
-  @Page({ transport: 'http' })
-  class AssetPage extends Cossack {
-    render() { return html`<main>SSR asset test</main>`; }
-  }
-  registry.pages['/src/pages/index.ts'] = { default: AssetPage };
-  const { createApp } = await import('../src/router');
-  return createApp();
+@Page({ transport: 'http' })
+class AssetPage extends Cossack {
+  render() { return html`<main>SSR asset test</main>`; }
 }
+registry.pages['/src/pages/index.ts'] = { default: AssetPage };
+
+// Transform the SSR dependency graph during collection, like the other router
+// suites. Cold imports under full-suite load must not consume a request test's
+// timeout. A unique query reloads only the router's asset caches per case;
+// resetModules would also reload every dependency and change class identities.
+await import('../src/router');
+let routerInstance = 0;
+let createApp: typeof import('../src/router').createApp;
+beforeEach(async () => {
+  vi.stubEnv('DEV', false);
+  const router = await import(/* @vite-ignore */ `../src/router.ts?client-assets-test=${routerInstance++}`) as typeof import('../src/router');
+  createApp = router.createApp;
+});
+afterEach(() => { vi.unstubAllEnvs(); });
 
 async function render(css: string, manifestStatus = 200, cssStatus = 200, development = false) {
   vi.stubEnv('DEV', development);
-  const app = await createTestApp();
+  const app = createApp();
   const fetch = vi.fn(async (request: Request) => {
     if (new URL(request.url).pathname === '/cossack-manifest.json') {
       return new Response(JSON.stringify({ 'src/client/entry-client.ts': {
@@ -72,8 +80,7 @@ it('ignores stale built assets in development', async () => {
 
 it('renders without an ASSETS binding', async () => {
   vi.stubEnv('DEV', false);
-  const app = await createTestApp();
-  const response = await app.request('/');
+  const response = await createApp().request('/');
   expect(response.status).toBe(200);
   expect(await response.text()).toContain('/src/client/entry-client.ts');
 });

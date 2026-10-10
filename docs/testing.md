@@ -48,7 +48,30 @@ The framework uses Playwright for end-to-end testing. Tests are located in `pack
 pnpm --filter @cossackframework/framework test:e2e
 ```
 
-to view the test report after running tests:
+The default run builds the production app and starts `vite preview`. Playwright
+shows build progress while it waits for the server. Later runs reuse the build
+when its inputs have the same contents. Rebuilding identical workspace packages
+does not trigger another application build. Changed source, configuration,
+dependencies, or build environment values invalidate this cache.
+
+The server launcher limits each readiness request to one second. This prevents
+a closed localhost port from delaying startup for minutes on WSL.
+
+If you need a clean build, force one with:
+
+```bash
+COSSACK_E2E_REBUILD=1 pnpm --filter @cossackframework/framework test:e2e
+```
+
+For faster local iteration, use the development server:
+
+```bash
+pnpm --filter @cossackframework/framework test:e2e:dev
+```
+
+The development run skips SSG tests because they need production output.
+
+To view the test report after running tests:
 
 ```bash
 pnpm --filter @cossackframework/framework exec playwright show-report
