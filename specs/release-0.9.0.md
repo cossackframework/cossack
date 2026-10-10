@@ -41,8 +41,8 @@ Later release-record edits do not change package behavior.
 - [x] Final installed-package/scaffold acceptance: declaration/runtime imports, offline CLI/MCP, configuration secrecy, budgets, native D1 migrations, generated recipes and bidirectional Node RPC. Private test-utils is a local acceptance artifact; Desktop platform checks are excluded.
 - [x] Final [CLI integration and UI browser run](https://github.com/cossackframework/cossack/actions/runs/38030885483): 397 CLI tests passed, eleven skipped; all 35 UI browser tests passed.
 - [x] Final [Framework/Studio run](https://github.com/cossackframework/cossack/actions/runs/38030885475): 281 Framework E2E tests, 14 SSG output tests and the complete Studio browser scenario passed, together with build, typechecks, units and installed acceptance.
-- [ ] PR merged into master and 0.9.0 release created at the verified revision.
-- [ ] npm publication verified for all eleven public workspace packages.
+- [x] [PR #94](https://github.com/cossackframework/cossack/pull/94) merged into master as `644ca19a8ffa29e0202f0ab09c994729d259a083`; [release/tag 0.9.0](https://github.com/cossackframework/cossack/releases/tag/0.9.0) targets that commit.
+- [x] [Trusted publication workflow](https://github.com/cossackframework/cossack/actions/runs/38031771346) passed. Registry verification at `2026-10-10T06:57:06.692Z` confirmed all eleven public packages at 0.9.0, with `latest` = 0.9.0 and tarball integrity metadata present. Fresh no-cache requests avoided stale registry responses.
 
 Codex fixed three runtime issues exposed during acceptance: late popup-close
 notifications clearing MultiSelect validation; short transcripts resuming
@@ -67,9 +67,8 @@ Separate installed/native browser suites passed as listed above.
 Historical plans/handoffs remain at `36df3388`. Seven obsolete working journals
 and 353 owned historical temporary artifacts were removed. This compact record
 replaces the checklist, plan, verification archive and handoff for the release.
-The only outstanding release tasks are merge/release creation and registry
-publication verification; no implementation task or Desktop platform check is
-reopened.
+Release status: complete. Remaining release tasks: zero; blockers: none.
+No implementation task or Desktop platform check is reopened.
 
 ## Publishing
 
@@ -78,5 +77,14 @@ publishing through OIDC. It builds package artifacts, runs the release acceptanc
 checks and publishes public workspace packages in dependency order. `test-utils` is
 excluded. Desktop platform jobs remain manual under the release waiver.
 
-A GitHub release alone does not prove npm publication. The published registry
-versions and workflow result are checked separately before calling release done.
+Verified public packages: renderer, core, node-adapter, auth, ui, framework,
+desktop, database, studio and scaffold under `@cossackframework`, plus `cossack`.
+Internal test-utils was not published. Solar Icons and its lockfile entry were
+not changed.
+
+Duplicate master-push E2E/integration runs were cancelled after the merged tree
+matched the verified PR tree. They are not claimed as passed. The final PR runs
+and the release workflow independently passed their required gates.
+
+This record is finalized after publication; the immutable 0.9.0 tag retains the
+pre-publication checklist. No tag or published artifact was moved or replaced.
