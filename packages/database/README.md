@@ -2,8 +2,8 @@
 
 An ESM-only, serverless-first Active Record ORM for Cossack. It provides decorated
 models, safe SQL, a fluent query builder, explicit request scopes, schema metadata,
-introspection, and deterministic migrations without a repository layer or a
-runtime schema-sync mode.
+and introspection. Migrations are deterministic. There is no repository layer and
+no runtime schema-sync mode.
 
 ## Install
 
@@ -93,7 +93,7 @@ await orm.run(async () => {
 
 Static Active Record methods and the global `sql` tag deliberately throw outside
 `orm.run()`. Put one scope around each request, queue job, scheduled task, or CLI
-operation. Runtime adapters provide async-local isolation; a nested transaction
+operation. Runtime adapters provide async-local isolation. A nested transaction
 rebinds the scope to its transaction client and uses savepoints when supported.
 
 ## Safe SQL
@@ -118,8 +118,8 @@ literal SQL.
 
 The neutral `SQL` export accepts an explicit adapter, so it is safe in Workers.
 For lazy Node/Bun adapter selection from a URL or SQLite path, import `SQL` from
-`@cossackframework/database/node`. Workers should pass their D1, Hyperdrive or
-Turso adapter explicitly rather than guess from an environment URL.
+`@cossackframework/database/node`. In Workers, pass the D1, Hyperdrive, or
+Turso adapter explicitly. Do not guess the adapter from an environment URL.
 
 ## Relations
 
@@ -135,7 +135,7 @@ const users = await User.find({
 The loader batches keys and chunks them at the adapter's parameter limit. Owning
 relations expose both logical metadata and physical join columns. Many-to-many
 associations require `@JoinTable()` on one side. Cascades are opt-in with
-`{ cascade: ["insert", "update"] }`; delete cascades remain database behavior and
+`{ cascade: ["insert", "update"] }`. Delete cascades remain database behavior and
 are never replayed across an in-memory object graph.
 
 ## Runtime adapters
@@ -151,12 +151,12 @@ are never replayed across an in-memory object graph.
 
 D1 uses prepared statements and `batch()`. It supports atomic migration batches,
 but rejects interactive transactions, savepoints, and connection reservation with
-`UnsupportedCapabilityError`. Enable Workers' narrow `nodejs_als` compatibility
+`UnsupportedCapabilityError`. Enable the narrow Workers `nodejs_als` compatibility
 flag for request scope isolation.
 
 Hyperdrive creates and closes a request-local `pg`/`mysql2` client while
-Hyperdrive owns the global pool. Workers need `nodejs_compat`; `mysql2` uses
-`disableEval: true`. See Cloudflare's current
+Hyperdrive owns the global pool. Workers need `nodejs_compat`. The `mysql2`
+driver uses `disableEval: true`. See Cloudflare's current
 [D1 binding API](https://developers.cloudflare.com/d1/worker-api/),
 [Hyperdrive guide](https://developers.cloudflare.com/hyperdrive/get-started/),
 and [Workers best practices](https://developers.cloudflare.com/workers/best-practices/workers-best-practices/).
@@ -199,7 +199,7 @@ cossack-orm seed run --only users,posts
 ```
 
 Generated migrations compare current decorators with a committed model schema
-snapshot; database introspection remains limited to `schema diff/check/pull`.
+snapshot. Database introspection remains limited to `schema diff/check/pull`.
 Migrations are reviewable TypeScript and are never run during application
 startup. Dropped tables/columns and narrowing changes require
 `--allow-destructive`. Rename detection is never heuristic: set `renamedFrom` on
@@ -239,17 +239,17 @@ Seeders run sequentially in configuration order and stop at the first failure.
 `"auto"` uses one transaction per seeder where supported, `"required"` fails
 before writing when interactive transactions are unavailable, and `"none"`
 executes without a runner-managed transaction. On D1, `"auto"` runs without an
-interactive transaction; use a database-specific batch inside a `"none"` seeder
+interactive transaction. Use a database-specific batch inside a `"none"` seeder
 when the work must be atomic.
 
 `SeederRunner` owns scope, selection, transaction policy, cancellation, and
-failure attribution. Framework CLIs should load `orm.config.ts` and delegate to
-this runner instead of implementing their own seed loop. Environment and
+failure attribution. Framework CLIs load `orm.config.ts` and delegate to
+this runner. Do not implement a separate seed loop in a CLI. Environment and
 production-confirmation policies belong in the framework CLI. Seed data remains
-application-owned and should be idempotent through stable keys, existence checks,
-or upserts; seeders are not recorded as migrations.
+application-owned. Keep seed data idempotent through stable keys, existence
+checks, or upserts. Seeders are not recorded as migrations.
 
-## Deliberate v1 boundaries
+## Deliberate boundaries
 
 There is no Data Mapper/repository API, legacy query-builder compatibility layer, automatic
 schema mutation at startup, NoSQL/GraphQL integration, or ORM query-result cache.
@@ -269,7 +269,7 @@ pnpm exec tsx ./examples/sqlite-starter/query.ts
 
 [`examples/multiple-connections`](./examples/multiple-connections/README.md)
 demonstrates two independent SQLite connections with separate models,
-migrations, transactions, CLI configs, and concurrent explicit-manager queries:
+migrations, transactions, CLI configurations, and concurrent explicit-manager queries:
 
 ```sh
 pnpm example:multiple-connections

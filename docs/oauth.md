@@ -5,13 +5,13 @@ description: "Add OAuth 2.0 login (GitHub, Google, GitLab, Facebook, Microsoft, 
 
 # OAuth (Login with GitHub, Google,...)
 
-The `@cossackframework/auth` package ships a full **OAuth 2.0 Authorization
-Code flow with PKCE (S256)** implementation. It works on both Cloudflare
+The `@cossackframework/auth` package implements the OAuth 2.0 Authorization
+Code flow with PKCE (S256). It works on both Cloudflare
 Workers and Node.js because it only uses web-standard APIs (`fetch`, Web
 Crypto, `crypto.randomUUID`).
 
-First-party providers: **GitHub, Google, GitLab, Facebook, Microsoft**. Custom
-providers are supported via [`defineOAuthProvider`](#custom-providers).
+First-party providers: GitHub, Google, GitLab, Facebook, and Microsoft. Custom
+providers use [`defineOAuthProvider`](#custom-providers).
 
 ## How the flow works
 
@@ -45,19 +45,19 @@ Browser                   Cossack app              OAuth provider
 
 ## Security defaults
 
-- **PKCE S256** is on for every provider (RFC 9700 recommendation, even for
- confidential clients). A fresh `code_verifier` is generated per redirect.
-- **CSRF `state`**: 128-bit random nonce, stored in an HttpOnly
+- PKCE S256 is on for every provider. RFC 9700 recommends it even for
+ confidential clients. A fresh `code_verifier` is generated per redirect.
+- CSRF `state`: a 128-bit random nonce, stored in an HttpOnly
  `SameSite=Lax` cookie signed with HMAC-SHA256, compared without an early mismatch exit,
  and deleted on callback read. The required server state store atomically consumes
  the provider-bound state before token exchange. Both the cookie and store enforce expiry.
-- **Exact `redirect_uri` match**: the same value is sent on the authorize and
+- Exact `redirect_uri` match: the same value is sent on the authorize and
  token-exchange requests.
 
 ## Atomic state storage
 
 Cookie-based `createOAuth` requires an `OAuthStateStore`. The generated
-`src/auth.ts` exports `oauthStateStore`; `cossack add auth --oauth github`
+`src/auth.ts` exports `oauthStateStore`. `cossack add auth --oauth github`
 composes it automatically. Handwritten applications supply these callbacks:
 
 | Callback | Contract |
@@ -67,7 +67,7 @@ composes it automatically. Handwritten applications supply these callbacks:
 
 `OAuthStateRecord` has a SHA-256 `key`, `provider`, `createdAt` and `expiresAt`.
 Times are Unix milliseconds. The key hashes the library purpose, provider ID and
-random state; rows contain no authorization code, PKCE verifier or credential.
+random state. Rows contain no authorization code, PKCE verifier or credential.
 The signed cookie still binds the nonce and verifier to the browser.
 
 The generated store writes anonymous `sessions` rows with
@@ -78,20 +78,20 @@ a password-reset token. Remove abandoned expired rows through application cleanu
 
 Consumption happens after signed-cookie and state validation, before token
 exchange. Concurrent callbacks have one winner. Failed exchange, profile or
-account mapping does not restore the state; start a new flow to retry. Cookie
+account mapping does not restore the state. Start a new flow to retry. Cookie
 cleanup alone cannot provide this property. Stateless mode deliberately leaves
 CSRF and replay protection to the application.
 
 This store supplies the one-time state boundary described in
 [OAuth Security BCP](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.7.1).
 Storage atomicity remains the application's responsibility. The native local
-tests verify the generated SQLite/D1 composition; they do not prove a live
+tests verify the generated SQLite/D1 composition. They do not prove a live
 provider registration or deployed database configuration.
 
 ## 1. Register an OAuth app with your provider
 
 Create credentials in the provider's developer console and configure the
-authorized callback URL (e.g. `https://yourapp.example/auth/github/callback`).
+authorized callback URL (for example `https://yourapp.example/auth/github/callback`).
 
 | Provider | Console |
 | --- | --- |
@@ -195,7 +195,7 @@ this immutable error. Log `error.toJSON()` instead of the callback URL or contex
 
 Configuration errors throw when constructing a kit or route. Redirect failures
 use the default diagnostic response. Callback errors call `onError`. Returning
-no response keeps the default response; a throwing handler gets its own diagnostic.
+no response keeps the default response. A throwing handler gets its own diagnostic.
 Configured cookie-based callbacks clear their state cookie on success and failure,
 including denied consent and missing parameters. The separate required state store
 provides atomic server consumption. An error cannot undo application effects already
@@ -276,7 +276,7 @@ interface OAuthUser {
 
 ## Provider-specific options
 
-Attach a `provider` object to the per-provider config:
+Attach a `provider` object to the per-provider configuration:
 
 ```ts
 providers: {
@@ -336,7 +336,7 @@ Custom provider ids must not shadow a first-party id (`github`, `google`,
 ## Overriding cookie defaults
 
 Names and paths are checked before state storage. `__Host-` and `__Secure-`
-names require explicit `secure: true`; `__Host-` also requires `path: '/'`.
+names require explicit `secure: true`. `__Host-` also requires `path: '/'`.
 Clearing preserves these flags, including for raw or immutable custom Responses.
 
 ```ts
@@ -356,13 +356,13 @@ createOAuth({
 ## Stateless mode (advanced)
 
 For cookie-less API clients, pass `stateless: true`. In this mode the package
-will **not** set or verify a state cookie, and **PKCE is disabled** as well
-(since the `code_verifier` cannot be recovered without a cookie store).
+does not set a state cookie, and PKCE is disabled
+as well, because the `code_verifier` cannot be recovered without a cookie store.
 
-**You are then responsible for CSRF protection** of the callback : for example,
-by including a signed `state` value in the authorize URL that you verify
-yourself on callback. Without PKCE you also lose the defense against
-authorization-code injection, so stateless mode is riskier than the default and
+You are then responsible for CSRF protection of the callback. For example,
+include a signed `state` value in the authorize URL. Make sure that the value is
+valid when the callback arrives. Without PKCE you also lose the defense against
+authorization-code injection. Stateless mode is riskier than the default.
 Use it only when you cannot use cookies.
 
 ```ts

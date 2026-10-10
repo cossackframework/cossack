@@ -59,7 +59,7 @@ render() {
 
 ### Dynamic Values
 
-For truly dynamic values that cannot be expressed as static classes (e.g., a progress bar width based on a percentage), keep an inline `style` attribute:
+For dynamic values that static classes cannot express (for example, a progress bar width based on a percentage), keep an inline `style` attribute:
 
 ```typescript
 render() {
@@ -119,7 +119,7 @@ loadingTemplate() {
 
 ## Custom CSS
 
-If you need styles that Tailwind utilities cannot express (custom animations, complex selectors), you have two options:
+If you need styles that Tailwind utilities cannot express (custom animations, complex selectors), use one of these two options:
 
 ### Per-Component `<style>` Blocks
 
@@ -163,4 +163,4 @@ Tailwind CSS is included as a dev dependency in the framework package:
 }
 ```
 
-No PostCSS config or `tailwind.config.js` file is needed : Tailwind CSS 4.x detects utility classes automatically.
+No PostCSS configuration or `tailwind.config.js` file is needed. Tailwind CSS 4.x detects utility classes automatically.

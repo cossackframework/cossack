@@ -40,16 +40,17 @@ if (!import.meta.env.DEV) {
 ```
 
 Do not top-level `await` `createDesktopApp()` in an ESM entry. Electron emits
-`ready` after the main module's first event-loop tick; Desktop creation waits
+`ready` after the main module's first event-loop tick. Desktop creation waits
 for that event. Development calls the exported bootstrap once. Production starts
 it through the guarded call above.
 
 `pnpm desktop:dev` requires Vite 8.1.4 or later in the 8.x series. The CLI
 supervises Electron, which runs the development module loader and asset server.
 Pages retain the private origin and native request checks. Source edits reload
-managed windows; changes under `src/desktop/`, to the Vite config or root `.env*`
-files restart Electron. Reloads do not undo application side effects. Page syntax
-errors remain visible and source repair can recover without restarting the CLI.
+managed windows. Changes under `src/desktop/`, to the Vite configuration, or to
+root `.env*` files restart Electron. Reloads do not undo application side effects.
+Page syntax errors remain visible and source repair can recover without
+restarting the CLI.
 
 Keep `ssr.noExternal: true` restricted to production Desktop builds:
 `mode === 'desktop' && command === 'build'`. Development needs normal external
@@ -59,26 +60,26 @@ inspector and CLI/MCP capture readers.
 
 The optional `assets.fetch(request)` provider on `createDesktopApp()` replaces
 filesystem asset lookup. A 404 falls through to application dispatch after its
-body is canceled. The development runner supplies this provider for Vite assets;
-ordinary packaged apps use `assetsRoot`. Native proof headers are stripped
+body is canceled. The development runner supplies this provider for Vite assets.
+Ordinary packaged apps use `assetsRoot`. Native proof headers are stripped
 before either provider or application code receives a request.
 
 `createDesktopApp()` forces context isolation and renderer sandboxing, with Node
 integration and preload bridges disabled. Only same-origin navigation is
-allowed; valid HTTP(S) popups are opened in the operating-system browser.
-Desktop pages currently require `@Page({ transport: 'http' })`.
+allowed. Valid HTTP(S) popups are opened in the operating-system browser.
+Desktop pages require `@Page({ transport: 'http' })`.
 
-Use Electron 43.7+ in the 43.x series, or 44.4+. The runtime verifies native
+Use Electron 43.7+ in the 43.x series, or 44.4+. The runtime enforces native
 request initiators and managed window identity before dispatching local actions.
 Cossack reserves the `persist:cossack.<identifier>` session and its
 `onBeforeSendHeaders` hook. Default-session cookies/storage are not migrated.
-Keep the identifier stable; native app files retain their existing paths.
+Keep the identifier stable. Native app files retain their existing paths.
 
-On Linux, `desktop:dev` checks Electron's local `chrome-sandbox` helper. pnpm's
+On Linux, `desktop:dev` inspects Electron's local `chrome-sandbox` helper. pnpm's
 download is normally user-owned rather than root-owned/setuid, so the runner
 prints a warning and applies Electron's testing-only `--no-sandbox` flag to the
 development process. Forge packages and installed DEB applications do not use
-this fallback; the DEB installs its helper with the required permissions.
+this fallback. The DEB installs its helper with the required permissions.
 For Wayland sessions that expose XWayland, the development runner selects X11
 to avoid Chromium's current Wayland/Vulkan incompatibility and hides nonfatal
 GPU probe noise. Set `COSSACK_DESKTOP_OZONE_PLATFORM=wayland` to force native
@@ -87,13 +88,13 @@ Desktop lifecycle tracing.
 
 The generated Linux desktop entry also starts the installed DEB through
 XWayland so Electron can register its tray with GNOME's StatusNotifier host.
-An unpacked Forge executable bypasses that desktop entry; launch it with both
-`--no-sandbox` and `--ozone-platform=x11` when testing directly from `out/`.
+An unpacked Forge executable bypasses that desktop entry. Launch it with both
+`--no-sandbox` and `--ozone-platform=x11` when you test it directly from `out/`.
 The sandbox flag is only appropriate for that uninstalled test package.
 
 Node 22 or 24 LTS is recommended for Forge packaging. Node 26 is supported, but
 the current Forge/Packager ZIP stack can extract Electron pathologically slowly
-there; generated Desktop projects declare `node: ">=22"`.
+there. Generated Desktop projects declare `node: ">=22"`.
 
 Use Electron APIs in the bootstrap or through ordinary `@Server()` methods via
 `this.env.COSSACK_DESKTOP`. There is deliberately no renderer client or generic

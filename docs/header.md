@@ -11,7 +11,7 @@ Use the `head()` method in a component to set tags in the document's `<head>` se
 
 To set head tags, add the optional `head()` method to your component. It receives a `HeadContext` and returns a `HeadValue` object.
 
-The framework automatically merges metadata from the **inside out**:
+The framework merges metadata from the inside out:
 `Page` -> `Layouts` -> `Global App`.
 
 ### The `head()` Signature
@@ -61,23 +61,23 @@ your `App` automatically. See [Static Site Generation](./static-site-generation.
 
 ### `HeadContext`
 
-`HeadContext` contains the metadata that nested components have added:
+`HeadContext` contains the metadata that nested components added:
 
 - `title`: The current accumulated title string.
 - `meta`: Array of accumulated meta tags.
 - `links`: Array of accumulated link tags.
 - `scripts`: Array of accumulated script tags.
-- `tags`: Array of other accumulated tags (styles, base, etc.).
+- `tags`: Array of other accumulated tags, for example styles and base.
 
 ### `HeadValue`
 
 Return a `HeadValue` object from `head()`:
 
-- `title`: (Optional) Set a new title.
-- `meta`: (Optional) Override or add meta tags.
-- `links`: (Optional) Override or add link tags.
-- `scripts`: (Optional) Override or add script tags.
-- `tags`: (Optional) Override or add other tags.
+- `title`: Optional. Sets a new title.
+- `meta`: Optional. Overrides or adds meta tags.
+- `links`: Optional. Overrides or adds link tags.
+- `scripts`: Optional. Overrides or adds script tags.
+- `tags`: Optional. Overrides or adds other tags.
 
 ## Client-Side Synchronization
 

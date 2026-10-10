@@ -1,6 +1,6 @@
 ---
 title: "Server Adapters"
-description: "Cossack is designed to be runtime-agnostic, with core framework logic decoupled from the server environment via the CossackServerRuntime interface."
+description: "The CossackServerRuntime interface separates the framework core from the server environment. The framework runs on Cloudflare Workers and Node.js."
 ---
 
 # Server Adapters
@@ -13,10 +13,10 @@ The framework supports two adapters:
 
 This is the default adapter. It uses Cloudflare Workers and Durable Objects.
 
-- **Runtime:** Cloudflare Workers
-- **Transport:** Cloudflare Durable Objects (WebSockets)
-- **State Persistence:** Automatic via Durable Object Storage.
-- **Scalability:** Durable Objects provide strong consistency and global uniqueness for component instances.
+- Runtime: Cloudflare Workers
+- Transport: Cloudflare Durable Objects with WebSockets
+- State persistence: automatic through Durable Object storage
+- Scaling: Durable Objects give each component instance strong consistency and a globally unique identity
 
 ### Usage
 
@@ -37,10 +37,10 @@ export default {
 
 Use this adapter to run a Cossack application on Node.js, such as in a container, on a VPS, or on your computer.
 
-- **Runtime:** Node.js (>= 20)
-- **Transport:** `ws` library (WebSockets)
-- **State Persistence:** **Memory Only**. State is lost when the server process restarts.
-- **Scalability:** Suitable for single-instance deployments or sticky-session clusters.
+- Runtime: Node.js 20 or later
+- Transport: the `ws` library with WebSockets
+- State persistence: memory only. State is lost when the server process restarts.
+- Scaling: single-instance deployments or sticky-session clusters
 
 ### Usage
 

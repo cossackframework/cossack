@@ -10,12 +10,12 @@ Cossack and its packages.
 
 ## Exports
 
-- `createNodeAdapter` : connects framework-guarded WebSocket upgrades to a Node server, shares process-local scope instances, and manages cleanup.
-- `CossackNodeAdapter` and `nodeRuntimeAdapter` : legacy registry adapter and metadata-only adapter; generated apps use `createNodeAdapter`.
-- `serveStatic` : Node `fs`-based Hono middleware for serving static assets.
-- `NodeWebSocketRuntime` : the WebSocket runtime used by the adapter.
-- `createNodeEmailSender` : Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
-- `cossackNode` from `/vite`: standalone Vite HTTP development integration; see the lifecycle limits below.
+- `createNodeAdapter`: connects framework-guarded WebSocket upgrades to a Node server, shares process-local scope instances, and manages cleanup.
+- `CossackNodeAdapter` and `nodeRuntimeAdapter`: a legacy registry adapter and a metadata-only adapter. Generated apps use `createNodeAdapter`.
+- `serveStatic`: Node `fs`-based Hono middleware for serving static assets.
+- `NodeWebSocketRuntime`: the WebSocket runtime used by the adapter.
+- `createNodeEmailSender`: Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
+- `cossackNode` from `/vite`: standalone Vite HTTP development integration. See the lifecycle limits below.
 
 ## Unified `env.EMAIL` (Cloudflare email binding polyfill)
 
@@ -30,7 +30,7 @@ Cloudflare Workers expose `env.EMAIL.send({ to, from, subject, html, text })` wh
 Then `await env.EMAIL.send({ to, from, subject, html, text })` works directly.
 
 ### Node.js
-Build the sender from SMTP env vars and inject it into `env`, then pass `env` `app.fetch` for both HTTP requests and WebSocket authorization:
+Build the sender from SMTP environment variables and inject it into `env`. Pass `env` to `app.fetch` for HTTP requests and WebSocket authorization:
 
 ```ts
 import { serve } from '@hono/node-server';
@@ -70,11 +70,11 @@ runtime.attach(server, (request) => app.fetch(request, env));
 ```
 
 ### Environment variables
-Configure via `.dev.vars` (Cloudflare dev) or your shell/`.env` (Node):
+Configure through `.dev.vars` for Cloudflare development, or through your shell or an `.env` file for Node:
 
 | Variable | Description | Default |
 | -------------- | -------------------------------------------- | ------------------ |
-| `SMTP_HOST` | SMTP server host (e.g. `smtp.gmail.com`) | : |
+| `SMTP_HOST` | SMTP server host (for example `smtp.gmail.com`) | : |
 | `SMTP_PORT` | SMTP server port | `587` |
 | `SMTP_SECURE` | Use TLS (`"true"` for port 465) | `port === 465` |
 | `SMTP_USER` | SMTP username | : |
@@ -92,18 +92,18 @@ cookies and application headers reach the handshake. Components for the same
 route/provider/scope share one initialization and process-local state.
 
 `maxInstances` defaults to 512 and includes pending initialization.
-`idleTimeoutMs` defaults to 15 minutes; pruning runs on socket activity.
+`idleTimeoutMs` defaults to 15 minutes. Pruning runs on socket activity.
 Call `await runtime.dispose()` before closing an embedded server. It detaches
 upgrade listeners, ends sockets, waits for pending initialization and active
 actions, and destroys components/services. Repeated calls share the same result.
 A native server `close` event also triggers disposal. Actions must settle for
 cleanup to finish. Disposed adapters cannot be attached again.
 
-The request scheme follows the actual Node socket (HTTP or TLS); the adapter does
-not trust forwarded scheme headers. Configure origin policy for a trusted proxy
+The request scheme follows the actual Node socket (HTTP or TLS). The adapter does
+not trust forwarded scheme headers. Configure an origin policy for a trusted proxy
 in the application. Generated production and development entries attach the adapter automatically.
 The dev server disposes the previous runtime on source reload while Vite retains
-its HMR connection; clients reconnect to a fresh process-local scope.
+its HMR connection. Clients reconnect to a fresh process-local scope.
 
 ## Vite development HTTP server
 
@@ -126,7 +126,7 @@ The HTTP middleware runs after Vite's public asset and module handlers. A separa
 including when no application HTTP request has run. Other upgrade paths remain
 with Vite. Server-source edits replace the server module graph, detach and dispose
 the old runtime, and close its sockets. The browser HMR connection stays open.
-Cleanup can continue while the replacement runtime starts; source reload does
+Cleanup can continue while the replacement runtime starts. Source reload does
 not undo in-flight application effects.
 An edit during asynchronous initialization discards the stale entry before it can
 accept a request. Initialization failures retry with a fresh entry.
@@ -136,18 +136,18 @@ Vite's environment files, with process variables taking precedence. The factory
 preserves arbitrary bindings, supplies the `DB_PATH` default, and configures
 `EMAIL` when `SMTP_HOST` is present. SMTP configuration requires `SMTP_USER` and
 `SMTP_PASS`. The same factory supplies production bindings. Private bindings are
-not added to Vite's client environment; the existing `VITE_` public-prefix rule
+not added to Vite's client environment. The existing `VITE_` public-prefix rule
 still applies. Custom entries without a factory retain their exported `env`.
 
 The generated `scripts/dev.js` is a thin Vite launcher. It retains the optional
-`COSSACK_LOCAL` overlay and its `PORT`/3000 default; application routing, upgrades,
-bindings and cleanup all use the plugin. Plain `vite dev` and `cossack dev` use
+`COSSACK_LOCAL` overlay and its `PORT`/3000 default. Application routing, upgrades,
+bindings, and cleanup all use the plugin. Plain `vite dev` and `cossack dev` use
 Vite's usual port options. Both normal and JSON CLI development commands supervise
-the child process and bound requested shutdown.
+the child process and honor a requested shutdown.
 
-Closing Vite waits up to five seconds for runtime cleanup; use
+Closing Vite waits up to five seconds for runtime cleanup. Use
 `cossackNode({ entry: '/src/custom.ts', shutdownTimeoutMs: 2000 })` to change the
-entry or deadline. A deadline stops waiting; it cannot terminate application I/O.
+entry or the deadline. A deadline stops the wait. It cannot terminate application I/O.
 Embedded Vite servers (`server.middlewareMode`) retain ownership of their listener
 and lifecycle and are not installed by this plugin.
 

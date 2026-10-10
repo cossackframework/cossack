@@ -1,6 +1,6 @@
 ---
 title: "Testing"
-description: "Run TypeScript type checking and Playwright end-to-end tests with simple commands for validating framework changes."
+description: "Run TypeScript type checking and Playwright end-to-end tests for framework changes."
 ---
 
 # Testing
@@ -9,8 +9,9 @@ description: "Run TypeScript type checking and Playwright end-to-end tests with 
 
 ### Type Checks
 
-For this monorepo, build package dependencies first, then check every TypeScript
-package explicitly. Root `tsc --noEmit` alone does not traverse project references:
+For this monorepo, build package dependencies first, then run the type check for
+every TypeScript package explicitly. Root `tsc --noEmit` alone does not traverse
+project references:
 
 ```bash
 pnpm build
@@ -84,8 +85,8 @@ open packages/framework/playwright-report/index.html
 
 ### Test Structure
 
-- **e2e/core-features/**: Tests for framework features (decorators, loading states, navigation, state sync)
-- **e2e/pages/**: Tests for individual pages (home, counter, contact, etc.)
+- `e2e/core-features/`: Tests for framework features (decorators, loading states, navigation, state sync)
+- `e2e/pages/`: Tests for individual pages (home, counter, contact, and other pages)
 
 ### Test Configuration
 
@@ -111,7 +112,7 @@ test.describe('My Feature', () => {
 
 ### Best Practices
 
-1. **Wait for readiness**: Use retrying locator assertions for visible state. Before interacting with SSR markup, wait for the framework readiness signal (`window.__cossackReady`). Avoid fixed sleeps and network-idle waits on streaming pages.
-2. **Handle multiple elements**: Use`.first()` when multiple elements match a selector
-3. **Timeouts**: Add explicit timeouts for navigation and async operations
-4. **Strict mode**: Playwright enforces strict mode by locator methods return multiple elements
+1. Wait for readiness: use retrying locator assertions for visible state. Before interacting with SSR markup, wait for the framework readiness signal (`window.__cossackReady`). Avoid fixed sleeps and network-idle waits on streaming pages.
+2. Handle multiple elements: use `.first()` when multiple elements match a selector.
+3. Timeouts: add explicit timeouts for navigation and async operations.
+4. Strict mode: Playwright enforces strict mode. A locator method that matches multiple elements fails.

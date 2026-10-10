@@ -135,7 +135,7 @@ Every declaration creates one instance for that layout scope, regardless of
 how many descendants inject it. All consumers rerender when one of the
 service's `@State` fields or nested `@Store` values changes.
 If a later declared service fails during construction or hydration, the
-partially built scope disposes services that were already created; async
+partially built scope disposes services that were already created. Async
 cleanup remains tracked by its parent scope.
 
 - Each SSR request gets a fresh root scope, so requests cannot share service
@@ -177,7 +177,7 @@ export class SearchService {
 ```
 
 `onDispose()` runs once when the owning scope is destroyed. `dispose()` starts
-cleanup without waiting; `await scope.disposeAsync()` waits for child scopes
+cleanup without waiting. `await scope.disposeAsync()` waits for child scopes
 and Promise-returning hooks, and rejects with an `AggregateError` if any fail.
 It also waits for cleanup already started by `dispose()`.
 If a hook throws, rejects, or fails while its property is read, disposal still
@@ -190,11 +190,11 @@ their owned services are disposed. Use `await component.destroyAsync()` when
 the caller needs to wait for cleanup.
 
 SSG waits for component and scoped-service cleanup before publishing a render.
-Cleanup failures fail generation; a preceding render failure is retained as
+Cleanup failures fail generation. A preceding render failure is retained as
 the error's `cause`. SSR and ordinary component/service RPC await cleanup before
 completing their response. Streamed and native-body RPC responses keep services
 until the response body completes, fails, or is cancelled. SSR logs cleanup
-failures with the request ID; it still attempts the remaining cleanup.
+failures with the request ID. It still attempts the remaining cleanup.
 Browser callers using `destroy()` start cleanup without waiting. Use
 `destroyAsync()` when an explicit caller needs to wait for completion.
 
@@ -232,7 +232,7 @@ Prefer `this.user` for authenticated-user data. Do not cache a request context,
 user, or bindings in a module-level variable or a legacy global singleton.
 Explicit layout scopes bind these values to the current SSR or RPC request.
 
-The request facilities are intended for request-bound server work. A browser
+Use the request facilities for request-bound server work. A browser
 render has only a hydrated context shim, and server-only context operations
 remain unavailable there.
 
@@ -272,7 +272,7 @@ slot, the action, arguments, and current public service state. The server then:
 
 1. Rebuilds the layout scope for the request.
 2. Restores only the declared service state fields.
-3. Verifies that the target method has `@Server()` metadata.
+3. Validates that the target method has `@Server()` metadata.
 4. Invokes the method with request-local `c`, `user`, and `env` values.
 5. Returns the method result, redirect metadata, and updated service state.
 
@@ -318,7 +318,7 @@ that subtree's scope. Circular dependency graphs are rejected.
 
 ## Constructor Injection Compatibility
 
-Existing constructor injection remains supported:
+Constructor injection remains supported:
 
 ```typescript
 @Page()
@@ -351,7 +351,7 @@ Adding a service does not configure a transport provider, and adding a provider
 does not make a class injectable.
 
 For browser-only application-global UI state shared across unrelated trees,
-such as theme, toast, or command-palette state, continue to use
+such as theme, toast, or command-palette state, use
 [`createStore()` and `connectStore()`](/docs/reactive-store.md).
 
 ## File Convention
@@ -378,7 +378,7 @@ consumer from silently creating a new scope.
 
 Use rpc$(service.method(...)) to iterate and cancel the same invocation.
 The service proxy uses HTTP on HTTP, SSE and socket pages. Each subscribed consumer
-owns one loading contribution. Late consumers inherit it; duplicate injection does
+owns one loading contribution. Late consumers inherit it. Duplicate injection does
 not add a second count. Cancellation also releases ownership before iteration starts.
 A request producer that ignores abort cannot hold the client response wait open.
 Its late body is released and cannot hydrate service state.

@@ -77,7 +77,7 @@ application data. The default is `push`. Existing navigation outcomes and guards
 
 `updateUrlState(definition, patch, options)` returns the same navigation outcome.
 It merges each patch with the latest pending query intent. A later patch wins
-for a repeated key; patches from separate declarations retain unrelated keys.
+for a repeated key. Patches from separate declarations retain unrelated keys.
 Outgoing page reads and the address stay committed while a query fetch is pending.
 Guards, failures, ordinary navigation and disposal release pending ownership.
 For repeated relative increments, compute the intended number explicitly:
@@ -86,7 +86,7 @@ two calls that both read `this.filters.page + 1` request the same number.
 Same-path navigation to the same page class preserves declared `ClientState`
 and `ClientStore` drafts when user, transport, provider and service ownership
 match. The framework adopts the latest local values when publishing the prepared page. SSR JSON and copied URLs
-cannot restore them. Stores get proxies owned by the new page; declared File
+cannot restore them. Stores get proxies owned by the new page. Declared File
 values retain their identity. Browser file-input DOM values are not restored.
 Plain records, null-prototype records and arrays are copied as one local graph.
 Cycles, shared references between draft fields, sparse arrays and property
@@ -97,7 +97,7 @@ mutable contents and external effects are outside this isolation contract.
 Use retained services for intentionally shared mutable state.
 
 Draft records must use data properties. An accessor fails navigation before
-publication with `COSSACK_NAVIGATION_DRAFT_ACCESSOR`; its getter is not executed.
+publication with `COSSACK_NAVIGATION_DRAFT_ACCESSOR`. Its getter is not executed.
 Keep computed getters on the component and store their inputs in the draft.
 
 Rendered child components also transfer declared drafts into matching replacement
@@ -105,15 +105,15 @@ instances. Matching uses template identity, position (or a `repeat()` key), clas
 parent and service scope. A changed `key()` value starts a fresh child. Matching
 descendants receive their drafts before their mount hooks run. Retained live
 instances keep their current values. After failed publication, rollback can
-recreate destroyed children and restore their captured drafts; it never reconnects
-a destroyed instance. A newer publication revokes pending restoration callbacks.
+recreate destroyed children and restore their captured drafts. It never
+reconnects a destroyed instance. A newer publication revokes pending restoration callbacks.
 Inactive `cache()` branches participate too, including branches hidden by
 `cache(null)` across multiple navigations. Navigation retires their old instances
 and keeps independent local draft capabilities for destination and rollback.
 When a matching branch becomes visible, a fresh instance receives its drafts
 before mount. Ordinary cache toggles within one owner still retain live DOM.
 Leaving the cache, changing its key or ownership, or discarding the checkpoint
-drops pending restoration. Only declared drafts transfer; arbitrary DOM state
+drops pending restoration. Only declared drafts transfer. Arbitrary DOM state
 and external effects do not.
 
 The root App also has navigation ownership. A changed user or navigation scope
@@ -129,12 +129,12 @@ is outside this scoped-service contract.
 Unrelated pages and changed ownership start with new drafts. New page tasks,
 transports, onMount and clientInit start at publication. Framework preparation
 keeps the old page editable and does not bind retained services to the destination.
-A custom bootstrap override runs during preparation; it must not assume that
+A custom bootstrap override runs during preparation. It must not assume that
 local drafts have transferred or that its page has become visible.
 
 Retained layouts keep their drafts and service instances. Their resource entries
 are replaced with the new SSR results before changing query dependencies.
-Matching arguments require no extra RPC; old pending results cannot publish
+Matching arguments require no extra RPC. Old pending results cannot publish
 into the new entries. Discarding an old result does not terminate application I/O.
 Query changes keep the current page editable while waiting, including when a
 `loading.ts` component exists.
@@ -147,10 +147,10 @@ query response remains pending. A blocked or failed traversal restores the
 previous owned entry. Read the [guard contract](./prevent-navigation.md#guards-during-back-and-forward)
 for confirmation and history ownership.
 
-Navigation has a 30-second completion budget and restores framework-owned state
-on failure before history commit. Broader ownership changes, interrupted history
-and the resource-read audit remain open in the
-[framework architecture](../specs/architecture.md).
+Navigation has a 30-second completion budget. It restores framework-owned state
+on failure before history commit. Read
+[framework architecture](../specs/architecture.md) for broader ownership changes,
+interrupted history, and the resource-read audit.
 
 Same-owner page replacements restore focus for a control with a unique DOM `id`.
 The replacement must keep its tag, type and name. Text selection is restored only

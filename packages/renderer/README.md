@@ -1,7 +1,7 @@
 # Cossack Renderer Package
 
-Cossack Renderer is a Lit-compatible rendering engine for **Light DOM** and
-**SSR**. It returns HTML strings for SSR and updates the DOM without Shadow DOM
+Cossack Renderer is a Lit-compatible rendering engine for Light DOM and
+SSR. It returns HTML strings for SSR and updates the DOM without Shadow DOM
 isolation.
 
 ## Installation
@@ -108,7 +108,7 @@ html`<button @click="${(e) => this.handleClick(e)}">Click Me</button>`
 
 ### Property Binding
 
-For `<input>` elements, use `.` prefix to bind properties directly.
+For `<input>` elements, use the `.` prefix to bind properties directly.
 
 ```typescript
 html`<input type="text" .value="${this.inputValue}" @input="${this.handleInput}" />`
@@ -125,7 +125,7 @@ html`<button ...=${props}>Click</button>`
 
 ### Unsafe HTML
 
-To render raw HTML strings (careful!):
+Render a raw HTML string with `unsafeHTML`. Do not pass untrusted input to it:
 
 ```typescript
 import { unsafeHTML } from '@cossackframework/renderer';
@@ -211,7 +211,7 @@ class Notice extends CossackElement {
 }
 ```
 
-Style arrays may be nested. They are flattened in declaration order, and the
+Style arrays can be nested. They are flattened in declaration order, and the
 last occurrence of the same `CSSResult` wins. A subclass can extend inherited
 styles explicitly:
 
@@ -224,7 +224,7 @@ class EmphasizedNotice extends Notice {
 Cossack scopes selectors by adding deterministic `data-cossack-scope`
 attributes to elements created by that component and emits one managed style
 element per component instance. Conditional at-rules and functional selectors
-are scoped recursively; keyframe names and matching animation declarations are
+are scoped recursively. Keyframe names and matching animation declarations are
 rewritten. `:host`, `:host-context`, and `::slotted` are rejected because
 Cossack uses Light DOM rather than Shadow DOM.
 
@@ -267,7 +267,7 @@ Cossack includes standard Lit directives.
 
 ### `repeat` (Keyed Lists)
 
-Efficiently renders lists by key.
+Renders lists by key.
 
 ```typescript
 import { repeat } from '@cossackframework/renderer';
@@ -306,7 +306,7 @@ html`<input ref="${(el) => console.log(el)}" />`
 
 ### `live`
 
-Check against the live DOM value (useful for inputs).
+`live` compares against the live DOM value. Use it for inputs.
 
 ```typescript
 import { live } from '@cossackframework/renderer';
@@ -333,8 +333,8 @@ any depth: `bind(this, 'address.street')`.
 
 ### `key`
 
-Force a subtree to be recreated when the key changes. Useful for re-triggering
-CSS animations or remounting a child.
+Force a subtree to be recreated when the key changes. Use it to re-trigger
+CSS animations or to remount a child.
 
 ```typescript
 import { key } from '@cossackframework/renderer';
@@ -345,8 +345,8 @@ html`<div>${key(currentIndex, html`<div class="animate-fade-in">${child}</div>`)
 ### `preventDefault`
 
 Wraps an event handler so the event's default is prevented before it runs. It
-also disables the browser's native validation on the bound `<form>` by default;
-pass `{ novalidate: false }` to keep native validation.
+also disables the browser's native validation on the bound `<form>` by default.
+Pass `{ novalidate: false }` to keep native validation.
 
 ```typescript
 import { preventDefault } from '@cossackframework/renderer';
@@ -382,7 +382,7 @@ html`${choose(status, [
 
 ### `ifDefined`
 
-Only omit an attribute when the value is `undefined`; render every other value
+Only omit an attribute when the value is `undefined`. Render every other value
 (including `null`, `false`, `0`, `''`) as a normal attribute.
 
 ```typescript
@@ -408,7 +408,7 @@ html`${guard([query, page], () => renderResults(query, page))}`
 
 Keep previously-rendered template subtrees alive instead of destroying them
 when the rendered value switches templates. Toggling back to a cached template
-reattaches its existing DOM and part tree, preserving component state, scroll
+reattaches its existing DOM and part tree. It preserves component state, scroll
 position, and focus.
 
 ```typescript
@@ -430,7 +430,7 @@ html`<ul>${map(items, (item) => html`<li>${item.name}</li>`)}</ul>`
 ### `join`
 
 Join renderable values with a separator interleaved between each pair. The
-separator can be a static value or a template (e.g. a divider element).
+separator can be a static value or a template (for example a divider element).
 
 ```typescript
 import { join } from '@cossackframework/renderer';
@@ -525,7 +525,7 @@ class ClockElement extends CossackElement {
 
 Cossack supports passing children to components.
 
-**Parent:**
+Parent:
 ```typescript
 html`
   ${component(Card, {}, html`
@@ -535,7 +535,7 @@ html`
 `
 ```
 
-**Child (Card):**
+Child (Card):
 ```typescript
 class Card extends CossackElement {
   render() {

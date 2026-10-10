@@ -87,7 +87,7 @@ PostgreSQL or MySQL driver. Other Workers recipes use `nodejs_als`.
 ## Tooling
 
 `orm.config.ts` registers entities, migrations, and seeders as deterministic
-arrays. The application’s installed ORM tooling powers all commands:
+arrays. The ORM tooling installed in the application powers all commands:
 
 ```sh
 cossack migration generate add_posts

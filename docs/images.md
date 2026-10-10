@@ -68,8 +68,8 @@ VITE_COSSACK_IMAGE_PROVIDER=cloudflare
 ```
 
 When this is set, the helper transforms your URL:
-* **Input:** `/assets/banner.jpg` (with `width: 800`)
-* **Output:** `/cdn-cgi/image/width=800/assets/banner.jpg`
+* Input: `/assets/banner.jpg` (with `width: 800`)
+* Output: `/cdn-cgi/image/width=800/assets/banner.jpg`
 
 ### 3. Production (Node.js / Other)
 
@@ -81,7 +81,7 @@ For hosts without an image CDN, such as Node.js, or to commit pre-generated imag
 
 ### `cossack image optimize`
 
-The command scans `src/` for `Image({ ... })` calls. It finds each local `src` file under `public/` and writes resized versions beside the original. Install **ImageMagick** to use this command.
+The command scans `src/` for `Image({ ... })` calls. It finds each local `src` file under `public/` and writes resized versions beside the original. Install ImageMagick to use this command.
 
 ```bash
 cossack image optimize
@@ -102,7 +102,7 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
 | `--quality <0-100>` | Output quality (default: `80`). |
 | `--dry-run` | List the image variants without writing them. |
 
-**Installing ImageMagick**
+Install ImageMagick:
 
 ```bash
 # macOS
@@ -115,7 +115,7 @@ choco install imagemagick
 
 If the binary is missing, the command prints these instructions and exits with a non-zero code.
 
-> **Cloudflare deployments:** prefer runtime resizing via `/cdn-cgi/image/...` (set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`) : it generates variants on demand at the edge with no build step. Use `cossack image optimize` for the Node.js adapter or when you want the files committed to your repository.
+> For Cloudflare deployments, prefer runtime resizing through `/cdn-cgi/image/...`. Set `VITE_COSSACK_IMAGE_PROVIDER=cloudflare`. It generates variants on demand at the edge with no build step. Use `cossack image optimize` for the Node.js adapter, or when you want the files committed to your repository.
 
 See the [Cossack CLI reference](/docs/cossack-cli.md#image-optimization) for the full `image optimize` options.
 
@@ -125,11 +125,11 @@ Import `imageDiagnostics` from `@cossackframework/core`. It returns fixed codes,
 messages and next actions without including the source URL. Pass the selected
 `provider` and `development` mode when inspecting a configuration. `Image` rejects
 invalid sources, dimensions, quality, fit and output format. Local development
-warns when transform options cannot apply; production with provider `none` still
+warns when transform arguments cannot apply. Production with provider `none` still
 renders the original image. Intrinsic width/height remain valid without a provider.
 
 Cloudflare configuration does not enable Image Resizing on your account or zone.
 Enable the provider service and allowed remote sources separately. A local URL
-rewrite does not prove those settings. JSON metadata is not a renderable `img`
-format; use `webp` or `avif` for this helper. Supported fit values are `cover`,
+rewrite does not prove that those features are enabled. JSON metadata is not a renderable `img`
+format. Use `webp` or `avif` for this helper. Supported fit values are `cover`,
 `contain`, `scale-down`, `crop` and `pad`. See the [provider fit options](https://developers.cloudflare.com/images/optimization/features/#fit).

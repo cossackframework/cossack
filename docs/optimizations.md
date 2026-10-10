@@ -5,30 +5,30 @@ description: "Built-in optimizations including instant navigation with smart pre
 
 # Performance Optimizations
 
-Cossack is built for speed. Beyond its edge-native architecture, it includes several automatic optimizations to make your application feel instantaneous to the end-user.
+Cossack runs at the edge. It also includes automatic optimizations that reduce waiting for the user.
 
 ## 1. Instant Navigation
 
-Cossack's client-side router (Soft Navigation) is enhanced with two key features that eliminate perceived network latency.
+Cossack's client-side router (soft navigation) has two features that remove perceived network latency.
 
 ### Smart Pre-fetching
-When a user hovers their mouse over a link (`<a>`), Cossack assumes they are likely to click it. After a 50ms hover delay, the framework automatically begins fetching the data for that page in the background.
+When a user hovers the mouse over a link (`<a>`), Cossack starts to fetch the data for that page in the background after a 50 ms hover delay.
 
-By the time the user actually clicks the link (typically 100ms-300ms later), the data is often already downloaded, resulting in an **instant transition**.
+The user typically clicks the link 100 ms to 300 ms later. The data is often downloaded by then, so the transition is instant.
 
 ### Client-Side Caching
 Cossack maintains a memory-based cache of all visited and pre-fetched pages.
-- **Instant Back/Forward**: Clicking the browser's back or forward buttons is instantaneous because the state is restored directly from the cache.
-- **Zero Network Re-visits**: Re-visiting a page you have already seen in the current session requires zero network requests.
+- Fast back and forward: the browser restores the page state directly from the cache.
+- No network re-visits: a page that the user already saw in the current session loads without network requests.
 
 ## 2. Navigation Progress Bar
-For slow network conditions or large data fetches where pre-fetching is not enough, Cossack automatically displays a sleek, non-intrusive progress bar at the top of the viewport.
+For slow network conditions or large data fetches where pre-fetching is not enough, Cossack automatically displays a progress bar at the top of the viewport.
 
-This gives the user immediate visual feedback that their navigation is in progress, improving the perceived reliability of the application.
+The bar gives the user immediate visual feedback that the navigation is in progress.
 
 ## 3. Optimistic UI Updates
 
-With the `@Optimistic` decorator, you can eliminate the "waiting for server" feel for interactive actions.
+The `@Optimistic` decorator removes the "waiting for server" feel for interactive actions.
 
 ```typescript
 @Optimistic('increment')
@@ -37,11 +37,11 @@ applyOptimisticIncrement() {
 }
 ```
 
-When the server eventually broadcasts the "true" state, Cossack overwrites the optimistic state with the verified value from the server. See the [State Management Guide](./states.md) for more details.
+When the server broadcasts the confirmed state, Cossack replaces the optimistic state with that value. See the [State Management Guide](./states.md) for details.
 
 ## 4. Image Optimization
 
-The built-in `Image` helper makes sure that your assets are served in modern formats (like WebP/AVIF) and at the correct size for the user's screen, reducing page weight and improving Core Web Vitals. See the [Image Optimization Guide](./images.md) for more details.
+The built-in `Image` helper serves your assets in modern formats (WebP or AVIF) and at the correct size for the user's screen. This reduces page weight and improves Core Web Vitals. See the [Image Optimization Guide](./images.md) for details.
 
-We also provide a `cossack image:optimize` CLI command to automatically optimize images in your `public` folder. This command scans for `Image({ ... })` helper calls in your project and optimizes local `src` assets.
-The optimized images will be saved next to the original image in either WebP or AVIF format (`--format webp|avif`).
+The `cossack image:optimize` CLI command optimizes images in your `public` folder. The command scans for `Image({ ... })` helper calls in your project and optimizes local `src` assets.
+It saves the optimized images next to the original image in WebP or AVIF format (`--format webp|avif`).

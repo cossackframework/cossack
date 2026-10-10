@@ -6,8 +6,8 @@ description: "Utilities for trapping and navigating keyboard focus in accessible
 # Focus Management
 
 Cossack provides DOM-level focus utilities for building accessible interactive
-components : dropdown menus, command palettes, dialogs, comboboxes : that need
-to trap or cycle keyboard focus.
+components that need to trap or cycle keyboard focus. Examples are dropdown
+menus, command palettes, dialogs, and comboboxes.
 
 These are framework-agnostic helpers exported from `@cossackframework/core`.
 They work with any DOM tree and have no Cossack dependencies.
@@ -37,7 +37,7 @@ const buttons = getTabbable(menuElement);
 ## `focusFirst(root)` / `focusLast(root)`
 
 Move focus to the first or last tabbable element within `root`. If no tabbable
-children exist, focuses `root` itself. Add `tabindex="-1"` to `root` in this case.
+children exist, the helper focuses `root` itself. Add `tabindex="-1"` to `root` in this case.
 
 ```typescript
 // Focus the first menu item when a dropdown opens.
@@ -46,8 +46,8 @@ focusFirst(menuElement);
 
 ## `focusNext(root, opts?)`
 
-Move focus to the next (or previous) tabbable element within `root`, wrapping
-around at the boundaries. Used for roving-tabindex / arrow-key navigation.
+Move focus to the next or previous tabbable element within `root`. Focus wraps
+around at the boundaries. Use this for roving-tabindex or arrow-key navigation.
 
 ```typescript
 // Arrow Down → next item
@@ -63,15 +63,16 @@ handleKeydown(e: KeyboardEvent) {
 }
 ```
 
-**Options:**
-- `reverse: true` : focus the previous element instead of next.
-- `from: HTMLElement` : start from a specific element instead of the currently
- focused one.
+Options:
+
+- `reverse: true` focuses the previous element instead of the next one.
+- `from: HTMLElement` starts from a specific element instead of the focused
+ element.
 
 ## `focusTrap(root)`
 
 Trap keyboard focus (Tab / Shift+Tab) within `root`. While active, Tab and
-Shift+Tab cycle through tabbable elements inside `root` only. Returns a release
+Shift+Tab cycle through tabbable elements inside `root` only. The helper returns a release
 function that removes the trap and restores focus to the previously-focused
 element.
 
@@ -93,11 +94,12 @@ class MyDialog extends Cossack {
 }
 ```
 
-**How it works:**
-1. On activation, focuses the first tabbable element inside `root`.
-2. Intercepts Tab / Shift+Tab keydown events on `root`, wrapping focus between
+How it works:
+
+1. On activation, the helper focuses the first tabbable element inside `root`.
+2. It intercepts Tab / Shift+Tab keydown events on `root` and wraps focus between
  the first and last tabbable elements.
-3. On release (call the returned function), removes the interceptor and
+3. On release (call the returned function), it removes the interceptor and
  restores focus to whichever element had it before the trap was activated.
 
 ## Practical example: Dropdown Menu
@@ -139,6 +141,6 @@ export class DropdownMenu extends Cossack {
  handles focus trapping automatically. You do not need `focusTrap` for those.
 - `focusTrap` is for custom overlays that do not use `<dialog>`, such as a
  `<div popover>` menu that needs to contain Tab.
-- Always restore focus on close (the `focusTrap` release function does this
+- Always restore focus on close. The `focusTrap` release function does this
  automatically. If you use `focusFirst` manually, store `document.activeElement`
- before opening and restore it on close).
+ before you open the overlay, and restore it on close.

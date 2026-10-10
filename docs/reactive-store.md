@@ -47,7 +47,7 @@ Connect it during `onMount`, then disconnect it during `onCleanup`.
 `connectStore` assigns each published value to that field.
 The field's normal reactivity requests the render.
 
-[Messages](./examples/reactive-store.client.ts) is a complete example compiled by the release tests.
+[Messages](./examples/reactive-store.client.ts) is a complete example.
 Its module contains the store, the `showMessage` function, and the component.
 The following lifecycle methods own the subscription:
 

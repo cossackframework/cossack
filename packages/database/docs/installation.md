@@ -128,7 +128,7 @@ cossack-orm migration status
 cossack-orm seed list
 ```
 
-Pass a non-default config location with `--config`:
+Pass a non-default configuration location with `--config`:
 
 ```sh
 cossack-orm schema check --config ./config/orm.config.ts

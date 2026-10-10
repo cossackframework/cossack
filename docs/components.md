@@ -7,17 +7,17 @@ description: "Build reusable Cossack components with the same base class and sta
 
 Reusable components extend the same `Cossack` base class as pages. Add them to a template with the component helper. This guide explains how to create them and manage their state.
 
-> **Method stripping:** methods on `Cossack` subclasses that are not needed in
+> Methods on `Cossack` subclasses that are not needed in
 > the browser are automatically stripped from the client bundle. See
 > [Client Bundle & Method Stripping](./client-bundle.md) for the rule, the
-> built-in allowlist, using `@Client` as the escape hatch, and transitive
+> built-in allowlist, `@Client` as the escape hatch, and transitive
 > preservation of helpers called from lifecycle hooks.
 
 ## Creating a Component
 
 To create a component, extend the `Cossack` class. A parent passes inputs through `this.props`. Use `@State` for server-synchronized state. Use `@ClientState` for reactive client-only state.
 
-> **Inputs vs. state:** A parent passes inputs, such as data and callbacks, through `this.props`. A component stores values that it owns and changes in `@ClientState` or `@State`. Declare an interface and a `declare props` override to give `this.props` a type.
+> A parent passes inputs, such as data and callbacks, through `this.props`. A component stores values that it owns and changes in `@ClientState` or `@State`. Declare an interface and a `declare props` override to give `this.props` a type.
 
 ### Basic Example: Button
 
@@ -98,7 +98,7 @@ export class FileUploader extends Cossack {
 
 ## Using Components
 
-To use a class-based component, you the use the `component()` helper function from `@cossackframework/renderer`.
+To use a class-based component, use the `component()` helper function from `@cossackframework/renderer`.
 
 ```typescript
 import { html, component } from "@cossackframework/renderer";
@@ -114,7 +114,7 @@ html`
 
 ### Passing State (Parent to Child)
 
-Data flows down via properties. When the parent state changes, the `render` method re-runs, and `component()` is called with new values. The child component detects these changes and updates efficiently.
+Data flows down via properties. When the parent state changes, the `render` method re-runs, and `component()` is called with new values. The child component detects these changes and updates.
 
 ```typescript
 // Parent Page
@@ -147,7 +147,7 @@ render() {
 
 ## Server Actions in Components
 
-Reusable components **can** define and handle their own `@Server` actions directly. Components are fully stateful and their state is persisted as part of the Page's state tree.
+Reusable components can define and handle their own `@Server` actions directly. Components are fully stateful and their state is persisted as part of the Page's state tree.
 
 ### Basic Example
 
@@ -176,11 +176,11 @@ export class Counter extends Cossack {
 
 When a component with `@Server` actions is used in a Page:
 
-1. **Initial Render (Server):** The component is rendered, and its state is included in the Page's initial state tree under `_children`.
-2. **Client Hydration:** The component is restored with its server state.
-3. **Action Dispatch:** When `@Server` method is called, the framework sends the action to the server with the component's current state.
-4. **State Update:** The server executes the action and returns the updated state.
-5. **Re-render:** The client receives the new state and re-renders the component.
+1. Initial render (server): the component is rendered, and its state is included in the Page's initial state tree under `_children`.
+2. Client hydration: the component is restored with its server state.
+3. Action dispatch: when a `@Server` method is called, the framework sends the action to the server with the component's current state.
+4. State update: the server executes the action and returns the updated state.
+5. Re-render: the client receives the new state and re-renders the component.
 
 ### Nested Component State Flow
 
@@ -245,7 +245,7 @@ export class LikeButton extends Cossack {
 
 Components can access the global framework context (`env`, `user`, `c` for request) directly using `this.env`, `this.user`, and `this.c`, without needing them passed as props.
 
-> **See [Framework Context API](./framework-context.md)** for complete documentation on accessing environment bindings, authenticated users, and request context from any component.
+> See [Framework Context API](./framework-context.md) for complete documentation on accessing environment bindings, authenticated users, and request context from any component.
 
 ```typescript
 @Component()
@@ -264,7 +264,7 @@ export class UserProfile extends Cossack {
 ## Testing
 
 The following examples use the private `@cossackframework/test-utils` workspace
-package inside this repository. It is not published to npm in 0.9.0. See
+package inside this repository. It is not published to npm. See
 [Test utilities](./test-utils.md) for its internal component and request helpers.
 
 ### Basic Example
@@ -369,7 +369,7 @@ test('cleanup', async () => {
 
 ### Using with Testing Frameworks
 
-Works with Vitest, Jest, or any TypeScript test framework:
+It works with Vitest, Jest, or any TypeScript test framework:
 
 ```typescript
 // vitest.config.ts

@@ -61,7 +61,7 @@ It does not rerun the handler to reconstruct state.
 Declared async handlers are rejected before execution.
 A handler that returns a promise is rejected after its synchronous work, and that work is restored.
 The framework cannot stop asynchronous effects already started by application code.
-A throwing handler restores its captured field changes and logs the failure; the server action can still run.
+A throwing handler restores its captured field changes and logs the failure. The server action can still run.
 
 ## Record relative operations
 
@@ -105,7 +105,7 @@ An authoritative reply supplies their base and replaces operations that it confi
 | --- | --- |
 | `increment(field, amount)` | Add a finite amount to a finite numeric field |
 | `append(field, item)` | Append one detached data item to an array field |
-| `remove(field, item)` | Remove the first structurally equal item, preserving duplicate order |
+| `remove(field, item)` | Remove the first structurally equal item and keep the order of duplicates |
 
 Removal records its intent even when the item is currently absent.
 If an older removal fails, a later removal still applies to the restored item.
@@ -165,7 +165,7 @@ A newer preview can include data it read from an older preview.
 The framework does not infer subtraction, array element ownership, or a safe replay of application code.
 A later nested user edit protects that whole field, so it can also retain earlier preview data in that tree.
 Use separate fields for independent drafts, or wait for an authoritative read to reconcile them.
-Native values such as Map and class instances remain scalar references; mutate a plain tree or replace the field.
+Native values such as Map and class instances remain scalar references. Mutate a plain tree or replace the field.
 
 A successful server snapshot supplies public values.
 Client-only previews remain local and never enter the public request state.
@@ -180,26 +180,26 @@ A matching publication confirms that call's public preview without releasing its
 The terminal reply still settles loading and returns its own result.
 An older reply or duplicate publication cannot replace a newer SSE snapshot.
 A higher cursor is authoritative even when its public values equal an earlier snapshot.
-Only pending local edits retain ownership; use ClientState or ClientStore for lasting drafts.
+Only pending local edits retain ownership. Use ClientState or ClientStore for lasting drafts.
 Cursor ordering applies within the current EventSource baseline. Reopening resets that baseline.
-Cloudflare persists cursors per scope; Node orders publications within one process,
-including SSR entry replacement, and lose that order on process restart.
+Cloudflare persists cursors per scope. Node orders publications within one process,
+including SSR entry replacement, and loses that order on process restart.
 Other realtime snapshots still use value comparison rather than revision ordering.
 Use ClientState or ClientStore for drafts that must survive later authoritative snapshots.
 
 ## Handle an uncertain result
 
 A validation or authorization rejection confirms that the guarded mutation was denied.
-A network failure, deadline, cancellation, or lost socket may happen after the server changed data.
+A network failure, deadline, cancellation, or lost socket can happen after the server changed data.
 Restoring a preview does not prove that the server rolled back its mutation.
 
 | Outcome | Client behavior |
 | --- | --- |
 | Confirmed rejection | Remove that call's preview and expose the structured error |
-| `COSSACK_RPC_NETWORK_FAILED` | Settle the call; the server result is unknown |
-| `COSSACK_RPC_TRANSPORT_CLOSED` | Settle socket calls; reconnect does not replay them |
-| `COSSACK_RPC_TIMEOUT` | Settle once and stop waiting; the server result is unknown |
-| `COSSACK_RPC_CANCELLED` | Release client ownership; application I/O may still finish |
+| `COSSACK_RPC_NETWORK_FAILED` | Settle the call. The server result is unknown |
+| `COSSACK_RPC_TRANSPORT_CLOSED` | Settle socket calls. Reconnect does not replay them |
+| `COSSACK_RPC_TIMEOUT` | Settle once and stop waiting. The server result is unknown |
+| `COSSACK_RPC_CANCELLED` | Release client ownership. Application I/O can still finish |
 
 Do not retry an uncertain mutation automatically.
 Use `reconcile$(error, 'resourceName')` to read a declared resource after an uncertain RPC failure.
@@ -287,7 +287,7 @@ Read [Realtime Recovery](./websockets.md) and [Server Resources](./server-functi
 ## Cancel a stream
 
 Use rpc$(this.method(...)) to keep one call's result, iterator and cancel handle.
-Cancel before or during iteration releases that call's preview and loading ownership.
+Cancellation before or during iteration releases that call's preview and loading ownership.
 This also applies to injected services and consumers that joined pending work later.
 Repeated cancellation and result reads do not dispatch another action.
 If a frame already confirmed public state, failure or cancellation retains that state.
@@ -314,7 +314,7 @@ to a migration in a real application. The example's SQL uses SQLite/D1 syntax.
 The page uses SSE, explicit public/client-only increment previews, automatic loading,
 validated input, rpc$ iteration and a declared read resource. The local draft is
 ClientState. The server yields after the write commits. A short demo pause lets the
-user cancel after that yield. Cancel releases client ownership; the write remains.
+user cancel after that yield. Cancel releases client ownership. The write remains.
 The failure checkbox selects a deliberate application error after the same write.
 Neither path retries the increment.
 

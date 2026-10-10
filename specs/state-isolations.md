@@ -1,6 +1,8 @@
 # State Isolations
 
-When using reusable components within Pages, each component's state is independently managed and synchronized with the server. This enables patterns where components maintain their own server-side state without lifting everything to the Page.
+Each component in a page manages its state independently. The framework
+synchronizes this state with the server. A component keeps its own server-side
+state, and the page does not need to hold that state.
 
 ## State Structure
 
@@ -32,17 +34,17 @@ Each component instance receives a unique ID based on its position in the render
 - Page component: `"root"`
 - First nested component: `"root:0"`
 - Second nested component: `"root:1"`
-- Deeply nested: `"root:0:0"`, etc.
+- Deeply nested: `"root:0:0"`, and so on.
 
 ## Server Action Flow
 
 When a nested component's `@Server` method is called:
 
-1. **Client → Server**: The action is dispatched with the component's ID (`target`) and current state
-2. **Server Processing**: The framework rebuilds the component tree and finds the target component
-3. **State Restoration**: The target component's state is restored from the request payload
-4. **Action Execution**: The `@Server` method runs with the restored state
-5. **Response → Client**: The updated state is returned and applied to the component
+1. Client to server: the client dispatches the action with the component's ID (`target`) and current state.
+2. Server processing: the framework rebuilds the component tree and finds the target component.
+3. State restoration: the target component's state is restored from the request payload.
+4. Action execution: the `@Server` method runs with the restored state.
+5. Response to client: the updated state is returned and applied to the component.
 
 ## Example: Independent Counters
 
@@ -88,7 +90,8 @@ Each counter maintains independent state:
 
 ## State Persistence
 
-Nested component state is automatically:
-- **Serialized** during SSR and included in `window.__INITIAL_STATE__`
-- **Restored** on client hydration
-- **Synchronized** after each `@Server` action
+The framework handles nested component state automatically:
+
+- It serializes the state during SSR and includes it in `window.__INITIAL_STATE__`.
+- It restores the state on client hydration.
+- It synchronizes the state after each `@Server` action.

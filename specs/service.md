@@ -23,7 +23,7 @@ class DashboardChild extends Cossack {
 ```
 
 `PageOptions.services` declares DI ownership on layouts. Pages use the nearest
-layout scope; putting `services` on a page does not create an owner.
+layout scope. Putting `services` on a page does not create an owner.
 `cossack check routes` reports `COSSACK_PAGE_SERVICES_UNSUPPORTED` for these
 ignored declarations. Move them to an ancestor layout. `PageOptions.providers` maps
 transport providers for WebSocket and Durable Object state. It does not declare
@@ -39,9 +39,9 @@ on a scope exposes the same ancestry for inspection without failing.
 
 `CossackService` exposes these protected request facilities:
 
-- `c`: the current Hono request context;
-- `user`: the authenticated user, when present;
-- `env`: the current runtime bindings;
+- `c`: the current Hono request context.
+- `user`: the authenticated user, when present.
+- `env`: the current runtime bindings.
 - `redirect(url, status?)`: a server redirect response.
 
 ## Scope hierarchy and lifetime
@@ -53,9 +53,9 @@ priority over an outer declaration.
 
 The framework creates:
 
-- a fresh root scope for every SSR request;
-- a fresh anonymous root scope for every SSG render;
-- a fresh root scope for every component and service RPC request;
+- a fresh root scope for every SSR request,
+- a fresh anonymous root scope for every SSG render,
+- a fresh root scope for every component and service RPC request,
 - one browser root scope, with child scopes retained alongside reused layouts.
 
 The page receives the innermost layout scope. A nested component inherits the
@@ -66,22 +66,22 @@ When a layout leaves the client route stack, `destroy()` disposes its owned
 scope. Disposal removes service subscriptions, recursively disposes child
 scopes, and invokes each optional `onDispose()` hook once. SSR and ordinary
 component/service RPC await disposal in request-handler cleanup.
-Component RPC waits for component and scope cleanup; a streamed result retains
-the scope until completion, failure, or cancellation. `dispose()` is synchronous;
-an async `onDispose()` hook is started and rejection-logged, but navigation and
+Component RPC waits for component and scope cleanup. A streamed result retains
+the scope until completion, failure, or cancellation. `dispose()` is synchronous.
+An async `onDispose()` hook is started and rejection-logged, but navigation and
 request completion do not wait for it. `disposeAsync()` waits for all child and
 service hooks, including cleanup started earlier by `dispose()`, and reports
-failures with an `AggregateError`. A throwing hook accessor is also collected;
-it does not prevent other services or child scopes from being cleaned.
+failures with an `AggregateError`. A throwing hook accessor is also collected.
+It does not prevent other services or child scopes from being cleaned.
 Successful completed child disposals are not
 retained by a long-lived browser root.
 
 `destroyAsync()` waits for component and descendant cleanup, then releases an
 owned scope. Independent cleanup still runs if a hook throws. Repeated destroy
 and dispose calls do not repeat hooks. SSG uses these awaitable operations before
-returning HTML; failed cleanup fails generation and retains a preceding render
+returning HTML. Failed cleanup fails generation and retains a preceding render
 error as the cause. SSR logs cleanup failures and continues remaining cleanup.
-Browser callers using `destroy()` start cleanup without awaiting it; explicit
+Browser callers using `destroy()` start cleanup without awaiting it. Explicit
 callers can use `destroyAsync()` for completion ordering. Streamed and native-body
 RPC keep their scope until the response completes, fails, or is cancelled.
 
@@ -89,35 +89,35 @@ Duplicate entries in one `services` array and entries lacking `@Service()` are
 configuration errors. Service ownership is never inferred from the first
 consumer.
 
-## Global singletons versus layout and request scopes (GLM, 2026-10-02)
+## Global singletons versus layout and request scopes
 
 Choose ownership by state lifetime, not convenience:
 
 | Ownership | Lifetime | Use for |
 | --- | --- | --- |
-| Global container (`@Service({ scope: 'singleton' })`, undeclared constructor injection) | One isolate; survives across requests | Stateless helpers, pure functions over inputs, immutable configuration |
-| Layout declaration (`@Page({ services: [...] })`) | Layout presence on the route stack; disposed when the layout leaves | Subtree state shared by pages and children under the layout |
-| Request root scope | One SSR/SSG/RPC request | Request-local work; nothing shared with other requests |
+| Global container (`@Service({ scope: 'singleton' })`, undeclared constructor injection) | One isolate, survives across requests | Stateless helpers, pure functions over inputs, immutable configuration |
+| Layout declaration (`@Page({ services: [...] })`) | Layout presence on the route stack, disposed when the layout leaves | Subtree state shared by pages and children under the layout |
+| Request root scope | One SSR/SSG/RPC request | Request-local work, nothing shared with other requests |
 
-A global singleton **must not** retain request/user-specific mutable state:
-concurrent requests in one isolate would observe each other's data. The
+A global singleton must not retain request-specific or user-specific mutable
+state. Concurrent requests in one isolate can observe each other's data. The
 resolution error's scope chain shows which layouts are active and what they
 declare, so a misplaced declaration is visible without tracing framework
 internals. Undeclared constructor injection falls back to the global container
-silently (legacy compatibility); `@Inject` on a property is strict and fails
+silently (legacy compatibility). `@Inject` on a property is strict and fails
 with the diagnostic above when no active layout declares the service.
 
 ## Compatibility
 
 `DIContainer` and constructor injection remain supported. With an active layout
 scope, constructor resolution first uses an explicit declaration. Otherwise it
-falls back to the existing global container and continues honoring
+falls back to the global container and continues honoring
 `@Service({ scope: 'singleton' | 'transient' })`.
 
 Legacy global services must not retain request/user-specific mutable state.
 Explicitly declared services are the request-safe choice for subtree state.
 The legacy component bridge remains only for undeclared constructor-injected
-services; explicitly scoped services are never flattened onto components.
+services. Explicitly scoped services are never flattened onto components.
 
 ## Reactive state and hydration
 
@@ -139,7 +139,7 @@ State is serialized once on the owning layout:
 The stable slot is the declaration index, so independently minified server and
 client class names cannot diverge. Service state is separate from component `public` state
 and transport `providerTargets`, preventing key collisions. Only service
-`@State`/`@Store` fields hydrate; client-supplied unknown keys and prototype
+`@State`/`@Store` fields hydrate. Client-supplied unknown keys and prototype
 pollution keys are ignored.
 
 When the browser reuses a layout during navigation, it keeps the live scope and
@@ -164,10 +164,11 @@ sends an explicit envelope to `/crpc`:
 }
 ```
 
-The server validates the layout route and slot, reconstructs its ancestor layout
-scope hierarchy, restores allowlisted service state, and accepts only actions in
-the service class's `cossack:server-methods` metadata. Framework internals,
-shared/client methods, undecorated helpers, and forged names are rejected.
+The server makes sure that the layout route and slot are valid, reconstructs its
+ancestor layout scope hierarchy, restores allowlisted service state, and accepts
+only actions in the service class's `cossack:server-methods` metadata. Framework
+internals, shared/client methods, undecorated helpers, and forged names are
+rejected.
 
 The response keeps service state separate too:
 

@@ -31,20 +31,20 @@ This service passes `readOnly: true` to the application adapter factory and clos
 its temporary connection after success or failure. Factories must honor the
 selected environment/target and avoid setup writes when read-only. If ORM model
 validation fails after creating an adapter, the adapter is closed too.
-`inspectDatabase(orm, migrations)` inspects an existing borrowed connection;
-its owner remains responsible for closing it.
+`inspectDatabase(orm, migrations)` inspects an existing borrowed connection.
+Its owner remains responsible for closing it.
 
 Resolved identity includes only bounded public fields. Connection URLs, credential
 fields, getter properties and bound SQL values are excluded. Driver capabilities
 are declarations of support, not a connectivity check or proof of server version.
 Absent target metadata remains unspecified rather than guessing from a URL.
 The `defaultValues: omitted` policy removes model and physical column default
-values from shared inspection; entity metadata reports `hasDefault`. Use the
+values from shared inspection. Entity metadata reports `hasDefault`. Use the
 application-owned migration SQL when reviewing an explicit default change. Unknown historical migration names remain in `history` even
 when their declarations are no longer loaded.
 
-Studio displays these same facts under **Database capabilities and migrations**.
+Studio displays these same facts under "Database capabilities and migrations".
 Its richer row editor still provides indexes, views and row locators. Those editor
 details are separate from the shared versioned inspection result. Remote Studio
 inspection loads the application's `orm.config.ts` and uses its remote adapter
-factory; the selected binding must match an explicit `--database` request.
+factory. The selected binding must match an explicit `--database` request.

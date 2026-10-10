@@ -6,7 +6,7 @@ description: Define decorated Active Record models, columns, keys, indexes, time
 # Models
 
 A model is a decorated class extending `BaseEntity`. Decorators describe its
-logical schema; `BaseEntity` supplies static query methods and instance
+logical schema. `BaseEntity` supplies static query methods and instance
 persistence methods.
 
 ```ts
@@ -73,11 +73,11 @@ class User extends BaseEntity {
 }
 ```
 
-`name` is the logical model name; `tableName` is the database table.
+`name` is the logical model name. `tableName` is the database table.
 
 ## Column types
 
-When reflection is available, `@Column()` safely infers:
+When reflection is available, `@Column()` infers these logical types:
 
 | TypeScript design type | Logical type |
 | --- | --- |
@@ -197,8 +197,9 @@ declare version: number;
 ```
 
 `save()` fills create/update timestamps and increments version columns.
-Optimistic updates fail when the stored version changed. `remove()` writes the
-delete timestamp when a `@DeleteDateColumn()` exists; otherwise it deletes the
+Optimistic updates fail when another writer changed the stored version.
+`remove()` writes the
+delete timestamp when a `@DeleteDateColumn()` exists. Otherwise it deletes the
 row. Queries do not implicitly hide timestamped rows, so add an explicit
 `deletedAt: null` predicate when that is the desired application policy.
 
@@ -222,7 +223,7 @@ await orm.run(async () => {
 ```
 
 Hydrated entities retain an original snapshot. Existing entities update only
-changed persisted fields; new entities are inserted.
+changed persisted fields. New entities are inserted.
 
 ## Lifecycle hooks
 
@@ -233,7 +234,7 @@ Available hook decorators are:
 - `@BeforeRemove()` and `@AfterRemove()`
 - `@AfterLoad()`
 
-Hooks may be synchronous or asynchronous. Keep database side effects deliberate:
+Hooks can be synchronous or asynchronous. Keep database side effects deliberate:
 a hook runs as part of the surrounding save/remove operation and uses the
 current ORM or transaction scope.
 

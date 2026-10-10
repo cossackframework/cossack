@@ -15,11 +15,11 @@ Generate the default catalog:
 pnpm exec cossack lang publish
 ```
 
-This creates `src/lang/en.json` and **automatically wires** everything else:
+This creates `src/lang/en.json` and wires everything else automatically:
 
-- `{{ cossackLang }}` is injected into `<html lang="...">` in your `src/root.ts` (if you have one).
-- `APP_LOCALE` is added to the `vars` block in `wrangler.jsonc`.
-- The locale middleware, `__()` global, and `<html lang>` attribute are already wired by the framework : no manual imports or middleware registration needed.
+- The framework injects `{{ cossackLang }}` into `<html lang="...">` in your `src/root.ts` (if you have one).
+- The framework adds `APP_LOCALE` to the `vars` block in `wrangler.jsonc`.
+- The locale middleware, the `__()` global, and the `<html lang>` attribute are wired by the framework. No manual imports or middleware registration are needed.
 
 ```json
 {
@@ -42,7 +42,7 @@ The framework detects `src/lang/*.json`, loads the active locale on the client, 
 
 ## Configuration
 
-Set the deployment-wide default locale via the `APP_LOCALE` environment variable in `wrangler.jsonc`:
+Set the deployment-wide default locale with the `APP_LOCALE` environment variable in `wrangler.jsonc`:
 
 ```jsonc
 {
@@ -63,7 +63,7 @@ const app = createApp({
 });
 ```
 
-This is **off by default** because it can affect caching and SEO (every visitor with a different `Accept-Language` gets a different response). The `cossack_locale` cookie (set by client-side `setLocale()`) always takes precedence.
+This is off by default. It can affect caching and SEO, because every visitor with a different `Accept-Language` gets a different response. The `cossack_locale` cookie (set by client-side `setLocale()`) always takes precedence.
 
 ## Adding locales
 
@@ -80,7 +80,7 @@ import { setLocale } from '@cossackframework/core';
 await setLocale('es');
 ```
 
-`setLocale` is **client-only** : on the server, locale is resolved per-request (see [How it works](#how-it-works)). Calling it from server code throws.
+`setLocale` is client-only. On the server, the framework resolves the locale per request (see [How it works](#how-it-works)). A call from server code throws.
 
 ## Runtime locale switching
 
@@ -118,7 +118,7 @@ This is a client-only sentinel. On the server, the equivalent (Accept-Language d
 | Event           | Fires when                                     | `event.detail`         |
 |-----------------|------------------------------------------------|------------------------|
 | `localechange`  | The new locale's catalog loaded and is active  | `{ locale: 'es' }`     |
-| `localeerror`   | The dynamic import failed (offline, etc.)      | `{ error: '...' }`     |
+| `localeerror`   | The dynamic import failed (offline, for example) | `{ error: '...' }`     |
 
 ```ts
 window.addEventListener('localechange', (e) => {
@@ -146,7 +146,7 @@ __('greeting', { name: 'Sam' })  // "Hello, Sam"
 
 ### Translation strings as keys
 
-For apps with many strings, inventing short keys for everything is cumbersome. Use the default-language text **as the key**:
+Short keys for every string are cumbersome in large apps. Use the default-language text as the key:
 
 ```json
 {
@@ -208,7 +208,7 @@ Separate plural forms with `|`:
 }
 ```
 
-Pass `count` as a parameter : the correct form is selected automatically:
+Pass `count` as a parameter. The framework selects the correct form automatically:
 
 ```ts
 __('apples', { count: 1 })  // "You have 1 apple"
@@ -227,7 +227,7 @@ Cossack uses `Intl.PluralRules` for CLDR-correct pluralization. The number of `|
 | 4     | one, few, many, other    | Russian, Ukrainian   |
 | 6     | zero, one, two, few, many, other | Arabic       |
 
-Note: Russian is commonly authored with **3 forms** (`one|few|many`). When only 3 forms are provided, categories like `many`/`other` fall back to the last form.
+Russian is commonly authored with 3 forms (`one|few|many`). When only 3 forms are provided, categories like `many`/`other` fall back to the last form.
 
 Russian (`src/lang/ru.json`):
 
@@ -245,7 +245,7 @@ Pluralization also works with translation-strings-as-keys.
 
 On Cloudflare Workers, a single isolate serves many concurrent requests. To prevent locale races, the framework wraps each request in an `AsyncLocalStorage` scope:
 
-1. The **locale middleware** runs before SSR and resolves the locale (cookie → `Accept-Language` → `config('app.locale')` → `en`).
+1. The locale middleware runs before SSR and resolves the locale (cookie → `Accept-Language` → `config('app.locale')` → `en`).
 2. It loads the catalog and runs the rest of the request inside the ALS scope.
 3. `__()` and `getLocale()` read from the scope, so every visitor gets the right locale.
 
@@ -253,9 +253,9 @@ This is the same pattern Next.js uses for `headers()` / `cookies()` and Nuxt use
 
 ### Client-side: code splitting
 
-Each locale's JSON catalog is a separate chunk. The initial bundle includes only the **active** and **default** catalogs through `window.__INITIAL_STATE__.__cossackLang`. Cossack loads other catalogs when `setLocale()` runs.
+Each locale's JSON catalog is a separate chunk. The initial bundle includes only the active and default catalogs through `window.__INITIAL_STATE__.__cossackLang`. Cossack loads other catalogs when `setLocale()` runs.
 
-For predicted non-default locales (e.g., when the `cossack_locale` cookie is set), the framework injects a `<link rel="modulepreload">` hint so the chunk is already cached when the user switches.
+For predicted non-default locales (for example, when the `cossack_locale` cookie is set), the framework injects a `<link rel="modulepreload">` hint so the chunk is already cached when the user switches.
 
 ### `<html lang>`
 
@@ -299,7 +299,7 @@ Both honor `--force` (overwrite) and `--dry-run` (preview without writing).
 
 ## Check translations before building
 
-Use the same selected default locale as your app. It defaults to `en`:
+Use the same default locale that your app uses. The default is `en`:
 
 ```sh
 pnpm exec cossack lang extract --locale=en --json
@@ -311,18 +311,18 @@ pnpm exec cossack lang types --locale=en
 literal `__()` keys with a project-relative file, line and column. It recognizes
 the framework global, imports from core/framework (including named aliases),
 namespace calls, and local named or star reexports. It skips unrelated object
-methods and shadowed helpers. Source code is parsed; it is never executed.
+methods and shadowed helpers. The command parses source code. It never executes it.
 
 Dynamic keys such as `__(key)` and interpolated template keys remain explicit
 unresolved calls. Dynamic parameter objects produce a separate warning. `extract`
-returns the inventory even when catalog errors exist; use `check` to enforce
+returns the inventory even when catalog errors exist. Use `check` to enforce
 validation in CI. Each JSON command emits the standard versioned result envelope.
 Catalog text and parser exception text are omitted from the result.
 
 `check` fails for missing default/locale keys, empty translations, invalid JSON,
 missing call parameters, renamed placeholders, inconsistent plural variants, and
-invalid source syntax. A missing locale key reports the default fallback locale;
-it remains an error even though the runtime can display the fallback. Extra keys
+invalid source syntax. A missing locale key reports the default fallback locale.
+It remains an error even though the runtime can display the fallback. Extra keys
 and keys with no static use produce warnings. When dynamic keys exist, unused-key
 warnings are marked uncertain. Different languages can use different numbers of
 plural forms (one to six). Every variant must preserve the same placeholders,
@@ -331,7 +331,7 @@ because the runtime supports `:Name` and `:NAME` with a `name` parameter.
 
 Analysis is bounded to 4,096 source/catalog files, 1 MiB per file, 16 MiB total,
 and 16,384 directory entries. Symlinks are refused. Unsupported dynamic calls
-need an explicit review; the checker cannot prove which keys they use.
+need an explicit review. The checker cannot prove which keys they use.
 
 ## Generate translation types
 
@@ -362,7 +362,7 @@ __('apples', { count: '2' });
 
 Rerun `types` when catalog contracts change. Generated files with the command's
 ownership header can be updated. An existing file without that header requires
-`--force`; symlink output is refused. `--dry-run` validates and reports the target
+`--force`. Symlink output is refused. `--dry-run` checks and reports the target
 without writing it. The `check` and `extract` commands always remain read-only.
 Use `--locale=fr` when `fr` is the app's default and fallback language.
 

@@ -96,7 +96,7 @@ Cossack includes standard Lit directives.
 
 ### `repeat` (Keyed Lists)
 
-Efficiently renders lists by key.
+Renders lists by key. The framework reuses and reorders DOM nodes by key.
 
 ```typescript
 import { repeat } from '@cossackframework/renderer';
@@ -137,19 +137,19 @@ html`<input ref="${(el) => console.log(el)}" />`;
 
 ### `live`
 
-Compare against the **live DOM value** instead of the last-rendered value when
+Compare against the live DOM value instead of the last-rendered value when
 deciding whether to write a property. This is the Lit-faithful `live` directive.
 
-By default, a plain property binding like `.value="${this.email}"` does a dirty
-check against the last value the renderer committed: if the bound value is
-unchanged, the write is skipped (so a user's in-progress edit is not clobbered).
-`live()` switches the comparison to the actual DOM value : meaning the property
-**is** written whenever the DOM differs from the bound value, even if the bound
-value itself has not changed. Use it when you need to force the DOM back to the
-bound value (e.g. a "Reset" button that reverts a field the user edited).
+By default, a plain property binding like `.value="${this.email}"` compares
+against the last value the renderer committed. If the bound value is
+unchanged, the write is skipped, so a user's in-progress edit is not clobbered.
+`live()` switches the comparison to the actual DOM value. The property
+is written whenever the DOM differs from the bound value, even if the bound
+value itself has not changed. Use it to force the DOM back to the
+bound value, for example in a "Reset" button that reverts a field the user edited.
 
-> Note: `live()` is a render-direction directive only. It does **not** provide
-> two-way binding (it will not write DOM edits back into your state). For
+> Note: `live()` is a render-direction directive only. It does not provide
+> two-way binding. It does not write DOM edits back into your state. For
 > two-way binding, use [`bind()`](#bind) instead.
 
 ```typescript
@@ -158,20 +158,20 @@ import { live } from '@cossackframework/renderer';
 html`<input .value="${live(this.email)}" />`;
 ```
 
-`live()` also works when routed through `component()` props (e.g. `component(Input, { '.value': live(this.email) })`), so it can be combined with UI components the same way `bind()` can.
+`live()` also works when routed through `component()` props (for example `component(Input, { '.value': live(this.email) })`), so it can be combined with UI components the same way `bind()` can.
 
 ### `bind`
 
 Two-way binding for a form element's value/checked against a component state
-field. It reads the field for rendering **and** writes user edits back to it
+field. It reads the field for rendering and writes user edits back to it
 (assignment to a `@State` field triggers a re-render automatically). The DOM
 property is inferred from the attribute it is attached to (`.value` → `value`,
-`.checked` → `checked`), and the writeback event is chosen per element
+`.checked` → `checked`). The writeback event is chosen per element
 (`input` for text-like inputs and `<textarea>`, `change` for checkbox/radio/
 range inputs and `<select>`).
 
-`bind(this, 'field')` replaces the manual `.value` + `@input` + `setProperty`
-dance:
+`bind(this, 'field')` replaces the manual combination of `.value`, `@input`,
+and `setProperty`:
 
 ```typescript
 import { html, bind } from '@cossackframework/renderer';
@@ -194,9 +194,9 @@ html`<input type="checkbox" .checked="${bind(this, 'active')}" />`;
 
 ### `key`
 
-Force a subtree to be **recreated** when the key changes. Useful for
-re-triggering CSS animations or remounting a child (e.g. on tab/index change).
-With the same key, updates apply in place (no rebuild).
+Force the framework to recreate a subtree when the key changes. Use it for
+re-triggering CSS animations or remounting a child, for example on tab or index
+change. With the same key, updates apply in place (no rebuild).
 
 ```typescript
 import { key, html } from '@cossackframework/renderer';
@@ -205,18 +205,18 @@ import { key, html } from '@cossackframework/renderer';
 html`<div>${key(currentIndex, html`<div class="animate-fade-in">${child}</div>`)}</div>`;
 ```
 
-In SSR, `key` is transparent (it just renders its template : there is no
-previous DOM to dispose).
+In SSR, `key` is transparent. It renders its template, and there is no
+previous DOM to dispose.
 
 ### `preventDefault`
 
-Wraps an event handler so the event's default is prevented before the handler
+Wraps an event handler so the browser prevents the event's default before the handler
 runs.
 
-Browser-native (HTML5 constraint) validation is **also** disabled by default :
-the bound `<form>` gets `novalidate` : because Cossack encourages custom
-`@Validate` validation. Pass `{ novalidate: false }` to restore native
-validation (the `preventDefault` itself stays unconditional).
+The directive also disables browser-native (HTML5 constraint) validation by
+default. The bound `<form>` gets the `novalidate` attribute, because Cossack
+expects custom `@Validate` validation. Pass `{ novalidate: false }` to restore
+native validation. The `preventDefault` behavior itself stays unconditional.
 
 ```typescript
 import { preventDefault } from '@cossackframework/renderer';
@@ -228,9 +228,9 @@ html`<form @submit="${preventDefault(this.onSave, { novalidate: false })}"></for
 
 ### `when`
 
-Render one of two templates based on a condition : the template equivalent of a
-ternary, but the two branches are functions that are only invoked when their
-case is selected (so the untaken branch never evaluates). The chosen case
+Render one of two templates based on a condition. The two branches are
+functions, and the framework invokes a function only when its case is selected.
+The untaken branch never runs. The chosen case
 function receives the condition as its argument.
 
 ```typescript
@@ -256,9 +256,9 @@ html`${choose(status, [
 ], () => html`<span>Unknown</span>`)}`;
 ```
 
-Each case function receives the matched value and its case index. `choose` is
-handy when you have more than two branches tied to a single value : it reads
-more clearly than a chain of `when`/ternaries.
+Each case function receives the matched value and its case index. Use `choose`
+when more than two branches depend on a single value. It reads
+more clearly than a chain of `when` calls or ternaries.
 
 ### `ifDefined`
 
@@ -268,8 +268,8 @@ Lit-faithful `ifDefined` directive.
 
 By default a plain Cossack attribute binding like `href="${url}"` omits the
 attribute for `null`/`undefined`/`false`. `ifDefined` narrows that to
-`undefined`-only omission, and renders `false`/`null` as the literal strings
-`"false"`/`"null"` : useful for data attributes where you want the literal
+`undefined`-only omission. It renders `false`/`null` as the literal strings
+`"false"`/`"null"`. This is useful for data attributes where you want the literal
 value rather than an omission.
 
 ```typescript
@@ -280,7 +280,7 @@ html`<a href="${ifDefined(url)}">link</a>`;
 
 When the value transitions from defined back to `undefined` on a re-render, the
 attribute is explicitly removed. `ifDefined` also works through `component()`
-props (e.g. `component(Link, { href: ifDefined(url) })`).
+props (for example `component(Link, { href: ifDefined(url) })`).
 
 ### `guard`
 
@@ -289,9 +289,9 @@ the value produced by its factory and reuses it on subsequent renders as long
 as the `deps` are shallow-equal to the previous render. The factory runs
 again when a dependency changes.
 
-This is an optimization for expensive rendering : large lists, heavy
-computations : so the costly part is not recomputed on every render, only when
-the inputs it actually depends on change.
+Use `guard` for expensive rendering, such as large lists or heavy
+computations. The costly part then runs only when the inputs it depends on
+change, not on every render.
 
 ```typescript
 import { guard } from '@cossackframework/renderer';
@@ -304,8 +304,8 @@ html`${guard([query, page], () => renderResults(query, page))}`;
 ```
 
 The dependency comparison is shallow. For a single value, it uses `===`. For an
-array each element is compared with `===` and the lengths must match. Note that
-memoization is per-template-site : the cache lives on the rendered Part, so
+array each element is compared with `===` and the lengths must match.
+Memoization is per-template-site. The cache lives on the rendered Part, so
 reuse the same `html\`...\`` site across renders for it to take effect (this is
 how all Cossack/Lit directives work).
 
@@ -313,13 +313,12 @@ how all Cossack/Lit directives work).
 
 Keep previously-rendered template subtrees alive instead of destroying them
 when the rendered value switches to a different template. When you toggle
-between two (or more) templates behind `cache`, switching back to one that was
-rendered before reattaches its existing DOM and part tree rather than rebuilding
-it : so component state, scroll position, focus, and DOM identity are preserved
-across the swap.
+between two or more templates behind `cache`, switching back reattaches the
+existing DOM and part tree rather than rebuilding it. Component state, scroll
+position, focus, and DOM identity survive the swap.
 
 Without `cache`, a conditional like `cond ? html\`<A/>\` : html\`<B/>\`` rebuilds
-the previously-shown branch every time you switch back, losing that branch's
+the previously-shown branch every time you switch back. That branch loses its
 state. With `cache`, each branch is kept alive while it is not displayed.
 
 ```typescript
@@ -334,10 +333,10 @@ values are passed through unchanged (no caching benefit, no harm).
 
 ### `map`
 
-Map an iterable to renderable values (e.g. templates) and render them as a
-list. It is a thin helper over `Array.from` so that plain objects, `Set`s, or
-other iterables can be rendered as a list without manually spreading into an
-array first.
+Map an iterable to renderable values, such as templates, and render them as a
+list. It is a small helper over `Array.from`. Plain objects, `Set`s, and
+other iterables then render as a list without manual conversion to an
+array.
 
 ```typescript
 import { map } from '@cossackframework/renderer';
@@ -346,14 +345,14 @@ html`<ul>${map(items, (item) => html`<li>${item.name}</li>`)}</ul>`;
 ```
 
 `map` does not key its items (it renders a plain array). For keyed lists with
-efficient reordering and per-item state preservation, use [`repeat`](#repeat-keyed-lists)
+reordering and per-item state preservation, use [`repeat`](#repeat-keyed-lists)
 instead.
 
 ### `join`
 
-Join renderable values with a separator interleaved between each pair : the list
-equivalent of `Array.prototype.join`, but with values rather than strings, so
-the separator can itself be a template (e.g. a divider element).
+Join renderable values with a separator between each pair. It is the list
+equivalent of `Array.prototype.join`, but with values instead of strings. The
+separator can be a template, for example a divider element.
 
 ```typescript
 import { join } from '@cossackframework/renderer';
@@ -370,9 +369,9 @@ is the position of the item before the separator.
 
 ### `range`
 
-Generate an increasing (or decreasing) sequence of numbers as an array,
-suitable for rendering a fixed number of items (e.g. pagination, a numbered
-grid). It is half-open like `Array.prototype.slice`.
+Generate an increasing or decreasing sequence of numbers as an array.
+Use it to render a fixed number of items, for example pagination or a numbered
+grid. It is half-open like `Array.prototype.slice`.
 
 - `range(end)` → `[0, 1, …, end-1]`
 - `range(start, end)` → `[start, …, end-1]`
@@ -463,7 +462,7 @@ class ClockElement extends CossackElement {
 
 Cossack supports passing children to components.
 
-**Parent:**
+Parent:
 
 ```typescript
 html`
@@ -478,7 +477,7 @@ html`
 `;
 ```
 
-**Child (Card):**
+Child (Card):
 
 ```typescript
 class Card extends CossackElement {
@@ -490,9 +489,8 @@ class Card extends CossackElement {
 
 ## Using Cossack Renderer with Other Frameworks
 
-This package is included by projects created with `cossack create`, but can
-also be used standalone in any project that needs a lightweight rendering
-solution.
+Projects created with `cossack create` include this package. You can also
+use it standalone in any project.
 
 ### Installation
 

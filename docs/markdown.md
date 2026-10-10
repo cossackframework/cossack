@@ -1,6 +1,6 @@
 ---
 title: "Markdown Pages"
-description: "Create pages from.md and.mdx files with frontmatter metadata."
+description: "Create pages from Markdown and MDX files with frontmatter metadata."
 ---
 
 # Markdown Pages
@@ -47,7 +47,7 @@ Unknown fields need an explicit extension validator.
 | `locale` | Language tag such as `en` or `fr-CA` | Page render locale |
 | `canonical` | HTTP(S) URL or root-relative path | Canonical page URL |
 | `aliases` | Array of static root-relative paths | Additional static HTML outputs |
-| `ssg` | Boolean | Enable static output; defaults to true for Markdown |
+| `ssg` | Boolean | Enables static output. Defaults to true for Markdown |
 
 Quote dates in YAML. An invalid date such as `2023-02-29` fails validation.
 Canonical URLs cannot contain credentials or fragments. Alias paths cannot
@@ -55,9 +55,9 @@ contain parameters, query strings, fragments, traversal segments, backslashes,
 or percent-encoded segments. Use literal output paths for aliases. Duplicate
 aliases such as `/guide` and `/guide/` are rejected.
 Aliases require static generation. They produce additional static files with the
-same canonical URL; they do not register runtime redirects or new router routes.
+same canonical URL. They do not register runtime redirects or new router routes.
 
-Use the public type to check authored metadata objects:
+Use this public type for authored metadata objects:
 
 ```ts
 import type { MarkdownFrontmatter } from '@cossackframework/framework/markdown-processor';
@@ -103,7 +103,7 @@ frozen metadata object and frozen aliases. Preserve that validated object when
 returning it. The configured processor also exposes its validators through the
 readonly `frontmatterExtensions` property, so the Vite and SSG module graphs can
 validate the same extension contract. Custom processors with extension fields
-should expose that property too. The processor does not render extension fields
+must expose that property too. The processor does not render extension fields
 in the document automatically.
 
 ### Locale pages and output identity
@@ -111,8 +111,9 @@ in the document automatically.
 Place distinct locale pages at distinct source routes, such as
 `src/pages/en/guide.md` and `src/pages/fr/guide.md`, and give each an explicit
 `locale` and canonical URL. The locale must have a configured catalog. Each page
-renders in its own locale/configuration scope, including its layouts. Frontmatter
-does not translate the Markdown body; author that body in the chosen language.
+renders in its own locale and configuration scope, including its layouts.
+Frontmatter does not translate the Markdown body. Author that body in the chosen
+language.
 
 Markdown and TypeScript pages use the same route model. A content route, static
 parameter variant, or alias cannot publish the same output file as another page.

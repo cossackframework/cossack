@@ -6,7 +6,7 @@ description: "Internal workspace helpers for request dispatch, component hydrati
 # Test utilities
 
 `@cossackframework/test-utils` is a private workspace package used by this
-repository's tests. It is not published to npm in 0.9.0. The examples below
+repository's tests. It is not published to npm. The examples below
 describe internal usage. Its server entry requires Node.js. The browser entry uses the DOM and
 can run in Vitest's jsdom environment or a real browser.
 
@@ -41,13 +41,13 @@ const result = await app.componentRpc({
 For an application created with the framework router, inject
 `fetch: (request, env) => application.fetch(request, env)` instead. Keep the
 application's real configuration and middleware. `authFixture` attaches headers
-and cookies; it does not create a user or grant permission. Create test session
+and cookies. It does not create a user or grant permission. Create test session
 tokens with your authentication provider, or configure explicit test middleware
 in the test application's source.
 
 `componentRpc` sends the production JSON envelope to `/crpc`. `serviceRpc`
 accepts `ownerRouteId`, `slot`, `action`, optional `payload`, `state` and
-`scopeKey`; it sends the same scoped-service envelope as the browser proxy.
+`scopeKey`. It sends the same scoped-service envelope as the browser proxy.
 The default Origin is the application's base origin. Supply a different Origin
 in the second argument to test rejection. Raw `request()` supports other
 methods, multipart uploads and abort signals. Read or cancel streaming response
@@ -55,7 +55,7 @@ bodies to let the real handler finish response-owned cleanup.
 
 `readHydrationState` parses the JSON in the production
 `window.__INITIAL_STATE__` assignment. It never evaluates JavaScript. Missing
-state returns `undefined`; malformed or duplicate assignments throw. Its generic
+state returns `undefined`. Malformed or duplicate assignments throw. Its generic
 type parameter is your expected shape, not runtime validation.
 
 ## Render and hydrate a component
@@ -77,11 +77,11 @@ await view.unmount();
 
 The helper uses core constructor injection and the production bootstrap method.
 Pass a real `ServiceScope` when the component injects layout services. Set
-`ownsServiceScope: true` only when this component should dispose that scope;
-otherwise dispose the externally owned scope yourself. State uses the normal
+`ownsServiceScope: true` only when this component must dispose that scope.
+Otherwise dispose the externally owned scope yourself. State uses the normal
 hydration envelope, including `public` and any production metadata. Bootstrap
-options such as context, user and environment retain their production meaning;
-browser identity comes from hydrated metadata.
+options such as context, user and environment retain their production meaning.
+Browser identity comes from hydrated metadata.
 
 `unmount()` is awaitable and idempotent. It waits for component, descendant and
 owned-service cleanup, and removes the DOM even if cleanup fails. Failed

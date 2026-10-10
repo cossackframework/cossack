@@ -41,8 +41,8 @@ pnpm exec tsx ./examples/sqlite-starter/query.ts
 ```
 
 The seeder is idempotent, so running it more than once does not duplicate users
-or posts. It is declared with `defineSeeder()` and executed by `SeederRunner`;
-`seed.ts` is only the executable entry point. Framework CLIs should load the
+or posts. It is declared with `defineSeeder()` and executed by `SeederRunner`.
+`seed.ts` is only the executable entry point. Framework CLIs must load the
 same configured seeder list and delegate execution to `SeederRunner`.
 
 The included `orm.config.ts` also works with the ORM CLI during development:

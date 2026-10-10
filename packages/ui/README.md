@@ -1,9 +1,9 @@
 # @cossackframework/ui
 
-UI component library for the Cossack Framework : token-driven, themeable
-components built on native HTML elements and the browser's top-layer API.
-Styles are written as Tailwind v4 utility classes that reference CSS-token-driven
-variables, so the whole library retints by overriding a handful of `@theme` values.
+UI component library for the Cossack Framework. It provides token-driven,
+themeable components built on native HTML elements and the browser's top-layer
+API. Styles are Tailwind v4 utility classes that reference CSS token variables.
+Override a few `@theme` values to retint the whole library.
 
 ## Install
 
@@ -49,78 +49,78 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 ### Buttons & Actions
 | Component | Description |
 |---|---|
-| **Button** | Variant button (default, secondary, destructive, outline, ghost, link) with sizes (default, sm, lg, icon) |
-| **Spinner** | CSS-animated loading spinner using `animate-spin` |
+| Button | Variant button (default, secondary, destructive, outline, ghost, link) with sizes (default, sm, lg, icon) |
+| Spinner | CSS-animated loading spinner using `animate-spin` |
 
 ### Forms & Inputs
 | Component | Native element | Description |
 |---|---|---|
-| **Input** | `<input>` | Token-driven text input with variant/size |
-| **Textarea** | `<textarea>` | Multiline text input |
-| **Select** | `<select>` | Native select with chevron overlay |
-| **NativeSelect** | `<select>` | Styled native select (no JS, no popover : mobile-friendly) |
-| **InputGroup** | `<input>` + addons | Input with prefix/suffix adornments (@, $, icons) |
-| **Checkbox** | `<input type="checkbox">` | Checkbox with label wrapper |
-| **Switch** | `<input type="checkbox">` | Toggle switch (role="switch") |
-| **RadioGroup** | `<input type="radio">` | Radio button group |
-| **Slider** | `<input type="range">` | Range slider with token accent-color |
-| **InputOTP** | `<input>` ×N | Segmented one-time-password input (paste, auto-advance, arrows) |
-| **Calendar** | `<div>` grid | Month-grid date picker with min/max bounds and ISO onChange |
-| **DatePicker** | `popover` + calendar | Calendar in a native popover; emits ISO date on pick |
-| **Label** | `<label>` | Accessible form label |
+| Input | `<input>` | Token-driven text input with variant/size |
+| Textarea | `<textarea>` | Multiline text input |
+| Select | `<select>` | Native select with chevron overlay |
+| NativeSelect | `<select>` | Styled native select (no JS, no popover, mobile-friendly) |
+| InputGroup | `<input>` + addons | Input with prefix/suffix adornments (@, $, icons) |
+| Checkbox | `<input type="checkbox">` | Checkbox with label wrapper |
+| Switch | `<input type="checkbox">` | Toggle switch (role="switch") |
+| RadioGroup | `<input type="radio">` | Radio button group |
+| Slider | `<input type="range">` | Range slider with token accent-color |
+| InputOTP | `<input>` ×N | Segmented one-time-password input (paste, auto-advance, arrows) |
+| Calendar | `<div>` grid | Month-grid date picker with min/max bounds and ISO onChange |
+| DatePicker | `popover` + calendar | Calendar in a native popover. It emits an ISO date on pick |
+| Label | `<label>` | Accessible form label |
 
 ### Layout & Display
 | Component | Native element | Description |
 |---|---|---|
-| **Card** | `<div>` | Surface container with optional header/body/footer slots |
-| **Separator** | `<hr>` / `<div>` | Horizontal or vertical divider |
-| **DataTable** | `<table>` | Controlled server paging, filtering, sorting and stable row-ID selection |
-| **Table** | `<table>` | Token-styled table with sub-components (TableHeader, TableBody, TableRow, TableHead, TableCell) |
-| **Avatar** | `<img>` / `<span>` | Image with initials fallback, circle/square |
-| **AvatarGroup** | `<div>` | Stacked avatar set with "+N" overflow counter |
-| **Badge** | `<span>` | Status/label pill with semantic variants |
-| **Skeleton** | `<div>` | Loading placeholder with `animate-pulse` |
-| **Progress** | `<div role="progressbar">` | Progress bar with aria values |
-| **Tooltip** | CSS `:hover` | Pure-CSS hover tooltip (no JS, no portal) |
-| **Typography** | semantic tags | Typographic primitives (h1–h4, p, lead, blockquote, code, ul, ol) |
-| **ContextMenu** | `popover` attribute | Right-click menu with separators and destructive items |
-| **Sidebar** | `<aside>` | Collapsible nav rail (icon / offcanvas) with nested groups + agnostic footer slot |
-| **Drawer** | `<dialog>` | Slide-in drawer panel with drag handle grip and backdrop |
-| **Item** | `<div>` | Generic list-row primitive with media/content/trailing slots |
+| Card | `<div>` | Surface container with optional header/body/footer slots |
+| Separator | `<hr>` / `<div>` | Horizontal or vertical divider |
+| DataTable | `<table>` | Controlled server paging, filtering, sorting and stable row-ID selection |
+| Table | `<table>` | Token-styled table with sub-components (TableHeader, TableBody, TableRow, TableHead, TableCell) |
+| Avatar | `<img>` / `<span>` | Image with initials fallback, circle/square |
+| AvatarGroup | `<div>` | Stacked avatar set with "+N" overflow counter |
+| Badge | `<span>` | Status/label pill with semantic variants |
+| Skeleton | `<div>` | Loading placeholder with `animate-pulse` |
+| Progress | `<div role="progressbar">` | Progress bar with aria values |
+| Tooltip | CSS `:hover` | Pure-CSS hover tooltip (no JS, no portal) |
+| Typography | semantic tags | Typographic primitives (h1–h4, p, lead, blockquote, code, ul, ol) |
+| ContextMenu | `popover` attribute | Right-click menu with separators and destructive items |
+| Sidebar | `<aside>` | Collapsible nav rail (icon / offcanvas) with nested groups + agnostic footer slot |
+| Drawer | `<dialog>` | Slide-in drawer panel with drag handle grip and backdrop |
+| Item | `<div>` | Generic list-row primitive with media/content/trailing slots |
 
 ### Chat
 | Component | Native element | Description |
 |---|---|---|
-| **Bubble** | `<div>` | Chat message bubble (sent/received variants, tail, timestamp) |
-| **Message** | `<div>` | Chat message wrapper (avatar + name + bubble grouping) |
-| **MessageScroller** | `<div>` | Named keyboard-scrollable viewport with history anchoring and a latest-message action |
-| **Marker** | `<div>` | Date/section divider inside a message list ("Today", "New messages") |
-| **Attachment** | `<div>` | Chat file-attachment card with auto-detected type icon + status |
+| Bubble | `<div>` | Chat message bubble (sent/received variants, tail, timestamp) |
+| Message | `<div>` | Chat message wrapper (avatar + name + bubble grouping) |
+| MessageScroller | `<div>` | Named keyboard-scrollable viewport with history anchoring and a latest-message action |
+| Marker | `<div>` | Date/section divider inside a message list ("Today", "New messages") |
+| Attachment | `<div>` | Chat file-attachment card with auto-detected type icon + status |
 
 ### Overlay & Interactive
 | Component | Native element | Description |
 |---|---|---|
-| **Modal** | `<dialog>` | Controlled modal via `dialog.showModal()` + `@Task` |
-| **Popover** | `popover` attribute | Top-layer popover with JS positioning + light dismiss |
-| **DropdownMenu** | `popover` attribute | Menu with keyboard navigation (Arrow/Escape), collision-aware side/align flip, scroll/resize repositioning |
-| **Sheet** | `<dialog>` | Slide-in panel (drawer) from any edge |
-| **Accordion** | `<button>` + `<div>` | Animated collapsible sections |
-| **Tabs** | conditional render | Accessible tabbed interface with ARIA tablist |
-| **Toaster** + `toast` | reactive store | Global toast notification system |
+| Modal | `<dialog>` | Controlled modal via `dialog.showModal()` + `@Task` |
+| Popover | `popover` attribute | Top-layer popover with JS positioning + light dismiss |
+| DropdownMenu | `popover` attribute | Menu with keyboard navigation (Arrow/Escape), collision-aware side/align flip, scroll/resize repositioning |
+| Sheet | `<dialog>` | Slide-in panel (drawer) from any edge |
+| Accordion | `<button>` + `<div>` | Animated collapsible sections |
+| Tabs | conditional render | Accessible tabbed interface with ARIA tablist |
+| Toaster + `toast` | reactive store | Global toast notification system |
 
 ### Icons
 | Component | Description |
 |---|---|
-| **Icon** | Renders a Solar icon from a direct `entry` (tree-shakeable). Pass an icon entry imported from `@cossackframework/solar-icons/<name>`. 6 styles: line, bold, duotone, broken, outline, line-duotone. |
+| Icon | Renders a Solar icon from a direct `entry` (tree-shakeable). Pass an icon entry imported from `@cossackframework/solar-icons/<name>`. 6 styles: line, bold, duotone, broken, outline, line-duotone. |
 
-> **Only `Icon` is provided.** There is no name-based lookup component :
-> importing icons by name pulls the full ~1,200-icon registry (~9 MB of SVG
+> The package provides only `Icon`. There is no name-based lookup component.
+> Importing icons by name pulls the full ~1,200-icon registry (~9 MB of SVG
 > paths) into the bundle. Always import the specific icon you need and pass its
 > entry to `<Icon>`.
 
 ## Usage
 
-Components are Cossack components : consume them with the `component()` helper,
+Components are Cossack components. Consume them with the `component()` helper,
 not JSX:
 
 ```ts
@@ -139,19 +139,19 @@ html`
 
 The theme is a two-layer shadcn-style system in `src/theme/theme.css`:
 
-1. **Raw values** : `:root { … }` (light) and `.dark { … }` (dark) define OKLCH
+1. Raw values: `:root { … }` (light) and `.dark { … }` (dark) define OKLCH
  color values for every semantic token (`--primary`, `--background`, `--card`,
  `--popover`, `--accent`, `--border`, `--ring`, `--chart-*`, `--sidebar-*`, …).
- The default palette is shadcn's **neutral** (black primary on light, near-white
- on dark).
-2. **Tailwind mapping** : `@theme inline { … }` maps each raw variable into a
+ The default palette is shadcn's neutral palette (black primary on light,
+ near-white on dark).
+2. Tailwind mapping: `@theme inline { … }` maps each raw variable into a
  Tailwind utility (`--color-primary: var(--primary)` → `bg-primary`,
  `text-primary`, `border-primary`, `ring-primary`, …) plus a radius scale
  derived from a single `--radius` knob.
 
 ### Dark mode
 
-Dark mode is **opt-in**: add `class="dark"` to `<html>` (or any ancestor of the
+Dark mode is opt-in. Add `class="dark"` to `<html>` (or any ancestor of the
 UI). The `.dark` token overrides live in `theme.css`, so no extra import is
 needed.
 
@@ -168,9 +168,9 @@ Override any single token in your own `:root` / `.dark` blocks:
 }
 ```
 
-Or import a named palette AFTER `theme.css`. Neutral families retint the whole
-surface scale; accent palettes retint only `--primary` / `--ring` / `--chart-*`
-/ `--sidebar-primary-*`, keeping neutral surfaces:
+Or import a named palette after `theme.css`. Neutral families retint the whole
+surface scale. Accent palettes retint only `--primary` / `--ring` / `--chart-*`
+/ `--sidebar-primary-*` and keep neutral surfaces:
 
 ```css
 @import "@cossackframework/ui/theme/theme.css";
@@ -206,22 +206,22 @@ to rescale every `rounded-*` utility at once.
 
 The token set extends shadcn's with `success` / `success-foreground` and
 `warning` / `warning-foreground` semantic colors, used by `Badge`, `Alert`,
-`Toast`, etc.
+and `Toast`.
 
 ## Icons
 
 Icons are split across two packages:
 
-- **`@cossackframework/solar-icons`** : the icon **dataset**. A zero-dependency,
- framework-agnostic package shipping 1,246 Solar icons across six styles as
+- `@cossackframework/solar-icons`: the icon dataset. It is a zero-dependency,
+ framework-agnostic package. It ships 1,246 Solar icons across six styles as
  tree-shakeable data entries. Install it to get the icon data:
 
   ```sh
   pnpm add @cossackframework/solar-icons
   ```
 
-- **`@cossackframework/ui`** : provides the **`Icon`** component that renders
- the data. It lives in `ui` (not in the data package) so it shares your app's
+- `@cossackframework/ui`: provides the `Icon` component that renders
+ the data. It lives in `ui` (not in the data package), so it shares your app's
  single renderer/core module instance.
 
 ### Usage : fixed icon (tree-shakeable)
@@ -243,19 +243,20 @@ import { ArrowRightIcon } from "@cossackframework/solar-icons/arrow-right/bold";
 // ArrowRightIcon is now a string (the bold SVG markup only), wrapped by Icon.
 ```
 
-Each icon export is suffixed with `Icon` (e.g. `ArrowRightIcon`, `SettingsIcon`)
+Each icon export is suffixed with `Icon` (for example `ArrowRightIcon`,
+`SettingsIcon`)
 to avoid collisions with common identifiers. Icon names are kebab-case in the
 import path (`arrow-right`, `eye-closed`, `alt-arrow-down`).
 
-> **No name-based lookup.** If the icon is determined by runtime data, map it
+> Do not look up icons by name. If the icon is determined by runtime data, map it
 > to a direct entry yourself (a small `Record<string, IconEntry>` of the icons
 > you ship). Importing the full registry to resolve names by string pulls all
 > 1,246 icons (~9 MB) into the bundle.
 
 ### Styles
 
-Solar ships six styles. The `style` prop selects one; missing styles fall back
-to `line`:
+Solar ships six styles. The `style` prop selects one style. Missing styles fall
+back to `line`:
 
 | key           | Solar source folder |
 |---------------|---------------------|
@@ -270,7 +271,7 @@ to `line`:
 
 Both components accept `open` for parent-controlled state, or `defaultOpen`
 for local state, and call `onToggle(open)` when the trigger is used.
-`Accordion` uses a button summary; `Collapsible` accepts custom trigger content.
+`Accordion` uses a button summary. `Collapsible` accepts custom trigger content.
 
 Open content has automatic height and visible overflow, including during SSR.
 Async rows, validation messages, and absolutely positioned dropdowns can grow
@@ -288,8 +289,8 @@ maximum falls back to `100`.
 
 `cossack add ui <component>` copies a single component into your project at
 `src/components/ui/<Component>.ts` so you can customize it. The ejected copy is
-yours : re-run with `--force` to overwrite. Shared private animation helpers
-are included in ejected Accordion and Collapsible source; Toaster is ejected
+yours. Run the command again with `--force` to overwrite it. Shared private animation helpers
+are included in ejected Accordion and Collapsible source. Toaster is ejected
 from the package's Toast module.
 
 Available component names (kebab-case, passed to `cossack add ui <name>`):
@@ -323,7 +324,7 @@ preserves off-page IDs. Reconcile selection and out-of-range pages in the parent
 when filters, permissions or the underlying records change.
 
 Use `loading`, `error` and `onRetry` for request states. Native controls provide
-keyboard behavior, headers expose sort state and row labels name checkboxes.
+keyboard behavior. Headers expose sort state. Row labels name checkboxes.
 Paging uses focusable `aria-disabled` buttons that ignore inactive actions.
 Retry returns focus to the filter before its callback. The table accepts only
 its declared props, with no general HTML-attribute forwarding.
@@ -337,7 +338,7 @@ explains selection policy, labels and status behavior.
 Button, Input, Label, Checkbox, Switch and Form use typed native attributes and
 `@event` listeners. Unknown props, string boolean values and React-style `onClick`
 are rejected. Pass children as the third argument to `component()`. Listener
-`currentTarget` is typed as the native control; `target` can be a descendant.
+`currentTarget` is typed as the native control. `target` can be a descendant.
 Capture the control before awaiting, because native events clear currentTarget after dispatch.
 Use `disabled: !!loading` for loading counts and an explicit Button `type` in forms.
 Input's visual `size` is `default`, `sm` or `lg`, not a numeric HTML size.
@@ -352,8 +353,7 @@ Form's `submit` callback prevents navigation and defaults to `novalidate`.
 Set `novalidate: false` to keep browser validation, or omit `submit` for native POST.
 
 The installed `native-controls` guide documents attributes, event types and
-labeling requirements. The rest of the catalog remains under
-[contract audit](../../specs/ui-contract-audit.md).
+labeling requirements.
 
 ## Radio groups and sliders
 
@@ -362,7 +362,7 @@ values. Provide `aria-label` or `aria-labelledby` for the group. `onValueChange(
 event)` receives an input event with `HTMLInputElement` currentTarget. A native
 `@change` listener receives the bubbled event on the root div. Update parent `value`
 from the callback. Items retain DOM identity by value when reordered. `disabled`,
-`required` and `form` apply to the inputs; other global attributes apply to the div.
+`required` and `form` apply to the inputs. Other global attributes apply to the div.
 
 Slider owns a finite numeric `value`, `min`, `max` and positive `step`. The browser
 clamps and rounds values. Constraints apply before value, and widened bounds restore
@@ -391,10 +391,10 @@ component(AuthForm, {
 ```
 
 Use `mode` with `onModeChange` for controlled state. Native credentials remain in
-fields; submission reads current FormData, including autofill. Provider actions
+fields. Submission reads current FormData, including autofill. Provider actions
 require explicit `providers` and `onSocial`. Localize text with `labels`.
 The block owns UI behavior, not authentication or session creation. Actions need
-JavaScript; fields remain editable before hydration. `cossack add ui auth-form`
+JavaScript. Fields remain editable before hydration. `cossack add ui auth-form`
 ejects the block using public UI imports.
 
 ### CommandPalette block

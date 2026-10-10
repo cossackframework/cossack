@@ -4,10 +4,10 @@ This document describes how Cossack loads, evaluates, and scopes configuration f
 
 ## Design Principles
 
-1. **Worker bindings.** Cloudflare Workers expose environment bindings (`c.env`) inside a request handler, not when a module loads. Evaluate configuration for each request.
-2. **Request isolation.** One Worker isolate can serve many requests at the same time. AsyncLocalStorage (ALS) stores configuration for the current request. The framework also uses this pattern for `__()` (locale), ORM scopes, `flash()`, and `getRequestContext()`.
-3. **Server-only files.** Config files call `env()` to read secrets and bindings. Keep them out of the client bundle. Two enforcement layers do this. See [Client-side exclusion](#client-side-exclusion).
-4. **Library/application separation.** The config system (ALS store + `config()` / `env()` accessors) lives in `@cossackframework/framework` and is exported from `@cossackframework/framework/config`.
+1. Worker bindings. Cloudflare Workers expose environment bindings (`c.env`) inside a request handler, not when a module loads. Evaluate configuration for each request.
+2. Request isolation. One Worker isolate can serve many requests at the same time. AsyncLocalStorage (ALS) stores configuration for the current request. The framework also uses this pattern for `__()` (locale), ORM scopes, `flash()`, and `getRequestContext()`.
+3. Server-only files. Configuration files call `env()` to read secrets and bindings. Keep them out of the client bundle. Two enforcement layers do this. See [Client-side exclusion](#client-side-exclusion).
+4. Library/application separation. The configuration system (ALS store + `config()` / `env()` accessors) lives in `@cossackframework/framework` and is exported from `@cossackframework/framework/config`.
 
 ## Package Responsibilities
 
@@ -19,7 +19,7 @@ The framework owns the configuration system. Locale (`__()`) and the ORM use dif
 
 ## Config File Format
 
-Each file in `src/config/*.ts` default-exports a **factory function**, not a plain object:
+Each file in `src/config/*.ts` default-exports a factory function, not a plain object:
 
 ```typescript
 // src/config/app.ts
@@ -32,17 +32,17 @@ export default ({ env }) => ({
 
 ### Why factory functions (not plain objects)
 
-ESM modules load once per isolate. Cloudflare Workers load them before request bindings exist. A plain object would call `env()` at startup and read `undefined` for every binding.
+ESM modules load once per isolate. Cloudflare Workers load them before request bindings exist. With a plain object, `env()` runs at module load and reads `undefined` for every binding.
 
-Factory functions defer evaluation. The framework calls each factory **for every request** and passes an `env` function that reads that request's `c.env`. The framework also uses this pattern in `getR2ConfigFromEnv(env)` and `configureRateLimitFromEnv(env)`.
+Factory functions defer evaluation. The framework calls each factory for every request and passes an `env` function that reads that request's `c.env`. The framework also uses this pattern in `getR2ConfigFromEnv(env)` and `configureRateLimitFromEnv(env)`.
 
-The `EnvFunction` type guarantees a `(key: string, defaultValue?: string) => string` signature : values are always stringified, and unset bindings fall back to the default.
+The `EnvFunction` type is the signature `(key: string, defaultValue?: string) => string`. Values are always stringified. Unset bindings fall back to the default.
 
 ## Request Lifecycle
 
 ### 1. Config middleware (SSR)
 
-The config middleware is registered **first** in `createApp()` (before user middleware from `src/bootstrap/middlewares.ts`, the locale middleware, and the flash middleware):
+The configuration middleware is registered first in `createApp()` (before user middleware from `src/bootstrap/middlewares.ts`, the locale middleware, and the flash middleware):
 
 ```typescript
 app.use('*', async (c, next) => {
@@ -60,10 +60,10 @@ Because the scope wraps `next()`, all downstream middleware, route handlers, com
 
 ### 2. SSG (static site generation)
 
-SSG runs inside `vite build` via the `cossackSsg()` Vite plugin (`vite-ssg-plugin.ts`), which uses Vite's `runnerImport()` to load `ssg-entry.ts` through an ephemeral Vite environment. Because SSG loads through Vite, the `virtual:cossack-config` module (and the `virtual:cossack-pages` / `virtual:cossack-lang` modules) resolve the same way they do in SSR : no disk-based reimplementation is needed.
+SSG runs inside `vite build` via the `cossackSsg()` Vite plugin (`vite-ssg-plugin.ts`), which uses Vite's `runnerImport()` to load `ssg-entry.ts` through an ephemeral Vite environment. Because SSG loads through Vite, the `virtual:cossack-config` module (and the `virtual:cossack-pages` / `virtual:cossack-lang` modules) resolve the same way as they do in SSR. No disk-based reimplementation is needed.
 
 - `ssg-entry.ts` imports `virtual:cossack-config` directly, so config factories are available during static generation without reading `src/config/*.ts` from disk.
-- `ssg-renderer.ts` injects the resolved site URL (from `getSiteUrl()`) as `APP_URL` into the SSG env bindings, so `config('app.url')` returns the correct value during static generation. Other bindings are empty : config factories use their fallback values.
+- `ssg-renderer.ts` injects the resolved site URL (from `getSiteUrl()`) as `APP_URL` into the SSG env bindings, so `config('app.url')` returns the correct value during static generation. Other bindings are empty. Configuration factories use their fallback values.
 - The config store is built before locale initialization, so `ensureSsgLocaleInitialized()` can read `config('app.locale')`. Locale catalogs are resolved from `virtual:cossack-lang` (not read from disk).
 
 ### 3. Client-side
@@ -74,8 +74,8 @@ SSG runs inside `vite build` via the `cossackSsg()` Vite plugin (`vite-ssg-plugi
 
 The `cossackConfig()` plugin in `vite-plugin.ts` emits a `virtual:cossack-config` module:
 
-- **SSR environment**: eagerly globs `/src/config/*.ts`, re-exports each file's default export keyed by file name (sans extension).
-- **Client environment**: returns `export default {};` : an empty object. Config factories never ship to the browser.
+- SSR environment: eagerly globs `/src/config/*.ts`, re-exports each file's default export keyed by file name (sans extension).
+- Client environment: returns `export default {};`, an empty object. Config factories never ship to the browser.
 
 The plugin follows the same shape as `cossackMiddlewares()` and `cossackPages()`: a `resolveId` / `load` pair with a `\0`-prefixed resolved ID.
 
@@ -89,7 +89,7 @@ The `cossackConfig()` plugin's `load` hook returns `export default {};` when `th
 
 ### Layer 2: Security plugin guard
 
-The `cossackSecurityPlugin` includes a `load` hook that intercepts any file matching `/(^|\/)config\/[^/]+\.m?ts$/` on the client environment and returns `export default {};`. This is a defense-in-depth guard against accidental direct imports (e.g. `import { dbConfig } from '../config/database'` in a component). Such an import resolves to an empty default export rather than leaking the file's contents.
+The `cossackSecurityPlugin` includes a `load` hook that intercepts any file matching `/(^|\/)config\/[^/]+\.m?ts$/` on the client environment and returns `export default {};`. This is a defense-in-depth guard against accidental direct imports (for example, `import { dbConfig } from '../config/database'` in a component). Such an import resolves to an empty default export rather than leaking the file's contents.
 
 ## Built-in Config Consumers
 
@@ -100,13 +100,13 @@ The `cossackSecurityPlugin` includes a `load` hook that intercepts any file matc
 | SSG locale init | `config('app.locale')` | Default locale for static pages | `ssg-renderer.ts` |
 | Flash middleware | `c.env.APP_SECRET` | HMAC signing secret | `middlewares/flash.ts` |
 
-The flash middleware reads `c.env.APP_SECRET` directly (with legacy fallbacks to `COSSACK_SECRET` and bare `SECRET`) rather than going through `config()`, because it needs the raw binding and must avoid a hard dependency on a `src/config/app.ts` file existing.
+The flash middleware reads `c.env.APP_SECRET` directly (with fallbacks to `COSSACK_SECRET` and bare `SECRET`) rather than going through `config()`, because it needs the raw binding and must avoid a hard dependency on a `src/config/app.ts` file existing.
 
 ## ALS Architecture
 
 The config system owns its `AsyncLocalStorage` instance directly in `src/config.ts`. Config is consumed only within Framework, so an application injection point is unnecessary.
 
-- `runWithConfig(store, fn)` enters the ALS scope : called by the config middleware in `createApp()` and the SSG renderer.
+- `runWithConfig(store, fn)` enters the ALS scope. The configuration middleware in `createApp()` and the SSG renderer call it.
 - `config()` and `env()` call `configAls.getStore()` directly. When no scope is active (client-side, outside a request), they return defaults.
 
 ## Type System: Dotted-Path Inference
@@ -131,29 +131,29 @@ TypeScript's declaration merging combines all augmentations into a single `Cossa
 
 Two internal conditional types walk the registry tree:
 
-- `DottedPaths<T>` : recursively produces all valid dotted paths: `'app.name'`, `'app.nested.sub.value'`, etc.
-- `GetByPath<T, Path>` : extracts the value type at a path: `GetByPath<Registry, 'app.name'>` → `string`.
+- `DottedPaths<T>` recursively produces all valid dotted paths: `'app.name'`, `'app.nested.sub.value'`, and others.
+- `GetByPath<T, Path>` extracts the value type at a path: `GetByPath<Registry, 'app.name'>` → `string`.
 
 ### 3. Overload resolution
 
 `config()` has two overloads:
 
-1. **Typed overload:** `config<Path extends DottedPaths<ConfigTree>>(key: Path, ...)` : matches when the key is a known path. Infers the return type via `GetByPath`.
-2. **Untyped fallback:** accepts any string only while `CossackConfigRegistry` is empty. It returns the type of the supplied default, or `unknown` when no default is supplied. Once an app augments the registry, this fallback accepts no keys; a misspelled path cannot bypass the typed overload.
+1. Typed overload: `config<Path extends DottedPaths<ConfigTree>>(key: Path, ...)` matches when the key is a known path. It infers the return type via `GetByPath`.
+2. Untyped fallback: accepts any string only while `CossackConfigRegistry` is empty. It returns the type of the supplied default, or `unknown` when no default is supplied. Once an app augments the registry, this fallback accepts no keys. A misspelled path cannot bypass the typed overload.
 
-When `CossackConfigRegistry` is empty (no augmentation), `DottedPaths<{}>` is `never`, so overload 1 never matches : calls use the string fallback. Existing apps can add the registry augmentation incrementally; after they do, config paths and defaults are checked against their registered types.
+When `CossackConfigRegistry` is empty (no augmentation), `DottedPaths<{}>` is `never`, so overload 1 never matches. Calls use the string fallback. An app can add the registry augmentation in steps. After that, the framework checks configuration paths and defaults against the registered types.
 
-### Generated factory types (Codex, 2026-10-05)
+### Generated factory types
 
 `cossackConfig()` generates `.cossack/config.d.ts` when Vite resolves the project,
 and refreshes it when development config files change. New scaffold projects
-include this file in `tsconfig.json` and ignore it in Git. Existing apps should
+include this file in `tsconfig.json` and ignore it in Git. Existing apps must
 add `.cossack/config.d.ts` to their TypeScript `include` list.
 
 The generator discovers direct `src/config/*.ts` files, excluding declarations,
 tests and specs, matching the server virtual module. It references each default
 factory with type-only imports. It never executes factories or copies values.
-Factory return types populate `CossackGeneratedConfigRegistry`; explicit
+Factory return types populate `CossackGeneratedConfigRegistry`. Explicit
 `CossackConfigRegistry` entries replace the generated shape for the same key.
 The effective tree controls typed paths and disables arbitrary string fallback
 once either registry has entries.
@@ -172,38 +172,38 @@ output destinations. This tooling is not a runtime API. Generated types do not p
 ### CLI discovery and generation
 
 `cossack config` lists the discovered factory keys, source files, and return-type
-origins without evaluating modules. `--json` uses the versioned CLI envelope;
-it exposes names and origins rather than computed values or source text.
+origins without evaluating modules. `--json` uses the versioned CLI envelope.
+It exposes names and origins rather than computed values or source text.
 
 Run `cossack config --generate` before a standalone `pnpm tsc --noEmit` check.
 Use `--generate --dry-run --json` to preview the generated file status without
 writing. Repeated generation writes only when content changes. An authored
 `.cossack/config.d.ts` prevents generation with
-`COSSACK_CONFIG_GENERATION_CONFLICT`; read-only discovery still works.
+`COSSACK_CONFIG_GENERATION_CONFLICT`. Read-only discovery still works.
 
 The catalog reports filename-based type origins, not expanded inferred types,
-verified factory exports, or verified runtime values. Literal requirement metadata is described below. Existing apps must include `.cossack/config.d.ts` in
+factory exports, or runtime values. Literal requirement metadata is described below. Existing apps must include `.cossack/config.d.ts` in
 TypeScript before its augmentation is visible.
 
 `prepareConfigStore(factories, bindings)` creates a fresh scope for synchronous
 factory evaluation. Injected `env` and imported `env`, `binding`, `requireEnv`, and
 `requireBinding` all use the supplied bindings. An enclosing request's bindings
-are not inherited. The completed tree is published after every factory succeeds;
+are not inherited. The completed tree is published after every factory succeeds.
 `config()` inside a factory sees the empty preparation tree. Enter the returned
 store with `runWithConfig` for downstream code. Both preparation success and
 failure restore an enclosing scope. Async factory functions remain unsupported.
 
 SSR supplies the current request bindings. SSG supplies only `APP_URL` from the
-resolved base URL; a required live binding fails before locale initialization,
+resolved base URL. A required live binding fails before locale initialization,
 user middleware, or page lifecycle begins. SSG does not invent bindings or waive
-required accessors. Legacy required helpers validate when invoked. Independent declarations now
-validate before the first factory, as described below.
-`buildConfig` remains a low-level evaluator with an injected reader; it does not
+required accessors. Legacy required helpers apply their rules when invoked. Independent declarations apply
+before the first factory, as described below.
+`buildConfig` remains a low-level evaluator with an injected reader. It does not
 establish an accessor scope. Integrations that need scoped imported helpers
-should use `prepareConfigStore`.
+must use `prepareConfigStore`.
 
 
-### Declared requirements (Codex, 2026-10-05)
+### Declared requirements
 
 Export a literal `requirements` object beside a synchronous factory:
 
@@ -222,17 +222,17 @@ export const requirements = {
 export default () => ({ port: requireConfigVariable('PORT', 'number') });
 ```
 
-The virtual server module collects declarations. `prepareConfigStore` validates
-all active metadata and values before any factory runs. Integrations pass
+The virtual server module collects declarations. `prepareConfigStore` makes sure
+that all active metadata and values are valid before any factory runs. Integrations pass
 `{ requirements: { app: requirements }, context: { runtime: 'node' } }` as its
 third argument. SSR derives runtime from its adapter, with Cloudflare as the
-adapter-free default; unknown adapters retain unknown runtime. Its selected
+adapter-free default. Unknown adapters retain unknown runtime. Its selected
 environment comes from `cossackConfig({ environment })` or `CLOUDFLARE_ENV`.
 Realtime authorization snapshots preserve the originating runtime/environment.
 Replay uses the same fresh preparation before middleware, authorization checks
-or operations; configuration failure denies replay without exposing values.
+or operations. Configuration failure denies replay without exposing values.
 SSG uses runtime `ssg`. It supplies only APP_URL. A live binding can be explicitly
-Cloudflare-only; omitting runtimes makes the rule apply in every runtime.
+Cloudflare-only. Omitting runtimes makes the rule apply in every runtime.
 
 Variable types are `string`, `number`, and `boolean`. Required defaults to true,
 coerce and secret to false. Numeric coercion accepts finite decimal/exponent
@@ -241,38 +241,40 @@ Boolean coercion accepts booleans, 1/0 and the strings true/false/1/0 after
 trimming. It rejects yes/no, uppercase aliases and object conversion. Strict
 rules accept only values of the declared type. Optional absent values stay
 undefined. Duplicate active declarations must agree on type/coercion or binding
-kind; required and secret classification are promoted if any declaration needs
+kind. Required and secret classification are promoted if any declaration needs
 them. Accessors report a mismatch if the caller requests the wrong type.
 
 Binding kinds are object, d1, kv, r2, durable-object and service. Specific kinds
-check a minimal public method shape at runtime and selected binding category
-in tooling. They require Cloudflare; object accepts a non-null object/function
+make sure that the value has a minimal public method shape at runtime, and tooling inspects
+the selected binding category. They require Cloudflare. Object accepts a non-null object/function
 in other runtimes. This is structural validation, not resource connectivity or
 complete platform branding. Binding methods are never invoked by validation.
 
-`configVariable(name, type)` returns a typed optional scalar;
-`requireConfigVariable` requires it. They read validated server-only values.
+`configVariable(name, type)` returns a typed optional scalar, and
+`requireConfigVariable` requires it. They read server-only values that passed
+the requirement checks.
 `env()` keeps its string behavior and `binding()` preserves raw identity.
 Secret classification does not stop application code from deliberately exposing
 a value through public props, factories or responses. Nothing automatically
-serializes the requirement store. Full hydration secrecy remains release work.
+serializes the requirement store.
 
 `cossack config --check --env staging --json`, `cossack check cloudflare` and
 `cossack deploy` reuse the checker with privately parsed selected Wrangler facts.
 Deployment failures stop before types, build, artifact deletion or upload.
 Checks do not read process/development values, evaluate factories, or contact
-remote resources. Secret existence and values remain unverified, even if a
+remote resources. Secret existence and values stay unchecked, even if a
 required secret name is declared. Node declaration preflight is explicitly
-unavailable; runtime checks work with their supplied bindings. Direct Vite builds
-now perform Cloudflare declaration preflight through `cossackConfig()` before
-config type generation, transforms and output cleanup. Explicit runtime and
+unavailable. Runtime checks work with their supplied bindings. Direct Vite builds
+perform Cloudflare declaration preflight through `cossackConfig()` before
+configuration type generation, transforms and output cleanup. Explicit runtime and
 environment options override project metadata and `CLOUDFLARE_ENV`. Runtime
 inference prefers scaffold metadata, then package metadata, adapter dependencies,
-and Cloudflare tooling/configuration. Every build/watch cycle rechecks declarations.
-Node/unknown targets validate static metadata, conflicts and runtime
-compatibility only; their supplied values remain unverified. Development startup
+and Cloudflare tooling/configuration. Every build and watch cycle repeats the
+declaration checks.
+Node/unknown targets cover static metadata, conflicts and runtime
+compatibility only. Their supplied values stay unchecked. Development startup
 allows incomplete declarations. Failed build/render hooks suppress SSG cleanup
-publication for that environment; the next build cycle clears its failure state.
+publication for that environment. The next build cycle clears its failure state.
 
 The Node-only `framework/config-preflight` module shares Wrangler normalization
 between Vite, CLI inspection, build capability checks and deployment. Its raw
@@ -285,5 +287,5 @@ mutations, computed keys, getters, spreads, unsupported exported forms and
 ambiguous top-level effects are unknown. Invalid schemas and parser failures
 have value-free diagnostics. Source text and scalar values never enter catalogs.
 The inspector is conservative: unrelated dynamic top-level const initializers can
-also make declared metadata unknown. It is Node-only tooling; the shared
+also make declared metadata unknown. It is Node-only tooling. The shared
 `framework/config-requirements` runtime checker imports no Node APIs.

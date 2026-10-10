@@ -36,9 +36,9 @@ export default class RefExample extends Cossack {
 
 ## How it Works
 
-1. **Declaration**: The `@Ref()` decorator initializes the property with an object: `{ value: undefined }`.
-2. **Binding**: When Cossack renders the template, the `ref` attribute assigns the DOM element to `.value`.
-3. **Access**: Read the DOM element in `onMount()` or a later method. `this.inputRef.value` is `undefined` during server-side rendering.
+1. Declaration: The `@Ref()` decorator initializes the property with an object: `{ value: undefined }`.
+2. Binding: When Cossack renders the template, the `ref` attribute assigns the DOM element to `.value`.
+3. Access: Read the DOM element in `onMount()` or a later method. `this.inputRef.value` is `undefined` during server-side rendering.
 
 ## Functional Refs
 

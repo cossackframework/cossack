@@ -22,7 +22,7 @@ pnpm add -g cossack
 # or: npm install -g cossack
 ```
 
-Verify the installation:
+Make sure that the installation works:
 
 ```bash
 cossack --version
@@ -47,14 +47,14 @@ their underlying tool. Command help is handled before starting that tool.
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files or skip confirmation prompts. |
 | `--dry-run` | Show planned changes without writing them. |
-| `--json` | Emit a machine-readable result envelope; dev/start/Studio emit lifecycle events (see below). |
+| `--json` | Emit a machine-readable result envelope. Dev, start, and Studio emit lifecycle events (see below). |
 | `--yes`, `-y` | Apply changes without confirmation (noninteractive mode). |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
 
-### Machine-readable output contract (Codex, 2026-10-02)
+### Machine-readable output contract
 
-Under `--json`, a finite command prints **exactly one** result envelope on
+Under `--json`, a finite command prints exactly one result envelope on
 stdout and nothing else. Dev, start, and Studio use the same envelope for their
 lifecycle events:
 
@@ -71,18 +71,18 @@ lifecycle events:
   alternatives), `COSSACK_OPTION_VALUE_REQUIRED`, `COSSACK_OPTION_REPEATED`,
   `COSSACK_ARGUMENT_MISSING`, `COSSACK_ARGUMENT_UNEXPECTED`,
   `COSSACK_FILE_EXISTS`, and command-specific failure codes. Human-oriented
-  notes go to stderr or are suppressed; they never mix into stdout.
+  notes go to stderr or are suppressed. They never mix into stdout.
 - Exit codes: `0` success, `1` failure, `130` an interactive prompt was
   canceled, or a supervised command was interrupted before completion.
   JSON/non-TTY execution never prompts. Supply required choices or use documented
-  defaults. Scaffold creation defaults to Cloudflare/full-stack; adding a feature
+  defaults. Scaffold creation defaults to Cloudflare/full-stack. Adding a feature
   to an unrecognized legacy project requires an explicit runtime.
 - `dev --json` and `start --json` emit newline-delimited JSON. `data.event:
-  "started"` confirms child process creation and includes its PID and tool;
-  it does **not** claim HTTP readiness. A clean exit or requested graceful stop
+  "started"` confirms child process creation and includes its PID and tool.
+  It does not claim HTTP readiness. A clean exit or requested graceful stop
   emits `"stopped"`. Spawn/runtime/shutdown failures emit `"failed"` with
-  coded diagnostics and a nonzero exit. SIGINT/SIGTERM requests cleanup;
-  unresponsive children are force-stopped after a bounded grace period.
+  coded diagnostics and a nonzero exit. SIGINT/SIGTERM requests cleanup.
+  Unresponsive children are force-stopped after a bounded grace period.
   Tool argv, URLs, and raw logs do not enter events. `build` and `ssg` emit one envelope
   with `exitCode` and coded failures. Raw project/tool logs are omitted because
   they can contain credentials. Run human mode to inspect those logs locally.
@@ -91,23 +91,23 @@ lifecycle events:
   failed envelope with a nonzero exit. A startup failure produces one failed
   envelope. Project logs and launch tokens are isolated in a child process.
   The ready event contains the loopback origin and remote/local selection.
-  Studio stays running after readiness; send SIGINT or SIGTERM to stop it.
+  Studio stays running after readiness. Send SIGINT or SIGTERM to stop it.
   `--timeout <milliseconds>` bounds startup (default 30000, maximum 300000).
   JSON mode never opens a browser. Use human mode to open its authenticated UI.
 - JSON execution uses an isolated process with ignored stdin/stdout/stderr.
-  Only validated framework envelopes cross IPC; project imports, inherited
+  Only validated framework envelopes cross IPC. Project imports, inherited
   subprocess logs, thrown connection values, and parser excerpts are excluded.
   Database results use the public command `seeder` for both `seed` and `seeder`,
   with the ORM action in `data.action`. Database failures identify
-  `data.phase` and provide a follow-up action; detailed SQL/cause chains remain
+  `data.phase` and provide a follow-up action. Detailed SQL/cause chains remain
   available in human mode. Public target metadata excludes extra factory fields.
 - Finite commands have a default 300000 ms execution deadline. Set
   `COSSACK_COMMAND_TIMEOUT_MS` to an integer from 1 to 86400000 to change it.
   Dev/start have a startup deadline of at most 30000 ms, then run until stopped.
   Studio uses its `--timeout` readiness deadline, also bounded by the execution
-  deadline. Deadline failures use `COSSACK_COMMAND_TIMEOUT`; unexpected process
+  deadline. Deadline failures use `COSSACK_COMMAND_TIMEOUT`. Unexpected process
   exits use `COSSACK_COMMAND_PROCESS_FAILED`. Cancellation reclaims process
-  descendants (POSIX process groups; Windows taskkill).
+  descendants (POSIX process groups, Windows taskkill).
 - File-changing dry runs perform no writes: `generate component X --dry-run
   --json` emits planned paths and leaves the filesystem untouched. Deployment
   dry runs write generated types and build artifacts while preventing uploads.
@@ -130,7 +130,7 @@ cossack create my-app --adapter cloudflare --preset minimal --features desktop
 `cossack add`, `cossack remove`, `cossack adapter`, and `cossack upgrade`.
 
 Use `--dry-run` to inspect planned files without creating the project or its
-manifest. It does not prompt or check for CLI updates. Use `--json` for scripts
+manifest. It does not prompt and does not test for CLI updates. Use `--json` for scripts
 and coding agents:
 
 ```sh
@@ -141,7 +141,7 @@ JSON mode writes one object to stdout with `schemaVersion: 1`, `command`,
 `ok`, `data`, and `diagnostics`. Creation data includes the status, public
 recipe, project directory, manifest path, and planned file changes. It excludes
 generated secret values. Errors use stable diagnostic codes and a nonzero exit
-code. JSON mode does not prompt; specify the desired recipe through flags.
+code. JSON mode does not prompt. Specify the desired recipe through flags.
 Without a terminal, creation also uses flag values and defaults without prompts.
 
 ### `cossack add desktop`
@@ -169,14 +169,14 @@ method facts are unavailable, or a transport is invalid. JSON diagnostics use
 `COSSACK_ROUTE_TRANSPORT_INVALID` and identify the source file. Unresolved base
 declarations produce `COSSACK_ROUTE_INHERITANCE_UNKNOWN`. Unknown declared member
 precedence produces `COSSACK_ROUTE_DISPATCH_UNKNOWN`. Inspection can
-still succeed for those files so an agent can examine the available facts.
+still succeed for those files and report the available facts.
 
 Functional API modules under `src/pages/api/` are marked
 `routeStyle: "http-handlers"`. Recognized named method exports and local default
 functions use HTTP without requiring component decorators or a default component
 class. Component dispatch/classification fields are `not-applicable`, and layout
 service scopes are not applied to these functional routes. These facts describe
-source declarations; inspection does not execute handler factories.
+source declarations. Inspection does not execute handler factories.
 
 Component pages and layouts include `moduleExport`: `resolved` means its default export
 is a local class declaration, `missing` means no default export exists, and
@@ -190,7 +190,7 @@ Services remain listed as source expressions on their declaring layouts. The
 identifier/member expressions through import aliases, re-exports and inherited
 layout decorators to the class declaration file and line. It does not import or
 execute project modules. Each token reports whether an imported core `@Service()`
-decorator is declared, missing, or unknown; static syntax does not prove that
+decorator is declared, missing, or unknown. Static syntax does not prove that
 decorator execution or the runtime lifecycle succeeds. Dynamic lookups remain
 unknown. Page-level service declarations fail with
 `COSSACK_PAGE_SERVICES_UNSUPPORTED`: pages use layout scopes rather than creating
@@ -200,8 +200,8 @@ the combined total unknown.
 
 Route JSON also includes `scaffold` metadata. Schema-v3 manifests are resolved
 through the scaffold recipe registry, including feature dependencies and provider
-compatibility. Missing manifests have status `unrecorded`; malformed or unsupported
-manifests have status `invalid` and make checks fail with
+compatibility. Missing manifests have status `unrecorded`. Malformed or unsupported
+manifests have status `invalid` and make the command fail with
 `COSSACK_SCAFFOLD_METADATA_INVALID`. Arbitrary manifest fields and secret values
 are excluded. Recorded recipes do not prove that generated files are unchanged.
 
@@ -213,21 +213,21 @@ extensionless paths remain unresolved. `declarationDispatch` resolves declared i
 including overrides and accessor replacement, with declaring owners and sources.
 Unknown computed keys, unresolved bases, or constructor parameter properties
 produce an unknown result. Erased TypeScript `declare` fields are excluded. Constructor,
-decorator, initializer side effects, and later property mutations are not evaluated;
-this is not a guarantee of runtime method availability.
+decorator, initializer side effects, and later property mutations are not evaluated.
+This is not a guarantee of runtime method availability.
 
 These commands do not execute page constructors or server methods. Current
-checks cover static metadata only. Inheritance resolution and runtime behavior
-are reported as `not-checked`; success does not prove that the application runs.
+coverage is static metadata only. Inheritance resolution and runtime behavior
+are reported as `not-checked`. Success does not prove that the application runs.
 Resource macros expose generated RPC method names, resource names, and authored
 loader locations. Unsupported resource declarations produce unknown method facts.
 Route commands accept `--env <name>` for Cloudflare configuration selection, or
 use `CLOUDFLARE_ENV` when the flag is absent. Their `runtime` metadata evaluates
 route transports with the shared framework capability model. Missing required
-transport bindings or unsupported transports make checks fail. Configuration
-presence does not prove remote resources exist or adapter setup is correct.
+transport bindings or unsupported transports make the command fail. Configuration
+presence does not prove that remote resources exist or that adapter setup is correct.
 Node supports the `durable-object` transport name through process-local
-adapters; this does not provide durable cross-instance coordination.
+adapters. This does not provide durable cross-instance coordination.
 
 ### `cossack inspect cloudflare` and `cossack check cloudflare`
 
@@ -239,7 +239,7 @@ cossack check cloudflare --env staging --json
 These commands use the application's Wrangler to resolve the selected
 environment. They report Worker and binding identities, required secret names,
 and local configuration diagnostics without building or deploying.
-`inspect` returns success when configuration can be read; `check` returns a
+`inspect` returns success when configuration can be read. `check` returns a
 nonzero exit code for deployment errors. JSON output marks build and remote
 readiness as `not-checked` and omits variable and secret values.
 
@@ -251,14 +251,14 @@ Build and deploy a Cloudflare application with the project's installed tools:
 cossack deploy --env staging --dry-run --json
 ```
 
-The environment is selected before Vite builds the application. The CLI checks
-configuration, generates binding types, builds, verifies the built environment,
+The environment is selected before Vite builds the application. The CLI tests
+configuration, generates binding types, builds, tests the built environment,
 and calls Wrangler on that artifact. `--mode` selects a Vite mode independently.
 Unlike creation dry runs, deployment dry runs write local build artifacts and
-generated types. They validate deployment without uploading or provisioning.
+generated types. They test deployment without uploading or provisioning.
 
 `--json` emits one versioned result with diagnostics and step results. Raw tool
-output is suppressed. Required remote secrets are not checked during a local
+output is suppressed. Required remote secrets are not tested during a local
 dry run. See [Deployment](./deployment.md) for environment and secret setup.
 
 ### `cossack adapter <node|cloudflare>`
@@ -274,7 +274,7 @@ cossack adapter cloudflare --database=turso
 cossack adapter node --database=sqlite --yes
 ```
 
-**Options**
+Options:
 
 | Option | Description |
 | --- | --- |
@@ -293,7 +293,7 @@ and `.dev.vars`. Existing target-file values win, and the source file is never
 deleted. Local environment files remain gitignored and are not added to the
 scaffold manifest.
 
-> **Database data is not migrated.** The command changes application code and
+> The command does not migrate database data. It changes application code and
 > configuration only. Deployment resources, D1/SQLite/Turso contents,
 > lockfiles, and dependency installation remain your responsibility. After a
 > successful switch, run the install command printed by the CLI, configure the
@@ -323,7 +323,7 @@ Generate a file for a given type. Files are placed following the framework's con
 cossack generate <type> <name> [options]
 ```
 
-**Types and aliases**
+Types and aliases:
 
 | Type | Alias | Target |
 | --- | --- | --- |
@@ -336,7 +336,7 @@ cossack generate <type> <name> [options]
 | `migration` | | `src/migrations/<timestamp>_<name>.ts` |
 | `seeder` | | `src/seeders/<name>.ts` |
 
-**Page options**
+Page options:
 
 | Option | Description |
 | --- | --- |
@@ -345,9 +345,9 @@ cossack generate <type> <name> [options]
 | `--description <string>` | Set the head description and a `<p>` under the `<h1>`. Implies `--head`. |
 | `--no-index`, `--ni` | Generate a flat `src/pages/<name>.ts` (or `.md`) instead of a directory with `index.ts`. Both resolve to the same route. |
 
-When `--head` is given without `--title`/`--description`, the page name is converted to title case (e.g. `my-page` → `My Page`).
+When `--head` is given without `--title`/`--description`, the page name is converted to title case (for example `my-page` → `My Page`).
 
-**Examples**
+Examples:
 
 ```bash
 # A page with SEO head()
@@ -378,7 +378,7 @@ cossack g migration create_posts
 cossack g seeder posts
 ```
 
-> **Layouts are colocated.** The framework's router discovers layouts in `src/pages/**/layout.ts`. Generate layouts under `src/pages/...`. The router does not scan `src/layouts/`.
+> The framework's router discovers layouts in `src/pages/**/layout.ts`. Generate layouts under `src/pages/...`. The router does not scan `src/layouts/`.
 
 ### `cossack delete` (alias: `d`)
 
@@ -407,7 +407,7 @@ Adds `@cossackframework/database`, decorated entities, deterministic migrations 
 seeders, `orm.config.ts`, a runtime-specific ORM factory, ORM/session/cache
 middleware, and the selected provider binding.
 
-> **Note:** The Database and Full Stack presets include database support. Use
+> The Database and Full Stack presets include database support. Use
 > this command for Minimal projects or to compose it later.
 
 ```bash
@@ -424,7 +424,7 @@ cossack add auth
 cossack add auth --auth-methods credentials,oauth --oauth github,google
 ```
 
-**Options**
+Options:
 
 | Option | Description |
 | --- | --- |
@@ -495,8 +495,8 @@ JSON database commands run configuration, adapters, and callbacks in a child
 process with isolated output. Connection logs, console calls, and subprocess
 output cannot mix with the single result on stdout. If the child exits before
 returning a result, the command emits `COSSACK_ORM_PROCESS_FAILED`. Run without
-`--json` to see raw tool diagnostics. This isolates output and process state;
-application callbacks remain trusted code.
+`--json` to see raw tool diagnostics. This isolates output and process state.
+Application callbacks remain trusted code.
 
 ### `cossack seeder` (alias: `seed`)
 
@@ -529,7 +529,7 @@ See [Static Site Generation](/docs/static-site-generation.md).
 
 ### `cossack image optimize`
 
-Scan `src/` for [`<Image>`](/docs/images.md) usages and generate optimized variants next to the originals in `public/`. Useful for hosts without a built-in image CDN (e.g. the Node.js adapter). Requires **ImageMagick** to be installed.
+Scan `src/` for [`<Image>`](/docs/images.md) usages and generate optimized variants next to the originals in `public/`. Useful for hosts without a built-in image CDN (for example the Node.js adapter). ImageMagick must be installed.
 
 ```bash
 cossack image optimize
@@ -544,7 +544,7 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800 })             
 public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })  ->  public/img/hero-800x600.webp
 ```
 
-**Options**
+Options:
 
 | Option | Description |
 | --- | --- |
@@ -554,12 +554,10 @@ public/img/hero.png  +  Image({ src: '/img/hero.png', width: 800, height: 600 })
 
 `--json` reports file effects and optimized/planned/skipped counts. Quality must
 be an integer from 0 through 100. Missing sources, unsafe paths, and conversion
-failures return coded diagnostics and a nonzero exit; converter output does not
+failures return coded diagnostics and a nonzero exit. Converter output does not
 enter the JSON result. Empty projects succeed without requiring ImageMagick.
 
-**Installing ImageMagick**
-
-Install ImageMagick before applying an optimization plan:
+Install ImageMagick before you apply an optimization plan:
 
 ```bash
 # macOS
@@ -570,7 +568,7 @@ sudo apt-get install imagemagick
 choco install imagemagick
 ```
 
-On Cloudflare deployments, runtime resizing via `/cdn-cgi/image/...` is preferred : see [Images](/docs/images.md).
+On Cloudflare deployments, prefer runtime resizing via `/cdn-cgi/image/...`. See [Images](/docs/images.md).
 
 ---
 
@@ -581,7 +579,7 @@ On Cloudflare deployments, runtime resizing via `/cdn-cgi/image/...` is preferre
 List all routes discovered in the project (pages, layouts, API routes).
 
 Run `cossack routes --generate` to write `.cossack/routes.ts` before a standalone
-TypeScript check. Use `--generate --dry-run --json` to preview generation without
+TypeScript compile. Use `--generate --dry-run --json` to preview generation without
 writes. Plain route inspection stays read-only. JSON output includes the shared
 structural manifest and the effective inspection facts.
 
@@ -603,7 +601,7 @@ Print the installed CLI version.
 
 ### `cossack upgrade [dir]`
 
-Upgrade Cossack dependencies in the current project and report template drift. **Non-destructive by default:** it updates `package.json`, reinstalls, and prints which scaffolded files have upstream changes : source files are never overwritten unless you opt in.
+Upgrade Cossack dependencies in the current project and report template drift. The command is non-destructive by default. It updates `package.json`, reinstalls, and prints which scaffolded files have upstream changes. It never overwrites source files unless you opt in.
 
 ```bash
 cossack upgrade                       # bump deps + print drift report
@@ -612,33 +610,33 @@ cossack upgrade --force               # apply safe updates + restore deleted fil
 cossack upgrade --force-file <path>   # surgically overwrite one file, even if edited
 ```
 
-**Options**
+Options:
 
 | Option | Description |
 | --- | --- |
 | `--tag <latest\|canary\|<version>>` | Version to upgrade to (default: `latest`). |
-| `--apply-template` | Update scaffolded files you have **not** modified. Modified files are always skipped. |
+| `--apply-template` | Update scaffolded files you have not modified. Modified files are always skipped. |
 | `--force` | Apply safe updates and restore deleted scaffold files. Locally modified files remain protected. |
 | `--force-file <path>` | Force-update one specific file even if you modified it. You can use this option more than once. |
 | `--dry-run` | Show planned changes without writing them. |
 
-Drift detection is powered by the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `canDelete` (unchanged locally and removed upstream), `modified` (you edited it), or `missing` (deleted), so you stay in control of your changes.
+Drift detection uses the `.cossack/scaffold.json` manifest written at project-creation time, which records a SHA-256 of every scaffolded file. `upgrade` classifies each file as `upToDate`, `canUpdate` (unchanged locally, changed upstream), `canDelete` (unchanged locally and removed upstream), `modified` (you edited it), or `missing` (deleted). You decide which changes the command applies.
 
 Use `cossack upgrade --dry-run --json` to inspect the complete current plan.
 It includes dependency updates, additions and removals, selected file writes and
 deletions, preserved edits, conflicts, manifest changes, build-setting migration,
 installation requirements, and follow-up actions. `--tag` resolves the scaffold
-release used for both templates and recipe dependencies; `templateVersion` is
+release used for both templates and recipe dependencies. `templateVersion` is
 that exact version. Foreign releases are installed into temporary storage with
 pnpm and lifecycle scripts disabled, then removed. Dry runs leave all application
-files unchanged; pnpm may populate its package cache.
+files unchanged. pnpm can populate its package cache.
 
 The manifest records `dependencyBaseline` separately from the merged package.
 Unchanged owned versions follow the target recipe, including additions, removals,
 and moves between dependency sections. Local pins, intentionally deleted
 dependencies, and user-added packages remain intact. Existing schema-v3 manifests
-without this field reconstruct it from their recorded exact scaffold release;
-the plan labels this ownership source as `reconstructed`. An unavailable baseline
+without this field reconstruct it from their recorded exact scaffold release.
+The plan labels this ownership source as `reconstructed`. An unavailable baseline
 or target release fails before project writes. Custom URL/path specifiers are
 redacted from JSON plans.
 
@@ -658,7 +656,7 @@ manager output stays outside the machine-readable protocol.
 
 ## Exit codes
 
-Every command returns `0` on success and a non-zero code on failure, making the CLI safe to use in scripts, CI, and `&&` chains.
+Every command returns `0` on success and a non-zero code on failure. The CLI is therefore safe in scripts, CI, and `&&` chains.
 
 Cloudflare `cossack build` and `cossack deploy` can enforce literal project
 `cossack.buildBudgets` settings in `package.json`. Machine results report public

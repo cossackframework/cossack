@@ -39,8 +39,8 @@ The `scope` option selects the state backend that handles a request. It receives
 
 ### Default Behavior
 
-- **SSE**: Per-user (`user:${user?.id || 'anonymous'}`). Each user gets isolated state.
-- **Durable Object**: Per-URL. Each URL gets its own DO instance (unchanged from existing behavior).
+- SSE: Per-user (`user:${user?.id || 'anonymous'}`). Each user gets isolated state.
+- Durable Object: Per-URL. Each URL gets its own DO instance.
 
 ### Per-Team
 
@@ -75,7 +75,7 @@ Every user on this page shares the same state.
 
 ### How scope works
 
-The scope function is evaluated **once during SSR** with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the SSE endpoint and `/crpc` handler. This makes sure that all three contexts use the same scope : even when scope depends on query params that are not present in SSE or `/crpc` requests.
+The scope function is evaluated once during SSR with the full page request context (including query params). The computed `scopeKey` is embedded in the page's initial state and passed by the client to the SSE endpoint and `/crpc` handler. This gives all three contexts the same scope, even when scope depends on query params that are not present in SSE or `/crpc` requests.
 
 ## Layouts and Nested Pages
 
@@ -85,7 +85,7 @@ See [Layouts](./layouts.md) to create and use layouts in Cossack.
 
 Cossack can also create pages from Markdown files that include components.
 
-See [Markdown Pages](./mdx.md) to create these pages.
+See [Markdown Pages](./markdown.md) to create these pages.
 
 ## Middlewares
 
@@ -112,7 +112,7 @@ This mode uses a Cloudflare Durable Object as a WebSocket hub. By default, the D
 Uses standard WebSockets. On Node.js, this uses an in-memory runtime. On Cloudflare, it also typically points to a Durable Object but is a more generic flag.
 
 ### `sse`
-Uses Server-Sent Events for real-time server-to-client pushes without Durable Objects. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. Works on plain Workers : no DO binding required. Multi-tab sync is supported via SSE broadcast. Note: connection tracking is in-memory (single Worker instance only).
+Uses Server-Sent Events for real-time server-to-client pushes without Durable Objects. Client actions are sent via HTTP POST (`/crpc`), and state updates are pushed to all connected clients via an SSE stream. It works on plain Workers. No DO binding is required. Multi-tab sync works through SSE broadcast. Note: connection tracking is in-memory (single Worker instance only).
 
 ```typescript
 @Page({ transport: 'sse' })

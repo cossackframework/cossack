@@ -86,24 +86,25 @@ Cossack includes these framework features:
 - Static site generation (SSG).
 - Runtime adapters for Cloudflare Workers and Node.js.
 - Authentication with session management.
-- **R2 or S3 file storage integration**
-- **Enterprise ready**: using Middleware, Service classes, and Dependency Injection (DI) for complex applications
-- **Dev tools**: Ctrl+Click to jump to component definition, hot reload, and more
-- **Customizing headers, scripts, and meta tags**: for SEO and social sharing
-- **Image optimization**: with automatic resizing and format conversion
-- **Tailwind support**
-- **Latest Vite 8 and Hono version**
-- **First class Cloudflare Workers support**
-- **LLM friendly**: use less tokens, native TypeScript syntax, easy for LLMs to understand, type check, and generate code
-- *and a lot more features to discover in the [documentation](https://cossack.dev/docs).*
+- R2 or S3 file storage integration.
+- Middleware, Service classes, and Dependency Injection (DI) for complex applications.
+- Dev tools: Ctrl+Click jumps to a component definition, with hot reload.
+- Custom headers, scripts, and meta tags for SEO and social sharing.
+- Image optimization with automatic resizing and format conversion.
+- Tailwind support.
+- Vite 8 and current Hono versions.
+- First class Cloudflare Workers support.
+- LLM friendly: fewer tokens, native TypeScript syntax, easy for LLMs to understand, type check, and generate code.
+
+Find more features in the [documentation](https://cossack.dev/docs).
 
 ### Real-time support
 
-Traditional frameworks rely on a single transport mode, usually HTTP. So to build real-time applications, you usually have to write WebSocket client and server code yourself. Cossack supports multiple transport modes, allowing you to choose the best one for each component. You can even mix and match transport modes in the same application. For example, you can use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
+Traditional frameworks rely on one transport mode, usually HTTP. To build a real-time application, you usually write WebSocket client and server code yourself. Cossack supports multiple transport modes. You choose a transport mode for each component. You can mix transport modes in the same application. For example, use SSE for a live feed, WebSockets for a chat, and HTTP for a form submission.
 
 ## Learning Cossack
 
-Full documentation is available in the [Cossack Documentation](https://cossack.dev/docs).:
+Full documentation is available in the [Cossack Documentation](https://cossack.dev/docs).
 
 ## Contributing
 
@@ -133,7 +134,7 @@ pnpm run test:e2e
 
 ## Credits
 
-Cossack cannot exist without the following open source projects:
+Cossack builds on these open source projects:
 
 - [Vite](https://vite.dev/) (For bundling, HMR, and dev server)
 - [Hono](https://hono.dev/) (For routing, middleware)

@@ -5,17 +5,17 @@ description: "Intercept and block client-side navigation to warn users about uns
 
 # Prevent Navigation
 
-Cossack provides a way to intercept and block client-side navigation, allowing you to warn users about unsaved changes or perform other checks before they leave the current page.
+Cossack can intercept and block client-side navigation. Use it to warn users about unsaved changes or to run other guards before they leave the current page.
 
 ## The `@PreventNavigation` Decorator
 
-Add the `@PreventNavigation` decorator to a component method. Return `true` to **block** navigation. Return `false` or nothing to allow it.
+Add the `@PreventNavigation` decorator to a component method. Return `true` to block navigation. Return `false` or nothing to allow it.
 
 > Return `true` when the method must prevent navigation.
 
 ## Handling the Blocked Navigation
 
-When navigation is blocked, Cossack sets the internal `_pendingNavigation` property. You can check this property in your `render` method to display a custom UI (like a modal).
+When navigation is blocked, Cossack sets the internal `_pendingNavigation` property. You can read this property in your `render` method to display a custom UI, such as a modal.
 
 To resolve the pending navigation, call `this.confirmNavigation(boolean)`:
 * `confirmNavigation(true)`: Proceed with the navigation (leave the page).
@@ -55,13 +55,13 @@ export default class UnsavedForm extends Cossack {
 
 ## How it Works
 
-1. **Interception**: When a user clicks a link managed by Cossack's client-side router, the framework checks the current page for any `@PreventNavigation` handler.
-2. **Evaluation**: The handler is executed. If it returns `true` (or a Promise resolving to `true`), the navigation is halted.
-3. **State Update**: The blocked navigation action is stored in `_pendingNavigation` and `_render()` is triggered to allow your UI to react.
-4. **Resolution**: `confirmNavigation(true)` runs the stored action without checking again. `confirmNavigation(false)` clears the pending state.
+1. Interception: When a user clicks a link managed by Cossack's client-side router, the framework checks the current page for any `@PreventNavigation` handler.
+2. Evaluation: The handler is executed. If it returns `true` (or a Promise resolving to `true`), the navigation is halted.
+3. State Update: The blocked navigation action is stored in `_pendingNavigation` and `_render()` is triggered to allow your UI to react.
+4. Resolution: `confirmNavigation(true)` runs the stored action without checking again. `confirmNavigation(false)` clears the pending state.
 
 
-## Navigation completion contract (GLM, 2026-10-02)
+## Navigation completion contract
 
 On the client, `await this.navigate(url, options)` returns a typed outcome after
 the page render, history change, and scroll update. Applications that call
@@ -70,10 +70,10 @@ the page render, history change, and scroll update. Applications that call
 | Outcome | Meaning |
 | --- | --- |
 | `completed` | The page rendered, history updated, scroll policy applied. |
-| `redirected` | The server redirected during the fetch; `url` includes the final path, query, and fragment. |
+| `redirected` | The server redirected during the fetch. `url` includes the final path, query, and fragment. |
 | `superseded` | A newer navigation took ownership. Revoked work cannot publish further changes. |
 | `canceled` | A `preventNavigation` handler stopped this navigation. |
-| `failed` | The fetch or render threw after the error event; `error` carries the cause. |
+| `failed` | The fetch or render threw after the error event. `error` carries the cause. |
 
 ```ts
 const result = await this.navigate('/dashboard');
@@ -96,16 +96,15 @@ imports, preparation, rendering and transition completion. Expiry revokes its
 publication authority and reports `COSSACK_NAVIGATION_TIMEOUT`. A history
 restoration after failure has its separate two-second limit. If the application
 prevents the default action of the cancelable `cossack:navigation-error` event,
-navigation returns `failed`; otherwise the existing reload fallback runs.
+navigation returns `failed`. Otherwise the existing reload fallback runs.
 
 The deadline settles the framework's wait. It cannot stop arbitrary application
-I/O, synchronous blocking code, or undo effects from a custom render or mount
-hook that already ran. Before publication, the renderer captures declared drafts
-from the rendered child tree. Rollback restores them into matching fresh owners
-before mount; destroyed children stay destroyed. Inactive cached branches retain
-local draft capabilities until a matching branch is shown, including across
-another navigation. The wider ownership and history matrix still needs its
-RT-08/RT-09 acceptance audit.
+I/O or synchronous blocking code. It cannot undo effects from a custom render or
+mount hook that already ran. Before publication, the renderer captures declared
+drafts from the rendered child tree. Rollback restores them into matching fresh
+owners before mount. Destroyed children stay destroyed. Inactive cached branches
+retain local draft capabilities until a matching branch is shown, including
+across another navigation.
 
 During rollback, abandoned components become destroyed and cancel their tasks
 immediately. During both rollback and successful retirement, their owned service
@@ -113,7 +112,7 @@ scopes stay available until the renderer removes their child consumers and those
 consumers finish asynchronous cleanup. New consumers cannot attach to a retiring
 scope. This lifetime hold does not extend
 the navigation deadline or impose a deadline on application cleanup. Ordinary
-explicit component destruction keeps its existing behavior.
+explicit component destruction keeps its normal behavior.
 
 Navigation uses a core-owned render pass and does not join an unrelated pending
 App update promise. It calls the normal render/controller lifecycle and reports
@@ -127,7 +126,7 @@ A newer navigation releases the old navigation's reader immediately. The request
 is aborted when no readers remain. Another prefetch or navigation can continue
 reading the same request. Abandoned responses cannot repopulate the page cache.
 Each reader also has a separate 30-second response/body deadline with code
-`COSSACK_NAVIGATION_FETCH_TIMEOUT`; the earlier whole-navigation deadline normally
+`COSSACK_NAVIGATION_FETCH_TIMEOUT`. The earlier whole-navigation deadline normally
 wins for navigation readers. Independent prefetch readers keep their own budget.
 
 ## Guards during back and forward
@@ -156,8 +155,7 @@ not undo arbitrary application effects after publication. Distinct same-URL
 entries retain their owned history positions during restoration and confirmation.
 A newer intent waits for pending restoration, while a newer navigation can
 supersede a confirmed traversal that is still fetching. A late response cannot
-overwrite its replacement. The remaining ownership matrix and full acceptance
-audit stay in RT-09.
+overwrite its replacement.
 
 ## Development diagnostics
 
@@ -185,7 +183,7 @@ document.addEventListener('cossack:navigation-diagnostic', event => {
 
 A normal navigation emits start, cache, transition, layouts, scroll and finish.
 A guard can cancel before fetching. A failure can stop before scrolling. Layout
-counts describe an attempted commit; a later failure can roll it back. Animation
+counts describe an attempted commit. A later failure can roll it back. Animation
 rejection does not fail a committed navigation. Its `animation-skipped` event can
 arrive after finish because animation completion has a separate lifetime.
 `fragment-missing` means the target was absent and the viewport moved to the top.

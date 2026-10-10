@@ -7,7 +7,7 @@ description: "Access environment bindings, the authenticated user, and request c
 
 The Framework Context API gives every component access to `env` (environment bindings), `user` (the authenticated user), and `c` (the request context). You do not need to pass these values through component properties. Pages and reusable components can use them.
 
-> **Note:** This is different from [Request Context](./context.md) which specifically covers Hono's request object for route parameters and query strings.
+> This is different from [Request Context](./context.md). That page covers the Hono request object for route parameters and query strings.
 
 ---
 
@@ -15,9 +15,9 @@ The Framework Context API gives every component access to `env` (environment bin
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `this.env` | `Env` | Cloudflare environment bindings (D1, R2, KV, DOs, etc.) |
+| `this.env` | `Env` | Cloudflare environment bindings (for example D1, R2, KV, and DOs) |
 | `this.user` | `User \| undefined` | Currently authenticated user (if any) |
-| `this.c` | `Context` | Hono request context (params, queries, headers, etc.) |
+| `this.c` | `Context` | Hono request context (params, queries, and headers) |
 
 ---
 
@@ -25,9 +25,7 @@ The Framework Context API gives every component access to `env` (environment bin
 
 The root `App` component sets up these contexts. Descendant components can read them as properties.
 
-**On the Server:** These are the values from the current request.
-
-**On the Client:** The framework restores these values from the initial server render.
+On the server, these are the values from the current request. On the client, the framework restores these values from the initial server render.
 
 ---
 
@@ -83,7 +81,7 @@ interface Env extends CloudflareBindings {}
 
 ## `this.user` - Authenticated User
 
-Access the currently authenticated user from any component.
+Access the authenticated user from any component.
 
 ```typescript
 import { Cossack, Component } from "@cossackframework/core";
@@ -108,9 +106,7 @@ export class UserGreeting extends Cossack {
 
 ### User Interface
 
-The `User` interface defaults to a minimal shape and is intended to be augmented
-from `src/models/User.ts` via declaration merging so `this.user` reflects your
-app's real user columns:
+The `User` interface defaults to a minimal shape. Augment it from `src/models/User.ts` through declaration merging. Then `this.user` reflects the real user columns of your app:
 
 ```typescript
 interface User {
@@ -130,7 +126,7 @@ declare module '@cossackframework/core' {
 
 ### Setting the User
 
-Users are typically set by middleware in your router:
+Middleware in your router sets the user:
 
 ```typescript
 // packages/framework/src/router.ts
@@ -200,7 +196,7 @@ export class UserProfilePage extends Cossack {
 
 ### Server vs Client Behavior
 
-**Server-side:** Full access to all contexts with real runtime values.
+On the server, all contexts have full access with real runtime values.
 
 ```typescript
 @Server()
@@ -212,7 +208,7 @@ async serverMethod() {
 }
 ```
 
-**Client-side:** `this.env` is `undefined`. `this.user` and `this.c` use values restored from the initial render.
+On the client, `this.env` is `undefined`. `this.user` and `this.c` use values restored from the initial render.
 
 ```typescript
 @Client()
@@ -259,7 +255,7 @@ ${component(Child, {})}
 
 ## Advanced: Custom Contexts
 
-You can create your own context providers using the `createContext` API:
+Create your own context providers with the `createContext` API:
 
 ```typescript
 import { createContext } from "@cossackframework/renderer";

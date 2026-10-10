@@ -11,7 +11,7 @@ Cossack is a framework for building applications that run on the edge or on Node
 
 To use Cossack locally, install:
 
-- Node.js v22.12+ (use Node.js 24 for the current tested deployment combination)
+- Node.js v22.12+ (use Node.js 24 for the tested deployment combination)
 - An editor (VS Code preferred)
 
 ## Creating a New Project
@@ -34,8 +34,8 @@ Replace `my-app` with your project name.
 
 During setup, choose a server adapter:
 
-1. **Cloudflare Workers (Default):** Use this adapter to deploy to Cloudflare's edge network. It requires a Cloudflare account.
-2. **Node.js:** Use this adapter to run the app on a Node.js server or locally without Cloudflare. Component state stays in memory.
+1. Cloudflare Workers (default): use this adapter to deploy to Cloudflare's edge network. It requires a Cloudflare account.
+2. Node.js: use this adapter to run the app on a Node.js server or locally without Cloudflare. Component state stays in memory.
 
 The CLI configures `package.json`, `tsconfig.json`, and the entry points for the adapter you choose.
 

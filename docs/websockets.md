@@ -1,33 +1,33 @@
 ---
 title: "States with Websockets"
-description: "Real-time state management over WebSockets with Durable Object transport for true real-time applications."
+description: "Real-time state management over WebSockets with the Durable Object transport."
 ---
 
 # States with Websockets
 
-The true power of state management in Cossack is that is not only limited to HTTP based state but can be synced with any transport layer. For example, websocket, so you can write a truly real time application just as the same 
+Cossack syncs state over transports other than HTTP. With the WebSocket transport, connected clients receive state updates in real time.
 
-Cossack's primary goal is to unify client and server state management. For real-time applications, it provides a flexible, architecture that allows you to choose the right pattern for the job, from simple, automatic UI updates to, secure, event-driven workflows.
+Cossack unifies client and server state management. For real-time applications it supports two patterns: automatic state synchronization and event-driven re-fetch.
 
-**Note:** The patterns described here:Automatic State Synchronization and Event-Driven Re-fetch:are features of the real-time transport and require components to be decorated with `@Page({ transport: 'durable-object' })`.
+Both patterns belong to the real-time transport. They require a component decorated with `@Page({ transport: 'durable-object' })`.
 
-## Calling actions over WebSockets (GLM, 2026-10-02)
+## Calling actions over WebSockets
 
-`@Server()` methods on WebSocket-transport components are **request-scoped RPC
-calls**, not fire-and-forget messages. Every call dispatches one action frame
+`@Server()` methods on WebSocket-transport components are request-scoped RPC
+calls, not fire-and-forget messages. Every call dispatches one action frame
 with a unique request id and follows the same contract as HTTP/SSE:
 
-- `await this.myAction(...)` resolves the method's return value; generator
+- `await this.myAction(...)` resolves the method's return value. Generator
   methods stream their yields through `for await`.
-- Failures reject with `RpcError` (`code`, `requestId`): client-visible errors
-  keep their message (`COSSACK_RPC_CLIENT_ERROR`), internal errors are redacted
-  (`COSSACK_RPC_INTERNAL_ERROR`), forbidden actions answer
+- Failures reject with `RpcError` (`code`, `requestId`). Client-visible errors
+  keep their message (`COSSACK_RPC_CLIENT_ERROR`). Internal errors are redacted
+  (`COSSACK_RPC_INTERNAL_ERROR`). Forbidden actions answer
   `COSSACK_RPC_FORBIDDEN`.
 - `call.cancel()` sends a cancel frame, closes the generator server-side, and
   rejects with `COSSACK_RPC_CANCELLED`. Consuming the same call twice never
   dispatches a second mutation.
 - `@Server({ timeout: ms })` adds a deadline. Exceeding it rejects with
-  `COSSACK_RPC_TIMEOUT` — the server outcome stays **unknown** and is never
+  `COSSACK_RPC_TIMEOUT`. The server outcome stays unknown and is never
   retried automatically. `ms` must be an integer from 1 through 2,147,483,647.
 - If the socket closes mid-call, the call rejects with
   `COSSACK_RPC_TRANSPORT_CLOSED` (uncertain outcome). The transport reconnects
@@ -45,7 +45,7 @@ render() {
 
 Each status entry tracks `state`, `attempts` (reconnects since the last open),
 `lastEventId`, `lastError`, and `resynced`. SSE pages expose the same fields on
-`this.realtime.sse`; `resynced` becomes true when a reconnect had to replace
+`this.realtime.sse`. `resynced` becomes true when a reconnect had to replace
 expired history with an authoritative snapshot.
 
 Retiring a component or replacing its provider connections sets the old statuses
@@ -76,39 +76,36 @@ Two pending browser calls do not mean that both server writes started.
 Closing a socket cancels registered queued work before invocation.
 An already committed write remains committed.
 Stream failure or cancellation after a yield also cannot establish rollback of a prior write.
-Keep application reads and write consistency explicit.
-Actual SSE resync, late-snapshot ordering, retained service consumers and optimistic
-stream failure/cancellation now have browser/native acceptance. The optimistic
-criterion audit is complete. Broader execution and session gates remain separate. See [SSE snapshot ordering](./sse.md#optimistic-confirmation-and-snapshot-order).
+Keep application reads and write consistency explicit. See [SSE snapshot ordering](./sse.md#optimistic-confirmation-and-snapshot-order).
 
 ## Action identity and request context
 
 Actions use the verified identity and request context of their originating
 socket. Another connection sharing a component cannot replace that context.
-`this.user`, `this.c.get('user')`, and custom rate keys use the same peer;
-client-supplied message identity is ignored. Anonymous Cloudflare sockets have
+`this.user`, `this.c.get('user')`, and custom rate keys use the same peer.
+Client-supplied message identity is ignored. Anonymous Cloudflare sockets have
 no synthetic user and their default rate key uses captured IP headers.
 
 Cloudflare keeps the upgrade URL, page route params and selected headers in
 native socket attachments. Each action reconstructs its own context, retaining
 query/header access through generator completion and component restoration.
 Cookie/Authorization, common credential headers and internal auth assertions
-are excluded. Custom headers and query values are retained; they are not a
+are excluded. Custom headers and query values are retained. They are not a
 place for credentials. A snapshot is not the full original HTTP middleware
-scope: arbitrary middleware variables, request bodies, response cookies and
+scope. Arbitrary middleware variables, request bodies, response cookies and
 session revalidation are not reconstructed. The identity is a handshake snapshot.
 
 Oversized metadata returns `COSSACK_WS_CONTEXT_TOO_LARGE` with status 413 before
 accepting the socket. Malformed identity assertions return
-`COSSACK_WS_CONTEXT_INVALID` (400). Connections created by an older version
-without request metadata reject actions and close with code 1012 to reconnect.
+`COSSACK_WS_CONTEXT_INVALID` (400). Connections without request metadata reject
+actions and close with code 1012 to reconnect.
 The Node adapter passes each connection's upgrade context into its shared
-runtime; the framework includes decoded page route params. See
+runtime. The framework includes decoded page route params. See
 [rate limiting](./rate-limiting.md) for counter-store guarantees.
 
 ## Stateless vs Stateful Durable Objects
 
-By default, `transport: 'durable-object'` creates a **stateless** DO that acts as a WebSocket hub only. State is ephemeral : it lives in-memory during the session but is not persisted to DO storage. This is ideal for applications that use a database (D1, R2, etc.) as the source of truth.
+By default, `transport: 'durable-object'` creates a stateless DO that acts as a WebSocket hub only. State lives in memory during the session. The framework does not persist it to DO storage. This fits applications that use a database (D1, R2) as the source of truth.
 
 To persist state in DO storage (survives reconnections and DO eviction), add `stateful: true`:
 
@@ -121,13 +118,13 @@ To persist state in DO storage (survives reconnections and DO eviction), add `st
 ```
 
 ### When to use `stateful: true`
-- In-memory state that needs to persist across connections (e.g., counters, shared whiteboards)
-- No external database : the DO itself is the source of truth
+- In-memory state that needs to persist across connections (for example, counters or shared whiteboards)
+- No external database: the DO itself is the source of truth
 - State must survive DO eviction and reactivation
 
 ## Scope : controlling which Durable Object instance a page connects to
 
-By default, each URL gets its own Durable Object instance (per-URL scope). The `scope` option on `@Page` overrides this: it receives the Hono `Context` and returns a scope-key string, which becomes the Durable Object **ID name**. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state : this is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
+By default, each URL gets its own Durable Object instance (per-URL scope). The `scope` option on `@Page` overrides this. It receives the Hono `Context` and returns a scope-key string, which becomes the Durable Object ID name. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state. This is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
 
 ```typescript
 // All members of a team share one DO instance for this page
@@ -145,34 +142,34 @@ By default, each URL gets its own Durable Object instance (per-URL scope). The `
 })
 ```
 
-The scope function is evaluated **once during SSR** with the full request context (including params and query). The resulting `scopeKey` is embedded in the page's initial state and reused as the DO ID name, so SSR, the WebSocket connection, and `/crpc` all agree on the same instance : even when scope depends on params not present in later requests.
+The scope function is evaluated once during SSR with the full request context (including params and query). The resulting `scopeKey` is embedded in the page's initial state and reused as the DO ID name. SSR, the WebSocket connection, and `/crpc` then agree on the same instance, even when scope depends on params not present in later requests.
 
 The same `scope` option also applies to the `sse` transport (where the default is per-user instead of per-URL). Without `scope`, the default per-URL behavior is unchanged.
 
-This architecture is built on three pillars: **State Providers**, **Channels**, and **Events**.
+This architecture has three parts: `StateProvider`, `Channel`, and `Event`.
 
-- **`StateProvider` (The "Where"):** A State Provider determines *which* stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. However, you can create custom providers to connect to other contexts, such as a `UserSessionProvider` for state shared across all pages for a logged-in user, or a `GlobalProvider` for a singleton state shared by all users.
+- `StateProvider` (the where): A State Provider determines which stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. You can create custom providers for other contexts. A `UserSessionProvider` shares state across all pages for a logged-in user. A `GlobalProvider` shares a singleton state with all users.
 
-- **`Channel` (The "What"):** A Channel is a logical partition *within* a provider. It allows you to group related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel, making updates efficient.
+- `Channel` (the what): A Channel is a logical partition within a provider. It groups related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel.
 
-- **`Event` (The "When" & "How"):** An Event is a simple, stateless message broadcasted by the server. Components can listen for these events to trigger actions, most notably the "Event-Driven Re-fetch" pattern, which is the most secure way to handle complex state changes.
+- `Event` (the when and how): An Event is a stateless message broadcast by the server. Components listen for these events to trigger actions, most notably the "Event-Driven Re-fetch" pattern.
 
 ---
 
 ## Two Core Patterns for Real-Time State
 
-Cossack offers two primary patterns for managing real-time state. You can use either:or both:within the same component.
+Cossack offers two primary patterns for managing real-time state. You can use either or both within the same component.
 
 ### 1. Automatic State Synchronization (The "Blazor" Way)
 
-This is the simplest and most direct way to manage state. It is perfect for UI-specific state that is not persisted in a database or does not have complex security requirements.
+This is the most direct way to manage state. Use it for UI-specific state that is not persisted in a database and does not have complex security requirements.
 
-**How it works:**
+How it works:
 1. You decorate a property with `@State`.
 2. You decorate a server-side method with `@Server`.
-3. When the `@Server` method changes the value of the `@State` property, the framework **automatically** detects the change.
-4. It then broadcasts a **partial state update** containing only the properties for the affected channel to all clients connected to that page.
-5. The client-side component receives the update and automatically re-renders.
+3. When the `@Server` method changes the value of the `@State` property, the framework detects the change automatically.
+4. It then broadcasts a partial state update containing only the properties for the affected channel to all clients connected to that page.
+5. The client-side component receives the update and re-renders automatically.
 
 #### Example: A Simple Counter
 
@@ -201,20 +198,20 @@ export class Counter extends Cossack {
 }
 ```
 
-In this example, calling `this.count++` is all that is needed. The framework handles detecting the change, serializing the new value, broadcasting it, and re-rendering the component on all connected clients.
+In this example, `this.count++` is enough. The framework detects the change, serializes the new value, broadcasts it, and re-renders the component on all connected clients.
 
 ---
 
 ### 2. Event-Driven Re-fetch (The "Liveview" Way)
 
-This is the most and secure pattern. It is the **recommended approach** for any action that modifies a shared source of truth (like a database) or requires permission checks.
+Use this pattern for any action that modifies a shared source of truth (like a database) or requires permission checks.
 
-**How it works:**
+How it works:
 1. A `@Server` method performs an action, such as writing to a database.
 2. Instead of changing the component's state directly, it calls `this.broadcastEvent('event-name')`.
-3. The server broadcasts this simple, stateless event message to all connected clients.
+3. The server broadcasts this stateless event message to all connected clients.
 4. A method on the component decorated with `@OnEvent('event-name')` is triggered on every client.
-5. This handler's primary job is to call `this.init()`, which re-runs the component's initial data-loading logic. This makes sure that that each client re-fetches the data *within its own permission context*.
+5. This handler calls `this.init()`, which re-runs the component's initial data-loading logic. This makes sure that each client re-fetches the data within its own permission context.
 
 This pattern is secure by default and prevents race conditions or accidental data leaks.
 
@@ -259,10 +256,10 @@ export class Tasks extends Cossack {
 
 ## Connections, Providers, and Channels
 
-Real-time communication in Cossack is managed through a clear hierarchy:
+Real-time communication in Cossack has two levels:
 
-1. **Connection:** A physical WebSocket connection is established for each **State Provider** a component uses. For most components, this is just a single connection to the default `PageStateProvider`.
-2. **Channel:** A channel is a logical grouping of state *within* a single provider's connection. It allows the framework to send efficient, partial state updates.
+1. Connection: The framework establishes a physical WebSocket connection for each State Provider a component uses. For most components, this is a single connection to the default `PageStateProvider`.
+2. Channel: A channel is a logical grouping of state within a single provider's connection. It lets the framework send partial state updates.
 
 By default, all state and actions use the `global` channel within the default `page` provider.
 
@@ -286,11 +283,11 @@ export class LiveCounter extends Cossack {
 
 ### Multi-Channel Components
 
-The true power of this system comes from associating specific pieces of state and server-side actions with different channels. This allows for fine-grained control over data flow.
+Associate specific pieces of state and server-side actions with different channels. This controls which updates each channel carries.
 
 #### 1. Channel-Specific State with `@State`
 
-Use the `channel` property on the `@State` decorator to link a state variable to a specific channel. When this variable's value changes on the server, the automatic update will **only** contain the state for other properties belonging to that same channel.
+Use the `channel` property on the `@State` decorator to link a state variable to a specific channel. When this variable's value changes on the server, the automatic update contains only the state of properties in that channel.
 
 ```typescript
 @Page({
@@ -377,16 +374,16 @@ export class Greeting extends Cossack {
 }
 ```
 
-**Behavior:**
-- The client establishes **one** WebSocket connection for the default `page` provider.
+Behavior:
+- The client establishes one WebSocket connection for the default `page` provider.
 - When "Increment Feeds" is clicked, `incrementFeed` is called on the server.
-- The server automatically broadcasts a partial state update containing **only `feedCount`** to all clients connected to this page.
+- The server automatically broadcasts a partial state update containing only `feedCount` to all clients connected to this page.
 - The "Increment Notifications" button behaves identically but for the `notificationCount` state.
 - If `this.name` changes, the partial update contains only the `name` property.
 
 ## Sharing State Across Pages/Components with Providers
 
-To share state between pages or components (e.g., a shopping cart, notifications), you can create a custom `StateProvider`.
+To share state between pages or components (for example, a shopping cart or notifications), you can create a custom `StateProvider`.
 
 For example, a `UserSessionProvider` connects to a Durable Object whose ID comes from the user's session instead of the URL.
 
@@ -431,11 +428,11 @@ Origin. The Durable Object proxy discards client-supplied identity headers.
 It forwards only the user from the authentication middleware.
 
 Each serialized action exposes its caller through `this.user` and
-`this.c.get('user')`, including an undefined user for a guest. Check resource
+`this.c.get('user')`, including an undefined user for a guest. Enforce resource
 permissions in each server method. Revoke or disconnect existing connections
 when your application changes permissions or ends a session.
 
-WebSocket actions no longer append the user as a positional argument. Use
+WebSocket actions do not append the user as a positional argument. Use
 `this.user` or `this.c.get('user')` for trusted identity. Treat every method
 argument as client input. A longer payload can displace a positional user
 argument, so that pattern cannot provide authentication.
