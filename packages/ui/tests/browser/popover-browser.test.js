@@ -72,6 +72,9 @@ window.fresh=()=>{window.unmount();props={};draw();};
     expect(await page.evaluate(()=>window.retained)).toBe(true);
     const button=page.locator('#details'),panel=page.locator('#details-content');
     await button.focus();await page.keyboard.press('Enter');await browserExpect(panel).toBeVisible();await browserExpect(button).toBeFocused();
+    // Native toggle notifications are queued and may coalesce. Observe the
+    // opening callback before testing a separate closing notification.
+    await browserExpect.poll(()=>page.evaluate(()=>window.events.filter(e=>e[0]==='toggle'))).toEqual([['toggle','details-content','open']]);
     const accessibility=await page.context().newCDPSession(page);
     const {root:documentNode}=await accessibility.send('DOM.getDocument');
     const {nodeId}=await accessibility.send('DOM.querySelector',{nodeId:documentNode.nodeId,selector:'#details'});
@@ -80,7 +83,7 @@ window.fresh=()=>{window.unmount();props={};draw();};
     await accessibility.detach();
     await page.keyboard.press('Tab');await browserExpect(page.getByLabel('Value')).toBeFocused();
     await page.keyboard.press('Escape');await browserExpect(panel).not.toBeVisible();await browserExpect(button).toBeFocused();
-    expect(await page.evaluate(()=>window.events.filter(e=>e[0]==='toggle'))).toEqual([['toggle','details-content','open'],['toggle','details-content','closed']]);
+    await browserExpect.poll(()=>page.evaluate(()=>window.events.filter(e=>e[0]==='toggle'))).toEqual([['toggle','details-content','open'],['toggle','details-content','closed']]);
     await page.evaluate(()=>{window.veto=true;});await button.click();await browserExpect(panel).not.toBeVisible();
     await page.evaluate(()=>{window.veto=false;window.directiveVeto=true;window.update({});});await button.click();await browserExpect(panel).not.toBeVisible();
     await page.evaluate(()=>{window.directiveVeto=false;window.update({});window.vetoOpen=true;});await button.click();await browserExpect(panel).not.toBeVisible();

@@ -81,13 +81,15 @@ window.fresh=(name,next={})=>{window.unmount();Control={Modal,Sheet,Drawer}[name
       await page.waitForFunction(()=>window.events.some(e=>e[0]==='close'));await browserExpect(dialog).toBeVisible();
       await page.waitForFunction(()=>document.querySelector('#dialog').matches(':modal')); // Rejected controlled close reopens.
       await page.evaluate(()=>{window.accept=true;});await page.getByLabel('Name').fill('Ada');await page.getByRole('button',{name:'Save',exact:true}).click();
-      await browserExpect(dialog).not.toBeVisible();expect(await page.evaluate(()=>window.events.filter(e=>e[0]==='close').at(-1))).toEqual(['close','dialog','saved']);
+      await browserExpect(dialog).not.toBeVisible();await browserExpect.poll(()=>page.evaluate(()=>window.events.filter(e=>e[0]==='close').at(-1))).toEqual(['close','dialog','saved']);
       const count=await page.evaluate(()=>window.events.filter(e=>e[0]==='close').length);
       await page.evaluate(()=>window.update({open:true}));await browserExpect(dialog).toBeVisible();expect(await dialog.evaluate(el=>el.returnValue)).toBe('');
       await page.evaluate(()=>window.update({open:false}));await browserExpect(dialog).not.toBeVisible();
       expect(await page.evaluate(()=>window.events.filter(e=>e[0]==='close').length)).toBe(count);
       await page.evaluate(name=>{window.accept=false;window.fresh(name,{defaultOpen:true});},name);await browserExpect(dialog).toBeVisible();
-      await page.keyboard.press('Escape');await browserExpect(dialog).not.toBeVisible();await page.evaluate(()=>window.update({'data-update':'yes'}));await browserExpect(dialog).not.toBeVisible();
+      await page.keyboard.press('Escape');await browserExpect(dialog).not.toBeVisible();
+      await page.waitForFunction(()=>window.events.some(e=>e[0]==='close'));
+      await page.evaluate(()=>window.update({'data-update':'yes'}));await browserExpect(dialog).not.toBeVisible();
       await page.evaluate(()=>window.update({open:true}));await browserExpect(dialog).toBeVisible();
       await page.evaluate(()=>{window.accept=true;window.update({closeOnBackdrop:false});});
       await page.mouse.click(2,2);expect(await dialog.evaluate(el=>el.open)).toBe(true);
@@ -95,7 +97,9 @@ window.fresh=(name,next={})=>{window.unmount();Control={Modal,Sheet,Drawer}[name
       await dialog.evaluate(el=>el.click());expect(await dialog.evaluate(el=>el.open)).toBe(true);
       const panel=dialog.locator('[data-dialog-panel]');
       await panel.click({position:{x:10,y:10}});expect(await dialog.evaluate(el=>el.open)).toBe(true);
+      const beforeBackdrop=await page.evaluate(()=>window.events.filter(e=>e[0]==='close').length);
       await page.mouse.click(2,2);await browserExpect(dialog).not.toBeVisible();
+      await page.waitForFunction(count=>window.events.filter(e=>e[0]==='close').length>count,beforeBackdrop);
       await page.locator('#outside').focus();await page.evaluate(()=>window.update({open:true}));await browserExpect(dialog).toBeVisible();
       await page.getByLabel('Name').evaluate(el=>{
         const nested=document.createElement('dialog');nested.id='nested';nested.innerHTML='<button autofocus>Nested</button>';el.closest('dialog').append(nested);nested.showModal();
@@ -103,7 +107,9 @@ window.fresh=(name,next={})=>{window.unmount();Control={Modal,Sheet,Drawer}[name
       await browserExpect(page.locator('#nested button')).toBeFocused();await page.keyboard.press('Escape');
       await browserExpect(page.locator('#nested')).not.toBeVisible();expect(await dialog.evaluate(el=>el.matches(':modal'))).toBe(true);
       await page.locator('#nested').evaluate(el=>el.remove());
+      const beforeParentClose=await page.evaluate(()=>window.events.filter(e=>e[0]==='close').length);
       await page.keyboard.press('Escape');await browserExpect(dialog).not.toBeVisible();await browserExpect(page.locator('#outside')).toBeFocused();
+      await page.waitForFunction(count=>window.events.filter(e=>e[0]==='close').length>count,beforeParentClose);
       await page.evaluate(()=>window.update({open:true}));await browserExpect(dialog).toBeVisible();
       const beforeRapid=await page.evaluate(()=>window.events.filter(e=>e[0]==='close').length);
       await page.evaluate(async()=>{window.update({open:false});await new Promise(resolve=>queueMicrotask(resolve));window.update({open:true});});
