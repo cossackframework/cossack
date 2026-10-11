@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
-import { createD1ToolingAdapter, type ToolingWrangler } from "../src/tooling/cloudflare.js";
+import { createCloudflareToolingPlatform, createD1ToolingAdapter, type ToolingWrangler } from "../src/tooling/cloudflare.js";
 import type { ORMToolingContext } from "../src/config.js";
 import { createORM } from "../src/orm.js";
 import { MigrationRunner } from "../src/migration/runner.js";
@@ -43,6 +43,44 @@ describe("D1 tooling target selection", () => {
     expect(adapter.tooling).toMatchObject({ provider: "d1", target: "local", accountId: "selected-account",
       environment: "staging", databaseName: "staging-db" });
     await adapter.driver.close(); await adapter.driver.close();
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the Worker's own Durable Objects and Workflows from the proxy", async () => {
+    const context = await fixture();
+    const { wrangler, getPlatformProxy } = mockWrangler();
+    const external = { name: "REMOTE", class_name: "Remote", script_name: "other-worker" };
+    wrangler.experimental_readRawConfig = () => ({ rawConfig: {
+      name: "fixture", main: "./src/index.ts", vars: { APP_URL: "http://localhost" },
+      durable_objects: { bindings: [{ name: "COSSACK_SSE", class_name: "SseDurableObject" }, external] },
+      migrations: [{ tag: "v1", new_sqlite_classes: ["SseDurableObject"] }],
+      workflows: [{ name: "flow", binding: "FLOW", class_name: "Flow" }],
+      env: { staging: { durable_objects: { bindings: [{ name: "COSSACK_SSE", class_name: "SseDurableObject" }] } } },
+    } });
+    let configPath = "";
+    getPlatformProxy.mockImplementation(async options => {
+      configPath = options.configPath;
+      expect(dirname(configPath)).toBe(context.cwd);
+      expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+        name: "fixture", main: "./src/index.ts", vars: { APP_URL: "http://localhost" },
+        durable_objects: { bindings: [external] }, workflows: [], env: { staging: {} },
+      });
+      expect(options).toMatchObject({ environment: "staging", remoteBindings: false });
+      return mockWrangler().wrangler.getPlatformProxy(options);
+    });
+    const adapter = await createD1ToolingAdapter(context, { wrangler });
+    await expect(readFile(configPath)).rejects.toThrow();
+    await adapter.driver.close();
+  });
+
+  it("starts a generic tooling platform with the selected environment for remote targets", async () => {
+    const context = await fixture("remote");
+    const { wrangler, getPlatformProxy, dispose } = mockWrangler();
+    const platform = await createCloudflareToolingPlatform<{ DB: unknown }>(context, { wrangler });
+    expect(getPlatformProxy).toHaveBeenCalledWith({ configPath: join(context.cwd, "wrangler.jsonc"),
+      environment: "staging", remoteBindings: true, persist: false });
+    expect(platform.env.DB).toBeDefined();
+    await platform.dispose();
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 

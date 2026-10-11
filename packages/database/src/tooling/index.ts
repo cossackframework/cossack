@@ -20,7 +20,8 @@ import { ConfigurationError, MigrationError, ORMError } from "../errors.js";
 import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import { runJSONORMCommand } from "./process-json.js";
-export { createD1ToolingAdapter, readD1ToolingBindings, type D1ToolingBinding,
+export { createCloudflareToolingPlatform, createD1ToolingAdapter, readD1ToolingBindings,
+  type CloudflareToolingPlatform, type CloudflareToolingPlatformOptions, type D1ToolingBinding,
   type D1ToolingOptions, type ToolingWrangler } from "./cloudflare.js";
 
 interface Arguments {

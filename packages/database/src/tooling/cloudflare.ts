@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile, access } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ORMToolingContext } from "../config.js";
 import type { Adapter } from "../adapter/types.js";
@@ -21,9 +21,12 @@ interface WranglerConfig {
   compatibility_flags?: string[];
   d1_databases: D1Config[];
 }
+type RawWranglerSection = Record<string, unknown>;
+type RawWranglerConfig = RawWranglerSection & { env?: Record<string, RawWranglerSection> };
+
 /** Structural API keeps Wrangler owned by the application, outside the library dependency graph. */
 export interface ToolingWrangler {
-  experimental_readRawConfig(args: { config: string }): { rawConfig: { env?: Record<string, unknown> } };
+  experimental_readRawConfig(args: { config: string }): { rawConfig: RawWranglerConfig };
   unstable_readConfig(args: { config: string; env?: string }, options: { hideWarnings: boolean }): WranglerConfig;
   getPlatformProxy(options: {
     configPath: string; environment?: string; remoteBindings: boolean;
@@ -59,8 +62,9 @@ async function readCloudflareConfig(
     throw new ConfigurationError("The project's Wrangler does not support Cossack configuration discovery. Update Wrangler.");
   }
   let config: WranglerConfig;
+  let raw: RawWranglerConfig;
   try {
-    const raw = wrangler.experimental_readRawConfig({ config: configPath }).rawConfig;
+    raw = wrangler.experimental_readRawConfig({ config: configPath }).rawConfig;
     if (context.environment && !Object.hasOwn(raw.env ?? {}, context.environment)) {
       throw new ConfigurationError(`Cloudflare environment "${context.environment}" is not configured.`);
     }
@@ -71,7 +75,94 @@ async function readCloudflareConfig(
     // Wrangler errors can embed config excerpts containing credential values.
     throw new ConfigurationError("Wrangler could not validate the configuration. Check its syntax and binding declarations.");
   }
-  return { config, configPath, wrangler };
+  return { config, configPath, raw, wrangler };
+}
+
+type ResolvedCloudflareConfig = Awaited<ReturnType<typeof readCloudflareConfig>>;
+
+/**
+ * Tooling never runs the Worker entry, so Durable Objects and Workflows that
+ * the Worker itself implements cannot exist in the proxy. Wrangler warns about
+ * each of them; drop them because tooling never uses them.
+ */
+function withoutWorkerOwnedClasses(section: RawWranglerSection): { section: RawWranglerSection; changed: boolean } {
+  const next = { ...section };
+  let changed = false;
+  const durableObjects = next.durable_objects as { bindings?: { script_name?: string }[] } | undefined;
+  if (durableObjects?.bindings?.some(binding => !binding.script_name)) {
+    const bindings = durableObjects.bindings.filter(binding => binding.script_name);
+    if (bindings.length) next.durable_objects = { ...durableObjects, bindings };
+    else delete next.durable_objects;
+    changed = true;
+  }
+  const workflows = next.workflows as { script_name?: string }[] | undefined;
+  if (workflows?.some(workflow => !workflow.script_name)) {
+    next.workflows = workflows.filter(workflow => workflow.script_name);
+    changed = true;
+  }
+  if ("migrations" in next) {
+    delete next.migrations;
+    changed = true;
+  }
+  return { section: next, changed };
+}
+
+async function startToolingPlatform(
+  context: Pick<ORMToolingContext, "cwd" | "environment" | "target">,
+  resolved: ResolvedCloudflareConfig,
+  configPath: string,
+) {
+  let proxyConfigPath = configPath;
+  if (configPath === resolved.configPath) {
+    const { env, ...top } = resolved.raw;
+    const stripped = withoutWorkerOwnedClasses(top);
+    let changed = stripped.changed;
+    const environments = env && Object.fromEntries(Object.entries(env).map(([name, section]) => {
+      const result = withoutWorkerOwnedClasses(section);
+      changed ||= result.changed;
+      return [name, result.section];
+    }));
+    if (changed) {
+      // Stay next to the original so relative paths and .dev.vars resolve the same way.
+      proxyConfigPath = join(dirname(configPath), `.wrangler.cossack-tooling-${crypto.randomUUID()}.json`);
+      await writeFile(proxyConfigPath, JSON.stringify({ ...stripped.section,
+        ...(environments ? { env: environments } : {}) }), { mode: 0o600 });
+    }
+  }
+  try {
+    return await resolved.wrangler.getPlatformProxy({ configPath: proxyConfigPath,
+      // An isolated config (remote D1) has no environments to select.
+      ...(configPath === resolved.configPath && context.environment ? { environment: context.environment } : {}),
+      remoteBindings: context.target === "remote",
+      persist: context.target === "remote" ? false : { path: join(context.cwd, ".wrangler/state/v3") },
+    });
+  } finally {
+    // The proxy has read its config; remove the temporary file immediately.
+    if (proxyConfigPath !== configPath) await rm(proxyConfigPath, { force: true });
+  }
+}
+
+export interface CloudflareToolingPlatform<Env = Record<string, unknown>> {
+  readonly env: Env;
+  dispose(): Promise<void>;
+}
+
+export interface CloudflareToolingPlatformOptions {
+  readonly configPath?: string;
+  /** Test/integration injection; production resolves Wrangler from context.cwd. */
+  readonly wrangler?: ToolingWrangler;
+}
+
+/**
+ * Start Wrangler's platform proxy for ORM tooling. Use the returned env to read
+ * bindings and dev vars, and call dispose() when the tooling adapter closes.
+ */
+export async function createCloudflareToolingPlatform<Env = Record<string, unknown>>(
+  context: ORMToolingContext, options: CloudflareToolingPlatformOptions = {},
+): Promise<CloudflareToolingPlatform<Env>> {
+  const resolved = await readCloudflareConfig(context, options);
+  const platform = await startToolingPlatform(context, resolved, resolved.configPath);
+  return platform as CloudflareToolingPlatform<Env>;
 }
 
 export interface D1ToolingBinding {
@@ -99,7 +190,7 @@ export async function createD1ToolingAdapter(
   context: ORMToolingContext, options: D1ToolingOptions = {},
 ): Promise<Adapter> {
   const resolved = await readCloudflareConfig(context, options);
-  const { config, wrangler } = resolved;
+  const { config } = resolved;
   let configPath = resolved.configPath;
   const bindingName = options.binding ?? "DB";
   const database = config.d1_databases.find(binding => binding.binding === bindingName);
@@ -129,18 +220,12 @@ export async function createD1ToolingAdapter(
   }
   let platform: Awaited<ReturnType<ToolingWrangler["getPlatformProxy"]>>;
   try {
-    platform = await wrangler.getPlatformProxy({ configPath,
-      ...(context.target === "local" && context.environment ? { environment: context.environment } : {}),
-      remoteBindings: context.target === "remote",
-      persist: context.target === "remote" ? false : { path: join(context.cwd, ".wrangler/state/v3") },
-    });
-  } catch (cause) {
-    if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
-    throw cause;
-  }
-  try {
+    platform = await startToolingPlatform(context, resolved, configPath);
+  } finally {
     // The proxy has read its config; remove the temporary file immediately.
     if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+  try {
     const binding = platform.env[bindingName] as D1DatabaseBinding | undefined;
     if (!binding || typeof binding.prepare !== "function" || typeof binding.batch !== "function") {
       throw new ConfigurationError(`Wrangler did not provide D1 binding "${bindingName}".`);

@@ -739,27 +739,29 @@ export async function createToolingAdapter(context: ORMToolingContext): Promise<
 `;
   }
   return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
-import { getPlatformProxy } from 'wrangler';
+import { createCloudflareToolingPlatform } from '@cossackframework/database/tooling';
 import {
   createRuntimeAdapter,
   type ORMEnvironment,
 } from './factory';
 
 export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
-  const platform = await getPlatformProxy<ORMEnvironment>({
-    environment: context.environment,
-    remoteBindings: context.target === 'remote',
-  });
-  const adapter = await createRuntimeAdapter(platform.env);
-  const close = adapter.driver.close.bind(adapter.driver);
-  adapter.driver.close = async () => {
-    try {
-      await close();
-    } finally {
-      await platform.dispose();
-    }
-  };
-  return adapter;
+  const platform = await createCloudflareToolingPlatform<ORMEnvironment>(context);
+  try {
+    const adapter = await createRuntimeAdapter(platform.env);
+    const close = adapter.driver.close.bind(adapter.driver);
+    adapter.driver.close = async () => {
+      try {
+        await close();
+      } finally {
+        await platform.dispose();
+      }
+    };
+    return adapter;
+  } catch (error) {
+    await platform.dispose();
+    throw error;
+  }
 }
 `;
 }

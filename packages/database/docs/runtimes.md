@@ -204,6 +204,27 @@ fail instead of falling back to production. CLI and Studio share this binding
 discovery through `readD1ToolingBindings()`. These exports are Node tooling.
 Worker request code continues to import `d1()` from the Cloudflare entry.
 
+### Other Cloudflare tooling
+
+Turso and Hyperdrive tooling read secrets and bindings through
+`createCloudflareToolingPlatform()`. It starts Wrangler's platform proxy with
+the same target, environment and local state rules as the D1 helper:
+
+```ts
+import type { ORMToolingContext } from "@cossackframework/database";
+import { createCloudflareToolingPlatform } from "@cossackframework/database/tooling";
+
+const platform = await createCloudflareToolingPlatform<{ TURSO_DATABASE_URL?: string }>(context);
+// Read platform.env, then call platform.dispose() when the adapter closes.
+```
+
+Tooling does not run the Worker entry. Because of this, both helpers remove
+Durable Objects and Workflows that the Worker defines itself (bindings without
+`script_name`) before they start the proxy. Wrangler would otherwise warn about
+each one. The helpers write the changed configuration to a temporary file next
+to the original, so relative paths and `.dev.vars` still work. They delete the
+file when the proxy starts.
+
 ## Cloudflare Hyperdrive
 
 PostgreSQL through Hyperdrive:

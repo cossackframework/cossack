@@ -701,6 +701,9 @@ describe('composition', () => {
     const runtimeConfig = files.get('src/orm/factory.ts').content.toString();
     expect(runtimeConfig).toContain("import { turso } from '@cossackframework/database/cloudflare-turso';");
     expect(runtimeConfig).not.toContain("from '@cossackframework/database/cloudflare';");
+    const toolingConfig = files.get('src/orm/tooling.ts').content.toString();
+    expect(toolingConfig).toContain('createCloudflareToolingPlatform<ORMEnvironment>(context)');
+    expect(toolingConfig).not.toContain('getPlatformProxy');
   });
 
   it('uses Wrangler local D1 for migrations without native SQLite dependencies', async () => {
