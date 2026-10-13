@@ -6,6 +6,9 @@ on:
     paths:
       - 'skills/**'
 
+permissions:
+  contents: read
+
 jobs:
   sync:
     runs-on: ubuntu-24.04
@@ -15,17 +18,52 @@ jobs:
     steps:
       - name: Checkout monorepo
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
+      # Mirrors skills/ to the root of cossackframework/skills@main with plain git.
+      # SKILLS_REPO_TOKEN holds an SSH deploy key (write access) for that repo.
       - name: Sync skills to plugin repo
-        uses: cpina/github-action-push-to-another-repository@main
         env:
           SSH_DEPLOY_KEY: ${{ secrets.SKILLS_REPO_TOKEN }}
-        with:
-          source-directory: skills
-          destination-github-username: cossackframework
-          destination-repository-name: skills
-          user-email: github-actions[bot]@users.noreply.github.com
-          user-name: github-actions[bot]
-          commit-message: "sync skills from cossackframework/cossack@${{ github.sha }}"
-          target-branch: main
-          create-target-branch-if-needed: true
+          SOURCE_DIRECTORY: skills
+          DESTINATION_REPOSITORY: cossackframework/skills
+          TARGET_BRANCH: main
+          COMMIT_MESSAGE: sync skills from cossackframework/cossack@${{ github.sha }}
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+
+          key="$workdir/deploy_key"
+          known_hosts="$workdir/known_hosts"
+          (umask 077; printf '%s\n' "$SSH_DEPLOY_KEY" > "$key")
+          # GitHub's published host keys (https://api.github.com/meta), so no TOFU keyscan.
+          cat > "$known_hosts" <<'EOF'
+          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+          github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+          EOF
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts"
+
+          remote="git@github.com:${DESTINATION_REPOSITORY}.git"
+          clone="$workdir/destination"
+          # Create the target branch from the default branch when it does not exist yet.
+          if ! git clone --depth 1 --single-branch --branch "$TARGET_BRANCH" "$remote" "$clone"; then
+            git clone --depth 1 "$remote" "$clone"
+            git -C "$clone" checkout -b "$TARGET_BRANCH"
+          fi
+
+          # Replace the whole tree so files deleted from skills/ are deleted downstream.
+          find "$clone" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$SOURCE_DIRECTORY"/. "$clone"/
+
+          git -C "$clone" config user.name 'github-actions[bot]'
+          git -C "$clone" config user.email 'github-actions[bot]@users.noreply.github.com'
+          git -C "$clone" add --all
+          if git -C "$clone" diff --cached --quiet; then
+            echo "Skills are already in sync."
+            exit 0
+          fi
+          git -C "$clone" commit --message "$COMMIT_MESSAGE"
+          git -C "$clone" push origin "HEAD:refs/heads/$TARGET_BRANCH"
