@@ -76,7 +76,9 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
       }
     }
     State()(Live.prototype, 'count');
-    Page({ transport: 'websocket', stateful: true })(Live);
+    // The proxy binds socket targets to the page identity. A custom scope lets
+    // the test address several Durable Objects for the same page.
+    Page({ transport: 'websocket', stateful: true, scope: c => 'object:' + (c.req.query('object') || 'shared') })(Live);
     Reflect.defineMetadata('cossack:durable-object-name', 'COSSACK_OBJECT', Live);
     for (const name of ['limited', 'custom', 'inspect', 'observe'])
       Server()(Live.prototype, name, Object.getOwnPropertyDescriptor(Live.prototype, name));
@@ -90,6 +92,11 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
       (Live.prototype, 'custom', Object.getOwnPropertyDescriptor(Live.prototype, 'custom'));
     export class PeerObject extends CossackDurableObject {
       async getComponentRegistry() { return new Map([[componentPath, Live]]); }
+      // The proxy forwards only the user id. Like the framework's middleware
+      // replay, resolve the full user before authorizing each operation.
+      async authorizeWebSocketPeer(client, peer, operation) {
+        return super.authorizeWebSocketPeer(client, { ...peer, user: peer.user && { id: peer.user.id, tenant: 't1' } }, operation);
+      }
       async fetch(request) {
         if(new URL(request.url).pathname==='/__test_schema-status')return Response.json(schemaCallbacks);
         // Force the production reconstruction path while keeping the actual
@@ -113,9 +120,9 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
       }
       await next();
     });
-    app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName(c.req.query('name') || 'shared').toString() }));
-    app.post('/restore', c => c.env.COSSACK_OBJECT.getByName('shared').fetch('https://object/__test_restore'));
-    app.get('/schema-status',c=>c.env.COSSACK_OBJECT.getByName('shared').fetch('https://object/__test_schema-status'));
+    app.get('/id', c => c.json({ id: c.env.COSSACK_OBJECT.idFromName('object:' + (c.req.query('name') || 'shared')).toString() }));
+    app.post('/restore', c => c.env.COSSACK_OBJECT.getByName('object:shared').fetch('https://object/__test_restore'));
+    app.get('/schema-status',c=>c.env.COSSACK_OBJECT.getByName('object:shared').fetch('https://object/__test_schema-status'));
     app.get('/ws/:provider/:id/:channel', handleWebSocketProxy({
       pages: { [componentPath]: { default: Live } }, layouts: {}, allowedOrigins: ['http://localhost'],
       routePathToFilePathMap: new Map([['/live', componentPath]]),
@@ -151,6 +158,7 @@ it('keeps Cloudflare socket peer context and shared limits across reconnects and
     const route = new URL('/ws/page/' + id + '/global', url);
     route.searchParams.set('routePath', '/live'); route.searchParams.set('pathname', '/live');
     route.searchParams.set('params', JSON.stringify({ tenant: 'example' })); route.searchParams.set('filter', 'active');
+    route.searchParams.set('object', name);
     const response = await entry.fetch(route, { headers: { Upgrade: 'websocket', Origin: 'http://localhost',
       'x-test-ip': ip, ...(user ? { 'x-test-user': user } : {}), 'x-bucket': bucket,
       Cookie: 'session=PRIVATE', Authorization: 'Bearer PRIVATE',
