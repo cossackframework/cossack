@@ -209,6 +209,7 @@ Ordered by measured or structural impact.
 16. Studio truncates results after loading everything. `transport.ts:33-45`.
 17. MCP spawns a fresh worker and re-imports the Wrangler bundle per call. `inspection-runner.js:23`.
 18. Config requirements re-normalized per request. `config.ts:184-191`.
+19. Hydration payload repeats the user per component (page, each layout, app). Phase 1 reduced it to `{ id }` plus opt-in fields, so this is now size only. Emit it once at the payload root and update the three client reads: core bootstrap (`cossack.ts` `this.user = metadata.user`), navigation hydration (`cossack.ts` `state.metadata?.user`) and `framework/src/client/app.ts`. Deferred from Phase 1.
 
 ## Phase 4: design, dead code, docs, tests
 
