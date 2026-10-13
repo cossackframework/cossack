@@ -120,10 +120,17 @@ export const renderRoot = (props: RenderRootProps) => {
     if (typeof props.htmlTemplate === 'function') {
         raw = props.htmlTemplate({ cossackScripts, cossackBody });
     } else if (typeof props.htmlTemplate === 'string') {
-        raw = props.htmlTemplate
-            .replace('{{ cossackScripts }}', cossackScripts())
-            .replace('{{ cossackBody }}', cossackBody())
-            .replace('{{ cossackLang }}', langAttr);
+        // One pass with function replacers: inserted values are literal (no
+        // `$&`/`$'` expansion) and are never rescanned for later placeholders.
+        const values: Record<string, () => string> = {
+            cossackScripts, cossackBody, cossackLang: () => langAttr,
+        };
+        const used = new Set<string>();
+        raw = props.htmlTemplate.replace(/\{\{ (cossackScripts|cossackBody|cossackLang) \}\}/g, (match, name: string) => {
+            if (used.has(name)) return match;
+            used.add(name);
+            return values[name]!();
+        });
     } else {
         raw = `<!DOCTYPE html>
         <html lang="${langAttr}">

@@ -44,6 +44,18 @@ describe('renderRoot', () => {
         expect(out).not.toContain('{{');
     });
 
+    it('inserts string template values literally without replacement patterns', () => {
+        const message = "$' $& $$ $` {{ cossackBody }}";
+        const out = renderRoot({
+            ...props, initialState: { message }, body: '<p>$& $$</p>',
+            htmlTemplate: '<html lang="{{ cossackLang }}"><head>{{ cossackScripts }}</head><body>{{ cossackBody }}</body></html>',
+        });
+        const json = out.match(/window\.__INITIAL_STATE__ = (.*?)<\/script>/s)?.[1];
+        expect(json && JSON.parse(json.trim().replace(/;$/, '')).message).toBe(message);
+        expect(out).toContain('<div id="root"><p>$& $$</p></div>');
+        expect(out.split('<div id="root">')).toHaveLength(2);
+    });
+
     it('escapes metadata values so they cannot inject tags or attributes', () => {
         const value = '\"><script>alert(1)</script><meta content="&';
         const out = renderRoot({ ...props, headTags: [
