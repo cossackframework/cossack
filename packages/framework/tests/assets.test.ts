@@ -103,4 +103,22 @@ describe('Worker-first static assets', () => {
     expect(response.status).toBe(404);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it.each(['http://localhost//evil.com/index.html', 'http://localhost//evil.com.html', 'http://localhost/\\evil.com/index.html', 'http://localhost/docs//evil.com/index.html'])
+    ('never redirects %s to a protocol-relative Location under a root catch-all', async url => {
+      const fetch = vi.fn(async () => new Response('missing', { status: 404 }));
+      const files = ['/src/pages/[...slug]/index.ts'];
+      const ctx: RouterContext = {
+        ...computeRouteIds(files, []), pages: Object.fromEntries(files.map(file => [file, {}])), layouts: {},
+        getMiddlewares: () => [],
+      };
+      const app = new Hono();
+      app.use('*', createAssetsMiddleware(ctx));
+      app.get('*', c => c.text('SSR fallback'));
+      const response = await app.request(url, undefined, { ASSETS: { fetch } });
+      const location = response.headers.get('Location') ?? '';
+      expect(location.startsWith('//')).toBe(false);
+      expect(location.startsWith('/\\')).toBe(false);
+      expect(response.status).not.toBe(308);
+    });
 });
