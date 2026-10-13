@@ -2971,7 +2971,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /**
      * Redirect back to the previous page (the request's `Referer`), with an
-     * optional fallback if there is no referer. Pairs naturally with `flash()`
+     * optional fallback if there is no same-origin referer. Pairs naturally with `flash()`
      * for the POST→redirect→GET pattern:
      *
      *   async post() {
@@ -2990,8 +2990,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
             return this.redirect(fallback);
         }
-        const referer = this.c.req.header('referer') || fallback;
-        return this.c.redirect(referer, 302);
+        // Referer is client-controlled: only follow it within this origin.
+        const referer = this.c.req.header('referer');
+        let target = fallback;
+        if (referer) {
+            try { if (new URL(referer).origin === new URL(this.c.req.url).origin) target = referer; }
+            catch { /* Malformed or relative referer: use the fallback. */ }
+        }
+        return this.c.redirect(target, 302);
     }
 
     /**

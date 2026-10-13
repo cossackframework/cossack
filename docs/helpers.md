@@ -55,7 +55,7 @@ See the [Prevent Navigation](./prevent-navigation.md) documentation for more det
 
 ### `this.back()`
 
-Redirects the user to the previous page in browser history. Use it after a form submission or another action that returns the user to the previous page.
+Redirects the user to the previous page. On the server it follows the `Referer` header only when it has the same origin as the request; otherwise it redirects to the fallback (default `/`). Use it after a form submission or another action that returns the user to the previous page.
 
 ```typescript
 post() {
