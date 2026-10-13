@@ -7,13 +7,61 @@ on:
   workflow_dispatch:
 
 jobs:
-  integration:
+  verify-release:
+    name: Verify release tag and versions
     if: github.event_name == 'release' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check release tag, branch and package versions
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET_COMMITISH: ${{ github.event.release.target_commitish }}
+          REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = release ]; then
+            if [ "$TARGET_COMMITISH" != master ]; then
+              echo "::error::Release targets '$TARGET_COMMITISH'; releases must target master."
+              exit 1
+            fi
+            # target_commitish is only a label; also require the tagged commit to be on master.
+            status="$(gh api "repos/$REPOSITORY/compare/master...$GITHUB_SHA" --jq .status)"
+            case "$status" in
+              identical|behind) ;;
+              *) echo "::error::Release commit $GITHUB_SHA is not on master (compare status: $status)."; exit 1 ;;
+            esac
+            tag="$GITHUB_REF_NAME"
+          else
+            # A manual retry may only publish a version that already has a release tag.
+            version="$(node -p "require('./package.json').version")"
+            tag=""
+            for candidate in "$version" "v$version"; do
+              if gh api "repos/$REPOSITORY/git/ref/tags/$candidate" --silent 2>/dev/null; then
+                tag="$candidate"
+                break
+              fi
+            done
+            if [ -z "$tag" ]; then
+              echo "::error::No release tag $version or v$version exists; publish a GitHub release first."
+              exit 1
+            fi
+          fi
+          node scripts/verify-release-version.mjs "$tag"
+
+  integration:
+    needs: verify-release
     uses: ./.github/workflows/integration-tests.yml
 
   publish:
-    needs: integration
-    if: github.event_name == 'release' || github.ref == 'refs/heads/master'
+    needs: [verify-release, integration]
     runs-on: ubuntu-24.04
     # Must exactly match the environment in each npm trusted publisher.
     environment: Publish to npm
@@ -23,6 +71,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -60,41 +110,16 @@ jobs:
       # pnpm 11 supports npm trusted publishing through GitHub OIDC.
       # Configure publish.yml as a trusted publisher for each package on npm.
       # Do not inject NPM_TOKEN: publishing must use the workflow identity.
-      - name: Publish @cossackframework/renderer
-        run: pnpm publish --filter @cossackframework/renderer --access public --no-git-checks
-
-      - name: Publish @cossackframework/core
-        run: pnpm publish --filter @cossackframework/core --access public --no-git-checks
-
-      - name: Publish @cossackframework/node-adapter
-        run: pnpm publish --filter @cossackframework/node-adapter --access public --no-git-checks
-
-      - name: Publish @cossackframework/auth
-        run: pnpm publish --filter @cossackframework/auth --access public --no-git-checks
-
-      # framework depends on the UI workspace package, so publish UI first.
-      - name: Publish @cossackframework/ui
-        run: pnpm publish --filter @cossackframework/ui --access public --no-git-checks
-
-      - name: Publish @cossackframework/framework
-        run: pnpm publish --filter @cossackframework/framework --access public --no-git-checks
-
-      - name: Publish @cossackframework/desktop
-        run: pnpm publish --filter @cossackframework/desktop --access public --no-git-checks
-
-      - name: Publish @cossackframework/database
-        run: pnpm publish --filter @cossackframework/database --access public --no-git-checks
-
-      # Studio ships a prebuilt Cossack app and depends on the database
-      # workspace package, UI, and framework.
-      - name: Publish @cossackframework/studio
-        run: pnpm publish --filter @cossackframework/studio --access public --no-git-checks
-
-      - name: Publish @cossackframework/scaffold
-        run: pnpm publish --filter @cossackframework/scaffold --access public --no-git-checks
-
-      # cossack must publish LAST: it depends on @cossackframework/framework and
-      # @cossackframework/scaffold, both of which are published above. It is plain JS
-      # (no build step) — ships bin/ and src/ directly.
-      - name: Publish cossack
-        run: pnpm publish --filter cossack --access public --no-git-checks
+      #
+      # pnpm -r publish publishes every non-private workspace package in
+      # topological order (dependencies first) and skips versions that are
+      # already on the registry, so a failed run can simply be re-run.
+      # Private packages (root, @cossackframework/test-utils, examples/*) are skipped.
+      #
+      # cossack is published in a second pass: framework devDepends on cossack
+      # and cossack depends on framework, so pnpm breaks that cycle arbitrarily
+      # and could publish cossack before the framework version it requires.
+      - name: Publish workspace packages
+        run: |
+          pnpm -r --filter '!cossack' publish --access public --no-git-checks
+          pnpm -r --filter cossack publish --access public --no-git-checks
