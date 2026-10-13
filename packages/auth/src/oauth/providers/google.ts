@@ -23,7 +23,8 @@ function optionsOf(config: OAuthProviderConfig<GoogleProviderOptions>): GooglePr
  *
  * Default scopes: `['openid', 'email', 'profile']`. Email/name/picture are
  * resolved from the `id_token` JWT claims (preferred for accuracy), with
- * fallback to the userinfo payload.
+ * fallback to the userinfo payload. `email` is `null` unless `email_verified`
+ * is `true`.
  *
  * When `hostedDomain` is set, the `hd` authorize param is only a UI hint; the
  * domain is enforced here by requiring the verified `hd` claim to match.
@@ -66,7 +67,10 @@ export function createGoogleProvider(
                 (merged.hd !== opts.hostedDomain || merged.email_verified !== true)) {
                 throw new OAuthError('COSSACK_OAUTH_USER_INFO_FAILED');
             }
-            return fallback(merged, tokens);
+            const emailVerified = merged.email_verified === true;
+            if (!emailVerified) merged.email = null;
+            const user = fallback(merged, tokens);
+            return { ...user, emailVerified: emailVerified && typeof user.email === 'string' };
         },
     };
 }

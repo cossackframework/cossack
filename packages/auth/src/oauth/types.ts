@@ -13,8 +13,17 @@ export interface OAuthUser {
     id: string;
     nickname?: string;
     name?: string;
-    /** May be `null` for providers/users that hide it (e.g. GitHub). */
+    /**
+     * First-party providers set this only to an address the provider marks
+     * verified or confirmed (GitHub, GitLab, Google). Otherwise it is `null`
+     * or absent. Microsoft returns its `email` claim; check `emailVerified`.
+     */
     email?: string | null;
+    /**
+     * `true` only when the provider asserted ownership of `email`. Require it
+     * before matching or linking local accounts by email.
+     */
+    emailVerified?: boolean;
     avatar?: string;
     /** The full, unmodified user-info response from the provider. */
     raw: Record<string, unknown>;

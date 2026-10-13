@@ -217,13 +217,14 @@ async onUser(oauthUser, tokens, c) {
     if (link) {
         // 2a. Existing link → reuse the linked user.
         userId = link.userId;
-    } else if (oauthUser.email) {
-        // A matching email alone does not prove account ownership.
+    } else if (oauthUser.email && oauthUser.emailVerified) {
+        // Only provider-verified emails reach this branch. A matching email
+        // still does not prove ownership of the existing local account.
         const existing = await db.users.findUnique({ where: { email: oauthUser.email } });
         if (existing) throw new Error('Sign in before linking this provider.');
         userId = (await db.users.create({ data: { email: oauthUser.email, ... } })).id;
     } else {
-        // 2c. No link, no usable email → create a new user.
+        // 2c. No link, no verified email → create a new user without one.
         userId = (await db.users.create({ data: { /* ... */ } })).id;
     }
 
@@ -268,11 +269,27 @@ interface OAuthUser {
     id: string;            // stable, provider-scoped
     nickname?: string;     // GitHub login, GitLab username, ...
     name?: string;
-    email?: string | null; // null when hidden (GitHub) and unresolvable
+    email?: string | null; // only a provider-verified address; see below
+    emailVerified?: boolean; // true only when the provider asserted ownership
     avatar?: string;
     raw: Record<string, unknown>; // full provider payload
 }
 ```
+
+`email` is set only when the provider marks the address verified. Otherwise
+it is `null` or absent. Unverified addresses are dropped because a user can add
+somebody else's address to their provider account without confirming it.
+
+| Provider | `email` source | `emailVerified` |
+| --- | --- | --- |
+| GitHub | Profile email if `/user/emails` lists it as verified, else the verified primary. Needs the `user:email` scope (default); without it `email` is `null`. | `true` when `email` is set |
+| GitLab | Primary email of a confirmed account (`confirmed_at`), else the first confirmed `/user/emails` entry. | `true` when `email` is set |
+| Google | `email` claim only when `email_verified` is `true`. | `true` when `email` is set |
+| Microsoft | `email` claim only. `preferred_username` (a UPN) and Graph `mail` are never used. Microsoft does not verify this claim. | `true` only when the optional `xms_edov` claim is `true` |
+| Facebook | Graph `email` field. | not set |
+
+Require `emailVerified === true` before matching or creating local accounts by
+email. Custom providers should set `emailVerified` the same way.
 
 ## Provider-specific options
 

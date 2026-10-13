@@ -19,6 +19,8 @@ function optionsOf(config: OAuthProviderConfig<MicrosoftProviderOptions>): Micro
  * Default scopes: `['openid', 'email', 'profile', 'User.Read']`. The `tenant`
  * option controls the authority (`common`, `organizations`, `consumers`, or a
  * GUID). Email/name are read from the `id_token` claims with userinfo fallback.
+ * `email` comes only from the `email` claim, which Microsoft does not verify;
+ * `emailVerified` is `true` only when the optional `xms_edov` claim is `true`.
  */
 export function createMicrosoftProvider(
     opts: MicrosoftProviderOptions = {},
@@ -40,16 +42,19 @@ export function createMicrosoftProvider(
         scopes: ['openid', 'email', 'profile', 'User.Read'],
         normalizeUser: (raw, tokens: TokenSet): OAuthUser => {
             const claims = tokens.idToken ? decodeJwtPayload(tokens.idToken) : {};
-            // Prefer email/surname claims from the id_token; Microsoft's
-            // preferred_username is the most reliable email source.
+            // Only the `email` claim is an email. `preferred_username` is a
+            // UPN and Graph `mail` is admin-editable; neither proves ownership.
             const merged: Record<string, unknown> = {
                 ...raw,
                 ...claims,
-                mail: claims.email ?? claims.preferred_username ?? claims.mail ?? raw.mail,
+                mail: claims.email ?? raw.email ?? null,
                 displayName: claims.name ?? raw.displayName,
                 id: claims.oid ?? claims.sub ?? raw.id,
             };
-            return fallback(merged, tokens);
+            const user = fallback(merged, tokens);
+            // `xms_edov` (optional claim) asserts the email domain is verified
+            // by the tenant. Without it the `email` claim is unverified.
+            return { ...user, emailVerified: !!user.email && claims.xms_edov === true };
         },
     };
 }

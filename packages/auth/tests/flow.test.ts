@@ -278,9 +278,10 @@ describe('fetchUserInfo', () => {
     afterEach(restoreFetch);
 
     it('sends a bearer token and runs the provider normalizer', async () => {
-        const mock = mockFetch({
-            body: { id: 42, login: 'octouser', name: 'Octo', email: 'o@e.io', avatar_url: 'https://a' },
-        });
+        const mock = mockFetch([
+            { body: { id: 42, login: 'octouser', name: 'Octo', email: 'o@e.io', avatar_url: 'https://a' } },
+            { body: [{ email: 'o@e.io', primary: true, verified: true }] },
+        ]);
         const { user, raw } = await fetchUserInfo({
             definition: githubProvider,
             tokens: { accessToken: 'at' },
@@ -340,14 +341,43 @@ describe('provider definitions', () => {
             restoreFetch();
         });
 
-        it('skips the emails call when email is present', async () => {
-            const mock = mockFetch({ body: { id: 1, login: 'u', email: 'a@b.io' } });
-            const { user } = await fetchUserInfo({
-                definition: githubProvider,
-                tokens: { accessToken: 'at' },
-            });
+        it('confirms the profile email against /user/emails', async () => {
+            const mock = mockFetch([
+                { body: { id: 1, login: 'u', email: 'a@b.io' } },
+                { body: [{ email: 'p@b.io', primary: true, verified: true }, { email: 'a@b.io', primary: false, verified: true }] },
+            ]);
+            const { user } = await fetchUserInfo({ definition: githubProvider, tokens: { accessToken: 'at' } });
             expect(user.email).toBe('a@b.io');
-            expect(mock).toHaveBeenCalledTimes(1); // only userinfo, no /user/emails
+            expect(user.emailVerified).toBe(true);
+            expect(String(mock.mock.calls[1]![0])).toBe('https://api.github.com/user/emails');
+            restoreFetch();
+        });
+
+        it('never returns an unverified address', async () => {
+            const cases: Array<{ profile: string | null; emails: unknown }> = [
+                // Attacker-added secondary address, no verified primary.
+                { profile: null, emails: [{ email: 'victim@e.io', primary: false, verified: false }] },
+                // Unverified primary.
+                { profile: null, emails: [{ email: 'victim@e.io', primary: true, verified: false }] },
+                // Profile email that /user/emails does not mark verified.
+                { profile: 'victim@e.io', emails: [{ email: 'victim@e.io', primary: true, verified: false }] },
+                { profile: 'victim@e.io', emails: [] },
+                // Endpoint returned a non-list body.
+                { profile: 'victim@e.io', emails: { message: 'nope' } },
+            ];
+            for (const { profile, emails } of cases) {
+                mockFetch([{ body: { id: 1, login: 'u', email: profile } }, { body: emails }]);
+                const { user } = await fetchUserInfo({ definition: githubProvider, tokens: { accessToken: 'at' } });
+                expect(user.email).toBeNull();
+                expect(user.emailVerified).toBe(false);
+                restoreFetch();
+            }
+        });
+
+        it('returns no email when /user/emails is unavailable', async () => {
+            mockFetch([{ body: { id: 1, login: 'u', email: 'a@b.io' } }, { status: 404, body: {} }]);
+            const { user } = await fetchUserInfo({ definition: githubProvider, tokens: { accessToken: 'at' } });
+            expect(user.email).toBeNull();
             restoreFetch();
         });
     });
@@ -408,10 +438,22 @@ describe('provider definitions', () => {
             expect(user.name).toBe(name);
         });
 
+        it('returns email only when email_verified is true', async () => {
+            const def = createGoogleProvider();
+            for (const email_verified of [false, undefined, 'true']) {
+                const user = await def.normalizeUser({}, { accessToken: 'at', idToken: googleIdToken({ sub: 's1', email: 'a@e.io', email_verified }) });
+                expect(user.email).toBeNull();
+                expect(user.emailVerified).toBe(false);
+            }
+            const user = await def.normalizeUser({}, { accessToken: 'at', idToken: googleIdToken({ sub: 's1', email: 'a@e.io', email_verified: true }) });
+            expect(user.email).toBe('a@e.io');
+            expect(user.emailVerified).toBe(true);
+        });
+
         it('prefers id_token claims when normalizing', async () => {
             const def = createGoogleProvider();
             // JWT payload {"sub":"sub-123","email":"claims@e.io","name":"Claims","picture":"pic"}
-            const payload = btoa(JSON.stringify({ sub: 'sub-123', email: 'claims@e.io', name: 'Claims', picture: 'pic' }));
+            const payload = btoa(JSON.stringify({ sub: 'sub-123', email: 'claims@e.io', email_verified: true, name: 'Claims', picture: 'pic' }));
             const idToken = `hdr.${payload}.sig`;
             const user = await def.normalizeUser({ sub: 'other', email: 'raw@e.io' }, { accessToken: 'at', idToken });
             expect(user.id).toBe('sub-123');
@@ -434,6 +476,37 @@ describe('provider definitions', () => {
             expect(def.authorizeUrl).toBe('https://gitlab.acme.io/oauth/authorize');
             expect(def.tokenUrl).toBe('https://gitlab.acme.io/oauth/token');
             expect(def.userInfoUrl).toBe('https://gitlab.acme.io/api/v4/user');
+        });
+
+        it('returns the primary email only for a confirmed account', async () => {
+            const mock = mockFetch({ body: { id: 7, username: 'g', email: 'g@e.io', confirmed_at: '2024-01-01T00:00:00Z' } });
+            const { user } = await fetchUserInfo({ definition: createGitLabProvider(), tokens: { accessToken: 'at' } });
+            expect(user.email).toBe('g@e.io');
+            expect(user.emailVerified).toBe(true);
+            expect(mock).toHaveBeenCalledTimes(1);
+            restoreFetch();
+        });
+
+        it('falls back to a confirmed secondary email only', async () => {
+            mockFetch([
+                { body: { id: 7, username: 'g', email: 'victim@e.io', confirmed_at: null } },
+                { body: [{ email: 'victim@e.io', confirmed_at: null }, { email: 'mine@e.io', confirmed_at: '2024-01-01T00:00:00Z' }] },
+            ]);
+            const { user } = await fetchUserInfo({ definition: createGitLabProvider(), tokens: { accessToken: 'at' } });
+            expect(user.email).toBe('mine@e.io');
+            expect(user.emailVerified).toBe(true);
+            restoreFetch();
+        });
+
+        it('never returns an unconfirmed address', async () => {
+            mockFetch([
+                { body: { id: 7, username: 'g', email: null } },
+                { body: [{ email: 'victim@e.io', confirmed_at: null }, { email: 'other@e.io' }] },
+            ]);
+            const { user } = await fetchUserInfo({ definition: createGitLabProvider(), tokens: { accessToken: 'at' } });
+            expect(user.email).toBeNull();
+            expect(user.emailVerified).toBe(false);
+            restoreFetch();
         });
     });
 
@@ -466,7 +539,22 @@ describe('provider definitions', () => {
             expect(def.authorizeUrl).toContain('login.microsoftonline.com/consumers/');
         });
 
-        it('prefers email from id_token preferred_username', async () => {
+        it('never uses preferred_username or mail as the email', async () => {
+            const def = createMicrosoftProvider();
+            const payload = btoa(JSON.stringify({ oid: 'oid-1', preferred_username: 'victim@e.io', name: 'Msft' }));
+            const user = await def.normalizeUser({ mail: 'victim@e.io' }, { accessToken: 'at', idToken: `hdr.${payload}.sig` });
+            expect(user.email ?? null).toBeNull();
+            expect(user.emailVerified).toBe(false);
+        });
+
+        it('marks the email claim verified only with xms_edov', async () => {
+            const def = createMicrosoftProvider();
+            const token = (claims: Record<string, unknown>) => `hdr.${btoa(JSON.stringify({ oid: 'oid-1', email: 'jp@e.io', ...claims }))}.sig`;
+            expect((await def.normalizeUser({}, { accessToken: 'at', idToken: token({}) })).emailVerified).toBe(false);
+            expect((await def.normalizeUser({}, { accessToken: 'at', idToken: token({ xms_edov: true }) })).emailVerified).toBe(true);
+        });
+
+        it('reads email from the id_token email claim', async () => {
             const def = createMicrosoftProvider();
             const payload = btoa(
                 JSON.stringify({

@@ -2,18 +2,17 @@ import type { OAuthProviderDefinition, OAuthUser, TokenSet } from '../types';
 import { createNormalizer } from '../provider';
 
 /**
- * GitHub OAuth user-info email fallback.
+ * Resolve a verified GitHub email.
  *
- * GitHub returns `email: null` when the user has marked their email as private.
- * If the `user:email` scope was requested, the primary/verified address can be
- * fetched from the `/user/emails` endpoint.
+ * The `/user` payload does not say whether its `email` is verified, and users
+ * can add unverified secondary addresses. Every address is therefore checked
+ * against `/user/emails` (needs the `user:email` scope): the profile email if
+ * it is listed as verified, else the verified primary, else `null`.
  */
 async function resolveEmail(
     raw: Record<string, unknown>,
     tokens: TokenSet,
-): Promise<string | null | undefined> {
-    if (typeof raw.email === 'string' && raw.email.length > 0) return raw.email;
-
+): Promise<string | null> {
     const response = await fetch('https://api.github.com/user/emails', {
         headers: {
             Authorization: `Bearer ${tokens.accessToken}`,
@@ -21,13 +20,12 @@ async function resolveEmail(
         },
     });
     if (!response.ok) return null;
-    const emails = (await response.json()) as Array<{
-        email: string;
-        primary: boolean;
-        verified: boolean;
-    }>;
-    const primary = emails.find((e) => e.primary && e.verified) ?? emails[0];
-    return primary?.email ?? null;
+    const emails: unknown = await response.json();
+    if (!Array.isArray(emails)) return null;
+    const verified = emails.filter((e): e is { email: string; primary?: boolean; verified: true } =>
+        !!e && typeof e === 'object' && typeof e.email === 'string' && e.email.length > 0 && e.verified === true);
+    const profile = typeof raw.email === 'string' ? verified.find((e) => e.email === raw.email) : undefined;
+    return (profile ?? verified.find((e) => e.primary === true))?.email ?? null;
 }
 
 const base = createNormalizer({
@@ -41,7 +39,8 @@ const base = createNormalizer({
 /**
  * GitHub OAuth App provider definition.
  *
- * Default scopes: `['user:email']` — enough to resolve email even when hidden.
+ * Default scopes: `['user:email']` — required to confirm that an email is
+ * verified. Without it, `email` is `null`.
  */
 export const githubProvider: OAuthProviderDefinition = {
     id: 'github',
@@ -52,6 +51,6 @@ export const githubProvider: OAuthProviderDefinition = {
     normalizeUser: async (raw, tokens): Promise<OAuthUser> => {
         const user = base(raw, tokens);
         const email = await resolveEmail(raw, tokens);
-        return { ...user, email };
+        return { ...user, email, emailVerified: email !== null };
     },
 };

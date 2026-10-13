@@ -158,7 +158,8 @@ interface OAuthUser {
     id: string;            // stable, provider-scoped
     nickname?: string;     // e.g. GitHub login
     name?: string;
-    email?: string | null; // null if hidden (GitHub) and unresolvable
+    email?: string | null; // only a provider-verified address, else null/absent
+    emailVerified?: boolean; // true only when the provider asserted ownership
     avatar?: string;
     raw: Record<string, unknown>; // full provider payload
 }
@@ -168,11 +169,11 @@ interface OAuthUser {
 
 | Provider | Quirk handled |
 | --- | --- |
-| GitHub | Falls back to `/user/emails` when the user's primary email is private. |
+| GitHub | Confirms the email against `/user/emails`; returns only a verified address (profile email or verified primary). |
 | Google | OIDC `id_token` claims preferred. Options: `hostedDomain` (sent as `hd` and enforced on callback: the `hd` claim must match and `email_verified` must be `true`) and `offlineAccess` (`access_type=offline`). |
-| GitLab | Configurable `baseUrl` for self-hosted instances. Same email fallback as GitHub. |
+| GitLab | Configurable `baseUrl` for self-hosted instances. Returns only confirmed addresses (primary of a confirmed account, else a confirmed `/user/emails` entry). |
 | Facebook | Sends explicit `fields=id,name,email,picture` on the user-info call. |
-| Microsoft | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID). OIDC `id_token` claims. |
+| Microsoft | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID). OIDC `id_token` claims. `email` is the `email` claim only (never `preferred_username`); `emailVerified` requires `xms_edov`. |
 
 ### Custom providers
 

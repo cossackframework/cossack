@@ -158,6 +158,7 @@ describe('createOAuth — callback handler (happy path)', () => {
                     avatar_url: 'https://github.com/octo.png',
                 },
             },
+            { body: [{ email: 'octo@e.io', primary: true, verified: true }] },
         ]);
 
         // 3. Hit the callback with the state + a fake code, carrying the cookie.
@@ -176,6 +177,7 @@ describe('createOAuth — callback handler (happy path)', () => {
             nickname: 'octouser',
             name: 'Octo Cat',
             email: 'octo@e.io',
+            emailVerified: true,
             avatar: 'https://github.com/octo.png',
         });
         expect(seen.tokens).toMatchObject({ accessToken: 'at', scope: 'user:email' });
@@ -404,7 +406,7 @@ describe('createOAuth — stateless mode', () => {
         // No code_verifier in the token-exchange body.
         expect(observedBody).not.toContain('code_verifier');
         expect((seen.user as { id: string }).id).toBe('1');
-        expect(mock).toHaveBeenCalledTimes(2);
+        expect(mock).toHaveBeenCalledTimes(3); // token, /user, /user/emails
     });
 });
 
