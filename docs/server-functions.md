@@ -52,6 +52,12 @@ render() {
 
 Inline calls can omit `initial`. Their type is `T | undefined`, and they render empty while a client-side request is pending. Cossack identifies an inline call by its module, component class, and call order in `render()`. Keep the call order fixed.
 
+`server$` is valid only in these two places: a class-field initializer and a
+direct call inside `render()`, both on a component class. Anywhere else, such as
+module scope, another method, a nested function, or a class that is not a
+component, the build fails. The compiler cannot move the loader to the server
+from those places, so it refuses to ship it to the browser.
+
 ## Reactive dependencies
 
 Use `deps` to declare values that select a resource invocation. The dependency values are passed to the loader as arguments:

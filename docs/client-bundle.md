@@ -38,6 +38,13 @@ During the client build, the Cossack Vite security plugin walks every class that
 `extends Cossack`, `extends CossackElement`, or is decorated with `@Service`,
 and for each top-level method it asks:
 
+The plugin finds these classes wherever they are written: class declarations,
+`export default`, class expressions such as `export const Page = class extends
+Cossack {}` or `wrap(class extends Cossack {})`, and classes inside function
+bodies. A component class declared inside another class's method fails the
+build, because its members cannot be stripped safely there. Move it to module
+scope.
+
 > Is this method client-safe? A method is client-safe when an explicit
 > decorator marks it, when it is a built-in lifecycle method, or when a
 > client-safe method on the same class calls it directly or transitively.
@@ -85,8 +92,9 @@ its full implementation:
 
 You do not have to decorate every helper. If a preserved method calls
 another method on the same class via `this.foo(...)`, the called method is kept
-as well, recursively up to a fixed depth (currently 3 levels). This covers the
-common pattern of splitting `onMount()` setup into smaller helpers:
+as well, recursively, with no depth limit. Private methods (`this.#foo()`)
+follow the same rule. This covers the common pattern of splitting `onMount()`
+setup into smaller helpers:
 
 ```typescript
 @Page()
@@ -114,6 +122,26 @@ The transitive scan only follows `this.methodName(...)` calls. Calls through
 dynamic proxies, `Function.prototype.call` with an arbitrary receiver, or
 methods passed as callbacks to external code are not detected. Mark the
 helper with `@Client()` in those cases (see below).
+
+### Event handlers are RPC boundaries
+
+A call inside an event handler runs later, when the user acts. It does not keep
+the called method in the client bundle. These two handlers behave the same:
+
+```typescript
+render() {
+    return html`
+        <button @click=${this.remove}>Remove</button>
+        <button @click=${() => this.remove(item.id)}>Remove</button>
+    `;
+}
+```
+
+If `remove` has no decorator, both handlers call it on the server as an
+automatic RPC endpoint, and its body is stripped from the client. This applies
+to functions in template `@event` slots in any client method, and to `onX` /
+`@x` component props written in `render()`. To run the handler in the browser,
+mark the method `@Client()`.
 
 ## `@Client()` as the escape hatch
 
@@ -167,8 +195,9 @@ If you hit the "stripped from the client bundle" error, pick one:
 1. Add a client-safe decorator (`@Client`, `@Shared`, `@Computed`, etc.)
  to the helper. `@Client` is the right choice for pure client-side plumbing.
 2. Keep the helper reachable. Call the helper (directly or
- transitively, up to 3 levels) from a client-safe method such as `onMount`,
- `render`, or a `@Client` method, using `this.helper(...)`.
+ transitively) from a client-safe method such as `onMount`,
+ `render`, or a `@Client` method, using `this.helper(...)`. A call inside an
+ event handler function does not count, because the handler runs later.
 3. Inline the helper's logic into the calling method if only one place uses it.
 
 Do not work around this by adding `@Server` to the helper. `@Server` turns it
@@ -178,7 +207,10 @@ The body then executes on the server instead of the client.
 ## SSG `generateStaticParams`
 
 The same secure-by-default treatment applies to the SSG helper
-`generateStaticParams` passed inside `@Page(...)` / `@Component(...)`:
+`generateStaticParams` passed inside `@Page(...)` / `@Component(...)`. The
+plugin strips it from any class decorator call, including an aliased or
+namespaced decorator and an options object stored in a module constant. A
+module-level loader that only `generateStaticParams` uses is removed too:
 
 ```typescript
 @Page({
