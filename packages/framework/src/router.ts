@@ -325,6 +325,12 @@ export interface CreateAppOptions {
    */
   allowedOrigins?: string[];
   /**
+   * Request-body limits for RPC transports. Larger requests get 413
+   * `COSSACK_RPC_REQUEST_TOO_LARGE`. Defaults: 1 MiB JSON (`/crpc`) and
+   * 32 MiB multipart (`/upload`, files included).
+   */
+  rpc?: { maxJsonBytes?: number; maxUploadBytes?: number };
+  /**
    * Localization options. The locale middleware always runs (it's a no-op
    * when the project has no `src/lang/` folder). Enable `autoDetectBrowser`
    * to honor the `Accept-Language` header for visitors without a locale
@@ -398,6 +404,7 @@ export function createApp(options: CreateAppOptions = {}) {
     pages,
     layouts,
     allowedOrigins: options.allowedOrigins,
+    rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
   };
@@ -836,7 +843,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // streaming, cookies and cleanup use the same action pipeline.
   const handleRpc: Handler = async (c) => {
     const startedAt = performance.now();
-    const body = await readRpcRequest(c);
+    const body = await readRpcRequest(c, routerContext.rpcBodyLimits);
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
     if (typeof action !== 'string' || !action) return c.json({ error: 'Invalid action', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);

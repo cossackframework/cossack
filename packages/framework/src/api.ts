@@ -1,6 +1,7 @@
 /** Declared native HTTP contracts. This entry uses only portable Web APIs. */
 import type { Context } from 'hono';
 import { createServerFailureContext, logServerFailure } from './server-logging.js';
+import { readBoundedBody } from './request-body.js';
 import { HTTPException } from 'hono/http-exception';
 import { getAuthorizationFailure, isActionValidationError, isClientVisibleError, isInputSchema,
     snapshotRpcValue, type InputOf, type InputSchema, type RawInputOf, type RpcSerialized } from '@cossackframework/core';
@@ -213,27 +214,10 @@ async function readJsonBody(request: Request, limit: number, signal: AbortSignal
         void request.body.cancel().catch(() => {});
         throw new ApiFailure(415, 'COSSACK_API_MEDIA_TYPE', 'Expected a JSON request body.');
     }
-    const reader = request.body.getReader();
-    let size = 0;
-    let bytes = new Uint8Array(Math.min(4096, limit));
-    try {
-        while (true) {
-            const next = await owned(() => reader.read(), signal);
-            if (next.done) break;
-            size += next.value.byteLength;
-            if (size > limit) throw new ApiFailure(413, 'COSSACK_API_INPUT_TOO_LARGE', 'Request input is too large.');
-            if (size > bytes.length) {
-                const grown = new Uint8Array(Math.min(limit, Math.max(size, bytes.length * 2)));
-                grown.set(bytes); bytes = grown;
-            }
-            bytes.set(next.value, size - next.value.byteLength);
-        }
-        if (!size) return undefined;
-        try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size))); }
-        catch { throw new ApiFailure(400, 'COSSACK_API_JSON_INVALID', 'Malformed JSON request body.'); }
-    } finally {
-        // A hostile stream may never finish its cancellation. Observe it without retaining the request.
-        void reader.cancel().catch(() => {});
-        reader.releaseLock();
-    }
+    const bytes = await readBoundedBody(request.body, limit,
+        () => new ApiFailure(413, 'COSSACK_API_INPUT_TOO_LARGE', 'Request input is too large.'),
+        reader => owned(() => reader.read(), signal));
+    if (!bytes.byteLength) return undefined;
+    try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+    catch { throw new ApiFailure(400, 'COSSACK_API_JSON_INVALID', 'Malformed JSON request body.'); }
 }

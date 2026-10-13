@@ -1,16 +1,45 @@
 import { RpcError } from '@cossackframework/core';
 import type { Context } from 'hono';
+import { parseBody } from 'hono/utils/body';
+import { declaredLengthExceeds, readBoundedBody } from '../request-body.js';
 
 const BODY_KEY = 'cossack:rpc-request';
 const invalid = (path: string): never => { throw new RpcError('COSSACK_RPC_REQUEST_INVALID', `Invalid RPC request at ${path}.`); };
 
+/** Default `/crpc` JSON request limit (matches `defineApi`'s `maxBodyBytes`). */
+export const RPC_JSON_REQUEST_MAX_BYTES = 1024 * 1024;
+/** Default `/upload` multipart request limit, files included. */
+export const RPC_UPLOAD_REQUEST_MAX_BYTES = 32 * 1024 * 1024;
+
+export interface RpcBodyLimits {
+    /** Maximum `/crpc` JSON body bytes. Default: 1 MiB. */
+    jsonBytes?: number;
+    /** Maximum `/upload` (multipart or form) body bytes, files included. Default: 32 MiB. */
+    uploadBytes?: number;
+}
+
+const tooLarge = () => new RpcError('COSSACK_RPC_REQUEST_TOO_LARGE', 'RPC request body is too large.', { status: 413 });
+
+async function readBody(c: Context, limit: number): Promise<Uint8Array<ArrayBuffer>> {
+    const body = c.req.raw.body;
+    if (declaredLengthExceeds(c.req.raw.headers, limit)) {
+        void body?.cancel().catch(() => {});
+        throw tooLarge();
+    }
+    return body ? readBoundedBody(body, limit, tooLarge) : new Uint8Array();
+}
+
 /** Decode once for both transport guards and the shared action dispatcher. */
-export async function readRpcRequest(c: Context): Promise<Record<string, any>> {
+export async function readRpcRequest(c: Context, limits: RpcBodyLimits = {}): Promise<Record<string, any>> {
     const cached = c.get(BODY_KEY);
     if (cached) return cached;
     let body: any;
     if (c.req.path === '/upload' || c.req.header('Content-Type')?.startsWith('multipart/form-data')) {
-        const fields = await c.req.parseBody({ all: true });
+        // Buffer at most the limit, then parse the bounded copy (never the raw stream).
+        const bytes = await readBody(c, limits.uploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES);
+        const headers = new Headers(c.req.raw.headers);
+        headers.delete('Content-Length');
+        const fields = await parseBody(new Request(c.req.url, { method: 'POST', headers, body: bytes }), { all: true });
         body = Object.create(null);
         for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {
             if (fields[key] !== undefined) {
@@ -42,7 +71,8 @@ export async function readRpcRequest(c: Context): Promise<Record<string, any>> {
         };
         body.payload = restore(body.payload, 'payload', 0);
     } else {
-        body = await c.req.json();
+        const bytes = await readBody(c, limits.jsonBytes ?? RPC_JSON_REQUEST_MAX_BYTES);
+        body = JSON.parse(new TextDecoder().decode(bytes));
     }
     if (!body || typeof body !== 'object' || Array.isArray(body)) invalid('(root)');
     for (const key of ['componentRouteId', 'action', 'target', 'scopeKey']) {

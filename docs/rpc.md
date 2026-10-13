@@ -148,6 +148,12 @@ multipart payloads. Missing/duplicate file parts, duplicate metadata, malformed
 JSON or markers and invalid envelope shapes reject before action dispatch with
 `COSSACK_RPC_REQUEST_INVALID`, a path and request ID.
 
+Request bodies are bounded before parsing. JSON calls (`/crpc`) accept up to
+1 MiB and multipart calls (`/upload`, files included) up to 32 MiB. Larger
+requests, by `Content-Length` or by streamed size, get HTTP 413 with
+`COSSACK_RPC_REQUEST_TOO_LARGE`. Change the limits with
+`createApp({ rpc: { maxJsonBytes, maxUploadBytes } })`.
+
 Component uploads use Fetch by default and preserve native response streaming.
 To observe upload progress, declare a numeric client state field named after the
 method, such as `uploadProgress` for `upload()`. That selects XMLHttpRequest

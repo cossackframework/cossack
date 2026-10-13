@@ -102,6 +102,47 @@ describe('transport security boundary', () => {
         expect(action).not.toHaveBeenCalled();
     });
 
+    it('rejects oversized JSON RPC bodies with 413 before dispatch', async () => {
+        const { app, action } = appFor();
+        const body = JSON.stringify({ ...rpc, payload: ['x'.repeat(1024 * 1024)] });
+        const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' }, body });
+        expect(response.status).toBe(413);
+        expect((await response.json() as any).code).toBe('COSSACK_RPC_REQUEST_TOO_LARGE');
+        expect(action).not.toHaveBeenCalled();
+        const limited = appFor({ ...ctx, rpcBodyLimits: { jsonBytes: 64 } });
+        const small = await limited.app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' },
+            body: JSON.stringify({ ...rpc, payload: ['x'.repeat(100)] }) });
+        expect(small.status).toBe(413);
+        expect(limited.action).not.toHaveBeenCalled();
+    });
+
+    it('rejects multipart uploads above the limit by Content-Length and by streamed size', async () => {
+        const form = new FormData();
+        for (const [key, value] of Object.entries({ ...rpc, payload: JSON.stringify([{ _cossack_file_id: 'file_0' }]) })) form.set(key, String(value));
+        form.set('file_0', new File(['x'.repeat(4096)], 'big.bin'));
+        const encoded = new Response(form);
+        const type = encoded.headers.get('content-type')!;
+        const bytes = new Uint8Array(await encoded.arrayBuffer());
+        const { app, action } = appFor({ ...ctx, rpcBodyLimits: { uploadBytes: 1024 } });
+        const declared = await app.request('/upload', { method: 'POST', body: bytes,
+            headers: { origin: 'http://localhost', 'content-type': type, 'content-length': String(bytes.byteLength) } });
+        expect(declared.status).toBe(413);
+        expect((await declared.json() as any).code).toBe('COSSACK_RPC_REQUEST_TOO_LARGE');
+        const stream = new ReadableStream<Uint8Array>({ start(controller) {
+            for (let i = 0; i < bytes.byteLength; i += 256) controller.enqueue(bytes.slice(i, i + 256));
+            controller.close();
+        } });
+        const streamed = await app.request(new Request('http://localhost/upload', { method: 'POST', body: stream,
+            duplex: 'half', headers: { origin: 'http://localhost', 'content-type': type } } as RequestInit));
+        expect(streamed.status).toBe(413);
+        expect((await streamed.json() as any).code).toBe('COSSACK_RPC_REQUEST_TOO_LARGE');
+        expect(action).not.toHaveBeenCalled();
+        const allowed = appFor();
+        const ok = await allowed.app.request('/upload', { method: 'POST', body: bytes, headers: { origin: 'http://localhost', 'content-type': type } });
+        expect(ok.status).toBe(200);
+        expect(allowed.action).toHaveBeenCalledOnce();
+    });
+
     it('returns guard redirects through the RPC protocol without invoking the action', async () => {
         const { app, action } = appFor({ ...ctx, getMiddlewares: () => [async (c) => c.redirect('/login')] });
         const response = await app.request('/crpc', { method: 'POST', headers: { origin: 'http://localhost' }, body: JSON.stringify(rpc) });
