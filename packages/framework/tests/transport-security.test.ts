@@ -169,12 +169,26 @@ describe('transport security boundary', () => {
         expect(response.status).toBe(200);
         const headers = (forward.mock.calls[0] as unknown as [Request])[0].headers;
         expect(headers.get('X-User-ID')).toBe(user?.id ?? null);
-        expect(headers.get('X-User-Data')).toBe(user ? JSON.stringify(user) : null);
-        expect(headers.get('X-Cossack-Realtime-Scope')).toBe(user ? 'user:real-user' : 'user:anonymous');
+        expect(headers.get('X-User-Data')).toBeNull();
+        expect(decodeURIComponent(headers.get('X-Cossack-Realtime-Scope')!)).toBe(user ? 'user:real-user' : 'user:anonymous');
         expect(headers.get('X-Cossack-Realtime-Identity')).toBe(user ? JSON.stringify({
             version: 1, provider: 'fixture.session', data: { reference: 'opaque', fingerprint: 'digest' },
         }) : null);
         expect(headers.get('Cookie')).toBeNull();
+    });
+
+    it('forwards only the user id so non-Latin-1 user data can connect', async () => {
+        const forward = vi.fn(async () => new Response('forwarded'));
+        const app = new Hono();
+        app.use('*', async (c, next) => { c.set('user' as never, { id: 'taras-Тарас', name: 'Тарас 🎉' } as never); await next(); });
+        app.get('/ws/:provider/:id', handleWebSocketProxy(ctx));
+        const response = await app.request('/ws/page/target?routePath=/private', { headers: { origin: 'http://localhost' } },
+            { COSSACK_OBJECT: { idFromString: () => 'target', get: () => ({ fetch: forward }) } });
+        expect(response.status).toBe(200);
+        const headers = (forward.mock.calls[0] as unknown as [Request])[0].headers;
+        expect(decodeURIComponent(headers.get('X-User-ID')!)).toBe('taras-Тарас');
+        expect(headers.get('X-User-Data')).toBeNull();
+        expect(decodeURIComponent(headers.get('X-Cossack-Realtime-Scope')!)).toBe('user:taras-Тарас');
     });
 
     it('forwards a terminal rejection when a custom-scope socket targets another Durable Object', async () => {
@@ -202,6 +216,6 @@ describe('transport security boundary', () => {
         expect(response.status).toBe(200);
         const forwarded = (forward.mock.calls[0] as unknown as [Request])[0];
         expect(forwarded.headers.get('X-Cossack-Realtime-Target-Valid')).toBe('false');
-        expect(forwarded.headers.get('X-Cossack-Realtime-Scope')).toBe('team:alpha');
+        expect(decodeURIComponent(forwarded.headers.get('X-Cossack-Realtime-Scope')!)).toBe('team:alpha');
     });
 });
