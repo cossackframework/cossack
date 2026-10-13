@@ -3,7 +3,8 @@ export type WorkflowEvents = Record<string, WorkflowSchema<any>>;
 export type WorkflowValue<S> = S extends WorkflowSchema<infer T> ? T : never;
 export type WorkflowData = null | boolean | number | string | WorkflowData[] | { [key: string]: WorkflowData };
 export interface WorkflowScope { tenantId?: string; actorId?: string; }
-export interface WorkflowIdentity { readonly id: string; readonly namespace: string; readonly name: string; readonly version: number; readonly scope: Readonly<WorkflowScope>; }
+/** Self-verifying handle: `id` is SHA-256 of (namespace, name, version, scope, key) and is recomputed on every use, so `scope` can be trusted by `authorize`. */
+export interface WorkflowIdentity { readonly id: string; readonly namespace: string; readonly name: string; readonly version: number; readonly key: string; readonly scope: Readonly<WorkflowScope>; }
 export interface WorkflowStepOptions { retries?: { limit: number; delay: number; backoff?: 'constant' | 'linear' | 'exponential' }; timeout?: number; }
 /** The provider owns persistence/replay. A retried side effect needs an application receipt/idempotency key. */
 export interface WorkflowStep<E extends WorkflowEvents> {

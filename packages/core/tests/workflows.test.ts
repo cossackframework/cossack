@@ -4,6 +4,8 @@ import { createLocalWorkflowProvider, createWorkflowClient, defineWorkflow, work
 const number = { async parse(value: unknown) { if (typeof value !== 'number') throw new Error('PRIVATE_SCHEMA_VALUE'); return value; } };
 const boolean = { async parse(value: unknown) { if (typeof value !== 'boolean') throw new Error('PRIVATE_EVENT_VALUE'); return value; } };
 function fixture(run: () => Promise<null> = vi.fn(async () => null)) { const definition = defineWorkflow({ name: 'approval', version: 1, schema: number, events: { approved: boolean }, run }); const provider = createLocalWorkflowProvider(definition, { env: {} }); return { definition, provider, client: createWorkflowClient(definition, provider, { namespace: 'app' }) }; }
+/** Identity verification hashes with WebCrypto (off the microtask queue), so let the real event loop turn until the workflow parks on its first timer. */
+async function started(){for(let i=0;i<100&&vi.getTimerCount()===0;i++)await vi.advanceTimersByTimeAsync(0);}
 it('keeps deterministic identity isolated by version/namespace/tenant/actor/key, and never dispatches duplicates', async () => {
  const run=vi.fn(async()=>null),f=fixture(run),id=await f.client.invoke(1,{key:'one',scope:{tenantId:'a',actorId:'user'}});
  await expect(f.client.invoke(2,{key:'one',scope:{tenantId:'a',actorId:'user'}})).rejects.toMatchObject({code:'WORKFLOW_DUPLICATE'});
@@ -44,6 +46,16 @@ it('enforces declared event names, schema input and scoped identity ownership', 
  const f=fixture();await expect(f.client.invoke('PRIVATE' as unknown as number,{key:'bad'})).rejects.toMatchObject({code:'WORKFLOW_INPUT_INVALID'});const id=await f.client.invoke(1,{key:'good'});
  await expect(f.client.sendEvent(id,'unknown' as 'approved',true)).rejects.toMatchObject({code:'WORKFLOW_EVENT_INVALID'});await expect(f.client.inspect({...id,namespace:'other'})).rejects.toMatchObject({code:'WORKFLOW_IDENTITY_INVALID'});
 });
+it('rejects scope-tampered identities before authorize sees them',async()=>{
+ const definition=defineWorkflow({name:'approval',version:1,schema:number,events:{approved:boolean},run:async()=>null});const provider:WorkflowProvider={durability:'durable',create:vi.fn(),inspect:vi.fn(async()=>'running' as const),sendEvent:vi.fn(),control:vi.fn()};
+ const seen:unknown[]=[];const client=createWorkflowClient(definition,provider,{namespace:'app',authorize(operation,identity){seen.push(identity.scope.tenantId);if(operation!=='invoke'&&identity.scope.tenantId!=='B')throw new Error('Denied');}});
+ const victim=await client.invoke(1,{key:'order-1',scope:{tenantId:'A',actorId:'alice'}});
+ for(const forged of [{...victim,scope:{tenantId:'B'}},{...victim,scope:{tenantId:'B',actorId:'alice'}},{...victim,key:'order-2'},{...victim,version:2}]){
+  await expect(client.inspect(forged as typeof victim)).rejects.toMatchObject({code:'WORKFLOW_IDENTITY_INVALID'});await expect(client.terminate(forged as typeof victim)).rejects.toMatchObject({code:'WORKFLOW_IDENTITY_INVALID'});
+ }
+ const {key:_key,...keyless}=victim as typeof victim&{key?:string};await expect(client.inspect(keyless as typeof victim)).rejects.toMatchObject({code:'WORKFLOW_IDENTITY_INVALID'});
+ expect(seen).toEqual(['A']);expect(provider.inspect).not.toHaveBeenCalled();expect(provider.control).not.toHaveBeenCalled();
+});
 it('reports exhaustion and event timeout as redacted failure without later effects',async()=>{
  let attempts=0,late=0;const definition=defineWorkflow({name:'exhausted',version:1,schema:number,events:{approved:boolean},async run(_input,{step}){await step.do('retry',()=>{attempts++;throw new Error('PRIVATE_ATTEMPT');},{retries:{limit:2,delay:0}});late++;return null;}});
  const client=createWorkflowClient(definition,createLocalWorkflowProvider(definition,{env:{}}),{namespace:'app'}),id=await client.invoke(1,{key:'one'});await vi.waitFor(async()=>expect((await client.inspect(id)).status).toBe('failed'));expect(attempts).toBe(3);expect(late).toBe(0);
@@ -72,13 +84,13 @@ it.each([['constant',[10,10,10]],['linear',[10,20,30]],['exponential',[10,20,40]
 });
 it('enforces step timeout, retires its timer, and does not run later steps after failure',async()=>{
  vi.useFakeTimers();try{let later=0;const definition=defineWorkflow({name:'deadline',version:1,schema:number,events:{},async run(_input,{step}){await step.do('stuck',async()=>new Promise<null>(()=>{}),{timeout:10});later++;return null;}});
- const client=createWorkflowClient(definition,createLocalWorkflowProvider(definition,{env:{}}),{namespace:'app'}),id=await client.invoke(1,{key:'one'});await vi.advanceTimersByTimeAsync(0);expect(vi.getTimerCount()).toBe(1);await vi.advanceTimersByTimeAsync(10);expect((await client.inspect(id)).status).toBe('failed');expect(later).toBe(0);expect(vi.getTimerCount()).toBe(0);
+ const client=createWorkflowClient(definition,createLocalWorkflowProvider(definition,{env:{}}),{namespace:'app'}),id=await client.invoke(1,{key:'one'});await started();expect(vi.getTimerCount()).toBe(1);await vi.advanceTimersByTimeAsync(10);expect((await client.inspect(id)).status).toBe('failed');expect(later).toBe(0);expect(vi.getTimerCount()).toBe(0);
  }finally{vi.useRealTimers();}
 });
 it.each(['sleep','event','retry','callback'] as const)('termination cancels pending %s timers and later effects',async kind=>{
  vi.useFakeTimers();try{let effects=0;const definition=defineWorkflow({name:'cancel',version:1,schema:number,events:{approved:boolean},async run(_input,{step}){
  if(kind==='sleep')await step.sleep('sleep',10000);else if(kind==='event')await step.waitForEvent('wait','approved',{timeout:10000});else if(kind==='callback')await step.do('callback',()=>new Promise<null>(()=>{}),{timeout:10000});else await step.do('retry',()=>{throw new Error('PRIVATE_RETRY');},{retries:{limit:1,delay:10000}});
  effects++;return null;}});
- const client=createWorkflowClient(definition,createLocalWorkflowProvider(definition,{env:{}}),{namespace:'app'}),id=await client.invoke(1,{key:'one'});await vi.advanceTimersByTimeAsync(0);expect(vi.getTimerCount()).toBe(1);await client.terminate(id);await vi.advanceTimersByTimeAsync(0);expect((await client.inspect(id)).status).toBe('terminated');expect(vi.getTimerCount()).toBe(0);expect(effects).toBe(0);
+ const client=createWorkflowClient(definition,createLocalWorkflowProvider(definition,{env:{}}),{namespace:'app'}),id=await client.invoke(1,{key:'one'});await started();expect(vi.getTimerCount()).toBe(1);await client.terminate(id);await vi.advanceTimersByTimeAsync(0);expect((await client.inspect(id)).status).toBe('terminated');expect(vi.getTimerCount()).toBe(0);expect(effects).toBe(0);
  }finally{vi.useRealTimers();}
 });
