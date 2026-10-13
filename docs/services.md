@@ -338,6 +338,12 @@ in `services` always has one instance owned by that layout scope. Prefer explici
 layout ownership for shared reactive state or request-aware work. The legacy global
 singletons must never retain request- or user-specific mutable data.
 
+A component that constructor-injects an undeclared singleton service with
+`@State` or `@Store` fields fails at bootstrap. The singleton is shared by every
+request in the isolate, so client-sent state would leak between users. Declare
+the service with `@Page({ services: [...] })` on the owning layout, or use
+`@Service({ scope: 'transient' })` for per-component state.
+
 ## `services` Is Not `providers`
 
 These similarly named page options solve different problems:
