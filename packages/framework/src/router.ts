@@ -9,7 +9,7 @@ import { getForwardedServerMethodClass } from '@cossackframework/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { Page, PageOptions, Cossack, User, type CossackRuntimeInfo, type Middleware } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, setPublicUserProjection, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
   createInstance,
   createLayoutServiceScope,
@@ -342,6 +342,12 @@ export interface CreateAppOptions {
   };
   /** Optional process runtime integration (for example the Node adapter). */
   runtimeAdapter?: CossackRuntimeAdapter;
+  /**
+   * Extra user fields to expose in the browser hydration payload
+   * (`this.user` on the client). By default only `{ id }` is serialized; `id`
+   * always comes from the authenticated user. Return only non-sensitive data.
+   */
+  publicUser?: PublicUserProjection;
 }
 
 @Page({ transport: 'http' })
@@ -352,6 +358,7 @@ class RouterFallbackApp extends Cossack {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
+  setPublicUserProjection(options.publicUser);
   // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
@@ -680,6 +687,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
         c.header('X-Cossack-Request-Id', failureContext.requestId);
         c.header('Content-Type', 'text/html');
+        // Personalized HTML must never be stored by shared caches.
+        if (user) c.header('Cache-Control', 'private, no-store');
         const manifest = await getManifest(c.env);
         const modulePreloads = getModulePreloads(manifest, path);
         return c.body(

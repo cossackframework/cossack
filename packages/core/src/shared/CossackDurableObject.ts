@@ -207,7 +207,7 @@ export abstract class CossackDurableObject {
                     const options: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
                     if (options?.stateful === true) {
                         await this.state.storage.put({ componentPath, url: `${page}${url.search}`, params,
-                            componentState: component.getInitialState(), providerName, stateful: true });
+                            componentState: component.getInitialState({ user: false }), providerName, stateful: true });
                     }
                     this.publishComponent(component);
                 } catch (error) { await this.disposeComponent(component); throw error; }
@@ -270,7 +270,7 @@ export abstract class CossackDurableObject {
         }
 
         if (url.pathname === '/state') {
-            const currentState = this.componentInstance.getInitialState();
+            const currentState = this.componentInstance.getInitialState({ user: false });
             return new Response(JSON.stringify(currentState), {
                 headers: { 'Content-Type': 'application/json' }
             });

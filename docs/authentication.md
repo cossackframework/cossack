@@ -275,6 +275,28 @@ export class Dashboard extends Cossack {
 }
 ```
 
+### The user in the browser
+
+On the server, `this.user` is the full user that your middleware set. The
+browser gets only a projection of it. By default the SSR hydration payload
+(`window.__INITIAL_STATE__`) contains only `{ id }`, so after hydration
+`this.user` on the client has only `id`. Durable Object storage never stores
+the user.
+
+Read other user fields on the server, for example in `init()`, and copy what
+the page displays into `@State` fields. If client code needs more user fields,
+opt in to them with `publicUser`. Return only data that is safe to show to that
+user. `id` always comes from the authenticated user.
+
+```typescript
+const app = createApp({
+    publicUser: (user) => ({ name: user.name, avatar: user.avatar }),
+});
+```
+
+SSR responses for a signed-in user get `Cache-Control: private, no-store`, so
+shared caches do not store personalized HTML.
+
 ## Generated token boundaries
 
 The auth recipe stores login sessions and password-reset tokens in one table.

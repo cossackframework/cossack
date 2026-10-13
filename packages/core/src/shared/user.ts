@@ -22,3 +22,23 @@
 export interface User {
     id: string;
 }
+
+/** Extra user fields an application chooses to expose to the browser. */
+export type PublicUserProjection = (user: User) => Record<string, unknown>;
+
+let publicUserProjection: PublicUserProjection | undefined;
+
+/**
+ * Configure which user fields reach the browser hydration payload. By default
+ * only `id` is serialized. `id` is always taken from the real user. The
+ * framework sets this from `createApp({ publicUser })`.
+ */
+export function setPublicUserProjection(projection: PublicUserProjection | undefined): void {
+    publicUserProjection = projection;
+}
+
+/** The browser-visible projection of a user: `{ id }` plus any opted-in fields. */
+export function toPublicUser(user: User | undefined): User | undefined {
+    if (!user) return undefined;
+    return { ...publicUserProjection?.(user), id: user.id } as User;
+}
