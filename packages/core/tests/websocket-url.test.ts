@@ -51,4 +51,27 @@ describe('connectWebSocket URL protocol', () => {
     expect(urls[0]).toBe(`${socketProtocol}//example.test/ws/page/scope?routePath=%2F&pathname=%2F&params=%7B%7D`);
     disconnectWebSockets(component);
   });
+
+  it('encodes a target with path characters as one URL segment', () => {
+    const urls: string[] = [];
+    class FakeWebSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onmessage: unknown; onclose: unknown; onerror: unknown;
+      constructor(url: string) { urls.push(url); }
+      send() {} close() {}
+    }
+    vi.stubGlobal('window', { location: { protocol: 'http:', host: 'example.test' } });
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const target = 'page:["/src/pages/room/[id]/index.ts",[["id","1"]]]';
+    const component = {
+      getInitialStateFromWindow: () => ({ providerTargets: { page: target }, routePath: '/room/[id]', metadata: { pathname: '/room/1' } }),
+      websockets: new Map(),
+    };
+    connectWebSocket(component);
+    const path = new URL(urls[0]!).pathname;
+    expect(path.split('/')).toHaveLength(4);
+    expect(decodeURIComponent(path.split('/')[3]!)).toBe(target);
+    disconnectWebSockets(component);
+  });
 });

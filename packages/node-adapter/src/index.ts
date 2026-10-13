@@ -137,8 +137,12 @@ export class CossackNodeAdapter {
             const url = new URL(request.url || '', `http://${request.headers.host}`);
             // Path: /ws/:provider/:target
             const pathParts = url.pathname.split('/');
-            const target = pathParts.pop(); // last part is target
-            const provider = pathParts.pop(); // second to last is provider
+            const decode = (part: string | undefined) => {
+                if (part === undefined) return undefined;
+                try { return decodeURIComponent(part); } catch { return undefined; }
+            };
+            const target = decode(pathParts.pop()); // last part is target
+            const provider = decode(pathParts.pop()); // second to last is provider
             
             const params = url.searchParams;
             // Current clients send the public route path. Keep componentId as

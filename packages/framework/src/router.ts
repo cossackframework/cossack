@@ -577,7 +577,7 @@ export function createApp(options: CreateAppOptions = {}) {
           env: c.env,
           runtime: runtimeInfo,
           page: c.req.path,
-          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: scopeKey } : undefined,
+          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: doIdName } : undefined,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
         });
@@ -638,9 +638,11 @@ export function createApp(options: CreateAppOptions = {}) {
         // For durable-object transport, add the DO ID to providerTargets
         // Also add routePath to metadata for client WebSocket connections
         if (pageOptions?.transport === 'durable-object' && options.runtimeAdapter) {
+          // Process-local runtimes name the shared instance exactly as Cloudflare
+          // names its Durable Object, so a page behaves the same on both.
           pageInitialState.providerTargets = {
             ...(pageInitialState.providerTargets || {}),
-            page: scopeKey,
+            page: doIdName,
           };
           if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
         } else if (pageOptions?.transport === 'durable-object') {
@@ -780,8 +782,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       } catch (error) {
         return c.text(error instanceof Error ? error.message : String(error), 400);
       }
-      // Default scopes are recomputed from the authenticated user. Custom
-      // scope functions receive the same query values emitted during SSR.
+      // The target is recomputed from the route, never trusted from the client:
+      // without `scope`, one shared instance per page plus route params (as on
+      // Cloudflare); with `scope`, the scope key. Custom scope functions receive
+      // the same query values emitted during SSR.
       let routeParams: Record<string, string>;
       try {
         routeParams = decodeRuntimeRouteParams(c.req.query('params'));
@@ -789,7 +793,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         return c.text('Invalid WebSocket route params', 400);
       }
       const componentContext = withRuntimeRouteParams(c, routeParams);
-      const expectedTarget = await resolveSseScopeKey(componentContext, pageOptions);
+      const scopeKey = await resolveSseScopeKey(componentContext, pageOptions);
+      const objectName = async (context: Context) =>
+        realtimeObjectName(pageOptions, await resolveSseScopeKey(context, pageOptions), componentPath, routeParams);
+      const expectedTarget = await objectName(componentContext);
       let rejectAuthorization = target !== expectedTarget;
 
       const pathname = c.req.query('pathname') || '/';
@@ -801,7 +808,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const authSnapshot = snapshotRealtimeRequest(c, routeParams, getLocale());
       const authorize = async (operation: (fresh: Context) => Promise<void>) => !rejectAuthorization && (await withRealtimeAuthorization(
         authSnapshot, identity, getMiddlewares(componentPath), async fresh =>
-          fresh.get('user')?.id === originalUserId && await resolveSseScopeKey(fresh, pageOptions) === expectedTarget,
+          fresh.get('user')?.id === originalUserId && await objectName(fresh) === expectedTarget,
         operation,
       )) !== null;
       const runtimeInfo = await resolveRuntimeInfo();
@@ -824,7 +831,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             for (const layoutPath of getLayoutStack(componentPath)) {
               const Layout = getModuleDefault(layouts[layoutPath]) as new () => Cossack;
               activeScope = createLayoutServiceScope(activeScope, Layout, {
-                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: expectedTarget,
+                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey,
               });
               activeScope.bindRequest({ context: componentContext, user, env: c.env });
             }

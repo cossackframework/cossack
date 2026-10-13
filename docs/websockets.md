@@ -103,6 +103,12 @@ The Node adapter passes each connection's upgrade context into its shared
 runtime. The framework includes decoded page route params. See
 [rate limiting](./rate-limiting.md) for counter-store guarantees.
 
+On Node, a `durable-object` page uses the same instance identity as on
+Cloudflare: one in-memory instance per page plus route params, or one per scope
+key when the page sets `scope`. Users who open `/room/1` share one instance on
+both runtimes. Node instances live in one process, so they are not shared across
+machines and do not survive a restart.
+
 ## Stateless vs Stateful Durable Objects
 
 By default, `transport: 'durable-object'` creates a stateless DO that acts as a WebSocket hub only. State lives in memory during the session. The framework does not persist it to DO storage. This fits applications that use a database (D1, R2) as the source of truth.
