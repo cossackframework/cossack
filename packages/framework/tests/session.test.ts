@@ -212,6 +212,44 @@ describe('generic session middleware', () => {
     expect(store.rows.get(id)?.userId).toBeUndefined();
   });
 
+  it('marks the cookie Secure on HTTPS, and on X-Forwarded-Proto only with trustProxy', async () => {
+    const setCookieFor = async (options: Parameters<typeof createSessionMiddleware>[0], url: string, headers: Record<string, string> = {}) => {
+      const app = new Hono();
+      app.use('*', createRequestContextMiddleware());
+      app.use('*', createSessionMiddleware({ store: new MemorySessionStore(), ...options }));
+      app.get('/', (context) => context.text('ok'));
+      const response = await app.request(url, { headers });
+      return response.headers.getSetCookie().find((value) => value.startsWith('cossack_sid='))!;
+    };
+    const forwarded = { 'x-forwarded-proto': 'https' };
+    expect(await setCookieFor({}, 'https://app.example/')).toMatch(/; Secure/);
+    expect(await setCookieFor({}, 'http://app.example/')).not.toMatch(/; Secure/);
+    // The header is caller-controlled unless a trusted proxy sets it.
+    expect(await setCookieFor({}, 'http://app.example/', forwarded)).not.toMatch(/; Secure/);
+    expect(await setCookieFor({ trustProxy: true }, 'http://app.example/', forwarded)).toMatch(/; Secure/);
+    expect(await setCookieFor({ trustProxy: true }, 'http://app.example/', { 'x-forwarded-proto': 'https, http' })).toMatch(/; Secure/);
+    expect(await setCookieFor({ trustProxy: true }, 'http://app.example/', { 'x-forwarded-proto': 'http' })).not.toMatch(/; Secure/);
+    expect(await setCookieFor({ secure: true }, 'http://app.example/')).toMatch(/; Secure/);
+    expect(await setCookieFor({ secure: false }, 'https://app.example/')).not.toMatch(/; Secure/);
+  });
+
+  it('re-sends the cookie with a fresh Max-Age when the session is written, not on reads', async () => {
+    const store = new MemorySessionStore();
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store, ttl: 120_000 }));
+    app.get('/', async (context) => context.json(await session().get('cart') ?? null));
+    app.post('/', async (context) => { await session().set('cart', 1); return context.text('ok'); });
+    const id = cookieValue(await app.request('/'), 'cossack_sid')!;
+    const read = await app.request('/', { headers: { cookie: `cossack_sid=${id}` } });
+    expect(read.headers.getSetCookie()).toEqual([]);
+    const written = await app.request('/', { method: 'POST', headers: { cookie: `cossack_sid=${id}` } });
+    const header = written.headers.getSetCookie().find((value) => value.startsWith('cossack_sid='));
+    expect(cookieValue(written, 'cossack_sid')).toBe(id);
+    expect(header).toMatch(/Max-Age=120/);
+    expect(header).toMatch(/HttpOnly/);
+  });
+
   it('throws a clear error without a configured store or request session', async () => {
     expect(() => session()).toThrow(/No session in scope/);
     const app = new Hono();
