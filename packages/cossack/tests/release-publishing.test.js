@@ -35,3 +35,22 @@ describe('release publishing coverage', () => {
     expect(workflow.jobs.publish.permissions['id-token']).toBe('write');
   });
 });
+
+describe('workflow supply chain', () => {
+  it('pins every third-party action in every workflow to a full commit SHA', () => {
+    const directory = path.join(root, '.github/workflows');
+    const references = readdirSync(directory).filter(name => /\.ya?ml$/.test(name)).flatMap(name =>
+      [...readFileSync(path.join(directory, name), 'utf8').matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)(.*)$/gm)]
+        .map(([, ref, comment]) => ({ name, ref, comment })));
+    const external = references.filter(({ ref }) => !ref.startsWith('./'));
+    expect(external.length).toBeGreaterThan(0);
+    for (const { name, ref, comment } of external) {
+      expect(ref, `${name}: ${ref}`).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
+      expect(comment, `${name}: ${ref} needs a version comment`).toMatch(/^\s+# v\d+/);
+    }
+    const dependabot = parse(readFileSync(path.join(root, '.github/dependabot.yml'), 'utf8'));
+    expect(dependabot.updates).toContainEqual(expect.objectContaining({
+      'package-ecosystem': 'github-actions', schedule: { interval: 'weekly' },
+    }));
+  });
+});
