@@ -112,3 +112,30 @@ it('re-evaluates the entry after a binding factory failure instead of reusing it
         expect(await (await fetch(origin)).text()).toBe('ready');
     } finally { delete (globalThis as any)[key]; }
 });
+it('accepts a runnable SSR environment created by another Vite copy', async () => {
+    // Linked packages resolve their own Vite, so the application's environment
+    // is not an instance of this copy's RunnableDevEnvironment class.
+    const plugin = cossackNode();
+    const logger = { info() {}, warn() {}, error() {} };
+    const middlewares: Array<(request: unknown, response: unknown, next: (error?: unknown) => void) => void> = [];
+    const imported: string[] = [];
+    const server = (environment: unknown) => ({
+        config: { server: {}, mode: 'development', envDir: tmpdir(), root: tmpdir(), logger },
+        environments: { ssr: environment },
+        httpServer: null,
+        middlewares: { use: (handler: typeof middlewares[number]) => middlewares.push(handler) },
+    });
+    const configure = plugin.configureServer as (server: unknown) => (() => void) | void;
+    const foreign = {
+        moduleGraph: { invalidateAll() {} },
+        runner: {
+            clearCache() {},
+            async import(id: string) { imported.push(id); return { app: { fetch: () => new Response('foreign') } }; },
+        },
+    };
+    const install = configure.call({}, server(foreign));
+    expect(typeof install).toBe('function');
+    (install as () => void)();
+    expect(middlewares).toHaveLength(1);
+    expect(() => configure.call({}, server({ moduleGraph: {} }))).toThrow('runnable Vite SSR environment');
+});

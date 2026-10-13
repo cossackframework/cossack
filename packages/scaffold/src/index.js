@@ -306,6 +306,7 @@ const EXAMPLE_PATHS = new Set([
   'src/pages/(public)/layout.ts',
 ]);
 const DESKTOP_PATHS = new Set([
+  'patches/appdmg@0.6.6.patch',
   'src/desktop/index.ts',
   'forge.config.ts',
   'desktop-assets/icon.icns',
@@ -626,7 +627,8 @@ function pnpmWorkspace(recipe) {
     'workerd',
   ];
   const overrides = recipe.resolvedFeatures.includes('desktop')
-    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n`
+    // appdmg's callback API needs a compatibility patch for image-size 2.
+    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n  'image-size@<2.0.3': 2.0.4\n\npatchedDependencies:\n  appdmg@0.6.6: patches/appdmg@0.6.6.patch\n`
     : '\n';
   return `${recipe.resolvedFeatures.includes('desktop') ? 'nodeLinker: hoisted\n\n' : ''}allowBuilds:\n${builds.map((name) => `  ${name.startsWith('@') ? `'${name}'` : name}: true`).join('\n')}${overrides}`;
 }
@@ -2081,6 +2083,27 @@ async function mergePnpmWorkspace(
   }
 
   current.set('allowBuilds', mergedBuilds);
+  // Feature composition must install its dependency fixes as well as its build approvals.
+  for (const key of ['overrides', 'patchedDependencies']) {
+    const existing = current.get(key)?.toJSON?.() ?? {};
+    const before = previous[key] ?? {};
+    const after = desired[key] ?? {};
+    const merged = { ...existing };
+    for (const [name, value] of Object.entries(before)) {
+      if (!(name in after) && existing[name] === value) delete merged[name];
+    }
+    for (const [name, value] of Object.entries(after)) {
+      if (!(name in existing) || existing[name] === before[name]) merged[name] = value;
+    }
+    if (Object.keys(merged).length) current.set(key, merged);
+    else current.delete(key);
+  }
+  if (desired.nodeLinker && (!current.has('nodeLinker') || current.get('nodeLinker') === previous.nodeLinker)) {
+    current.set('nodeLinker', desired.nodeLinker);
+  } else if (!desired.nodeLinker && previous.nodeLinker && current.get('nodeLinker') === previous.nodeLinker) {
+    // Removing the feature that required the linker restores pnpm's default.
+    current.delete('nodeLinker');
+  }
   entry.content = text(current.toString());
   return entry;
 }

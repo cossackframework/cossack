@@ -77,8 +77,20 @@ describe('shared structural route model', () => {
     expect(file).toBe(join(root, '.cossack/routes.ts'));
     expect(readFileSync(file, 'utf8')).toContain('/only-here');
     write(root, 'dist/client/.vite/manifest.json', '{}');
-    (plugin.writeBundle as Function).call({ environment: { name: 'client' } });
+    (plugin.writeBundle as Function).call({ environment: { name: 'client', config: { build: { outDir: 'dist/client' } } } });
     expect(JSON.parse(readFileSync(join(root, 'dist/client/cossack-routes.json'), 'utf8'))).toEqual(discoverRoutes(root));
+  });
+
+  it.each(['dist/client', '../dist/app/client'])('emits the SSR manifest in the configured client output %s', outDir => {
+    const root = join(project(), 'app');
+    write(root, 'src/pages/index.ts');
+    const plugin = cossackPages();
+    (plugin.configResolved as Function)({ root });
+    const manifest = JSON.stringify({ 'src/client/entry-client.ts': { file: 'assets/client.js' } });
+    write(root, `${outDir}/.vite/manifest.json`, manifest);
+    (plugin.writeBundle as Function).call({ environment: { name: 'client', config: { build: { outDir } } } });
+    expect(readFileSync(join(root, outDir, 'cossack-manifest.json'), 'utf8')).toBe(manifest);
+    expect(existsSync(join(root, outDir, 'cossack-routes.json'))).toBe(true);
   });
 
   it('updates additions and deletions under the selected root and releases watcher listeners', () => {

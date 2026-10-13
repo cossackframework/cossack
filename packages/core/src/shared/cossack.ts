@@ -362,6 +362,31 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         await pending;
     }
 
+    /**
+     * Resolve a named resource for its current dependencies. Use it where
+     * render() does not read the field, such as an event handler: a plain
+     * field read starts a lazy load and returns the previous or `initial`
+     * value. Shares an in-flight load, rejects with the load's error, and
+     * follows dependency changes made while waiting.
+     */
+    public async load$<Name extends ServerResourceName<T, this>>(name: Name): Promise<ServerResourceValue<T, this, Name>> {
+        for (;;) {
+            this._bindServerResourceField(name);
+            const entry = this._serverResources.get(name);
+            if (!entry) throw new Error(`[Cossack] Unknown server$ resource "${name}". Declare it with server$() first.`);
+            if (entry.failed) throw entry.error;
+            if (entry.resolved) return entry.value as ServerResourceValue<T, this, Name>;
+            if (!entry.pending) throw new Error(`[Cossack] Cannot load server$ resource "${name}" now.`);
+            // Server loads reject; client loads record the error on the entry.
+            await entry.pending.catch(() => undefined);
+            if (this._phase === LifecyclePhase.Destroyed) {
+                throw new Error(`[Cossack] Cannot load server$ resource "${name}" after ${this.constructor.name} was destroyed.`);
+            }
+            // A newer entry (changed deps, refresh, or invalidation) is bound on the next pass.
+            if (this._serverResources.get(name) === entry && entry.failed) throw entry.error;
+        }
+    }
+
     /** Read declared resources after an uncertain RPC failure, without retrying its action. */
     public reconcile$<Name extends ServerResourceName<T, this>>(
         failure: unknown, name: Name, ...otherNames: Name[]

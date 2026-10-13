@@ -461,7 +461,7 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // environment where the manifest has just been emitted.
       if (this.environment?.name !== 'client') return;
 
-      const clientOutDir = resolve(projectRoot, 'dist', 'client');
+      const clientOutDir = resolve(projectRoot, this.environment.config.build.outDir);
       const src = resolve(clientOutDir, '.vite', 'manifest.json');
       if (!existsSync(src)) return;
 

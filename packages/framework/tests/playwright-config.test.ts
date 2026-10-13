@@ -46,6 +46,8 @@ it.each(['dev', ''])('disables server reuse in CI (server=%j)', async server => 
   expect(config.webServer).toHaveProperty('reuseExistingServer', false);
   expect(config.webServer).not.toHaveProperty('url');
   expect((config.webServer as { command: string }).command).not.toContain('--reuse');
+  expect(config.projects?.[0].use).not.toHaveProperty('channel');
+  expect(config.use?.video).toBe('retain-on-failure');
 });
 
 it.each(['', '0', '65536', '15173.5', 'invalid'])('rejects invalid dedicated ports: %j', async port => {

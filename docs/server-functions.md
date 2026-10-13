@@ -108,6 +108,27 @@ invalidateUsers() {
 - `refresh$('users')` bypasses the resolved invocation and immediately fetches it again while retaining the last good value.
 - `invalidate$('users')` removes the current invocation. The next render starts it again from the declared initial value.
 
+### Read a resource outside render()
+
+A `server$` field loads lazily. Cossack calls the loader only when code reads
+the field. When `render()` reads the field, a change to `deps` starts a new call
+on the next render. When only an event handler reads the field, a change to
+`deps` starts nothing. The first read in the handler starts the call and
+returns the last value or `initial`, not the new data.
+
+Use `await this.load$('name')` in handlers. It reads the current `deps`, starts
+the call if needed, shares a call that is already running, and returns the
+loaded value. If the call fails, `load$` rejects with the error.
+
+```typescript
+@Client()
+async submitLead() {
+    const property = await this.load$('leadProperty');
+    if (!property) return;
+    // property is loaded for the current selectedAddressId.
+}
+```
+
 If a client refresh fails, the resource keeps its last successful value and records the error without continuously retrying. A dependency change, explicit refresh, or invalidation allows another attempt. During SSR, loader failures propagate into the hierarchical error-boundary flow.
 
 `this.resourceStatus$('users')` returns a snapshot with `state` (`pending`,

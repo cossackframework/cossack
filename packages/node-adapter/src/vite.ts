@@ -1,5 +1,5 @@
 import { getRequestListener } from '@hono/node-server';
-import { isRunnableDevEnvironment, loadEnv, type Plugin } from 'vite';
+import { isRunnableDevEnvironment, loadEnv, type DevEnvironment, type Plugin, type RunnableDevEnvironment } from 'vite';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -30,6 +30,18 @@ interface LoadedEntry {
     detach?: () => void;
 }
 
+/**
+ * `isRunnableDevEnvironment` is an `instanceof` check. When this package is
+ * linked or Vite is installed twice, the server's environment comes from the
+ * application's Vite copy and fails that check, so also accept the runner shape.
+ */
+function isRunnableEnvironment(environment: DevEnvironment): environment is RunnableDevEnvironment {
+    if (isRunnableDevEnvironment(environment)) return true;
+    const runner = (environment as Partial<RunnableDevEnvironment>).runner;
+    return typeof runner?.import === 'function' && typeof runner.clearCache === 'function'
+        && typeof environment.moduleGraph?.invalidateAll === 'function';
+}
+
 /** Serve generated Node applications through Vite's SSR environment. */
 export function cossackNode(options: NodeDevelopmentOptions = {}): Plugin {
     const timeout = options.shutdownTimeoutMs ?? 5000;
@@ -51,7 +63,7 @@ export function cossackNode(options: NodeDevelopmentOptions = {}): Plugin {
             // Embedded servers own their HTTP listener and runtime lifecycle.
             if (server.config.server.middlewareMode) return;
             const environment = server.environments.ssr;
-            if (!isRunnableDevEnvironment(environment)) throw new Error('Cossack Node development requires a runnable Vite SSR environment');
+            if (!isRunnableEnvironment(environment)) throw new Error('Cossack Node development requires a runnable Vite SSR environment');
             const variables = { ...loadEnv(server.config.mode, server.config.envDir, ''), ...process.env };
             let current: LoadedEntry | undefined;
             let stopped = false;

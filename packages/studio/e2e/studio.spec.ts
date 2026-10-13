@@ -130,6 +130,8 @@ test('browses, queries, mutates, and refreshes SQLite schema', async ({ page }) 
   expect(faviconResponse.headers()['content-type']).toBe('image/svg+xml');
 
   await page.goto(launchUrl);
+  await expect(page.locator('script[type="module"][src]')).toHaveAttribute('src', /^\/assets\/entry-client\.[\w-]+\.js$/);
+  await page.waitForFunction(() => (window as unknown as { __cossackReady?: boolean }).__cossackReady === true);
   const studioBrand = page.getByTestId('studio-brand');
   await expect(studioBrand.getByRole('img', { name: 'Cossack' })).toBeVisible();
   await expect(studioBrand).toContainText('Studio');

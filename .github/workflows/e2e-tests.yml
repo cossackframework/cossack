@@ -5,14 +5,23 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   e2e-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -33,6 +42,13 @@ jobs:
             generated_app=true
             studio=true
           else
+            # Shared dependencies and CI changes affect every optional suite.
+            if ! git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+              package.json pnpm-lock.yaml pnpm-workspace.yaml .github/workflows; then
+              desktop=true
+              generated_app=true
+              studio=true
+            fi
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
               examples/desktop-counter \
               packages/desktop || desktop=true
@@ -56,7 +72,8 @@ jobs:
               docs/deployment.md \
               docs/installation.md || generated_app=true
             git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
-              packages/studio || studio=true
+              packages/studio packages/core packages/renderer packages/framework \
+              packages/node-adapter packages/database packages/ui || studio=true
           fi
 
           echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
@@ -64,10 +81,10 @@ jobs:
           echo "studio=$studio" >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'pnpm'
@@ -81,8 +98,8 @@ jobs:
       - name: Check package types
         run: pnpm run typecheck -- --exclude-desktop
 
-      - name: Install Playwright browsers
-        run: pnpm --filter @cossackframework/framework exec playwright install --with-deps
+      - name: Install Chromium and recording dependencies
+        run: pnpm --filter @cossackframework/framework exec playwright install chromium --with-deps
 
       - name: Run all unit tests
         run: pnpm --workspace-concurrency=1 --filter "./packages/*" --filter "!@cossackframework/desktop" run test --watch=false
@@ -112,11 +129,13 @@ jobs:
           CI: true
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
-        if: always()
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles('packages/framework/playwright-report/**', 'packages/studio/playwright-report/**', 'packages/framework/test-results/**', 'packages/studio/test-results/**') != '' }}
         with:
           name: playwright-report
           path: |
             packages/framework/playwright-report/
             packages/studio/playwright-report/
+            packages/framework/test-results/
+            packages/studio/test-results/
           retention-days: 30

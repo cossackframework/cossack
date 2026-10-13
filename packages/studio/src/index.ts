@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createStaticAssets } from '@cossackframework/node-adapter';
 import type { ORM, ORMConfig, ORMToolingContext } from '@cossackframework/database';
 import { createLocalConnection } from './lib/local-connection.js';
 import {
@@ -195,6 +196,7 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
     const security = createStudioSecurity(port);
     const packageRoot = path.dirname(fileURLToPath(import.meta.url));
     const clientRoot = path.resolve(packageRoot, 'app', 'client');
+    const env = { ASSETS: createStaticAssets({ root: clientRoot }) };
     const serverEntry = path.resolve(packageRoot, 'app', 'server', 'entry-server.js');
     let fetchApp: ((request: Request, env?: Record<string, unknown>) => Promise<Response>) | undefined;
 
@@ -209,7 +211,7 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
           fetchApp = (incoming, env) => module.app.fetch(incoming, env);
         }
         const webRequest = await toWebRequest(request, security.origin);
-        await writeWebResponse(await fetchApp(webRequest, {}), response);
+        await writeWebResponse(await fetchApp(webRequest, env), response);
       } catch (error: any) {
         if (!response.headersSent) response.statusCode = 500;
         response.end(error?.message ?? String(error));

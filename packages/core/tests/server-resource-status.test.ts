@@ -298,3 +298,112 @@ describe('resourceStatus$ (RT-03)', () => {
         expect(() => host.status('users')).toThrow(/Unknown server\$ resource/);
     });
 });
+
+describe('load$', () => {
+    class Lead extends Cossack<{}, { Resources: 'lead' }> {
+        static readonly __cossackResourceFields = ['lead'];
+        selectedId = 'a';
+        calls: string[] = [];
+        gates = new Map<string, ReturnType<typeof deferred<string>>>();
+        get lead() {
+            return this.__serverResource('lead', async (id: string) => {
+                this.calls.push(id);
+                const gate = deferred<string>();
+                this.gates.set(id, gate);
+                return gate.promise;
+            }, { deps: () => [this.selectedId] as const, initial: null as string | null })!;
+        }
+    }
+
+    it('resolves the current dependencies when render() never read the field', async () => {
+        const host = new Lead();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        host.selectedId = 'b';
+        const value = host.load$('lead');
+        await vi.waitFor(() => expect(host.gates.has('b')).toBe(true));
+        host.gates.get('b')!.resolve('lead b');
+        await expect(value).resolves.toBe('lead b');
+        expect(host.calls).toEqual(['b']);
+        // A resolved invocation is returned without another request.
+        await expect(host.load$('lead')).resolves.toBe('lead b');
+        expect(host.calls).toEqual(['b']);
+    });
+
+    it('shares an in-flight load and follows a dependency change made while waiting', async () => {
+        const host = new Lead();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        void host.lead;
+        const value = host.load$('lead');
+        await vi.waitFor(() => expect(host.gates.has('a')).toBe(true));
+        host.selectedId = 'c';
+        host.gates.get('a')!.resolve('lead a');
+        await vi.waitFor(() => expect(host.gates.has('c')).toBe(true));
+        host.gates.get('c')!.resolve('lead c');
+        await expect(value).resolves.toBe('lead c');
+        expect(host.calls).toEqual(['a', 'c']);
+    });
+
+    it('rejects with the load error and for unknown names', async () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const host = new Lead();
+            vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+            const value = host.load$('lead');
+            await vi.waitFor(() => expect(host.gates.has('a')).toBe(true));
+            host.gates.get('a')!.reject(new Error('backend down'));
+            await expect(value).rejects.toThrow('backend down');
+            await expect((host.load$ as (name: string) => Promise<unknown>)('missing')).rejects.toThrow(/Unknown server\$ resource/);
+        } finally {
+            log.mockRestore();
+        }
+    });
+
+    it('rejects when the component is destroyed while waiting', async () => {
+        const host = new Lead();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        const value = host.load$('lead');
+        await vi.waitFor(() => expect(host.gates.has('a')).toBe(true));
+        host.destroy();
+        host.gates.get('a')!.resolve('lead a');
+        await expect(value).rejects.toThrow(/after Lead was destroyed/);
+        await expect(host.load$('lead')).rejects.toThrow(/destroyed/);
+    });
+
+    it('follows a refresh made while waiting and returns the refreshed value', async () => {
+        const host = new Lead();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        const value = host.load$('lead');
+        await vi.waitFor(() => expect(host.gates.has('a')).toBe(true));
+        const first = host.gates.get('a')!;
+        void host.refresh$('lead');
+        await vi.waitFor(() => expect(host.calls).toEqual(['a', 'a']));
+        const second = host.gates.get('a')!;
+        expect(second).not.toBe(first);
+        first.resolve('stale a');
+        second.resolve('fresh a');
+        await expect(value).resolves.toBe('fresh a');
+    });
+
+    it('follows an invalidation made while waiting and starts a new load', async () => {
+        const host = new Lead();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        const value = host.load$('lead');
+        await vi.waitFor(() => expect(host.gates.has('a')).toBe(true));
+        const first = host.gates.get('a')!;
+        host.invalidate$('lead');
+        first.resolve('stale a');
+        await vi.waitFor(() => expect(host.calls).toEqual(['a', 'a']));
+        host.gates.get('a')!.resolve('fresh a');
+        await expect(value).resolves.toBe('fresh a');
+    });
+
+    it('rejects a server-side loader failure without recording a client error', async () => {
+        const host = new Lead();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        Object.defineProperty(host, 'isServer', { value: true, configurable: true });
+        const value = host.load$('lead');
+        await vi.waitFor(() => expect(host.gates.has('a')).toBe(true));
+        host.gates.get('a')!.reject(new Error('server rejected'));
+        await expect(value).rejects.toThrow('server rejected');
+    });
+});

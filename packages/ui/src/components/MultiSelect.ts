@@ -59,10 +59,17 @@ export class MultiSelect extends Cossack {
     private popup?: HTMLElement;
     private cleanup?: () => void;
     private searchOwner?: string;
+    // The last emitted selection and the props it was emitted under. A parent
+    // applies onChange in a later render, so until it replaces props, the next
+    // edit builds on this list instead of the stale value prop.
+    private emitted?: { props: MultiSelectProps; value: readonly string[] };
 
     private get selected(): readonly string[] {
         this.initialValue ??= [...(this.props.defaultValue ?? [])];
         return this.props.value ?? this.draft ?? this.initialValue;
+    }
+    private get base(): readonly string[] {
+        return this.emitted?.props === this.props ? this.emitted.value : this.selected;
     }
     private get selectionKey() { return JSON.stringify(this.selected); }
     private get search() { return this.searchOwner === this.selectionKey ? this.query : ''; }
@@ -195,11 +202,13 @@ export class MultiSelect extends Cossack {
     @Client()
     private add(value: string) {
         if (!this.editable() || !this.candidates.some(item => item.value === value) || this.selected.includes(value)) return;
-        if (this.atMax) { this.errorText = this.limitMessage; this.syncValidity(); return; }
+        const base = this.base;
+        if (this.atMax || (this.props.max && !base.includes(value) && base.length >= this.props.max)) { this.errorText = this.limitMessage; this.syncValidity(); return; }
         const error = this.props.validate?.(value);
         if (error) { this.errorText = error; this.syncValidity(); return; }
-        const next = [...this.selected, value];
+        const next = base.includes(value) ? [...base] : [...base, value];
         this.draft = next;
+        this.emitted = { props: this.props, value: next };
         this.close();
         this.props.onChange?.([...next]);
         this.syncValidity();
@@ -209,8 +218,9 @@ export class MultiSelect extends Cossack {
     private async remove(value: string, event?: ControlEvent<HTMLButtonElement, MouseEvent>) {
         if (!this.editable() || !this.selected.includes(value)) return;
         const input = this.input!, button = event?.currentTarget, index = this.selected.indexOf(value), keyboard = event?.detail === 0;
-        const next = this.selected.filter(item => item !== value);
+        const next = this.base.filter(item => item !== value);
         this.draft = next;
+        this.emitted = { props: this.props, value: next };
         this.close();
         this.props.onChange?.([...next]);
         this.syncValidity();
@@ -236,6 +246,7 @@ export class MultiSelect extends Cossack {
                 queueMicrotask(() => {
                     if (!active || event.defaultPrevented) return;
                     this.draft = undefined;
+                    this.emitted = undefined;
                     this.close();
                     this.syncValidity();
                 });

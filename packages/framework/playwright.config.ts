@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
  * Detect whether a system Google Chrome is installed. `channel: 'chrome'`
  * forces Playwright to launch system Chrome — required on platforms where
  * Playwright doesn't ship browser binaries (e.g. Ubuntu 26.04) and works on
- * GitHub Actions ubuntu-latest where Chrome is preinstalled. When absent
+ * local machines with Chrome installed. When absent
  * (e.g. a minimal WSL setup without Chrome), the channel is omitted so
  * Playwright falls back to its bundled Chromium (installed via
  * `playwright install`).
@@ -27,7 +27,8 @@ function hasSystemChrome(): boolean {
   return false;
 }
 
-const chromeChannel = hasSystemChrome() ? { channel: 'chrome' as const } : {};
+// CI installs the Chromium version that matches Playwright; system Chrome can drift.
+const chromeChannel = !process.env.CI && hasSystemChrome() ? { channel: 'chrome' as const } : {};
 
 /**
  * Server modes
@@ -83,11 +84,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // Prefer system Chrome (channel: 'chrome') when installed — required on
-      // platforms where Playwright doesn't ship browser binaries (e.g. Ubuntu
-      // 26.04), and works on GitHub Actions ubuntu-latest where Chrome is
-      // preinstalled. When system Chrome is absent (e.g. a minimal WSL setup),
-      // fall back to Playwright's bundled Chromium.
+      // Local runs can use system Chrome; CI uses the installed Playwright Chromium.
       use: { ...devices['Desktop Chrome'], ...chromeChannel },
       // SSG mode runs only the SSG suite; dev mode skips it because the SSG
       // output only exists after `vite build`.

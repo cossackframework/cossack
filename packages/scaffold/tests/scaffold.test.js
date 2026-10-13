@@ -800,7 +800,9 @@ describe('composition', () => {
       const targetPackage = JSON.parse(targetFiles.get('package.json').content.toString());
       expect(targetPackage.dependencies['@cossackframework/desktop']).toBeDefined();
       expect(targetPackage.devDependencies.electron).toBeDefined();
-      expect(targetPackage.devDependencies['@electron-forge/cli']).toBeDefined();
+      for (const name of ['cli', 'maker-deb', 'maker-dmg', 'maker-wix', 'shared-types']) {
+        expect(targetPackage.devDependencies[`@electron-forge/${name}`]).toBe('^8.0.1');
+      }
       expect(targetPackage.main).toBe('dist/desktop/index.js');
       expect(targetPackage.engines.node).toBe('>=22');
       expect(targetPackage.scripts['build:desktop']).toContain('src/desktop/index.ts');
@@ -816,6 +818,9 @@ describe('composition', () => {
       expect(pnpmWorkspace).toContain('electron: true');
       expect(pnpmWorkspace).toContain('fs-xattr: true');
       expect(pnpmWorkspace).toContain('macos-alias: true');
+      expect(pnpmWorkspace).toContain("'image-size@<2.0.3': 2.0.4");
+      expect(pnpmWorkspace).toContain('appdmg@0.6.6: patches/appdmg@0.6.6.patch');
+      expect(targetFiles.get('patches/appdmg@0.6.6.patch').capability).toBe('desktop');
       expect(targetFiles.get('vite.config.ts').content.toString())
         .toContain("external: ['electron']");
       expect(targetFiles.get('vite.config.ts').content.toString())
@@ -1056,6 +1061,31 @@ describe('composition', () => {
     const preservedWorkspace = await fs.readFile(workspacePath, 'utf8');
     expect(preservedWorkspace).toContain('sharp: false');
     expect(preservedWorkspace).toContain('customSetting: kept');
+  });
+
+  it('adds and removes Desktop dependency fixes during feature composition', async () => {
+    const root = await temporaryDirectory();
+    const project = await createApp('app', {
+      cwd: root, adapter: 'node', preset: 'minimal', interactive: false,
+    });
+    const workspacePath = path.join(project.projectDir, 'pnpm-workspace.yaml');
+    await fs.appendFile(workspacePath, '\noverrides:\n  lodash: 4.18.1\n');
+    await addFeature(project.projectDir, 'desktop', { interactive: false });
+    const workspace = await fs.readFile(workspacePath, 'utf8');
+    expect(workspace).toContain('nodeLinker: hoisted');
+    expect(workspace).toContain('lodash: 4.18.1');
+    expect(workspace).toContain('image-size@<2.0.3');
+    expect(workspace).toContain('appdmg@0.6.6: patches/appdmg@0.6.6.patch');
+    const patchPath = path.join(project.projectDir, 'patches/appdmg@0.6.6.patch');
+    expect(await fs.readFile(patchPath, 'utf8')).toContain('imageSizeFromFile');
+
+    await removeFeatureFromProject(project.projectDir, 'desktop', { interactive: false });
+    const remaining = await fs.readFile(workspacePath, 'utf8');
+    expect(remaining).toContain('lodash: 4.18.1');
+    expect(remaining).not.toContain('nodeLinker');
+    expect(remaining).not.toContain('image-size');
+    expect(remaining).not.toContain('patchedDependencies');
+    await expect(fs.access(patchPath)).rejects.toThrow();
   });
 
   it('protects user-owned collisions before writing', async () => {

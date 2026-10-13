@@ -41,6 +41,14 @@ class Resources extends Cossack<{}, { Resources: 'users' | 'selected' | 'missing
         const optional = this.resourceStatus$('optional');
         if (optional.state === 'ready') { const value: User | undefined = optional.value; void value; }
         void this.refresh$('users');
+        void this.load$('selected').then(user => {
+            const loaded: User | null = user;
+            // @ts-expect-error Loaded values retain the loader's nullable type.
+            const required: User = user;
+            void loaded; void required;
+        });
+        // @ts-expect-error Ordinary fields cannot be loaded.
+        void this.load$('query');
         const recovered = this.reconcile$(new Error('unknown'), 'users', 'selected');
         recovered.then(result => {
             const names: readonly ('users' | 'selected')[] = result.resources;

@@ -131,7 +131,10 @@ export function cossackSsg(options: CossackSsgOptions = {}): Plugin {
       const fs: typeof import('node:fs') = requireRealFs();
       const path = await import('node:path');
 
-      const outDir = path.resolve(projectRoot, options.outDir || 'dist/client');
+      // Default to the client environment's outDir so a custom build.outDir
+      // finds the manifests the cossack-pages compiler emitted next to them.
+      const outDir = path.resolve(projectRoot,
+        options.outDir || this.environment?.config?.build?.outDir || 'dist/client');
 
       console.log('[cossack/ssg] Starting static rendering...');
 

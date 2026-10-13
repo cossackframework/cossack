@@ -94,6 +94,10 @@ invalidateUsers() {
 - `invalidate$` removes it; the next render fetches it again.
 - After a client failure, retry only after dependency change, refresh, or
   invalidation.
+- Fields load lazily: only a read starts a call. If `render()` does not read
+  the field, `deps` changes start nothing, and a plain read in a handler
+  returns the old or `initial` value. Use `await this.load$('name')` in
+  handlers to get the value for the current `deps`.
 
 ## Compiler constraints
 
