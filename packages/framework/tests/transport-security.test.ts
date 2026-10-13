@@ -165,7 +165,7 @@ describe('transport security boundary', () => {
         app.get('/ws/:provider/:id', handleWebSocketProxy(ctx));
         const response = await app.request('/ws/page/target?routePath=/private', { headers: {
             origin: 'http://localhost', 'X-User-ID': 'admin', 'X-User-Data': '{"id":"admin","role":"admin"}',
-        } }, { COSSACK_OBJECT: { idFromString: () => 'target', get: () => ({ fetch: forward }) } });
+        } }, { COSSACK_OBJECT: { idFromName: () => ({ toString: () => 'target' }), idFromString: () => 'target', get: () => ({ fetch: forward }) } });
         expect(response.status).toBe(200);
         const headers = (forward.mock.calls[0] as unknown as [Request])[0].headers;
         expect(headers.get('X-User-ID')).toBe(user?.id ?? null);
@@ -183,7 +183,7 @@ describe('transport security boundary', () => {
         app.use('*', async (c, next) => { c.set('user' as never, { id: 'taras-Тарас', name: 'Тарас 🎉' } as never); await next(); });
         app.get('/ws/:provider/:id', handleWebSocketProxy(ctx));
         const response = await app.request('/ws/page/target?routePath=/private', { headers: { origin: 'http://localhost' } },
-            { COSSACK_OBJECT: { idFromString: () => 'target', get: () => ({ fetch: forward }) } });
+            { COSSACK_OBJECT: { idFromName: () => ({ toString: () => 'target' }), idFromString: () => 'target', get: () => ({ fetch: forward }) } });
         expect(response.status).toBe(200);
         const headers = (forward.mock.calls[0] as unknown as [Request])[0].headers;
         expect(decodeURIComponent(headers.get('X-User-ID')!)).toBe('taras-Тарас');

@@ -4,7 +4,7 @@ import { getLocale, isOriginAllowed } from '@cossackframework/core';
 import type { RouterContext } from '../route-ids.js';
 import { getModuleDefault } from '../module-default.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
-import { resolveRealtimeScopeKey } from '../realtime-scope.js';
+import { realtimeObjectName, resolveRealtimeScopeKey } from '../realtime-scope.js';
 import { captureRealtimeIdentity } from '../realtime-identity.js';
 
 /** WebSocket proxy handler — forwards WebSocket upgrade requests to the appropriate Durable Object. */
@@ -40,7 +40,11 @@ export function handleWebSocketProxy(ctx: RouterContext) {
         let id: unknown;
         let rejectAuthorization = false;
         try {
-            if (typeof pageOptions?.scope === 'function' && doBinding.idFromName(scopeKey).toString() !== durableObjectId) rejectAuthorization = true;
+            // The client chooses the target id. Recompute it from the page
+            // identity (custom scope key, or component + route params) so a
+            // client cannot join another page's Durable Object.
+            const expected = doBinding.idFromName(realtimeObjectName(pageOptions as any, scopeKey, componentPath, params));
+            if (expected.toString() !== durableObjectId) rejectAuthorization = true;
             id = doBinding.idFromString(durableObjectId);
         } catch { return new Response('Invalid WebSocket target', { status: 400 }); }
         const stub = doBinding.get(id);

@@ -249,7 +249,7 @@ The `scope` option controls which users share the same state. It receives the
 Hono `Context` (with access to the user, route params, query params, env
 bindings) and returns a scope key string.
 
-> `scope` is a shared `@Page` option. For the `durable-object` transport, it selects the Durable Object instance that handles a page. The default scope is per URL. See [WebSockets: Scope](./websockets.md#scope-controlling-which-durable-object-instance-a-page-connects-to).
+> `scope` is a shared `@Page` option. For the `durable-object` transport, it selects the Durable Object instance that handles a page. The default scope is per page instance (component plus route params, ignoring host and query string). See [WebSockets: Scope](./websockets.md#scope-controlling-which-durable-object-instance-a-page-connects-to).
 
 ### Default: Per-User
 

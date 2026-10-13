@@ -121,6 +121,7 @@ import type { ConfigRuntime, ConfigRequirementContext } from './config-requireme
 import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 import { createAssetsMiddleware } from './assets.js';
+import { realtimeObjectName } from './realtime-scope.js';
 import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './transports/rpc-stream.js';
 import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
 import { retainResponseLifetime } from './response-lifetime.js';
@@ -491,10 +492,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // For durable-object transport, query the DO for existing state before SSR
         // Only for stateful pages — stateless DOs don't persist state
         let doInitialState: any = undefined;
-        let doIdName: string = c.req.url; // Default: per-URL
-        if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
-          doIdName = scopeKey;
-        }
+        const doIdName = realtimeObjectName(pageOptions, scopeKey, path, c.req.param() || {});
         assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
         if (!options.runtimeAdapter && pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
           try {
@@ -640,7 +638,7 @@ export function createApp(options: CreateAppOptions = {}) {
           if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
         } else if (pageOptions?.transport === 'durable-object') {
           const doBinding = c.env.COSSACK_OBJECT;
-          // Use scoped ID (from scope function) or URL-based ID (default)
+          // Use scoped ID (from scope function) or page-instance ID (default)
           const doId = doBinding.idFromName(doIdName);
           // Convert DurableObjectId to string for client-side use
           pageInitialState.providerTargets = {
