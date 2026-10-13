@@ -48,7 +48,7 @@ import { OAuthAccount } from '../../models/OAuthAccount';
 const origin = ${JSON.stringify(providerOrigin)};
 const definition = defineOAuthProvider({ id: 'fixture', authorizeUrl: origin + '/authorize',
   tokenUrl: origin + '/token', userInfoUrl: origin + '/user', scopes: [],
-  normalizeUser: raw => ({ id: String(raw.id), email: String(raw.email), raw }) });
+  normalizeUser: raw => ({ id: String(raw.id), email: String(raw.email), emailVerified: true, raw }) });
 export const GET = defineApi({ handler: async ({ c }) => {
   const phase = c.req.query('phase');
   if (phase === 'expire' || phase === 'purpose') {

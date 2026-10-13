@@ -336,7 +336,10 @@ const discord = defineOAuthProvider({
     normalizeUser: (raw) => ({
         id: String(raw.id),
         nickname: raw.username as string,
-        email: raw.email as string | null,
+        // Discord reports whether the address is verified. Only a verified
+        // email may be used to identify or create an account.
+        email: raw.verified === true ? (raw.email as string | null) : null,
+        emailVerified: raw.verified === true && typeof raw.email === 'string',
         avatar: raw.avatar
             ? `https://cdn.discordapp.com/avatars/${raw.id}/${raw.avatar}.png`
             : undefined,
@@ -356,6 +359,10 @@ export const oauth = createOAuth({
 
 Custom provider ids must not shadow a first-party id (`github`, `google`,
 `gitlab`, `facebook`, `microsoft`).
+
+Set `emailVerified: true` only when the provider confirms the address. The
+generated `handleOAuthUser` ignores any email without it and stores a
+placeholder address for the new account instead.
 
 ## Overriding cookie defaults
 
