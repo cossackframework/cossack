@@ -79,8 +79,8 @@ a password-reset token. Remove abandoned expired rows through application cleanu
 Consumption happens after signed-cookie and state validation, before token
 exchange. Concurrent callbacks have one winner. Failed exchange, profile or
 account mapping does not restore the state. Start a new flow to retry. Cookie
-cleanup alone cannot provide this property. Stateless mode deliberately leaves
-CSRF and replay protection to the application.
+cleanup alone cannot provide this property. Stateless mode uses a signed,
+expiring `state` instead, and leaves replay protection to the application.
 
 This store supplies the one-time state boundary described in
 [OAuth Security BCP](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.7.1).
@@ -380,14 +380,27 @@ createOAuth({
 ## Stateless mode (advanced)
 
 For cookie-less API clients, pass `stateless: true`. In this mode the package
-does not set a state cookie, and PKCE is disabled
-as well, because the `code_verifier` cannot be recovered without a cookie store.
+does not set a state cookie and does not use a state store. PKCE is disabled,
+because the `code_verifier` cannot be recovered without a cookie.
 
-You are then responsible for CSRF protection of the callback. For example,
-include a signed `state` value in the authorize URL. Make sure that the value is
-valid when the callback arrives. Without PKCE you also lose the defense against
-authorization-code injection. Stateless mode is riskier than the default.
-Use it only when you cannot use cookies.
+The `secret` is still required, as in cookie mode. On redirect, the package
+generates `state` as a signed token: a random nonce, the provider ID and an
+absolute expiry, signed with HMAC-SHA256 under `secret`. The expiry is
+`cookie.maxAge` seconds (default 600). On callback, the package checks the
+signature (without an early mismatch exit), the provider and the expiry before
+token exchange. A forged, tampered, expired or other-provider `state` fails with
+`COSSACK_OAUTH_STATE_INVALID` (400). The provider is not contacted.
+
+This is weaker than cookie mode:
+
+- The state is not bound to the browser that started the flow. Anyone holding a
+  fresh state value can use it until it expires.
+- The state is not single-use. Replay protection inside the expiry window
+  depends on the provider's one-time authorization codes.
+- Without PKCE there is no defense against authorization-code injection.
+
+Use stateless mode only when you cannot use cookies. Keep `cookie.maxAge`
+short. Custom `state` values from the application are rejected.
 
 ```ts
 createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* ... */ } });

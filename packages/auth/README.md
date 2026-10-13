@@ -220,10 +220,12 @@ export const oauth = createOAuth({
 
 For cookie-less API clients, pass `stateless: true` to `createOAuth()`. In
 this mode, PKCE is also disabled. The verifier cannot be recovered without a
-cookie store. You become responsible for CSRF protection of the callback. For
-example, pass `state` through a signed query parameter and make sure that the
-value is valid. Use this mode only when cookies are not an option. The default
-stateful mode is more secure.
+cookie store. `secret` is still required: `state` becomes a signed token
+(HMAC-SHA256 over a random nonce, the provider ID and an expiry of
+`cookie.maxAge` seconds). The callback rejects forged, expired or
+other-provider state with `COSSACK_OAUTH_STATE_INVALID` before token exchange.
+The token is not bound to the browser and is not single-use. Use this mode only
+when cookies are not an option. The default stateful mode is more secure.
 
 OAuth failures expose an `OAuthError` with a fixed `code`, `stage`, `status`
 and safe message. Provider failures can include a numeric `providerStatus`.

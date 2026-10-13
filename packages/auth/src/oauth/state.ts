@@ -113,6 +113,41 @@ export async function verifyCookieValue(token: string, secret: string): Promise<
     }
 }
 
+const STATELESS_PURPOSE = 'cossack-oauth-stateless-state';
+
+/**
+ * Stateless-mode `state`: `base64url(payload).base64url(hmac)`, where the
+ * payload binds a random nonce, the provider id and an absolute expiry. The
+ * MAC input is purpose-prefixed so a signed state cookie is never accepted.
+ */
+export async function signStatelessState(provider: string, secret: string, expiresAt: number): Promise<string> {
+    const json = JSON.stringify({ n: generateState(), p: provider, e: expiresAt });
+    const encoded = base64url(new TextEncoder().encode(json));
+    return `${encoded}.${await hmac(`${STATELESS_PURPOSE}.${encoded}`, secret)}`;
+}
+
+/** Verify signature (without an early mismatch exit), provider and expiry. Returns the expiry or `null`. */
+export async function verifyStatelessState(token: string, provider: string, secret: string): Promise<number | null> {
+    if (typeof token !== 'string' || token.length > 1024) return null;
+    const dot = token.lastIndexOf('.');
+    if (dot <= 0) return null;
+    const encoded = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
+    if (!/^[A-Za-z0-9_-]+$/.test(encoded) || !/^[A-Za-z0-9_-]{43}$/.test(sig)) return null;
+    const expected = await hmac(`${STATELESS_PURPOSE}.${encoded}`, secret);
+    if (!constantTimeEqual(sig, expected)) return null;
+    try {
+        const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+        const json = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0)));
+        const parsed = JSON.parse(json) as { n?: unknown; p?: unknown; e?: unknown };
+        if (typeof parsed.n !== 'string' || parsed.p !== provider) return null;
+        if (!Number.isSafeInteger(parsed.e) || (parsed.e as number) <= Date.now()) return null;
+        return parsed.e as number;
+    } catch {
+        return null;
+    }
+}
+
 export interface StateCookieOptions {
     name?: string;
     maxAge?: number;

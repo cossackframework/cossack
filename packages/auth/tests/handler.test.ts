@@ -361,52 +361,123 @@ describe('createOAuth — stateless mode', () => {
         expect(location.searchParams.get('code_challenge_method')).toBeNull();
     });
 
-    it('completes the callback flow without sending a code_verifier', async () => {
+    function statelessApp(options: { secret?: string; maxAge?: number } = {}) {
         const oauth = createOAuth({
-            secret: SECRET,
+            secret: options.secret ?? SECRET,
             stateless: true,
+            ...(options.maxAge === undefined ? {} : { cookie: { maxAge: options.maxAge } }),
             providers: {
-                github: {
-                    clientId: 'gh-id',
-                    clientSecret: 'gh-secret',
-                    redirectUrl: '/auth/github/callback',
-                },
+                github: { clientId: 'gh-id', clientSecret: 'gh-secret', redirectUrl: '/auth/github/callback' },
+                gitlab: { clientId: 'gl-id', clientSecret: 'gl-secret', redirectUrl: '/auth/gitlab/callback' },
             },
         });
+        const onUser = vi.fn(async () => {});
+        const app = new Hono();
+        app.get('/r/:provider', c => oauth.redirect(c.req.param('provider'))(c, async () => {}) as Promise<Response>);
+        app.get('/cb', oauth.callback('github', { onUser, successRedirect: '/done' }));
+        const start = async (provider = 'github') => {
+            const res = await app.request(`/r/${provider}`);
+            return new URL(res.headers.get('location') ?? '').searchParams.get('state')!;
+        };
+        return { app, onUser, start };
+    }
+
+    it('completes the callback flow with its signed state and no code_verifier', async () => {
+        const { app, onUser, start } = statelessApp();
+        const state = await start();
         let observedBody: string | undefined;
         const mock = mockFetch([
-            {
-                body: { access_token: 'at', token_type: 'bearer' },
-            },
+            { body: { access_token: 'at', token_type: 'bearer' } },
             { body: { id: 1, login: 'u', email: 'a@b.io' } },
+            { body: [{ email: 'a@b.io', primary: true, verified: true }] },
         ]);
-        // Wrap fetch to capture the token-exchange body.
         const original = globalThis.fetch;
         vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
-            if (typeof input === 'string' && input.includes('access_token')) {
-                observedBody = String(init?.body);
-            }
+            if (typeof input === 'string' && input.includes('access_token')) observedBody = String(init?.body);
             return original(input, init);
         });
 
-        const seen: { user?: unknown } = {};
-        const app = new Hono();
-        app.get(
-            '/cb',
-            oauth.callback('github', {
-                onUser: async (user) => {
-                    seen.user = user;
-                },
-                successRedirect: '/done',
-            }),
-        );
-        const res = await app.request('/cb?code=thecode&state=anystate');
+        const res = await app.request(`/cb?code=thecode&state=${encodeURIComponent(state)}`);
         expect(res.status).toBe(302);
         expect(res.headers.get('location')).toBe('/done');
-        // No code_verifier in the token-exchange body.
         expect(observedBody).not.toContain('code_verifier');
-        expect((seen.user as { id: string }).id).toBe('1');
+        expect((onUser.mock.calls[0] as unknown[])[0]).toMatchObject({ id: '1' });
         expect(mock).toHaveBeenCalledTimes(3); // token, /user, /user/emails
+    });
+
+    it('issues a distinct signed state per redirect', async () => {
+        const { start } = statelessApp();
+        const [a, b] = [await start(), await start()];
+        expect(a).not.toBe(b);
+        expect(a).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
+    });
+
+    it.each([
+        ['an arbitrary value', () => 'anystate'],
+        ['a random nonce', () => 'AAAAAAAAAAAAAAAAAAAAAA'],
+        ['a value with a forged signature', (s: string) => `${s.slice(0, s.lastIndexOf('.'))}.${'A'.repeat(43)}`],
+        ['a tampered payload', (s: string) => `${s[0] === 'A' ? 'B' : 'A'}${s.slice(1)}`],
+    ])('rejects %s without contacting the provider', async (_label, forge) => {
+        const { app, onUser, start } = statelessApp();
+        const state = forge(await start());
+        const mock = mockFetch({ body: { access_token: 'at' } });
+        const res = await app.request(`/cb?code=thecode&state=${encodeURIComponent(state)}`);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toMatchObject({ code: 'COSSACK_OAUTH_STATE_INVALID' });
+        expect(mock).not.toHaveBeenCalled();
+        expect(onUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects a state signed with a different secret', async () => {
+        const other = statelessApp({ secret: 'another-secret-0123456789-abcdef' });
+        const state = await other.start();
+        const { app, onUser } = statelessApp();
+        const mock = mockFetch({ body: { access_token: 'at' } });
+        const res = await app.request(`/cb?code=c&state=${encodeURIComponent(state)}`);
+        expect(res.status).toBe(400);
+        expect(mock).not.toHaveBeenCalled();
+        expect(onUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects a state issued for another provider', async () => {
+        const { app, onUser, start } = statelessApp();
+        const state = await start('gitlab');
+        const mock = mockFetch({ body: { access_token: 'at' } });
+        const res = await app.request(`/cb?code=c&state=${encodeURIComponent(state)}`);
+        expect(res.status).toBe(400);
+        expect(mock).not.toHaveBeenCalled();
+        expect(onUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired state', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            const { app, onUser, start } = statelessApp({ maxAge: 60 });
+            const state = await start();
+            vi.setSystemTime(Date.now() + 61_000);
+            const mock = mockFetch({ body: { access_token: 'at' } });
+            const res = await app.request(`/cb?code=c&state=${encodeURIComponent(state)}`);
+            expect(res.status).toBe(400);
+            expect(await res.json()).toMatchObject({ code: 'COSSACK_OAUTH_STATE_INVALID' });
+            expect(mock).not.toHaveBeenCalled();
+            expect(onUser).not.toHaveBeenCalled();
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('rejects a stateful cookie value used as a stateless state', async () => {
+        const cookie = await signCookieValue({ state: 's', codeVerifier: 'v' }, SECRET);
+        const { app, onUser } = statelessApp();
+        const mock = mockFetch({ body: { access_token: 'at' } });
+        const res = await app.request(`/cb?code=c&state=${encodeURIComponent(cookie)}`);
+        expect(res.status).toBe(400);
+        expect(mock).not.toHaveBeenCalled();
+        expect(onUser).not.toHaveBeenCalled();
+    });
+
+    it('requires a valid secret at construction', () => {
+        const providers = { github: { clientId: 'gh-id', clientSecret: 'gh-secret', redirectUrl: '/cb' } };
+        expect(() => createOAuth({ stateless: true, providers } as never)).toThrow(/state secret/);
+        expect(() => createOAuth({ secret: 'short', stateless: true, providers })).toThrow(/state secret/);
     });
 });
 

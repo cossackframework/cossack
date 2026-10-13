@@ -15,6 +15,8 @@ import {
     generateState,
     stateKey,
     setStateCookie,
+    signStatelessState,
+    verifyStatelessState,
     type StateCookieOptions,
 } from './state';
 import { createPkcePair } from './pkce';
@@ -88,9 +90,13 @@ export function createOAuthHandlers(
         return async (c: Context, next): Promise<Response | void> => {
             try {
                 const usePkce = !deps.config.stateless;
-                const secret = usePkce ? await resolveSecret(deps.config, c) : undefined;
+                const secret = await resolveSecret(deps.config, c);
+                const createdAt = Date.now();
+                const expiresAt = createdAt + (deps.cookieOptions.maxAge ?? 600) * 1000;
                 const prepared = await runOAuthStage('COSSACK_OAUTH_REDIRECT_FAILED', async () => {
-                    const state = generateState();
+                    // Stateless mode has no cookie or store, so the state itself
+                    // carries a signed, provider-bound, expiring nonce.
+                    const state = usePkce ? generateState() : await signStatelessState(providerId, secret, expiresAt);
                     const redirectUrl = resolveRedirectUrl(config.redirectUrl, c);
                     const pkce = usePkce ? await createPkcePair() : null;
                     const authorizeUrl = buildAuthorizeUrl({ definition, config, redirectUrl, state,
@@ -98,15 +104,13 @@ export function createOAuthHandlers(
                     return { state, pkce, authorizeUrl };
                 });
                 if (usePkce) {
-                    const createdAt = Date.now();
-                    const expiresAt = createdAt + (deps.cookieOptions.maxAge ?? 600) * 1000;
                     await runOAuthStage('COSSACK_OAUTH_STATE_CREATE_FAILED', async () => {
                         const key = await stateKey(providerId, prepared.state);
                         await deps.config.stateStore!.create(Object.freeze({ key, provider: providerId, createdAt, expiresAt }), c);
                     });
                     if (expiresAt <= Date.now()) throw new OAuthError('COSSACK_OAUTH_STATE_UNAVAILABLE');
                     await runOAuthStage('COSSACK_OAUTH_REDIRECT_FAILED', () => setStateCookie(c,
-                        { state: prepared.state, codeVerifier: prepared.pkce!.codeVerifier }, secret!,
+                        { state: prepared.state, codeVerifier: prepared.pkce!.codeVerifier }, secret,
                         deps.cookieOptions, deps.requestIsSecure(c), expiresAt));
                 }
                 return c.redirect(prepared.authorizeUrl);
@@ -158,6 +162,13 @@ export function createOAuthHandlers(
                     if (consumed !== true) throw new OAuthError('COSSACK_OAUTH_STATE_UNAVAILABLE');
                     storedVerifier = stored.codeVerifier;
                     storedExpiry = stored.expiresAt;
+                } else {
+                    // Signed state proves this server started the flow recently
+                    // for this provider. It is not browser-bound or single-use.
+                    const secret = await resolveSecret(deps.config, c);
+                    const expiresAt = await runOAuthStage('COSSACK_OAUTH_STATE_INVALID', () => verifyStatelessState(state, providerId, secret));
+                    if (expiresAt === null) throw new OAuthError('COSSACK_OAUTH_STATE_INVALID');
+                    storedExpiry = expiresAt;
                 }
                 // In stateless mode there is no verifier to recover (PKCE was
                 // not sent on the redirect). `exchangeCode` omits the
