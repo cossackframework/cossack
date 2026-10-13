@@ -366,6 +366,39 @@ describe('provider definitions', () => {
             expect(extras.prompt).toBe('consent');
         });
 
+        const googleIdToken = (claims: Record<string, unknown>) =>
+            `hdr.${btoa(JSON.stringify(claims))}.sig`;
+
+        it('accepts a verified account from the configured hostedDomain', async () => {
+            const def = createGoogleProvider({ hostedDomain: 'acme.com' });
+            const idToken = googleIdToken({ sub: 's1', email: 'a@acme.com', email_verified: true, hd: 'acme.com' });
+            const user = await def.normalizeUser({}, { accessToken: 'at', idToken });
+            expect(user.id).toBe('s1');
+            expect(user.email).toBe('a@acme.com');
+        });
+
+        it('rejects accounts outside the configured hostedDomain', async () => {
+            const def = createGoogleProvider({ hostedDomain: 'acme.com' });
+            const outside = [
+                { sub: 's1', email: 'a@gmail.com', email_verified: true },
+                { sub: 's1', email: 'a@evil.com', email_verified: true, hd: 'evil.com' },
+                { sub: 's1', email: 'a@acme.com', email_verified: false, hd: 'acme.com' },
+                { sub: 's1', email: 'a@acme.com', hd: 'acme.com' },
+            ];
+            for (const claims of outside) {
+                await expect((async () => def.normalizeUser({}, { accessToken: 'at', idToken: googleIdToken(claims) }))())
+                    .rejects.toMatchObject({ code: 'COSSACK_OAUTH_USER_INFO_FAILED' });
+            }
+        });
+
+        it('fails the user-info stage for a foreign hostedDomain through fetchUserInfo', async () => {
+            mockFetch({ body: { sub: 's1', email: 'a@gmail.com', email_verified: true } });
+            const def = createGoogleProvider({ hostedDomain: 'acme.com' });
+            await expect(fetchUserInfo({ definition: def, tokens: { accessToken: 'at' } }))
+                .rejects.toMatchObject({ code: 'COSSACK_OAUTH_USER_INFO_FAILED' });
+            restoreFetch();
+        });
+
         it('preserves Unicode names in id_token claims', async () => {
             const def = createGoogleProvider();
             const name = 'Nguyễn — 東京 👋';

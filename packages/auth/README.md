@@ -169,7 +169,7 @@ interface OAuthUser {
 | Provider | Quirk handled |
 | --- | --- |
 | GitHub | Falls back to `/user/emails` when the user's primary email is private. |
-| Google | OIDC `id_token` claims preferred. Options: `hostedDomain` (`hd`) and `offlineAccess` (`access_type=offline`). |
+| Google | OIDC `id_token` claims preferred. Options: `hostedDomain` (sent as `hd` and enforced on callback: the `hd` claim must match and `email_verified` must be `true`) and `offlineAccess` (`access_type=offline`). |
 | GitLab | Configurable `baseUrl` for self-hosted instances. Same email fallback as GitHub. |
 | Facebook | Sends explicit `fields=id,name,email,picture` on the user-info call. |
 | Microsoft | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID). OIDC `id_token` claims. |

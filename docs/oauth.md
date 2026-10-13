@@ -298,6 +298,13 @@ providers: {
 }
 ```
 
+Google's `hostedDomain` is enforced on the callback, not only hinted. The
+`hd` authorize parameter only preselects accounts in Google's picker, and a user
+can remove it. The callback therefore requires the provider-issued `hd` claim to
+equal `hostedDomain` and `email_verified` to be `true`. Other accounts, including
+personal Gmail accounts, fail with `COSSACK_OAUTH_USER_INFO_FAILED` (`user-info`,
+502) before `onUser` runs.
+
 ## Custom providers
 
 ```ts

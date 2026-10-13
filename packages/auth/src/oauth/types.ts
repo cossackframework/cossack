@@ -58,8 +58,10 @@ export interface OAuthProviderConfig<TProviderOpts = Record<string, unknown>> {
 /** Google OIDC options. */
 export interface GoogleProviderOptions {
     /**
-     * Hosted-domain hint (`hd`). Restricts sign-in to a specific Google
-     * Workspace domain; passed as the `hd` authorize param.
+     * Google Workspace domain. Sent as the `hd` authorize param (an account
+     * picker hint only) and enforced on the callback: the user-info stage fails
+     * with `COSSACK_OAUTH_USER_INFO_FAILED` unless the provider's `hd` claim
+     * equals this value and `email_verified` is `true`.
      */
     hostedDomain?: string;
     /**
