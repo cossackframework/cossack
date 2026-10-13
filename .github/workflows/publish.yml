@@ -6,6 +6,10 @@ on:
   # Retry publication from master without moving an existing release tag.
   workflow_dispatch:
 
+# Jobs widen this only where needed (publish adds id-token: write for OIDC).
+permissions:
+  contents: read
+
 jobs:
   verify-release:
     name: Verify release tag and versions

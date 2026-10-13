@@ -5,6 +5,9 @@ name: Desktop installers
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   desktop:
     strategy:

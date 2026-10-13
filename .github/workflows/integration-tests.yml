@@ -24,6 +24,9 @@ on:
   workflow_dispatch:
   workflow_call:
 
+permissions:
+  contents: read
+
 concurrency:
   # Superseded PR runs are cancelled; master, nightly and release runs are not.
   group: integration-${{ github.event.pull_request.number || github.run_id }}

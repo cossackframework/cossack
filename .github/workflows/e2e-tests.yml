@@ -76,9 +76,11 @@ jobs:
               packages/node-adapter packages/database packages/ui || studio=true
           fi
 
-          echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
-          echo "generated_app=$generated_app" >> "$GITHUB_OUTPUT"
-          echo "studio=$studio" >> "$GITHUB_OUTPUT"
+          {
+            echo "desktop=$desktop"
+            echo "generated_app=$generated_app"
+            echo "studio=$studio"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10

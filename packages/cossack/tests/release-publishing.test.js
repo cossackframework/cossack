@@ -119,6 +119,10 @@ describe('workflow supply chain', () => {
       expect(ref, `${name}: ${ref}`).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
       expect(comment, `${name}: ${ref} needs a version comment`).toMatch(/^\s+# v\d+/);
     }
+    for (const name of new Set(references.map(reference => reference.name))) {
+      const permissions = parse(readFileSync(path.join(directory, name), 'utf8')).permissions;
+      expect(permissions, `${name} top-level permissions`).toEqual({ contents: 'read' });
+    }
     const dependabot = parse(readFileSync(path.join(root, '.github/dependabot.yml'), 'utf8'));
     expect(dependabot.updates).toContainEqual(expect.objectContaining({
       'package-ecosystem': 'github-actions', schedule: { interval: 'weekly' },
