@@ -243,7 +243,6 @@
     "@types/mdast": "^4.0.4"
   },
   "devDependencies": {
-    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@cossackframework/solar-icons": "^0.7.1",
     "@cossackframework/ui": "workspace:*",
     "tsx": "^4.23.0",

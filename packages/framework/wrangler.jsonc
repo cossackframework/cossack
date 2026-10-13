@@ -28,11 +28,10 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  "secrets": { "required": ["APP_SECRET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"] },
+  // The /r2-upload demo writes through the Storage facade to this binding.
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "serverdash" }],
+  "secrets": { "required": ["APP_SECRET"] },
   "vars": {
-    "R2_ACCOUNT_ID": "2aa2bfe713ea4ef2c4548cf1f658aed7",
-    "R2_BUCKET_NAME": "serverdash",
-    "R2_PUBLIC_URL": "https://data.serverdash.org",
     "APP_URL": "https://cossack.dev",
     // Default locale for localization (`__('key')`). Override per-request via
     // the `cossack_locale` cookie or Accept-Language (when autoDetectBrowser

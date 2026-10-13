@@ -34,7 +34,7 @@ export default ({ env }) => ({
 
 ESM modules load once per isolate. Cloudflare Workers load them before request bindings exist. With a plain object, `env()` runs at module load and reads `undefined` for every binding.
 
-Factory functions defer evaluation. The framework calls each factory for every request and passes an `env` function that reads that request's `c.env`. The framework also uses this pattern in `getR2ConfigFromEnv(env)` and `configureRateLimitFromEnv(env)`.
+Factory functions defer evaluation. The framework calls each factory for every request and passes an `env` function that reads that request's `c.env`. The framework also uses this pattern in `configureRateLimitFromEnv(env)`.
 
 The `EnvFunction` type is the signature `(key: string, defaultValue?: string) => string`. Values are always stringified. Unset bindings fall back to the default.
 
