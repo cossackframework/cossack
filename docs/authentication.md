@@ -222,6 +222,21 @@ The handler uses the provider's `createSession` when omitted. Pass a per-handler
 `createSession` to override it. If neither is configured, the handler returns
 a configuration error (HTTP 500).
 
+The handler checks each request before it reads credentials. These checks stop
+login CSRF, where another site signs the browser in to an attacker's account:
+
+| Check | Failure |
+| --- | --- |
+| `Sec-Fetch-Site` is `same-origin`, `same-site`, `none` or absent | 403 |
+| A present `Origin` equals the request origin (`https://` + host is also accepted when `X-Forwarded-Proto: https` is set) | 403 |
+| `Content-Type` is `application/json` (parameters such as `charset` are allowed) | 415 |
+| The body is valid JSON | 400 |
+| The JSON body is an object | 400 |
+
+A cross-site HTML form cannot send `application/json` without a CORS preflight.
+Send credentials with `fetch()` and `Content-Type: application/json`. Clients on
+another origin are rejected. Add your own route if you need cross-origin login.
+
 ```typescript
 // src/auth.ts
 export const loginHandler = auth.createLoginHandler({

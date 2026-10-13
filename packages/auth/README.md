@@ -12,8 +12,9 @@ Cossack and its packages.
 ## What is included
 
 - Session authentication: `createAuth()` middleware that populates
- `c.get('user')`, plus a `createLoginHandler()` factory for credentials-based
- login.
+ `c.get('user')`, plus a `createLoginHandler()` factory for JSON credentials-based
+ login. It rejects cross-site requests (403), non-JSON content types (415) and
+ malformed bodies (400).
 - OAuth 2.0: `createOAuth()` with first-party providers for GitHub,
  Google, GitLab, Facebook, and Microsoft, plus a `defineOAuthProvider()`
  helper for any custom provider. It implements the full Authorization Code flow
