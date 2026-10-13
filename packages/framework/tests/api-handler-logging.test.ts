@@ -57,3 +57,11 @@ it('restores the managed correlation header when a failing method changes it', a
     expect(logged.mock.calls[0][0].requestId).toBe(body.requestId);
     expect(JSON.stringify([body, logged.mock.calls])).not.toContain('private-application');
 });
+
+it('keys class API rate limits by route template, not the concrete path', async () => {
+    class Api extends Cossack { async get() { return new Response('ok'); } }
+    const app = new Hono(); app.get('/items/:id', createApiHandler(Api, 'get'));
+    await app.request('/items/1');
+    await app.request('/items/2');
+    expect(rateLimit.mock.calls.map(call => (call as unknown[])[3])).toEqual(['api:GET:/items/:id', 'api:GET:/items/:id']);
+});

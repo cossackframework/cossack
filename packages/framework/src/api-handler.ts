@@ -52,7 +52,8 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
                 c,
                 ComponentClass,
                 methodName,
-                `api:${c.req.method}:${c.req.path}`,
+                // Key by the route template so `/items/1` and `/items/2` share one budget.
+                `api:${c.req.method}:${(c.req as { routePath?: string }).routePath || c.req.path}`,
             );
             if (rateLimited) return rateLimited;
 
