@@ -618,14 +618,17 @@ export function setupServerMethodProxies(component: any): void {
 }
 
 /**
- * Framework-internal lifecycle methods that are decorated with `@Server()`
- * purely so the security plugin strips them from the client bundle. They are
- * NOT RPC endpoints and must never be invocable by a remote client.
+ * Framework-internal members that are decorated with `@Server()` purely as a
+ * server-only marker. They are NOT RPC endpoints and must never be invocable
+ * by a remote client.
  */
 const RPC_BLOCKED_INTERNAL_METHODS: ReadonlySet<string> = new Set([
     'initializeProviders',
     'proxyClientMethods',
     'validateChannels',
+    '_runtime',
+    '_cossack_ws_context',
+    '_cossack_provider_name',
 ]);
 
 /**

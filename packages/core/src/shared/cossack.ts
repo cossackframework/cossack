@@ -596,10 +596,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     @ClientState()
     private _cossack_path: string = '';
 
-    @Server()
+    @Server({ rpc: false })
     private _cossack_provider_name?: string;
 
-    @Server()
+    @Server({ rpc: false })
     private _cossack_ws_context?: unknown;
 
     @Client()
@@ -626,7 +626,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return false;
     }
 
-    @Server()
+    @Server({ rpc: false })
     private _runtime?: CossackServerRuntime;
 
     private dirtyProperties: Set<string> = new Set();

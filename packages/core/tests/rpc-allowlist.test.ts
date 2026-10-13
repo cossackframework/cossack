@@ -2,6 +2,8 @@ import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { Server, Shared, State } from '../src/shared/decorators';
 import { isRpcCallableAction, sanitizeClientState } from '../src/shared/method-proxy';
+import { Cossack } from '../src/shared/cossack';
+import { collectServerMethodMetadata } from '../src/shared/server-method-metadata';
 
 describe('isRpcCallableAction (RPC allowlist gate)', () => {
     it('allows methods explicitly decorated with @Server', () => {
@@ -10,6 +12,30 @@ describe('isRpcCallableAction (RPC allowlist gate)', () => {
             doThing() {}
         }
         expect(isRpcCallableAction(Page, 'doThing')).toBe(true);
+    });
+
+    it('never exposes the base class server-only fields as RPC actions', () => {
+        class Page extends Cossack {
+            @Server()
+            save() {}
+        }
+        for (const field of ['_runtime', '_cossack_ws_context', '_cossack_provider_name']) {
+            expect(isRpcCallableAction(Cossack, field)).toBe(false);
+            expect(isRpcCallableAction(Page, field)).toBe(false);
+            expect(collectServerMethodMetadata(Page)).not.toHaveProperty(field);
+        }
+        expect(isRpcCallableAction(Page, 'save')).toBe(true);
+    });
+
+    it('does not register accessors, while function-valued fields stay callable', () => {
+        class Page {
+            @Server()
+            get secret() { return 'x'; }
+            @Server()
+            field = async () => 1;
+        }
+        expect(isRpcCallableAction(Page, 'secret')).toBe(false);
+        expect(isRpcCallableAction(Page, 'field')).toBe(true);
     });
 
     it('allows inherited @Server methods from a base class', () => {
