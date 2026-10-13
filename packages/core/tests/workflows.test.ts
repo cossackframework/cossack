@@ -5,7 +5,11 @@ const number = { async parse(value: unknown) { if (typeof value !== 'number') th
 const boolean = { async parse(value: unknown) { if (typeof value !== 'boolean') throw new Error('PRIVATE_EVENT_VALUE'); return value; } };
 function fixture(run: () => Promise<null> = vi.fn(async () => null)) { const definition = defineWorkflow({ name: 'approval', version: 1, schema: number, events: { approved: boolean }, run }); const provider = createLocalWorkflowProvider(definition, { env: {} }); return { definition, provider, client: createWorkflowClient(definition, provider, { namespace: 'app' }) }; }
 /** Identity verification hashes with WebCrypto (off the microtask queue), so let the real event loop turn until the workflow parks on its first timer. */
-async function started(){for(let i=0;i<100&&vi.getTimerCount()===0;i++)await vi.advanceTimersByTimeAsync(0);}
+// Identity validation hashes with crypto.subtle, which settles on Node's thread
+// pool rather than as a microtask. Yield to the real event loop (captured before
+// fake timers install) until the workflow arms its first timer, bounded by real time.
+const realSetImmediate=globalThis.setImmediate;
+async function started(){const deadline=process.hrtime.bigint()+5_000_000_000n;while(vi.getTimerCount()===0&&process.hrtime.bigint()<deadline){await new Promise<void>(resolve=>realSetImmediate(resolve));await vi.advanceTimersByTimeAsync(0);}}
 it('keeps deterministic identity isolated by version/namespace/tenant/actor/key, and never dispatches duplicates', async () => {
  const run=vi.fn(async()=>null),f=fixture(run),id=await f.client.invoke(1,{key:'one',scope:{tenantId:'a',actorId:'user'}});
  await expect(f.client.invoke(2,{key:'one',scope:{tenantId:'a',actorId:'user'}})).rejects.toMatchObject({code:'WORKFLOW_DUPLICATE'});

@@ -78,7 +78,8 @@ hydrate(template(current()),container);window.retained=initial===container.query
     await page.locator('#outside').focus(); await page.keyboard.press('Tab'); await browserExpect(page.locator('#after')).toBeFocused();
     await page.evaluate(()=>window.update({src:'/good.svg'}));
     await browserExpect.poll(()=>avatar.locator('img').evaluate(el=>el.complete && el.naturalWidth>0)).toBe(true);
-    expect(await page.evaluate(()=>window.loads)).toContain('IMG');
+    // `complete` can turn true before the load event handler has run.
+    await browserExpect.poll(()=>page.evaluate(()=>window.loads)).toContain('IMG');
     await page.evaluate(()=>{window.oldImage=document.querySelector('#avatar img');window.failureCountBeforeStale=window.failures.length;window.update({src:'/good.svg?new'});});
     await page.evaluate(()=>window.oldImage.dispatchEvent(new Event('error')));
     expect(await page.evaluate(()=>window.failures.length)).toBe(await page.evaluate(()=>window.failureCountBeforeStale));
