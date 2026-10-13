@@ -5,14 +5,14 @@ description: "Direct, type-safe access to Cloudflare environment bindings includ
 
 # Environment Bindings
 
-Cossack provides direct, type-safe access to your Cloudflare environment bindings (D1, KV, R2, Secrets, etc.) through the `this.env` property within any component.
+Cossack provides direct, type-safe access to your Cloudflare environment bindings (for example D1, KV, R2, and secrets) through the `this.env` property within any component.
 
 ## Typed Bindings
 
-To get full TypeScript autocompletion for your environment, pass your bindings interface as the first generic parameter to the `Cossack` class.
+For full TypeScript autocompletion for your environment, pass your bindings interface as the first generic parameter to the `Cossack` class.
 
 ### 1. Generate Types
-First, make sure that you have run the Wrangler type generation script:
+Run the Wrangler type generation script first:
 
 ```bash
 pnpm run cf-typegen
@@ -44,12 +44,12 @@ export default class DataPage extends Cossack<CloudflareBindings> {
 
 ## How it Works
 
-* **Server-Side**: During SSR or Action execution, the environment object provided by Cloudflare is automatically injected into the component instance.
-* **Client-Side**: The `this.env` property is `undefined` on the client. Cloudflare resources are only available on the server. Read `this.env` in server methods such as `init()`, `get()`, or a method decorated with `@Server()`.
+* On the server, the framework injects the environment object from Cloudflare into the component instance during SSR or Action execution.
+* On the client, the `this.env` property is `undefined`. Cloudflare resources are only available on the server. Read `this.env` in server methods such as `init()`, `get()`, or a method decorated with `@Server()`.
 
 ## Accessing from API Routes
 
-API routes also benefit from typed environment bindings, allowing you to build backends:
+API routes also benefit from typed environment bindings. You can build backends with them:
 
 ```typescript
 @Page({ transport: 'http' })

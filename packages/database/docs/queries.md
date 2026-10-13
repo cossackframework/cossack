@@ -159,8 +159,8 @@ const totals = await User.query("user")
   .getRawMany();
 ```
 
-Use `getMany()` when selecting complete entity rows that should be hydrated as
-model instances. Use `getRawMany()` for custom projections.
+Use `getMany()` for complete entity rows. The ORM hydrates them as model
+instances. Use `getRawMany()` for custom projections.
 
 ## Joins
 
@@ -182,7 +182,7 @@ const rows = await User.query("user")
 ```
 
 Available joins are `innerJoin()` and `leftJoin()`. For ordinary model
-relationships, prefer explicit `relations` loading; it hydrates both sides and
+relationships, prefer explicit `relations` loading. It hydrates both sides and
 batches relation keys.
 
 ## Aggregates
@@ -268,7 +268,7 @@ This makes ties in other sort fields deterministic. An entity without a primary
 key cannot use this automatic order.
 
 Joined, grouped, distinct, and projected pages require an explicit unique order.
-Include all fields needed to distinguish result rows; Cossack cannot infer their
+Include all fields needed to distinguish result rows. Cossack cannot infer their
 uniqueness. Offset pages can shift when concurrent writes insert or delete rows.
 Use a transaction when the provider supports the consistency your application needs.
 

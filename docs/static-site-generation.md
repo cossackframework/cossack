@@ -7,13 +7,13 @@ description: 'Pre-render pages at build time for faster page loads, better SEO, 
 
 Static rendering uses the same layout service hierarchy as SSR. Each generated
 URL gets an isolated anonymous request scope. Constructor injection works in
-App, layouts, and pages; nested components inherit `@Inject()` services from
+App, layouts, and pages. Nested components inherit `@Inject()` services from
 their renderer parent. Service state is
 serialized on the owning layout for hydration. The build waits for component
 `onCleanup()` and scoped-service `onDispose()` hooks before accepting the HTML.
 A render or cleanup failure fails generation.
 
-Cossack Framework supports Static Site Generation (SSG) to pre-render pages at build time. This enables faster page loads, better SEO, and the ability to host your application on any static hosting service.
+Cossack Framework supports Static Site Generation (SSG). SSG pre-renders pages at build time. The result is faster page loads, better SEO, and hosting on any static hosting service.
 
 ## Overview
 
@@ -41,7 +41,7 @@ export class About extends Cossack {
 }
 ```
 
-This will generate `dist/client/about/index.html` at build time.
+The build generates `dist/client/about/index.html` at build time.
 
 ### Public pages only
 
@@ -59,7 +59,7 @@ escape the output directory also fail before publication.
 Build-time context exposes the resolved `APP_URL`. It does not provide live
 Worker bindings. Middleware that requires a request database or another live
 binding must support the build context, or the page must use SSR. Middleware
-errors fail the build; SSG does not bypass a guard to finish rendering.
+errors fail the build. SSG does not bypass a guard to finish rendering.
 
 Set `ssg: { enabled: false }` to disable generation for a page. Dynamic SSG
 routes must supply every ordinary or catch-all parameter through
@@ -67,7 +67,7 @@ routes must supply every ordinary or catch-all parameter through
 
 ### Dynamic Routes with Static Params
 
-For dynamic routes (e.g., `/users/[username]`), use `generateStaticParams` to specify which parameter combinations to pre-render:
+For dynamic routes, such as `/users/[username]`, use `generateStaticParams` to specify which parameter combinations to pre-render:
 
 ```typescript
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -92,7 +92,7 @@ export class UserProfile extends Cossack {
 }
 ```
 
-This will generate:
+The build generates these files:
 
 - `dist/client/users/alice/index.html`
 - `dist/client/users/bob/index.html`
@@ -122,13 +122,13 @@ cossackSsg({
 })
 ```
 
-The old `--base-url`, `--out-dir`, `--app`, `--template`, and `--project-root`
-flags are unsupported. The CLI warns when they are supplied.
+The `--base-url`, `--out-dir`, `--app`, `--template`, and `--project-root`
+flags are unsupported. The CLI warns when you supply them.
 
 ### Custom Base URL
 
 An explicit plugin `baseUrl` takes precedence. Otherwise, Cossack reads
-`APP_URL` from the shell, Wrangler config, or dotenv files. See
+`APP_URL` from the shell, Wrangler configuration, or dotenv files. See
 [Sitemap → Base URL](./sitemap.md#base-url) for the resolution order.
 
 Select a Cloudflare environment before building:
@@ -156,7 +156,7 @@ in your project.
 
 ## Output Structure
 
-After SSG build, the `dist/client/` directory contains the static HTML alongside
+After the SSG build, the `dist/client/` directory contains the static HTML alongside
 the client assets:
 
 ```
@@ -190,24 +190,24 @@ export interface SsgOptions {
 
 ## Limitations
 
-- **No Server-Side State**: SSG pages cannot use `@State` with server-only data at build time. All state must be either:
+- No server-side state: SSG pages cannot use `@State` with server-only data at build time. All state must be either:
   - Static content
   - Client-side state (use `@ClientState` instead)
   - Pre-defined via `generateStaticParams`
 
-- **No Dynamic Data**: Do not use SSG for pages that require real-time data, such as user-specific content or live prices.
+- No dynamic data: Do not use SSG for pages that require real-time data, such as user-specific content or live prices.
 
-- **HTTP Transport Required**: SSG pages must use `transport: 'http'` in their `@Page` options.
+- HTTP transport: SSG pages must use `transport: 'http'` in their `@Page` options.
 
 ## Best Practices
 
-1. **Use SSG for Content Pages**: Marketing sites, blogs, documentation, about pages
-2. **Use SSR for User Pages**: Dashboards, profiles, authenticated content
-3. **Combine Both**: Some frameworks can use hybrid approaches where SSG is the default with SSR fallback
+1. Use SSG for content pages: marketing sites, blogs, documentation, and about pages
+2. Use SSR for user pages: dashboards, profiles, and authenticated content
+3. Combine both: SSG is the default for content pages, and SSR serves pages that need dynamic data
 
 ## Example: SSG Demo Page
 
-See `src/pages/ssg-demo/` in the framework package for a complete example demonstrating:
+See `src/pages/ssg-demo/` in the framework package for a complete example. It demonstrates:
 
 - Static page generation
 - Dynamic route generation with `generateStaticParams`
@@ -227,8 +227,8 @@ include `params` and `outputPath`. Skipped and failed entries have a fixed
 `diagnostic.code` and explanation. Application exception values remain private.
 The output directory follows the plugin's `outDir` option.
 
-All static parameter records and output collisions are checked before rendering.
+The build tests all static parameter records and output collisions before rendering.
 A validation or render failure prevents publication of the HTML batch and sitemap.
-The report retains individual outcomes so an agent can locate the source and
-understand why publication stopped. A rendered outcome records successful rendering;
-it does not claim publication when another route fails the build.
+The report retains individual outcomes. Each outcome names the source file and
+the reason publication stopped. A rendered outcome records successful rendering.
+It does not claim publication when another route fails the build.

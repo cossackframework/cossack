@@ -99,13 +99,14 @@ export class CommandSpec {
       message: `Unknown subcommand for '${this.name}'. Available: ${Object.keys(this.subcommands).join(', ')}.`,
     });
     const positionals = this.subcommands && sub ? ['subcommand', ...(sub.positionals ?? [])] : this.positionals;
-    if (args.length > positionals.length) diagnostics.push({
+    if (!sub?.variadic && args.length > positionals.length) diagnostics.push({
       code: 'COSSACK_ARGUMENT_UNEXPECTED', severity: 'error',
       message: `'${this.name}' accepts ${positionals.length} positional argument(s): ${positionals.join(', ') || '(none)'}.`,
     });
-    if (args.length < this.minPositionals) diagnostics.push({
+    const minPositionals = sub?.minPositionals === undefined ? this.minPositionals : 1 + sub.minPositionals;
+    if (args.length < minPositionals) diagnostics.push({
       code: 'COSSACK_ARGUMENT_MISSING', severity: 'error',
-      message: `'${this.name}' requires ${this.minPositionals} positional argument(s): ${this.positionals.slice(args.length).join(', ')}.`,
+      message: `'${this.name}' requires ${minPositionals} positional argument(s): ${positionals.slice(args.length).join(', ')}.`,
     });
     // Custom constraints only run after type validation, before any project import.
     if (!diagnostics.length && this.check) diagnostics.push(...this.check(args, flags));

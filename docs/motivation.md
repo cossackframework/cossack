@@ -7,28 +7,28 @@ description: "Why Cossack exists: to solve the limitations of current frameworks
 
 ## Why This Project Exists
 
-I started my career as a PHP developer, used Laravel for quite a long time and it has been a great experience. However, as the web evolved and became more interactive, I found myself writing a lot of boilerplate to handle the frontend and backend separately with Laravel and Angular/React/Vue. Laravel now just acts as an API server.
+I started my career as a PHP developer. I used Laravel for a long time, and it was a great experience. The web then became more interactive. I found myself writing a lot of boilerplate to handle the frontend and the backend separately with Laravel and Angular, React, or Vue. Laravel acted only as an API server.
 
-This led me to move to NestJS + Angular so I can write both the frontend and backend in the same language. This approach is good. However, I still need to write two separate applications, one for the frontend and one for the backend, and handle the communication between them is time-consuming.
+This led me to NestJS and Angular. Both sides then use the same language. This approach works well. I still write two separate applications, one for the frontend and one for the backend. The communication between them takes time.
 
-One important thing to consider in modern web development nowadays is the performance. We might say: "tweak our code and server to make it faster", however, we still hit the limits of "centralized" servers, where all the requests are handled by a single server, on one physical location. This is where the concept of "edge" comes in. We can deploy our application to multiple locations around the world, close to every users. However, most of the frameworks are not designed to be deployed to the edge, or they are not fully compatible with modern platforms like Cloudflare Workers.
+Performance also matters in modern web development. The usual answer is to tweak the code and the server. But a centralized server has limits. All requests arrive at one server in one physical location. This is where the edge comes in. We can deploy the application to many locations around the world, close to every user. Most frameworks are not built for the edge, or they are not fully compatible with modern platforms like Cloudflare Workers.
 
-This is where I started to think about building a framework that can solve these problems, and that's how this project was born. 
+I started to think about a framework that solves these problems. That is how this project was born.
 
 ## Why Is This Project Different
 
 ### Performance
 
-Edge-first approach, we can deploy our application to multiple locations around the world, closer to our users, and handle the requests there. This allows us to achieve better performance and lower latency for our users.
+An edge-first approach deploys the application to many locations around the world, close to the users. The requests are handled there. Users get better performance and lower latency.
 
 ### Ergonomic
 
-We make it further optimized for DX by providing a simple and intuitive API. All the frontend and backend code lives in the same class. Frontend code can call backend code directly, without the need to write any API routes or handle any communication between them. 
+The API is simple and intuitive. All frontend and backend code lives in the same class. Frontend code calls backend code directly. You do not write API routes or handle communication between the two sides.
 
 ### Enterprise Ready
 
-As a developer who has been working at an unicorn startup for a long time, I know how important it is to have a framework that can handle the complexity of enterprise applications. We provide middlewares, dependency injection, and other features that are essential for building enterprise applications.
+I worked at a unicorn startup for a long time. I know what enterprise applications need. Cossack provides middlewares, dependency injection, and other features that enterprise applications require.
 
 ### LLM Friendly
 
-Less tokens, we can write more functionality with less code, which means we can achieve more with less tokens. This is especially important when we want to use LLMs to generate code for us, as it can help us to reduce the cost of using LLMs and make it more accessible for everyone.
+Cossack code is compact. You write more functionality with less code, so you use fewer tokens. This matters when you use LLMs to generate code. It reduces the cost of using LLMs and makes them accessible to more people.

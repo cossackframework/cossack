@@ -3,6 +3,7 @@ import { CommandSpec, runWithSpec } from '../src/command-spec.js';
 import { versionCommand } from '../src/commands/version.js';
 import { routesCommand } from '../src/commands/routes.js';
 import { parseFlags } from '../src/flags.js';
+import { commandSpecs } from '../src/command-specs.js';
 
 function ctxWith(flags) {
   const { flags: parsed } = parseFlags(flags);
@@ -47,6 +48,13 @@ describe('CommandSpec validation (CLI-02)', () => {
   it('does not validate unknown flags for forwarding commands', () => {
     const forwarder = new CommandSpec({ name: 'fwd', forwardsArgs: true });
     expect(forwarder.validate([], { anything: true, weird: 'x' })).toEqual([]);
+  });
+
+  it('accepts multiple rehash names, requires one name, and retains other migration argument limits', () => {
+    expect(commandSpecs.migration.validate(['rehash', '001_first', '002_second', '003_third'], { json: true, 'dry-run': true })).toEqual([]);
+    expect(commandSpecs.migration.validate(['rehash'], {})).toEqual([expect.objectContaining({ code: 'COSSACK_ARGUMENT_MISSING' })]);
+    expect(commandSpecs.migration.validate(['status', 'extra'], {})).toEqual([expect.objectContaining({ code: 'COSSACK_ARGUMENT_UNEXPECTED' })]);
+    expect(commandSpecs.migration.validate(['generate', 'one', 'two'], {})).toEqual([expect.objectContaining({ code: 'COSSACK_ARGUMENT_UNEXPECTED' })]);
   });
 });
 

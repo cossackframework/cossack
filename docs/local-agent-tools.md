@@ -137,13 +137,13 @@ signatures while their runtime targets remain missing. It does not execute or in
 types from JavaScript bodies. A resolver-selected JavaScript file without a type
 entry is reported as `source-not-indexed`. TypeScript source bodies are analyzed
 without execution. Candidate
-conditions are preserved; the catalog does not select a runtime environment.
+conditions are preserved. The catalog does not select a runtime environment.
 The first 100 compiler diagnostics are included, alongside the total count.
 
 `exportDiscovery` reports completeness. Pattern scans skip nested symlinks and
-`node_modules`, stop after 20,000 directory-entry visits, and report partial results
-for unreadable directories, unsupported URL-encoded targets or filenames, malformed
-pattern keys and patterns mapped to a constant target. Constant mappings can expose
+`node_modules`. They stop after 20,000 directory-entry visits. They report partial
+results for unreadable directories, unsupported URL-encoded targets or filenames,
+malformed pattern keys and patterns mapped to a constant target. Constant mappings can expose
 infinitely many subpath names, so the catalog does not invent a finite list.
 Repeated target stars use the same capture. The precedence rules follow
 [Node's package export resolution](https://nodejs.org/api/esm.html#resolution-algorithm-specification).
@@ -222,12 +222,12 @@ pure scaffold registry without writing files. The protected-route example also
 checks auth/database/UI dependencies, D1 requirements and an unsupported provider.
 Auth guidance covers trusted session resolution, role guards and typed record
 policies. Two additional examples check middleware ordering, anonymous/forbidden
-decisions, immutable presentation permissions and action lookup. Auth currently
+decisions, immutable presentation permissions and action lookup. Auth
 publishes TypeScript source. The acceptance harness checks these examples with
 Bundler resolution, bundles them with the installed esbuild dependency, then
 executes them under the offline guard. This does not prove plain Node imports, real session storage,
 login/cookie issuance or framework RPC authorization.
-Framework guides now cover runtime-capability planning and cache guarantees,
+Framework guides cover runtime-capability planning and cache guarantees,
 including Cloudflare binding names, the process locality of memory cache, and KV's
 eventual consistency. The Node adapter guide covers upgrade/fetch lifecycles,
 binding precedence, cleanup and its separate Vite development plugin. The
@@ -236,7 +236,7 @@ so it is deliberately excluded from installed package guidance.
 Studio guidance explains local versus live D1 access and how embedded startup
 reports readiness without exposing the private launch token. Its installed
 lifecycle example uses a fake connection and aborts as soon as the loopback
-server is ready; it never opens a real database.
+server is ready. It never opens a real database.
 Three more core examples are complete application pages. They cover validated
 component actions, read-only server resources and lifecycle tasks. These pages
 need the framework Vite plugins, generated entry and a browser. An ordinary
@@ -255,9 +255,9 @@ Standalone examples prove Node execution. The application checks cover local
 Cloudflare and Node development and production client stripping. They do not
 prove live deployment or every transport and runtime combination. Other APIs,
 components, recipes and runtime targets still need their own coverage.
-The latest tarball gate typechecks and executes all 67 standalone examples from
+The tarball gate typechecks and executes all 67 standalone examples from
 published package exports plus four separately bundled auth examples, for 71
-examples across 65 package guides. Database guidance now exercises the installed
+examples across 65 package guides. Database guidance exercises the installed
 Node SQLite migration apply/status/rollback and repeatable seeder lifecycle as
 well as bound Node SQLite and Cloudflare D1 queries. Core guidance includes locale
 negotiation, `q=0` exclusions and CLDR plural formatting.
@@ -285,26 +285,27 @@ strictly typed. Read index signatures and package diagnostics too.
 Union component props keep `propsContract.status: "partial"`. Their `variants`
 list exposes each branch's required and optional fields, callback signatures,
 and index contracts. For example, Pagination requires either `onPageChange`
-or `href`; its shared members alone make both appear optional. Inspect the
+or `href`. Its shared members alone make both appear optional. Inspect the
 variants and packaged guide before combining options. Unknown branches remain
 explicit, and a declared branch does not prove runtime behavior.
 
 The catalog does not prove native attribute forwarding, keyboard behavior, labels
 or focus management. Those require authored guidance and browser acceptance.
-The installed UI check verifies reviewed prop contracts and guides, with exact-symbol
-SettingsPanel CLI/MCP parity covering controlled/default value branches, readonly sections and native div targets,
-plus DashboardStat readonly metrics, explicit trend/tone types and native list targets,
-plus AuthForm required callbacks and native targets,
-plus Icon artwork, native SVG targets, naming and style ownership,
-plus Bubble readonly reactions and time metadata,
-plus Message/Marker contracts and Attachment filenames, native targets and status,
-plus Carousel slide identity and sizing,
-plus Toaster isolated store types and both
+The installed UI check verifies reviewed prop contracts and guides. Exact-symbol
+SettingsPanel CLI/MCP parity covers controlled/default value branches, readonly sections and native div targets.
+DashboardStat readonly metrics, explicit trend/tone types and native list targets
+are covered. AuthForm required callbacks and native targets
+are covered. Icon artwork, native SVG targets, naming and style ownership
+are covered. Bubble readonly reactions and time metadata
+are covered. Message/Marker contracts and Attachment filenames, native targets and status
+are covered. Carousel slide identity and sizing
+is covered. Toaster isolated store types and both
 Sidebar collapse-mode branches and Resizable
 panel/callback contracts and all six table
-exports and the named ScrollArea viewport,
-plus Typography native prop branches, Avatar span/image targets, Field callbacks,
-Spinner SVG and other reviewed contracts. It retains unresolved platform diagnostics.
+exports and the named ScrollArea viewport
+are covered. Typography native prop branches, Avatar span/image targets, Field callbacks,
+Spinner SVG and other reviewed contracts
+are covered. The check retains unresolved platform diagnostics.
 
 
 For one exported contract, use an exact symbol name:
@@ -318,7 +319,7 @@ Filtering occurs before member expansion. The response retains the selected
 symbol's complete contract and lists `availableSymbols` in each declaration entry.
 `selection.matched` distinguishes a missing name from a contract with no members.
 Unknown names produce `COSSACK_DOCS_SYMBOL_NOT_FOUND` with no fabricated contract.
-The MCP result limit remains 4 MiB; use this filter when a full catalog exceeds it.
+The MCP result limit remains 4 MiB. Use this filter when a full catalog exceeds it.
 Declaration signatures still do not prove runtime availability.
 
 ## Development traces
@@ -326,7 +327,7 @@ Declaration signatures still do not prove runtime availability.
 `cossack traces --json` and MCP `read_development_traces` read the same bounded
 project-local browser records. Supply `--session <uuid>` or `{ "session": "<uuid>" }`
 for one capture. The Vite bridge and browser recording must be enabled explicitly.
-Inspect `freshness.ageMs` and `live: false`; a record is not proof of current state
+Inspect `freshness.ageMs` and `live: false`. A record is not proof of current state
 or server execution by itself. Joined `server-native` events report native-body
-outcome and cleanup over the separate development channel; they do not prove
+outcome and cleanup over the separate development channel. They do not prove
 client consumption. See [capture setup and limits](./development-traces.md#read-captures-from-cli-and-mcp).

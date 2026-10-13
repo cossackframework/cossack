@@ -33,6 +33,12 @@ export interface MigrationStatus {
   readonly state: "pending" | "applied" | "changed";
 }
 
+export interface MigrationRehashResult {
+  readonly name: string;
+  readonly previousChecksum: string;
+  readonly checksum: string;
+}
+
 export type MigrationOperation = SchemaOperation | SQLFragment;
 export type DatabasePlanTarget = Readonly<NonNullable<Adapter["tooling"]> & { connectionId: string; dialect: DialectName }> | Readonly<{ connectionId: string; dialect: DialectName }>;
 

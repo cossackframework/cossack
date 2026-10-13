@@ -20,7 +20,8 @@ import { ConfigurationError, MigrationError, ORMError } from "../errors.js";
 import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import { runJSONORMCommand } from "./process-json.js";
-export { createD1ToolingAdapter, readD1ToolingBindings, type D1ToolingBinding,
+export { createCloudflareToolingPlatform, createD1ToolingAdapter, readD1ToolingBindings,
+  type CloudflareToolingPlatform, type CloudflareToolingPlatformOptions, type D1ToolingBinding,
   type D1ToolingOptions, type ToolingWrangler } from "./cloudflare.js";
 
 interface Arguments {
@@ -139,14 +140,16 @@ export async function runORMCommandInProcess(
     const common = ["config", "env", "target", "remote", "local", "json", "dry-run", "help"];
     const actions: Record<string, Record<string, readonly string[]>> = {
       migration: { generate: ["output", "allow-destructive"], snapshot: ["force"],
-        squash: ["output", "prune"], up: [], down: [], status: [], check: [], baseline: [], plan: ["direction"] },
+        squash: ["output", "prune"], up: [], down: [], status: [], rehash: [], check: [], baseline: [], plan: ["direction"] },
       schema: { inspect: [], pull: ["output", "force"], diff: ["allow-destructive"], check: ["allow-destructive"] },
       seed: { list: [], run: ["only"] },
     };
     const specific = actions[args.command]?.[args.action ?? ""];
     if (!specific) throw new ConfigurationError(`Unknown ${args.command} action "${args.action ?? ""}".`);
     const allowsName = args.command === "migration" && ["generate", "squash"].includes(args.action!);
-    if (args.rest.length > (allowsName ? 1 : 0)) {
+    const rehash = args.command === "migration" && args.action === "rehash";
+    if (rehash && !args.rest.length) throw new ConfigurationError("Migration rehash requires at least one migration name.");
+    if (!rehash && args.rest.length > (allowsName ? 1 : 0)) {
       throw new ConfigurationError(`Unexpected arguments for ${args.command} ${args.action}.`);
     }
     for (const name of args.flags.keys()) if (![...common, ...specific].includes(name)) {
@@ -276,8 +279,19 @@ async function migrationCommand(
     return { reverted: names };
   } else if (args.action === "status") {
     const statuses = await runner.status({ readOnly: true });
-    for (const status of statuses) out(`${status.state.padEnd(8)} ${status.migration.name}`);
+    for (const status of statuses) {
+      out(`${status.state.padEnd(8)} ${status.migration.name}`);
+      if (status.state === "changed") {
+        out(`  stored:  ${status.applied!.checksum}`);
+        out(`  current: ${status.checksum}`);
+      }
+    }
     return { migrations: statuses.map(({ migration, ...status }) => ({ name: migration.name, ...status })) };
+  } else if (args.action === "rehash") {
+    const dryRun = enabled(args, "dry-run");
+    const migrations = await runner.rehash(args.rest, { dryRun });
+    for (const migration of migrations) out(`${dryRun ? "Would rehash" : "Rehashed"}: ${migration.name} (${migration.previousChecksum} -> ${migration.checksum})`);
+    return { dryRun, migrations };
   } else if (args.action === "check") {
     const statuses = await runner.status({ readOnly: true });
     const invalid = statuses.filter(status => status.state !== "applied");
@@ -548,6 +562,7 @@ function help(): string {
   migration snapshot [--force]
   migration squash <name> [--output path] [--prune]
   migration up | down | status | check | baseline
+  migration rehash <name...>
   migration plan [--direction up|down]
   schema pull [--output path] [--force]
   schema diff | check [--allow-destructive]

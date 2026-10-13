@@ -1,61 +1,64 @@
-# Cossack Framework — Bug Reports & Feature Requests
+# Cossack reports
 
-Reports filed from downstream apps. Each entry notes where the limitation was
-hit and whether a workaround is currently in place.
+## `server$` resource read only in an event handler returns `initial` and never loads in time
 
----
+**Found in:** storm-matching, outreach page lead form (2026-10-13).
 
-## CSM-001: `Accordion` clips dynamically-growing and pop-out content
+**What happened:** A page declared
+`leadProperty = server$((id) => getLeadPropertyContext(id), { deps: () => [this.selectedAddressId], initial: null })`
+and read `this.leadProperty` only inside a `@Client()` click handler, never in
+`render()`. Changing `selectedAddressId` did not fetch the resource. The first
+read in the handler started the fetch but returned `null` (the `initial`
+value), so the handler saw no data. Tracing `/crpc` showed the resource RPC
+was sent only after that first read.
 
-- **Type:** Limitation / feature request
-- **Component:** `@cossackframework/ui` → `Accordion` (`packages/ui/src/components/Accordion.ts`)
-- **Found in:** `new-storm-matching` — outreach filter card (`src/pages/dashboard/outreach/index.ts`)
+**Expected:** Either the resource refetches when its `deps` change, whether or
+not `render()` reads it, or the docs say clearly that `server$` loads lazily
+and only resources that `render()` reads are kept fresh. An awaitable accessor
+(e.g. `await this.load$('leadProperty')`) would let handlers read the value
+safely.
 
-### Problem
+**Workaround:** Read the data from a resource that `render()` already uses (we
+added the owner names to the outreach property detail).
 
-The accordion animates open/close by clamping its content wrapper to a
-`max-height` measured **once in `onMount`** (single `requestAnimationFrame`
-read of `scrollHeight`), with the wrapper permanently set to
-`overflow: hidden`:
+**Status:** Fixed. New `await this.load$('leadProperty')` resolves the
+resource for its current `deps`. It starts or shares the load, follows `deps`
+changes made while it waits, and rejects with the load error.
+`docs/server-functions.md` now says that `server$` fields load lazily. Tests:
+`packages/core/tests/server-resource-status.test.ts` (`load$`).
 
-```ts
-const contentWrapperStyle = `max-height: ${open ? targetHeight + "px" : "0"}; ...`;
-// <div class="cs-accordion__content-wrapper overflow-hidden" style=...>
-```
+## Controlled `MultiSelect` drops a pick made before the parent re-renders
 
-Two consequences for real-world content:
+**Found in:** storm-matching, outreach filters (2026-10-13). Seen in `@cossackframework/ui` 0.8.3; the logic is unchanged in `packages/ui/src/components/MultiSelect.ts` (0.9.0).
 
-1. **Absolutely-positioned pop-outs are clipped.** An address-autocomplete
-   dropdown (`absolute`, ~288px tall) rendered inside the content is cut off
-   at the wrapper's bottom edge, even when the accordion is fully open —
-   `overflow: hidden` applies in the resting open state too, not just during
-   the animation.
-2. **Content that grows after mount is clipped.** Because the height is only
-   measured in `onMount`, anything that appears later (async data, error
-   messages, conditionally rendered rows) extends past the clamp and gets
-   cut off.
+**What happened:** With `value` + `onChange` (controlled), `add()` builds
+`next = [...this.selected, value]` and `remove()` filters `this.selected`.
+`selected` returns `props.value` whenever it is set, and that prop only
+updates after the parent's asynchronous re-render (~50 ms on a fast machine,
+more on a heavy page or a phone). A second pick or removal inside that window
+starts from the stale list:
 
-### Requested behavior
+- pick "Metal", then quickly "Unknown" → `onChange(['Unknown'])`, Metal lost;
+- pick "Tile", then quickly remove "Metal" → Tile lost again.
 
-Either or both:
+Reproduced by clicking two options back to back (`opt1.click(); opt2.click()`).
 
-- Re-measure content height when it changes (e.g. `ResizeObserver` on the
-  content element), so the clamp always matches actual content height.
-- Overflow should be `visible` in the resting open state (clipping only
-  needed while animating), allowing pop-out overlays like combobox
-  suggestion lists to escape the content area.
+**Expected:** Consecutive edits accumulate. Options: in controlled mode, base
+the next value on `this.draft` until a newer `props.value` arrives (clear
+`draft` when the prop changes), or emit change events (`onAdd`/`onRemove`) so the
+owner can apply them to its current state.
 
-### Current workaround (downstream)
+**Workaround (storm-matching):** `renderMultiFilter()` in
+`src/pages/dashboard/outreach/index.ts` compares `onChange`'s list with the value
+it rendered, and applies only the added/removed items to the page's current
+selection.
 
-A scoped `:has()` CSS override in the app lifts the clamp only while the
-autocomplete dropdown/error is visible:
+**Also noted (0.8.3 only):** the dropdown stays open after a pick and, on
+mobile, covers the form's submit button. 0.9.0's `add()` calls `close()`, so
+upgrading fixes it.
 
-```css
-.cs-accordion__content-wrapper:has(#outreach-address-suggestions, #outreach-autocomplete-error) {
-  max-height: none !important;   /* inline-style override requires !important */
-  overflow: visible;
-}
-```
-
-This keeps open/close animations intact for normal toggling but is
-per-instance glue the app has to maintain.
+**Status:** Fixed. In controlled mode, `MultiSelect` now builds the next edit
+on the last list it sent to `onChange` until the parent re-renders it. After
+that re-render, it uses `value` again, so a parent can still reject an edit.
+`max` also counts edits that are not rendered yet. Tests:
+`packages/ui/tests/multi-select-controlled.test.ts`.

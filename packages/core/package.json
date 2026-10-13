@@ -16,6 +16,15 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "imports": {
+    "#cossack-environment": {
+      "workerd": "./dist/shared/environment.js",
+      "worker": "./dist/shared/environment.js",
+      "node": "./dist/shared/environment.js",
+      "browser": "./dist/shared/browser-environment.js",
+      "default": "./dist/shared/environment.js"
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

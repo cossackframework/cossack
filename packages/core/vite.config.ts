@@ -8,6 +8,19 @@ export default defineConfig({
   // The consuming application's Vite mode selects diagnostics. A library build
   // must not erase development checks before the app can select its mode.
   define: { 'import.meta.env.DEV': 'import.meta.env?.DEV' },
+  plugins: [{
+    name: 'cossack-environment-boundary',
+    enforce: 'pre',
+    resolveId(id, importer) {
+      if (!importer || !id.startsWith('.')) return;
+      const target = path.resolve(path.dirname(importer), id).replace(/\.(?:js|ts)$/, '');
+      if (target === path.join(sourceRoot, 'shared/environment')) {
+        // Keep runtime selection deferred to the consuming app's conditions.
+        // Source imports stay relative so unit tests can mock the environment.
+        return { id: '#cossack-environment', external: true };
+      }
+    },
+  }],
   resolve: {
     tsconfigPaths: true,
   },
@@ -24,6 +37,8 @@ export default defineConfig({
         input: path.resolve(__dirname, 'src/input.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),
         'shared/server-diagnostics': path.resolve(__dirname, 'src/shared/server-diagnostics.ts'),
+        'shared/environment': path.resolve(__dirname, 'src/shared/environment.ts'),
+        'shared/browser-environment': path.resolve(__dirname, 'src/shared/browser-environment.ts'),
         // These contracts are type-only. Keep an empty runtime module beside
         // the declaration so strict ESM consumers can resolve the `.js`
         // specifier used in emitted declarations.

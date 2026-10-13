@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
  * Detect whether a system Google Chrome is installed. `channel: 'chrome'`
  * forces Playwright to launch system Chrome — required on platforms where
  * Playwright doesn't ship browser binaries (e.g. Ubuntu 26.04) and works on
- * GitHub Actions ubuntu-latest where Chrome is preinstalled. When absent
+ * local machines with Chrome installed. When absent
  * (e.g. a minimal WSL setup without Chrome), the channel is omitted so
  * Playwright falls back to its bundled Chromium (installed via
  * `playwright install`).
@@ -27,7 +27,8 @@ function hasSystemChrome(): boolean {
   return false;
 }
 
-const chromeChannel = hasSystemChrome() ? { channel: 'chrome' as const } : {};
+// CI installs the Chromium version that matches Playwright; system Chrome can drift.
+const chromeChannel = !process.env.CI && hasSystemChrome() ? { channel: 'chrome' as const } : {};
 
 /**
  * Server modes
@@ -55,11 +56,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 const host = requestedPort === undefined ? 'localhost' : '127.0.0.1';
 const address = `http://${host}:${port}`;
-// scripts/e2e-build.mjs runs `vite build` (not `pnpm build`, whose declaration
-// emit e2e does not need) and skips it when an identical build already exists.
-const command = devMode
-  ? `pnpm dev --host ${host} --port ${port} --strictPort`
-  : `node scripts/e2e-build.mjs && pnpm exec vite preview --host ${host} --port ${port} --strictPort`;
+// The launcher bounds HTTP probes, owns build caching, and explicitly permits
+// server reuse. Playwright's own initial URL probe can wait minutes on a closed
+// localhost port before even starting the command.
+const reuse = !process.env.CI && requestedPort === undefined
+  && (devMode || process.env.COSSACK_E2E_REUSE === '1');
+const command = `node scripts/e2e-server.mjs --mode ${devMode ? 'dev' : 'production'} --host ${host} --port ${port}${reuse ? ' --reuse' : ''}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -82,11 +84,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // Prefer system Chrome (channel: 'chrome') when installed — required on
-      // platforms where Playwright doesn't ship browser binaries (e.g. Ubuntu
-      // 26.04), and works on GitHub Actions ubuntu-latest where Chrome is
-      // preinstalled. When system Chrome is absent (e.g. a minimal WSL setup),
-      // fall back to Playwright's bundled Chromium.
+      // Local runs can use system Chrome; CI uses the installed Playwright Chromium.
       use: { ...devices['Desktop Chrome'], ...chromeChannel },
       // SSG mode runs only the SSG suite; dev mode skips it because the SSG
       // output only exists after `vite build`.
@@ -96,12 +94,14 @@ export default defineConfig({
   ],
   webServer: {
     command,
-    url: address,
+    wait: { stdout: /\[e2e\] Server ready at http:/ },
+    // Show build/cache progress while Playwright waits for the server.
+    stdout: 'pipe',
     // Only the dev server is reused by default: a leftover preview server
     // would serve a stale build. COSSACK_E2E_REUSE=1 opts in for iteration
     // against a preview server you started yourself.
-    reuseExistingServer: !process.env.CI && requestedPort === undefined
-      && (devMode || process.env.COSSACK_E2E_REUSE === '1'),
+    // The launcher handles reuse with a bounded HTTP check.
+    reuseExistingServer: false,
     timeout: devMode ? 180 * 1000 : 240 * 1000,
     cwd: __dirname,
   },

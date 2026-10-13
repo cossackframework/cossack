@@ -5,7 +5,7 @@ description: "Share password verification and session policy while keeping accou
 
 # Credential and session primitives
 
-`cossack add auth` now composes the shared auth library with application models.
+`cossack add auth` composes the shared auth library with application models.
 The application owns account lookup, roles, database access and password reset.
 The library owns password encoding, credential verification, session expiry,
 rotation and cookie headers. Auth imports Web APIs and Hono only.
@@ -29,23 +29,23 @@ configure these limits. `maxIterations` defaults to `iterations`. A stronger
 accepted hash is never classified for downgrade. A custom `PasswordHasher` can
 provide another server hashing implementation.
 
-The default preserves the existing generated Workers setting. As checked on
-2026-10-05, [workerd's default limit](https://github.com/cloudflare/workerd/blob/main/src/workerd/io/limit-enforcer.h)
-is 100,000 iterations. Local simulator success does not establish production
+The default is 100,000 iterations. [workerd's default limit](https://github.com/cloudflare/workerd/blob/main/src/workerd/io/limit-enforcer.h)
+is also 100,000 iterations. Local simulator success does not establish production
 limits. This factor is below the 600,000 PBKDF2-SHA256 iterations in
 [OWASP's password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
-Verify the target runtime before increasing the factor or choosing a custom hasher.
+Make sure that you know the limits of the target runtime before you increase the
+factor or choose a custom hasher.
 
 ## Credential verification
 
 `createCredentialVerifier` takes typed `find`, `passwordHash` and `user`
-callbacks. Account records can include secrets; the `user` callback returns the
+callbacks. Account records can include secrets. The `user` callback returns the
 safe application user only after successful verification. Missing accounts,
 missing hashes and rejected passwords return `null`. Identifier normalization,
 password policy and rate limiting belong to the application.
 
 An optional `replacePasswordHash(record, expectedHash, replacement)` callback
-upgrades a verified lower-cost hash. It must compare and replace atomically.
+upgrades a lower-cost hash after it passed verification. It must compare and replace atomically.
 Return `true` only if the expected hash still matches. A lost conditional write
 rejects that login before user mapping. A read followed by an unconditional write
 can overwrite a concurrent password change.
@@ -69,12 +69,12 @@ refreshes it. Rotation explicitly starts a new lifetime. The storage contract is
 | --- | --- |
 | `create(record, context)` | Insert a new record. Do not overwrite an existing token. |
 | `read(id, context)` | Return an auth record or `null`. Preserve its original timestamps. |
-| `replace(expected, replacement, now, context)` | Atomically replace the complete expected record only while it remains active. Exactly one concurrent replacement may win. |
+| `replace(expected, replacement, now, context)` | Atomically replace the complete expected record only while it remains active. At most one concurrent replacement wins. |
 | `revoke(id, context)` | Delete the auth record. Preserve records for other purposes. |
 
 The generated adapter uses one conditional SQL `UPDATE`, matching token,
 account, creation time, expiry and the canonical `{"type":"auth"}` metadata.
-It also checks expiry at the write. One affected row means success. Its `DELETE`
+It also tests expiry at the write. One affected row means success. Its `DELETE`
 targets that same auth purpose. Reset tokens cannot authenticate, rotate or be
 removed by logout. Existing stores with other JSON encodings must adapt their
 conditional matching or normalize the metadata explicitly.
@@ -85,7 +85,7 @@ cross-process atomicity remain storage responsibilities. See the generated
 
 ## Compose the session middleware
 
-Use the manager with `createAuth` so every new HTTP request checks stored expiry
+Use the manager with `createAuth` so every new HTTP request tests stored expiry
 before user resolution. Supply a safe user resolver and your store:
 
 ```typescript
@@ -123,21 +123,21 @@ cookie headers into public page state.
 ## Generated session dashboard
 
 The generated dashboard stores an independent UUID in `sessions.public_id`.
-`SessionInfo.reference` exposes that UUID; the bearer token remains in the
+`SessionInfo.reference` exposes that UUID. The bearer token remains in the
 HttpOnly cookie and storage. The reference stays stable during rotation.
 Listings return only dates, the current-session flag and origin information.
 Session data and arbitrary metadata do not enter page state.
 
 The auth starter registers auth middleware without the separate anonymous
 framework session bag. That bag remains available as an explicit application
-choice; see the [session guide](./session.md) before enabling it on public routes.
+choice. See the [session guide](./session.md) before you enable it on public routes.
 
-Application helpers now receive the authenticated Hono context:
+Application helpers receive the authenticated Hono context:
 `listUserSessions(c)`, `revokeSession(c, reference)` and
 `revokeAllUserSessions(c, keepCurrent = false)`. The caller's request supplies
-the owner. Single revocation checks owner, auth purpose and expiry in one delete.
+the owner. Single revocation tests owner, auth purpose and expiry in one delete.
 It protects the current stable reference as well as the current token, including
-concurrent rotation. Bulk revocation preserves reset and OAuth-state records;
+concurrent rotation. Bulk revocation preserves reset and OAuth-state records.
 `revokeAllUserSessions(c, true)` also protects the stable reference across rotation.
 
 The dashboard layout requires authentication for SSR and RPC. A public reference
@@ -145,9 +145,6 @@ does not authenticate a request or grant permission to revoke a session. Invalid
 foreign and current references produce the same fixed page error. Storage errors
 also use fixed messages. A mutation that commits before a later listing fails is
 not rolled back. An already-ended caller can receive a sign-in denial.
-
-Existing applications need the new migration and template changes described in
-the [draft migration guide](../specs/migration-0.9.0.md#session-dashboard-references).
 
 ## Diagnostics and limits
 
@@ -160,10 +157,5 @@ the separate `OAuthError` contract.
 Operations that fail after a committed write do not roll that write back. A
 session that expires during storage completion issues no cookie. Request
 validation does not refresh the identity of an already-open WebSocket. OAuth
-uses the separate required `OAuthStateStore` for atomic callback consumption;
-cookie deletion alone does not supply that guarantee.
-
-The packaged `credential-and-session-primitives` agent guide includes an
-executable typed example. Its memory store illustrates callbacks; generated
-Node SQLite and Cloudflare D1 tests verify persistent expiry, revocation and
-concurrent rotation.
+uses the separate required `OAuthStateStore` for atomic callback consumption.
+Cookie deletion alone does not supply that guarantee.

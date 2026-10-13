@@ -14,12 +14,12 @@ The framework scans `src/pages` and its subdirectories for `.ts`, `.md`, and `.m
 ### Basic Routing
 
 A page can be defined in two ways:
-- **Directory-based**: `src/pages/about/index.ts` → `/about`
-- **Flat file**: `src/pages/about.ts` → `/about`
+- Directory-based: `src/pages/about/index.ts` → `/about`
+- Flat file: `src/pages/about.ts` → `/about`
 
 Both paths create the same route. Use a flat file for a simple page.
 
-**Example File Structure:**
+Example file structure:
 
 ```
 src/
@@ -116,9 +116,6 @@ Parameter names use ASCII letters, digits, underscores or hyphens, and start
 with a letter or underscore.
 Conflicting files with equal precedence stop generation. The direct file wins
 over an equivalent file inside an additional route group, as in the router.
-`PageOptions.route` is removed in 0.9. It never registered a URL alias. Move the
-file to the intended path under `src/pages`; see the
-[migration guide](../specs/migration-0.9.0.md#file-routes-and-boundary-identities).
 
 The generated browser module contains public patterns and the portable core
 helper. For typed query values, defaults and history updates, read
@@ -171,7 +168,7 @@ still produces a failed navigation.
 
 To group routes without changing their URLs, put the folder name in parentheses. Use route groups to share layouts.
 
-**Example:**
+Example:
 * `src/pages/(auth)/login/index.ts` -> `/login`
 * `src/pages/(auth)/register/index.ts` -> `/register`
 
@@ -179,7 +176,7 @@ To group routes without changing their URLs, put the folder name in parentheses.
 
 Cossack supports nested layouts via `layout.ts` files. A layout wraps all pages and sub-directories within its folder. Layouts nest automatically based on the file system hierarchy.
 
-**Example File Structure:**
+Example file structure:
 
 ```
 src/
@@ -195,7 +192,7 @@ src/
     │       └── index.ts     // /register (Root Layout -> Auth Layout -> Register)
 ```
 
-**Creating a Layout:**
+Creating a layout:
 A layout is a Cossack component that accepts children in its `render` method and can provide metadata via its `head` method.
 
 ```typescript
@@ -230,7 +227,7 @@ Use `src/App.ts` for logic outside the routing system, such as global CSS, theme
 
 Cossack enables soft navigation by default. When a user clicks a link such as `<a href="/about">`, the framework fetches the page and replaces the content without a full browser refresh. The server still renders each page.
 
-**Optimizations:**
-* **Prefetching**: Cossack fetches page data when a user points to a link.
-* **Caching**: Cossack stores visited pages in memory for back and forward navigation.
-* **Persistent Layouts**: If you navigate between pages that share a layout (e.g., `/login` to `/register`), the shared `AuthLayout` instance is **preserved**, maintaining its state and scroll position.
+Optimizations:
+* Prefetching: Cossack fetches page data when a user points to a link.
+* Caching: Cossack stores visited pages in memory for back and forward navigation.
+* Persistent Layouts: If you navigate between pages that share a layout, for example `/login` to `/register`, the framework preserves the shared `AuthLayout` instance with its state and scroll position.

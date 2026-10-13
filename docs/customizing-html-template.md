@@ -62,12 +62,12 @@ Both approaches provide the same two helpers:
 | Helper | Description |
 | --- | --- |
 | `cossackScripts()` | Returns all `<head>` content: head tags from `head()`, CSS links/styles, initial state script, module preload links, and the client entry script tag. |
-| `cossackBody()` | Returns `<div id="root">${body}</div>` : the page content wrapped in the `#root` container required for hydration. |
+| `cossackBody()` | Returns `<div id="root">${body}</div>`. The page content is wrapped in the `#root` container required for hydration. |
 
 ### What `cossackScripts()` includes
 
 - Head tags defined by your page and layout components via `head()`. Attribute
-  values are HTML-escaped; `undefined` and false boolean attributes are omitted.
+  values are HTML-escaped. `undefined` and false boolean attributes are omitted.
   Pass ordinary strings without pre-escaping them.
 - CSS stylesheet link (or inline CSS with deferred load in production). A
   production entry without a CSS asset emits no stylesheet link.
@@ -77,9 +77,9 @@ Both approaches provide the same two helpers:
 
 ## Important Notes
 
-- **The `#root` container is required.** Client-side hydration looks for `<div id="root">` to mount the application. If you use a function template, always include `cossackBody()` in your output. If you use a string template, include the `{{ cossackBody }}` placeholder.
-- **Production minification still applies.** Regardless of which template mode you use, the output is minified via `minifyHtml` in production builds.
-- **The `<meta charset="utf-8">` tag is your responsibility.** The default template includes it, so make sure your custom template includes it as well.
+- The `#root` container is required. Client-side hydration looks for `<div id="root">` to mount the application. If you use a function template, always include `cossackBody()` in your output. If you use a string template, include the `{{ cossackBody }}` placeholder.
+- Production minification still applies. The output is minified via `minifyHtml` in production builds in both template modes.
+- The `<meta charset="utf-8">` tag is your responsibility. The default template includes it. Include it in your custom template as well.
 
 ## TypeScript
 

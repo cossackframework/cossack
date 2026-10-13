@@ -11,8 +11,8 @@ Each Cossack page can read the request context. It contains details about the HT
 
 Read the request context through `this.c` on a component. The property works on the server and the client.
 
-- **On the Server:** `this.c` is the full [Hono `Context`](https://hono.dev/api/context) object. You can read its methods and properties, including middleware values.
-- **On the Client:** `this.c` contains request parameters from the initial page load. A client component can use these values after hydration.
+- On the server: `this.c` is the full [Hono `Context`](https://hono.dev/api/context) object. You can read its methods and properties, including middleware values.
+- On the client: `this.c` contains request parameters from the initial page load. A client component can use these values after hydration.
 
 ---
 
@@ -20,12 +20,12 @@ Read the request context through `this.c` on a component. The property works on 
 
 To read a URL parameter, use `this.c.req.param()`. For a page at `/pages/hello/[name]/index.ts`, read the `name` parameter like this.
 
-**API:**
+API:
 ```typescript
 this.c.req.param('name')
 ```
 
-**Example:**
+Example:
 
 ```typescript
 import { Cossack, Page, Server, State } from '@cossackframework/core';
@@ -46,7 +46,7 @@ export class Greeting extends Cossack {
 }
 ```
 
-**Behavior:**
+Behavior:
 1. A user opens `/hello/Cossack`.
 2. The server runs `init()`. `this.c.req.param('name')` returns `"Cossack"`, and the method sets the initial value of `greeting`.
 3. The server renders the page and sends it to the client.

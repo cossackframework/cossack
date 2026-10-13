@@ -10,8 +10,8 @@ pnpm dev
 ```
 
 Cloudflare projects with D1 apply pending migrations to the local Wrangler
-database before the development server starts. Run `pnpm migrate` whenever you
-want to apply them without starting the server.
+database before the development server starts. Run `pnpm migrate` to apply them
+without starting the server.
 
 ## Cloudflare database setup
 
@@ -19,7 +19,7 @@ For a D1-backed project, the generated `wrangler.jsonc` sets `database_name`
 to the project name followed by `-db`. It leaves `database_id` unset so local
 development can use Wrangler's local D1 database. Cloudflare's Wrangler
 configuration requires both `database_name` and `database_id` for a remote
-binding; `cossack check cloudflare` reports the missing ID before deployment.
+binding. `cossack check cloudflare` reports the missing ID before deployment.
 
 For a new remote database, run this from the project directory. It creates a
 Cloudflare resource and updates `wrangler.jsonc` with its ID:
@@ -40,5 +40,5 @@ existing PostgreSQL or MySQL database, then replace the all-zero `id` in
 `wrangler.jsonc` with that configuration's real ID. You can create the
 configuration in the Cloudflare dashboard or with Wrangler. Keep the database
 connection string and origin credentials in the Hyperdrive configuration in
-Cloudflare; the Worker config only needs the opaque configuration ID. Do not
+Cloudflare. The Worker configuration only needs the opaque configuration ID. Do not
 put the connection string or credentials in source-controlled files.

@@ -1,6 +1,6 @@
 ---
 title: "Layouts"
-description: "Layouts are components decorated with @Page named layout.ts that receive a children argument for wrapping nested page content."
+description: "Layouts are components decorated with @Page and named layout.ts. They receive a children argument with the nested page content."
 ---
 
 # Layouts

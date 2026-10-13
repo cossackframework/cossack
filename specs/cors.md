@@ -4,8 +4,8 @@
 
 The framework registers CORS after request context and configuration are
 initialized, and before project middleware. It applies only to `/api` and
-`/api/*`. Valid API preflights terminate with `204`, avoiding project
-authentication and database work. Ordinary downstream API responses, including
+`/api/*`. A valid API preflight ends with `204`. Project authentication and
+database work do not run for it. Ordinary downstream API responses, including
 handled errors, retain the applicable CORS response headers.
 
 Pages and internal transports (`/crpc`, uploads, SSE, and WebSocket endpoints)
@@ -15,7 +15,7 @@ are outside its scope.
 
 `src/config/cors.ts` implements `CorsConfig`: `enabled`, `origins`, `methods`,
 `headers`, `exposeHeaders`, `credentials`, and `maxAge`. If the file is absent,
-the framework uses secure built-in defaults: enabled with an empty origin list.
+the framework uses built-in defaults: enabled with an empty origin list.
 
 Origin entries support exact HTTP(S) origins, global `*`, scheme-specific
 subdomain wildcards (`https://*.example.com`), and scheme-less subdomain

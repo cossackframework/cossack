@@ -5,13 +5,13 @@ description: "Protect routes and components with role and permission checks, dri
 
 # Authorization (roles & permissions)
 
-The `@cossackframework/auth` package provides an **unopinionated** authorization
-layer on top of authentication. It has no built-in RBAC engine and no knowledge
-of how your roles/permissions are stored : you supply callbacks that answer
-yes/no, and the package produces Hono middleware that gates access.
+The `@cossackframework/auth` package provides an unopinionated authorization
+layer on top of authentication. It has no built-in RBAC engine. It does not
+know how your roles and permissions are stored. You supply callbacks that
+answer yes or no. The package produces Hono middleware that gates access.
 
-It works identically for session login and OAuth login, since both populate
-`c.get('user')` via an upstream authentication middleware.
+It works the same for session login and OAuth login. Both populate
+`c.get('user')` through an upstream authentication middleware.
 
 ## `createAuthorizer()`
 
@@ -34,8 +34,8 @@ export const guard = createAuthorizer<User>({
 | `hasPermission(user, permission, resource?, c)` | Whether `user` holds `permission`, optionally against a domain object. Async allowed. |
 | `onUnauthorized(c, reason)` | Produce the failure response. `reason` is `'unauthenticated'` (no user on context) or `'forbidden'` (user present but lacks role/permission). Defaults: `401 JSON` / `403 JSON`. |
 
-Both `hasRole` and `hasPermission` are optional : but the corresponding
-middleware factories will deny access (`403`) when called without the callback
+Both `hasRole` and `hasPermission` are optional. The matching
+middleware factories deny access (`403`) when called without the callback
 configured. This makes the failure mode obvious during development.
 
 ### Returned middleware factories
@@ -43,10 +43,10 @@ configured. This makes the failure mode obvious during development.
 | Factory | Behavior |
 | --- | --- |
 | `guard.requireUser` | Allow any authenticated user. Deny all other users. |
-| `guard.requireRole(...roles)` | Allow if the user holds **any** of the given roles (OR semantics). |
-| `guard.requireAllRoles(...roles)` | Allow only if the user holds **every** role (AND semantics). |
+| `guard.requireRole(...roles)` | Allow if the user holds any of the given roles (OR semantics). |
+| `guard.requireAllRoles(...roles)` | Allow only if the user holds every role (AND semantics). |
 | `guard.requirePermission(perm, resource?)` | Allow only if the user holds the permission, optionally against a `resource` object. |
-| `guard.requireAllPermissions(...perms)` | Allow only if the user holds **every** permission (AND semantics). |
+| `guard.requireAllPermissions(...perms)` | Allow only if the user holds every permission (AND semantics). |
 
 All factories are Hono `MiddlewareHandler`s, so they work wherever Hono
 middleware works.
@@ -60,8 +60,8 @@ guards. Global authentication middleware runs first.
 Transport guards receive the transport request (`/crpc`, `/upload`, `/sse`, or
 `/ws`). Check resource access through `@Server({ authorize })` or an explicit
 policy check inside the server method. Public state, method arguments, query
-values, and scope names are client input. A connection guard does not recheck
-permissions on each WebSocket message; an action authorizer runs for each call.
+values, and scope names are client input. A connection guard does not authorize
+permissions again on each WebSocket message. An action authorizer runs for each call.
 
 Pass guards to `@Page({ middlewares })`:
 
@@ -124,7 +124,7 @@ async edit(data: EditInput) {
 The action names retain their literal union. TypeScript rejects an unknown
 action such as `posts.action('publish', ...)`, a lookup with the wrong resource
 shape, or an authorizer whose input differs from the schema's parsed type.
-`createTypedDecorators<T>().Server` preserves these checks and channel typing.
+`createTypedDecorators<T>().Server` preserves this type safety and channel typing.
 Keep factory aliases static: a local factory result, a destructured `Server`
 alias, or a directly selected `.Server` is recognized by the compiler.
 
@@ -133,18 +133,18 @@ server context, evaluates the policy, then invokes the method. This applies to
 HTTP/SSE component actions, multipart uploads, explicit/forwarded services and
 socket actions. A forged payload owner, user, tenant or permission flag never
 substitutes for the lookup or authenticated actor. Avoid changing state in lookup
-and policy callbacks. Only boolean `true` grants access; nonboolean decisions and
+and policy callbacks. Only boolean `true` grants access. Nonboolean decisions and
 unexpected exceptions are internal errors.
 
 | Helper | Result and use |
 | --- | --- |
 | `posts.can(c, 'edit', post, { signal })` | `Promise<boolean>` for one presentation decision. Missing user/record or unknown runtime action returns false. |
 | `posts.permissions(c, post, { signal })` | Frozen named booleans such as `{ read: true, edit: false }`, suitable for public UI state. It does not serialize the user, record, callback or lookup. |
-| `posts.authorize(c, 'edit', post, { signal })` | Returns the resource when allowed; otherwise throws a fixed authorization error. Use in reads, API handlers and native server calls. |
+| `posts.authorize(c, 'edit', post, { signal })` | Returns the resource when allowed. Otherwise it throws a fixed authorization error. Use in reads, API handlers and native server calls. |
 | `posts.action('edit', lookup)` | Callback for `@Server({ authorize })` over parsed input and the owned action signal. |
 | `posts.middleware('edit', lookup)` | Hono middleware that checks a request-specific resource before the handler. |
 
-For a server read loader or API handler, check access before exposing the record:
+For a server read loader or API handler, authorize access before you expose the record:
 
 ```ts
 async init() {
@@ -157,32 +157,32 @@ async init() {
 // render() uses this.permissions.edit to decide whether to show the edit control.
 ```
 
-Native API methods and internal `this.edit(...)` calls execute authored code;
-decorator metadata does not wrap them. Explicitly authorize those paths. The
+Native API methods and internal `this.edit(...)` calls execute authored code.
+Decorator metadata does not wrap them. Explicitly authorize those paths. The
 framework normalizes expected denials in API handlers, server reads and actions
 to `COSSACK_AUTH_UNAUTHENTICATED` / `COSSACK_AUTH_FORBIDDEN`, fixed public messages,
-and request IDs. HTTP uses 401/403; socket callers receive correlated RPC errors.
+and request IDs. HTTP uses 401/403. Socket callers receive correlated RPC errors.
 A missing record is a forbidden decision for an authenticated actor. Unexpected
 lookup/policy failures remain internal. Resource middleware returns the same
 denial envelope and stops its handler.
 
-Permission booleans only control presentation. Recheck each mutation on the
+Permission booleans only control presentation. Authorize each mutation again on the
 server even if its button is hidden. Policy metadata, private callbacks and
 module dependencies used solely by server methods are stripped from client
 builds. Keep private policy contracts separate from exported/client-reachable
-bindings and shared form rules. The compiler rejects private metadata that would
-retain local contracts or foreign module initializers on the client.
+bindings and shared form rules. The compiler rejects private metadata that
+retains local contracts or foreign module initializers on the client.
 
 Callbacks and lookups receive an abort signal. Direct helpers default to the
-request signal; inbound action adapters use the framework's action signal.
-Cancellation releases pending checks and prevents later mutation, but does not
-stop ignored I/O or roll back callback side effects. The policy kit does not
+request signal. Inbound action adapters use the framework's action signal.
+Cancellation releases pending work and prevents a later mutation. It does not
+stop ignored I/O and it does not roll back callback side effects. The policy kit does not
 revalidate an existing socket session, provide transaction atomicity, or retry
-mutations. Session freshness/revocation remains the authentication layer's job.
+mutations. Session freshness and revocation remain the job of the authentication layer.
 
 ## Conditional UI in `render()`
 
-The `require*` factories are **route-level** middleware : they deny access with
+The `require*` factories are route-level middleware. They deny access with
 an HTTP response. For conditional UI (show/hide a button, toggle a menu item),
 use the boolean helpers on the same kit:
 
@@ -194,11 +194,11 @@ use the boolean helpers on the same kit:
 | `guard.hasRoleAsync(c, ...roles)` | `Promise<boolean>` | `hasRole` is async. |
 
 All four read the user from `c.get('user')` and return `false` (never throw)
-when there is no user : unauthenticated visitors simply do not see the gated UI.
+when there is no user. Unauthenticated visitors do not see the gated UI.
 
 ### Pattern 1: inline sync check (in-memory permissions)
 
-When your `hasPermission` callback is synchronous (e.g. the user has a
+When your `hasPermission` callback is synchronous (for example the user has a
 `permissions: string[]` array), call `guard.can(this.c, ...)` directly inside
 `render()`:
 
@@ -220,8 +220,8 @@ export class PostList extends Cossack {
 }
 ```
 
-If `hasPermission` returns a Promise, `guard.can()` **throws a clear error**
-rather than silently returning `false` : use Pattern 2 instead.
+If `hasPermission` returns a Promise, `guard.can()` throws a clear error
+instead of silently returning `false`. Use Pattern 2 instead.
 
 ### Pattern 2: async check via `init()` + `@State` (DB-backed permissions)
 
@@ -257,7 +257,7 @@ export class PostList extends Cossack {
 }
 ```
 
-This is the **recommended** pattern for anything non-trivial: it keeps
+Use this pattern for anything non-trivial. It keeps
 `render()` synchronous, works identically on server and client, and avoids
 repeated permission queries on every re-render.
 
@@ -305,9 +305,9 @@ permission check is async.
 
 Pass a domain object as the third argument when the permission depends on
 ownership or state. The object is forwarded as-is to your `hasPermission`
-callback. (Note: middleware factories are constructed at module load, so for
+callback. Middleware factories are constructed at module load. For
 request-specific resources like "the post being edited", resolve the resource
-inside the callback using `c.req.param()` instead.)
+inside the callback using `c.req.param()` instead.
 
 ```ts
 // Static resource hint (rarely useful in route middleware; more common when
@@ -344,7 +344,7 @@ onUnauthorized: (c, reason) =>
 ## Async checks
 
 Both `hasRole` and `hasPermission` can be async. For example, they can query a database or
-an external authorization service). The middleware `await`s the result.
+an external authorization service. The middleware `await`s the result.
 
 ```ts
 const guard = createAuthorizer<User>({
@@ -357,7 +357,7 @@ const guard = createAuthorizer<User>({
 
 ## How it composes with authentication
 
-`createAuthorizer()` does **not** perform authentication : it only reads
+`createAuthorizer()` does not perform authentication. It only reads
 `c.get('user')`. Mount an authentication middleware upstream (such as
 `createAuth().middleware`) so that `user` is populated before the guard runs:
 
@@ -370,7 +370,7 @@ export default [auth.middleware];
 
 ## What this is not
 
-- Not a full RBAC/ABAC engine (no policies, no Casbin-style rules). For complex
+- It is not a full RBAC/ABAC engine (no policies, no Casbin-style rules). For complex
  authorization logic, encode it in your `hasPermission` callback.
-- Not tied to any ORM. The `User` type is your own.
-- Not a session store. Sessions are handled by `createAuth` or OAuth callbacks.
+- It is not tied to any ORM. The `User` type is your own.
+- It is not a session store. Sessions are handled by `createAuth` or OAuth callbacks.

@@ -306,6 +306,7 @@ const EXAMPLE_PATHS = new Set([
   'src/pages/(public)/layout.ts',
 ]);
 const DESKTOP_PATHS = new Set([
+  'patches/appdmg@0.6.6.patch',
   'src/desktop/index.ts',
   'forge.config.ts',
   'desktop-assets/icon.icns',
@@ -626,7 +627,8 @@ function pnpmWorkspace(recipe) {
     'workerd',
   ];
   const overrides = recipe.resolvedFeatures.includes('desktop')
-    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n`
+    // appdmg's callback API needs a compatibility patch for image-size 2.
+    ? `\n\noverrides:\n  '@electron/rebuild': ${dependencyVersion('@electron/rebuild')}\n  'image-size@<2.0.3': 2.0.4\n\npatchedDependencies:\n  appdmg@0.6.6: patches/appdmg@0.6.6.patch\n`
     : '\n';
   return `${recipe.resolvedFeatures.includes('desktop') ? 'nodeLinker: hoisted\n\n' : ''}allowBuilds:\n${builds.map((name) => `  ${name.startsWith('@') ? `'${name}'` : name}: true`).join('\n')}${overrides}`;
 }
@@ -690,6 +692,9 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
       : provider === 'hyperdrive-postgres'
         ? 'hyperdrivePostgres(env.HYPERDRIVE)'
         : 'hyperdriveMySQL(env.HYPERDRIVE)';
+  const runtimeModule = provider === 'turso'
+    ? '@cossackframework/database/cloudflare-turso'
+    : '@cossackframework/database/cloudflare';
   const envShape = provider === 'd1'
     ? 'DB: D1Database;'
     : provider === 'turso'
@@ -699,7 +704,7 @@ export function getORM(env: ORMEnvironment = process.env): Promise<ORM> {
 import { createORM } from '@cossackframework/database';
 import type { Adapter } from '@cossackframework/database';
 import { createAsyncLocalScope } from '@cossackframework/database/adapter';
-import { ${runtimeImport} } from '@cossackframework/database/cloudflare';
+import { ${runtimeImport} } from '${runtimeModule}';
 import { models } from '../models';
 
 export interface ORMEnvironment {
@@ -736,27 +741,29 @@ export async function createToolingAdapter(context: ORMToolingContext): Promise<
 `;
   }
   return `import type { Adapter, ORMToolingContext } from '@cossackframework/database';
-import { getPlatformProxy } from 'wrangler';
+import { createCloudflareToolingPlatform } from '@cossackframework/database/tooling';
 import {
   createRuntimeAdapter,
   type ORMEnvironment,
 } from './factory';
 
 export async function createToolingAdapter(context: ORMToolingContext): Promise<Adapter> {
-  const platform = await getPlatformProxy<ORMEnvironment>({
-    environment: context.environment,
-    remoteBindings: context.target === 'remote',
-  });
-  const adapter = await createRuntimeAdapter(platform.env);
-  const close = adapter.driver.close.bind(adapter.driver);
-  adapter.driver.close = async () => {
-    try {
-      await close();
-    } finally {
-      await platform.dispose();
-    }
-  };
-  return adapter;
+  const platform = await createCloudflareToolingPlatform<ORMEnvironment>(context);
+  try {
+    const adapter = await createRuntimeAdapter(platform.env);
+    const close = adapter.driver.close.bind(adapter.driver);
+    adapter.driver.close = async () => {
+      try {
+        await close();
+      } finally {
+        await platform.dispose();
+      }
+    };
+    return adapter;
+  } catch (error) {
+    await platform.dispose();
+    throw error;
+  }
 }
 `;
 }
@@ -865,7 +872,7 @@ import { Hono } from 'hono';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setClientAddress } from '@cossackframework/core';
 import { createApp } from '@cossackframework/framework/router';
-import { createNodeAdapter, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
+import { createNodeAdapter, createStaticAssets, serveStatic, installNodeShutdown } from '@cossackframework/node-adapter';
 import { App } from './App';
 import { template } from './root';
 ${oauthImport}
@@ -889,6 +896,7 @@ export async function createEnv(variables: Record<string, string | undefined> = 
   const bindings: Record<string, unknown> = {
     ...variables,
     DB_PATH: variables.DB_PATH ?? './database.sqlite',
+    ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false }),
   };
   if (variables.SMTP_HOST) {
     const { SMTP_USER: user, SMTP_PASS: pass } = variables;
@@ -2075,6 +2083,27 @@ async function mergePnpmWorkspace(
   }
 
   current.set('allowBuilds', mergedBuilds);
+  // Feature composition must install its dependency fixes as well as its build approvals.
+  for (const key of ['overrides', 'patchedDependencies']) {
+    const existing = current.get(key)?.toJSON?.() ?? {};
+    const before = previous[key] ?? {};
+    const after = desired[key] ?? {};
+    const merged = { ...existing };
+    for (const [name, value] of Object.entries(before)) {
+      if (!(name in after) && existing[name] === value) delete merged[name];
+    }
+    for (const [name, value] of Object.entries(after)) {
+      if (!(name in existing) || existing[name] === before[name]) merged[name] = value;
+    }
+    if (Object.keys(merged).length) current.set(key, merged);
+    else current.delete(key);
+  }
+  if (desired.nodeLinker && (!current.has('nodeLinker') || current.get('nodeLinker') === previous.nodeLinker)) {
+    current.set('nodeLinker', desired.nodeLinker);
+  } else if (!desired.nodeLinker && previous.nodeLinker && current.get('nodeLinker') === previous.nodeLinker) {
+    // Removing the feature that required the linker restores pnpm's default.
+    current.delete('nodeLinker');
+  }
   entry.content = text(current.toString());
   return entry;
 }

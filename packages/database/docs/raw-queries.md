@@ -49,7 +49,7 @@ await orm.sql`
 `;
 ```
 
-`input` is data, never executable SQL. PostgreSQL compiles it to `$1`; SQLite
+`input` is data, never executable SQL. PostgreSQL compiles it to `$1`. SQLite
 and MySQL use their corresponding placeholders.
 
 Do not interpolate table or column names as strings. Use `sql.id()`:
@@ -116,7 +116,7 @@ await orm.sql`
 ```
 
 Every row passed to `values()` must have the same columns in the same order.
-Large application writes should respect `orm.driver.capabilities.parameterLimit`
+Large application writes must respect `orm.driver.capabilities.parameterLimit`
 and `batchLimit`.
 
 ## Unsafe SQL
@@ -173,7 +173,7 @@ try {
 
 In Node.js, URL or path inference supports PostgreSQL, MySQL, Turso HTTPS URLs, and
 SQLite. Bun delegates to native Bun SQL. The package root's `SQL` export accepts
-explicit adapters and remains runtime neutral. Workers should use an
+explicit adapters and remains runtime neutral. On Workers, use an
 explicit adapter rather than URL guessing:
 
 ```ts
@@ -187,7 +187,7 @@ See [Runtimes](./runtimes.md) for adapter setup and
 
 The ORM logger receives `sql`, parameter type markers, `durationMs`, `dialect`,
 `provider`, `operation`, and `outcome`. A failed query includes only the fixed
-code `COSSACK_DATABASE_QUERY_FAILED`; the event has no error object or message.
+code `COSSACK_DATABASE_QUERY_FAILED`. The event has no error object or message.
 The SQL field is a bounded structural representation: literals and comments are
 removed, and quoted identifiers are anonymous because some providers interpret
 those tokens as values. It is diagnostic output, not executable SQL.

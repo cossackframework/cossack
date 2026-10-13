@@ -362,6 +362,31 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         await pending;
     }
 
+    /**
+     * Resolve a named resource for its current dependencies. Use it where
+     * render() does not read the field, such as an event handler: a plain
+     * field read starts a lazy load and returns the previous or `initial`
+     * value. Shares an in-flight load, rejects with the load's error, and
+     * follows dependency changes made while waiting.
+     */
+    public async load$<Name extends ServerResourceName<T, this>>(name: Name): Promise<ServerResourceValue<T, this, Name>> {
+        for (;;) {
+            this._bindServerResourceField(name);
+            const entry = this._serverResources.get(name);
+            if (!entry) throw new Error(`[Cossack] Unknown server$ resource "${name}". Declare it with server$() first.`);
+            if (entry.failed) throw entry.error;
+            if (entry.resolved) return entry.value as ServerResourceValue<T, this, Name>;
+            if (!entry.pending) throw new Error(`[Cossack] Cannot load server$ resource "${name}" now.`);
+            // Server loads reject; client loads record the error on the entry.
+            await entry.pending.catch(() => undefined);
+            if (this._phase === LifecyclePhase.Destroyed) {
+                throw new Error(`[Cossack] Cannot load server$ resource "${name}" after ${this.constructor.name} was destroyed.`);
+            }
+            // A newer entry (changed deps, refresh, or invalidation) is bound on the next pass.
+            if (this._serverResources.get(name) === entry && entry.failed) throw entry.error;
+        }
+    }
+
     /** Read declared resources after an uncertain RPC failure, without retrying its action. */
     public reconcile$<Name extends ServerResourceName<T, this>>(
         failure: unknown, name: Name, ...otherNames: Name[]
@@ -1497,6 +1522,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     public executeAction(action: string, payload: any[], user: User | undefined, clientContext: unknown, requestId?: string,
         requestContext?: Context, development?: DevelopmentSocketDispatch): Promise<void> {
+        if (!isServer) return Promise.reject(new Error('[Cossack] Server actions can only execute on the server.'));
         const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         // Authorisation gate: only @Server-registered methods may be invoked
         // remotely. Without this, any public/inherited method (bootstrap,
@@ -1542,6 +1568,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private async _runAction(action: string, payload: any[], user: any, clientContext: unknown,
         requestId: string | undefined, cancellation: { cancelled: boolean; controller: AbortController; close?: () => void }, requestContext?: Context, development?: DevelopmentSocketDispatch,
         releaseQueue?: () => void): Promise<void> {
+        // Class methods remain reachable through the component prototype.
+        // Guard this implementation too, so retaining Cossack does not retain
+        // the server dispatcher and its validation/rate-limit dependencies.
+        if (!isServer) throw new Error('[Cossack] Server actions can only execute on the server.');
         const send = (frame: RpcStreamFrame) => sendRpcFrame(clientContext, frame, import.meta.env?.DEV ? development?.frame : undefined);
         const actionMethod = this.getMethod(action);
         if (!actionMethod) {

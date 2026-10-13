@@ -33,6 +33,7 @@
     "@cossackframework/core": "workspace:*",
     "@cossackframework/database": "workspace:*",
     "@cossackframework/framework": "workspace:*",
+    "@cossackframework/node-adapter": "workspace:*",
     "@cossackframework/renderer": "workspace:*",
     "@cossackframework/solar-icons": "^0.7.1",
     "@cossackframework/ui": "workspace:*",

@@ -62,7 +62,7 @@ These insert individual decorators or methods into an existing class.
 
 Type the prefix in a `.ts` file and press `Tab` or `Enter` to expand. Use `Tab` to jump between placeholders.
 
-Example : type `cpage` and expand:
+Example: type `cpage` and expand the snippet:
 
 ```typescript
 import { Cossack, Page } from '@cossackframework/core';

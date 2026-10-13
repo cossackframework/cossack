@@ -204,7 +204,7 @@ Commands:
   lang <subcommand>            Manage localization catalogs under src/lang/.
                                Subcommands: publish, add <locale>.
   migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,
-                               squash, up, down, status, check, baseline, plan.
+                               squash, up, down, status, rehash, check, baseline, plan.
   schema <sub>                 ORM schema commands: inspect, pull, diff, check.
   seeder <sub> (seed)          Run registered ORM seeders: list, run.
   studio                       Inspect the configured database in a local browser.

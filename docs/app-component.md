@@ -5,14 +5,14 @@ description: "The App component acts as the root wrapper for your entire applica
 
 # The Global App Component
 
-In Cossack, `src/App.ts` is a special component that acts as the root wrapper for your entire application. Unlike regular pages or layouts, the App component is **never destroyed** during client-side navigation.
+In Cossack, `src/App.ts` is a special component that acts as the root wrapper for your entire application. Unlike regular pages or layouts, the App component is never destroyed during client-side navigation.
 
 ## Purpose
 
 Use the App component for:
-1. **Global State**: Store data that needs to persist across all pages (e.g., user session, theme preference, shopping cart).
-2. **Persistent UI**: Render elements that stay fixed while the page changes (e.g., a music player, global toast notifications, floating action buttons).
-3. **Providers**: Wrap your application in context providers if you are using libraries that require them.
+1. Global state: store data that must persist across all pages, for example a user session, a theme preference, or a shopping cart.
+2. Persistent UI: render elements that stay fixed while the page changes, for example a music player, global toast notifications, or floating action buttons.
+3. Providers: wrap your application in context providers when a library requires them.
 
 ## Usage
 
@@ -63,25 +63,25 @@ the server-rendered nodes, and the App's server-side head tags are missing.
 
 ## Lifecycle
 
-1. **Server-Side Rendering (SSR)**:
+1. Server-side rendering (SSR):
     * The `App` component is instantiated and bootstrapped for every request.
     * It wraps the rendered HTML of the requested page.
     * Its initial state is serialized into `window.__INITIAL_STATE__._app_state`.
 
-2. **Client-Side Hydration**:
+2. Client-side hydration:
     * On the first load, the client creates a single instance of `App` and hydrates it with the server-sent state.
 
-3. **Navigation**:
-    * When the user navigates to a new page (e.g., via a link), the `App` instance **remains active**.
+3. Navigation:
+    * The `App` instance remains active when the user navigates to a new page, for example through a link.
     * Only the `children` (the page content) are swapped out.
-    * This preserves any state stored in the `App` component (like the `theme` variable in the example above).
+    * This preserves any state stored in the `App` component, like the `theme` variable in the example above.
     * After each navigation completes, `onNavigateComplete(pathname)` is called on the `App` instance.
 
 ## Navigation Lifecycle Hooks
 
 ### `onNavigateComplete(pathname)`
 
-Called on the `App` component after every navigation completes : both the initial page load and subsequent SPA navigations. Override this method to react to route changes.
+The framework calls this method on the `App` component after every navigation completes, including the initial page load and later SPA navigations. Override this method to react to route changes.
 
 ```typescript
 import { Cossack, Page, State } from '@cossackframework/core';
@@ -110,8 +110,8 @@ export class App extends Cossack {
 
 The framework dispatches custom DOM events during the navigation lifecycle. You can listen for these in any client-side code:
 
-- **`cossack:ready`** : Fired after the initial page load and after each SPA navigation completes.
-- **`cossack:before-navigate`** : Fired before an SPA navigation begins.
+- `cossack:ready`: fires after the initial page load and after each SPA navigation completes.
+- `cossack:before-navigate`: fires before an SPA navigation begins.
 
 ```typescript
 // Listen for navigation completion
@@ -128,7 +128,7 @@ document.addEventListener('cossack:before-navigate', (e) => {
 
 ## Styling
 
-Since the App component wraps everything, it is the perfect place to apply global CSS classes or manage themes dynamically.
+The App component wraps every page. Apply global CSS classes or manage themes here.
 
 ```typescript
 if (!this.isServer) {

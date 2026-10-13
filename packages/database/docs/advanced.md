@@ -184,8 +184,7 @@ for (const operation of diff.operations) {
 }
 ```
 
-Pass `{ allowDestructive: true }` only after the caller has made a deliberate
-safety decision.
+Pass `{ allowDestructive: true }` only after a deliberate safety decision.
 
 ## Error handling
 

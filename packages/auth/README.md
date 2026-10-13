@@ -11,21 +11,21 @@ Cossack and its packages.
 
 ## What is included
 
-- **Session authentication** : `createAuth()` middleware that populates
+- Session authentication: `createAuth()` middleware that populates
  `c.get('user')`, plus a `createLoginHandler()` factory for credentials-based
  login.
-- **OAuth 2.0** : `createOAuth()` with first-party providers for **GitHub,
- Google, GitLab, Facebook, and Microsoft**, plus a `defineOAuthProvider()`
- helper for any custom provider. Implements the full Authorization Code flow
- with PKCE (S256), signed-cookie CSRF state and required atomic state storage
+- OAuth 2.0: `createOAuth()` with first-party providers for GitHub,
+ Google, GitLab, Facebook, and Microsoft, plus a `defineOAuthProvider()`
+ helper for any custom provider. It implements the full Authorization Code flow
+ with PKCE (S256), signed-cookie CSRF state, and required atomic state storage
  for cookie flows.
-- **Authorization** : `createAuthorizer()` returns role/permission middleware
+- Authorization: `createAuthorizer()` returns role/permission middleware
  factories (`requireUser`, `requireRole`, `requirePermission`, plus AND/OR
  variants) driven by your own callbacks.
 
-The package is intentionally unopinionated: it never assumes an ORM, a session
+The package is unopinionated. It never assumes an ORM, a session
 store, or a user shape. You supply the user type as a generic and a handful of
-callbacks; the package handles the protocol plumbing.
+callbacks. The package handles the protocol plumbing.
 
 ---
 
@@ -62,14 +62,15 @@ executable example from the installed package.
 
 ## OAuth (Login with GitHub, Google,...)
 
-The OAuth layer implements the standard **Authorization Code flow with PKCE
-(S256)**. CSRF protection is built-in: a signed HttpOnly cookie carries the
-random `state` nonce and PKCE `code_verifier` across the round-trip.
+The OAuth layer implements the standard Authorization Code flow with PKCE
+(S256). CSRF protection is built in. A signed HttpOnly cookie carries the
+random `state` nonce and the PKCE `code_verifier` across the round-trip.
 
 ### 1. Register an OAuth app with your provider
 
-Get `clientId` and `clientSecret` from the provider's developer console and set
-the **authorized redirect URL** to e.g. `https://yourapp.example/auth/github/callback`.
+Get `clientId` and `clientSecret` from the developer console of the provider.
+Set the authorized redirect URL to an address such as
+`https://yourapp.example/auth/github/callback`.
 
 ### 2. Configure `createOAuth()`
 
@@ -167,11 +168,11 @@ interface OAuthUser {
 
 | Provider | Quirk handled |
 | --- | --- |
-| **GitHub** | Falls back to `/user/emails` when the user's primary email is private. |
-| **Google** | OIDC `id_token` claims preferred; `hostedDomain` (`hd`) and `offlineAccess` (`access_type=offline`) options. |
-| **GitLab** | Configurable `baseUrl` for self-hosted instances; same email fallback as GitHub. |
-| **Facebook** | Sends explicit `fields=id,name,email,picture` on the user-info call. |
-| **Microsoft** | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID); OIDC `id_token` claims. |
+| GitHub | Falls back to `/user/emails` when the user's primary email is private. |
+| Google | OIDC `id_token` claims preferred. Options: `hostedDomain` (`hd`) and `offlineAccess` (`access_type=offline`). |
+| GitLab | Configurable `baseUrl` for self-hosted instances. Same email fallback as GitHub. |
+| Facebook | Sends explicit `fields=id,name,email,picture` on the user-info call. |
+| Microsoft | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID). OIDC `id_token` claims. |
 
 ### Custom providers
 
@@ -205,22 +206,22 @@ export const oauth = createOAuth({
 
 ### Security defaults
 
-- **PKCE (S256)** is on by default for every provider (RFC 9700 recommendation).
-- **State** is a 128-bit random nonce, stored in an HttpOnly `SameSite=Lax`
+- PKCE (S256) is on by default for every provider (RFC 9700 recommendation).
+- State is a 128-bit random nonce, stored in an HttpOnly `SameSite=Lax`
  cookie signed with HMAC-SHA256, compared without an early mismatch exit, and
  deleted on callback read. The required server store atomically consumes
- provider-bound state before token exchange; cookie and storage expiry are checked.
+ provider-bound state before token exchange. Cookie and storage expiry are checked.
 - The `redirect_uri` sent on the authorize request is reused unchanged on the
  token-exchange request (exact string match).
 
 ### Stateless mode
 
 For cookie-less API clients, pass `stateless: true` to `createOAuth()`. In
-this mode **PKCE is disabled too** (the verifier cannot be recovered without a
-cookie store), and **you become responsible for CSRF protection** of the
-callback (e.g. by passing `state` through a signed query param you verify
-yourself). Use only when cookies are not an option : the default stateful mode
-is strictly more secure.
+this mode, PKCE is also disabled. The verifier cannot be recovered without a
+cookie store. You become responsible for CSRF protection of the callback. For
+example, pass `state` through a signed query parameter and make sure that the
+value is valid. Use this mode only when cookies are not an option. The default
+stateful mode is more secure.
 
 OAuth failures expose an `OAuthError` with a fixed `code`, `stage`, `status`
 and safe message. Provider failures can include a numeric `providerStatus`.
@@ -237,8 +238,9 @@ See [`docs/oauth.md`](../../docs/oauth.md) for the complete guide.
 
 `createAuthorizer()` returns middleware factories that read `c.get('user')`
 (populated by `createAuth().middleware`) and consult your callbacks. The
-framework has no knowledge of how roles/permissions are stored on the user
-object : you answer yes/no, the package handles the HTTP response.
+framework does not know how the application stores roles and permissions on
+the user object. Your callbacks answer yes or no. The package handles the HTTP
+response.
 
 ```ts
 // src/auth.ts (continue)
@@ -278,16 +280,16 @@ Available factories:
 | `requirePermission(perm, resource?)` | User holds the permission, optionally against a domain object. |
 | `requireAllPermissions(...perms)` | User holds EVERY permission (AND). |
 
-For **conditional UI** (show/hide elements inside `render()`), use the boolean
+For conditional UI (show or hide elements inside `render()`), use the boolean
 helpers on the same kit: `guard.can(c, permission)`, `guard.hasRole(c, role)`,
-plus their `Async` variants for DB-backed checks. See
+plus their `Async` variants for database-backed lookups. See
 [`docs/authorization.md`](../../docs/authorization.md#conditional-ui-in-render)
 for the inline-sync and `init()`/`@State` patterns.
 
 Default failure responses are `401 JSON` (unauthenticated) and `403 JSON`
-(forbidden); override both via `onUnauthorized`.
+(forbidden). Override both via `onUnauthorized`.
 
-Works identically for session login and OAuth login : both populate
+Session login and OAuth login work in the same way. Both populate
 `c.get('user')`.
 
 See [`docs/authorization.md`](../../docs/authorization.md) for more.

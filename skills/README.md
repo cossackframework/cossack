@@ -1,18 +1,18 @@
 # Cossack Skills
 
-Agent Skills for working with the [Cossack Framework](https://github.com/cossackframework/cossack) — a full-stack TypeScript framework where a single component class runs on both server and client.
+Agent Skills for working with the [Cossack Framework](https://github.com/cossackframework/cossack). In the framework, a single component class runs on both server and client.
 
-These skills teach AI coding assistants (Claude Code, Open Code, and any Agent Skills-compatible tool) the framework's conventions and built-in features, so the assistant reaches for `@Validate`, `Image()`, `this.loading`, `@Ref()`, etc. instead of reinventing them.
+These skills teach AI coding assistants the conventions and built-in features of the framework. Claude Code, Open Code, and any Agent Skills-compatible tool can load them. The assistant then uses `@Validate`, `Image()`, `this.loading`, and `@Ref()` instead of writing custom replacements.
 
 ## Skills
 
 ### Background (auto-applied)
 
-These load automatically when you work on Cossack files. You don't invoke them.
+These load automatically when you work on Cossack files. You do not invoke them.
 
 | Skill | What it does |
 |---|---|
-| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Directive guardrails: use framework built-ins instead of rolling your own. Ships deep-dive references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, Electron Desktop, and errors. |
+| [`cossack-best-practices`](./cossack-best-practices/SKILL.md) | Guardrails that direct the assistant to framework built-in features instead of custom code. It includes references for reactive `server$` resources, server/client RPC, directives, decorators, tasks, validation, stores, UI, forms, loading, database, cache, realtime, auth, Electron Desktop, and errors. |
 
 ### Slash commands
 
@@ -20,12 +20,12 @@ Invoke explicitly for multi-step workflows.
 
 | Command | What it generates |
 |---|---|
-| [`/setup-auth`](./setup-auth/SKILL.md) | Full auth setup: install `@cossackframework/auth`, types, `createAuth()` config, middleware wiring, login route, protected pages. |
-| [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add an Electron Desktop side target without changing the web adapter; configure secure local RPC, native shell lifecycle, icons, and Forge packaging. |
+| [`/setup-auth`](./setup-auth/SKILL.md) | Full auth setup: install `@cossackframework/auth`, types, `createAuth()` configuration, middleware wiring, a login route, and protected pages. |
+| [`/create-desktop-app`](./create-desktop-app/SKILL.md) | Add an Electron Desktop side target without changing the web adapter. Configure secure local RPC, native shell lifecycle, icons, and Forge packaging. |
 | [`/setup-websocket`](./setup-websocket/SKILL.md) | Real-time setup: pick SSE or Durable Object transport, wire channels/scope, configure the DO binding. |
 | [`/setup-ui`](./setup-ui/SKILL.md) | UI package setup: `cossack add ui`, theme selection, component usage with `component()`, ejecting components, focus helpers, the global Toaster. |
 
-For everything else (creating pages, layouts, components, adding state or middleware), just ask in plain language — the background skill gives the assistant everything it needs.
+For other work, such as creating pages, layouts, components, state, or middleware, ask in plain language. The background skill gives the assistant the framework conventions.
 
 ## Installation
 
@@ -59,7 +59,7 @@ After installing, restart your tool (or run `/reload-plugins` in Claude Code).
 ## Compatibility
 
 - [ZCode](https://zcode.z.ai/)
-- [Claude Code](https://claude.com/claude-code) — Anthropic's CLI
+- [Claude Code](https://claude.com/claude-code), the CLI from Anthropic
 - [Open Code](https://github.com/opencode-ai/opencode)
 - Any tool that supports the Agent Skills convention (`.claude-plugin/plugin.json` + `SKILL.md`)
 

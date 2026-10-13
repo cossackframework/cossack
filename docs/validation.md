@@ -1,6 +1,6 @@
 ---
 title: "Form Validation"
-description: "Form validation using the @Validate decorator that runs on both client and server with seamless @State integration."
+description: "Form validation with the @Validate decorator that runs on both client and server and integrates with @State."
 ---
 
 # Form Validation
@@ -44,12 +44,12 @@ async save(data: SaveInput) {
 
 Noncoercing schemas keep the same raw and parsed types. String fields accept
 strings, enums accept their declared choices, and file arrays accept files.
-Optional fields add `undefined`; nullable fields add `null`. Coercing schemas
+Optional fields add `undefined`. Nullable fields add `null`. Coercing schemas
 explicitly include their supported incoming types.
 
 `InputOf` describes parsed values. `RawInputOf` describes supported incoming
 values, so the coercing count accepts a number or string at the boundary.
-Authored native method parameters keep the parsed type; ordinary direct server
+Authored native method parameters keep the parsed type. Ordinary direct server
 calls do not run decorator validation. Normalize client form values before
 calling the authored method. Validation metadata is not a wrapper around native
 JavaScript calls.
@@ -62,7 +62,7 @@ For API handlers and other native entrypoints, explicitly call
 Native entrypoints own their error response mapping as well as parsing.
 Keep private server contracts separate from shared browser form rules.
 
-Schemas also check public function fields, including arrow functions and async
+Schemas also apply to public function fields, including arrow functions and async
 generator functions, with both `Server` and `createTypedDecorators().Server`:
 
 ```typescript
@@ -71,11 +71,11 @@ save = async (data: SaveInput) => ({ title: data.title, count: data.count });
 ```
 
 The decorator does not change the field's native return type. Private/protected
-field inference is not supported; expose the RPC action as a public member.
+field inference is not supported. Expose the RPC action as a public member.
 
 Compose input parsing with `@Server({ input: contract, authorize })` for record
 access. The authorizer receives parsed values, trusted server context and the
-owned action signal; it must return boolean `true` to allow mutation. Use
+owned action signal. It must return boolean `true` to allow mutation. Use
 the resource kit's `policy.action(...)` for a typed record lookup and decision.
 See [resource policies](./authorization.md#typed-resource-policies). Neither
 input validity nor public permission state establishes ownership. Both direct
@@ -83,13 +83,13 @@ and typed-channel Server decorators retain authorizer input inference.
 
 | Builder | Incoming values and behavior |
 | :--- | :--- |
-| `input.string(rules)` | Strings only. Empty strings are valid unless constrained; `required` also rejects whitespace. Existing length, pattern, email and URL rules apply. |
-| `input.number({ coerce, integer, min, max })` | Finite numbers; explicit coercion also accepts nonempty decimal/scientific strings. Booleans, hex strings and empty strings fail. `integer` requires a safe integer. |
-| `input.boolean({ coerce })` | Booleans; explicit coercion accepts trimmed, case-insensitive `true/1/on/yes` and `false/0/off/no`. Other values fail. |
-| `input.literal(value)` / `input.enum(['draft', 'published'])` | Exact literals; enum choices retain their TypeScript union. |
+| `input.string(rules)` | Strings only. Empty strings are valid unless constrained. `required` also rejects whitespace. Existing length, pattern, email and URL rules apply. |
+| `input.number({ coerce, integer, min, max })` | Finite numbers. Explicit coercion also accepts nonempty decimal/scientific strings. Booleans, hex strings and empty strings fail. `integer` requires a safe integer. |
+| `input.boolean({ coerce })` | Booleans. Explicit coercion accepts trimmed, case-insensitive `true/1/on/yes` and `false/0/off/no`. Other values fail. |
+| `input.literal(value)` / `input.enum(['draft', 'published'])` | Exact literals. Enum choices retain their TypeScript union. |
 | `input.date({ coerce })` | Valid Date instances are copied. Explicit coercion accepts canonical UTC ISO strings such as `2026-10-03T00:00:00.000Z`. Dates with offsets, omitted milliseconds or invalid calendar values fail. |
 | `input.object(shape)` | Plain objects, with unknown keys rejected at every declared object. `{ unknownKeys: 'strip' }` explicitly removes them at that object only. The parsed object is a new object with no prototype. |
-| `input.array(item, { minItems, maxItems })` | Dense arrays; each item is parsed. Holes, accessor properties and extra array properties fail. Default maximum: 1,024 items. |
+| `input.array(item, { minItems, maxItems })` | Dense arrays. Each item is parsed. Holes, accessor properties and extra array properties fail. Default maximum: 1,024 items. |
 | `input.file({ maxBytes, mediaTypes })` | Actual uploaded File instances, with optional byte limit and exact declared media type checks. File-shaped JSON objects fail. The media type is upload metadata, not a content inspection. |
 
 JSON RPC serializes a Date as a string. Use `input.date({ coerce: true })` for
@@ -98,7 +98,7 @@ such fields, even when the authored client argument is a Date. Strict
 date strings received over JSON.
 
 Fields are required by their type unless marked `.optional()`. That permits
-`undefined` and omits absent object fields. `.nullable()` permits `null`; it does
+`undefined` and omits absent object fields. `.nullable()` permits `null`. It does
 not make a field optional. Typed action contracts accept at most one argument.
 A missing argument is parsed as `undefined`. An extra positional argument fails.
 Object schemas allow at most 1,024 fields. Parsing limits depth to 32, visited
@@ -116,12 +116,12 @@ const emailError = error.fieldErrors?.profile;
 ```
 
 Use `.refine()` for application validation. A `false` result creates a field
-error; a thrown/rejected callback or a nonboolean result is an internal failure.
+error. A thrown/rejected callback or a nonboolean result is an internal failure.
 Its private message is not sent to the caller, including when it throws a
 `ClientVisibleError`, `ActionValidationError` or HTTP exception. The original
 exception remains the internal error's `cause` for server diagnostics. Return
-`false` to produce a field error. Use read-only validation here;
-a mutation belongs in the action after all checks succeed.
+`false` to produce a field error. Use read-only validation here.
+Put a mutation in the action after all checks succeed.
 
 ```typescript
 const nameInput = input.string().refine(async (name, { signal }) => {
@@ -131,33 +131,31 @@ const nameInput = input.string().refine(async (name, { signal }) => {
 
 When a transport request is cancelled, parsing stops owning pending refinements
 and no later validator/action starts. Callbacks receive the request signal for
-cooperative I/O cancellation. A callback that ignores cancellation may continue
-its own work; there is no side-effect rollback. This does not introduce a
+cooperative I/O cancellation. A callback that ignores cancellation can continue
+its own work. There is no side-effect rollback. This does not introduce a
 server execution deadline for arbitrary application code.
 
-Use a static object literal for `@Server` options. The client compiler removes
+Use a static object literal for the `@Server` configuration. The client compiler removes
 `input`, its inline callbacks and private module declarations that become unused.
 A local contract that remains reachable from client code or an export fails the
 client build. Type-only uses such as `InputOf<typeof saveInput>` do not retain its
 runtime code. Imported contract modules must not also supply runtime client
-exports; use separate modules so their private initializers can be removed.
-Destructured contracts are removed as one declaration; client use of a sibling
+exports. Use separate modules so their private initializers can be removed.
+Destructured contracts are removed as one declaration. Client use of a sibling
 binding fails the build. Private runtime TypeScript enum/namespace dependencies
 fail the build rather than leaving their initializers in client code. Use plain
 const/function declarations or a separate contract module.
-Keep separate shared `storeRules` maps for client form validation;
-the mutation recipe demonstrates this composition. Dynamic option objects and
+Keep separate shared `storeRules` maps for client form validation.
+The mutation recipe demonstrates this composition. Dynamic option objects and
 spreads fail the client build because they can hide server validation code.
 
-In 0.9, plain rule maps are no longer action contracts. Replace
-`@Server({ input: { count: { coerce: 'number' } } })` with
+Plain rule maps are not action contracts. Pass a schema such as
 `@Server({ input: input.object({ count: input.number({ coerce: true }) }) })`.
 Declare every accepted key and nested/file shape, and use one input argument.
-TypeScript rejects maps; stale JavaScript metadata fails before validation
+TypeScript rejects maps. Stale JavaScript metadata fails before validation
 callbacks or mutation and logs a migration error on the server. The client gets
 a correlated internal failure. Existing form validation, `@Validate` and
-`storeRules` continue to accept their rule maps. See the
-[migration guide](../specs/migration-0.9.0.md#typed-server-input-contracts).
+`storeRules` continue to accept their rule maps.
 
 ## Usage
 
@@ -210,13 +208,13 @@ export class LoginForm extends Cossack {
 
 ## Coercion
 
-Form submissions arrive as strings : `FormData` values are always strings, so a field you think of as a number comes through as `"25"`. The `coerce` rule transforms the value before the other checks run, and (for `getFormData` / `validateObject`) writes the transformed value back into the returned `data`, so the runtime type matches your declared form type.
+Form submissions arrive as strings. `FormData` values are always strings, so a field you treat as a number comes through as `"25"`. The `coerce` rule transforms the value before the other rules run. For `getFormData` / `validateObject`, it writes the transformed value back into the returned `data`. The runtime type then matches your declared form type.
 
 | Mode | Result | Failure |
 | :--- | :--- | :--- |
-| `'number'` | `Number(value)` | `NaN` (e.g. `"abc"`) |
+| `'number'` | `Number(value)` | `NaN` (for example `"abc"`) |
 | `'boolean'` | `"true"` / `"1"` / `"on"` / `"yes"` (case-insensitive) → `true`, else `false` | never |
-| `'date'` | `new Date(value)` | `Invalid Date` (e.g. `"xyz"`) |
+| `'date'` | `new Date(value)` | `Invalid Date` (for example `"xyz"`) |
 
 ```typescript
 interface SignupForm { age: number; tos: boolean; birthday: Date }
@@ -236,12 +234,11 @@ if (valid) {
 }
 ```
 
-**Two important behaviors:**
+Coercion runs after the `required` rule. Empty values (`null`, `undefined`, `''`) are never coerced. `""` stays `""` and does not become `0` or `false`. This keeps `required` meaningful.
 
-- **Coercion runs after the `required` check.** Empty values (`null`, `undefined`, `''`) are never coerced : `""` stays `""`, it does not become `0` or `false`. This keeps `required` meaningful.
-- **A coercion that cannot succeed is a validation failure.** `Number("abc")` produces `NaN`, and `new Date("xyz")` produces an Invalid Date : both fail validation (and the original value is retained in `data`).
+A coercion that cannot succeed is a validation failure. `Number("abc")` produces `NaN`, and `new Date("xyz")` produces an Invalid Date. Both fail validation, and the original value is retained in `data`.
 
-> **Note on `@Validate` stores:** the coerced value is used for the validation checks (so `min`/`max`/`custom` run against the typed value), but it is **not** written back to your store : store fields keep whatever value you assigned them. Coercion's write-back only happens in the `getFormData` / `validateObject` pipeline.
+On `@Validate` stores, the coerced value drives the validation rules, so `min`/`max`/`custom` run against the typed value. The coerced value is not written back to your store. Store fields keep the value you assigned. Coercion writes back only in the `getFormData` / `validateObject` pipeline.
 
 ## Validation Config
 
@@ -311,7 +308,7 @@ this.clearErrors();
 
 ## Async Validation with Server Methods
 
-The `customAsync` rule allows async validation that can call `@Server()` methods via proxy. This is useful for checking unique values in a database.
+The `customAsync` rule allows async validation that can call `@Server()` methods via proxy. This is useful for uniqueness lookups in a database.
 
 ```typescript
 @State()
@@ -336,15 +333,15 @@ async checkUsernameAvailable(username: string): Promise<boolean> {
 }
 ```
 
-Note: The `customAsync` function receives a `component` parameter that gives you access to the component instance and its `@Server()` methods.
+The `customAsync` function receives a `component` parameter. It gives you access to the component instance and its `@Server()` methods.
 
 ## Validating Stores
 
-When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the **store property** with `@Validate` and pass a **nested rule tree** that mirrors the store shape : each field of the store takes a rule, and object fields nest a sub-tree. Use the `storeRules<T>()` helper to get compile-time checking of the field paths against the store type, so typos like `emial` fail to compile.
+When you group related fields in a single `@Store` (or `@ClientStore`) object, decorate the store property with `@Validate` and pass a nested rule tree that mirrors the store shape. Each field of the store takes a rule, and object fields nest a sub-tree. Use the `storeRules<T>()` helper for compile-time type checks of the field paths against the store type. Typos like `emial` fail to compile.
 
 ### Type-safe rules with `storeRules<T>()` (recommended)
 
-Pass `storeRules<T>(...)` as the `rules`. The tree mirrors `T`: primitive fields (and arrays, `Date`, `RegExp`, etc.) take a `ValidationRule` directly, while object fields nest a sub-tree. The keys you write are **relative** to the store and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, etc. `<T>` is optional : omit it for an untyped map.
+Pass `storeRules<T>(...)` as the `rules`. The tree mirrors `T`. Primitive fields (and arrays, `Date`, `RegExp`, and similar types) take a `ValidationRule` directly, while object fields nest a sub-tree. The keys you write are relative to the store and are auto-prefixed with the decorated property name at registration time, so the runtime paths become `form.email`, `form.address.zip`, and similar. `<T>` is optional. Omit it for an untyped map.
 
 ```typescript
 import { Cossack, Page, Store, Validate, Client, storeRules } from '@cossackframework/core';
@@ -392,7 +389,7 @@ rules: storeRules<FormState>({ emial: { required: true } })
 ```
 
 ### Addressing fields at runtime
-At runtime, `validateProperty`, `hasError`, and `getError` always take the **full prefixed dot-path** (the store name + the dotted path to the leaf you wrote). The framework flattens the rule tree to these paths and resolves each on the component instance (walking into the store), so it works at any depth.
+At runtime, `validateProperty`, `hasError`, and `getError` always take the full prefixed dot-path (the store name plus the dotted path to the leaf you wrote). The framework flattens the rule tree to these paths and resolves each on the component instance (walking into the store), so it works at any depth.
 
 ```typescript
 await this.validateProperty('form.address.zip', 'input');
@@ -401,7 +398,7 @@ this.getError('form.address.zip');   // => 'Invalid ZIP' | undefined
 ```
 
 ### How errors are stored
-The `errors` object (the `errorProperty`, default `'errors'`) remains a **single flat object keyed by the full prefixed dot-path**. There is no nesting in `errors` itself : `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered leaf (including nested ones) and `clearErrors()` clears them all in one call.
+The `errors` object (the `errorProperty`, default `'errors'`) remains a single flat object keyed by the full prefixed dot-path. There is no nesting in `errors` itself. `'form.address.zip'` is a single top-level key. `validateAll()` validates every registered leaf (including nested ones), and `clearErrors()` clears them all in one call.
 
 ### Mixing stores and individual states
 Use `@Store` with `@State` or `@ClientState` on the same component. A `@Validate` decorator on a store property creates dot-path rules. On a `@State` property, it creates one rule keyed by the property name. Both rules appear in the same `errors` object.

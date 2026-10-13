@@ -1,13 +1,13 @@
 ---
 title: 'Configuration'
-description: 'Read request-scoped values with config() and env() from server-only config files.'
+description: 'Read request-scoped values with config() and env() from server-only configuration files.'
 ---
 
 # Configuration
 
 Cossack reads configuration from TypeScript files in `src/config/`. Use `config()` to read a value by its dotted path. Use `env()` to read a request-scoped environment binding. AsyncLocalStorage keeps each request's values separate when one Worker isolate handles many users.
 
-Config files are **server-only** : they are never bundled into the client. On the client or outside a request, `config()` and `env()` return their defaults.
+Config files are server-only. The client bundle never includes them. On the client or outside a request, `config()` and `env()` return their defaults.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ The framework finds `src/config/*.ts` and evaluates each file for every request.
 
 ## How config files work
 
-Each file in `src/config/` default-exports a **factory function**. The function receives `{ env }` and returns a configuration object:
+Each file in `src/config/` default-exports a factory function. The function receives `{ env }` and returns a configuration object:
 
 ```ts
 export default ({ env }) => ({
@@ -61,9 +61,9 @@ export default ({ env }) => ({
 
 ### Why factory functions?
 
-On Cloudflare Workers, environment bindings (`c.env`) are available only **inside the request handler**. They are not available when the module loads. A plain object calls `env()` before bindings exist and returns defaults for every request.
+On Cloudflare Workers, environment bindings (`c.env`) are available only inside the request handler. They are not available when the module loads. A plain object calls `env()` before bindings exist and returns defaults for every request.
 
-Factory functions solve this: the framework calls each factory **per request**, passing an `env` function bound to that request's bindings. This means `env('APP_SECRET')` reads the actual secret for the current request, every time.
+Factory functions solve this. The framework calls each factory per request, passing an `env` function bound to that request's bindings. This means `env('APP_SECRET')` reads the actual secret for the current request, every time.
 
 ### Adding config files
 
@@ -93,7 +93,7 @@ config('database.connections.turso.url', 'fallback'); // nested path
 
 ### Nested values
 
-`config()` walks dotted paths through the config tree. The first segment is the file name. Later segments select values in the returned object:
+`config()` walks dotted paths through the configuration tree. The first segment is the file name. Later segments select values in the returned object:
 
 ```ts
 config('app.name')                    // src/config/app.ts → { name }
@@ -180,14 +180,14 @@ does not replace authentication, authorization, CSRF protection, or rate limits.
 
 | Helper | What it reads | Return type | When to use |
 |--------|--------------|-------------|-------------|
-| `config('app.name')` | The evaluated config tree (from `src/config/*.ts`) | Any (generic) | Reading structured config values with dotted paths |
-| `env('APP_SECRET')` | A flat binding from `c.env` | Always `string` | Reading a raw binding directly, without a config file |
+| `config('app.name')` | The evaluated configuration tree (from `src/config/*.ts`) | Any (generic) | Reading structured configuration values with dotted paths |
+| `env('APP_SECRET')` | A flat binding from `c.env` | Always `string` | Reading a raw binding directly, without a configuration file |
 
 ## Accessing config in components
 
-`config()` and `env()` work anywhere server-side: in `@Server` methods, `init()`, middleware, and `head()`. They are **server-only** : on the client they return defaults.
+`config()` and `env()` work anywhere server-side: in `@Server` methods, `init()`, middleware, and `head()`. They are server-only. On the client they return defaults.
 
-To surface config values in a component's render, read them server-side and store in `@State`:
+To surface configuration values in a component's render, read them server-side and store in `@State`:
 
 ```ts
 import { Cossack, Page, State, Server, HeadContext, HeadValue } from '@cossackframework/core';
@@ -226,7 +226,7 @@ export default class extends Cossack {
 
 ## Accessing config in middleware
 
-Config is available in any registered middleware because the config scope is established **before** user middleware runs:
+Configuration is available in any registered middleware because the framework establishes the configuration scope before user middleware runs:
 
 ```ts
 // src/middlewares/logging.ts
@@ -251,7 +251,7 @@ export default middlewares;
 
 ## Built-in config consumers
 
-Several framework features read from the config system:
+Several framework features read from the configuration system:
 
 | Feature | Config key | Env var |
 |---------|-----------|---------|
@@ -263,11 +263,11 @@ For example, the locale middleware resolves the default locale from `config('app
 
 ## Type safety
 
-`config()` can infer return types and auto-complete valid dotted paths when you register your config file's shape. This is **optional** : without it, `config()` works but returns `unknown`.
+`config()` can infer return types and auto-complete valid dotted paths when you register your configuration file's shape. Registration is optional. Without it, `config()` works but returns `unknown`.
 
 ### Registering types
 
-Export an interface from your config file and augment the `CossackConfigRegistry` interface via `declare module`. This is the same declaration-merging pattern used by the `User` model:
+Export an interface from your configuration file and augment the `CossackConfigRegistry` interface via `declare module`. This is the same declaration-merging pattern used by the `User` model:
 
 ```ts
 // src/config/app.ts
@@ -336,20 +336,20 @@ const name = config<string>('app.name'); // explicit type
 
 ## Client-side security
 
-Config files are **never bundled into the client**. They call `env()` to read secrets and bindings, so including them in the client bundle exposes sensitive data. Two layers enforce this:
+Config files are never bundled into the client. They call `env()` to read secrets and bindings, so including them in the client bundle exposes sensitive data. Two layers enforce this:
 
 1. The `virtual:cossack-config` Vite plugin stubs to `{}` on the client environment.
 2. The security plugin intercepts any direct import of `src/config/*.ts` on the client and replaces it with an empty module.
 
-This means accidentally importing a config file from a component (e.g. `import { dbConfig } from '../config/database'`) is safe : it resolves to `{}` on the client rather than leaking the file's contents.
+An accidental import of a configuration file from a component is safe. It resolves to `{}` on the client rather than leaking the file's contents.
 
 ## How it works
 
 ### Per-request isolation
 
-On Cloudflare Workers, a single isolate serves many concurrent requests. To prevent config races, the framework wraps each request in an `AsyncLocalStorage` scope:
+On Cloudflare Workers, a single isolate serves many concurrent requests. To prevent configuration races, the framework wraps each request in an `AsyncLocalStorage` scope:
 
-1. A **config middleware** (registered first in `createApp()`) evaluates every `src/config/*.ts` factory with the request's env bindings.
+1. A configuration middleware (registered first in `createApp()`) evaluates every `src/config/*.ts` factory with the request's env bindings.
 2. It stores the resulting tree in an ALS scope.
 3. `config()` and `env()` read from the scope, so every request gets its own values.
 
@@ -361,7 +361,7 @@ This mirrors the ALS pattern used by `__()` (locale), application ORM scopes,
 During `vite build`, the `cossackSsg()` plugin renders static pages without live
 request bindings. It resolves the site URL from Wrangler configuration, dotenv or
 shell variables (see [Sitemap](./sitemap.md#base-url)) and supplies `APP_URL`.
-Active requirements use runtime `ssg` and are validated before factories run.
+Active requirements use runtime `ssg` and are tested before factories run.
 A required live binding fails the static render. Use `runtimes` to apply a rule
 only where it is needed. Other optional bindings use their factory defaults.
 
@@ -371,65 +371,60 @@ All exports come from `@cossackframework/framework/config`.
 
 | Function / type | Description |
 |---|---|
-| `config(key, defaultValue?)` | Reads a value from the config tree via dotted notation (`'app.name'`). When `CossackConfigRegistry` is augmented, infers the return type and auto-completes paths. Returns `defaultValue` when the key is missing or no request scope is active. |
+| `config(key, defaultValue?)` | Reads a value from the configuration tree via dotted notation (`'app.name'`). When `CossackConfigRegistry` is augmented, infers the return type and auto-completes paths. Returns `defaultValue` when the key is missing or no request scope is active. |
 | `env(key, defaultValue?)` | Reads a flat binding from the per-request env (`c.env`), coerced to a string. Returns `defaultValue` (or `''`) when the binding is unset or no request scope is active. |
-| `ConfigFactory` | Type of a config file's default export: `({ env }) => Record<string, unknown>`. |
+| `ConfigFactory` | Type of a configuration file's default export: `({ env }) => Record<string, unknown>`. |
 | `EnvFunction` | Type of the `env` function passed to config factories: `(key, defaultValue?) => string`. |
 | `ConfigStore` | Internal: the per-request store (`{ env, config }`) held in ALS. |
 | `CossackConfigRegistry` | Interface users augment via `declare module` to register typed config shapes for inference. Empty by default. |
-| `runWithConfig(store, fn)` | Internal: runs `fn` inside a config ALS scope. Used by the framework's middleware and SSG renderer. |
+| `runWithConfig(store, fn)` | Internal: runs `fn` inside a configuration ALS scope. Used by the framework's middleware and SSG renderer. |
 
 ### Build-time requirement checks
 
-`cossackConfig()` checks literal factory requirements before generating types or
+`cossackConfig()` tests literal factory requirements before generating types or
 writing build output. Cloudflare builds use the selected Wrangler environment.
-Variables and binding declarations are checked locally; remote resources and
-secret existence remain unverified. The check never executes application factories.
+Local tests cover variables and binding declarations. Remote resources and
+secret existence remain untested. The test never executes application factories.
 
 Use `cossackConfig({ runtime: 'cloudflare', environment: 'staging' })` to select
 the target explicitly. Otherwise project metadata selects the runtime and
-`CLOUDFLARE_ENV` selects the named environment. Build watch cycles recheck factory
-metadata and Wrangler configuration. Node builds validate metadata,
+`CLOUDFLARE_ENV` selects the named environment. Build watch cycles test factory
+metadata and Wrangler configuration again. Node builds test metadata,
 conflicting declarations and runtime compatibility, but do not read `.env` or
-process values. Their runtime values remain unchecked until request preparation.
+process values. Their runtime values remain untested until request preparation.
 Development startup allows incomplete values so configuration can be completed.
 
 For Node, the literal `requirements` export is the declaration source.
 There is no Wrangler binding catalog for that runtime. `cossack config --json`
 reports that metadata without executing factories. `cossack config --check`
-returns `COSSACK_CONFIG_CHECK_UNAVAILABLE`; it cannot prove which variables or
+returns `COSSACK_CONFIG_CHECK_UNAVAILABLE`. It cannot prove which variables or
 objects a production process will supply. Direct Vite builds still reject invalid
 metadata, conflicting requirements and bindings that the selected runtime cannot
 support. A successful build does not prove that production values are present.
 
 The generated Node entry supplies process variables through `createEnv()`.
 A custom host can pass
-its own binding object to the application. Request preparation checks that object
+its own binding object to the application. Request preparation tests that object
 against every active requirement before calling any configuration factory or
 application middleware. Required variables, scalar coercion and binding shapes
-are checked together; a failure stops application use. The safe server diagnostic
+are tested together. A failure stops application use. The safe server diagnostic
 names the requirement and its fixed error code. The HTTP response remains a
 generic internal error and does not include a value, exception message or stack.
 
 Configuration inspection does not read arbitrary `.env` files or process values.
-Vite development adapters load their documented dotenv sources; production hosts
-must supply variables themselves. Binding checks prove a local object shape,
-not remote connectivity or secret availability. Async factories are unsupported;
-keep factories synchronous and perform I/O in request-owned services instead.
+Vite development adapters load their documented dotenv sources. Production hosts
+must supply variables themselves. Binding tests prove a local object shape,
+not remote connectivity or secret availability. Async factories are unsupported.
+Keep factories synchronous and perform I/O in request-owned services instead.
 
 ### Keep private configuration out of hydration
 
 Configuration stores, raw bindings and normalized scalars stay in the server
 request scope. Hydration includes selected public component/service/resource
 state, not the configuration store. A private field can retain a secret for
-server work; expose only the public result that the page needs.
+server work. Expose only the public result that the page needs.
 
 `secret: true` records classification. It does not prevent application code from
 putting the value into public state, HTML, head tags, RPC results or responses.
-Release acceptance exercises private reads across native Node SSR,
-parallel environments, browser hydration and real RPC. It also checks that invalid
-values stop before factory and page use, that named diagnostics omit values, and
-that production client JavaScript and source maps omit the private configuration.
-The separate installed Cloudflare acceptance covers local workerd hydration.
-These checks do not prove remote secret availability. Intentional publication
+Intentional publication
 through application state or responses remains the application's responsibility.

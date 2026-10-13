@@ -1,17 +1,17 @@
 ---
 title: "Component Helpers"
-description: "Built-in helpers and reactive properties for common tasks like navigation and state checking with the isActive method."
+description: "Built-in helpers and reactive properties for common tasks like navigation and state checks with the isActive method."
 ---
 
 # Component Helpers
 
-Cossack provides several built-in helpers and reactive properties to make common tasks, like navigation and state checking, easier to implement.
+Cossack provides built-in helpers and reactive properties for common tasks, such as navigation and state checks.
 
 ## Navigation Helpers
 
 ### `this.c.req.path`
 
-The current URL pathname is available on both the server and the client via the context object. On the client, this property is **reactive**, meaning your component will automatically re-render when the user navigates to a new page.
+The current URL pathname is available on the server and the client through the context object. On the client, this property is reactive. Your component re-renders when the user navigates to a new page.
 
 ```typescript
 render() {
@@ -23,10 +23,10 @@ render() {
 
 ### `this.isActive(path, exact = true)`
 
-A convenience method to check if a specific path is currently active. This is primarily used for styling navigation links.
+This method tests whether a path is the active path. It is mainly used for styling navigation links.
 
-* **`path`**: The path to check against.
-* **`exact`**: If `true` (default), it performs an exact match (`===`). If `false`, it checks if the current path starts with the given string.
+* `path`: the path to compare against.
+* `exact`: with `true` (the default), the match is exact (`===`). With `false`, the method tests whether the current path starts with the given string.
 
 #### Example: Styling Active Links
 
@@ -45,10 +45,10 @@ render() {
 
 ### `this.confirmNavigation(allow)`
 
-Used in conjunction with the `@PreventNavigation` decorator to resolve a blocked navigation attempt.
+Use this with the `@PreventNavigation` decorator to resolve a blocked navigation attempt.
 
-* `this.confirmNavigation(true)`: Proceed with the navigation.
-* `this.confirmNavigation(false)`: Stay on the current page and clear the pending navigation state.
+* `this.confirmNavigation(true)`: proceed with the navigation.
+* `this.confirmNavigation(false)`: stay on the current page and clear the pending navigation state.
 
 See the [Prevent Navigation](./prevent-navigation.md) documentation for more details.
 

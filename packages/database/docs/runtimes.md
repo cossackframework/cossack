@@ -96,7 +96,7 @@ const adapter = await turso({
 });
 ```
 
-Workers that use remote Turso should import `turso` from
+Workers that use remote Turso must import `turso` from
 `@cossackframework/database/cloudflare-turso`. Keeping that optional provider in
 its own entry lets a D1-only Worker bundle without the Turso client installed.
 
@@ -158,7 +158,7 @@ export async function createRequestORM(env: Env) {
 
 D1 compiles SQLite SQL and uses prepared bindings. It supports prepared batches
 but not interactive transactions, savepoints, connection reservation, or query
-cancellation. Unsupported operations throw `UnsupportedCapabilityError`; the ORM
+cancellation. Unsupported operations throw `UnsupportedCapabilityError`. The ORM
 does not emulate them unsafely.
 
 Migration schema operations and migration bookkeeping are submitted in one D1
@@ -196,13 +196,34 @@ parser. Local tooling disables remote bindings and shares the application's
 Remote tooling forces the selected D1 binding to use the remote resource,
 requires a real `database_id`, and closes the proxy when the ORM closes. The
 helper does not provision a remote database. JSON results include the selected
-account ID, environment, binding and D1 identity when Wrangler provides them;
-they never include credential values.
+account ID, environment, binding and D1 identity when Wrangler provides them.
+They never include credential values.
 
 Named environments use their own binding declarations. Missing environments
 fail instead of falling back to production. CLI and Studio share this binding
-discovery through `readD1ToolingBindings()`. These exports are Node tooling;
+discovery through `readD1ToolingBindings()`. These exports are Node tooling.
 Worker request code continues to import `d1()` from the Cloudflare entry.
+
+### Other Cloudflare tooling
+
+Turso and Hyperdrive tooling read secrets and bindings through
+`createCloudflareToolingPlatform()`. It starts Wrangler's platform proxy with
+the same target, environment and local state rules as the D1 helper:
+
+```ts
+import type { ORMToolingContext } from "@cossackframework/database";
+import { createCloudflareToolingPlatform } from "@cossackframework/database/tooling";
+
+const platform = await createCloudflareToolingPlatform<{ TURSO_DATABASE_URL?: string }>(context);
+// Read platform.env, then call platform.dispose() when the adapter closes.
+```
+
+Tooling does not run the Worker entry. Because of this, both helpers remove
+Durable Objects and Workflows that the Worker defines itself (bindings without
+`script_name`) before they start the proxy. Wrangler would otherwise warn about
+each one. The helpers write the changed configuration to a temporary file next
+to the original, so relative paths and `.dev.vars` still work. They delete the
+file when the proxy starts.
 
 ## Cloudflare Hyperdrive
 
@@ -296,7 +317,7 @@ export const databases = {
 ```
 
 Each instance owns its adapter, model metadata, entity snapshots, transaction
-scope, and shutdown lifecycle. It may use a different dialect and a different
+scope, and shutdown lifecycle. It can use a different dialect and a different
 entity list.
 
 When a function touches one connection, Active Record syntax remains available
@@ -324,7 +345,7 @@ const [users, events] = await Promise.all([
 ]);
 ```
 
-This avoids asking a static model method to infer which ORM should handle the
+This avoids asking a static model method to infer which ORM handles the
 query. It also supports registering the same entity class with two connections:
 
 ```ts
@@ -338,8 +359,8 @@ const [live, archived] = await Promise.all([
 ```
 
 Do not nest Active Record scopes from different ORM instances. Both scopes
-would be active in the same asynchronous chain, making a static call such as
-`User.find()` ambiguous. Use `orm.model(Entity)`, `orm.sql`, and explicit ORM
+are then active in the same asynchronous chain. A static call such as
+`User.find()` becomes ambiguous. Use `orm.model(Entity)`, `orm.sql`, and explicit ORM
 methods for cross-connection work.
 
 ### Concurrent scopes
@@ -382,7 +403,7 @@ connection explicitly and combine the results in application code.
 
 ### Migrations and shutdown
 
-Give each database its own config so schema commands cannot target the wrong
+Give each database its own configuration file so schema commands cannot target the wrong
 connection:
 
 ```text
@@ -417,7 +438,7 @@ container. Close it during graceful shutdown:
 await orm.close();
 ```
 
-Request-local adapters may make `close()` a no-op, but calling it remains safe
+Request-local adapters can make `close()` a no-op. Calling it remains safe
 and idempotent.
 
 ## Capabilities
@@ -455,7 +476,7 @@ accurate limits and implement the advertised methods.
 | Direct column type alteration | No | Yes | Yes | No |
 
 UUID generation happens in the client. PostgreSQL and MySQL column alterations
-support type changes only; changes to defaults or constraints need explicit SQL.
+support type changes only. Changes to defaults or constraints need explicit SQL.
 SQLite type changes need a table-rebuild migration. Schema queues compile every
 operation before execution, so unsupported later operations cannot publish earlier
 DDL. MySQL DDL can implicitly commit and must not be described as rollback-safe.

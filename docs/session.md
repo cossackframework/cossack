@@ -121,7 +121,7 @@ supported for jobs and tests.
 `SessionStore.set()` and `unset()` must mutate one key without replacing
 unrelated concurrent updates. The built-in database store performs each change
 as one dialect-specific JSON update. A custom backend that reads and rewrites
-the whole bag can lose another request's update; same-key writes remain
+the whole bag can lose another request's update. Same-key writes remain
 last-writer-wins unless the backend provides a stronger operation.
 
 ## Flash and old input
@@ -145,7 +145,7 @@ projects include this binding and its SQLite migration. A Cloudflare app without
 the binding fails closed for flash reads and writes. Without that coordinator,
 Node claims each signed nonce once in a bounded, module-local store in
 the current JavaScript process. Expired claims are
-purged; if the store is full, flash reads fail closed with a 503 instead of
+purged. If the store is full, flash reads fail closed with a 503 instead of
 evicting a live claim. This guard does not coordinate across processes and does not survive a restart.
 Valid incoming flash survives background RPC/upload/realtime requests. Failed
 outgoing RPC writes preserve unrelated incoming flash.
@@ -157,7 +157,7 @@ disables both categories. The selection does not change server-side parsed data.
 
 Select nested leaves individually. Whole objects, files, Date values, object
 arrays and accessors are omitted. Scalar arrays are copied. Numeric paths such
-as `contacts.0.label` retain selected array fields; unselected positions become
+as `contacts.0.label` retain selected array fields. Unselected positions become
 null during JSON serialization. Later source mutations do not change the copy.
 Prototype paths and inherited properties are excluded.
 
@@ -167,19 +167,19 @@ removal precede matching: names containing `password`, `passwd`, `passphrase`,
 `sessionid` or `csrf` are excluded, as are `pin`, `otp`, `cvv` and `cvc`.
 Custom secret names cannot be classified automatically. Keep them outside the
 public field list, and keep the list in server-authored code. Do not copy secret
-values into flash messages or validation messages. Use ordinary parsed data;
-reflective reads of JavaScript proxies can invoke their traps.
-Generic `flash()` rejects the reserved `__input` namespace; use `flashInput()`
+values into flash messages or validation messages. Use ordinary parsed data.
+Reflective reads of JavaScript proxies can invoke their traps.
+Generic `flash()` rejects the reserved `__input` namespace. Use `flashInput()`
 for old input so the selection policy applies.
 
-Prepare flash before returning a lazy generator. After response headers are
-committed, flash writes reject with `COSSACK_RESPONSE_HEADERS_COMMITTED`.
+Prepare flash before returning a lazy generator. After response headers commit,
+flash writes reject with `COSSACK_RESPONSE_HEADERS_COMMITTED`.
 See the [form recipe](./forms.md#server-side-validation) and installed
 `safe-old-input` guide returned by `cossack docs --package @cossackframework/core --json`.
 
 Custom stores must add `has()` and reject writes that recreate expired or deleted
 rows. After `destroy()`, the handle rejects further access in the same request.
 
-For verified concurrent key writes, authentication rotation, admitted requests,
+For concurrent key writes, authentication rotation, admitted requests,
 anonymous upgrade limitations and flash replay scope, see
 [concurrent sessions and flash state](./session-concurrency.md).

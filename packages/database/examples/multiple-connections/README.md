@@ -46,7 +46,8 @@ under `.data/`.
 
 ## Why explicit model managers?
 
-Code touching more than one connection should make the destination visible:
+Make the destination connection visible when code touches more than one
+connection:
 
 ```ts
 const users = await databases.db1.model(User).find();
@@ -54,8 +55,8 @@ const events = await databases.db2.model(AuditEvent).find();
 ```
 
 Avoid nesting `db1.run()` and `db2.run()` around static Active Record calls.
-Both scopes would be active in one asynchronous chain, so a static model could
-not safely infer the intended connection.
+Both scopes are active in one asynchronous chain. A static model cannot then
+infer the intended connection.
 
 Relations do not cross ORM instances. This example stores `userEmail` in db2
 and joins the two result sets in application code.
@@ -65,7 +66,7 @@ transaction does not create a distributed transaction.
 
 ## Separate CLI configurations
 
-Each database has its own config:
+Each database has its own configuration file:
 
 ```sh
 pnpm exec tsx ./src/cli.ts migration status \

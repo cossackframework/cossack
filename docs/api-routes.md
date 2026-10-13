@@ -5,7 +5,7 @@ description: "Build backend endpoints directly in your project using functional 
 
 # API Routes
 
-Cossack makes it easy to build backend endpoints directly within your project. You can choose between two styles: **Functional API Routes** for simplicity, or **Class-based API Routes** for shared state and advanced logic.
+You can build backend endpoints directly in your project. Choose one of two styles. Functional API routes are simple. Class-based API routes support shared state and more advanced logic.
 
 Place API routes under the public `/api` path. Route groups work here too:
 `src/pages/(account)/api/items/[id].ts` serves `/api/items/:id`.
@@ -35,10 +35,10 @@ such as `/crpc`, uploads, SSE, and WebSockets. See [Configuration](./config.md#c
 
 ## Functional API Routes (Zero-Config)
 
-For most use cases, you can simply export a standard Hono handler.
+For most use cases, export a standard Hono handler.
 
 ### All Methods (`default` export)
-If you export a function as the default, it will handle **all** HTTP methods for that route.
+A default export handles every HTTP method for that route.
 
 ```typescript
 // src/pages/api/echo.ts
@@ -51,7 +51,7 @@ export default (c) => {
 ```
 
 ### Specific Methods (Named exports)
-You can export functions named `GET`, `POST`, `PUT`, `DELETE`, or `PATCH` to handle specific HTTP methods.
+Export functions named `GET`, `POST`, `PUT`, `DELETE`, or `PATCH` to handle specific HTTP methods.
 
 ```typescript
 // src/pages/api/users.ts
@@ -99,7 +99,7 @@ export const POST = defineApi({
 
 The order is input parsing, authorization, handler execution, then output
 validation and JSON serialization. Invalid input causes no handler calls.
-Authorization must return `true`; a false result returns 403. Schemas and
+Authorization must return `true`. A false result returns 403. Schemas and
 authorizers are trusted application callbacks. Keep them free of mutations.
 Pass `signal` to their cancellable I/O.
 
@@ -112,7 +112,7 @@ input is limited to 1,024 pairs and 64 KiB of encoded text.
 
 Body schemas read JSON, including `application/*+json` content types. Missing
 bodies parse as `undefined`, so use an optional schema when absence is allowed.
-The reader checks actual stream bytes, rejects invalid UTF-8, and releases its
+The reader tests actual stream bytes, rejects invalid UTF-8, and releases its
 lock on failure or cancellation. `maxBodyBytes` defaults to 1 MiB and accepts
 1 through 16 MiB. Schemas also retain core depth, node and array bounds.
 An undeclared body stays available for native request handling.
@@ -121,7 +121,7 @@ With `output`, return data of the schema's parsed type. Dates become ISO
 strings on the wire. A `Response` cannot bypass output validation. Output
 validation errors, unsupported serialized values and unexpected callback
 exceptions return a private 500 error. The server logs the cause with a
-request ID. Schema validation messages are public; do not include secrets in
+request ID. Schema validation messages are public. Do not include secrets in
 them.
 
 Omit `output` to return a native `Response`. This mode preserves cookies,
@@ -144,7 +144,7 @@ It covers asynchronous work until JSON or native response headers are ready.
 Disconnect and timeout release the framework's wait even if a callback ignores
 abort. Late response bodies are cancelled. This does not terminate application
 I/O, interrupt synchronous code or roll back completed writes. After native
-headers, the streaming handler owns body cancellation and lifetime; use the
+headers, the streaming handler owns body cancellation and lifetime. Use the
 original request signal for that lifetime.
 
 Contract failures return `{ error, code, requestId }`. Expected schema failures
@@ -183,12 +183,12 @@ type SaveResult = ApiResponse<'/api/items/[id]', 'POST'>;
 ```
 
 `ApiRequest` uses each schema's raw input type. Coercing number schemas can
-accept strings; strict number schemas require numbers. `ApiResponse` uses the
+accept strings. Strict number schemas require numbers. `ApiResponse` uses the
 serialized output type, or `Response` in native mode. Plain handlers have
 unknown contracts. Class endpoints do not invent native method contracts.
-These declarations guide callers; they do not add a fetch client or replace
-runtime validation. Type-only references follow actual source exports and
-aliases. They disappear from the browser output.
+These declarations guide callers. They do not add a fetch client and they do
+not replace runtime validation. Type-only references follow actual source
+exports and aliases. They disappear from the browser output.
 
 `ApiInput`, `ApiRawInput` and `ApiOutput` at the `/api` package entry infer
 contracts directly from a declared handler. `cossack routes --json` reports
@@ -217,11 +217,11 @@ Cossack page classes retain the usual method stripping and RPC behavior.
 
 ## Class-based API Routes
 
-If you prefer an object-oriented approach, you can extend the `Cossack` base class.
+Extend the `Cossack` base class for an object-oriented style.
 
-A class **without** a `render()` method is treated as a pure API route: every HTTP
+A class without a `render()` method is a pure API route. Every HTTP
 method it defines returns JSON (no HTML rendering). Use `get()` to handle `GET`
-requests : it matches the HTTP method directly and is server-only, so no
+requests. `get()` matches the HTTP method directly and is server-only, so no
 `@Server()` decorator is required. `init()` is kept as a server-side alias.
 
 ```typescript
@@ -242,20 +242,22 @@ export default class MyApi extends Cossack {
 
 ### Pages that also expose endpoints
 
-A class **with** a `render()` method is a regular page: `GET` renders HTML through
+A class with a `render()` method is a regular page: `GET` renders HTML through
 SSR, while `post()` / `put()` / `patch()` / `delete()` are still exposed as JSON
-endpoints on the same route. This is handy for co-locating a form's view with its
-submit handler.
+endpoints on the same route. This keeps a form view and its submit handler
+together.
 
 ### Server-only lifecycle methods
 
-`get()` and `init()` are server-only : their bodies are stripped from client
+`get()` and `init()` are server-only. Their bodies are stripped from client
 bundles. For client-side initialization that runs after hydration, override
 `clientInit()` instead.
 
 ## Rate Limiting
 
-API routes and `@Server` methods can be protected from abuse with `RateLimit`, which enforces **server-side** request limits and responds `429 Too Many Requests` when a caller exceeds them. See the dedicated [Rate Limiting guide](/docs/rate-limiting.md) for options, the `RateLimit()` wrapper, the `@RateLimit()` decorator, and the storage backends (Durable Object, Redis/Upstash, KV).
+`RateLimit` protects API routes and `@Server` methods from abuse. It enforces
+request limits on the server and responds `429 Too Many Requests` when a caller
+exceeds them. See the [Rate Limiting guide](/docs/rate-limiting.md) for options, the `RateLimit()` wrapper, the `@RateLimit()` decorator, and the storage backends (Durable Object, Redis/Upstash, KV).
 
 ```typescript
 import { RateLimit } from '@cossackframework/core';
@@ -276,7 +278,7 @@ Cossack follows a standard file-based routing convention for API routes:
 
 ## Type Safety
 
-You can use the `CloudflareBindings` type (generated by `cf-typegen`) to get full autocompletion for your environment bindings (D1, KV, etc.) inside your handlers.
+Use the `CloudflareBindings` type (generated by `cf-typegen`) for autocompletion of your environment bindings (D1, KV, etc.) inside your handlers.
 
 ```typescript
 export const GET = async (c) => {

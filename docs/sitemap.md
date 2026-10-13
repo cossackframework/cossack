@@ -5,16 +5,16 @@ description: "Automatic sitemap.xml generation during SSG builds with proper URL
 
 # Sitemap Generation
 
-Cossack Framework automatically generates a `sitemap.xml` file when building with SSG. The sitemap helps search engines discover and index your pages.
+Cossack Framework generates a `sitemap.xml` file during every SSG build. The sitemap helps search engines discover and index your pages.
 
 ## Overview
 
-The sitemap is automatically generated during SSG build and includes:
+The sitemap is generated during the SSG build and includes:
 
 - All pre-rendered SSG pages
-- Proper URL formatting with your site's base URL
-- Metadata like `lastmod`, `changefreq`, and `priority`
-- Excludes API routes, 404 pages, and error pages
+- URL formatting with your site's base URL
+- Metadata such as `lastmod`, `changefreq`, and `priority`
+- No API routes, 404 pages, or error pages
 
 ## Generated Sitemap Example
 
@@ -46,15 +46,15 @@ The sitemap is automatically generated during SSG build and includes:
 
 ### Base URL
 
-The base URL is resolved in the following order (first match wins):
+Cossack resolves the base URL in this order. The first match wins:
 
-1. **`APP_URL` shell env** : explicit override, useful for CI:
+1. `APP_URL` in the shell environment. This override is useful in CI:
    ```bash
    APP_URL=https://my-site.com pnpm run build
    ```
-2. **`vars.APP_URL` in `wrangler.jsonc` or `wrangler.json`** (or `APP_URL` in the `[vars]`
- table of `wrangler.toml`). This is the recommended approach : the value
- is also available to your Worker at runtime via `config('app.url')`:
+2. `vars.APP_URL` in `wrangler.jsonc` or `wrangler.json`, or `APP_URL` in the `[vars]`
+   table of `wrangler.toml`. This value is also available to your Worker at runtime
+   through `config('app.url')`:
    ```jsonc
    {
      "vars": {
@@ -62,10 +62,10 @@ The base URL is resolved in the following order (first match wins):
      }
    }
    ```
-3. **`APP_URL` in dotenv files**. Later files override earlier ones:
+3. `APP_URL` in dotenv files. Later files override earlier ones:
    `.env`, `.env.<environment>`, `.env.local`, `.env.<environment>.local`.
    Without an environment, only `.env` and `.env.local` are used.
-4. **`https://example.com`** : final default.
+4. `https://example.com`. This is the final default.
 
 When `CLOUDFLARE_ENV` is set, Wrangler values come from that environment's
 `vars` object or `[env.<environment>.vars]` table. Top-level variables are not
@@ -87,11 +87,11 @@ interface SitemapOptions {
 
 ## Auto-Excluded Routes
 
-The following routes are automatically excluded from the sitemap:
+The generator excludes these routes from the sitemap:
 
-- **API Routes**: Paths containing `/api/` (e.g., `/api/users`)
-- **404 Pages**: Paths containing `/404`
-- **Error Pages**: Paths containing `/error`
+- API routes: paths that contain `/api/`, for example `/api/users`
+- 404 pages: paths that contain `/404`
+- Error pages: paths that contain `/error`
 
 ## Priority Settings
 
@@ -100,7 +100,7 @@ The following routes are automatically excluded from the sitemap:
 | Homepage (`/`) | 1.0 | Highest priority for the root page |
 | All other pages | 0.5 (default) | Standard priority |
 
-You can customize the default priority in the options:
+Customize the default priority in the options:
 
 ```typescript
 // In build-ssg.ts or your custom SSG build script
@@ -113,9 +113,10 @@ const sitemap = generateSitemapFromUrls(routes, {
 
 ## Change Frequency
 
-The `changefreq` field indicates how often the page is likely to change. Default is `weekly`.
+The `changefreq` field tells search engines how often the page changes. The default is `weekly`.
 
 Supported values:
+
 - `always`: With every change
 - `hourly`: Every hour
 - `daily`: Every day
@@ -139,7 +140,7 @@ function generateSitemap(
 
 ### generateSitemapFromUrls
 
-Generates a sitemap from an array of URL strings. Useful when you have the rendered URLs.
+Generates a sitemap from an array of URL strings. Use it when you have the rendered URLs.
 
 ```typescript
 function generateSitemapFromUrls(
@@ -161,7 +162,7 @@ function generateSitemapIndex(
 
 ## Output Location
 
-The generated sitemap is saved to:
+The build saves the sitemap to:
 
 ```
 dist/ssg/sitemap.xml
@@ -169,14 +170,14 @@ dist/ssg/sitemap.xml
 
 ## Submitting to Search Engines
 
-After generating your sitemap, submit it to search engines:
+Submit the generated sitemap to search engines:
 
-- **Google**: Use Google Search Console → Sitemaps
-- **Bing**: Use Bing Webmaster Tools → Sitemaps
+- Google: use the Sitemaps section in Google Search Console
+- Bing: use the Sitemaps section in Bing Webmaster Tools
 
 ## Best Practices
 
-1. **Keep it Updated**: Rebuild your SSG pages when content changes
-2. **Use Correct Priority**: Set higher priority for important pages
-3. **Set Appropriate Changefreq**: Match the update frequency of your content
-4. **Validate**: Use XML sitemap validators to make sure that proper format
+1. Rebuild your SSG pages when content changes
+2. Set a higher priority for important pages
+3. Match `changefreq` to the update frequency of your content
+4. Use XML sitemap validators to make sure that the format is correct

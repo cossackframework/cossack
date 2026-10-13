@@ -7,17 +7,17 @@ description: "Build interactive UIs and JSON APIs using the default HTTP transpo
 
 Cossack's default transport uses stateless HTTP requests for server-rendered pages and interactive UIs. It supports three use cases:
 
-1. **Interactive Components**: Creating dynamic UIs that update without a full page reload (e.g., counters, filters, searches).
-2. **Pure JSON APIs**: Creating RESTful endpoints for other applications.
-3. **Classic Forms**: Handling simple, stateless UI actions like form submissions that render HTML.
+1. Interactive components: dynamic UIs that update without a full page reload, for example counters, filters, and searches.
+2. Pure JSON APIs: REST endpoints for other applications.
+3. Classic forms: stateless UI actions such as form submissions that render HTML.
 
 ## 1. Interactive Components (Default)
 
-This is the most common pattern. By default, any `@Server` method in a component is automatically wired up to be called from the client via a `fetch` request. The framework handles the request, state updates, and re-rendering automatically.
+This is the most common pattern. By default, the client calls any `@Server` method in a component through a `fetch` request. The framework handles the request, the state updates, and the re-rendering.
 
 ### Example: An Interactive Counter
 
-**File:** `src/pages/counter.ts`
+File: `src/pages/counter.ts`
 ```typescript
 import { Page, State, Cossack, Server } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
@@ -44,15 +44,15 @@ export default class extends Cossack {
     }
 }
 ```
-When a button is clicked, the client sends the component's current state to a generic `/crpc` endpoint. The server re-hydrates the component, runs the method (e.g., `increment`), and returns the new state as JSON, which the client then uses to update the DOM.
+When a button is clicked, the client sends the current state of the component to the generic `/crpc` endpoint. The server re-hydrates the component and runs the method, for example `increment`. The server returns the new state as JSON. The client uses it to update the DOM.
 
 ## 2. Pure JSON APIs
 
-To create a pure API endpoint, simply create a component without a `render()` method.
+To create a pure API endpoint, create a component without a `render()` method.
 
 ### Getting Started: Your First API Route
 
-**File:** `src/pages/api/greeting.ts`
+File: `src/pages/api/greeting.ts`
 ```typescript
 import { Page, State, Cossack } from '@cossackframework/core';
 
@@ -67,7 +67,7 @@ export default class extends Cossack {
     }
 }
 ```
-Navigating to `/api/greeting` will return a `200 OK` JSON response:
+Navigating to `/api/greeting` returns a `200 OK` JSON response:
 ```json
 {
   "message": "Hello from your first Cossack API!"
@@ -78,15 +78,15 @@ Navigating to `/api/greeting` will return a `200 OK` JSON response:
 
 ## 3. Classic Form Handling
 
-This pattern allows you to handle traditional HTML form submissions.
+Use this pattern for traditional HTML form submissions.
 
-The router intelligently handles this:
-- A `GET` request will render the HTML template.
-- `POST`, `PUT`, etc., requests will be handled as form submissions or actions.
+The router handles this:
+- A `GET` request renders the HTML template.
+- The router handles `POST`, `PUT`, and other write requests as form submissions or actions.
 
 ### Example: A Contact Form
 
-**File:** `src/pages/contact.ts`
+File: `src/pages/contact.ts`
 ```typescript
 import { Page, State, Cossack } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
@@ -139,11 +139,11 @@ export default class extends Cossack {
 
 ### 1. The `@Page()` Decorator
 
-By default, all components use the `http` transport. You only need to specify the transport if you want to opt-in to real-time functionality: `@Page({ transport: 'durable-object' })`.
+By default, all components use the `http` transport. Specify the transport only for real-time support: `@Page({ transport: 'durable-object' })`.
 
 ### 2. File-Based Routing
 
-Routes are mapped directly from the file system. The router is flexible, supporting both named files and `index.ts` files.
+Routes map directly from the file system. The router supports named files and `index.ts` files.
 
 - `src/pages/api/users/index.ts` -> `/api/users`
 - `src/pages/api/tasks/index.ts` -> `/api/tasks`
@@ -172,7 +172,7 @@ async get() {
 
 ### Reading the Request Body
 
-For `POST`, `PUT`, and `PATCH` methods, you can easily parse the incoming body.
+For `POST`, `PUT`, and `PATCH` methods, parse the incoming body.
 
 ```typescript
 // For JSON APIs
@@ -190,7 +190,7 @@ async post() {
 
 ### Nested Form Data (PHP-style brackets)
 
-For complex forms with nested fields, name your inputs using bracket notation:
+For complex forms with nested fields, name your inputs with bracket notation:
 
 ```html
 <input name="address[street]" />
@@ -205,7 +205,7 @@ The browser sends these as a flat `FormData` with literal keys like
 
 The convenient server-side helper on `this.c`. Pass a type parameter for the
 shape and (optionally) `rules` built with `storeRules<T>()` for built-in
-validation : the same vocabulary used by `@Store`/`@Validate` components.
+validation. It uses the same vocabulary as `@Store`/`@Validate` components.
 
 ```typescript
 import { storeRules } from '@cossackframework/core';
@@ -236,16 +236,14 @@ async post() {
 }
 ```
 
-- **No `rules`** → returns `Promise<T>` (parsed data, type-asserted).
-- **With `rules`** → returns `{ data: T; errors: Partial<Record<...>>; valid: boolean }`.
-- **Non-throwing.** You decide how to handle a failure (400 JSON, re-render with
- errors, etc.). The same `storeRules<T>()` syntax works in `@Store` components
- too : learn one validation vocabulary, use it everywhere.
+- No `rules` → returns `Promise<T>` (parsed data, type-asserted).
+- With `rules` → returns `{ data: T; errors: Partial<Record<...>>; valid: boolean }`.
+- Non-throwing. You decide how to handle a failure, for example a 400 JSON response or a re-render with errors. The same `storeRules<T>()` syntax works in `@Store` components too. Learn one validation vocabulary and use it everywhere.
 
-**Cast, not coercion.** `<T>` is a compile-time assertion about the shape. It
-does not convert values. `FormData` values are strings/`File`, so a field typed
+`<T>` is a cast, not a coercion. It is a compile-time assertion about the shape.
+It does not convert values. `FormData` values are strings or `File`, so a field typed
 `number` stays a string at runtime (`"30"`). Built-in validators like `min`/`max`
-do validate numerically, but for a true `number` you still cast/transform at the
+do validate numerically, but for a true `number` you still cast or transform at the
 edge. Use `rules` for runtime validation. `<T>` alone only sets a type hint.
 
 #### `parseFormData()` : the lower-level utility
@@ -283,23 +281,22 @@ this.serverHandle(data);
 
 #### Why a separate API (not overriding `formData()`)
 
-`this.c.req.formData()` stays flat : the standard Hono surface, untouched and
-backward compatible. The convenience is additive: `getFormData<T>()` is the
-opt-in for nested + typed + validated data. Cossack intentionally does NOT
-auto-nest every form body (matching Hono, Fastify, and Express 5), because
-auto-nesting has been a recurring source of prototype-pollution CVEs and
-ambiguity footguns across the Node ecosystem. Parsing is **prototype-pollution
-safe by construction**: intermediate containers use `Object.create(null)` (no
-`__proto__` setter), so a crafted field name like `__proto__[polluted]` just
-becomes a normal own property and never reaches `Object.prototype`. Bracket-only
-(no dot-path) also avoids the `api.version` ambiguity ("flat key or nested?").
+`this.c.req.formData()` stays flat. It is the standard Hono surface and stays backward compatible. The convenience is additive: `getFormData<T>()` is the
+opt-in for nested, typed, and validated data. Cossack intentionally does NOT
+auto-nest every form body (matching Hono, Fastify, and Express 5). Auto-nesting
+caused repeated prototype-pollution CVEs and ambiguity problems across the Node
+ecosystem. Parsing is prototype-pollution
+safe by construction: intermediate containers use `Object.create(null)` (no
+`__proto__` setter), so a crafted field name like `__proto__[polluted]` becomes a normal own property and never reaches `Object.prototype`. Bracket-only
+(no dot-path) also avoids the `api.version` ambiguity between a flat key and a
+nested key.
 
 ### Preventing the default submit (and native validation)
 
 When you submit to a `@Server` method via JavaScript instead of a traditional
 `method="post"`, use the `preventDefault` directive instead of a manual
 `e.preventDefault()` arrow. It also disables the browser's native (HTML5
-constraint) validation by default, since Cossack encourages custom `@Validate`
+constraint) validation by default, because Cossack favors custom `@Validate`
 validation:
 
 ```typescript
@@ -314,7 +311,7 @@ render() {
 }
 ```
 
-Pass `{ novalidate: false }` if you want native validation restored:
+Pass `{ novalidate: false }` to restore native validation:
 
 ```typescript
 @submit="${preventDefault(this.serverHandle, { novalidate: false })}"
@@ -322,10 +319,10 @@ Pass `{ novalidate: false }` if you want native validation restored:
 
 ## Flash Data
 
-Flash data carries values across exactly one redirect (POST → GET), then is
-consumed : the classic Laravel `back()->with('success', 'Saved!')` pattern.
+Flash data carries values across exactly one redirect (POST → GET), and the
+framework then consumes it. It is the classic Laravel `back()->with('success', 'Saved!')` pattern.
 Use it for success messages, validation errors, or repopulating form fields
-after a failed submission. The signed cookie is readable; never put secrets
+after a failed submission. The signed cookie is readable. Never put secrets
 into flash data.
 
 When you pass `rules` to `getFormData()`, nonempty validation errors are
@@ -377,20 +374,20 @@ option on `getFormData()`, and the persistent DB-backed `session()`.
 
 ### How it works
 
-Flash data is carried in a **signed cookie** (`cossack_flash`) that survives the
-redirect. The framework's flash middleware reads and consumes it on the next
-page request and seeds a per-request store so `flashed()` /
+Flash data is carried in a signed cookie (`cossack_flash`) that survives the
+redirect. The flash middleware reads and consumes it on the next
+page request. It seeds a per-request store so `flashed()` /
 `old()` work context-free, like `__()` for i18n. Writes are signed and set on
 the response after the handler returns.
 
 Background `/crpc`, `/upload`, `/sse`, and `/ws/` requests preserve valid incoming
 flash for the next page. Invalid tokens are cleared. An RPC HTTP error status
-(400 or higher) discards partial outgoing flash. Errors raised after a stream's
-headers were sent cannot retract its cookies.
+(400 or higher) discards partial outgoing flash. Errors raised after a stream
+sent its headers cannot retract its cookies.
 
-**Signing secret required.** Because flash messages render into HTML, the
-cookie is HMAC-signed to prevent tampering. Set `APP_SECRET` (min 16 chars)
-in your wrangler env:
+A signing secret is required. Flash messages render into HTML, so the
+cookie is HMAC-signed to prevent tampering. Set `APP_SECRET` (at least 16
+characters) in your wrangler configuration:
 
 ```jsonc
 // wrangler.jsonc
@@ -399,16 +396,16 @@ in your wrangler env:
 }
 ```
 
-Apps that never use `flash()` need no secret : the middleware throws only when
-flash is actually exercised.
+Apps that never use `flash()` need no secret. The middleware throws only when
+flash is actually used.
 
 ### Limitations
 
-- **~4KB cookie limit.** Fine for messages + small form input. For larger
+- The cookie holds about 4 KB. That size fits messages and small form input. For larger
  payloads, use a database-backed session (`session()`) instead.
-- **Read-once.** Flash is consumed on the next page request. Refreshing
- the page clears it. (`flash().keep()` / `reflash()` are not implemented yet.)
-- **Header timing.** Write flash before returning a stream. Lazy generator
+- Flash is read-once. The framework consumes it on the next page request. A page
+ refresh clears it. (`flash().keep()` / `reflash()` are not implemented yet.)
+- Header timing. Write flash before you return a stream. Lazy generator
  bodies run after headers are finalized and reject writes with
  `COSSACK_RESPONSE_HEADERS_COMMITTED`. RPC redirects preserve flash cookies
  and navigate from redirect metadata. See [server calls](./rpc.md).
@@ -416,9 +413,9 @@ flash is actually exercised.
 ## Cookies
 
 The `cookie()` helper reads and writes cookies on the active request without an
-explicit `Context` argument : the same context-free ergonomics as ORM scopes,
+explicit `Context` argument. It works context-free, like ORM scopes,
 `__()`,
-and `flash()`. It delegates to Hono's `hono/cookie` under the hood.
+and `flash()`. It uses Hono's `hono/cookie` internally.
 
 ```typescript
 import { cookie } from '@cossackframework/core';
@@ -442,10 +439,10 @@ async post() {
 | `cookie().set(name, value, options?)` | Set a cookie on the response. |
 | `cookie().delete(name, options?)` | Expire a cookie. |
 
-`cookie()` works anywhere inside a request : handlers, services, and
-middlewares. It is available by default (the request-context middleware
+`cookie()` works anywhere inside a request: handlers, services, and
+middlewares. It is available by default. The request-context middleware
 scopes the Hono `Context` into AsyncLocalStorage for every request, first in
-the stack).
+the stack.
 
 Writes must happen before the response's middleware finishes. `cookie().set()`,
 `cookie().delete()`, and `this.c.header()` reject later writes with
@@ -457,10 +454,10 @@ cookies. WebSocket action results cannot carry native HTTP responses.
 
 ## Sessions (database-backed)
 
-For data that outlives a single redirect : shopping carts, wizard state,
-per-user preferences : use `session()`. Unlike flash (cookie-backed, ~4KB,
-read-once), sessions are **database-backed** (D1/Turso via the `sessions`
-table), long-lived, and keyed off a session ID cookie.
+For data that outlives a single redirect, use `session()`. Examples are shopping
+carts, wizard state, and per-user preferences. Flash is cookie-backed, holds
+about 4 KB, and is read-once. Sessions are database-backed (D1/Turso via the
+`sessions` table), long-lived, and keyed off a session ID cookie.
 
 ```typescript
 import { session } from '@cossackframework/framework/session';
@@ -493,7 +490,8 @@ export const middlewares = [sessionMiddleware];
 ```
 
 The migration shipped by `cossack add database` creates the `sessions` table
-(`id`, nullable `user_id`, JSON `data`, `expires_at`) : no extra schema work.
+(`id`, nullable `user_id`, JSON `data`, `expires_at`). No extra schema work is
+needed.
 
 ### Anonymous vs. authenticated sessions
 
@@ -519,26 +517,26 @@ export const sessionMiddleware = createSessionMiddleware({
 | `await session().get(key)` / `getAll()` | Read a key / the whole bag. |
 | `await session().set(key, value)` | Merge a key into the bag (refreshes expiry). |
 | `await session().unset(key)` | Remove a key. |
-| `await session().destroy()` | Delete the session row (e.g. on logout). |
+| `await session().destroy()` | Delete the session row (for example on logout). |
 
 ### Flash vs. session : when to use which
 
 | | Flash | Session |
 |---|---|---|
-| **Lifetime** | One redirect (read-once) | Long-lived (until logout/expiry) |
-| **Storage** | Signed cookie (~4KB limit) | Database (`sessions.data` JSON) |
-| **Best for** | Success/error messages, old form input | Carts, wizards, prefs, A/B |
-| **Requires** | `APP_SECRET` | Database (included by default) |
+| Lifetime | One redirect (read-once) | Long-lived (until logout/expiry) |
+| Storage | Signed cookie (~4KB limit) | Database (`sessions.data` JSON) |
+| Best for | Success/error messages, old form input | Carts, wizards, prefs, A/B |
+| Requires | `APP_SECRET` | Database (included by default) |
 
 ## Sending Responses
 
 ### Automatic JSON Responses
 
-If a method in a **pure JSON API** (a component without a `render()`) does not explicitly return a value, the framework automatically calls the component's `getPublicState()` method, which serializes only the `@State` properties into a clean JSON object and sends a `200 OK` response.
+If a method in a pure JSON API (a component without a `render()`) does not explicitly return a value, the framework automatically calls the component's `getPublicState()` method. That method serializes only the `@State` properties into a clean JSON object and sends a `200 OK` response.
 
 ### Custom Responses
 
-For full control, you can return a `Response` object directly using the methods on `this.c`. This allows you to set custom status codes, headers, and body content. **If you return a value, the automatic response behavior is skipped.**
+For full control, return a `Response` object directly through the methods on `this.c`. Then you set custom status codes, headers, and body content. If you return a value, the framework skips the automatic response behavior.
 
 ```typescript
 async post() {
@@ -580,7 +578,7 @@ async get() {
 
 Apply Hono middleware to your routes by exporting a `middleware` array from the page.
 
-**File:** `src/pages/api/me.ts`
+File: `src/pages/api/me.ts`
 
 ```typescript
 import { Page, Cossack } from '@cossackframework/core';
@@ -598,7 +596,7 @@ export default class extends Cossack {
 }
 ```
 
-You can also implicitly apply middleware into the page by using the `middleware` property on the `@Page()` decorator:
+You can also implicitly apply middleware into the page with the `middleware` property on the `@Page()` decorator:
 
 ```typescript
 @Page({ middleware: [authMiddleware] })

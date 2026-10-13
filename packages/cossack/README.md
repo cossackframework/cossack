@@ -25,7 +25,7 @@ pnpm add -g cossack
 # or: yarn global add cossack
 ```
 
-Requires **Node.js >= 22**.
+Requires Node.js >= 22.
 
 `cossack create` detects whether it was invoked through npm, pnpm, Yarn or Bun
 and prints matching install/dev commands. Globally installed users can
@@ -57,7 +57,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | `seeder <sub>` (`seed`) | Run seeders (`run`). |
 | `studio` | Inspect the configured database in a local browser. |
 | `routes` | List all routes in the project. |
-| `config` | List configuration factory type origins; use `--generate` before standalone typechecking. |
+| `config` | List configuration factory type origins. Use `--generate` before standalone type checking. |
 | `ssg` | Pre-render pages marked `ssg:true` to static HTML. |
 | `image optimize` | Generate optimized image variants from `<Image>` usages (requires ImageMagick). |
 | `upgrade [dir]` | Upgrade Cossack deps and report template drift. |
@@ -69,7 +69,7 @@ Run `cossack --help` to list all commands, or `cossack <command> --help` for com
 | Option | Description |
 | --- | --- |
 | `--force`, `-f` | Overwrite existing files / skip confirmation. |
-| `--dry-run` | Show what would happen without writing. |
+| `--dry-run` | Show the planned changes without writing files. |
 | `--help`, `-h` | Show help. |
 | `--version`, `-V` | Print the CLI version. |
 
@@ -115,7 +115,7 @@ cossack upgrade --apply-template
 
 ## How it works
 
-The CLI is a small, dependency-light Node.js program (no `commander`/`yargs`). Commands are registered in [`src/dispatch.js`](./src/dispatch.js); each command lives in [`src/commands/`](./src/commands) and follows the contract `async function run(args, ctx): Promise<exitCode>`. Generated file contents are pure template functions in [`src/templates.js`](./src/templates.js) (string in, string out) for easy testing.
+The CLI is a small, dependency-light Node.js program (no `commander`/`yargs`). Commands are registered in [`src/dispatch.js`](./src/dispatch.js). Each command lives in [`src/commands/`](./src/commands) and follows the contract `async function run(args, ctx): Promise<exitCode>`. Generated file contents are pure template functions in [`src/templates.js`](./src/templates.js) (string in, string out) for easy testing.
 
 Scaffolding is powered by [`@cossackframework/scaffold`](../scaffold).
 `cossack create` writes a schema-v3 `.cossack/scaffold.json` manifest with
@@ -138,5 +138,5 @@ cossack add dashboard --features=users,sessions
 
 ## Documentation
 
-- **Full CLI reference** : [`docs/cossack-cli.md`](../../docs/cossack-cli.md) in the framework repository.
-- **Framework docs** : [https://cossack.dev/docs](https://cossack.dev/docs).
+- Full CLI reference: [`docs/cossack-cli.md`](../../docs/cossack-cli.md) in the framework repository.
+- Framework docs: [https://cossack.dev/docs](https://cossack.dev/docs).

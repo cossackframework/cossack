@@ -199,7 +199,7 @@ does not walk an in-memory object graph and delete related entities.
 
 ## Nullable and logical relations
 
-Use `nullable` to describe whether an owning relation may be absent:
+Use `nullable` to describe whether an owning relation can be absent:
 
 ```ts
 @ManyToOne(() => Team, (team) => team.members, {
@@ -209,8 +209,8 @@ Use `nullable` to describe whether an owning relation may be absent:
 declare team: Relation<Team | null>;
 ```
 
-Set `createForeignKeyConstraints: false` for a logical relation that should
-appear in ORM metadata without creating a database foreign-key constraint:
+Set `createForeignKeyConstraints: false` for a logical relation that appears
+in ORM metadata without creating a database foreign-key constraint:
 
 ```ts
 @ManyToOne(() => ExternalAccount, {

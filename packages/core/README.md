@@ -14,4 +14,4 @@ Cloudflare runtime types, such as `DurableObjectNamespace`,
 import them. The deprecated `@cloudflare/workers-types` package is not a
 dependency.
 
-> **Note:** This is a library package, so it intentionally does not declare `wrangler` or a `cf-typegen` script. Application packages (e.g. `@cossackframework/framework`) generate their own bindings via `pnpm run cf-typegen` (`wrangler types`).
+> This is a library package. It does not declare `wrangler` or a `cf-typegen` script. Application packages, for example `@cossackframework/framework`, generate their own bindings with `pnpm run cf-typegen` (`wrangler types`).

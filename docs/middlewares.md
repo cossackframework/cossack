@@ -9,12 +9,12 @@ Cossack uses Hono's middleware system. Middleware functions run on the server be
 
 There are two kinds of middleware in Cossack:
 
-- **[Global request middleware](#global-request-middleware)** : runs on *every* request and sets up ORM, session, auth, or feature-flag context.
-- **[Route-level middleware](#colocated-middleware)** : runs for specific pages/layouts via `@Page({ middlewares })`. Used for per-route concerns like auth guards ("redirect to /login").
+- [Global request middleware](#global-request-middleware): runs on every request. It sets up ORM, session, auth, or feature-flag context.
+- [Route-level middleware](#colocated-middleware): runs for specific pages and layouts through `@Page({ middlewares })`. Use it for per-route concerns such as auth guards.
 
 ## Global request middleware
 
-For middleware that must run on every request and set up context the rest of the app reads (`c.get('orm')`, `c.get('session')`, `c.get('user')`), use the **`src/bootstrap/middlewares.ts` registry**.
+For middleware that must run on every request and set up context the rest of the app reads (`c.get('orm')`, `c.get('session')`, `c.get('user')`), use the `src/bootstrap/middlewares.ts` registry.
 
 Middleware definitions live in `src/middlewares/*.ts`. The ordered list in `src/bootstrap/middlewares.ts` names the middleware to run. Edit this list to add or remove middleware.
 
@@ -35,7 +35,7 @@ export default middlewares;
 
 The framework session bag above is opt-in. Generated auth already supplies its
 own persistent cookie. Register the extra bag only on routes that need visitor
-state; its new-visitor cookie prevents that response from being published as SSG.
+state. Its new-visitor cookie prevents that response from being published as SSG.
 
 ```ts
 // src/middlewares/logging.ts — a definition
@@ -48,9 +48,9 @@ export const loggingMiddleware = defineServerMiddleware(async (c, next) => {
 ```
 
 Feature commands maintain this order automatically. The locale middleware is
-Framework-built-in and does not need an entry.
+built into the framework and does not need an entry.
 
-> If `src/bootstrap/middlewares.ts` is absent, no global middlewares run : existing apps are unaffected.
+> If `src/bootstrap/middlewares.ts` is absent, no global middlewares run. Existing apps are unaffected.
 
 ## Colocated Middleware
 
@@ -103,7 +103,7 @@ export default class Dashboard extends Cossack {
 
 ## `defineServerMiddleware()`
 
-Middlewares passed to `@Page` are only ever invoked by the Hono router on the server, so they never run in the browser. `defineServerMiddleware()` is a semantic wrapper that documents this intent : it makes it clear that the middleware is server-only:
+Middlewares passed to `@Page` are only ever invoked by the Hono router on the server, so they never run in the browser. `defineServerMiddleware()` is a wrapper that documents this intent. It marks a middleware as server-only:
 
 ```typescript
 import { defineServerMiddleware } from '@cossackframework/core';
@@ -159,7 +159,7 @@ export const authGuard = defineServerMiddleware(async (c, next) => {
 
 ## Middleware in Layouts
 
-Layouts can also define middleware. When a page is nested within layouts, middleware from all parent layouts are applied first, in root-to-leaf order:
+Layouts can also define middleware. When a page is nested within layouts, middleware from all parent layouts runs first, in root-to-leaf order:
 
 ```
 src/pages/
@@ -171,6 +171,6 @@ src/pages/
 
 Execution order: A → B → C
 
-This means root-level layout middleware runs first, allowing you to place global concerns (like auth or logging) at the top of the layout hierarchy.
+Root-level layout middleware runs first. Put global concerns such as auth or logging at the top of the layout hierarchy.
 
-See the [`@Page` options table](./page.md#options) for the full list of decorator configuration.
+See the [`@Page` options table](./pages.md#options) for the full list of decorator configuration.

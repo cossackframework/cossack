@@ -58,6 +58,16 @@ describe('cossackSsg() plugin', () => {
       expect(existsSync(path.join(fixture, 'sitemap.xml'))).toBe(false);
     } finally { vi.unstubAllEnvs(); rmSync(fixture, { recursive: true, force: true }); }
   });
+  it('reads the manifest from the client environment outDir when no outDir option is given', async () => {
+    const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-env-outdir-'));
+    try {
+      vi.stubEnv('VITEST', '');
+      const plugin = cossackSsg({ baseUrl: 'https://site.example.test' });
+      const outDir = path.join(fixture, 'custom', 'client');
+      await expect((plugin.closeBundle as Function).call({ environment: { name: 'client', config: { build: { outDir } } } }))
+        .rejects.toThrow(`COSSACK_SSG_MANIFEST_MISSING: ${path.join(outDir, 'cossack-routes.json')}`);
+    } finally { vi.unstubAllEnvs(); rmSync(fixture, { recursive: true, force: true }); }
+  });
   it.each(['failed render', 'path traversal', 'duplicate output'])('publishes no SSG files after %s', async failure => {
     const fixture = mkdtempSync(path.join(tmpdir(), 'cossack-ssg-publication-'));
     const outDir = path.join(fixture, 'dist');

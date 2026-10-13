@@ -142,9 +142,8 @@ import './config-globals.js';
 // or dynamic `import()` for the manifest — the bundler (rolldown) resolves
 // the path at build time regardless of where the expression sits, and the
 // file does not exist yet. Instead we read it at request time via the same
-// runtime mechanism used for CSS: env.ASSETS.fetch on Cloudflare Workers,
-// fs.readFileSync on Node.js. In dev mode there is no manifest on disk and
-// the try/catch returns an empty object (renderRoot handles this).
+// runtime mechanism used for CSS: env.ASSETS.fetch. Node adapters provide
+// the same interface with filesystem access kept outside this module.
 let _manifest: Record<string, any> | undefined;
 async function getManifest(env?: any): Promise<Record<string, any>> {
   if (_manifest !== undefined) return _manifest;
@@ -160,7 +159,6 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
   }
   let resolved: Record<string, any> = {};
   try {
-    let text: string;
     if (env?.ASSETS?.fetch) {
       // Cloudflare Workers: fetch from the assets binding. The manifest is
       // copied to SSR_MANIFEST_ASSET_PATH by the cossackPages plugin's
@@ -171,19 +169,8 @@ async function getManifest(env?: any): Promise<Record<string, any>> {
         _manifest = resolved;
         return _manifest;
       }
-      text = await res.text();
-    } else {
-      // Node.js: read from dist/client/.vite/manifest.json. Resolve relative
-      // to this module via fileURLToPath (NOT dirname(import.meta.url), which
-      // is a file: URL string and yields a bogus "file:/..." path).
-      const { readFileSync } = await import('fs');
-      const { resolve, dirname } = await import('path');
-      const { fileURLToPath } = await import('url');
-      const here = dirname(fileURLToPath(import.meta.url));
-      const clientDir = resolve(here, '..', 'client');
-      text = readFileSync(resolve(clientDir, '.vite', 'manifest.json'), 'utf-8');
+      resolved = JSON.parse(await res.text());
     }
-    resolved = JSON.parse(text);
   } catch (e) {
     // Dev mode or manifest not yet generated: renderRoot falls back to
     // un-hashed dev paths. Emit fixed metadata so a corrupt manifest is observable.
@@ -265,27 +252,13 @@ async function getInlineCss(env: any): Promise<string | undefined> {
   const cssPath = `/${entry.css[0]}`;
 
   try {
-    let cssText: string;
-
-    // Cloudflare Workers: use ASSETS binding
-    if (env?.ASSETS?.fetch) {
-      const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
-      if (!res.ok) {
-        cachedInlineCss = null;
-        return undefined;
-      }
-      cssText = await res.text();
-    } else {
-      // Node.js: read from dist/client. Resolve relative to this module via
-      // fileURLToPath — dirname(import.meta.url) is a "file:" URL string, not
-      // a filesystem path, and produces a bogus "file:/..." prefix.
-      const { readFileSync } = await import('fs');
-      const { resolve, dirname } = await import('path');
-      const { fileURLToPath } = await import('url');
-      const here = dirname(fileURLToPath(import.meta.url));
-      const clientDir = resolve(here, '..', 'client');
-      cssText = readFileSync(resolve(clientDir, cssPath.replace(/^\//, '')), 'utf-8');
+    if (!env?.ASSETS?.fetch) return undefined;
+    const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
+    if (!res.ok) {
+      cachedInlineCss = null;
+      return undefined;
     }
+    const cssText = await res.text();
 
     if (new TextEncoder().encode(cssText).length <= CSS_INLINE_THRESHOLD) {
       cachedInlineCss = cssText;

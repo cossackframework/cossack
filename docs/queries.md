@@ -87,7 +87,7 @@ await sql.transaction(async () => {
 });
 ```
 
-D1 does not emulate interactive transactions. Use D1’s native `batch()` for
+D1 does not emulate interactive transactions. Use the D1 native `batch()` for
 multi-statement atomic work. The batch is transactional and rolls back when a
 statement fails. Prefer a single idempotent statement when possible.
 

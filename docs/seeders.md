@@ -5,7 +5,7 @@ description: 'Deterministic, named seeders for Cossack applications.'
 
 # ORM seeders
 
-Define seeders with `defineSeeder()` and register them explicitly in
+Define seeders with `defineSeeder()`. Register them explicitly in
 `src/seeders/index.ts`.
 
 ```ts

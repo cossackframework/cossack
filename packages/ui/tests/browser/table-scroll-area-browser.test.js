@@ -78,7 +78,8 @@ hydrate(template(current()),container);window.retained=initial.every(node=>node=
     const color=()=>page.locator('#row-2').evaluate(el=>getComputedStyle(el).backgroundColor);
     const striped=await color();expect(striped).not.toBe('rgba(0, 0, 0, 0)');
     await page.evaluate(()=>window.update({striped:false,name:'Alicia',label:'Recent messages',height:100}));
-    await browserExpect(page.locator('#cell-1')).toHaveText('Alicia');expect(await color()).not.toBe(striped);
+    // Rows transition colors, so poll until the stripe has faded out.
+    await browserExpect(page.locator('#cell-1')).toHaveText('Alicia');await expect.poll(color).not.toBe(striped);
     await browserExpect(viewport).toHaveAccessibleName('Recent messages');expect(await viewport.evaluate(el=>el.clientHeight)).toBe(100);
     await page.locator('#outside').focus();await page.keyboard.press('Tab');await browserExpect(page.locator('#overflow')).toBeFocused();
     await page.keyboard.press('ArrowRight');await page.waitForFunction(()=>document.querySelector('#overflow').scrollLeft>0);

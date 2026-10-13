@@ -10,14 +10,14 @@ and Cloudflare Workers. It combines decorated models, Active Record
 methods, a typed query builder, safe SQL fragments, migrations, introspection,
 and explicit runtime adapters.
 
-The package is deliberately small in shape:
+The package is deliberately small:
 
 - Models are ordinary classes that extend `BaseEntity`.
 - Every application registers its complete entity list with `createORM()`.
 - Static Active Record methods resolve through the current request or job scope.
 - Dialects compile SQL while adapters execute it.
 - Relations are loaded explicitly and batched.
-- Migrations are generated and reviewed; startup never mutates the schema.
+- Migrations are generated and reviewed. Startup never mutates the schema.
 
 ## A first model and query
 
@@ -67,7 +67,8 @@ try {
 
 `orm.run()` establishes the current ORM for static methods such as
 `User.find()`, `entity.save()`, and the global `sql` tag. Put one scope around a
-request, queue job, scheduled task, or command:not around each query.
+request, queue job, scheduled task, or command. Do not put a scope around each
+query.
 
 Framework middleware normally installs this scope automatically. For example,
 the Cossack/Hono middleware wraps the request once:
@@ -91,26 +92,26 @@ const users = await orm.model(User).find({
 });
 ```
 
-This form is useful for framework integrations and simple read-only scripts.
+This form is useful for framework integrations and read-only scripts.
 Use `orm.run()` when you want static Active Record methods, instance persistence,
 the global `sql` tag, or automatic transaction rebinding.
 
 ## What `orm.run()` does
 
 An ORM scope identifies the correct ORM and transaction client across
-asynchronous calls. It does not, by itself, promise to reserve a database
-connection. Pooling adapters generally acquire connections as needed.
+asynchronous calls. It does not reserve a database connection by itself.
+Pooling adapters generally acquire connections as needed.
 `orm.transaction()` and `orm.reserve()` explicitly pin the appropriate client
 when the adapter supports those capabilities.
 
-This distinction matters when an application has multiple databases, concurrent
+This distinction applies when an application has multiple databases, concurrent
 requests, request-specific Workers bindings, or nested transactions. Cossack ORM
-throws an actionable `ScopeError` instead of silently guessing a global
+throws an actionable `ScopeError` instead of guessing a global
 connection.
 
 ## Design boundaries
 
-Cossack ORM v1 does not provide a repository/Data Mapper layer, automatic schema
+Cossack ORM does not provide a repository/Data Mapper layer, automatic schema
 synchronization, a legacy query-builder compatibility API, NoSQL or GraphQL integration, or
 query-result caching. Database-specific work remains possible through safe SQL
 fragments and public adapter contracts.

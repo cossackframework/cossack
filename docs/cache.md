@@ -23,11 +23,11 @@ const settings = await cache.remember('settings', 600_000, () => loadSettings())
 await cache.store('kv').set('key', 'value', 60_000);
 ```
 
-TTLs are nonnegative integer **milliseconds**. Zero expires immediately. The facade `set()` default is `3_600_000` ms (one hour); a direct store call or batch entry with an omitted TTL stores indefinitely. Invalid durations reject before writes.
+TTLs are nonnegative integer milliseconds. Zero expires immediately. The facade `set()` default is `3_600_000` ms (one hour). A direct store call or batch entry with an omitted TTL stores indefinitely. Invalid durations are rejected before writes.
 
 ## Configuration
 
-Cache is configured in `src/config/cache.ts` : a factory evaluated per request (so it can read environment bindings). Declare a `default` store plus a `stores` map:
+Cache is configured in `src/config/cache.ts`. The file default-exports a factory, evaluated per request (so it can read environment bindings). Declare a `default` store plus a `stores` map:
 
 ```typescript
 // src/config/cache.ts
@@ -62,7 +62,7 @@ export default ({ env }: { env: EnvFunction }): CacheConfig => ({
 
 Choose KV for recomputable data when stale reads are acceptable. Choose a Durable Object when successive reads must observe writes to one storage owner. Use memory for process-local data. Database guarantees depend on the selected database and its read configuration.
 
-`remember()` can compute the same key concurrently in several requests. It does not lock or combine those requests. Use a side-effect-free computation and allow duplicate work. Cache stores expose get/set operations; even the Durable Object store does not make a separate `get()` plus `set()` atomic. Use the rate-limit store for counters and a dedicated coordination API for locks.
+`remember()` can compute the same key concurrently in several requests. It does not lock or combine those requests. Use a side-effect-free computation and allow duplicate work. Cache stores expose get and set operations. Even the Durable Object store does not make a separate `get()` plus `set()` atomic. Use the rate-limit store for counters and a dedicated coordination API for locks.
 
 | Need | Store |
 | --- | --- |
@@ -75,14 +75,14 @@ Choose KV for recomputable data when stale reads are acceptable. Choose a Durabl
 
 | Store | Consistency | Best for |
 | --- | --- | --- |
-| `memory` (default) | Per-process | Dev, single-instance apps. Zero config. |
-| `durable-object` | **Strong** | Persistent, strongly-consistent cache on Cloudflare. |
-| `kv` | **Eventual** | Cheap, global, "good enough" caching. |
+| `memory` (default) | Per-process | Dev, single-instance apps. Zero configuration. |
+| `durable-object` | Strong | Persistent, strongly-consistent cache on Cloudflare. |
+| `kv` | Eventual | Cheap, global, "good enough" caching. |
 | `database` | Provider-dependent | Cache alongside application data. |
 
 ### In-memory (default)
 
-Works with zero configuration. Per-process : a single Node.js instance or one Workers isolate. Not shared across instances or regions.
+The memory store works with zero configuration. It is per-process: a single Node.js instance or one Workers isolate. It is not shared across instances or regions.
 
 ```typescript
 export default ({ env }) => ({
@@ -93,7 +93,7 @@ export default ({ env }) => ({
 
 ### Cloudflare KV
 
-KV serves shared data across Workers. Reads remain eventually consistent. Each record includes its logical expiration timestamp; native KV retention cleans up expiring records later. Records with no TTL remain until deleted.
+KV serves shared data across Workers. Reads remain eventually consistent. Each record includes its logical expiration timestamp. Native KV retention cleans up expiring records later. Records with no TTL remain until deleted.
 
 ```jsonc
 // wrangler.jsonc
@@ -109,9 +109,9 @@ export default ({ env }) => ({
 });
 ```
 
-> **KV is approximate.** KV is *eventually consistent*: reads can remain stale across locations, and there is no atomic read-modify-write. A read on one instance can return an old value after another instance writes a new value. For strict consistency, use the Durable Object store. A stale or missing cache entry is safe when your code can compute the value again.
+> KV is approximate. It is eventually consistent: reads can remain stale across locations, and there is no atomic read-modify-write. A read on one instance can return an old value after another instance writes a new value. For strict consistency, use the Durable Object store. A stale or missing cache entry is safe when your code can compute the value again.
 >
-> KV storage retention has a 60-second minimum. Cossack enforces the requested millisecond expiration when it reads a record; storage retention is `max(60, ceil(ttlMs / 1000))` seconds. `cache.flush()` throws on the KV store because KV cannot delete keys by prefix.
+> KV storage retention has a 60-second minimum. Cossack enforces the requested millisecond expiration when it reads a record. Storage retention is `max(60, ceil(ttlMs / 1000))` seconds. `cache.flush()` throws on the KV store because KV cannot delete keys by prefix.
 
 ### Durable Object (strongly consistent)
 
@@ -134,7 +134,7 @@ export default ({ env }) => ({
 });
 ```
 
-> **Durable Object mode requires one export.** Cloudflare mandates that DO classes be exported from the Worker entry, so add `CacheDurableObject` to the exports in your `src/index.ts`:
+> Durable Object mode requires one export. Cloudflare requires Durable Object classes to be exported from the Worker entry. Add `CacheDurableObject` to the exports in your `src/index.ts`:
 > ```ts
 > import { AppDurableObject } from '@cossackframework/framework/DurableObject'; // already there
 > import { CacheDurableObject } from '@cossackframework/framework/cache';
@@ -148,13 +148,13 @@ export default ({ env }) => ({
 
 New projects register it in `src/middlewares/orm.ts` and include migration `0006_create_cache_table.ts`.
 
-**1. Apply the migration** (if not already applied):
+1. Apply the migration if you have not applied it:
 
 ```sh
 cossack migration up
 ```
 
-**2. Set `CACHE_DRIVER=database`** in your wrangler vars or `.dev.vars`, or declare the store in `config/cache.ts`:
+2. Set `CACHE_DRIVER=database` in your wrangler vars or `.dev.vars`, or declare the store in `config/cache.ts`:
 
 ```typescript
 export default ({ env }) => ({
@@ -189,11 +189,11 @@ Remove that registration if you do not use database-backed caching. The store re
 | `cache.deleteMany(keys)` | Remove several keys. |
 | `cache.store(name)` | Access a named store declared in `config/cache.ts`. |
 | `cache.setDefaultStore(store)` | Override the default store directly (advanced). |
-| `extendCacheDriver(driver, factory)` | Register a custom driver (e.g. Redis). |
+| `extendCacheDriver(driver, factory)` | Register a custom driver (for example Redis). |
 
 ## Custom stores
 
-Need Redis, R2, or something else? Implement the `CacheStore` interface and register it as a driver:
+Implement the `CacheStore` interface and register it as a driver for Redis, R2, or another backend:
 
 ```ts
 import type { CacheStore } from '@cossackframework/framework/cache';
@@ -226,7 +226,7 @@ export default ({ env }) => ({
 
 ### Read-through caching
 
-`cache.remember()` is the idiomatic way to cache an expensive operation. It returns the cached value on a hit, or computes, stores, and returns it on a miss:
+Use `cache.remember()` to cache an expensive operation. It returns the cached value on a hit, or computes, stores, and returns it on a miss:
 
 ```ts
 const products = await cache.remember('products:featured', 600_000, () =>
@@ -236,7 +236,7 @@ const products = await cache.remember('products:featured', 600_000, () =>
 
 ### Multiple stores
 
-Use `cache.store()` to target a specific named store (e.g. a hot in-memory store alongside a persistent KV store):
+Use `cache.store()` to target a specific named store, for example a hot in-memory store alongside a persistent KV store:
 
 ```ts
 // Fast per-process cache for the request lifecycle.
@@ -247,28 +247,24 @@ await cache.store('kv').set('products', list, 3_600_000);
 
 ## Ownership and limits
 
-Built-in KV and Durable Object wrappers are reused by the actual binding object's identity and the full store declaration. A missing or invalid binding rejects before lookup; another request's binding is never a fallback. Durable Object I/O stubs are obtained inside each operation.
+Built-in KV and Durable Object wrappers are reused by the actual binding object's identity and the full store declaration. A missing or invalid binding rejects before lookup. Another request's binding is never a fallback. Durable Object I/O stubs are obtained inside each operation.
 
 Named built-in memory stores persist within one process. They evict the least recently used entry at `maxEntries` (default 10,000) or `maxBytes` (default 8 MiB of serialized keys and values). This byte budget does not measure JavaScript heap usage or impose a process-wide limit. Configure both in the memory store declaration. A value that exceeds the byte budget rejects before replacing an existing value.
 
-Keys must be nonempty valid UTF-8 strings of at most 512 UTF-8 bytes. KV also validates the combined namespace and key after framing. JSON values have a 1 MiB limit. Batches accept at most 128 entries and 2 MiB of serialized write data, including entry overhead. All inputs are validated and snapshotted before writes; a later storage failure may still leave a partially written batch. These limits apply to the built-in stores and the facade. A custom store used directly must enforce its own policy.
+Keys must be nonempty valid UTF-8 strings of at most 512 UTF-8 bytes. KV also validates the combined namespace and key after framing. JSON values have a 1 MiB limit. Batches accept at most 128 entries and 2 MiB of serialized write data, including entry overhead. All inputs are validated and snapshotted before writes. A later storage failure can still leave a partially written batch. These limits apply to the built-in stores and the facade. A custom store used directly must enforce its own policy.
 
-The Durable Object client uses a five-second I/O deadline, the current request's abort signal, a 2 MiB JSON reply limit, strict UTF-8, and required EOF. Unused and failed bodies are cancelled without waiting for producer cancellation. A write already dispatched can still commit; there is no rollback or retry. Custom cache and database calls do not inherit this deadline automatically.
+The Durable Object client uses a five-second I/O deadline, the current request's abort signal, a 2 MiB JSON reply limit, strict UTF-8, and required EOF. Unused and failed bodies are cancelled without waiting for producer cancellation. A write already dispatched can still commit. There is no rollback or retry. Custom cache and database calls do not inherit this deadline automatically.
 
-Custom factories are memoized within a request by factory identity, the complete JSON store spec, and shallow environment field values/binding identities. Nested mutable environment objects are not tracked: treat bindings and credentials as stable within a request. Factories own any resources they create; the cache manager does not close them. Use scoped ORM/service ownership. `remember()` captures its selected provider before awaiting the computation.
+Custom factories are memoized within a request by factory identity, the complete JSON store spec, and shallow environment field values/binding identities. Nested mutable environment objects are not tracked: treat bindings and credentials as stable within a request. Factories own any resources they create. The cache manager does not close them. Use scoped ORM/service ownership. `remember()` captures its selected provider before awaiting the computation.
 
-## Upgrading to 0.9.0
+## KV limits
 
-Multiply old cache TTL numbers by 1,000 and rename batch `ttlSeconds` to `ttlMs`, including custom implementations. The database `expires_at` column already stores epoch milliseconds, so its schema and existing timestamps do not change.
-
-KV keys now use `JSON.stringify([namespace, key])`, and values use a versioned envelope. Old unframed records are not read or migrated automatically; the new cache begins empty. Old records with no expiration require explicit cleanup. Rebuild and deploy cache clients and the exported Durable Object class together: the private protocol now uses `/entry?key=...`, `ttlMs`, and explicit found/missing batch records. Stored DO entries retain their existing epoch timestamp format.
-
-See [KV write limits and retention](https://developers.cloudflare.com/kv/api/write-key-value-pairs/) and [KV consistency](https://developers.cloudflare.com/kv/concepts/how-kv-works/). Live KV also limits writes to one per key per second. Local tests do not prove regional propagation, production write throttling, or remote producer shutdown.
+Live KV allows one write per key per second. See [KV write limits and retention](https://developers.cloudflare.com/kv/api/write-key-value-pairs/) and [KV consistency](https://developers.cloudflare.com/kv/concepts/how-kv-works/). Local tests do not prove regional propagation, production write throttling, or remote producer shutdown.
 
 ## Required guarantees and inspection
 
 `cache.inspect()` describes the current provider without dispatching a cache
-operation. Resolving a custom factory can still construct resources; keep factory
+operation. Resolving a custom factory can still construct resources. Keep factory
 construction free of storage operations and close owned resources yourself.
 
 ```typescript
@@ -280,7 +276,7 @@ await shared.set('settings', { theme: 'dark' }, 60_000);
 ```
 
 `cache.store('name').require(...)` works the same way. Requirements are immutable
-snapshots checked when each operation resolves its provider. Chaining `require`
+snapshots tested when each operation resolves its provider. Chaining `require`
 cannot weaken an earlier requirement. Declare the same `requires` object on a
 named store in `src/config/cache.ts` to apply it to every use of that declaration.
 Unsupported or unknown guarantees throw `COSSACK_STORAGE_GUARANTEE_UNSUPPORTED`
@@ -302,18 +298,18 @@ names). Cache providers do not expose an increment operation, so none can satisf
 Built-ins and the database adapter declare logical millisecond expiry. Database
 locality, persistence and consistency depend on deployment/read settings and stay
 unknown. Custom stores can declare a validated `StorageCapabilities` object on
-`capabilities`; declarations are assertions by their implementer, not remote
-verification. Undeclared stores remain usable without requested guarantees.
+`capabilities`. Declarations are assertions by their implementer, not remote
+proof. Undeclared stores remain usable without requested guarantees.
 The pure model is exported from `@cossackframework/core/storage-capabilities`
 and re-exported from `@cossackframework/framework/storage-capabilities`.
 
 Run `cossack inspect providers --json [--env staging]` for compiler-backed cache
 and limiter declarations, backend profiles, units and binding diagnostics.
 `cossack check providers` fails on invalid declarations or unsupported required
-cache guarantees. Missing bindings on the selected default fail checks; missing
-bindings on optional unselected stores produce warnings and
+cache guarantees. Missing bindings on the selected default fail the command.
+Missing bindings on optional unselected stores produce warnings and
 `bindingStatus: "missing"`. Named-store operations still validate their binding at runtime.
-Inspection never executes config modules or contacts providers.
+Inspection never executes configuration modules or contacts providers.
 It reads public selected Wrangler variables/bindings, not process/dev/secret
 values. Dynamic helpers, registration candidates and default-store overrides
 remain unknown. A declared built-in profile does not establish remote readiness.

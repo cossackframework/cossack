@@ -41,7 +41,6 @@ TypeScript `private` does not hide a decorated public field from serialization.
 
 [StateMechanisms](./examples/state-mechanisms.ts) is a complete HTTP page.
 Copy it to `src/pages/state-example/index.ts` in a generated Cossack app.
-The release tests compile this file against published exports and run its production browser build.
 Its buttons demonstrate shallow replacement, nested store writes, local drafts, computed totals, and server resources.
 
 These fields use the same declarations as the example:
@@ -149,7 +148,7 @@ Do not use a public field for a `File`, DOM object, callback, or connection hand
 Pass upload files through a validated action argument instead.
 `server$` resources use a stricter JSON-preserving contract that also rejects Dates, class instances, and custom hooks.
 
-The initial HTML serializer retains its existing JSON behavior.
+The initial HTML serializer keeps its JSON behavior.
 Development diagnostics identify known values that cannot round-trip through RPC before that snapshot hides or loses them.
 They do not change production serialization or reject a write.
 Keep public state valid for both hydration and RPC.
@@ -169,7 +168,7 @@ Identical issues remain quiet until the field becomes valid or the issue changes
 Diagnostic reads inspect data properties without calling getters or serialization hooks.
 Those representations remain unknown until the real serializer runs.
 Inspection stops after its depth or visit budget, so silence does not prove that every value is valid.
-The consuming Vite application's development mode enables the checks.
+The consuming Vite application's development mode enables these diagnostics.
 Production builds and direct Node imports without Vite do not run them.
 
 ## Bind flash and old input

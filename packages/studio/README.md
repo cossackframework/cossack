@@ -27,17 +27,17 @@ cossack studio --remote --database DB --env production
 ```
 
 Studio supports Cloudflare D1, SQLite, Turso, PostgreSQL, and MySQL
-schema inspection, exact row counts, adjustable pagination (100 rows by
-default), inline and JSON-aware keyed row editing, and one arbitrary SQL
+schema inspection. It shows exact row counts and adjustable pagination, with
+100 rows by default. It supports inline and JSON-aware keyed row editing. It runs one arbitrary SQL
 statement per execution. Its SQL editor includes syntax highlighting plus table
 and column completion. Remote D1 changes affect deployed data immediately.
 
 For local connections, Studio detects the ORM driver's dialect.
 `DB_CONNECTION` or `COSSACK_STUDIO_DRIVER` can distinguish SQLite-family
-adapters. PostgreSQL and MySQL drivers remain project dependencies; Studio
+adapters. PostgreSQL and MySQL drivers remain project dependencies. Studio
 executes through the ORM driver and never exposes credentials to browser code.
 Project `.env` and `.dev.vars` files are loaded into the Studio server process
-before `orm.config.ts` is imported; existing shell variables keep precedence.
+before `orm.config.ts` is imported. Existing shell variables keep precedence.
 
 Studio merges physical introspection with `orm.schema()`, displays logical
 types and relation provenance, surfaces drift, and hides migration bookkeeping.
@@ -63,12 +63,12 @@ const facts = await inspectStudioProject({
 
 The project adapter receives the selected environment and target with
 `readOnly: true`. The optional binding must match the inspected target.
-Named environments must select their own configured binding; an absent binding
+Named environments must select their own configured binding. An absent binding
 must fail rather than use an unrelated top-level database. Temporary inspection
 connections close after success or failure. An existing local Studio connection
 keeps ownership of its borrowed ORM until Studio closes it.
 
-This means storage-oriented SQLite declarations can retain richer application
+Storage-oriented SQLite declarations can retain richer application
 semantics through model decorators:
 
 ```ts
@@ -83,8 +83,8 @@ The Structure tab shows both the ORM type (`json`, `datetime`) and physical
 database type (`TEXT`, `VARCHAR(32)`). The Browse tab adds relation-property
 columns for navigable ORM relations. Selecting one toggles a read-only related
 table directly below that row, loaded through the corresponding foreign-key
-filter. Relation data is fetched lazily and capped at 50 rows per expansion;
-the panel's new-tab action opens the fully browsable filtered relation.
+filter. Relation data is fetched lazily and capped at 50 rows per expansion.
+The panel's new-tab action opens the fully browsable filtered relation.
 
 For programmatic startup:
 

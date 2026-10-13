@@ -66,7 +66,7 @@ For R2, call `createR2StorageProvider(env.FILES)` from
 For S3, call `createS3StorageProvider({ client, bucket })` from
 `@cossackframework/framework/storage/s3`, where `client` is your server-owned
 AWS SDK v3 `S3Client` and `bucket` is its configured bucket name. Neither factory
-authorizes callers; always use the facade or apply an equivalent server policy.
+authorizes callers. Always use the facade or apply an equivalent server policy.
 Configure S3 credentials only on the server. Store secrets through your runtime's secret mechanism.
 Never put access keys in browser code or public Worker variables.
 
@@ -93,7 +93,7 @@ const url = await storage.signedUrl(context, key, 'put', {
 
 Replace `provider`, `signingSecret`, `context`, `key`, and `file` with your server values.
 Route the configured endpoint to `storage.handleSignedRequest(context, request)` with the current authenticated context.
-The handler checks the signature, expiry, operation, upload metadata, and authorization again.
+The handler makes sure again that the signature, expiry, operation, upload metadata, and authorization are valid.
 The URL targets your application endpoint. It does not expose bucket credentials or promise a direct provider upload.
 Use `fetch(url, { method: 'PUT', body: file, signal })` in the browser. Cancel the request through its signal.
 
@@ -107,13 +107,13 @@ Derive the object key and authorization context on the server. Avoid buffering t
 
 R2 and S3 uploads use multipart parts of 5 MiB, with at most 10,000 parts
 (52,428,800,000 bytes, about 48.83 GiB). The facade defaults to a lower 64 MiB
-limit; set `maxBytes` deliberately for larger transfers. Provider/service limits
-may be lower. Uploads and downloads retain backpressure; they do not buffer the
-whole object. Progress counts bytes, not provider acceptance or durable delivery.
+limit. Set `maxBytes` deliberately for larger transfers. Provider or service
+limits can be lower. Uploads and downloads retain backpressure. They do not
+buffer the whole object. Progress counts bytes, not provider acceptance or durable delivery.
 
 Cancellation before publication aborts the pending upload and preserves an older
-object. Cleanup is bounded and best effort when the provider is unavailable;
-configure provider lifecycle rules for abandoned multipart uploads. A completion
+object. Cleanup is bounded and best effort when the provider is unavailable.
+Configure provider lifecycle rules for abandoned multipart uploads. A completion
 race or lost completion response can leave a fully committed object. Cancellation
 never promises rollback, and the framework does not delete a newly committed
 object to simulate rollback. Reconcile uncertain completion before retrying.

@@ -14,7 +14,7 @@ export default defineConfig({
     },
     outDir: 'dist',
     rolldownOptions: {
-        external: [/^node:/, 'vite', '@hono/node-server', 'ws', 'http', 'url', 'fs', 'path', 'os', 'nodemailer', '@cossackframework/core', '@cossackframework/core/notifications', '@cossackframework/core/storage']
+        external: [/^node:/, 'vite', 'hono', '@hono/node-server', 'ws', 'http', 'url', 'fs', 'path', 'os', 'nodemailer', '@cossackframework/core', '@cossackframework/core/notifications', '@cossackframework/core/storage']
     }
   },
 });

@@ -217,7 +217,7 @@ Key points:
 
 Use **reactive** when you need inline async validation (e.g. "username available?"), live-computed fields, multi-step wizards, or you're already in a dashboard that never does full reloads. Use **progressive** when the form should be crawlable, bookmarkable, or usable without JS — public contact forms, auth pages, SEO landing pages.
 
-## Typed native and UI bindings (0.9.0)
+## Typed native and UI bindings
 
 Prefer `createFormController(schema, initial)` with `createFormBindings(form,{id})`
 for typed raw values, errors/touched/dirty, stale-result rejection and single-flight

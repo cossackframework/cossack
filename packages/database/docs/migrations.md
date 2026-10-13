@@ -74,7 +74,7 @@ entity, rename marker, or index produces deterministic TypeScript containing
 reviewable `operations.up` and inverse `operations.down` SQL. The snapshot advances only after the
 migration file is written successfully. When the output is directly inside
 `migrationDirectory` and its `index.ts` exports the standard `migrations` array,
-the generator registers the new migration automatically; otherwise it prints a
+the generator registers the new migration automatically. Otherwise it prints a
 registration reminder.
 
 A migration has this contract:
@@ -141,7 +141,7 @@ cossack-orm migration check
 
 Applied migrations are recorded in `_cossack_migrations` with their name,
 SHA-256 checksum, batch, and application timestamp. Editing an applied migration
-causes checksum validation to fail; create a new migration instead.
+causes checksum validation to fail. Create a new migration instead.
 
 ## Targets and plans
 
@@ -155,18 +155,18 @@ pnpm exec cossack migration up --env staging --target remote
 
 `--local` and `--remote` are aliases for `--target`. The default is local.
 The selected environment also accepts `CLOUDFLARE_ENV`. Adapter factories
-receive an `ORMToolingContext` with the project root, config path, environment,
+receive an `ORMToolingContext` with the project root, configuration path, environment,
 target, and `readOnly` flag. A remote command requires a factory so the adapter
 can honor that selection. See [D1 tooling](./runtimes.md#d1-tooling) for generated
 Cloudflare projects.
 
 `plan` reads migration history without creating its table and never executes
 migration callbacks. Generated migrations declare authoritative `operations` for
-`up` and `down`. Those same operations drive execution; callbacks cannot override
+`up` and `down`. Those same operations drive execution. Callbacks cannot override
 them. Each entry includes its direction, checksum, mode, ordered SQL, affected
 objects, parameter counts, risk, target connection identity, atomicity and
 provider limitations. Parameter values are omitted. Raw SQL object discovery and
-risk classification are conservative; `affectedObjectsComplete: false` makes
+risk classification are conservative. `affectedObjectsComplete: false` makes
 that limit explicit. Review the SQL itself.
 Use `--direction down` to preview the most recent reversal. A squash that
 replaces fully applied migrations reports `mode: "consolidate"` without
@@ -183,16 +183,15 @@ pnpm exec cossack migration up --env staging --target remote
 pnpm exec cossack migration check --env staging --target remote --json
 ```
 
-This is an opt-in procedure and has not been run against a live account by the
-release verification. Never point it at production for a smoke test. Remote
-commands require `--target remote` (or `--remote`); an environment name alone
+This procedure is opt-in. Never point it at production for a smoke test. Remote
+commands require `--target remote` (or `--remote`). An environment name alone
 always uses local state.
 
 Legacy callbacks remain executable through explicit `up()` and `down()`, but
-planning reports them as incomplete without invoking them. This is an intentional
-0.9 change: a disconnected ORM cannot stop a callback from writing files, calling
-external services, or using another captured connection. Configuration module
-loading is still trusted application code; this boundary does not sandbox imports.
+planning reports them as incomplete without invoking them. Planning does not
+invoke a callback because a disconnected ORM cannot stop it from writing files,
+calling external services, or using another captured connection. Configuration
+module loading is trusted application code. This boundary does not sandbox imports.
 
 For application-controlled review and apply in one process:
 
@@ -207,14 +206,14 @@ await runner.applyPlan(plan);
 incomplete plans and rechecks all migration definitions, checksums, history and
 target identity before writing. Its private SQL/parameter snapshot prevents later
 application mutations from changing the approved batch. JSON reports are inspection
-artifacts; they cannot be imported as executable approvals. Separate CLI invocations
+artifacts. They cannot be imported as executable approvals. Separate CLI invocations
 must replan on their selected target. Concurrent external writers still need a
-provider-specific deployment lock; history rechecks are not a distributed lock.
+provider-specific deployment lock. History rechecks are not a distributed lock.
 
 Bookkeeping SQL is reported separately, including squash consolidation deletes
 and the replacement history insert. Missing declarative `down` operations mean a
 reversal is unknown and cannot be applied from a plan. MySQL DDL can commit
-implicitly; a transaction is not a guarantee of schema rollback. Providers with
+implicitly. A transaction does not guarantee schema rollback. Providers with
 neither transactions nor an atomic batch report possible partial application.
 
 `--dry-run` also previews snapshot, generate, squash, and schema pull file
@@ -226,11 +225,11 @@ before opening the adapter.
 
 JSON commands execute configuration and adapters in a child process. Console
 messages, direct stdout/stderr writes, and inherited subprocess output are
-suppressed; the structured result returns over IPC. This keeps Wrangler
+suppressed. The structured result returns over IPC. This keeps Wrangler
 connection logs out of JSON and prevents configuration code from changing the
 calling process's environment. It is output isolation, not a sandbox for
 application code. Unexpected child termination produces
-`COSSACK_ORM_PROCESS_FAILED`; text mode retains raw diagnostics.
+`COSSACK_ORM_PROCESS_FAILED`. Text mode retains raw diagnostics.
 
 ## Destructive changes
 
@@ -299,7 +298,7 @@ replaying its historical schema creation:
 cossack-orm migration baseline
 ```
 
-The CLI first verifies that the live database matches current model metadata.
+The CLI first makes sure that the live database matches current model metadata.
 Only then does it record the schema hash. Resolve drift before baselining.
 
 ## Programmatic runner
@@ -318,4 +317,4 @@ const status = await orm.run(() => runner.status());
 Transactional adapters apply a migration and its bookkeeping together. D1 uses
 an atomic prepared batch for schema statements plus bookkeeping.
 
-See [Seeders](./seeders.md) for application data that may be safely rerun.
+See [Seeders](./seeders.md) for application data that is safe to rerun.

@@ -5,21 +5,21 @@ description: "The auth package provides a minimal, flexible interface for handli
 
 # Authentication
 
-The `@cossackframework/auth` package provides a minimal, flexible, and unopinionated interface for handling authentication in your Cossack application. It is designed to work with Hono and allows you to implement any authentication strategy (Session/Cookie, JWT, OAuth, etc.) while providing a standardized way to protect your routes and components.
+The `@cossackframework/auth` package provides a small, flexible interface for handling authentication in your Cossack application. It works with Hono. You can implement any authentication strategy (Session/Cookie, JWT, OAuth, etc.). It gives you one standard way to protect your routes and components.
 
 ## Core Concepts
 
-The library allows you to create an **Auth Kit** by providing an **Auth Provider**.
+You provide an auth provider. The library returns an auth kit.
 
-* **Auth Provider**: A set of functions that define *how* to extract a session, validate it, and fetch the user.
-* **Auth Kit**: The object returned by `createAuth`, exposing:
+* Auth provider: a set of functions that define how to extract a session, validate it, and fetch the user.
+* Auth kit: the object returned by `createAuth`. It exposes:
     * `middleware`: Hono middleware that runs on every request to populate `c.get('user')`.
-    * `createLoginHandler(options)`: builds a credentials-based login route handler (optional : see the `@Server` pattern below).
-    * `createSession`: the reusable session creator (if configured on the provider), reusable by any auth path (login handler, OAuth callback, `@Server` methods).
+    * `createLoginHandler(options)`: builds a credentials-based login route handler. This member is optional. See the `@Server` pattern below.
+    * `createSession`: the reusable session creator, if you configured it on the provider. Any auth path can reuse it (login handler, OAuth callback, `@Server` methods).
 
-> **Note:** `createAuth()` returns a kit *object*. Access `createLoginHandler` and `createSession` as `auth.createLoginHandler(...)` and `auth.createSession(...)`.
+> `createAuth()` returns a kit object. Access `createLoginHandler` and `createSession` as `auth.createLoginHandler(...)` and `auth.createSession(...)`.
 
-> **Do not want to wire this by hand?** Run `cossack add auth` to generate a complete, working session-auth setup (PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets) in your project.
+> Run `cossack add auth` to generate a complete, working session-auth setup in your project. The setup includes PBKDF2 hashing, login/register/forgot-password/reset-password pages, a session middleware, a guard, and the `send_email` wiring for password resets.
 
 The generated application uses the shared password, credential and session APIs.
 Read [credential and session primitives](./auth-primitives.md) for typed storage
@@ -27,9 +27,9 @@ callbacks, atomic rotation, cookie policy and the password-format migration.
 
 ## Example: Email/Password with Cookie Sessions
 
-This example demonstrates a standard authentication flow:
-1. **Login**: User sends email/password. System verifies them, creates a session in the DB, and sets an HTTP-only cookie.
-2. **Request**: User makes a request. System reads the cookie, verifies the session in the DB, and attaches the User object to the context.
+This example shows a standard authentication flow:
+1. Login: the user sends an email and a password. The system verifies them, creates a session in the database, and sets an HTTP-only cookie.
+2. Request: the user makes a request. The system reads the cookie, looks up the session in the database, and attaches the user object to the context.
 
 ### 1. Define Your Types
 
@@ -54,7 +54,7 @@ export type Session = {
 
 ### 2. Configure Authentication
 
-Create a file (e.g., `src/auth.ts`) to configure your authentication logic using `createAuth`.
+Create a file (for example `src/auth.ts`) to configure your authentication logic using `createAuth`.
 
 ```typescript
 import { createAuth } from '@cossackframework/auth';
@@ -110,7 +110,7 @@ export const auth = createAuth<User>({
 
 ### 3. Register the Session Middleware
 
-`createApp()` auto-loads global middleware from `src/bootstrap/middlewares.ts` (a Laravel-style "kernel" list). Register `auth.middleware` there so it populates `c.get('user')` on every request : you do **not** pass it to `createApp`:
+`createApp()` auto-loads global middleware from `src/bootstrap/middlewares.ts` (a Laravel-style "kernel" list). Register `auth.middleware` there so it populates `c.get('user')` on every request. Do not pass it to `createApp`:
 
 ```typescript
 // src/bootstrap/middlewares.ts
@@ -176,46 +176,46 @@ The scaffold adds `Validate` with `runOn: 'client'` to the draft. Server schemas
 reject missing, malformed and extra fields. Passwords need at least eight
 characters and at most 1024 UTF-8 bytes. They are not normalized or truncated.
 Keep custom credentials out of public state, old input and arbitrary flash data.
-Explicit submission payloads carry credentials to the server; `ClientStore`
-does not encrypt the network or hide values from browser scripts.
+Explicit submission payloads carry credentials to the server. `ClientStore`
+does not encrypt the network and does not hide values from browser scripts.
 
 Login, register and reset failures show fixed messages and retain the browser
 draft. The register page also recognizes the exact duplicate-account error.
 The reset-request page shows the same confirmation for known and unknown emails.
-Configure email delivery before expecting a reset email; an absent email binding
+Configure email delivery before you expect a reset email. An absent email binding
 is a no-op. Reset tokens are carried in the link query and explicit action input,
 not a public page field. Treat the reset URL as a credential.
 
 ### Generated session actions and partial failures
 
-A dashboard with the sessions module has a **Rotate current session** action.
+A dashboard with the sessions module has a Rotate current session action.
 Rotation atomically replaces the bearer token while retaining its public
 management reference. The page applies the replacement cookie and redirects to
 `/dashboard/sessions`. The next request lists the new token as current. Two
 rotations using the same token have one winner. An already-started request can
-retain its resolved user; a new HTTP request validates the incoming token again.
+retain its resolved user. A new HTTP request validates the incoming token again.
 Rotation affects every tab that shares the browser cookie. Authenticated SSE
-checks the old token's server-only descriptor before each delivery, closes the
+tests the old token's server-only descriptor before each delivery, closes the
 old subscription and requires a reload with the new cookie. WebSocket identity
 refresh remains separate work. An already-validated frame can be in flight
 when rotation finishes. Read the [SSE session contract](./sse.md#session-changes-on-an-open-subscription)
-for provider setup, guard checks, idle checks and limits.
+for provider setup, guard and idle behavior, and limits.
 
 The dashboard layout guard also protects its logout RPC. Logout expires the
 cookie and redirects only after storage revocation succeeds. Storage failures
 keep the cookie and show fixed feedback. A lost response can leave a revoked
-session cookie in the browser; the next request must sign in again.
+session cookie in the browser. The next request must sign in again.
 
 These operations are not a transaction spanning account writes, sessions and
-HTTP delivery. Registration can create an account before session creation fails;
-the user can retry by signing in. A reset consumes its token before hashing,
+HTTP delivery. Registration can create an account before session creation fails.
+The user can retry by signing in. A reset consumes its token before hashing,
 updating the account and revoking sessions. Later failures can leave partial
 writes and require a new reset link. A failed response does not establish that
 nothing changed. Do not automatically repeat a mutation based on that assumption.
 
 ### Alternative: Login via a Hono Route
 
-If you prefer a raw endpoint (e.g. for an API consumer), use `auth.createLoginHandler(...)` and mount it in `src/index.ts`:
+For a raw endpoint, for example for an API consumer, use `auth.createLoginHandler(...)` and mount it in `src/index.ts`:
 
 
 The handler uses the provider's `createSession` when omitted. Pass a per-handler
@@ -236,7 +236,7 @@ app.post('/api/login', loginHandler);
 export default { fetch: app.fetch };
 ```
 
-Now, any request handled by your pages and components will have access to `this.user` if the user is logged in.
+Every request handled by your pages and components then has access to `this.user` if the user is logged in.
 
 ## Using Authenticated User in Components
 
@@ -266,7 +266,3 @@ The auth recipe stores login sessions and password-reset tokens in one table.
 It accepts only rows with `meta.type === 'auth'` for login, and only
 `meta.type === 'password_reset'` for password reset. A reset consumes the token
 once and revokes the user's existing sessions.
-
-Applications generated before this security update must port these checks from
-`packages/scaffold/template/src/auth.ts`. Updating the framework dependency alone
-does not change an application's generated auth module.

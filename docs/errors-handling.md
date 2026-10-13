@@ -69,12 +69,12 @@ export default class ErrorPage extends Cossack {
 ## Layout & Shell Integration
 
 The `404` and `error` pages use the normal component stack:
-* **Global App**: `src/App.ts` wraps each page. It can provide the theme, navigation, and persistent state.
-* **Root Layout**: Each page uses `src/pages/layout.ts` if that file exists.
-* **Metadata**: Each page uses the nested `head()` merge. The root can add branding, such as `Cossack Framework - Page Not Found`.
+* Global App: `src/App.ts` wraps each page. It can provide the theme, navigation, and persistent state.
+* Root Layout: Each page uses `src/pages/layout.ts` if that file exists.
+* Metadata: Each page uses the nested `head()` merge. The root can add branding, such as `Cossack Framework - Page Not Found`.
 
 ## Default Fallbacks
 
 If your project does not include these components:
-* **404**: The framework returns a plain-text `404 Not Found` response.
-* **Error**: The framework returns basic HTML with the error stack trace. Use this response to debug during development.
+* 404: The framework returns a plain-text `404 Not Found` response.
+* Error: The framework returns basic HTML with the error stack trace. Use this response to debug during development.

@@ -6,7 +6,7 @@ description: Define and run ordered, idempotent seed data with scope and transac
 # Seeders
 
 Seeders create or update application data after migrations have established the
-schema. Cossack ORM provides a reusable `SeederRunner`; `tsx` or another runtime
+schema. Cossack ORM provides a reusable `SeederRunner`. `tsx` or another runtime
 loader only executes the TypeScript entry point.
 
 ## Define a named seeder
@@ -132,7 +132,7 @@ await runner.run({
 });
 ```
 
-The signal is exposed to the seeder context. A seeder should pass it to any
+The signal is exposed to the seeder context. Pass it to every
 lower-level operation that supports cancellation.
 
 ## Transaction policies
@@ -141,7 +141,7 @@ Each seeder declares one of three policies:
 
 | Policy | Behavior |
 | --- | --- |
-| `"auto"` | Use one transaction when supported; otherwise run without one |
+| `"auto"` | Use one transaction when supported, or run without one |
 | `"required"` | Fail before executing when interactive transactions are unavailable |
 | `"none"` | Never create a runner-managed transaction |
 
@@ -192,7 +192,7 @@ pnpm exec cossack seeder run --only users --env staging --target remote --dry-ru
 
 The result reports selected seeders, ordered statements, affected objects,
 parameter counts, risk, target identity and transaction limitations. Callbacks are
-never invoked during planning. A callback seeder reports `complete: false`; an
+never invoked during planning. A callback seeder reports `complete: false`. An
 empty SQL list does not imply that its eventual callback makes no changes.
 
 For a complete plan, declare SQL fragments instead of a callback:
@@ -207,22 +207,22 @@ export const settings = defineSeeder({
 });
 ```
 
-Declared `operations` are authoritative for execution as well as planning; a
+Declared `operations` are authoritative for execution as well as planning. A
 `run` callback on the same definition is not executed. A required transaction on
 an unsupported provider produces an incomplete plan. Statements without an
 interactive transaction run individually and can leave partial changes on failure.
-Parameter values stay private; raw SQL object discovery remains incomplete.
+Parameter values stay private. Raw SQL object discovery remains incomplete.
 
 `await runner.applyPlan(await runner.plan())` applies a plan returned by that
 live runner after rechecking its target and definitions. Plans use detached
 statement/parameter snapshots. A copied or deserialized JSON report is not an
-executable plan. Seeders have no applied-history ledger and remain rerunnable;
-planning does not prove that data-dependent SQL is safe or idempotent.
+executable plan. Seeders have no applied-history ledger and remain rerunnable.
+Planning does not prove that data-dependent SQL is safe or idempotent.
 `seed list` reads registration metadata without constructing an adapter.
 
 ## Framework integration
 
-A framework should:
+A framework integration follows these steps:
 
 1. Load the application's `orm.config.ts`.
 2. Construct its normal ORM instance.

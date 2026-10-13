@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
 
 /**
@@ -154,6 +155,13 @@ export function serveStatic(options: StaticServeOptions) {
             return next();
         }
     };
+}
+
+/** Filesystem-backed ASSETS binding for SSR manifest and CSS reads. */
+export function createStaticAssets(options: StaticServeOptions): { fetch(request: Request): Promise<Response> } {
+    const app = new Hono();
+    app.use('*', serveStatic(options));
+    return { fetch: async request => app.fetch(request) };
 }
 
 /**

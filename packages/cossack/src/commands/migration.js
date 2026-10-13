@@ -22,7 +22,8 @@ Subcommands:
   squash <name>     Generate one baseline migration from the current models.
   up                Apply all pending migrations.
   down              Revert the most recent migration.
-  status            List migration state.
+  status            List migration state and changed checksums.
+  rehash <name...>   Accept current checksums without running migrations.
   check             Fail unless all migrations are applied and checksums match.
   baseline          Record an existing schema after a clean drift check.
   plan              Preview pending migration SQL without applying it.`);

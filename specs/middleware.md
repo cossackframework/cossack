@@ -48,9 +48,9 @@ This document describes how the middleware system works. Use it when you change 
 | File | Responsibility |
 |------|---------------|
 | `packages/core/src/shared/decorators.ts` | `@Page()` decorator. Merges options and stores via `Reflect.defineMetadata('page:options', mergedOptions, target)`. |
-| `packages/core/src/shared/middleware.ts` | `defineServerMiddleware(handler)` : semantic passthrough wrapper. Returns handler directly. Exists for documentation intent. |
+| `packages/core/src/shared/middleware.ts` | `defineServerMiddleware(handler)`: semantic passthrough wrapper. Returns handler directly. Exists for documentation intent. |
 | `packages/framework/src/vite-plugin.ts` | `cossackPages()` plugin. Loads page/layout modules via `import.meta.glob`. SSR uses `{ eager: true }`. |
-| `packages/framework/src/router.ts` | `createApp()` : reads metadata, builds middleware stack, registers Hono routes. |
+| `packages/framework/src/router.ts` | `createApp()`: reads metadata, builds middleware stack, registers Hono routes. |
 | `packages/framework/src/vite-security-plugin.ts` | Strips server-only method bodies from client bundle. Does NOT process middleware-only files (no `extends Cossack` match). |
 
 ---
@@ -59,7 +59,7 @@ This document describes how the middleware system works. Use it when you change 
 
 ### `@Page(options)`
 
-**File**: `packages/core/src/shared/decorators.ts`
+File: `packages/core/src/shared/decorators.ts`
 
 The `@Page` decorator accepts a `middlewares` array of Hono `MiddlewareHandler` functions and stores it on the class constructor:
 
@@ -84,7 +84,7 @@ Page(options)
        // mergedOptions.middlewares = [loggingMiddleware]  ← function references
 ```
 
-**Key detail**: The `middlewares` array holds direct function references. These are not serialized : they are the actual `MiddlewareHandler` closures. Both the decorator and the router must run in the same JS environment (SSR) so that `Reflect.getMetadata` retrieves the same references.
+Key detail: The `middlewares` array holds direct function references. The framework does not serialize them. They are the actual `MiddlewareHandler` closures. Both the decorator and the router must run in the same JS environment (SSR) so that `Reflect.getMetadata` retrieves the same references.
 
 ---
 
@@ -92,7 +92,7 @@ Page(options)
 
 ### `virtual:cossack-pages`
 
-**File**: `packages/framework/src/vite-plugin.ts`
+File: `packages/framework/src/vite-plugin.ts`
 
 The Vite plugin creates a virtual module that loads all page and layout modules:
 
@@ -107,11 +107,11 @@ Client environment (name === 'client'):
   layouts  = import.meta.glob('pages/**/layout.ts', { eager: true })
 ```
 
-**Why layouts are always eager**: Layouts are small and shared. They are needed immediately on both server and client to wrap page content.
+Why layouts are always eager: Layouts are small and shared. They are needed immediately on both server and client to wrap page content.
 
-**Why pages are lazy on the client**: Only the active page's code is loaded in the browser, enabling code splitting.
+Why pages are lazy on the client: Only the active page's code is loaded in the browser. This enables code splitting.
 
-**Impact on middleware**: When a page module is loaded (eager on SSR, lazy on client), its imports are resolved. If a page imports a middleware from `src/middlewares/`, that module is loaded too. On the SSR side, the `@Page` decorator runs immediately and stores the middleware references in metadata. On the client side, the decorator also runs (storing metadata), but that metadata is never read for Hono route registration.
+Impact on middleware: When a page module is loaded (eager on SSR, lazy on client), its imports are resolved. If a page imports a middleware from `src/middlewares/`, that module is loaded too. On the SSR side, the `@Page` decorator runs immediately and stores the middleware references in metadata. On the client side, the decorator also runs (storing metadata), but that metadata is never read for Hono route registration.
 
 ---
 
@@ -119,7 +119,7 @@ Client environment (name === 'client'):
 
 ### `createApp()` : middleware collection
 
-**File**: `packages/framework/src/router.ts` (lines 561–604)
+File: `packages/framework/src/router.ts` (lines 561-604)
 
 The route registration loop iterates over all loaded page modules:
 
@@ -162,7 +162,7 @@ for each path in pages:
 
 ### `getLayoutStack()` : layout resolution
 
-**File**: `packages/framework/src/router.ts` (lines 135–155)
+File: `packages/framework/src/router.ts` (lines 135-155)
 
 Walks the directory tree from `src/pages/` down to the page's directory, collecting `layout.ts` files:
 
@@ -181,7 +181,7 @@ Middleware ordering is root-to-leaf: the root layout's middleware runs first, th
 
 ## Phase 4: `defineServerMiddleware()`
 
-**File**: `packages/core/src/shared/middleware.ts`
+File: `packages/core/src/shared/middleware.ts`
 
 ```typescript
 export function defineServerMiddleware(handler: MiddlewareHandler): MiddlewareHandler {
@@ -189,16 +189,16 @@ export function defineServerMiddleware(handler: MiddlewareHandler): MiddlewareHa
 }
 ```
 
-This is a **passthrough function** : it returns the handler unchanged. It exists for:
+This is a passthrough function. It returns the handler unchanged. It exists for:
 
-1. **Semantic documentation**: Makes it explicit that a middleware is server-only.
-2. **API stability**: If a future version needs runtime behavior (e.g., stripping the handler from client bundles), the function is already in place.
+1. Semantic documentation: it makes explicit that a middleware is server-only.
+2. API stability: If a future change needs runtime behavior (for example, stripping the handler from client bundles), the function is in place.
 
 ### Why no `isServer` guard
 
-Middlewares are only ever invoked through Hono's route system in `router.ts`, which runs exclusively on the server. The client never calls these middleware functions through a Hono router : it only stores them in metadata as part of the `@Page` decorator.
+Middlewares are only ever invoked through Hono's route system in `router.ts`, which runs exclusively on the server. The client never calls these middleware functions through a Hono router. It only stores them in metadata as part of the `@Page` decorator.
 
-A previous implementation wrapped the handler in `if (isServer)`, but the Cloudflare Workers runtime (via `@cloudflare/vite-plugin`) provides a `window` global in its sandbox, causing `isServer` to evaluate to `false`. Since the guard is unnecessary (middlewares only run server-side via Hono), it was removed.
+The framework needs no `isServer` guard, because middlewares only run server-side through Hono. The Cloudflare Workers runtime (via `@cloudflare/vite-plugin`) provides a `window` global in its sandbox, so `isServer` evaluates to `false` there. An `isServer` guard is not a reliable server test in that sandbox.
 
 ### Inline middleware pattern
 
@@ -211,15 +211,15 @@ const myMiddleware: MiddlewareHandler = async (c, next) => {
 };
 ```
 
-This works identically. The inline pattern is simpler for one-off use; `defineServerMiddleware` is preferred for reusable middleware files in `src/middlewares/`.
+This works identically. The inline pattern is simpler for one-off use. Use `defineServerMiddleware` for reusable middleware files in `src/middlewares/`.
 
 ---
 
 ## Phase 5: Security Plugin Interaction
 
-**File**: `packages/framework/src/vite-security-plugin.ts`
+File: `packages/framework/src/vite-security-plugin.ts`
 
-The security plugin transforms Cossack component source code in the **client** environment only. It stubs server-only methods.
+The security plugin transforms Cossack component source code in the client environment only. It stubs server-only methods.
 
 ### Middleware files are NOT processed
 
@@ -242,7 +242,7 @@ A file like `src/middlewares/logging.ts` has no class extending `Cossack`, so it
 
 ### Page files ARE processed (client bundle only)
 
-In the client bundle, a page component's server-only methods are stubbed. However, the `middlewares` array stored in `page:options` metadata is preserved : it is just an array of function references, not method bodies. The security plugin does not modify the decorator arguments.
+In the client bundle, a page component's server-only methods are stubbed. However, the `middlewares` array stored in `page:options` metadata is preserved. It is an array of function references, not method bodies. The security plugin does not modify the decorator arguments.
 
 ---
 
@@ -304,7 +304,7 @@ POST /crpc { componentRouteId, action, state, payload }
        └─ Return getPublicState() as JSON
 ```
 
-**Note**: CRPC and WebSocket RPC actions bypass page-level middleware. Middleware only applies to Hono routes registered in the page registration loop (GET for SSR, POST/PUT/PATCH/DELETE for HTTP-transport pages).
+Note: CRPC and WebSocket RPC actions bypass page-level middleware. Middleware only applies to Hono routes registered in the page registration loop (GET for SSR, POST/PUT/PATCH/DELETE for HTTP-transport pages).
 
 ---
 
@@ -338,7 +338,7 @@ app.get('/dashboard/settings', rootAuth, dashLogger, settingsGuard, ssrHandler)
 
 Execution order: `rootAuth → dashLogger → settingsGuard → ssrHandler`.
 
-Each middleware calls `await next()` to pass control to the next. If any middleware returns early (e.g., `return c.redirect('/login')`), the chain stops.
+Each middleware calls `await next()` to pass control to the next. If any middleware returns early (for example, `return c.redirect('/login')`), the chain stops.
 
 ---
 
@@ -352,14 +352,14 @@ Each middleware calls `await next()` to pass control to the next. If any middlew
 
 ## Known Constraints
 
-1. **CRPC bypasses middleware**: The `/crpc` and `/ws/:provider/:id` routes are registered globally, not per-page. Page-level middlewares only apply to SSR GET requests and HTTP-transport action methods (POST, PUT, PATCH, DELETE).
+1. CRPC bypasses middleware: The `/crpc` and `/ws/:provider/:id` routes are registered globally, not per-page. Page-level middlewares only apply to SSR GET requests and HTTP-transport action methods (POST, PUT, PATCH, DELETE).
 
-2. **Upload route bypasses middleware**: The `/upload` route (file uploads) is also a global route that does not go through page middlewares.
+2. Upload route bypasses middleware: The `/upload` route (file uploads) is also a global route that does not go through page middlewares.
 
-3. **Middleware runs on server only**: Despite the client bundle containing the middleware function references (in metadata), they are never invoked on the client because there is no Hono router on the client side.
+3. Middleware runs on server only: Despite the client bundle containing the middleware function references (in metadata), they are never invoked on the client because there is no Hono router on the client side.
 
-4. **No middleware on SPA navigations**: Client-side navigations (intercepted `<a>` clicks) fetch data via the SSR route, which does go through middleware. But the middleware runs on the server : the client never executes it locally.
+4. No middleware on SPA navigations: Client-side navigations (intercepted `<a>` clicks) fetch data via the SSR route, which does go through middleware. The middleware runs on the server. The client never executes it locally.
 
-5. **Layout ordering is root-to-leaf**: There is no way to reverse the order or exclude parent middleware from a child page.
+5. Layout ordering is root-to-leaf: There is no way to reverse the order or exclude parent middleware from a child page.
 
-6. **`defineServerMiddleware` is a passthrough**: It provides no runtime behavior beyond returning the handler. Its value is semantic : it documents that the middleware is intended for server-side execution only.
+6. `defineServerMiddleware` is a passthrough: It provides no runtime behavior beyond returning the handler. Its value is semantic. It documents that the middleware is intended for server-side execution only.
