@@ -123,6 +123,19 @@ Common column options include:
 declare externalId: string;
 ```
 
+`select: false` hides a column (for example a password hash) from every query
+that does not ask for it: `find()`, `findOne()`, `query().getMany()` and raw
+rows. The property stays `undefined`, and saving such an entity leaves the
+stored value alone. Load it explicitly with `find({ select: [...] })` or
+`query().addSelect("passwordHash")`, which keeps the default columns. Primary,
+version and relation join columns are always loaded. `reload()` refreshes a
+hidden column only when the instance already holds it.
+
+`insert: false` and `update: false` apply to entity saves and to the static
+`insert()`, `upsert()` and `update()` methods. Entity saves skip such columns.
+The static methods reject a value for them with a `ConfigurationError`. An
+upsert inserts `update: false` columns but never overwrites them on conflict.
+
 Use `renamedFrom` when a model property maps to a renamed database column.
 Migration generation never guesses renames heuristically.
 

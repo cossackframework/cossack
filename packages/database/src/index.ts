@@ -52,7 +52,7 @@ export type {
   RelationOptions,
   Relation,
 } from "./metadata/types.js";
-export { SelectQueryBuilder, MutationQueryBuilder } from "./query/builder.js";
+export { SelectQueryBuilder, MutationQueryBuilder, defaultSelectColumns } from "./query/builder.js";
 export {
   Equal,
   Not,

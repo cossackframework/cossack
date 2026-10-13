@@ -12,6 +12,7 @@ import type {
 import { decodeValue, encodeValue } from "./codec.js";
 import { ConfigurationError, QueryError, UnsupportedCapabilityError } from "./errors.js";
 import { ModelManager } from "./entity/manager.js";
+import { defaultSelectColumns } from "./query/builder.js";
 import type { BaseEntity } from "./entity/base-entity.js";
 import { finalizeMetadata } from "./metadata/finalize.js";
 import { defaultNamingStrategy, type NamingStrategy } from "./metadata/naming.js";
@@ -271,7 +272,12 @@ export class ORM {
     const entity = new metadata.target() as T;
     const snapshot: Record<string, unknown> = {};
     for (const column of metadata.columns) {
-      if (!(column.columnName in row)) continue;
+      if (!(column.columnName in row)) {
+        // Unloaded (for example `select: false`) columns stay undefined so a class
+        // field default can never be mistaken for a change and written back.
+        (entity as unknown as Record<string, unknown>)[column.propertyName] = undefined;
+        continue;
+      }
       const value = decodeValue(column, row[column.columnName]);
       (entity as unknown as Record<string, unknown>)[column.propertyName] = value;
       snapshot[column.propertyName] = cloneValue(value);
@@ -332,13 +338,13 @@ export class ORM {
       const current = (entity as unknown as Record<string, unknown>)[column.propertyName];
       if (!equalValue(current, state.original[column.propertyName])) changes[column.propertyName] = current;
     }
-    const updateDate = metadata.columns.find((column) => column.updateDate);
+    const updateDate = metadata.columns.find((column) => column.updateDate && column.update);
     if (updateDate && Object.keys(changes).length) {
       const now = new Date();
       (entity as unknown as Record<string, unknown>)[updateDate.propertyName] = now;
       changes[updateDate.propertyName] = now;
     }
-    const version = metadata.columns.find((column) => column.version);
+    const version = metadata.columns.find((column) => column.version && column.update);
     const where = this.primaryWhere(entity, metadata);
     if (version && Object.keys(changes).length) {
       const oldVersion = Number(state.original[version.propertyName] ?? 1);
@@ -381,11 +387,17 @@ export class ORM {
 
   async reload<T extends BaseEntity>(entity: T): Promise<T> {
     const state = this.stateFor(entity);
-    const fresh = await this.model(state.metadata.target).findOne({
-      where: this.primaryWhere(entity, state.metadata),
-    });
+    const record = entity as unknown as Record<string, unknown>;
+    // Reload the default columns plus any `select: false` column this instance holds.
+    const defaults = new Set(defaultSelectColumns(state.metadata));
+    const columns = state.metadata.columns.filter((column) =>
+      defaults.has(column) || record[column.propertyName] !== undefined || state.original[column.propertyName] !== undefined);
+    const fresh = await this.model(state.metadata.target).query()
+      .addSelect(...columns.map((column) => column.propertyName) as never[])
+      .where(this.primaryWhere(entity, state.metadata) as never)
+      .getOne();
     if (!fresh) throw new QueryError(`Cannot reload missing ${state.metadata.modelName}.`);
-    for (const column of state.metadata.columns) {
+    for (const column of columns) {
       (entity as unknown as Record<string, unknown>)[column.propertyName] =
         (fresh as unknown as Record<string, unknown>)[column.propertyName];
     }
@@ -694,7 +706,9 @@ export class ORM {
     const limit = Math.max(1, this.driver.capabilities.parameterLimit);
     for (let index = 0; index < values.length; index += limit) {
       const chunk = values.slice(index, index + limit);
-      result.push(...await this.model(metadata.target).findBy({ [property]: In(chunk) }));
+      // The lookup property is the relation key, so load it even when it is `select: false`.
+      result.push(...await this.model(metadata.target).query().addSelect(property as never)
+        .where({ [property]: In(chunk) } as never).getMany());
     }
     return result;
   }
