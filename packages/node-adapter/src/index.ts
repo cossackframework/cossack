@@ -6,6 +6,8 @@ import type { Cossack, PageOptions } from '@cossackframework/core';
 import { isOriginAllowed, createInstance } from '@cossackframework/core';
 import { URL } from 'url';
 
+import { websocketMaxPayload } from './adapter';
+
 export * from './runtime';
 /** Pass to `createApp({ runtimeAdapter })` so SSR emits process-runtime targets. */
 export const nodeRuntimeAdapter = { name: 'node' } as const;
@@ -50,6 +52,11 @@ export interface CossackNodeAdapterOptions {
     maxInstances?: number;
     /** Evict disconnected instances after this idle period. Defaults to 15 minutes. */
     idleTimeoutMs?: number;
+    /**
+     * Largest accepted WebSocket message in bytes. Defaults to 1 MiB. Larger
+     * messages close the connection with code 1009 before they are parsed.
+     */
+    maxPayload?: number;
 }
 
 interface NodeRuntimeEntry {
@@ -93,7 +100,7 @@ export class CossackNodeAdapter {
     private idleTimeoutMs: number;
 
     constructor(options: CossackNodeAdapterOptions) {
-        this.wss = new WebSocketServer({ noServer: true });
+        this.wss = new WebSocketServer({ noServer: true, maxPayload: websocketMaxPayload(options.maxPayload) });
         this.componentRegistry = options.componentRegistry;
         this.allowedOrigins = options.allowedOrigins;
         this.authenticate = options.authenticate;
@@ -124,6 +131,9 @@ export class CossackNodeAdapter {
         }
 
         this.wss.handleUpgrade(request, socket, head, async (ws) => {
+            // ws reports oversized (1009) and malformed frames as 'error' before
+            // closing; without a listener that event would crash the process.
+            ws.on('error', () => logRuntimeFailure({ runtime: 'node' }, 'socket'));
             const url = new URL(request.url || '', `http://${request.headers.host}`);
             // Path: /ws/:provider/:target
             const pathParts = url.pathname.split('/');
@@ -306,6 +316,6 @@ export class CossackNodeAdapter {
     }
 }
 
-export { createNodeAdapter, type NodeAdapterOptions, type NodeWebSocketUpgrade, type NodeUpgradeServer } from "./adapter";
+export { createNodeAdapter, DEFAULT_WEBSOCKET_MAX_PAYLOAD, type NodeAdapterOptions, type NodeWebSocketUpgrade, type NodeUpgradeServer } from "./adapter";
 
 export { installNodeShutdown, type NodeShutdownServer, type NodeShutdownOptions, type NodeShutdownResult } from './shutdown';
