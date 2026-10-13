@@ -92,17 +92,16 @@ jobs:
       - name: Install generated-app test browser
         run: pnpm --filter cossack exec playwright install chromium --with-deps
 
-      - name: Run tests
-        run: |
-          pnpm --filter @cossackframework/core test -- --run
-          pnpm --filter @cossackframework/renderer test -- --run
-          pnpm --filter @cossackframework/ui test -- --run
-          pnpm --filter @cossackframework/database test
-          pnpm --filter @cossackframework/database audit:bundle
-          pnpm --filter @cossackframework/framework test --run tests/
-          pnpm --filter @cossackframework/studio test
-          pnpm --filter @cossackframework/scaffold test
-          pnpm --filter cossack test
+      # Every published package (including node-adapter, auth and desktop) is
+      # type checked and unit tested before publishing.
+      - name: Check package types
+        run: pnpm run typecheck
+
+      - name: Run all unit tests
+        run: pnpm run test:unit
+
+      - name: Audit database bundle
+        run: pnpm --filter @cossackframework/database audit:bundle
 
       - name: Test generated app with local package tarballs
         run: pnpm run test:scaffold:local

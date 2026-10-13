@@ -95,17 +95,16 @@ jobs:
       - name: Build workspace libraries
         run: pnpm run build
 
+      # Includes Desktop: its typecheck and unit tests mock Electron and run on
+      # Linux. Only the platform installers (desktop.yml) stay manual.
       - name: Check package types
-        run: pnpm run typecheck -- --exclude-desktop
+        run: pnpm run typecheck
 
       - name: Install Chromium and recording dependencies
         run: pnpm --filter @cossackframework/framework exec playwright install chromium --with-deps
 
       - name: Run all unit tests
-        run: pnpm --workspace-concurrency=1 --filter "./packages/*" --filter "!@cossackframework/desktop" run test --watch=false
-
-      - name: Record Desktop release waiver
-        run: echo "Desktop platform acceptance is waived for 0.9.0; installer jobs are manual."
+        run: pnpm run test:unit
 
       - name: Test generated app with local package tarballs
         if: steps.changes.outputs.generated_app == 'true'

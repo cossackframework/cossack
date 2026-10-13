@@ -8,14 +8,9 @@ import path from 'node:path';
 // Check each package config explicitly, without requiring composite builds.
 const root = fileURLToPath(new URL('../', import.meta.url));
 const packages = path.join(root, 'packages');
-const excludeDesktop = process.argv.includes('--exclude-desktop');
 const compiler = path.join(path.dirname(createRequire(import.meta.url).resolve('typescript/package.json')), 'bin/tsc');
 for (const entry of readdirSync(packages, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory()) continue;
-    if (excludeDesktop && entry.name === 'desktop') {
-        console.log('Desktop typecheck excluded by the release waiver; not reported as passed.');
-        continue;
-    }
     const config = path.join(packages, entry.name, 'tsconfig.json');
     if (!existsSync(config)) continue; // JavaScript-only CLI/scaffold packages.
     console.log(`Type checking ${entry.name}`);

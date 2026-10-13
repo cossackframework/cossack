@@ -34,16 +34,31 @@ describe('release publishing coverage', () => {
     // Examples are workspace members; recursive publish must skip them.
     for (const example of manifests('examples')) expect(example.private, example.name).toBe(true);
   });
-  it('keeps test-utils internal and preserves the Desktop platform waiver', () => {
-    const commands = steps.map(step => step.run ?? '').join('\n');
+  it('keeps test-utils internal and keeps the publish job identity', () => {
     const internal = JSON.parse(readFileSync(path.join(root, 'packages/test-utils/package.json'), 'utf8'));
     expect(internal.private).toBe(true);
     const workspace = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
     expect(workspace.private).toBe(true);
     expect(workspace.scripts.build).toContain('pnpm --filter @cossackframework/test-utils run build');
-    expect(commands).not.toMatch(/--filter @cossackframework\/desktop (?:test|build:desktop)/);
     expect(workflow.jobs.publish.environment).toBe('Publish to npm');
     expect(workflow.jobs.publish.permissions['id-token']).toBe('write');
+  });
+  it('type checks and unit tests every package, Desktop included, before publishing', () => {
+    const runs = steps.map(step => step.run ?? '');
+    const publishAt = runs.findIndex(run => run.includes('publish --access public'));
+    const typecheckAt = runs.indexOf('pnpm run typecheck');
+    const unitAt = runs.indexOf('pnpm run test:unit');
+    expect(typecheckAt).toBeGreaterThan(-1);
+    expect(unitAt).toBeGreaterThan(-1);
+    expect(Math.max(typecheckAt, unitAt)).toBeLessThan(publishAt);
+    const workspace = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+    expect(workspace.scripts['test:unit']).toContain('--filter "./packages/*"');
+    expect(workspace.scripts['test:unit']).not.toContain('!@cossackframework/desktop');
+    const e2e = parse(readFileSync(path.join(root, '.github/workflows/e2e-tests.yml'), 'utf8'));
+    const e2eRuns = e2e.jobs['e2e-tests'].steps.map(step => step.run ?? '');
+    expect(e2eRuns).toContain('pnpm run typecheck');
+    expect(e2eRuns).toContain('pnpm run test:unit');
+    expect(e2eRuns.join('\n')).not.toMatch(/exclude-desktop|!@cossackframework\/desktop/);
   });
   it('verifies the release tag, target branch and versions before testing or publishing', () => {
     const verify = workflow.jobs['verify-release'];
