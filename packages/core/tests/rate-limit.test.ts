@@ -376,6 +376,23 @@ describe('RateLimit handler wrapper (functional API routes)', () => {
         expect(blocked.status).toBe(429);
     });
 
+    it('shares one budget across concrete paths of the same route template', async () => {
+        const { Hono } = await import('hono');
+        const app = new Hono();
+        app.get('/api/items/:id', RateLimit({ window: 60_000, max: 1 }, (c: any) => c.json({ id: c.req.param('id') })));
+        const request = (path: string) => { const raw = new Request(`http://localhost${path}`); setClientAddress(raw, '9.9.9.9'); return app.fetch(raw); };
+        expect((await request('/api/items/1')).status).toBe(200);
+        expect((await request('/api/items/2')).status).toBe(429);
+        expect((await request('/api/items/3')).status).toBe(429);
+    });
+
+    it('falls back to the concrete path when no route template is available', async () => {
+        const handler = RateLimit({ window: 60_000, max: 1 }, (c: any) => c.json({ ok: true }));
+        expect(((await handler(makeContext({ ip: '8.8.8.8', path: '/a' }))) as Response).status).toBe(200);
+        expect(((await handler(makeContext({ ip: '8.8.8.8', path: '/b' }))) as Response).status).toBe(200);
+        expect(((await handler(makeContext({ ip: '8.8.8.8', path: '/a' }))) as Response).status).toBe(429);
+    });
+
     it('different callers have independent budgets', async () => {
         const handler = RateLimit({ window: 60_000, max: 1 }, (c: any) => c.json({ ok: true }));
         const a = makeContext({ ip: '1.1.1.1' });
