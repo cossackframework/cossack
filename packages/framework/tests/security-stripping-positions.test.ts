@@ -51,6 +51,14 @@ describe('framework classes are stripped wherever they are written', () => {
     expect(out).not.toContain('SECRET_F');
   });
 
+  it('allows a component subclass inside a server-only class on the server build', () => {
+    const source = `${imports}@Page() export class Live extends Cossack { @Server() async count() { return 1; } render() { return ''; } }
+      export class FixtureDO extends CossackDurableObject {
+        async getComponentRegistry() { class RegisteredLive extends Live { constructor() { super(); } } return new Map([['/live.ts', RegisteredLive]]); }
+      }`;
+    expect(() => server(source)).not.toThrow();
+  });
+
   it('refuses a framework class nested inside another class member', () => {
     expect(() => client(`${imports}@Page() export class Outer extends Cossack {
       @Client() build() {

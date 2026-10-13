@@ -978,10 +978,27 @@ function typedDecoratorBindings(program: any): { aliases: Map<string, string>; n
   return { aliases, namespaces };
 }
 
-const frameworkClassSets = new WeakMap<any, Set<any>>();
+const frameworkClassSets = new WeakMap<any, { selected: Set<any>; hidden?: any }>();
 
 /** Resolve component aliases and local inheritance before selecting classes. */
 function frameworkClasses(program: any): Set<any> {
+  return frameworkClassSelection(program).selected;
+}
+
+/**
+ * Fail closed for the client build: a framework class inside another class's
+ * member would be emitted verbatim when that member is kept, or overlap its
+ * stub edits. Server builds keep every body, so they allow the pattern (for
+ * example a Durable Object subclassing a component inside a method).
+ */
+function assertNoHiddenFrameworkClass(program: any): void {
+  const { hidden } = frameworkClassSelection(program);
+  if (hidden) {
+    throw new Error(`[Cossack Security] Framework class ${classNameOf(program, hidden) ?? '(anonymous)'} is declared inside another class. Move it to module scope so its server-only members can be stripped.`);
+  }
+}
+
+function frameworkClassSelection(program: any): { selected: Set<any>; hidden?: any } {
   const cached = frameworkClassSets.get(program);
   if (cached) return cached;
   const bases = new Set(['Cossack', 'CossackElement']);
@@ -1029,14 +1046,9 @@ function frameworkClasses(program: any): Set<any> {
       changed = true;
     }
   }
-  // Fail closed: a framework class inside another class's member would be
-  // emitted verbatim when that member is kept, or overlap its stub edits.
-  const hidden = nested.find(isFramework);
-  if (hidden) {
-    throw new Error(`[Cossack Security] Framework class ${classNameOf(program, hidden) ?? '(anonymous)'} is declared inside another class. Move it to module scope so its server-only members can be stripped.`);
-  }
-  frameworkClassSets.set(program, selected);
-  return selected;
+  const result = { selected, hidden: nested.find(isFramework) };
+  frameworkClassSets.set(program, result);
+  return result;
 }
 
 /** The static name of a class's `superClass` (e.g. `Cossack`), or null. */
@@ -2075,6 +2087,7 @@ export function transformCossackClass(
   if (!program) {
     throw new Error(`[Cossack Security] Could not parse ${id}; refusing to emit unstripped client code.`);
   }
+  assertNoHiddenFrameworkClass(program);
 
   // Collect, per class, the splices to apply. We record replacements as
   // file-relative offsets and apply them in reverse order at the end.
