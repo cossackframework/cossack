@@ -6,10 +6,8 @@ import {
   render,
   renderToString,
   svg,
-  type SanitizerFactory,
   type SVGTemplateResult,
   type TemplateResult,
-  type ValueSanitizer,
 } from './cossack-html';
 import { component } from './cossack-html';
 import { CossackElement } from './cossack-element';
@@ -30,12 +28,6 @@ describe('Lit-compatible public types', () => {
     expectTypeOf(svgResult).toEqualTypeOf<SVGTemplateResult>();
     expect(htmlResult['_$litType$']).toBe(1);
     expect(svgResult['_$litType$']).toBe(2);
-  });
-
-  it('exports Lit-compatible sanitizer function types without runtime setup', () => {
-    const sanitizer: ValueSanitizer = (value) => value;
-    const factory: SanitizerFactory = (_node, _name, _type) => sanitizer;
-    expect(factory(document.body, 'title', 'attribute')('safe')).toBe('safe');
   });
 });
 

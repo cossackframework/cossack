@@ -73,8 +73,6 @@ export {
 } from '@cossackframework/renderer';
 export type {
     SVGTemplateResult,
-    ValueSanitizer,
-    SanitizerFactory,
     CSSResultGroup,
 } from '@cossackframework/renderer';
 

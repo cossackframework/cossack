@@ -50,13 +50,6 @@ export const svg = (strings: TemplateStringsArray, ...values: unknown[]): SVGTem
 /** Lit-compatible sentinel that removes the value in its binding context. */
 export const nothing: unique symbol = Symbol.for('cossack-nothing');
 
-export type ValueSanitizer = (value: unknown) => unknown;
-export type SanitizerFactory = (
-  node: Node,
-  name: string,
-  type: 'property' | 'attribute',
-) => ValueSanitizer;
-
 // A supplied object gets its own overload so an optional union discriminator can
 // contextually type callbacks without the optional parameter's undefined branch.
 export function component<T extends CossackElement>(
