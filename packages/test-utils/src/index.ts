@@ -55,7 +55,15 @@ export async function render<T extends Cossack>(
         click: async (selector: string) => {
             const el = container.querySelector(selector);
             if (!el) throw new Error(`Element not found: ${selector}`);
-            el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            if (el instanceof HTMLElement) {
+                // Activate like a user: a disabled form control (including one
+                // inside a disabled fieldset) ignores the click. The explicit
+                // `:disabled` check keeps this true on DOM implementations whose
+                // `click()` does not apply that rule.
+                if (!el.matches(':disabled')) el.click();
+            } else {
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            }
             await mounted.updateComplete;
         },
         type: async (selector: string, text: string) => {
