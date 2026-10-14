@@ -1,6 +1,7 @@
 import { html, component, repeat, ifDefined, PreventDefaultResult, preventDefault } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client } from '@cossackframework/core';
 import type { GlobalAttributes, FormAttributes, ControlEvent } from '../../native-attributes.js';
+import { ControlledValue } from '../../native-attributes.js';
 import { Button } from '../../components/Button.js';
 import { Input } from '../../components/Input.js';
 import { PasswordInput } from '../../components/PasswordInput.js';
@@ -58,6 +59,7 @@ export class AuthForm extends Cossack {
     @ClientState() private feedback: AuthFormResult | undefined;
     private initialMode?: AuthFormMode;
     private renderedMode?: AuthFormMode;
+    private controlled = new ControlledValue<AuthFormMode>();
     private connected = false;
     private revision = 0;
     private active?: AbortController;
@@ -160,9 +162,9 @@ export class AuthForm extends Cossack {
     @Client()
     private changeMode() {
         if (!this.connected || this.pending || this.props.disabled) return;
-        const next = this.currentMode() === 'login' ? 'signup' : 'login';
+        const next = this.controlled.base(this.props, this.currentMode()) === 'login' ? 'signup' : 'login';
         if (this.props.mode === undefined) this.localMode = next;
-        this.props.onModeChange?.(next);
+        this.props.onModeChange?.(this.controlled.emit(this.props, next));
     }
     @Client()
     private async submit(event: SubmitEvent) {

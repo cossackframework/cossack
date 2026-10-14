@@ -15,10 +15,11 @@ it('preserves off-page IDs and does not mutate the controlled selection', () => 
     table.selectVisible(true);
     expect(table.props.onSelectionChange).toHaveBeenLastCalledWith(new Set(['off-page','a','b']));
     expect(original).toEqual(new Set(['off-page']));
-    table.props.selection = new Set(['off-page','a','b']);
+    // A parent render assigns a new props object.
+    table.props = { ...table.props, selection: new Set(['off-page','a','b']) };
     table.selectVisible(false);
     expect(table.props.onSelectionChange).toHaveBeenLastCalledWith(new Set(['off-page']));
-    table.props.rows = [{id:'c',name:'Carol'}]; table.selectRow('a',true);
+    table.props = { ...table.props, rows: [{id:'c',name:'Carol'}] }; table.selectRow('a',true);
     expect(table.props.onSelectionChange).toHaveBeenCalledTimes(2);
     table.selectRow('c',true);
     expect(table.props.onSelectionChange).toHaveBeenLastCalledWith(new Set(['off-page','a','b','c']));

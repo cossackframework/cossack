@@ -2,7 +2,7 @@
 // A controlled parent applies onChange in a later render. Two edits made before
 // that render must build on each other, not on the stale value prop.
 import { afterEach, expect, it, vi } from 'vitest';
-import { render, type TemplateResult } from '@cossackframework/renderer';
+import { component, html, render, type TemplateResult } from '@cossackframework/renderer';
 import { Tabs, type TabsProps } from '../src/components/Tabs';
 import { Combobox, type ComboboxProps } from '../src/components/Combobox';
 import { DatePicker, type DatePickerProps } from '../src/components/DatePicker';
@@ -12,6 +12,12 @@ import { Toggle } from '../src/components/Toggle';
 import { AccordionItem } from '../src/components/Accordion';
 import { Collapsible } from '../src/components/Collapsible';
 import { Sidebar } from '../src/components/Sidebar';
+import { Resizable } from '../src/components/Resizable';
+import { Command } from '../src/components/Command';
+import { CommandPalette } from '../src/blocks/CommandPalette/index';
+import { AuthForm } from '../src/blocks/AuthForm/index';
+import { DataTable, type DataTableProps } from '../src/components/DataTable';
+import { Pagination } from '../src/components/Pagination';
 
 afterEach(() => { document.body.replaceChildren(); });
 
@@ -122,4 +128,96 @@ it('Sidebar: a double click on the toggle proposes collapsed then expanded', () 
     button.click();
     button.click();
     expect(onToggle.mock.calls).toEqual([[true], [false]]);
+});
+
+// Components that compared edits with the stale prop instead of using the shared helper.
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+it('Resizable: arrow keys before the parent renders build on the pending size', async () => {
+    const onSizeChange = vi.fn();
+    const container = mount(html`${component(Resizable, { id: 'split', label: 'Editor', primary: 'A', secondary: 'B', size: 50, onSizeChange })}`);
+    await settle();
+    const handle = container.querySelector<HTMLDivElement>('.cs-resizable__handle')!;
+    for (const key of ['ArrowRight', 'ArrowRight', 'ArrowLeft', 'ArrowLeft']) handle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    expect(onSizeChange.mock.calls).toEqual([[51], [52], [51], [50]]);
+});
+
+it('Command: opening then closing before the parent renders proposes both states', () => {
+    const onOpenChange = vi.fn();
+    const command = quiet(new Command());
+    command.props = { id: 'search', label: 'Search', open: false, onOpenChange };
+    command.setOpen(true);
+    command.setOpen(false);
+    expect(onOpenChange.mock.calls).toEqual([[true], [false]]);
+});
+
+it('CommandPalette: a double toggle proposes open then closed', () => {
+    const onOpenChange = vi.fn();
+    const palette = quiet(new CommandPalette());
+    palette.props = { id: 'commands', label: 'Commands', commands: [], onSelect: () => {}, open: false, onOpenChange };
+    palette.toggle();
+    palette.toggle();
+    expect(onOpenChange.mock.calls).toEqual([[true], [false]]);
+});
+
+it('AuthForm: a double mode switch proposes signup then login', async () => {
+    const onModeChange = vi.fn();
+    const container = mount(html`${component(AuthForm, { id: 'account', mode: 'login', onModeChange, onSubmit: () => {} })}`);
+    await settle();
+    const button = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Create an account instead'))!;
+    button.click();
+    button.click();
+    expect(onModeChange.mock.calls).toEqual([['signup'], ['login']]);
+});
+
+type Person = { id: string; name: string };
+async function table(props: Partial<DataTableProps<Person>>) {
+    const container = mount(html`${component(DataTable<Person>, {
+        caption: 'People', rows: [{ id: 'a', name: 'Alice' }, { id: 'b', name: 'Bob' }],
+        columns: [{ id: 'name', header: 'Name', key: 'name', sortable: true }], getRowId: row => row.id,
+        rowCount: 30, state: { page: 1, pageSize: 2, filter: '' }, onStateChange: () => {}, ...props,
+    })}`);
+    await settle();
+    return container;
+}
+
+it('DataTable: two row checks before the parent renders keep both rows', async () => {
+    const onSelectionChange = vi.fn();
+    const container = await table({ selection: new Set(), onSelectionChange });
+    const [, alice, bob] = container.querySelectorAll<HTMLInputElement>('input[type=checkbox]');
+    alice.click();
+    bob.click();
+    expect(onSelectionChange.mock.calls).toEqual([[new Set(['a'])], [new Set(['a', 'b'])]]);
+});
+
+it('DataTable: query edits before the parent renders build on the pending state', async () => {
+    const onStateChange = vi.fn();
+    const container = await table({ onStateChange });
+    const filter = container.querySelector<HTMLInputElement>('input[type=search]')!;
+    filter.value = 'al';
+    filter.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    container.querySelector<HTMLButtonElement>('th button')!.click();
+    const next = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Next page')!;
+    next.click();
+    next.click();
+    const sort = { columnId: 'name', direction: 'asc' };
+    expect(onStateChange.mock.calls.map(call => call[0])).toEqual([
+        { page: 1, pageSize: 2, filter: 'al' },
+        { page: 1, pageSize: 2, filter: 'al', sort },
+        { page: 2, pageSize: 2, filter: 'al', sort },
+        { page: 3, pageSize: 2, filter: 'al', sort },
+    ]);
+});
+
+it('Pagination: Next then Previous before the parent renders build on the pending page', async () => {
+    const onPageChange = vi.fn();
+    const container = mount(html`${component(Pagination, { page: 3, totalPages: 5, onPageChange })}`);
+    await settle();
+    const next = container.querySelector<HTMLButtonElement>('[aria-label="Next page"]')!;
+    const previous = container.querySelector<HTMLButtonElement>('[aria-label="Previous page"]')!;
+    next.click();
+    next.click();
+    previous.click();
+    previous.click();
+    expect(onPageChange.mock.calls).toEqual([[4], [5], [4], [3]]);
 });

@@ -1,6 +1,7 @@
 import { html, IfDefinedResult } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client } from '@cossackframework/core';
 import type { GlobalAttributes } from '../native-attributes';
+import { ControlledValue } from '../native-attributes';
 
 export type ResizablePanelProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'hidden' | '?hidden' | 'inert' | '?inert' | 'aria-hidden'>;
 export type ResizableHandleProps = Omit<GlobalAttributes<HTMLDivElement>,
@@ -50,6 +51,7 @@ export class Resizable extends Cossack {
     private rootElement?: HTMLDivElement;
     private handleElement?: HTMLDivElement;
     private dragSession?: DragSession;
+    private controlled = new ControlledValue<number>();
 
     private bounds() { return this.props.minSize === undefined ? 10 : this.props.minSize; }
     private clampSize(value: number) { return Math.max(this.bounds(), Math.min(100 - this.bounds(), value)); }
@@ -103,20 +105,22 @@ export class Resizable extends Cossack {
         </div>`;
     }
 
+    /** Size the next keyboard edit builds on, including a proposal the parent has not rendered yet. */
+    private baseSize() { return this.controlled.base(this.props, this.currentSize()); }
     @Client()
     private propose(value: number) {
         if (this.props.disabled || this.bounds() === 50) return;
         const next = this.clampSize(value);
-        if (!Number.isFinite(next) || next === this.currentSize()) return;
+        if (!Number.isFinite(next) || !this.controlled.changed(this.props, this.currentSize(), next)) return;
         if (this.props.size === undefined) this.localSize = next;
-        this.props.onSizeChange?.(next);
+        this.props.onSizeChange?.(this.controlled.emit(this.props, next));
     }
     @Client()
     private keyResize(event: KeyboardEvent) {
         if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || this.props.disabled || this.bounds() === 50) return;
         const vertical = this.props.orientation === 'vertical';
         const rtl = !vertical && this.rootElement?.ownerDocument.defaultView?.getComputedStyle(this.rootElement).direction === 'rtl';
-        const current = this.currentSize(), step = (this.props.step ?? 1) * (event.shiftKey ? 10 : 1);
+        const current = this.baseSize(), step = (this.props.step ?? 1) * (event.shiftKey ? 10 : 1);
         let next: number;
         if (event.key === 'Home') next = this.bounds();
         else if (event.key === 'End') next = 100 - this.bounds();
@@ -149,7 +153,7 @@ export class Resizable extends Cossack {
         const blur = () => this.endDrag();
         view?.addEventListener('blur', blur);
         this.dragSession = { handle, pointerId: event.pointerId, start: vertical ? event.clientY : event.clientX,
-            size: this.currentSize(), available, orientation, minSize: this.bounds(), id: this.props.id,
+            size: this.baseSize(), available, orientation, minSize: this.bounds(), id: this.props.id,
             sign: !vertical && view?.getComputedStyle(root).direction === 'rtl' ? -1 : 1,
             stopBlur: () => view?.removeEventListener('blur', blur) };
     }
