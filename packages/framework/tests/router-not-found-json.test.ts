@@ -37,9 +37,17 @@ describe('app.notFound', () => {
         expect(await response.json()).toMatchObject({ code: 'COSSACK_NOT_FOUND', error: 'Not Found' });
     });
 
-    it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('returns JSON 404 for a %s to an unknown page path', async method => {
-        const response = await createApp().request('/missing', { method }, {} as any);
+    it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('returns JSON 404 for a %s from a JSON client', async method => {
+        const response = await createApp().request('/missing', { method, headers: { accept: 'application/json' } }, {} as any);
         expect(response.status).toBe(404);
         expect(await response.json()).toMatchObject({ code: 'COSSACK_NOT_FOUND' });
+    });
+
+    it('renders the HTML 404 boundary for a browser form POST to a page path', async () => {
+        const response = await createApp().request('/missing', {
+            method: 'POST', headers: { accept: 'text/html,application/xhtml+xml,*/*;q=0.8' },
+        }, {} as any);
+        expect(response.status).toBe(404);
+        expect(await response.text()).toContain('Custom 404 page');
     });
 });

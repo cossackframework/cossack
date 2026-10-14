@@ -135,9 +135,10 @@ catch-alls. Fewer route groups win an otherwise equal match. This preserves
 directory names such as `(account)` and `[id]` that a public URL cannot identify.
 An explicit 404 directory can own a namespace without an ordinary page.
 
-Only GET and HEAD requests for page paths render a 404 boundary. Unknown
-`/api` paths and other methods (POST, PUT, PATCH, DELETE) receive a JSON
-`{ "error": "Not Found", "code": "COSSACK_NOT_FOUND" }` response with status 404.
+Unknown `/api` paths, and clients whose `Accept` header asks for JSON but not
+HTML, receive a JSON `{ "error": "Not Found", "code": "COSSACK_NOT_FOUND" }`
+response with status 404. Every other request renders the nearest 404 boundary,
+whatever its method, so a browser form POST to a page path shows the page's 404.
 
 For example, `/users/alice/missing` can select
 `src/pages/(account)/users/[id]/404/index.ts`. The boundary and its layout

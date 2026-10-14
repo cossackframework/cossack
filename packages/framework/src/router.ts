@@ -1498,9 +1498,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   }
 
   app.notFound(async (c) => {
-    // API clients and non-navigation methods get a machine-readable 404; only
-    // GET/HEAD page requests render the nearest HTML 404 boundary.
-    if ((c.req.method !== 'GET' && c.req.method !== 'HEAD') || classifyRoute(c.req.path) === 'api') {
+    // API paths and clients that ask for JSON (but not HTML) get a
+    // machine-readable 404. Every other request, including a browser form
+    // POST to a page path, renders the route's nearest HTML 404 boundary.
+    const accept = c.req.header('accept') ?? '';
+    const wantsJson = /\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(accept) && !/\btext\/html\b/i.test(accept);
+    if (classifyRoute(c.req.path) === 'api' || wantsJson) {
       return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
     }
     const selected = resolveNotFound(c.req.path);
