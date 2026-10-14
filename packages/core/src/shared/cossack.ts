@@ -1436,6 +1436,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._navigationScopeRemoval = Promise.all([...rendererScopeAttachments.get(scope) ?? []]).then(() => {});
     }
 
+    /** Seed resolved server$ entries from serialized SSR state without replacing live entries. */
+    private _hydrateServerResources(resources: NonNullable<SerializedComponentState['serverResources']>): void {
+        for (const [name, resource] of Object.entries(resources)) {
+            if (this._serverResources.has(name)) continue;
+            this._serverResources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
+        }
+    }
+
     /** @internal Restore retained request/resource ownership after an abandoned publication. */
     public _frameworkCaptureNavigationContext(): () => void {
         const path = this._cossack_path;
@@ -2171,6 +2179,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * same broadcast / re-render path at any depth.
      */
     private initializeState(serializedState?: SerializedComponentState) {
+        // Nested component() children receive their SSR state here (via the
+        // parent's registry) rather than through bootstrap(); hydrate their
+        // server$ results too so they neither refetch nor flash `initial`.
+        // Client only: on the server, serialized state may come from a client.
+        if (!this.isServer && serializedState?.serverResources) this._hydrateServerResources(serializedState.serverResources);
         const { state: stateProperties, store: storeProperties,
             clientState: clientStateProperties, clientStore: clientStoreProperties } = collectReactiveMetadata(this.constructor);
 
