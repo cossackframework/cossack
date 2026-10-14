@@ -140,6 +140,22 @@ describe('duplicate public page routes', () => {
       '/src/pages/users/[slug]/index.ts',
     ])).toThrow(/Duplicate page route/);
   });
+
+  it('keeps a param and a catch-all sibling as distinct routes', () => {
+    const pages = ['/src/pages/docs/[id]/index.ts', '/src/pages/docs/[...slug]/index.ts'];
+    expect(resolvePageRouteFiles(pages)).toEqual([...pages].sort());
+    expect(() => resolvePageRouteFiles([
+      '/src/pages/docs/[...slug]/index.ts',
+      '/src/pages/docs/[...rest].ts',
+    ])).toThrow(/Duplicate page route/);
+  });
+
+  it('rejects optional catch-all segments with a clear error', () => {
+    for (const file of ['/src/pages/docs/[[...slug]]/index.ts', '/src/pages/[[id]].ts']) {
+      expect(() => filePathToHttpRoute(file)).toThrow(/COSSACK_ROUTE_PATTERN_UNSUPPORTED/);
+      expect(() => resolvePageRouteFiles([file])).toThrow(/only \[name\] and \[\.\.\.name\]/);
+    }
+  });
 });
 
 describe('trailing slash handling', () => {

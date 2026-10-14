@@ -97,6 +97,14 @@ export function filePathToRoutePath(filePath: string): string {
  * becomes `:slug{.+}` (a parameter spanning path segments).
  */
 export function filePathToHttpRoute(filePath: string): string {
+  // Optional segments (`[[...slug]]`, `[[id]]`) would otherwise translate to a
+  // broken `::slug{.+}` pattern that silently never matches.
+  if (filePath.includes('[[')) {
+    throw Object.assign(new Error(
+      `[Cossack] COSSACK_ROUTE_PATTERN_UNSUPPORTED: ${filePath} uses an optional segment ([[...]]). ` +
+      'Page routes support only [name] and [...name]. Add a sibling index page for the empty case instead.',
+    ), { code: 'COSSACK_ROUTE_PATTERN_UNSUPPORTED' });
+  }
   const route = filePath
     .replace('/src/pages', '')
     .replace(/\.(ts|js|md|mdx)$/, '')
@@ -162,8 +170,10 @@ function routeGroupCount(filePath: string): number {
  * like two routes made identical by removing route groups.
  */
 function pageRouteCollisionKey(filePath: string): string {
-  return filePathToHttpRoute(filePath).replace(/:[^/*]+(\*)?/g, (_match, star) =>
-    star ? ':*' : ':param');
+  // `[...slug]` becomes `:slug{.+}` and `[id]` becomes `:id`; they match
+  // different requests, so only same-kind parameters collide.
+  return filePathToHttpRoute(filePath).replace(/:[^/]+/g, (param) =>
+    param.endsWith('{.+}') ? ':*' : ':param');
 }
 
 /**
