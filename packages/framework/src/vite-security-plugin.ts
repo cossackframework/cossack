@@ -529,6 +529,36 @@ export function isClientOnlyModuleId(id: string): boolean {
 type ClientOnlyExports = { named: string[]; hasDefault: boolean };
 
 /**
+ * Single-quoted JavaScript string literal for any value, derived from
+ * JSON.stringify so quotes, backslashes and line terminators are escaped.
+ * Generated stubs keep their established `'name'` form for plain names.
+ */
+function jsString(value: string): string {
+  const inner = JSON.stringify(value).slice(1, -1)
+    .replace(/\\(.)|'/g, (match, escaped: string | undefined) =>
+      escaped === undefined ? "\\'" : escaped === '"' ? '"' : match);
+  return `'${inner}'`;
+}
+
+/** A `//` comment cannot contain line terminators. */
+function commentText(text: string): string {
+  return text.replace(/[\r\n\u2028\u2029]/g, ' ');
+}
+
+const IDENTIFIER_NAME = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * Emit `export const name = <value>` for an identifier export, or a local
+ * binding re-exported under a string-literal name (`export { x as "a-b" }`).
+ * Every interpolated name is a JSON string literal or a checked identifier.
+ */
+function stubExport(name: string, value: string, index: number): string {
+  if (IDENTIFIER_NAME.test(name)) return `export const ${name} = ${value};\n`;
+  const local = `__cossack_stub_${index}`;
+  return `const ${local} = ${value};\nexport { ${local} as ${jsString(name)} };\n`;
+}
+
+/**
  * Generate an SSR-safe interface for a browser-only module. Importing a stub
  * is harmless; any runtime interaction with one of its exports fails close to
  * the misuse with lifecycle guidance.
@@ -544,12 +574,12 @@ export function generateClientOnlyServerStub(id: string, moduleName = moduleLabe
   const exports = readClientOnlyExports(source, cleanId);
   const label = JSON.stringify(moduleName);
   const prelude =
-    `// [cossack-security] ${moduleName} is client-only — stubbed during SSR.\n` +
+    `// [cossack-security] ${commentText(moduleName)} is client-only — stubbed during SSR.\n` +
     `const __clientOnly = (name) => {\n` +
     `  const fail = () => { throw new Error('[Cossack] Client-only export "' + name + '" from "' + ${label} + '" was accessed during SSR. Use it only in onMount(), clientInit(), or an @Client() method.'); };\n` +
     `  return new Proxy(function () {}, { get: fail, set: fail, apply: fail, construct: fail });\n` +
     `};\n`;
-  const lines = exports.named.map((name) => `export const ${name} = __clientOnly(${JSON.stringify(name)});\n`);
+  const lines = exports.named.map((name, index) => stubExport(name, `__clientOnly(${JSON.stringify(name)})`, index));
   if (exports.hasDefault) lines.push(`export default __clientOnly('default');\n`);
   return prelude + lines.join('');
 }
@@ -610,8 +640,8 @@ function readClientOnlyExports(source: string, id: string, kind = 'Client-only m
 export function generateServerOnlyStub(id: string, moduleName: string): string {
   const namedExports = readNamedExports(id);
   const header =
-    `// [cossack-security] ${moduleName} is server-only — stubbed on the client.\n` +
-    `const stub = (name) => () => { throw new Error('${moduleName}.' + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
+    `// [cossack-security] ${commentText(moduleName)} is server-only — stubbed on the client.\n` +
+    `const stub = (name) => () => { throw new Error(${jsString(`${moduleName}.`)} + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
 
   if (namedExports.length === 0) {
     // Couldn't read/parse the real file. Emit a throwing Proxy so any named
@@ -620,15 +650,12 @@ export function generateServerOnlyStub(id: string, moduleName: string): string {
     // still surfaced in dev.
     return (
       header +
-      `// [cossack-security] Could not parse ${moduleName} exports — using a throwing Proxy fallback.\n` +
+      `// [cossack-security] Could not parse ${commentText(moduleName)} exports — using a throwing Proxy fallback.\n` +
       `export default new Proxy({}, { get: (_, name) => stub(String(name)) });\n`
     );
   }
 
-  const lines: string[] = [];
-  for (const name of namedExports) {
-    lines.push(`export const ${name} = stub('${name}');\n`);
-  }
+  const lines = namedExports.map((name, index) => stubExport(name, `stub(${jsString(name)})`, index));
   return header + lines.join('');
 }
 
@@ -664,7 +691,7 @@ function generateAuthClientStub(id: string): string {
       if (name === 'auth') {
         lines.push(`export const auth = { middleware: stub('middleware') };\n`);
       } else {
-        lines.push(`export const ${name} = stub('${name}');\n`);
+        lines.push(stubExport(name, `stub(${jsString(name)})`, lines.length));
       }
     }
     return (
@@ -676,7 +703,7 @@ function generateAuthClientStub(id: string): string {
   }
 
   const lines: string[] = [];
-  for (const name of namedExports) {
+  for (const [index, name] of namedExports.entries()) {
     // The `auth` kit object: client code only ever touches `auth.middleware`
     // (and only to register it, which is a server-bootstrap concern). Expose a
     // throwing middleware so accidental client invocation is loud, rather than
@@ -684,7 +711,7 @@ function generateAuthClientStub(id: string): string {
     if (name === 'auth') {
       lines.push(`export const auth = { middleware: stub('middleware') };\n`);
     } else {
-      lines.push(`export const ${name} = stub('${name}');\n`);
+      lines.push(stubExport(name, `stub(${jsString(name)})`, index));
     }
   }
   return header + lines.join('');
@@ -816,7 +843,10 @@ function readNamedExports(id: string): string[] {
         }
         // `export { foo, bar }` / `export { foo } from './y'`
         for (const spec of stmt.specifiers ?? []) {
-          if (spec.exported?.type === 'Identifier') names.add(spec.exported.name);
+          if (spec.exportKind === 'type') continue;
+          const exported = spec.exported?.type === 'Identifier' ? spec.exported.name
+            : typeof spec.exported?.value === 'string' ? spec.exported.value : undefined;
+          if (exported !== undefined && exported !== 'default') names.add(exported);
         }
         break;
       }
@@ -1687,32 +1717,36 @@ function createStub(
   className: string,
   devWarning: boolean
 ): string {
-  const renderGuard = `this.__cossackAssertNotRendering?.('${methodName}');`;
+  // Every interpolated name is emitted as a JSON string literal: a
+  // string-literal member key may contain quotes or line terminators.
+  const name = jsString(methodName);
+  const renderGuard = `this.__cossackAssertNotRendering?.(${name});`;
   if (devWarning) {
+    const message = jsString(
+      `[Cossack] ${className}.${methodName} was stripped from the client bundle ` +
+      'because it has no client-safe decorator and is not reachable from a ' +
+      'client-safe method. Add @Client, @On, @OnWindow, @OnDocument, @Computed, ' +
+      '@Shared, @Task, or @VisibleTask; ensure it is called (directly or ' +
+      'transitively) from a preserved method; or avoid calling it from client code.',
+    );
     return `{
       ${renderGuard}
       // Check if a proxy has been set up for this server-only method
-      const proxy = this.__cossack_proxies?.get('${methodName}');
+      const proxy = this.__cossack_proxies?.get(${name});
       if (proxy) {
         return proxy.apply(this, arguments);
       }
       // No proxy - this method was stripped because it has no client-safe
       // decorator and is not reachable from a client-safe method.
-      throw new Error(
-        '[Cossack] ${className}.${methodName} was stripped from the client bundle ' +
-        'because it has no client-safe decorator and is not reachable from a ' +
-        'client-safe method. Add @Client, @On, @OnWindow, @OnDocument, @Computed, ' +
-        '@Shared, @Task, or @VisibleTask; ensure it is called (directly or ' +
-        'transitively) from a preserved method; or avoid calling it from client code.'
-      );
+      throw new Error(${message});
     }`;
   }
   // Production: minimal stub that still checks for proxy
   return `{
     ${renderGuard}
-    const proxy = this.__cossack_proxies?.get('${methodName}');
+    const proxy = this.__cossack_proxies?.get(${name});
     if (proxy) return proxy.apply(this, arguments);
-    throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
+    throw new Error(${jsString(`[Cossack] ${className}.${methodName} was stripped from the client bundle.`)});
   }`;
 }
 
@@ -1735,22 +1769,24 @@ function createFieldStub(
   const sig = isFunction
     ? `${asyncPrefix}function (...args)`
     : `${asyncPrefix}(...args) =>`;
-  const renderGuard = `this.__cossackAssertNotRendering?.('${methodName}');`;
+  const name = jsString(methodName);
+  const message = jsString(`[Cossack] ${className}.${methodName} was stripped from the client bundle.`);
+  const renderGuard = `this.__cossackAssertNotRendering?.(${name});`;
   if (devWarning) {
     return `${sig} {
       ${renderGuard}
-      const proxy = this.__cossack_proxies?.get('${methodName}');
+      const proxy = this.__cossack_proxies?.get(${name});
       if (proxy) {
         return proxy.apply(this, args);
       }
-      throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
+      throw new Error(${message});
     }`;
   }
   return `${sig} {
     ${renderGuard}
-    const proxy = this.__cossack_proxies?.get('${methodName}');
+    const proxy = this.__cossack_proxies?.get(${name});
     if (proxy) return proxy.apply(this, args);
-    throw new Error('[Cossack] ${className}.${methodName} was stripped from the client bundle.');
+    throw new Error(${message});
   }`;
 }
 

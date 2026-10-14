@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { transformWithOxc } from 'vite';
+import { transformWithOxc, parseSync } from 'vite';
 /**
  * Unit tests for vite-security-plugin
  * Tests the code stripping functionality to ensure server-only code is properly removed from client bundles.
@@ -376,6 +376,21 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).toContain('clientMethod() {');
       expect(result).toContain("return 'client'");
+    });
+
+    it.each([true, false])('escapes string-literal member names in method and field stubs (devWarning=%s)', (devWarning) => {
+      const code = `
+@Page()
+export class Quoted extends Cossack {
+    "it's"() { return 'secret'; }
+    @Server() "a'b" = async () => 'secret';
+    @Server() "c\\\\'); globalThis.pwned = 1; ('" = function () { return 'secret'; };
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, devWarning);
+      expect(parseSync('quoted.ts', result, { lang: 'ts' }).errors).toEqual([]);
+      expect(result).not.toContain("'secret'");
+      expect(result).toContain(String.raw`__cossack_proxies?.get('it\'s')`);
+      expect(result).toContain(String.raw`__cossack_proxies?.get('a\'b')`);
     });
 
     it('should keep @On decorated methods (regression: previously stripped)', () => {
@@ -2169,6 +2184,16 @@ describe('server-only module detection', () => {
       expect(stub).toContain("export const listUsers = stub('listUsers');");
       // `export type User` must NOT produce a runtime stub binding.
       expect(stub).not.toContain("export const User");
+    });
+
+    it('escapes interpolated export names and module labels', async () => {
+      const p = track(tempFile('quoted.ts', `import { sql } from '@cossackframework/database';\nconst a = 1, b = 2;\nexport const listUsers = () => [];\nexport { a as "it's", b as "x\\\\'); globalThis.pwned = 1; ('" };\n`));
+      const stub = generateServerOnlyStub(p, "o'brien\n/svc");
+      expect(parseSync('stub.js', stub).errors).toEqual([]);
+      const module = await import(`data:text/javascript,${encodeURIComponent(stub)}`);
+      expect(() => module["it's"]()).toThrow("o'brien\n/svc.it's is server-only");
+      expect(() => module.listUsers()).toThrow('server-only');
+      expect((globalThis as any).pwned).toBeUndefined();
     });
 
     it('falls back to a throwing Proxy when exports cannot be parsed', () => {
