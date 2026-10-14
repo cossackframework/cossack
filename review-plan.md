@@ -195,7 +195,7 @@ Ordered by measured or structural impact.
 2. **`serializeFormValues` re-parses the whole output with parse5 for every nested template.** Run once at the outermost render. `ssr-form-values.ts:7-8`.
 3. **Security plugin `load()` reads and Oxc-parses every client module id, including PNGs and CSS**; server-only pages are parsed up to four times. Gate on extension, parse once. `vite-security-plugin.ts:175,681`.
 4. **Each client transform re-parses the module 3 to 6 times** and recomputes `frameworkClasses` per class. Compute once, thread the program through.
-5. **Static `/assets/*` requests run the full middleware stack** (config, auth, locale catalogs, flash). Short-circuit hashed assets. `router.ts:404-462`.
+5. **Static `/assets/*` requests run the full middleware stack** (config, auth, locale catalogs, flash). `router.ts:404-462`. Needs a design decision first: worker-first routing deliberately runs project middleware for assets (the deploy acceptance test asserts it), so a fast path must be opt-in. Do not cache the config store per env object: factories can create request-bound I/O objects, and reusing them crashed Workers in Phase 2.
 6. **`getInlineCss` never caches the negative decision**; every SSR request re-fetches and re-encodes the CSS bundle. `router.ts:248-274`.
 7. **Studio re-introspects the whole schema on every browse and three times per mutation**; remote D1 spawns dozens of `wrangler` processes per click. `studio/src/lib/service.ts:193-204`.
 8. `InMemoryRateLimitStore` runs an O(n) prune on every new-key insert at capacity. `rate-limit.ts:134-142`.
