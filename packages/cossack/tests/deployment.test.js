@@ -23,17 +23,33 @@ async function project(config) {
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 
 describe('deployment inspection with project Wrangler', () => {
-  it.each([undefined, false, ['/private/*']])('rejects assets that can bypass the Worker (%j)', async runWorkerFirst => {
+  it.each([undefined, false, ['/private/*'], ['/*'], ['!/assets/*', '/*'], ['/*', '!/assets/*', '!/private/*'], ['/*', '!/*']])(
+    'rejects assets that can bypass the Worker (%j)', async runWorkerFirst => {
+      const root = await project({ assets: { binding: 'ASSETS', run_worker_first: runWorkerFirst } });
+      const inspection = await inspectDeployment(root);
+      expect(inspection.diagnostics).toContainEqual({ code: 'COSSACK_ASSETS_WORKER_FIRST_REQUIRED', severity: 'error',
+        message: 'Set assets.run_worker_first to true or to ["/*","!/assets/*"]. Any other value lets Cloudflare serve public files before authentication and route policies run.' });
+    });
+
+  it.each([true, ['/*', '!/assets/*']])('accepts %j and rejects a renamed framework binding', async runWorkerFirst => {
     const root = await project({ assets: { binding: 'ASSETS', run_worker_first: runWorkerFirst } });
-    const inspection = await inspectDeployment(root);
-    expect(inspection.diagnostics).toContainEqual(expect.objectContaining({ code: 'COSSACK_ASSETS_WORKER_FIRST_REQUIRED' }));
+    expect((await inspectDeployment(root)).diagnostics).toEqual([]);
+    const invalid = await project({ assets: { binding: 'FILES', run_worker_first: runWorkerFirst } });
+    expect((await inspectDeployment(invalid)).diagnostics).toEqual([expect.objectContaining({ code: 'COSSACK_ASSETS_BINDING_REQUIRED' })]);
   });
 
-  it('accepts Worker-first assets and rejects a renamed framework binding', async () => {
-    const root = await project({ assets: { binding: 'ASSETS', run_worker_first: true } });
-    expect((await inspectDeployment(root)).diagnostics).toEqual([]);
-    const invalid = await project({ assets: { binding: 'FILES', run_worker_first: true } });
-    expect((await inspectDeployment(invalid)).diagnostics).toContainEqual(expect.objectContaining({ code: 'COSSACK_ASSETS_BINDING_REQUIRED' }));
+  it('reserves /assets for hashed build output', async () => {
+    const root = await project({ assets: { binding: 'ASSETS', run_worker_first: ['/*', '!/assets/*'] } });
+    await fs.mkdir(path.join(root, 'public/assets'), { recursive: true });
+    await fs.mkdir(path.join(root, 'src/pages/(files)/assets'), { recursive: true });
+    await fs.writeFile(path.join(root, 'src/pages/(files)/assets/index.ts'), 'export default class Files {}');
+    const { diagnostics } = await inspectDeployment(root);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: 'COSSACK_ASSETS_NAMESPACE_RESERVED', severity: 'error',
+        message: expect.stringContaining('public/assets/ uses the /assets/ namespace, which is reserved for hashed build output') }),
+      expect.objectContaining({ code: 'COSSACK_ASSETS_NAMESPACE_RESERVED', severity: 'error',
+        message: expect.stringContaining('src/pages/(files)/assets/index.ts resolves to /assets') }),
+    ]);
   });
 
   it('uses Wrangler environment inheritance and exposes names, not values', async () => {

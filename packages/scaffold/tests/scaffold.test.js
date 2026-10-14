@@ -58,6 +58,8 @@ describe('recipe resolution', () => {
     expect(config.vars).not.toHaveProperty('APP_SECRET');
     expect(config.secrets.required).toEqual(expect.arrayContaining(['APP_SECRET', 'OAUTH_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']));
     expect(config.d1_databases[0]).not.toHaveProperty('database_id');
+    // Hashed build output skips the Worker; everything else runs its policies.
+    expect(config.assets).toEqual({ binding: 'ASSETS', run_worker_first: ['/*', '!/assets/*'] });
     expect(ignored).toContain('.dev.vars*\n');
     expect(ignored).toContain('.env*\n');
     expect(ignored).toContain('!.dev.vars.example');

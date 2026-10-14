@@ -22,6 +22,7 @@ import { extractPageOptionsFromAst, isHttpHandlerModule } from './page-inspectio
 import { readBuildBindingNames } from './build-bindings.js';
 import { classifyRoute, filePathToHttpRoute, filePathToRoutePath } from './route-ids.js';
 import { validateMarkdownFrontmatter, isValidatedMarkdownFrontmatter } from './markdown-frontmatter.js';
+import { checkStaticAssetNamespace, describeUncoveredClientOutput, uncoveredClientOutput } from './static-asset-routing.js';
 
 export { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 
@@ -106,6 +107,7 @@ export function getConfiguredMarkdownProcessor(): MarkdownProcessor | undefined 
 
 export function cossackPages(options: CossackPagesOptions = {}): Plugin {
   let projectRoot = process.cwd();
+  let publicDirectory: string | false = 'public';
   let developmentBase = '/';
   let traceBridge: ReturnType<typeof installDevelopmentTraceBridge> | undefined;
   if (options.markdownProcessor) {
@@ -200,11 +202,20 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
     },
     configResolved(config) {
       projectRoot = config.root;
+      publicDirectory = config.publicDir || false;
       developmentBase = config.base;
       generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
     },
     async buildStart() {
-      generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+      const { manifest } = generateRoutes(projectRoot, { includeMarkdown: markdownEnabled });
+      // `/assets/*` skips the request pipeline (Cloudflare static routing and
+      // the generated Node server), so nothing else may live there.
+      const reserved = checkStaticAssetNamespace(projectRoot, { publicDir: publicDirectory, routes: manifest.routes });
+      if (reserved.length) {
+        const message = `[cossack] ${reserved.map(diagnostic => diagnostic.message).join('\n')}`;
+        if (this.environment?.mode === 'dev') this.warn(message);
+        else this.error({ code: reserved[0]!.code, message, id: reserved[0]!.file });
+      }
       if (options.capabilities) {
         const { runtime } = options.capabilities;
         const bindings = options.capabilities.bindings ?? (runtime === 'cloudflare'
@@ -471,6 +482,8 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
       // scripts (no hydration). Fail the build instead of shipping that.
       try {
         const data = readFileSync(src, 'utf-8');
+        const uncovered = uncoveredClientOutput(JSON.parse(data));
+        if (uncovered.length) this.warn(`[cossack] ${describeUncoveredClientOutput(uncovered)}`);
         const destDir = clientOutDir;
         if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
         const dest = resolve(destDir, 'cossack-manifest.json');

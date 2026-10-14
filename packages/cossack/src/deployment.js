@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { DeploymentError } from '@cossackframework/framework/deployment-artifact';
+import { DeploymentError, ASSETS_RUN_WORKER_FIRST, checkStaticAssetNamespace, isPolicyPreservingRunWorkerFirst } from '@cossackframework/framework/deployment-artifact';
 export { DeploymentError, inspectBuiltDeployment } from '@cossackframework/framework/deployment-artifact';
 import { exists } from './fs-utils.js';
 
@@ -117,10 +117,12 @@ export async function inspectDeployment(root, environment) {
       }
     }
   }
-  if (config.assets && config.assets.run_worker_first !== true) {
+  if (config.assets && !isPolicyPreservingRunWorkerFirst(config.assets.run_worker_first)) {
     error('COSSACK_ASSETS_WORKER_FIRST_REQUIRED',
-      'Set assets.run_worker_first to true so authentication and route policies run before static assets.');
+      `Set assets.run_worker_first to true or to ${JSON.stringify(ASSETS_RUN_WORKER_FIRST)}. Any other value lets Cloudflare serve public files before authentication and route policies run.`);
   }
+  // `public/assets/` and routes under `/assets` would skip the Worker.
+  for (const diagnostic of checkStaticAssetNamespace(root)) error(diagnostic.code, diagnostic.message);
   if (config.assets && config.assets.binding !== 'ASSETS') {
     error('COSSACK_ASSETS_BINDING_REQUIRED', 'Set assets.binding to ASSETS for framework asset serving.');
   }

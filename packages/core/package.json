@@ -58,6 +58,10 @@
       "types": "./dist/shared/server-diagnostics.d.ts",
       "import": "./dist/shared/server-diagnostics.js"
     },
+    "./static-assets": {
+      "types": "./dist/shared/static-assets.d.ts",
+      "import": "./dist/shared/static-assets.js"
+    },
     "./jobs": {
       "types": "./dist/jobs/index.d.ts",
       "import": "./dist/jobs/index.js"

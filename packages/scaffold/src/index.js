@@ -6,6 +6,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import { parseDocument } from 'yaml';
+import { ASSETS_RUN_WORKER_FIRST } from '@cossackframework/core/static-assets';
 import { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 export { dependencyBaseline, planDependencyChanges } from './dependencies.js';
 import {
@@ -468,7 +469,7 @@ function wranglerConfig(recipe, projectName) {
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
   "upload_source_maps": true,
-  "assets": { "binding": "ASSETS", "run_worker_first": true },
+  "assets": { "binding": "ASSETS", "run_worker_first": [${ASSETS_RUN_WORKER_FIRST.map(rule => json(rule)).join(', ')}] },
   "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",

@@ -37,6 +37,7 @@ export default defineConfig({
         input: path.resolve(__dirname, 'src/input.ts'),
         devtools: path.resolve(__dirname, 'src/devtools.ts'),
         'shared/server-diagnostics': path.resolve(__dirname, 'src/shared/server-diagnostics.ts'),
+        'shared/static-assets': path.resolve(__dirname, 'src/shared/static-assets.ts'),
         'shared/environment': path.resolve(__dirname, 'src/shared/environment.ts'),
         'shared/browser-environment': path.resolve(__dirname, 'src/shared/browser-environment.ts'),
         // These contracts are type-only. Keep an empty runtime module beside
