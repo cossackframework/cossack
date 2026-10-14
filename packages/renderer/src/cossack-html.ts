@@ -1,5 +1,5 @@
 import { serializeFormValues } from './ssr-form-values';
-import { analyzeTemplate, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
+import { getTemplateAnalysis, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
 import { ComponentResult, isComponentResult } from './component';
 import { CossackElement, pushCurrentInstance, popCurrentInstance, getComponentRange, setComponentRange, type ComponentRange } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
@@ -443,20 +443,13 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
 // Template analysis depends only on the static strings and the style scope,
 // so it is computed once per (strings, scope) and shared by every render and
 // every TemplateResult instance (e.g. each row of a list).
-const templateAnalyses = new WeakMap<TemplateStringsArray, Map<string, TemplateAnalysis>>();
-const getTemplateAnalysis = (result: TemplateResult): TemplateAnalysis => {
-  let byScope = templateAnalyses.get(result.strings);
-  if (!byScope) {
-    byScope = new Map();
-    templateAnalyses.set(result.strings, byScope);
-  }
-  const scope = result.__cossackScope ?? '';
-  let analysis = byScope.get(scope);
-  if (!analysis) {
-    analysis = analyzeTemplate(result.strings, result.__cossackScope);
-    byScope.set(scope, analysis);
-  }
-  return analysis;
+const analysisFor = (result: TemplateResult): TemplateAnalysis =>
+  getTemplateAnalysis(result.strings, result.__cossackScope);
+
+// A plain loop: Array.prototype.some takes a slow path on frozen arrays.
+const hasNothing = (indices: readonly number[], values: readonly unknown[]): boolean => {
+  for (let i = 0; i < indices.length; i++) if (values[indices[i]] === nothing) return true;
+  return false;
 };
 
 const rawTextString = (value: unknown): string => {
@@ -497,7 +490,7 @@ class SSRScanner {
   private analysis: TemplateAnalysis;
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
-    this.analysis = getTemplateAnalysis(resultObj);
+    this.analysis = analysisFor(resultObj);
   }
 
   scan(): string {
@@ -518,8 +511,8 @@ class SSRScanner {
         // otherwise treat it as its value; SSR has no DOM to compare against.
         if (binding.kind === 'attribute' && val instanceof LiveResult) val = val.value;
         // `nothing` in any slot of an attribute removes the whole attribute.
-        const group = attributeGroups.get(this.stringIdx);
-        if (group && group.indices.some((index) => values[index] === nothing)) {
+        const group = attributeGroups[this.stringIdx];
+        if (group && hasNothing(group.indices, values)) {
           if (this.result.endsWith(group.prefix)) {
             this.result = this.result.slice(0, -group.prefix.length);
           }
@@ -2498,7 +2491,7 @@ const getTemplateElement = (result: TemplateResult, { strings, bindings }: Templ
 
 const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
   const parts: Part[] = [];
-  const analysis = getTemplateAnalysis(result);
+  const analysis = analysisFor(result);
   const { bindings } = analysis;
 
   // Property, event and boolean bindings keep the author's case
