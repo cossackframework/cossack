@@ -399,9 +399,8 @@ describe('lifecycle process event contract', () => {
       await fs.writeFile(path.join(root, 'dist/server/index.js'),
         'require("node:fs").writeFileSync("started.txt", "yes"); console.log("server-private-value"); setInterval(() => {}, 10000);');
     } else {
-      const tools = path.join(root, 'tools'); await fs.mkdir(tools);
-      await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\nrequire("node:fs").writeFileSync("started.txt", "yes"); console.log("vite-private-value"); setInterval(() => {}, 10000);', { mode: 0o755 });
-      env = { PATH: tools + path.delimiter + process.env.PATH };
+      // dev runs the project's installed Vite, never one found on PATH.
+      await installedVite('require("node:fs").writeFileSync("started.txt", "yes"); console.log("vite-private-value"); setInterval(() => {}, 10000);');
     }
     const result = await execute([command, '--json'], { stopOnStarted: true, stopDelay: 500, env });
     expect(result.code).toBe(0);
@@ -415,11 +414,10 @@ describe('lifecycle process event contract', () => {
   });
 
   it('dev --env overrides the inherited environment and reports the resolved target', async () => {
-    const tools = path.join(root, 'tools'); await fs.mkdir(tools);
-    await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\nrequire("node:fs").writeFileSync("selected-env.txt", process.env.CLOUDFLARE_ENV || ""); setInterval(() => {}, 10000);', { mode: 0o755 });
+    await installedVite('require("node:fs").writeFileSync("selected-env.txt", process.env.CLOUDFLARE_ENV || ""); setInterval(() => {}, 10000);');
     const result = await execute(['dev', '--env', 'staging', '--json'], {
       stopOnStarted: true, stopDelay: 500,
-      env: { PATH: tools + path.delimiter + process.env.PATH, CLOUDFLARE_ENV: 'production' },
+      env: { CLOUDFLARE_ENV: 'production' },
     });
     expect(result.code).toBe(0);
     const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
@@ -443,13 +441,11 @@ describe('lifecycle process event contract', () => {
   });
 
   it.each([[true,143],[false,143],[true,130],[false,130]])('classifies a signal exit code only after requested shutdown (%s, %s)', async (requested, exitCode) => {
-    const tools = path.join(root, 'tools'); await fs.mkdir(tools);
     const source = requested
       ? `process.on("SIGTERM", () => process.exit(${exitCode})); setInterval(() => {}, 10000);`
       : `process.exit(${exitCode});`;
-    await fs.writeFile(path.join(tools, 'vite'), '#!/usr/bin/env node\n' + source, { mode: 0o755 });
-    const result = await execute(['dev', '--json'], { stopOnStarted: requested, stopDelay: 500,
-      env: { PATH: tools + path.delimiter + process.env.PATH } });
+    await installedVite(source);
+    const result = await execute(['dev', '--json'], { stopOnStarted: requested, stopDelay: 500 });
     expect(result.code).toBe(requested ? 0 : 1);
     const events = result.stdout.trim().split('\n').map(line => JSON.parse(line));
     expect(events.at(-1)).toMatchObject({ ok: requested, data: { event: requested ? 'stopped' : 'failed', exitCode } });

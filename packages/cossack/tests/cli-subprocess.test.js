@@ -499,7 +499,8 @@ describe('lifecycle commands', () => {
   }, 30_000);
 
   it('dev/start --json report unavailable tools or build artifacts without logs', async () => {
-    for (const [command, code] of [['dev', 'COSSACK_DEV_FAILED'], ['start', 'COSSACK_SERVER_ENTRY_MISSING']]) {
+    // dev resolves the project's installed Vite; without it no process starts.
+    for (const [command, code] of [['dev', 'COSSACK_PROJECT_TOOL_MISSING'], ['start', 'COSSACK_SERVER_ENTRY_MISSING']]) {
       const result = await runCli([command, '--json'], { env: { ...process.env, PATH: '/nonexistent' } });
       expect(result.code, command).toBe(1);
       const envelope = parseEnvelope(result.stdout);
