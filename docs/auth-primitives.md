@@ -42,9 +42,10 @@ factor or choose a custom hasher.
 callbacks. Account records can include secrets. The `user` callback returns the
 safe application user only after successful verification. Missing accounts,
 missing hashes and rejected passwords return `null`. For a missing account or
-hash, the verifier still runs `hasher.verify` against a dummy hash that the
-same hasher creates once, on first use. The result is discarded. This keeps the
-work, and so the response time, close to a wrong password, so timing does not
+hash, the verifier still does one key derivation. The first miss creates a
+dummy hash with the same hasher; later misses run `hasher.verify` against it and
+discard the result. This keeps the work, and so the response time, close to a
+wrong password, so timing does not
 reveal which identifiers exist. Lookup time in `find` remains the application's
 responsibility. Identifier normalization,
 password policy and rate limiting belong to the application.
