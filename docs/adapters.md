@@ -110,6 +110,25 @@ runtime never sees HMR upgrades, whatever `destroyUnmatchedUpgrades` is set to.
 
 You can generate a project pre-configured with this adapter using the `cossack` CLI.
 
+## Node static files
+
+`serveStatic` from `@cossackframework/node-adapter` streams files from disk. It
+does not read a whole file into memory. Each response has `Content-Length`, a weak
+`ETag`, `Last-Modified`, and `Accept-Ranges: bytes`.
+
+- Conditional requests: a matching `If-None-Match` returns `304 Not Modified`.
+  If the request has no `If-None-Match`, an `If-Modified-Since` date at or after
+  the file's `Last-Modified` time also returns `304`.
+- Range requests: one `Range: bytes=...` on a GET request returns
+  `206 Partial Content` with `Content-Range`. A range that starts past the end of
+  the file returns `416 Range Not Satisfiable`. A request with several ranges, or
+  an invalid range, gets the whole file with `200`. `If-Range` accepts only the
+  file's unchanged `Last-Modified` date, because the `ETag` is weak.
+- HEAD returns the same headers as GET without a body. It ignores `Range`.
+
+The `cacheControl` option sets `Cache-Control` on `200`, `206`, and `304`
+responses. It does not set it on `416` responses.
+
 ## Static asset boundaries
 
 The Node and Desktop asset servers resolve symlinks before reading a file.

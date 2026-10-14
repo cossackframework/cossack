@@ -61,8 +61,7 @@ function weakEtag(stats: fs.Stats): string {
 }
 
 /** `If-None-Match` uses weak comparison (RFC 9110 §13.1.2). */
-function matchesIfNoneMatch(header: string | undefined, etag: string): boolean {
-    if (!header) return false;
+function matchesIfNoneMatch(header: string, etag: string): boolean {
     const opaque = etag.replace(/^W\//, '');
     return header.split(',').some(candidate => {
         const value = candidate.trim();
@@ -70,9 +69,63 @@ function matchesIfNoneMatch(header: string | undefined, etag: string): boolean {
     });
 }
 
+/** Parse an HTTP-date; future dates are invalid (RFC 9110 §13.1.3). */
+function pastDate(value: string | undefined, now: number): number | undefined {
+    const date = value ? Date.parse(value) : NaN;
+    return Number.isFinite(date) && date <= now ? date : undefined;
+}
+
+/**
+ * RFC 9110 §13.2.2: `If-None-Match` takes precedence; `If-Modified-Since` is
+ * evaluated only without it. Both apply to GET and HEAD.
+ */
+function notModified(c: Context, etag: string, lastModified: number, now: number): boolean {
+    const ifNoneMatch = c.req.header('if-none-match');
+    if (ifNoneMatch) return matchesIfNoneMatch(ifNoneMatch, etag);
+    const since = pastDate(c.req.header('if-modified-since'), now);
+    return since !== undefined && lastModified <= since;
+}
+
+type ByteRange = { start: number; end: number };
+
+/**
+ * One `bytes=first-last`, `bytes=first-` or `bytes=-suffix` range (RFC 9110 §14.1.2).
+ * Returns `undefined` to ignore the header and send the whole file (absent,
+ * malformed, another unit, or several ranges) and `null` when unsatisfiable.
+ */
+function parseRange(header: string | undefined, size: number): ByteRange | null | undefined {
+    if (!header) return undefined;
+    const match = /^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$/i.exec(header);
+    if (!match || (!match[1] && !match[2])) return undefined;
+    const [, first, last] = match;
+    if (!first) {
+        const suffix = Number(last);
+        return suffix === 0 || size === 0 ? null : { start: Math.max(0, size - suffix), end: size - 1 };
+    }
+    const start = Number(first), end = last ? Number(last) : Infinity;
+    if (end < start) return undefined;
+    return start >= size ? null : { start, end: Math.min(end, size - 1) };
+}
+
+/**
+ * `If-Range` (RFC 9110 §13.1.5) needs a strong validator. The weak ETag never
+ * matches; a date matches only if it equals a Last-Modified at least one second old.
+ */
+function rangeStillApplies(ifRange: string | undefined, lastModified: number, now: number): boolean {
+    if (ifRange === undefined) return true;
+    const value = ifRange.trim();
+    if (value.startsWith('"') || value.startsWith('W/')) return false;
+    return pastDate(value, now) === lastModified && now - lastModified >= 1000;
+}
+
 /**
  * Create a middleware that serves static files from a directory.
  * This is for Node.js runtime only - uses fs to read files.
+ *
+ * Files are streamed. Responses carry a weak `ETag`, `Last-Modified` and
+ * `Accept-Ranges: bytes`; `If-None-Match`/`If-Modified-Since` return 304, and a
+ * single `Range` on GET returns 206 (416 when unsatisfiable). Several ranges
+ * receive the whole file with 200.
  *
  * @param options - Static serving options
  * @returns Hono middleware
@@ -145,28 +198,44 @@ export function serveStatic(options: StaticServeOptions) {
                 if (!stats.isFile()) return next();
             }
 
+            const now = Date.now();
             const etag = weakEtag(stats);
+            // HTTP dates have one-second precision and must not be in the future.
+            const lastModified = Math.min(Math.floor(stats.mtimeMs / 1000), Math.floor(now / 1000)) * 1000;
             const headers = new Headers({ ETag: etag });
             const resolvedCacheControl = typeof cacheControl === 'function'
                 ? cacheControl(filePath, urlPath)
                 : cacheControl;
             if (resolvedCacheControl) headers.set('Cache-Control', resolvedCacheControl);
 
-            if (matchesIfNoneMatch(c.req.header('if-none-match'), etag)) {
+            if (notModified(c, etag, lastModified, now)) {
                 return new Response(null, { status: 304, headers });
+            }
+            headers.set('Last-Modified', new Date(lastModified).toUTCString());
+            headers.set('Accept-Ranges', 'bytes');
+
+            // Range handling is defined only for GET (RFC 9110 §14.2); HEAD describes the whole file.
+            const range = method === 'GET' && rangeStillApplies(c.req.header('if-range'), lastModified, now)
+                ? parseRange(c.req.header('range'), stats.size)
+                : undefined;
+            if (range === null) {
+                return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${stats.size}`, 'Accept-Ranges': 'bytes', 'Content-Length': '0' } });
             }
 
             // Serve with the correct Content-Type. Previously c.html() forced
             // text/html for every asset (CSS, JS, images, fonts).
             headers.set('Content-Type', getContentType(filePath));
-            headers.set('Content-Length', String(stats.size));
-            if (!file || stats.size === 0) return new Response(null, { status: 200, headers });
+            const start = range?.start ?? 0, end = range?.end ?? stats.size - 1;
+            const status = range ? 206 : 200;
+            if (range) headers.set('Content-Range', `bytes ${start}-${end}/${stats.size}`);
+            headers.set('Content-Length', String(end - start + 1));
+            if (!file || stats.size === 0) return new Response(null, { status, headers });
 
             // Stream instead of buffering. `end` (inclusive) caps the body at the
             // advertised length; the stream owns and closes the handle from here.
-            const stream = file.createReadStream({ end: stats.size - 1, autoClose: true });
+            const stream = file.createReadStream({ start, end, autoClose: true });
             file = undefined;
-            return new Response(Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>, { status: 200, headers });
+            return new Response(Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>, { status, headers });
         } catch {
             // File doesn't exist or other error
             return next();
