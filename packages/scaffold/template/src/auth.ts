@@ -117,14 +117,15 @@ export const authSessions = createSessionManager({
     async replace(expected, replacement, now) {
       // One SQL statement owns rotation. Match the complete prior record and
       // auth purpose so concurrent rotation or revocation can have only one winner.
+      // Pass Date values: the sql tag encodes them in the column's stored format.
       const result = await sql`
         UPDATE sessions SET id = ${replacement.id},
-          created_at = ${new Date(replacement.createdAt).toISOString()},
-          expires_at = ${new Date(replacement.expiresAt).toISOString()}
+          created_at = ${new Date(replacement.createdAt)},
+          expires_at = ${new Date(replacement.expiresAt)}
         WHERE id = ${expected.id} AND user_id = ${expected.userId}
-          AND created_at = ${new Date(expected.createdAt).toISOString()}
-          AND expires_at = ${new Date(expected.expiresAt).toISOString()}
-          AND expires_at > ${new Date(Math.max(now, Date.now())).toISOString()}
+          AND created_at = ${new Date(expected.createdAt)}
+          AND expires_at = ${new Date(expected.expiresAt)}
+          AND expires_at > ${new Date(Math.max(now, Date.now()))}
           AND meta = ${JSON.stringify({ type: 'auth' })}
       `;
       return result.meta.rowsAffected === 1;
@@ -355,7 +356,7 @@ async function sessionWithReference(row: Session, userId: string): Promise<Sessi
     await sql`UPDATE sessions SET public_id = ${crypto.randomUUID()}
       WHERE id = ${row.id} AND user_id = ${userId} AND public_id IS NULL
         AND meta = ${JSON.stringify({ type: 'auth' })}
-        AND expires_at > ${new Date().toISOString()}`;
+        AND expires_at > ${new Date()}`;
     const stored = await Session.findOne({ where: { id: row.id, userId } });
     if (!stored || parseMeta(stored.meta)?.type !== 'auth' || stored.expiresAt.getTime() <= Date.now()) return null;
     row = stored;
@@ -404,7 +405,7 @@ export async function revokeSession(c: Context, reference: string): Promise<bool
     WHERE public_id = ${reference} AND user_id = ${userId} AND id <> ${currentId}
       AND public_id <> ${currentReference}
       AND meta = ${JSON.stringify({ type: 'auth' })}
-      AND expires_at > ${new Date().toISOString()}`;
+      AND expires_at > ${new Date()}`;
   return result.meta.rowsAffected === 1;
 }
 

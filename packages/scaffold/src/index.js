@@ -1245,7 +1245,7 @@ export const oauthStateStore: OAuthStateStore = {
     // One conditional write owns callback replay. Never read then delete.
     const result = await sql\`DELETE FROM sessions WHERE id = \${key}
       AND user_id IS NULL AND meta = \${JSON.stringify({ type: 'oauth_state', provider })}
-      AND expires_at > \${new Date(Math.max(now, Date.now())).toISOString()}\`;
+      AND expires_at > \${new Date(Math.max(now, Date.now()))}\`;
     return result.meta.rowsAffected === 1;
   },
 };

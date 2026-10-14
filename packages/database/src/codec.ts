@@ -6,7 +6,7 @@ import type { ColumnMetadata } from "./metadata/types.js";
  * keeps application values and database defaults comparable and sortable.
  * PostgreSQL `timestamptz` receives an ISO string with an explicit `Z`.
  */
-function encodeDateTime(value: Date, dialect: string): string {
+export function encodeDateTime(value: Date, dialect: string): string {
   const iso = value.toISOString();
   return dialect === "postgres" ? iso : `${iso.slice(0, 10)} ${iso.slice(11, 23)}`;
 }

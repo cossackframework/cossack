@@ -1,3 +1,4 @@
+import { encodeDateTime } from "../codec.js";
 import type { DatabaseValue, Dialect, QueryResult } from "../adapter/types.js";
 
 const SQL_FRAGMENT = Symbol.for("@cossackframework/database/sql-fragment");
@@ -54,7 +55,10 @@ export function compileSQL(fragment: SQLFragment, dialect: Dialect): CompiledQue
       } else if (node.kind === "fragment") {
         visit(node.value.nodes);
       } else {
-        const value = node.value === undefined ? null : node.value;
+        // Raw Date parameters use the same per-dialect text the ORM stores, so
+        // raw comparisons such as `expires_at > ${new Date()}` match ORM rows.
+        const value = node.value === undefined ? null
+          : node.value instanceof Date ? encodeDateTime(node.value, dialect.name) : node.value;
         parameters.push(value);
         text += dialect.placeholder(parameters.length);
       }

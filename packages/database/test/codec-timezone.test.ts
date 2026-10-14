@@ -16,6 +16,9 @@ import {
   createORM,
 } from "../src/index.js";
 import { decodeValue, encodeValue } from "../src/codec.js";
+import { compileSQL } from "../src/sql/fragment.js";
+import { sql } from "../src/sql/tag.js";
+import { dialectFor } from "../src/dialect/dialects.js";
 import type { ColumnMetadata } from "../src/metadata/types.js";
 import { nodeSQLite } from "../src/runtime/node.js";
 
@@ -80,6 +83,31 @@ describe("datetime codec in a non-UTC time zone", () => {
         // Application dates and database defaults share one sortable text format.
         const recent = await Event.find({ where: { createdAt: MoreThan(new Date(before)) } });
         expect(recent.map((event) => event.id)).toEqual([1]);
+      });
+    } finally {
+      await orm.close();
+    }
+  });
+
+  it("encodes raw sql Date parameters like stored values", () => {
+    const value = new Date(Date.UTC(2026, 0, 2, 3, 4, 5, 6));
+    const fragment = sql`SELECT ${value}`;
+    expect(compileSQL(fragment, dialectFor("sqlite")).parameters).toEqual(["2026-01-02 03:04:05.006"]);
+    expect(compileSQL(fragment, dialectFor("mysql")).parameters).toEqual(["2026-01-02 03:04:05.006"]);
+    expect(compileSQL(fragment, dialectFor("postgres")).parameters).toEqual(["2026-01-02T03:04:05.006Z"]);
+  });
+
+  it("matches ORM-written dates from raw SQL comparisons on SQLite", async () => {
+    const orm = createORM({ adapter: await nodeSQLite(), entities: [Event] });
+    try {
+      await orm.run(async () => {
+        await new SchemaBuilder().createTable(orm.schema().entities[0]!).execute(orm);
+        const createdAt = new Date(Date.UTC(2026, 0, 2, 3, 4, 5, 6));
+        await Event.create({ id: 3, name: "raw", createdAt }).save();
+        const equal = await orm.sql`UPDATE events SET name = ${"matched"} WHERE id = ${3} AND created_at = ${createdAt}`;
+        expect(equal.meta.rowsAffected).toBe(1);
+        const later = await orm.sql`SELECT id FROM events WHERE created_at > ${new Date(createdAt.getTime() - 1)}`;
+        expect(later.rows).toEqual([{ id: 3 }]);
       });
     } finally {
       await orm.close();
