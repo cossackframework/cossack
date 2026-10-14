@@ -21,8 +21,13 @@ export type BindingInfo =
    * `name=` or `name="`; `prefixStart` is the index in the (scoped) string
    * where that `name=` text begins. Other attribute bindings interpolate into
    * a value that already started.
+   *
+   * `directValue` is true when a `.value` set here (directly or through a
+   * spread) can be serialized by SSR as a plain `value` attribute: the element
+   * is not a <textarea>/<select> and has no static `value` attribute. Other
+   * cases need the serializeFormValues pass.
    */
-  | { kind: 'attribute'; name: string; start: boolean; quote: '"' | "'" | ''; prefixStart: number }
+  | AttributeBinding
   /**
    * Text content of a raw-text element (`tag` is lowercase). `first` is true
    * when no text precedes the binding inside the element.
@@ -32,6 +37,15 @@ export type BindingInfo =
   | { kind: 'comment' }
   /** In a tag but not in an attribute value (e.g. `<div ${x}>`). Dropped. */
   | { kind: 'element' };
+
+export interface AttributeBinding {
+  kind: 'attribute';
+  name: string;
+  start: boolean;
+  quote: '"' | "'" | '';
+  prefixStart: number;
+  directValue: boolean;
+}
 
 /** An attribute that contains bindings, used to drop it whole for `nothing`. */
 export interface AttributeGroup {
@@ -108,12 +122,17 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
   let commentTail = '';
   let attr: OpenAttribute | null = null;
   let spaceStart = -1;
+  // Attribute bindings of the tag being read and whether it has a static
+  // `value` attribute; resolved into `directValue` when the tag closes.
+  let tagBindings: AttributeBinding[] = [];
+  let tagHasStaticValue = false;
 
   for (let i = 0; i < input.length; i++) {
     const str = input[i];
     let out = '';
 
     const closeAttribute = (endInThisString: number) => {
+      if (attr && attr.indices.length === 0 && attr.name.toLowerCase() === 'value') tagHasStaticValue = true;
       if (attr && attr.indices.length > 0 && attr.stringIndex === attr.indices[0]) {
         const last = attr.indices[attr.indices.length - 1];
         // The suffix lives at the start of the string after the last binding.
@@ -127,6 +146,10 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
     };
     // The state after an opening tag's `>`: raw text for raw-text elements.
     const afterTag = (): State => {
+      closeAttribute(0);
+      const directValue = tagName !== 'textarea' && tagName !== 'select' && !tagHasStaticValue;
+      for (const binding of tagBindings) binding.directValue = directValue;
+      tagBindings = [];
       const next = RAW_TEXT_TAGS.has(tagName) ? State.RawText : State.Data;
       if (next === State.RawText) {
         rawTextTag = tagName;
@@ -146,6 +169,8 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
             if (isAsciiAlpha(next)) {
               state = State.TagName;
               tagName = '';
+              tagBindings = [];
+              tagHasStaticValue = false;
             } else if (next === '/' && isAsciiAlpha(str[j + 2])) {
               state = State.EndTag;
             } else if (next === '!' && str[j + 2] === '-' && str[j + 3] === '-') {
@@ -303,13 +328,16 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
             open.prefix = out.slice(open.spaceStart);
           }
           open.indices.push(i);
-          bindings.push({
+          const binding: AttributeBinding = {
             kind: 'attribute',
             name: open.name,
             start,
             quote: quoted ? quote : '',
             prefixStart: start ? open.nameStart : -1,
-          });
+            directValue: false,
+          };
+          bindings.push(binding);
+          tagBindings.push(binding);
           if (state === State.BeforeAttrValue) state = State.AttrValueUnquoted;
           valueEmpty = false;
           break;

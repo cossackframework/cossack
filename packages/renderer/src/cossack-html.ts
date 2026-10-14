@@ -186,7 +186,7 @@ const renderComponentSSR = (instance: CossackElement, opts: { hydrate?: boolean 
     ? wrappedRender.call(instance)
     : instance._finalizeRenderOutput(instance.render());
   if (!template) return '';
-  return renderToString(isTemplateResult(template) ? template : html`${template}`, opts);
+  return renderTemplateMarkup(isTemplateResult(template) ? template : html`${template}`, opts);
 };
 
 const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string => {
@@ -203,7 +203,7 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     return value.map((v) => valueToString(v, opts)).join('');
   }
   if (isTemplateResult(value)) {
-    return renderToString(value, opts);
+    return renderTemplateMarkup(value, opts);
   }
   if (value instanceof LiveResult || value instanceof IfDefinedResult) {
     // Node position has no attribute to omit: `ifDefined(undefined)` renders
@@ -320,17 +320,20 @@ interface SpreadRenderContext {
  * (`.innerHTML`, `.tabIndex`, custom element data) renders nothing; the
  * client sets it on hydration.
  */
-const propertyBindingSSR = (prop: string, value: unknown): string => {
+const propertyBindingSSR = (prop: string, value: unknown, directValue: boolean): string => {
   if (value instanceof BindResult) value = resolveField(value.component, value.fieldName);
   if (value instanceof LiveResult) value = value.value;
   if (value === nothing) return '';
-  if (prop === 'value') return ` .value="${escapeHtml(String(value ?? ''))}"`;
+  // Inputs and most elements take the value as a plain attribute. <textarea>,
+  // <select> and tags with a static default `value` need the structural
+  // serializeFormValues pass, which the temporary ` .value` attribute requests.
+  if (prop === 'value') return ` ${directValue ? 'value' : '.value'}="${escapeHtml(String(value ?? ''))}"`;
   const attr = prop.toLowerCase();
   if (BOOLEAN_ATTRS.has(attr)) return value ? ` ${attr}` : '';
   return '';
 };
 
-const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
+const renderSpread = (obj: unknown, ctx: SpreadRenderContext, directValue = false): void => {
   if (obj === nothing || typeof obj !== 'object' || obj === null) return;
   for (const [k, v] of Object.entries(obj)) {
     if (k.startsWith('@')) continue;
@@ -344,7 +347,7 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
     }
     if (k.startsWith('.')) {
       // Same rules as a direct `.prop` binding (bind()/live() unwrapped).
-      ctx.result += propertyBindingSSR(k.slice(1), val);
+      ctx.result += propertyBindingSSR(k.slice(1), val, directValue);
       continue;
     }
 
@@ -541,7 +544,7 @@ class SSRScanner {
             // spread attributes are appended, while a caller-supplied `class`
             // is merged into an existing `class="..."` on the current open tag.
             const ctx: SpreadRenderContext = { result: this.result };
-            renderSpread(val, ctx);
+            renderSpread(val, ctx, binding.directValue);
             this.result = ctx.result;
           } else if (name === 'ref') {
             // `ref` is a Cossack directive (value is a RefObject); it has no
@@ -561,7 +564,7 @@ class SSRScanner {
             }
           } else if (name.startsWith('.')) {
             this.result = this.result.trimEnd();
-            this.result += propertyBindingSSR(name.slice(1), val);
+            this.result += propertyBindingSSR(name.slice(1), val, binding.directValue);
           } else if (val instanceof IfDefinedResult) {
             // `ifDefined`: drop the attribute only when the value is undefined;
             // render every other value (incl. false/null/0/'') as a normal
@@ -637,14 +640,21 @@ class SSRScanner {
       }
       this.stringIdx++;
     }
-    return serializeFormValues(this.result);
+    return this.result;
   }
 }
 
-export const renderToString = (result: TemplateResult, opts: { hydrate?: boolean } = {}): string => {
-  const scanner = new SSRScanner(result, opts);
-  return scanner.scan();
-};
+/**
+ * Render a template to markup that may still contain temporary ` .value`
+ * attributes. Nested templates and components use this so the document is
+ * post-processed by serializeFormValues (a parse5 pass) once, at the
+ * outermost renderToString, instead of once per nested template.
+ */
+const renderTemplateMarkup = (result: TemplateResult, opts: { hydrate?: boolean }): string =>
+  new SSRScanner(result, opts).scan();
+
+export const renderToString = (result: TemplateResult, opts: { hydrate?: boolean } = {}): string =>
+  serializeFormValues(renderTemplateMarkup(result, opts));
 
 // --- Client-Side Implementation ---
 
