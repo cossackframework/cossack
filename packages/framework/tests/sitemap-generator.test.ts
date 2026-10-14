@@ -65,6 +65,26 @@ describe('sitemap-generator', () => {
       expect(sitemap).toContain('/about');
     });
 
+    it('classifies whole route segments instead of matching substrings', () => {
+      const route = (routePath: string): SsgRoute => ({ routePath, filePath: `/src/pages${routePath}/index.ts`, component: MockCossack as any });
+      const sitemap = generateSitemap(
+        ['/error-codes', '/404-stories', '/docs/api-reference', '/api', '/api/users', '/blog/404', '/blog/error', '/404', 'error/']
+          .map(route),
+        { baseUrl: 'https://example.com' },
+      );
+      expect(sitemap).toContain('<loc>https://example.com/error-codes</loc>');
+      expect(sitemap).toContain('<loc>https://example.com/404-stories</loc>');
+      expect(sitemap).toContain('<loc>https://example.com/docs/api-reference</loc>');
+      for (const excluded of ['/api<', '/api/users', '/blog/404', '/blog/error', '.com/404<', '.com/error<']) {
+        expect(sitemap).not.toContain(excluded);
+      }
+      const fromUrls = generateSitemapFromUrls(['/api', '/error-codes', 'https://example.com/api/x', 'https://example.com/404-stories'],
+        { baseUrl: 'https://example.com' });
+      expect(fromUrls).not.toContain('example.com/api');
+      expect(fromUrls).toContain('/error-codes');
+      expect(fromUrls).toContain('/404-stories');
+    });
+
     it('should exclude 404 pages', () => {
       const routes: SsgRoute[] = [
         {
