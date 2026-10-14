@@ -16,6 +16,7 @@ import type {
   StudioSchema,
 } from './schema-types.js';
 import type { OrmSchema } from '@cossackframework/database';
+import { runStatements } from './batch.js';
 
 const SQLITE_ROWID_ALIAS = '__cossack_rowid__';
 const POSTGRES_TABLEOID_ALIAS = '__cossack_tableoid__';
@@ -480,6 +481,13 @@ function generatedDefinition(
   return `CREATE TABLE ${quote(row.name)} (\n${lines.join(',\n')}\n)`;
 }
 
+/**
+ * Introspect SQLite-family databases in three rounds of statements (object
+ * list, per-object PRAGMAs, per-index PRAGMAs) instead of one round trip per
+ * PRAGMA. Connections with `batch()` (remote D1) send each round as a few
+ * batches, so the number of Wrangler processes does not grow with the
+ * number of tables.
+ */
 async function introspectSqlite(connection: StudioConnection): Promise<StudioObject[]> {
   // D1 exposes protected metadata tables that reject PRAGMA inspection with SQLITE_AUTH.
   const excludeCloudflareTables = connection.info.provider === 'd1-local' ||
@@ -493,13 +501,40 @@ async function introspectSqlite(connection: StudioConnection): Promise<StudioObj
       AND name NOT LIKE 'sqlite_%'${excludeCloudflareTables}
     ORDER BY type, name
   `);
+  const rows = schemaRows(result.rows);
+  const objectStatements = rows.flatMap((row) => {
+    const name = quoteIdentifier(row.name);
+    return row.type === 'table'
+      ? [
+          { sql: `PRAGMA table_xinfo(${name})` },
+          { sql: `PRAGMA index_list(${name})` },
+          { sql: `PRAGMA foreign_key_list(${name})` },
+        ]
+      : [{ sql: `PRAGMA table_xinfo(${name})` }];
+  });
+  const objectResults = await runStatements(connection, objectStatements);
+  let cursor = 0;
+  const pragmas = rows.map((row) => {
+    const columns = objectResults[cursor++]!.rows;
+    if (row.type !== 'table') return { columns, indexes: [], foreignKeys: [] };
+    return {
+      columns,
+      indexes: pragmaIndexes(objectResults[cursor++]!.rows),
+      foreignKeys: objectResults[cursor++]!.rows,
+    };
+  });
+  const indexResults = await runStatements(
+    connection,
+    pragmas.flatMap((pragma) => pragma.indexes.map((index) => ({
+      sql: `PRAGMA index_xinfo(${quoteIdentifier(index.name)})`,
+    }))),
+  );
+  cursor = 0;
   const objects: StudioObject[] = [];
-  for (const row of schemaRows(result.rows)) {
-    const pragma = await connection.execute(
-      `PRAGMA table_xinfo(${quoteIdentifier(row.name)})`,
-    );
+  for (const [position, row] of rows.entries()) {
+    const pragma = pragmas[position]!;
     const definition = row.sql ?? '';
-    const columns = pragmaColumns(pragma.rows).map((column) => {
+    const columns = pragmaColumns(pragma.columns).map((column) => {
       const dataType = column.type ?? '';
       const primaryKeyPosition = Number(column.pk ?? 0);
       return {
@@ -516,64 +551,49 @@ async function introspectSqlite(connection: StudioConnection): Promise<StudioObj
         hidden: Number(column.hidden ?? 0) !== 0,
       };
     });
-    const indexes: StudioIndex[] = [];
-    const foreignKeys: StudioForeignKey[] = [];
-    if (row.type === 'table') {
-      const indexList = await connection.execute(
-        `PRAGMA index_list(${quoteIdentifier(row.name)})`,
-      );
-      for (const index of pragmaIndexes(indexList.rows)) {
-        const indexInfo = await connection.execute(
-          `PRAGMA index_xinfo(${quoteIdentifier(index.name)})`,
-        );
-        indexes.push({
-          name: index.name,
-          unique: Number(index.unique ?? 0) !== 0,
-          origin: index.origin ?? 'c',
-          partial: Number(index.partial ?? 0) !== 0,
-          columns: pragmaIndexColumns(indexInfo.rows)
-            .filter((column) => Number(column.key ?? 1) !== 0)
-            .map((column) => ({
-              name: column.name ?? null,
-              position: Number(column.seqno ?? 0),
-              descending: Number(column.desc ?? 0) !== 0,
-              collation: column.coll ?? null,
-            })),
-        });
+    const indexes: StudioIndex[] = pragma.indexes.map((index) => ({
+      name: index.name,
+      unique: Number(index.unique ?? 0) !== 0,
+      origin: index.origin ?? 'c',
+      partial: Number(index.partial ?? 0) !== 0,
+      columns: pragmaIndexColumns(indexResults[cursor++]!.rows)
+        .filter((column) => Number(column.key ?? 1) !== 0)
+        .map((column) => ({
+          name: column.name ?? null,
+          position: Number(column.seqno ?? 0),
+          descending: Number(column.desc ?? 0) !== 0,
+          collation: column.coll ?? null,
+        })),
+    }));
+    const grouped = new Map<number, StudioForeignKey>();
+    for (const foreignKey of pragmaForeignKeys(pragma.foreignKeys)) {
+      const id = Number(foreignKey.id ?? 0);
+      const referencedTable = foreignKey.table;
+      const column = foreignKey.from;
+      const referencedColumn = foreignKey.to;
+      if (!referencedTable || !column || !referencedColumn) continue;
+      let definition = grouped.get(id);
+      if (!definition) {
+        definition = {
+          name: `fk_${row.name}_${id}`,
+          referencedTable,
+          columns: [],
+          onUpdate: foreignKey.on_update ?? null,
+          onDelete: foreignKey.on_delete ?? null,
+        };
+        grouped.set(id, definition);
       }
-      const foreignKeyList = await connection.execute(
-        `PRAGMA foreign_key_list(${quoteIdentifier(row.name)})`,
-      );
-      const grouped = new Map<number, StudioForeignKey>();
-      for (const foreignKey of pragmaForeignKeys(foreignKeyList.rows)) {
-        const id = Number(foreignKey.id ?? 0);
-        const referencedTable = foreignKey.table;
-        const column = foreignKey.from;
-        const referencedColumn = foreignKey.to;
-        if (!referencedTable || !column || !referencedColumn) continue;
-        let definition = grouped.get(id);
-        if (!definition) {
-          definition = {
-            name: `fk_${row.name}_${id}`,
-            referencedTable,
-            columns: [],
-            onUpdate: foreignKey.on_update ?? null,
-            onDelete: foreignKey.on_delete ?? null,
-          };
-          grouped.set(id, definition);
-        }
-        definition.columns.push({
-          column,
-          referencedColumn,
-          position: Number(foreignKey.seq ?? 0),
-        });
-      }
-      foreignKeys.push(...[...grouped.values()].map((foreignKey) => ({
-        ...foreignKey,
-        columns: [...foreignKey.columns]
-          .sort((left, right) => left.position - right.position),
-      })));
+      definition.columns.push({
+        column,
+        referencedColumn,
+        position: Number(foreignKey.seq ?? 0),
+      });
     }
+    const foreignKeys: StudioForeignKey[] = [...grouped.values()].map((foreignKey) => ({
+      ...foreignKey,
+      columns: [...foreignKey.columns]
+        .sort((left, right) => left.position - right.position),
+    }));
     objects.push(buildObject(
       connection.info.provider,
       row,

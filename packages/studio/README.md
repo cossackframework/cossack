@@ -41,7 +41,15 @@ Batch delete and batch update apply all or nothing on SQLite, Turso,
 PostgreSQL and MySQL: Studio runs them in one transaction and rolls back if a
 selected row is stale or a statement fails. D1 (local and remote) has no
 interactive transactions, so batches there are best-effort. Rows changed
-before the failure stay changed, and the error reports how many.
+before the failure stay changed, and the error reports how many. Remote D1
+sends up to 50 statements in one Wrangler call, as one D1 batch: a failing
+statement rolls back the rows of its own call, but a stale row does not stop
+the other rows in the same call.
+
+Studio groups remote D1 statements into few Wrangler calls, because each call
+starts a Wrangler process. A schema load takes three or four calls, whatever
+the number of tables. A browse takes one call, and the Pragmas tab takes one
+call after the first visit.
 
 For local connections, Studio detects the ORM driver's dialect.
 `DB_CONNECTION` or `COSSACK_STUDIO_DRIVER` can distinguish SQLite-family

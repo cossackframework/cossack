@@ -5,7 +5,7 @@ import { readD1ToolingBindings } from '@cossackframework/database/tooling';
 import path from 'node:path';
 import prompts from 'prompts';
 import { OperationQueue } from './queue.js';
-import type { StudioConnection, StudioQueryResult } from './schema-types.js';
+import type { StudioConnection, StudioQueryResult, StudioStatement } from './schema-types.js';
 
 export interface D1Binding {
   binding: string;
@@ -155,28 +155,42 @@ export function executeWrangler(
   });
 }
 
-function parseWranglerResult(output: string): {
+interface WranglerStatementResult {
   rows: Record<string, unknown>[];
   affectedRows: number;
   insertId?: string;
-} {
+}
+
+/** Parse `wrangler d1 execute --json` output: one entry per statement. */
+function parseWranglerResults(output: string): WranglerStatementResult[] {
   let parsed: any;
   try {
     parsed = JSON.parse(output);
   } catch {
     throw new Error('Wrangler returned malformed JSON.');
   }
-  const entry = Array.isArray(parsed) ? parsed[0] : parsed;
-  if (!entry || typeof entry !== 'object') throw new Error('Wrangler returned an empty result.');
-  if (entry.success === false) {
-    throw new Error(entry.error ?? entry.message ?? 'Remote D1 query failed.');
-  }
-  const rows = Array.isArray(entry.results) ? entry.results : [];
-  return {
-    rows,
-    affectedRows: Number(entry.meta?.changes ?? entry.changes ?? 0),
-    insertId: entry.meta?.last_row_id == null ? undefined : String(entry.meta.last_row_id),
-  };
+  const entries: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  if (!entries.length) throw new Error('Wrangler returned an empty result.');
+  return entries.map((entry: any) => {
+    if (!entry || typeof entry !== 'object') throw new Error('Wrangler returned an empty result.');
+    if (entry.success === false) {
+      throw new Error(entry.error ?? entry.message ?? 'Remote D1 query failed.');
+    }
+    const rows = Array.isArray(entry.results) ? entry.results : [];
+    return {
+      rows,
+      affectedRows: Number(entry.meta?.changes ?? entry.changes ?? 0),
+      insertId: entry.meta?.last_row_id == null ? undefined : String(entry.meta.last_row_id),
+    };
+  });
+}
+
+/**
+ * Remove trailing semicolons so statements can be joined. Joining with a
+ * newline before the separator keeps a trailing line comment from hiding it.
+ */
+function batchStatementText(sql: string): string {
+  return sql.replace(/[\s;]+$/, '');
 }
 
 export class RemoteD1Connection implements StudioConnection {
@@ -202,22 +216,54 @@ export class RemoteD1Connection implements StudioConnection {
       throw new Error('Remote D1 statements must be rendered with escaped SQLite literals.');
     }
     return this.queue.run(async () => {
-      const args = ['d1', 'execute', this.binding.binding, '--remote', '--json', '--command', sql];
-      if (this.options.environment) args.push('--env', this.options.environment);
       const started = performance.now();
-      const result = await this.options.execute(
-        this.options.wrangler.command,
-        [...this.options.wrangler.args, ...args],
-        this.options.projectRoot,
+      const [result] = await this.runCommand(sql);
+      return { ...result!, durationMs: performance.now() - started };
+    });
+  }
+
+  /**
+   * Run several statements with one Wrangler process. D1 executes the
+   * statements of one `--command` as a batch, in one transaction, and
+   * returns one result per statement.
+   */
+  batch(statements: readonly StudioStatement[]): Promise<StudioQueryResult[]> {
+    if (statements.some((statement) => statement.parameters?.length)) {
+      return Promise.reject(new Error(
+        'Remote D1 statements must be rendered with escaped SQLite literals.',
+      ));
+    }
+    if (!statements.length) return Promise.resolve([]);
+    return this.queue.run(async () => {
+      const started = performance.now();
+      const results = await this.runCommand(
+        statements.map((statement) => batchStatementText(statement.sql)).join('\n;\n'),
       );
-      if (result.exitCode !== 0) {
+      if (results.length !== statements.length) {
         throw new Error(
-          `Wrangler exited with code ${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || 'remote D1 command failed'),
+          `Wrangler returned ${results.length} result(s) for ${statements.length} statement(s).`,
         );
       }
-      return { ...parseWranglerResult(result.stdout), durationMs: performance.now() - started };
+      const durationMs = (performance.now() - started) / statements.length;
+      return results.map((result) => ({ ...result, durationMs }));
     });
+  }
+
+  private async runCommand(sql: string): Promise<WranglerStatementResult[]> {
+    const args = ['d1', 'execute', this.binding.binding, '--remote', '--json', '--command', sql];
+    if (this.options.environment) args.push('--env', this.options.environment);
+    const result = await this.options.execute(
+      this.options.wrangler.command,
+      [...this.options.wrangler.args, ...args],
+      this.options.projectRoot,
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `Wrangler exited with code ${result.exitCode}: ` +
+        (result.stderr.trim() || result.stdout.trim() || 'remote D1 command failed'),
+      );
+    }
+    return parseWranglerResults(result.stdout);
   }
 
   close(): Promise<void> {
