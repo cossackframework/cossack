@@ -717,34 +717,29 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     connectedCallback() {
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
-        // Transition to Mounted phase from Creating phase
-        this._transitionToPhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
+        // A connected component rests in Mounted until it is destroyed.
+        this._settlePhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating, LifecyclePhase.Mounted]);
 
-        try {
-            if (!this._serviceScope) {
-                const parent = this.getParentComponent() as any;
-                if (parent?._getServiceScope) this._serviceScope = parent._getServiceScope();
-            }
-            this._prepareInjectedServices();
-            // Register first so parent can provide restored child state
-            this.registerSelf();
-            this.initializeState();
-            this._navigationClientDraft = undefined;
-            super.connectedCallback();
+        if (!this._serviceScope) {
+            const parent = this.getParentComponent() as any;
+            if (parent?._getServiceScope) this._serviceScope = parent._getServiceScope();
+        }
+        this._prepareInjectedServices();
+        // Register first so parent can provide restored child state
+        this.registerSelf();
+        this.initializeState();
+        this._navigationClientDraft = undefined;
+        super.connectedCallback();
 
-            // Child components rendered via component() go through
-            // connectedCallback() but NOT bootstrap(). Without this, their
-            // onMount() / @On('mount') / setupEventListeners() / @VisibleTask
-            // observers would never fire. Root/page components call
-            // _frameworkMount() from bootstrap() (guarded by isMounted), so
-            // this is a no-op for them.
-            if (!this.isServer && !this.isMounted) {
-                this.isMounted = true;
-                this._frameworkMount();
-            }
-        } finally {
-            // Restore phase after lifecycle complete
-            this._restorePhase();
+        // Child components rendered via component() go through
+        // connectedCallback() but NOT bootstrap(). Without this, their
+        // onMount() / @On('mount') / setupEventListeners() / @VisibleTask
+        // observers would never fire. Root/page components call
+        // _frameworkMount() from bootstrap() (guarded by isMounted), so
+        // this is a no-op for them.
+        if (!this.isServer && !this.isMounted) {
+            this.isMounted = true;
+            this._frameworkMount();
         }
     }
 
@@ -754,10 +749,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return;
         }
 
-        // Transition to Updating phase from Creating, Bootstrapping, or Mounted phase
-        // This allows willUpdate to be called during:
-        // - SSR: bootstrap() → render() → willUpdate() (from Creating/Bootstrapping)
-        // - Client: connectedCallback() → willUpdate() (from Mounted)
+        // Updating lasts for willUpdate() only, then the previous phase
+        // returns: Mounted for a connected or bootstrapped component,
+        // Creating for an instance rendered without either.
         this._transitionToPhase(LifecyclePhase.Updating, [
             LifecyclePhase.Creating,
             LifecyclePhase.Bootstrapping,
@@ -986,6 +980,21 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     /**
+     * Enter a resting phase (Mounted). Unlike `_transitionToPhase`, nothing
+     * restores the previous phase afterwards.
+     */
+    private _settlePhase(phase: LifecyclePhase, allowedFrom: LifecyclePhase[]): void {
+        if (this._phase === LifecyclePhase.Destroyed) return;
+        if (!allowedFrom.includes(this._phase)) {
+            throw new Error(
+                `[Cossack] Invalid phase transition from ${this._phase} to ${phase}. ` +
+                `Allowed transitions: ${allowedFrom.join(', ')}.`
+            );
+        }
+        this._phase = phase;
+    }
+
+    /**
      * Restore the previous lifecycle phase.
      * Used when a lifecycle operation completes.
      */
@@ -1099,8 +1108,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, skipGet, deferMount, stageNavigation }: BootstrapOptions = {}) {
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
-        // Transition to Bootstrapping phase from Creating phase
         this._transitionToPhase(LifecyclePhase.Bootstrapping, [LifecyclePhase.Creating]);
+        let bootstrapped = false;
 
         try {
             this.__cossack_componentRouteId = initialState?.componentRouteId;
@@ -1234,11 +1243,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Call onMount() and clientInit() for all components (not just those with containers)
         // Page components don't have containers, but they still need their lifecycle hooks
         if (!deferMount && !stageNavigation) this._frameworkActivateNavigation();
+        bootstrapped = true;
 
         } finally {
             this.isBootstrapping = false;
-            // Restore phase after bootstrap complete
             this._restorePhase();
+            // A bootstrapped component rests in Mounted; a failed bootstrap
+            // returns to Creating.
+            if (bootstrapped) this._settlePhase(LifecyclePhase.Mounted, [LifecyclePhase.Creating]);
         }
     }
 
