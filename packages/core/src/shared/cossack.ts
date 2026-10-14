@@ -98,6 +98,8 @@ import type { ServiceScope } from './service-scope';
 // RPC tree reconstruction is synchronous, including nested renderer components.
 // It binds resource getters without dispatching unrelated read operations.
 let rpcReconstructionDepth = 0;
+/** Re-renders chained onto one update before the loop is stopped (state written on every render). */
+const MAX_UPDATE_RERUNS = 25;
 import { TaskCommitError, type TaskContext } from './task';
 import { getActionIdentityScope, type ActionIdentity } from './action-identity-scope';
 
@@ -453,6 +455,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
     // Standard Properties
     protected container?: Element;
+    /** True while an update pass renders and commits; writes then request a re-run. */
+    private _updateCommitting = false;
+    private _updateRerunRequested = false;
     protected isServer: boolean = isServer;
     
     private _c!: Context;
@@ -2707,6 +2712,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._render();
     }
     
+    /**
+     * The renderer's `requestUpdate()` joins the in-flight update promise, so a
+     * write from `updated()`, a controller's `hostUpdated()`, or a nested
+     * child's `onMount()` during the parent commit would otherwise be dropped.
+     * Mark a re-run instead; `_performOwnedUpdate` chains it.
+     */
+    public override requestUpdate(name?: string, oldValue?: unknown) {
+        if (this._updateCommitting) this._updateRerunRequested = true;
+        return super.requestUpdate(name, oldValue);
+    }
+
     // Override performUpdate to wrap template with devtools markers for client-side rendering
     protected async performUpdate() {
         return this._performOwnedUpdate(() => true, false);
@@ -2733,10 +2749,43 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return false;
         }
 
+        const elementInternal = this.getElementInternal();
+        const pendingUpdate = elementInternal.__updatePromise;
+        let shouldUpdate = false;
+        let reruns = 0;
+        try {
+            for (;;) {
+                this._updateRerunRequested = false;
+                if (this._performOwnedUpdatePass(isCurrent, propagateError)) shouldUpdate = true;
+                if (!this._updateRerunRequested || !active()) break;
+                if (++reruns > MAX_UPDATE_RERUNS) {
+                    if (import.meta.env?.DEV) {
+                        console.warn(`[Cossack] ${this.constructor.name} kept requesting a re-render while updating; stopped after ${MAX_UPDATE_RERUNS} re-renders in one update. A state write in updated(), a controller hostUpdated(), or a child onMount() probably changes state on every render.`);
+                    }
+                    break;
+                }
+                // Let synchronous follow-up writes batch into the re-run. The
+                // original update promise stays installed so callers awaiting
+                // `requestUpdate()` observe the final commit.
+                await Promise.resolve();
+                if (!active()) break;
+            }
+        } finally {
+            this._updateRerunRequested = false;
+            if (elementInternal.__updatePromise === pendingUpdate) {
+                elementInternal.__changedProperties = new Map();
+                elementInternal.__updatePromise = null;
+            }
+        }
+        return shouldUpdate;
+    }
+
+    /** One synchronous willUpdate → render → commit → updated pass. */
+    private _performOwnedUpdatePass(isCurrent: () => boolean, propagateError: boolean): boolean {
+        const active = () => isCurrent() && !this.isInPhase(LifecyclePhase.Destroyed);
         const failureContext = this.isServer ? this._failureContext() : undefined;
         let shouldUpdate = false;
         const elementInternal = this.getElementInternal();
-        const pendingUpdate = elementInternal.__updatePromise;
         const changedProperties = elementInternal.__changedProperties;
         const controllers = elementInternal.__controllers;
         try {
@@ -2769,6 +2818,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 this.willUpdate(changedProperties);
                 if (!isCurrent() || this.isInPhase(LifecyclePhase.Destroyed)) return false;
 
+                // Writes from here on (render commit, nested child mounts,
+                // updated(), hostUpdated()) are not reflected in this pass:
+                // collect them in a fresh map and request a re-run.
+                elementInternal.__changedProperties = new Map();
+                this._updateCommitting = true;
                 this.resetRenderState();
                 pushCurrentInstance(this);
 
@@ -2797,10 +2851,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (failureContext) logRuntimeFailure(failureContext, 'dispatch', 'COSSACK_RUNTIME_FAILED');
             else console.error('Error during update:', e);
         } finally {
-            if (elementInternal.__updatePromise === pendingUpdate) {
-                elementInternal.__changedProperties = new Map();
-                elementInternal.__updatePromise = null;
-            }
+            this._updateCommitting = false;
         }
         return shouldUpdate;
     }
