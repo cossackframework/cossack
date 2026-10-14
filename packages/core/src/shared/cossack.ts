@@ -453,6 +453,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public invalidate$<Name extends ServerResourceName<T, this>>(name: Name): void {
+        // Like refresh$/load$/resourceStatus$, accept a declared field that
+        // was never read. Binding suppresses the load; the next read starts it.
+        this._bindServerResourceField(name, true);
         if (!this._serverResources.delete(name)) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
         if (!this.isServer) void this.requestUpdate();
     }
