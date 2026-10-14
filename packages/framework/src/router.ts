@@ -229,19 +229,23 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
 
 const { pages, layouts, loadings } = registry;
 
-/** Maximum byte size for inlining CSS (20 KiB). */
+/** Maximum byte size for inlining CSS (25 KiB). */
 const CSS_INLINE_THRESHOLD = 25600;
 
-/** Cached CSS content after first read. */
-let cachedInlineCss: string | undefined | null = null;
+/**
+ * Cached inlining decision: `undefined` = not decided yet, `null` = do not
+ * inline (no CSS entry, fetch failed, or too large), string = CSS to inline.
+ */
+let cachedInlineCss: string | null | undefined;
 
 /**
  * Read the entry-client CSS file and return its content if below the inline threshold.
  * Returns `undefined` in dev mode or if the CSS exceeds the threshold.
- * Results are cached after the first successful read.
+ * Both the positive and the negative decision are cached after the first read,
+ * so SSR does not re-fetch and re-encode the bundle on every request.
  */
 async function getInlineCss(env: any): Promise<string | undefined> {
-  if (cachedInlineCss !== null) return cachedInlineCss || undefined;
+  if (cachedInlineCss !== undefined) return cachedInlineCss ?? undefined;
 
   const manifest = await getManifest(env);
   const entry = manifest['src/client/entry-client.ts'];
@@ -252,10 +256,12 @@ async function getInlineCss(env: any): Promise<string | undefined> {
 
   const cssPath = `/${entry.css[0]}`;
 
+  // Without an assets binding there is nothing to read yet; decide later.
+  if (!env?.ASSETS?.fetch) return undefined;
   try {
-    if (!env?.ASSETS?.fetch) return undefined;
     const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
     if (!res.ok) {
+      await res.body?.cancel();
       cachedInlineCss = null;
       return undefined;
     }
@@ -266,7 +272,7 @@ async function getInlineCss(env: any): Promise<string | undefined> {
       return cssText;
     }
 
-    // CSS too large — don't inline, but cache the decision
+    // CSS too large: don't inline, and cache the decision.
     cachedInlineCss = null;
     return undefined;
   } catch (e) {
