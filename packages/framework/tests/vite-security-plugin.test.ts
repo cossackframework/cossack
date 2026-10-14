@@ -70,6 +70,52 @@ describe('ORM and session server-only imports', () => {
     `, '/src/leak.ts')).toThrow(/server-only import/);
   });
 
+  it('ignores type-only imports and type positions when checking server-only references', () => {
+    const source = `
+      import type { Generated } from '@cossackframework/database';
+      import { type Selectable, Model } from '@cossackframework/database';
+      import type * as Db from '@cossackframework/database/types';
+      class State {}
+      export class Page {
+        @State() user: Generated<number> | null = null;
+        rows: Array<Selectable<Db.Row>> = [];
+        cast(value: unknown) { return value as Selectable<{ id: Generated<number> }>; }
+        load<T extends Db.Row>(input: T): Generated<T['id']> { return input.id satisfies Db.Id; }
+      }
+      export type Alias = Selectable<Db.Row>;
+      export interface Shape { id: Generated<number> }
+    `;
+    const result = stripClientServerOnlyImports(source, '/src/pages/users/index.ts');
+    expect(result).not.toMatch(/\bModel\b/);
+    expect(result).toContain('user: Generated<number> | null');
+    // A runtime value referenced next to type-only names still fails.
+    expect(() => stripClientServerOnlyImports(`
+      import { type Selectable, Model } from '@cossackframework/database';
+      export const leaked: Selectable<{}> = Model;
+    `, '/src/leak.ts')).toThrow(/server-only import.*\(Model\)/);
+    // The full client transform accepts a page using database types in @State.
+    const page = `
+      import { Cossack, Page, State, Server } from '@cossackframework/core';
+      import type { Generated } from '@cossackframework/database';
+      import { type Selectable, Model } from '@cossackframework/database';
+      @Page()
+      export default class UsersPage extends Cossack {
+        @State() user: Generated<number> | null = null;
+        @State() rows: Selectable<{ id: number }>[] = [];
+        @Server() async load() { return Model.all(); }
+        render() { return String(this.user); }
+      }
+    `;
+    const transformed = (cossackSecurityPlugin().transform as Function)
+      .call({ environment: { name: 'client' } }, page, '/src/pages/users/index.ts');
+    expect(transformed.code).not.toMatch(/\bModel\b/);
+    // Enums are runtime code.
+    expect(() => stripClientServerOnlyImports(`
+      import { Model } from '@cossackframework/database';
+      export enum Kind { A = Model.kind }
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+
   it('preserves authorization factories used by page decorators while stripping auth operations', () => {
     const source = `
       import { createAuthorizer as authorize, createAuth } from '@cossackframework/auth';

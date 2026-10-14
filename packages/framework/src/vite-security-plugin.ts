@@ -262,6 +262,20 @@ function isServerOnlyImportSource(source: string): boolean {
     source.startsWith('node:');
 }
 
+/** AST child keys that only hold type syntax. */
+const TYPE_ONLY_KEYS: ReadonlySet<string> = new Set([
+  'typeAnnotation', 'typeArguments', 'typeParameters', 'returnType',
+  'superTypeArguments', 'superTypeParameters', 'implements',
+]);
+
+/** TypeScript AST nodes that contain runtime expressions or declarations. */
+const RUNTIME_TS_NODES: ReadonlySet<string> = new Set([
+  'TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'TSInstantiationExpression',
+  'TSTypeAssertion', 'TSEnumDeclaration', 'TSEnumBody', 'TSEnumMember', 'TSModuleDeclaration',
+  'TSModuleBlock', 'TSParameterProperty', 'TSExportAssignment', 'TSImportEqualsDeclaration',
+  'TSExternalModuleReference',
+]);
+
 /**
  * Remove direct server-only imports after method/resource bodies have been
  * stripped. If a binding remains referenced, it escaped into client-safe code
@@ -274,6 +288,8 @@ export function stripClientServerOnlyImports(code: string, id: string): string {
   const candidates: Array<{ node: any; source: string; bindings: string[]; replacement: string }> = [];
   for (const statement of program.body ?? []) {
     if (statement.type !== 'ImportDeclaration') continue;
+    // `import type` is erased by every TypeScript transform.
+    if (statement.importKind === 'type') continue;
     const source = String(statement.source?.value ?? '');
     if (!isServerOnlyImportSource(source)) continue;
     // Page decorators evaluate guard.requireRole()/requirePermission() in both
@@ -287,8 +303,9 @@ export function stripClientServerOnlyImports(code: string, id: string): string {
     candidates.push({
       node: statement,
       source,
+      // `import { type X, Model }`: only value specifiers are runtime bindings.
       bindings: (statement.specifiers ?? [])
-        .filter((specifier: any) => !safeSpecifiers.includes(specifier))
+        .filter((specifier: any) => !safeSpecifiers.includes(specifier) && specifier.importKind !== 'type')
         .map((specifier: any) => specifier.local?.name).filter(Boolean),
       replacement: safeSpecifiers.length
         ? `import { ${safeSpecifiers.map((specifier: any) => code.slice(specifier.start, specifier.end)).join(', ')} } from ${JSON.stringify(source)};`
@@ -300,6 +317,9 @@ export function stripClientServerOnlyImports(code: string, id: string): string {
   const referenced = new Set<string>();
   const visit = (node: any, parent?: any, parentKey?: string) => {
     if (!node || typeof node.type !== 'string' || node.type === 'ImportDeclaration') return;
+    // Type annotations, interfaces, aliases and other type-only syntax never
+    // reach the client at runtime; TS nodes that carry runtime code still do.
+    if (node.type.startsWith('TS') && !RUNTIME_TS_NODES.has(node.type)) return;
     if (node.type === 'Identifier') {
       const isStaticKey =
         ((parent?.type === 'MethodDefinition' || parent?.type === 'PropertyDefinition') && parentKey === 'key' && !parent.computed) ||
@@ -309,6 +329,7 @@ export function stripClientServerOnlyImports(code: string, id: string): string {
       return;
     }
     for (const [key, value] of Object.entries(node)) {
+      if (TYPE_ONLY_KEYS.has(key)) continue;
       if (Array.isArray(value)) value.forEach((child) => visit(child, node, key));
       else if (value && typeof (value as any).type === 'string') visit(value, node, key);
     }
