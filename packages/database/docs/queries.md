@@ -101,6 +101,11 @@ const users = await User.find({
 
 Properties inside one object are joined with `AND`.
 
+A property set to `undefined` throws a `ConfigurationError` instead of
+compiling to `= NULL`, which never matches. Use `null` or `IsNull()` to match
+`NULL`, or leave the property out to skip that filter. `In([])` matches no rows,
+and an empty array of `where` objects also matches no rows.
+
 ## Query builder
 
 Start a builder with `Entity.query()`:
@@ -238,7 +243,20 @@ await User.delete({ active: false });
 These methods return a normalized `QueryResult` containing `rows` and `meta`.
 They reject values for columns declared with `insert: false` (insert/upsert) or
 `update: false` (update).
-Always make bulk update/delete predicates explicit.
+
+`update()` and `delete()` need a `where` with at least one condition. An empty
+object such as `User.delete({})` throws a `ConfigurationError`, because it
+would change every row. To change every row on purpose, call the explicit
+methods:
+
+```ts
+await Session.deleteAll();
+await User.updateAll({ active: false });
+```
+
+`User.insert({})` inserts one row of column defaults. It compiles to
+`INSERT INTO ... DEFAULT VALUES` on SQLite and PostgreSQL, and to
+`INSERT INTO ... () VALUES ()` on MySQL.
 
 For adapters that support `RETURNING`, use a mutation builder:
 

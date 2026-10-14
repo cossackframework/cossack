@@ -36,6 +36,10 @@ await User.delete({ id });
 await UserRole.upsert({ userId, roleId, createdAt }, ['userId', 'roleId']);
 ```
 
+`update()` and `delete()` reject an empty `where` such as `{}`. To change every
+row on purpose, use `User.updateAll(values)` or `User.deleteAll()`. A `where`
+property set to `undefined` also throws. Use `null` to match `NULL`.
+
 Call `Entity.create(values)` plus `entity.save()` when lifecycle hooks or a
 mutable entity instance are useful.
 
