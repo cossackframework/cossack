@@ -438,9 +438,10 @@ export class StudioDatabase {
 
   /**
    * Run a console statement, asking the database for at most one row more
-   * than the console displays so large SELECTs are not fully materialised.
-   * The bounded form is a derived table; when a database rejects it (for
-   * example MySQL with duplicate column names) the original query runs.
+   * than the console displays so large SELECTs are not fully materialised
+   * and the extra row still signals truncation (see `limitStatementRows`).
+   * When the database rejects the bounded form, the original query runs so
+   * errors refer to the statement the user wrote.
    */
   private async executeBounded(statement: string) {
     const bounded = limitStatementRows(

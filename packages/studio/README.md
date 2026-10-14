@@ -36,6 +36,11 @@ schema inspection. It shows exact row counts and adjustable pagination, with
 100 rows by default. It supports inline and JSON-aware keyed row editing. It runs one arbitrary SQL
 statement per execution. Its SQL editor includes syntax highlighting plus table
 and column completion. Remote D1 changes affect deployed data immediately.
+The console shows up to 1,000 rows and asks the database for at most 1,001,
+so the extra row tells it that the result is truncated. Studio appends
+`LIMIT 1001` to a `SELECT` or `WITH` query that has no top-level `LIMIT`,
+`OFFSET` or `FETCH`, and wraps other queries in
+`SELECT * FROM (…) AS __q LIMIT 1001`.
 
 Batch delete and batch update apply all or nothing on SQLite, Turso,
 PostgreSQL and MySQL: Studio runs them in one transaction and rolls back if a

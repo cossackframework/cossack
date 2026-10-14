@@ -316,12 +316,29 @@ export function statementMayChangeSchema(statement: string, provider?: StudioPro
 const ROW_LIMIT_UNSAFE_KEYWORDS = new Set([
   'INTO', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'SHARE', 'LOCK',
 ]);
+const ROW_LIMIT_CLAUSE_KEYWORDS = new Set(['LIMIT', 'OFFSET', 'FETCH']);
+
+/** Upper-cased bare words of executable SQL outside parentheses. */
+function topLevelKeywords(sql: string, provider?: StudioProvider): string[] {
+  const words: string[] = [];
+  let depth = 0;
+  for (const [token] of executableText(sql, provider).matchAll(/[()]|[A-Za-z_][A-Za-z0-9_$]*/g)) {
+    if (token === '(') depth++;
+    else if (token === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0) words.push(token.toUpperCase());
+  }
+  return words;
+}
 
 /**
- * Wrap a SELECT/WITH statement so the database returns at most `limit` rows,
+ * Bound a SELECT/WITH statement so the database returns at most `limit` rows,
  * instead of materialising the full result in Studio before truncating it.
- * Returns `undefined` for statements that cannot be wrapped as a derived table
- * (non-queries, `SELECT … INTO`, data-modifying CTEs, locking reads).
+ * A statement without its own top-level LIMIT, OFFSET or FETCH gets a
+ * `LIMIT` appended, which keeps its result columns exactly as written (a
+ * derived table renames duplicate columns in SQLite and is rejected by
+ * MySQL). Other statements are wrapped as a derived table. Returns
+ * `undefined` for statements that cannot be bounded (non-queries,
+ * `SELECT … INTO`, data-modifying CTEs, locking reads).
  */
 export function limitStatementRows(
   statement: string,
@@ -335,11 +352,14 @@ export function limitStatementRows(
   scanSql(statement, provider, (index, char) => {
     if (!/\s/.test(char)) lastCode = index;
   });
-  const body = lastCode >= 0 && statement[lastCode] === ';'
+  const body = (lastCode >= 0 && statement[lastCode] === ';'
     ? statement.slice(0, lastCode) + statement.slice(lastCode + 1)
-    : statement;
-  // Newlines keep a trailing line comment from swallowing the outer query.
-  return `SELECT * FROM (\n${body.trim()}\n) AS __q LIMIT ${limit}`;
+    : statement).trim();
+  // Newlines keep a trailing line comment from swallowing the added clause.
+  if (!topLevelKeywords(body, provider).some((keyword) => ROW_LIMIT_CLAUSE_KEYWORDS.has(keyword))) {
+    return `${body}\nLIMIT ${limit}`;
+  }
+  return `SELECT * FROM (\n${body}\n) AS __q LIMIT ${limit}`;
 }
 
 interface PlaceholderScan {
