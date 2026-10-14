@@ -643,6 +643,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _taskExecutions = new Map<string | symbol, AbortController>();
     private _taskCleanupPending = new Map<string | symbol, Promise<void>>();
     private isBootstrapping: boolean = false;
+    /** Set once bootstrap() ran (App, layouts, pages); component() children are never bootstrapped. */
+    private _frameworkBootstrapped = false;
     private eventCleanupFns: (() => void)[] = [];
     /**
      * Dotted paths of state changes accumulated since the last task run, used
@@ -1101,6 +1103,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         try {
             this.__cossack_componentRouteId = initialState?.componentRouteId;
             this.isBootstrapping = true;
+            this._frameworkBootstrapped = true;
 
             if (!this._id) this._id = 'root';
 
@@ -1987,13 +1990,25 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
 
         // 1. @On (Component/Container Events)
-        // Regular components delegate through their container element. Page and
-        // layout components don't have one (their content is composed into the
-        // App), so fall back to document-level delegation — a page-level @On
-        // handler is expected to observe events across the whole page.
-        const onTarget: EventTarget | undefined = this.container || (typeof document !== 'undefined' ? document : undefined);
-        if (onTarget) {
-            const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+        // Components with a container delegate through it. Bootstrapped page
+        // and layout components don't have one (their content is composed into
+        // the App), so they fall back to document-level delegation — a
+        // page-level @On handler is expected to observe events across the whole
+        // page. Nested component() children are never bootstrapped and have no
+        // container: a document fallback would fire their handlers for every
+        // unrelated event on the page (N list items = N document listeners), so
+        // they skip @On instead.
+        const onTarget: EventTarget | undefined = this.container
+            || (this._frameworkBootstrapped && typeof document !== 'undefined' ? document : undefined);
+        const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+        if (!onTarget) {
+            for (const { eventName } of domEvents) {
+                if (eventName === 'mount' || eventName === 'navigate-complete') continue;
+                if (import.meta.env?.DEV) {
+                    console.warn(`[Cossack] @On('${eventName}') on ${this.constructor.name} was not attached: nested components rendered with component() have no container. Use a template event binding (e.g. @${eventName}=\${...}) on the element instead.`);
+                }
+            }
+        } else {
             for (const { eventName, propertyKey } of domEvents) {
                 // Lifecycle events are handled by setupLifecycleEventHandlers()
                 if (eventName === 'mount' || eventName === 'navigate-complete') continue;
@@ -2083,8 +2098,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             if (strategy === 'intersection-observer') {
                 if (!this.container) {
-                     console.warn(`[Cossack] Cannot setup intersection observer for '${String(propertyKey)}': container not found.`);
-                     continue;
+                    // Never observe document-level stand-ins: a nested
+                    // component() child has no container of its own.
+                    if (import.meta.env?.DEV) {
+                        console.warn(`[Cossack] @VisibleTask '${String(propertyKey)}' on ${this.constructor.name} was not set up: the component has no container (nested component() children and pages composed into the App have none). Use strategy 'document-ready' or observe an element from onMount().`);
+                    }
+                    continue;
                 }
 
                 // Collect initial target elements. When a selector is provided we
