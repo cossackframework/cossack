@@ -30,7 +30,7 @@ it('isolates queues, freezes snapshots, bounds growth and owns a readonly subscr
     const id = first.success('Saved', { duration: 0 });
     expect(first.get()[0]).toMatchObject({ id, message: 'Saved', duration: 0, variant: 'success' });
     expect(Object.isFrozen(first.get())).toBe(true); expect(Object.isFrozen(first.get()[0])).toBe(true);
-    expect(second.get()).toEqual([]); expect(() => first.show('Overflow')).toThrow('queue is full');
+    expect(second.get()).toEqual([]);
     first.dismiss('missing'); expect(seen).toEqual([[], ['Saved']]);
     first.dismiss(id); expect(seen.at(-1)).toEqual([]); unsubscribe(); first.warning('Later'); expect(seen).toHaveLength(3);
     first.dispose(); expect(first.get()).toEqual([]); expect(() => first.show('Disposed')).toThrow('disposed');
@@ -64,4 +64,14 @@ it('generates distinct notification identities without cryptographic browser API
     const first = createToastStore(), second = createToastStore();
     const ids = [first.show('One'), second.show('Two'), first.show('Three')];
     expect(new Set(ids).size).toBe(3); first.dispose(); second.dispose();
+});
+
+it('drops the oldest toast instead of throwing when the queue is full', () => {
+    vi.stubGlobal('window', {}); vi.stubGlobal('document', {});
+    const store = createToastStore({ maxToasts: 2 });
+    store.show('One', { duration: 0 }); store.show('Two', { duration: 0 });
+    // toast.error() in a catch block must never mask the original error.
+    expect(() => store.error('Three', { duration: 0 })).not.toThrow();
+    expect(store.get().map(item => item.message)).toEqual(['Two', 'Three']);
+    store.dispose();
 });

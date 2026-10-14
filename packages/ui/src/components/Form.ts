@@ -59,6 +59,9 @@ export class Form extends Cossack {
     render() {
         const { submit, bindings, novalidate, ...attributes } = this.props;
         if (bindings && submit) throw new TypeError('[Cossack] Form accepts either typed bindings or submit, not both.');
+        // submit and bindings own these listeners; a supplied one would be silently dropped.
+        if ((submit || bindings) && attributes['@submit'] !== undefined) throw new TypeError('[Cossack] Form accepts either a native @submit or submit/bindings, not both.');
+        if (bindings && attributes['@reset'] !== undefined) throw new TypeError('[Cossack] Form accepts either a native @reset or bindings, not both.');
         const rest: FormAttributes = { ...bindings, ...attributes };
         if (bindings) {
             rest['@submit'] = bindings['@submit'];

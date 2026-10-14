@@ -28,7 +28,7 @@ import { Cossack, Component } from "@cossackframework/core";
 interface ButtonProps {
     variant?: 'primary' | 'secondary';
     disabled?: boolean;
-    // Allow arbitrary HTML attributes (class, style, onClick, ...) to spread
+    // Allow arbitrary HTML attributes and listeners (class, style, '@click', ...) to spread
     [key: string]: any;
 }
 
@@ -107,10 +107,12 @@ import { Button } from "./components/Button";
 // Inside your Page's render method:
 html`
     <div>
-        ${component(Button, { variant: 'secondary', onClick: this.handleClick }, 'Click Me')}
+        ${component(Button, { variant: 'secondary', '@click': () => this.handleClick() }, 'Click Me')}
     </div>
 `
 ```
+
+Props spread onto a native element use template syntax, so an event listener is an `@event` key such as `'@click'`. A plain `onClick` prop is not a listener and never calls your function. Wrap a method in an arrow function (or bind it) so `this` stays the component.
 
 ### Passing State (Parent to Child)
 

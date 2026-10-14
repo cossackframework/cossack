@@ -69,6 +69,8 @@ export default class ContactForm extends Cossack {
 | `novalidate` | Override the `novalidate` default. Defaults to `true` when `submit` is set, `false` otherwise. |
 | `...rest` | Any other props (`method`, `action`, `class`, …) spread onto the native `<form>`. |
 
+`submit` and `bindings` own the form's `@submit` listener (`bindings` also owns `@reset`). Passing a native `'@submit'` (or `'@reset'` with `bindings`) together with them throws, instead of silently dropping your listener. Use one owner per event.
+
 This is shorthand for the equivalent bare form:
 
 ```typescript

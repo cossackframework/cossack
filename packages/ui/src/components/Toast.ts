@@ -28,7 +28,10 @@ export interface ToastStore {
     /** Permanently release this store. Do not dispose the shared default store. */
     dispose(): void;
 }
-export interface ToastStoreOptions { maxToasts?: number; }
+export interface ToastStoreOptions {
+    /** Most toasts kept at once. Showing another drops the oldest. Default 5. */
+    maxToasts?: number;
+}
 interface ToastPresenter { pause(reason: string, paused: boolean): void; release(): void; }
 const presenters = new WeakMap<ToastStore, () => ToastPresenter>();
 let nextToastId = 0;
@@ -66,9 +69,12 @@ export function createToastStore({ maxToasts = 5 }: ToastStoreOptions = {}): Toa
         const { duration = 4000, variant = 'default' } = options;
         if (typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0 || duration > 2147483647) throw new Error('Toast duration must be finite milliseconds from 0 to 2147483647.');
         if (!variants.includes(variant)) throw new Error('Toast variant is invalid.');
-        if (items.length >= maxToasts) throw new Error('Toast queue is full. Dismiss an item before adding another.');
+        // Drop the oldest instead of throwing: toast.error() often runs in a catch
+        // block, and a throw there would mask the original error.
+        const kept = items.slice(Math.max(0, items.length - maxToasts + 1));
+        for (const item of items) if (!kept.includes(item)) cancel(item.id);
         const id = `toast-${++nextToastId}`;
-        items = Object.freeze([...items, Object.freeze({ id, message, duration, variant })]);
+        items = Object.freeze([...kept, Object.freeze({ id, message, duration, variant })]);
         if (duration > 0) clocks.set(id, { remaining: duration, started: 0 });
         schedule(); notify(); return id;
     };
