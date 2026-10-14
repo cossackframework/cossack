@@ -103,17 +103,24 @@ function readCounter(value: unknown): RateLimitCounter {
     return { count, resetAt };
 }
 
+/** Minimum time between full expiry scans of a full in-memory store. */
+const MEMORY_PRUNE_INTERVAL_MS = 1000;
+
 /**
  * Simple in-memory fixed-window counter holding at most `maxEntries` buckets
- * (default 10 000). When full, expired buckets are pruned first, then the
+ * (default 10 000). When full, expired buckets are dropped first (from the
+ * oldest end, plus a full expiry scan at most once per second), then the
  * buckets whose window started earliest are evicted to admit the new caller.
- * Eviction forgets those callers' spent quota, so size `maxEntries` above the
- * expected live caller count or use a shared provider for strict limits.
+ * Admitting a caller at capacity is amortized O(1), so a flood of distinct
+ * keys cannot turn every insert into a full scan. Eviction forgets those
+ * callers' spent quota, so size `maxEntries` above the expected live caller
+ * count or use a shared provider for strict limits.
  */
 export class InMemoryRateLimitStore implements RateLimitStore {
     readonly capabilities = storageCapabilities('rate-limit', 'memory');
     private readonly entries = new Map<string, { count: number; resetAt: number }>();
     private readonly maxEntries: number;
+    private nextPruneAt = 0;
 
     constructor(maxEntries = 10_000) {
         if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100000) {
@@ -132,7 +139,18 @@ export class InMemoryRateLimitStore implements RateLimitStore {
         if (!existing || now >= existing.resetAt) {
             if (existing) this.entries.delete(key);
             else if (this.entries.size >= this.maxEntries) {
-                this.prune(now);
+                // Map order tracks window start, so expired buckets cluster at
+                // the head: dropping them there is O(1) per bucket. A full scan
+                // (for long windows started before shorter, expired ones) runs
+                // opportunistically, at most once per interval.
+                for (const [oldest, bucket] of this.entries) {
+                    if (now < bucket.resetAt) break;
+                    this.entries.delete(oldest);
+                }
+                if (this.entries.size >= this.maxEntries && now >= this.nextPruneAt) {
+                    this.nextPruneAt = now + MEMORY_PRUNE_INTERVAL_MS;
+                    this.prune(now);
+                }
                 // Evict the oldest live windows rather than rejecting new callers:
                 // throwing here would let a flood of distinct keys deny service to
                 // every rate-limited endpoint until those windows expire.
