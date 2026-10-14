@@ -446,9 +446,11 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             };
             const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
             const cleanup = () => { if (deadlineTimer !== undefined) clearTimeout(deadlineTimer); finish(); };
-            // Keep serializable args (primitives, plain objects, arrays), drop
-            // non-transportable UI objects (DOM nodes, Event).
-            let payload = args.filter(isWsTransportable);
+            // Keep serializable args (primitives, plain objects, arrays) and
+            // replace non-transportable UI objects (DOM nodes, Event) with
+            // null, exactly like the HTTP path, so positional parameters keep
+            // their slots: save(evt, id) still receives id second.
+            let payload = args.map(arg => isWsTransportable(arg) ? arg : null);
             const queue = new SocketFrameQueue(frame => {
                 if (controller.signal.aborted) return;
                 interruptionError = new RpcError(frame.code, frame.message, { requestId, fieldErrors: frame.fieldErrors });

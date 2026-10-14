@@ -55,7 +55,7 @@ describe('WS payload keeps serializable objects', () => {
         expect(msg.payload).toEqual([{ id: 5, name: 'task' }]);
     });
 
-    it('keeps arrays and primitives and drops DOM nodes / Events', () => {
+    it('keeps arrays and primitives and replaces DOM nodes / Events with null', () => {
         const component = makeComponent();
         const ws = new MockWS();
         component.websockets.set('page', ws as any);
@@ -67,8 +67,22 @@ describe('WS payload keeps serializable objects', () => {
         void component.mix('keep', [1, 2, { a: 3 }], 42, node);
 
         const msg = JSON.parse(ws.sent[0]);
-        // DOM node and function dropped; primitive + array kept.
-        expect(msg.payload).toEqual(['keep', [1, 2, { a: 3 }], 42]);
+        // DOM node replaced with null (same as HTTP); primitive + array kept.
+        expect(msg.payload).toEqual(['keep', [1, 2, { a: 3 }], 42, null]);
+    });
+
+    it('keeps positional parameters when an Event precedes other arguments', () => {
+        const component = makeComponent();
+        const ws = new MockWS();
+        component.websockets.set('page', ws as any);
+        (globalThis as any).WebSocket = { OPEN: 1 };
+
+        proxyServerMethods(component, [{ name: 'save', channel: 'global', provider: 'page' }]);
+
+        void component.save(new Event('click'), 7);
+
+        const msg = JSON.parse(ws.sent[0]);
+        expect(msg.payload).toEqual([null, 7]);
     });
 
     it('rejects instead of crashing on circular references', async () => {
