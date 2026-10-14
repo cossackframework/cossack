@@ -1,4 +1,6 @@
-import { forEachHtmlToken, type HtmlAttribute, type HtmlToken } from './template-analysis';
+import { forEachHtmlToken, RAW_TEXT_TAGS, type HtmlAttribute, type HtmlToken } from './template-analysis';
+
+type StartTag = Extract<HtmlToken, { type: 'start-tag' }>;
 
 // Void elements in HTML5 that don't need a closing slash.
 const VOID_ELEMENTS = new Set([
@@ -115,7 +117,9 @@ const enum Phase { BeforeHtml, BeforeHead, InHead, AfterHead, Body }
  *  - comments are removed, except conditional comments and hydration markers.
  *  - tags: simple attribute values lose their quotes, `class` whitespace
  *    collapses, default `type` attributes and void-element slashes go away.
- *    Other attribute values are kept byte for byte.
+ *    Other attribute values are kept byte for byte. Start tags of elements
+ *    whose content is kept as written are kept as written too, apart from a
+ *    default `type`.
  */
 export function minifyHtml(html: string): string {
     let out = '';
@@ -164,7 +168,18 @@ export function minifyHtml(html: string): string {
         return ` ${attr.name}="${value.replace(/"/g, '&quot;')}"`;
     };
 
-    const startTag = (token: Extract<HtmlToken, { type: 'start-tag' }>): string => {
+    // A start tag as written, without a default `type` attribute.
+    const startTagAsWritten = (token: StartTag): string => {
+        const type = token.attributes.find((attr) => attr.name.toLowerCase() === 'type' && attr.valueStart >= 0 &&
+            isDefaultType(token.name, html.slice(attr.valueStart, attr.valueEnd)));
+        if (!type) return html.slice(token.start, token.end);
+        let start = type.nameStart;
+        while (start > token.nameEnd && /[ \t\n\f\r]/.test(html[start - 1])) start--;
+        const end = type.valueEnd + (type.quote ? 1 : 0);
+        return html.slice(token.start, start) + html.slice(end, token.end);
+    };
+
+    const startTag = (token: StartTag): string => {
         // An attribute named `=...` exists only after a `/` or another
         // attribute's value; rewriting the separator could change its
         // meaning, so such malformed tags are copied as written.
@@ -204,11 +219,13 @@ export function minifyHtml(html: string): string {
             case 'start-tag': {
                 flushText();
                 startTagPhase(token.name);
-                out += startTag(token);
                 const { name } = token;
-                if (!VOID_ELEMENTS.has(name) && (PREFORMATTED.has(name) || preservesWhitespace(html, token.attributes))) {
-                    verbatim = { name, depth: 1, raw: RAW_PREFORMATTED.has(name) };
-                }
+                const preserving = !VOID_ELEMENTS.has(name) && (PREFORMATTED.has(name) || preservesWhitespace(html, token.attributes));
+                // An element whose content is copied as written keeps its start
+                // tag as written too, apart from a default `type`. Tests and
+                // tools match framework tags such as `<script type="module"`.
+                out += preserving || RAW_TEXT_TAGS.has(name) ? startTagAsWritten(token) : startTag(token);
+                if (preserving) verbatim = { name, depth: 1, raw: RAW_PREFORMATTED.has(name) };
                 break;
             }
             case 'end-tag':

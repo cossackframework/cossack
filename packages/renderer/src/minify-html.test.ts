@@ -221,7 +221,7 @@ Line 1
         const result = minifyHtml(input);
         // Whitespace in <head> and around it never renders; in <body> it collapses.
         expect(result).toBe('<!DOCTYPE html><html lang=en><head><meta charset=utf-8><title>Test</title>'
-            + '<link rel=stylesheet href=style.css><script type=module src=app.js></script></head>'
+            + '<link rel=stylesheet href=style.css><script type="module" src="app.js"></script></head>'
             + '<body>\n<div id=root>\n<h1>Hello World</h1>\n<img src=hero.png alt="Hero image">\n</div>\n</body>\n</html>');
     });
 
@@ -283,26 +283,30 @@ describe('minifyHtml whitespace', () => {
             .toBe('<head><template><b>a</b> <i>b</i></template> <meta charset=x></head>');
     });
 
-    it('copies the content of elements that preserve whitespace as written', () => {
-        // The start tag is still minified; its content is not.
-        const cases: [string, string, string][] = [
-            ['<span class="whitespace-pre-wrap">', '<span class=whitespace-pre-wrap>', 'a\n\n   b  <!-- c --> <b  id="x">c</b></span>'],
-            ['<div class="md:whitespace-pre  !whitespace-break-spaces">', '<div class="md:whitespace-pre !whitespace-break-spaces">', '  x  </div>'],
-            ['<div style="color: red; white-space : pre-wrap !important">', '<div style="color: red; white-space : pre-wrap !important">', '  x  </div>'],
-            ['<div style="white-space-collapse: preserve">', '<div style="white-space-collapse: preserve">', '  x  </div>'],
-            ['<listing>', '<listing>', '  a\n  b</listing>'],
-            ['<xmp>', '<xmp>', ' <!-- c --> <b  x="1"> </xmp>'],
+    it('copies elements that preserve whitespace as written, start tag included', () => {
+        const cases = [
+            '<span class="whitespace-pre-wrap">a\n\n   b  <!-- c --> <b  id="x">c</b></span>',
+            '<div class="md:whitespace-pre  !whitespace-break-spaces">  x  </div>',
+            '<div style="color: red; white-space : pre-wrap !important">  x  </div>',
+            '<div style="white-space-collapse: preserve">  x  </div>',
+            '<pre  class="code">  a\n  b</pre>',
+            '<listing>  a\n  b</listing>',
+            '<xmp> <!-- c --> <b  x="1"> </xmp>',
         ];
-        for (const [tag, minifiedTag, content] of cases) {
-            expect(minifyHtml(`${tag}${content}  <p> a  b </p>`)).toBe(`${minifiedTag}${content} <p> a b </p>`);
-        }
+        for (const input of cases) expect(minifyHtml(`${input}  <p> a  b </p>`)).toBe(`${input} <p> a b </p>`);
         // Everything after <plaintext> is text.
         expect(minifyHtml('<plaintext>  a  </plaintext>  <p> b </p>')).toBe('<plaintext>  a  </plaintext>  <p> b </p>');
     });
 
+    it('keeps raw-text start tags as written, apart from a default type', () => {
+        expect(minifyHtml('<script type="module" src="/a.js"></script>')).toBe('<script type="module" src="/a.js"></script>');
+        expect(minifyHtml('<script  src="/a.js"\n  type="text/javascript" defer></script>')).toBe('<script  src="/a.js" defer></script>');
+        expect(minifyHtml('<textarea  name="t" rows="2"> a </textarea>')).toBe('<textarea  name="t" rows="2"> a </textarea>');
+    });
+
     it('ends a whitespace-preserving element at its matching end tag', () => {
         expect(minifyHtml('<div class="whitespace-pre"><div> a  </div>  b </div>  c   d'))
-            .toBe('<div class=whitespace-pre><div> a  </div>  b </div> c d');
+            .toBe('<div class="whitespace-pre"><div> a  </div>  b </div> c d');
         expect(minifyHtml('<div style="white-space: normal">  a  </div>')).toBe('<div style="white-space: normal"> a </div>');
     });
 });
