@@ -169,8 +169,8 @@ describe('Attribute interpolation', () => {
             const b: string | undefined = undefined;
             render(html`<div style="p:${a}; q:${b};"></div>`, container);
             const div = container.querySelector('div');
-            // undefined renders as "undefined" via String(); no crash.
-            expect(div!.getAttribute('style')).toBe('p:A; q:undefined;');
+            // undefined renders as empty text, matching SSR; no crash.
+            expect(div!.getAttribute('style')).toBe('p:A; q:;');
         });
     });
 

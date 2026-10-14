@@ -133,6 +133,19 @@ const unwrapNodeValue = (value: unknown): unknown => {
   }
 };
 
+/**
+ * Text an attribute binding contributes to its value, identical on SSR (before
+ * escaping) and the client. `null`/`undefined`/`nothing` contribute nothing,
+ * functions never leak their source, and everything else, including arrays
+ * and templates, is `String(value)` (`a,b`, `[object Object]`), the same as
+ * Lit. Templates are never rendered as markup inside an attribute.
+ */
+const attributeValueText = (value: unknown): string => {
+  value = unwrapNodeValue(value);
+  if (value === nothing || value === null || value === undefined || typeof value === 'function') return '';
+  return String(value);
+};
+
 /** Values a client NodePart's `update()` dispatches to a dedicated handler. */
 const isPartDirective = (value: unknown): boolean =>
   isComponentResult(value) || Array.isArray(value) || value instanceof RepeatResult ||
@@ -480,8 +493,11 @@ class SSRScanner {
       this.charIdxForNext = 0;
 
       if (this.stringIdx < strings.length - 1) {
-        const val = values[this.stringIdx];
         const binding = bindings[this.stringIdx];
+        let val = values[this.stringIdx];
+        // Attribute parts on the client compare live() against the DOM but
+        // otherwise treat it as its value; SSR has no DOM to compare against.
+        if (binding.kind === 'attribute' && val instanceof LiveResult) val = val.value;
         // `nothing` in any slot of an attribute removes the whole attribute.
         const group = attributeGroups.get(this.stringIdx);
         if (group && group.indices.some((index) => values[index] === nothing)) {
@@ -559,12 +575,11 @@ class SSRScanner {
             // around the value — emitting `class=foo bar baz` would make `bar`
             // and `baz` stray attributes (malformed HTML that breaks hydration).
             this.result += fullMatch;
-            const strVal = valueToString(val, this.opts);
+            const strVal = escapeHtml(attributeValueText(val));
             if (quote) {
               this.result += strVal;
               replaced = false; // leave the closing quote in the next string
             } else {
-              // strVal is already HTML-escaped by valueToString — don't double-escape.
               this.result += `"${strVal}"`;
             }
           }
@@ -581,6 +596,10 @@ class SSRScanner {
           // it as text, so hydration markers would show up verbatim. Emit the
           // text only; the client binds it as a RawTextPart.
           this.result += rawTextSSR(binding.tag, val, binding.first);
+        } else if (binding.kind === 'attribute') {
+          // A value inside an attribute that already started
+          // (`class="a ${x} b"`): interpolate text, never markup or markers.
+          this.result += escapeHtml(attributeValueText(val));
         } else if (binding.kind === 'comment' || binding.kind === 'element') {
           // Bindings inside comments, or in a tag outside any attribute value,
           // have nowhere to render. The client drops them too.
@@ -2079,7 +2098,7 @@ class AttributePart implements Part {
       }
       let result = this.segments[0];
       for (let i = 0; i < currentValues.length; i++) {
-        result += String(currentValues[i]) + this.segments[i + 1];
+        result += attributeValueText(currentValues[i]) + this.segments[i + 1];
       }
       this.element.setAttribute(this.name, result);
       return;
@@ -2189,7 +2208,7 @@ class AttributePart implements Part {
       if (serialized === null) this.element.removeAttribute(this.domName);
       else this.element.setAttribute(this.name, serialized);
     } else {
-      this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
+      this.element.setAttribute(this.name, this.segments[0] + attributeValueText(value) + this.segments[1]);
     }
   }
 
