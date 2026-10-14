@@ -1729,7 +1729,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,
                     message: denial?.message ?? (isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error') });
             }
-            logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
+            // Match the HTTP path's classification: authorization denials,
+            // validation and client-visible errors, rate limits and
+            // cancellations are expected outcomes, not internal failures.
+            const expected = cancellation.cancelled || !!getAuthorizationFailure(e) || isActionValidationError(e)
+                || isClientVisibleError(e)
+                || (e instanceof RpcError && (e.code === 'COSSACK_RPC_CANCELLED' || e.code === 'COSSACK_RPC_RATE_LIMITED'));
+            if (!expected) {
+                logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
+                // The redacted record carries no exception; show it locally.
+                if (import.meta.env?.DEV) console.error(`[Cossack] Server action '${this.constructor.name}.${action}' failed:`, e);
+            }
         } finally {
             if (iterator) {
                 const stream = iterator;
