@@ -57,7 +57,15 @@ export const serializeFormValues = (source: string): string => {
     if ('childNodes' in node) node.childNodes.forEach(visit);
   };
   visit(root);
-  edits.sort((a, b) => b.start - a.start || b.end - a.end);
-  for (const edit of edits) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
-  return source;
+  // Apply edits in one linear pass; re-slicing the whole document per edit is
+  // quadratic once this runs over a full page.
+  edits.sort((a, b) => a.start - b.start || a.end - b.end);
+  let output = '';
+  let cursor = 0;
+  for (const edit of edits) {
+    if (edit.start > cursor) output += source.slice(cursor, edit.start);
+    output += edit.text;
+    cursor = Math.max(cursor, edit.end);
+  }
+  return output + source.slice(cursor);
 };

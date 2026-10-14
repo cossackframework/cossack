@@ -73,6 +73,20 @@ describe('declared native API contracts', () => {
         expect(handler).not.toHaveBeenCalled();
     });
 
+    it('reads an unaccepted body to the end before answering 415, so the connection stays usable', async () => {
+        const chunks = ['{"a":', '1}'];
+        let pulls = 0; const cancel = vi.fn();
+        const stream = new ReadableStream<Uint8Array>({
+            pull(controller) { const chunk = chunks[pulls++]; if (chunk) controller.enqueue(new TextEncoder().encode(chunk)); else controller.close(); },
+            cancel,
+        });
+        const incoming = request(undefined, '', { body: stream, headers: { 'Content-Type': 'text/plain' }, duplex: 'half' } as RequestInit);
+        const endpoint = defineApi({ input: { body: input.object({}) }, handler: () => new Response() });
+        await failure(await app(endpoint).fetch(incoming), 415, 'COSSACK_API_MEDIA_TYPE');
+        expect(pulls).toBe(chunks.length + 1);
+        expect(cancel).not.toHaveBeenCalled();
+    });
+
     it('checks actual stream bytes without trusting a false Content-Length and releases the reader', async () => {
         const cancel = vi.fn(); const handler = vi.fn(() => new Response());
         const stream = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode('{"secret":"private-big-body"}')); }, cancel });

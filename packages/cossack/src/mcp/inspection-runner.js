@@ -1,4 +1,5 @@
 import { Worker } from 'node:worker_threads';
+import { decodeInspectionResult } from './inspection-result.js';
 
 const failure = code => Object.assign(new Error(code), { code });
 
@@ -38,8 +39,11 @@ export class InspectionRunner {
       const cancel = () => { void finish(failure('COSSACK_MCP_CANCELED')); };
       const timer = setTimeout(() => { void finish(failure('COSSACK_MCP_TIMEOUT')); }, this.timeout);
       signal?.addEventListener('abort', cancel, { once: true });
-      worker.once('message', value => {
-        if (Buffer.byteLength(JSON.stringify(value)) > 4 * 1024 * 1024) void finish(failure('COSSACK_MCP_RESULT_TOO_LARGE'));
+      // The worker serializes and measures the result (inspection-result.js),
+      // so an oversized result never crosses into this thread.
+      worker.once('message', message => {
+        const { error, value } = decodeInspectionResult(message);
+        if (error) void finish(failure(error));
         else void finish(null, value);
       });
       worker.once('error', () => { void finish(failure('COSSACK_INSPECTION_FAILED')); });

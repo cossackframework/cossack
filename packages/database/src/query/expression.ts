@@ -30,12 +30,15 @@ export class ExpressionBuilder<T extends object> {
   like(property: keyof T & string, value: string): SQLFragment { return this.compare(property, "LIKE", value); }
 
   compare(property: keyof T & string, operator: string, value: unknown): SQLFragment {
+    this.assertDefined(property, value);
     const column = this.metadata.columnByProperty.get(property);
     const encoded = column && this.encoder ? this.encoder(column, value) : value;
     return this.sql.fragment`${this.column(property)} ${this.sql.unsafe(operator)} ${encoded as import("../adapter/types.js").DatabaseValue}`;
   }
 
   in(property: keyof T & string, values: readonly unknown[]): SQLFragment {
+    this.assertDefined(property, values);
+    if (values.some((value) => value === undefined)) this.assertDefined(property, undefined);
     if (values.length === 0) return this.sql.fragment`1 = 0`;
     const column = this.metadata.columnByProperty.get(property);
     const encoded = column && this.encoder
@@ -58,6 +61,15 @@ export class ExpressionBuilder<T extends object> {
 
   not(part: SQLFragment): SQLFragment {
     return this.sql.fragment`NOT (${part})`;
+  }
+
+  /** `undefined` would compile to `= NULL`, which never matches; demand an explicit choice. */
+  private assertDefined(property: string, value: unknown): void {
+    if (value !== undefined) return;
+    throw new ConfigurationError(
+      `${this.metadata.modelName}.${property} is undefined in a where clause. ` +
+      "Use null (or IsNull()) to match NULL, or omit the property to not filter on it.",
+    );
   }
 }
 
@@ -82,7 +94,7 @@ function operatorFragment<T extends object>(
     case "gte": return expressions.gte(property, operator.value);
     case "lt": return expressions.lt(property, operator.value);
     case "lte": return expressions.lte(property, operator.value);
-    case "like": return expressions.like(property, String(operator.value));
+    case "like": return expressions.like(property, operator.value === undefined ? undefined as never : String(operator.value));
     case "in": return expressions.in(property, operator.value as readonly unknown[]);
     case "not-in": return expressions.not(expressions.in(property, operator.value as readonly unknown[]));
     case "is-null": return expressions.isNull(property);
@@ -102,6 +114,8 @@ export function compileWhere<T extends object>(
   if (where instanceof SQLFragment) return where;
   const expressions = new ExpressionBuilder<T>(metadata, sql, alias, encoder);
   if (Array.isArray(where)) {
+    // OR of no alternatives matches nothing.
+    if (where.length === 0) return sql.fragment`1 = 0`;
     return expressions.or(...where.map((item) => compileWhere(metadata, sql, item, alias, encoder)));
   }
   const parts = Object.entries(where).map(([property, value]) => {

@@ -200,6 +200,24 @@ describe('resourceStatus$ (RT-03)', () => {
         expect(() => host.resourceStatus$('missing')).toThrow(/Unknown server\$ resource/);
         await host.destroyAsync();
     });
+    it('invalidate$ binds a declared-but-unread field like refresh$/load$/resourceStatus$', async () => {
+        const loader = vi.fn(() => 5);
+        class Fields extends Cossack<{}, { Resources: 'item' }> {
+            static readonly __cossackResourceFields = ['item'];
+            get item() { return this.__serverResource('item', loader, { initial: 0 })!; }
+        }
+        const host = new Fields();
+        vi.spyOn(host, 'requestUpdate').mockResolvedValue(true);
+        expect(() => host.invalidate$('item')).not.toThrow();
+        // Binding never dispatches the loader; the next read starts it fresh.
+        expect(loader).not.toHaveBeenCalled();
+        expect(host.item).toBe(0);
+        await Promise.all(host.__serverResourcePending());
+        expect(loader).toHaveBeenCalledOnce();
+        expect(host.resourceStatus$('item')).toMatchObject({ state: 'ready', value: 5 });
+        await host.destroyAsync();
+    });
+
     it('refresh preserves dependency arguments and ignores older refreshes', async () => {
         const host = new Host();
         const first = deferred<number>();

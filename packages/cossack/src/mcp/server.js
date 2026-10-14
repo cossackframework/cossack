@@ -25,7 +25,7 @@ export async function startMcpServer(project, options = {}) {
   const handle = serveStdio(() => {
     const server = new McpServer({ name: 'cossack', version: versions.cli });
     server.registerTool('inspect_project', {
-      description: 'Inspect static Cossack routes, Cloudflare configuration localization catalogs, schedules, workflows or cache/rate-limit providers in the bound project. No build, module execution or remote readiness check.',
+      description: 'Inspect static Cossack routes, Cloudflare configuration, localization catalogs, schedules, workflows or cache/rate-limit providers in the bound project. No build, application-module execution or remote readiness check; every scope except localization may import the project\'s installed Wrangler to parse its configuration.',
       inputSchema: z.object({
         scope: z.enum(['routes', 'cloudflare', 'providers', 'localization', 'schedules', 'workflows']),
         environment: z.string().min(1).max(128).optional(),

@@ -56,9 +56,6 @@ function makeComponent() {
         _sseConnection: undefined,
         requestUpdate: vi.fn(),
         setProperty(key: string, value: unknown) { (this as any)[key] = value; },
-        _isOptimisticLocked: () => false,
-        _optimisticLockedKeys: {},
-        _optimisticPendingState: {},
         getInitialStateFromWindow: () => ({
             componentRouteId: 'cmp_sse',
             scopeKey: 'user:anonymous',

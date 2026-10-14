@@ -1,6 +1,6 @@
 import { DestructiveSchemaChangeError } from "../errors.js";
 import type { SchemaDiff, SchemaOperation } from "./operations.js";
-import type { ColumnSchema, EntitySchema, OrmSchema } from "./types.js";
+import type { ColumnSchema, EntitySchema, IndexSchema, OrmSchema } from "./types.js";
 
 function sqliteStorageType(type: ColumnSchema['logicalType']): string {
   if (type === 'integer' || type === 'bigint' || type === 'boolean') return 'integer';
@@ -21,7 +21,42 @@ function sqliteStorageType(type: ColumnSchema['logicalType']): string {
   return 'text';
 }
 
-function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect']): string {
+/** `now()` (PostgreSQL), `CURRENT_TIMESTAMP` and its aliases are the same default. */
+function normalizeDefault(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (/^(?:now\(\)|current_timestamp|transaction_timestamp\(\))$/i.test(trimmed)) return "CURRENT_TIMESTAMP";
+  const precise = /^(?:current_timestamp|now)\((\d+)\)$/i.exec(trimmed);
+  return precise ? `CURRENT_TIMESTAMP(${precise[1]})` : value;
+}
+
+/**
+ * A single-column unique index and an inline UNIQUE constraint enforce the same
+ * rule. SQLite cannot add a UNIQUE column with ALTER TABLE, so migrations often
+ * use an index; models may declare either form. Compare the effective rule.
+ */
+function enforcesUnique(entity: { readonly indexes: readonly IndexSchema[] }, column: ColumnSchema): boolean {
+  return column.unique || entity.indexes.some((index) =>
+    index.unique && index.columns.length === 1 && index.columns[0] === column.columnName);
+}
+
+function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect'], unique = column.unique): string {
+  let logicalType = dialect === 'sqlite' ? sqliteStorageType(column.logicalType) : column.logicalType;
+  let length = dialect === 'sqlite' || column.logicalType === 'enum' ? undefined : column.length;
+  let { precision, scale } = column;
+  let generated = column.generated;
+  // SQLite fills a single integer primary key (the rowid alias) with or without
+  // AUTOINCREMENT, so "generated" cannot be told apart in the database.
+  if (dialect === 'sqlite' && column.primary && logicalType === 'integer' && (generated === false || generated === 'increment')) {
+    generated = false;
+  }
+  // PostgreSQL renders "increment" as an identity column, and reads serial columns back as "increment".
+  if (dialect === 'postgres' && generated === 'identity') generated = 'increment';
+  if (dialect === 'mysql') {
+    // MySQL stores uuid as char(36) and an unsized decimal as decimal(10,0).
+    if (logicalType === 'uuid') { logicalType = 'varchar'; length = column.length ?? 36; }
+    if (logicalType === 'decimal') { precision ??= 10; scale ??= 0; }
+  }
   const normalizedDefault =
     column.logicalType === "boolean"
       ? (
@@ -37,16 +72,16 @@ function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect']):
               ? false
               : column.default
         )
-      : column.default;
+      : normalizeDefault(column.default);
   return JSON.stringify({
-    logicalType: dialect === 'sqlite' ? sqliteStorageType(column.logicalType) : column.logicalType,
+    logicalType,
     nullable: column.nullable,
     primary: column.primary,
-    generated: column.generated,
-    unique: column.unique,
-    length: dialect === 'sqlite' ? undefined : column.length,
-    precision: column.precision,
-    scale: column.scale,
+    generated,
+    unique,
+    length,
+    precision,
+    scale,
     default: normalizedDefault,
     enumValues: column.enumValues,
     array: column.array,
@@ -68,6 +103,12 @@ export function diffSchemas(
   const destructive: SchemaOperation[] = [];
   const matchedTables = new Set<string>();
   const dialect = existing.dialect ?? desired.dialect;
+  // Many-to-many join tables are created with their owning entity, not as entities.
+  for (const entity of desired.entities) {
+    for (const relation of entity.relations) {
+      if (relation.owner && relation.joinTable) matchedTables.add(relation.joinTable.name);
+    }
+  }
 
   for (const target of desired.entities) {
     const source = findExistingEntity(existing, target);
@@ -99,7 +140,8 @@ export function diffSchemas(
           to: desiredColumn.columnName,
         });
       }
-      if (comparableColumn(existingColumn, dialect) !== comparableColumn(desiredColumn, dialect)) {
+      if (comparableColumn(existingColumn, dialect, enforcesUnique(source, existingColumn))
+          !== comparableColumn(desiredColumn, dialect, enforcesUnique(target, desiredColumn))) {
         const operation: SchemaOperation = {
           kind: "alter-column",
           tableName: target.tableName,

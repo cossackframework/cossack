@@ -32,12 +32,11 @@ function fixture() {
         requests.push({ id: new Headers(init.headers).get('X-Cossack-Request-Id')!, resolve });
     })));
     const target: any = { constructor: class Counter {}, count: 0, draft: 'draft', loading: {},
-        _optimisticLockedKeys: {}, _optimisticPendingState: {}, __cossack_proxies: new Map(), requestUpdate: vi.fn(),
+        __cossack_proxies: new Map(), requestUpdate: vi.fn(),
         getInitialStateFromWindow: () => ({ componentRouteId: 'counter', scopeKey: 'one', transport: 'sse' }),
         getPublicState() { return { count: this.count }; },
         getMethod: () => () => optimistic(target).increment('count', 1), hasMethod: () => true,
         setProperty(key: string, value: unknown) { this[key] = value; noteOptimisticWrite(this, key); },
-        _isOptimisticLocked: () => false,
     };
     Reflect.defineMetadata('cossack:state', { count: {} }, target.constructor);
     Reflect.defineMetadata('cossack:optimistic-handlers', { edit: 'preview' }, target.constructor);
@@ -140,12 +139,11 @@ describe('SSE optimistic snapshot ordering', () => {
             })));
             class Plain {}
             const target: any = { constructor: Plain, count: 0, loading: {},
-                _optimisticLockedKeys: {}, _optimisticPendingState: {}, __cossack_proxies: new Map(), requestUpdate: vi.fn(),
+                __cossack_proxies: new Map(), requestUpdate: vi.fn(),
                 getInitialStateFromWindow: () => ({ componentRouteId: 'plain', scopeKey: 'one', transport: 'sse' }),
                 getPublicState() { return { count: this.count }; },
                 getMethod: () => undefined, hasMethod: () => false,
                 setProperty(key: string, value: unknown) { this[key] = value; noteOptimisticWrite(this, key); },
-                _isOptimisticLocked: () => false,
             };
             Reflect.defineMetadata('cossack:state', { count: {} }, Plain);
             proxyHttpMethods(target, [{ name: 'stream' }]); connectSSE(target); Source.latest.onopen?.();

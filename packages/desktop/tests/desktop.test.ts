@@ -34,9 +34,10 @@ const electron = vi.hoisted(() => {
   let protocolHandler: ((request: Request) => Promise<Response>) | undefined;
   const windows: FakeBrowserWindow[] = [];
   const trays: FakeTray[] = [];
+  let windowSequence = 0;
 
   class FakeWebContents extends Emitter {
-    readonly id = windows.length + 101;
+    readonly id = windowSequence + 100;
     openHandler?: (details: { url: string }) => { action: string };
     reloadIgnoringCache = vi.fn();
     setWindowOpenHandler(handler: (details: { url: string }) => { action: string }) {
@@ -48,18 +49,31 @@ const electron = vi.hoisted(() => {
     static getFocusedWindow = vi.fn(() => windows[0]);
     static getAllWindows = vi.fn(() => windows);
     static fromId = vi.fn((id: number) => windows.find((window) => window.id === id));
-    readonly id = windows.length + 1;
+    readonly id = ++windowSequence;
     readonly webContents = new FakeWebContents();
     readonly options: Record<string, unknown>;
+    destroyed = false;
     loadURL = vi.fn(async () => {});
-    show = vi.fn();
-    hide = vi.fn();
-    focus = vi.fn();
-    setOverlayIcon = vi.fn();
+    show = this.live();
+    hide = this.live();
+    focus = this.live();
+    setOverlayIcon = this.live();
+    isDestroyed = vi.fn(() => this.destroyed);
     constructor(options: Record<string, unknown>) {
       super();
       this.options = options;
       windows.push(this);
+    }
+    private live() {
+      return vi.fn((..._args: unknown[]) => {
+        if (this.destroyed) throw new TypeError('Object has been destroyed');
+      });
+    }
+    /** Electron destroys a closed window and removes it from getAllWindows(). */
+    close() {
+      this.destroyed = true;
+      windows.splice(windows.indexOf(this), 1);
+      this.emit('closed');
     }
   }
 
@@ -323,10 +337,17 @@ describe('Electron Desktop runtime', () => {
     }
   });
 
-  it('removes private proof from requests leaving the Desktop origin', () => {
+  it('removes only private proof from requests leaving the Desktop origin', () => {
     expect(electron.intercept({url:'https://example.com/redirect',requestHeaders:{
       'X-Cossack-Desktop-Owner':'42','X-Cossack-Desktop-Token':'secret',Accept:'text/plain',
-    }})).toEqual({requestHeaders:{accept:'text/plain'}});
+      'X-Custom-Case':'a, b','Cookie':'one=1; two=2',
+    }})).toEqual({requestHeaders:{Accept:'text/plain','X-Custom-Case':'a, b','Cookie':'one=1; two=2'}});
+  });
+
+  it('leaves external request headers untouched when no private proof is present', () => {
+    expect(electron.intercept({url:'https://example.com/api',requestHeaders:{
+      Accept:'text/plain','X-Custom-Case':'value','User-Agent':'Electron',
+    }})).toEqual({});
   });
 
   it.each(['42.9.0', '43.6.9', '44.3.9'])('rejects Electron %s without native initiator evidence', version => {
@@ -409,5 +430,48 @@ describe('Electron Desktop runtime', () => {
     application.quit();
     expect(application.quitting).toBe(true);
     expect(electron.app.quit).toHaveBeenCalled();
+  });
+
+  it('keeps mainWindow and shell references live after windows close and the app re-activates', async () => {
+    const application = await desktop.createDesktopApp({
+      identifier: 'dev.cossack.activate',
+      productName: 'Activate',
+      assetsRoot,
+      fetch: async () => new Response('ok'),
+    });
+    const earlyShell = application.shell;
+    const first = application.mainWindow;
+    expect(earlyShell.window).toBe(first);
+
+    // Closing the main window while another managed window stays open re-points to it.
+    const secondary = application.createWindow({ path: '/settings' });
+    first.close();
+    expect(application.mainWindow).toBe(secondary);
+    expect(earlyShell.window).toBe(secondary);
+    application.show();
+    expect(secondary.show).toHaveBeenCalled();
+
+    // macOS: closing the last window keeps the app alive; activate recreates the window.
+    for (const window of [...electron.windows]) window.close();
+    expect(electron.windows).toHaveLength(0);
+    electron.app.emit('activate');
+    expect(electron.windows).toHaveLength(1);
+    const replacement = electron.windows[0];
+    expect(application.mainWindow).toBe(replacement);
+    expect(application.shell).toBe(earlyShell);
+    expect(earlyShell.window).toBe(replacement);
+    expect(() => earlyShell.show()).not.toThrow();
+    expect(() => earlyShell.focus()).not.toThrow();
+    expect(() => application.show()).not.toThrow();
+    expect(() => application.hide()).not.toThrow();
+    expect(replacement.show).toHaveBeenCalledTimes(2);
+    expect(replacement.hide).toHaveBeenCalledOnce();
+
+    // A second instance with no open window (tray apps) also gets a fresh main window.
+    replacement.close();
+    electron.app.emit('second-instance');
+    expect(electron.windows).toHaveLength(1);
+    expect(application.mainWindow).toBe(electron.windows[0]);
+    expect(electron.windows[0].show).toHaveBeenCalled();
   });
 });

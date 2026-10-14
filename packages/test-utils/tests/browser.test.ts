@@ -31,6 +31,20 @@ describe('browser lifecycle helper', () => {
         expect(document.body.children).toHaveLength(0);
     });
 
+    it('click() honours disabled form controls like a real user click', async () => {
+        const clicked = vi.fn();
+        class Component extends Cossack {
+            render() { return html`<button id="off" disabled @click=${() => clicked('off')}>off</button><fieldset disabled><button id="nested" @click=${() => clicked('nested')}>nested</button></fieldset><button id="on" @click=${() => clicked('on')}>on</button>`; }
+        }
+        const result = await render(Component);
+        await result.click('#off');
+        await result.click('#nested');
+        expect(clicked).not.toHaveBeenCalled();
+        await result.click('#on');
+        expect(clicked).toHaveBeenCalledExactlyOnceWith('on');
+        await result.unmount();
+    });
+
     it('awaits async component/service cleanup once and removes the DOM even after failure', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const gate = controlledAsync<void>();

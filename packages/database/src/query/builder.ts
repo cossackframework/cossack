@@ -13,6 +13,14 @@ type Predicate<T extends object> =
   | SQLFragment
   | ((expressions: ExpressionBuilder<T>) => SQLFragment);
 
+/** True when a structured predicate has no conditions, so it would match every row. */
+function matchesEveryRow(predicate: unknown): boolean {
+  if (predicate === undefined || predicate === null) return true;
+  if (predicate instanceof SQLFragment) return false;
+  if (Array.isArray(predicate)) return predicate.some(matchesEveryRow);
+  return typeof predicate === "object" && Object.keys(predicate).length === 0;
+}
+
 interface JoinClause {
   readonly kind: "INNER" | "LEFT";
   readonly table: string;
@@ -208,7 +216,10 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
 
   async getMany(): Promise<readonly T[]> {
     const rows = await this.getRawMany() as readonly Record<string, unknown>[];
-    return rows.map((row) => this.orm.hydrate<T>(this.metadata, row));
+    const entities: T[] = [];
+    // Hydrate in order so `@AfterLoad` hooks finish (or throw) before entities are returned.
+    for (const row of rows) entities.push(await this.orm.hydrate<T>(this.metadata, row));
+    return entities;
   }
 
   async getOne(): Promise<T | null> {
@@ -308,6 +319,7 @@ export class MutationQueryBuilder<T extends BaseEntity> {
     private readonly values?: readonly Partial<EntityShape<T>>[],
     private readonly predicate?: FindWhere<T> | SQLFragment,
     private readonly conflict?: readonly (keyof EntityShape<T> & string)[],
+    private readonly options: { readonly all?: boolean } = {},
   ) {}
 
   returning(...properties: readonly (keyof EntityShape<T> & string)[]): this {
@@ -320,6 +332,12 @@ export class MutationQueryBuilder<T extends BaseEntity> {
 
   toSQL(): SQLFragment {
     const sql = this.orm.sql;
+    if ((this.kind === "delete" || this.kind === "update") && !this.options.all && matchesEveryRow(this.predicate)) {
+      const name = this.metadata.modelName;
+      throw new ConfigurationError(this.kind === "delete"
+        ? `${name}.delete() requires a where clause with at least one condition. Use ${name}.deleteAll() to delete every row.`
+        : `${name}.update() requires a where clause with at least one condition. Use ${name}.updateAll(values) to update every row.`);
+    }
     if (this.kind === "delete") {
       const where = this.predicate
         ? compileWhere(this.metadata, sql, this.predicate, undefined, (column, value) => this.orm.encode(column, value))
@@ -345,6 +363,10 @@ export class MutationQueryBuilder<T extends BaseEntity> {
       }
       return column;
     });
+    if (columns.length === 0) {
+      if (this.kind !== "insert") throw new ConfigurationError(`${this.kind} requires at least one column value.`);
+      return this.defaultValuesInsert(rows.length);
+    }
     // An upsert inserts every given column but only overwrites updatable ones on conflict.
     const updatable = columns.filter((column) => column.update);
     if (this.kind === "insert" || this.kind === "upsert") {
@@ -440,7 +462,39 @@ export class MutationQueryBuilder<T extends BaseEntity> {
   }
 
   async execute<Row = Record<string, unknown>>(): Promise<QueryResult<Row>> {
+    const rows = this.values ?? [];
+    if (this.kind === "insert" && rows.length > 1 && this.orm.driver.dialect !== "mysql" &&
+      rows.every((row) => Object.keys(row).length === 0)) {
+      // SQLite and PostgreSQL insert all-default rows with one DEFAULT VALUES statement each.
+      const results: QueryResult<Row>[] = [];
+      for (let index = 0; index < rows.length; index++) {
+        results.push(await this.orm.executeFragment<Row>(this.defaultValuesInsert(1), "insert"));
+      }
+      const last = results.at(-1)!;
+      return {
+        rows: results.flatMap((result) => result.rows),
+        meta: { ...last.meta, rowsAffected: results.reduce((sum, result) => sum + (result.meta.rowsAffected ?? 0), 0) },
+      };
+    }
     return this.orm.executeFragment<Row>(this.toSQL(), this.kind === "upsert" ? "insert" : this.kind);
+  }
+
+  /** `INSERT ... DEFAULT VALUES` (SQLite, PostgreSQL) or `INSERT ... () VALUES ()` (MySQL). */
+  private defaultValuesInsert(count: number): SQLFragment {
+    const nodes: SQLNode[] = [
+      { kind: "text", value: "INSERT INTO " },
+      { kind: "identifier", path: [this.metadata.tableName] },
+    ];
+    if (this.orm.driver.dialect === "mysql") {
+      nodes.push({ kind: "text", value: ` () VALUES ${Array.from({ length: count }, () => "()").join(", ")}` });
+    } else {
+      if (count !== 1) {
+        throw new ConfigurationError("Inserting several rows without column values needs one statement per row; use execute().");
+      }
+      nodes.push({ kind: "text", value: " DEFAULT VALUES" });
+    }
+    nodes.push(...this.returningNodes());
+    return new SQLFragment(nodes);
   }
 
   private returningNodes(): SQLNode[] {

@@ -1,16 +1,21 @@
 import { getModuleDefault } from '../module-default.js';
 // src/transports/sse.ts
-import { SseRuntime, Cossack, createInstance, getLocale, isOriginAllowed, sanitizeClientState, createRootServiceScope, createLayoutServiceScope, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
+import { Cossack, createInstance, getLocale, isOriginAllowed, sanitizeClientState, type CossackServerRuntime, type PageOptions } from '@cossackframework/core';
 import type { Context } from 'hono';
-import { resolveLayoutPaths, type RouterContext } from '../route-ids.js';
+import type { RouterContext } from '../route-ids.js';
+import { createServiceScopeChain } from '../service-scope-chain.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
 import { captureRealtimeIdentity, revalidateRealtimeIdentity, RealtimeIdentityConfigurationError, snapshotRealtimeRequest } from '../realtime-context.js';
 import { resolveRealtimeScopeKey } from '../realtime-scope.js';
 export { resolveRealtimeScopeKey as resolveSseScopeKey } from '../realtime-scope.js';
 
 interface SseStoreEntry {
-    componentInstance: any;
-    runtime: SseRuntime;
+    /**
+     * Detached JSON snapshot of the scope's public state. The store never
+     * retains a component instance: SSR and cold starts construct, read, and
+     * destroy their instance within the request, like the coordinator path.
+     */
+    state: Record<string, unknown>;
     /** Incremented by /crpc after each action. SSE endpoint polls this to detect changes. */
     stateVersion: number;
     requestId?: string;
@@ -106,6 +111,11 @@ export function __sseStoreSize(): number {
 export function __sweepSseStore(now = Date.now()): number {
     enforceSseStoreBound(now);
     return sseStateStore.size;
+}
+
+/** @internal Test seam: the detached state held for one store key. */
+export function __sseStoreState(storeKey: string): Record<string, unknown> | undefined {
+    return sseStateStore.get(storeKey)?.state;
 }
 
 /** @internal Test seam: clear the process-local SSE store. */
@@ -266,25 +276,30 @@ export function hydrateSseScopeState(instance: any, state: Record<string, unknow
     }
 }
 
+/** Detach a public-state object exactly as an SSE frame would serialize it. */
+function detachSseState(state: Record<string, unknown>): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(state ?? {}));
+}
+
 /**
  * Register or reset a process-local SSE store entry during SSR (Node
- * backend only). The fresh component instance replaces any existing entry so
- * that state is re-initialized via init() instead of reusing stale in-memory
- * state. On Cloudflare, SSR initializes the coordinator scope instead.
+ * backend only). The freshly rendered page state replaces any existing entry
+ * so that state is re-initialized via init() instead of reusing stale
+ * in-memory state. Only a detached snapshot is stored; the SSR instance is
+ * destroyed with its request. On Cloudflare, SSR initializes the coordinator
+ * scope instead.
  */
 export function registerSseStoreEntry(
     ctx: RouterContext,
     path: string,
     scopeKey: string,
-    pageInstance: any,
+    publicState: Record<string, unknown>,
 ): void {
     const componentRouteId = ctx.routePathToIdMap.get(path);
     if (componentRouteId) {
         const storeKey = sseStoreKey(componentRouteId, scopeKey);
-        const runtime = new SseRuntime(pageInstance);
         sseStateStore.set(storeKey, {
-            componentInstance: pageInstance,
-            runtime,
+            state: detachSseState(publicState),
             stateVersion: nextLocalSseCursor(),
             connectionCount: sseStateStore.get(storeKey)?.connectionCount ?? 0,
             lastActive: Date.now(),
@@ -370,22 +385,16 @@ export function handleSseEndpoint(ctx: RouterContext) {
         let entry = sseStateStore.get(storeKey);
 
         if (!entry) {
-            // Cold start: create instance on demand
-            const user = c.get('user');
-            const componentInstance = createInstance(PageComponent) as any;
-            await componentInstance.bootstrap({
-                context: c,
-                user,
-                env: c.env,
-                runtime: await ctx.runtimeInfo?.(),
-                skipInit: true,
-            });
-            componentInstance._render();
-
-            const runtime = new SseRuntime(componentInstance);
-            entry = { componentInstance, runtime, stateVersion: nextLocalSseCursor(), connectionCount: 0, lastActive: Date.now() };
-            sseStateStore.set(storeKey, entry);
-            enforceSseStoreBound(Date.now(), storeKey);
+            // Cold start: build the page with the same layout service scopes
+            // as SSR and RPC, read its state, and release it in this request.
+            const state = await buildColdStartState(c, ctx, componentPath, effectiveScopeKey, PageComponent);
+            // Another request may have registered the scope while this one awaited.
+            entry = sseStateStore.get(storeKey);
+            if (!entry) {
+                entry = { state, stateVersion: nextLocalSseCursor(), connectionCount: 0, lastActive: Date.now() };
+                sseStateStore.set(storeKey, entry);
+                enforceSseStoreBound(Date.now(), storeKey);
+            }
         }
 
         // Track this connection against the entry so the store can be trimmed
@@ -393,10 +402,8 @@ export function handleSseEndpoint(ctx: RouterContext) {
         entry.connectionCount++;
         entry.lastActive = Date.now();
 
-        const { componentInstance } = entry;
-
         const pending: SseFrame[] = [
-            { event: 'state-update', data: JSON.stringify(componentInstance.getPublicState()), cursor: entry.stateVersion },
+            { event: 'state-update', data: JSON.stringify(entry.state), cursor: entry.stateVersion },
             { event: 'connected', data: '{}' },
         ];
         let lastVersion = entry.stateVersion;
@@ -404,7 +411,7 @@ export function handleSseEndpoint(ctx: RouterContext) {
             const current = sseStateStore.get(storeKey);
             if (!current || current.stateVersion === lastVersion) return [];
             lastVersion = current.stateVersion;
-            return [{ event: 'state-update', cursor: lastVersion, data: JSON.stringify({ ...current.componentInstance.getPublicState(),
+            return [{ event: 'state-update', cursor: lastVersion, data: JSON.stringify({ ...current.state,
                 ...(current.requestId === undefined ? {} : { _cossack_request_id: current.requestId }) }) }];
         };
         const poll: SsePoll = async (waitMs, pollSignal) => {
@@ -423,6 +430,34 @@ export function handleSseEndpoint(ctx: RouterContext) {
         };
         return new Response(authorizedSseStream(c.req.raw.signal, pending, poll, authorize, cleanup), { headers: SSE_HEADERS });
     };
+}
+
+/**
+ * Subscription cold starts need the same layout declarations as SSR and RPC.
+ * Construct the page through the shared scope chain, read a detached state
+ * snapshot, and dispose the temporary instance and scopes in this request.
+ */
+async function buildColdStartState(
+    c: Context,
+    ctx: RouterContext,
+    componentPath: string,
+    scopeKey: string,
+    PageComponent: new () => Cossack,
+): Promise<Record<string, unknown>> {
+    const facilities = { context: c, user: c.get('user'), env: c.env };
+    const chain = await createServiceScopeChain({
+        componentPath, layouts: ctx.layouts, routePathToIdMap: ctx.routePathToIdMap, scopeKey, facilities,
+    });
+    let instance: Cossack | undefined;
+    try {
+        instance = createInstance(PageComponent, { serviceScope: chain.scope });
+        await instance.bootstrap({ ...facilities, runtime: await ctx.runtimeInfo?.(), skipInit: true });
+        instance._render();
+        return detachSseState(instance.getPublicState());
+    } finally {
+        try { await instance?.destroyAsync(); }
+        finally { await chain.root.disposeAsync(); }
+    }
 }
 
 /**
@@ -449,30 +484,9 @@ async function handleCoordinatorSubscription(
 
     let snapshot = await stub.currentState();
     if (!snapshot) {
-        // Subscription cold starts need the same layout declarations as SSR
-        // and RPC. Construct and dispose the temporary instance in this request.
-        const rootScope = createRootServiceScope();
-        const facilities = { context: c, user: c.get('user'), env: c.env };
-        rootScope.bindRequest(facilities);
-        let instance: Cossack | undefined;
-        try {
-            let active = rootScope;
-            const path = ctx.routeIdMap.get(componentRouteId)!;
-            for (const layout of resolveLayoutPaths(path, Object.keys(ctx.layouts))) {
-                const Layout = getModuleDefault(ctx.layouts[layout] as object) as new () => Cossack;
-                active = createLayoutServiceScope(active, Layout, {
-                    ownerRouteId: ctx.routePathToIdMap.get(layout), ownerRoutePath: layout, scopeKey,
-                });
-                active.bindRequest(facilities);
-            }
-            instance = createInstance(PageComponent, { serviceScope: active });
-            await instance.bootstrap({ ...facilities, runtime: await ctx.runtimeInfo?.(), skipInit: true });
-            instance._render();
-            snapshot = await stub.initialize(JSON.stringify(instance.getPublicState()));
-        } finally {
-            try { await instance?.destroyAsync(); }
-            finally { await rootScope.disposeAsync(); }
-        }
+        const path = ctx.routeIdMap.get(componentRouteId)!;
+        const state = await buildColdStartState(c, ctx, path, scopeKey, PageComponent);
+        snapshot = await stub.initialize(JSON.stringify(state));
     }
 
     const signal = c.req.raw.signal;
@@ -630,9 +644,10 @@ export function syncSseState(
     const entry = sseStateStore.get(storeKey);
     if (entry) {
         const cursor = nextLocalSseCursor();
-        for (const k in responseData) {
-            if (k !== '_cossack_return') {
-                entry.componentInstance[k] = responseData[k];
+        const next = detachSseState(responseData);
+        for (const k in next) {
+            if (k !== '_cossack_return' && k !== '__proto__' && k !== 'constructor' && k !== 'prototype') {
+                entry.state[k] = next[k];
             }
         }
         entry.stateVersion = cursor;

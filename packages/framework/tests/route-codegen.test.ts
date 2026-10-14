@@ -93,6 +93,27 @@ describe('shared structural route model', () => {
     expect(existsSync(join(root, outDir, 'cossack-routes.json'))).toBe(true);
   });
 
+  it('fails the build when the SSR manifest or the routes manifest cannot be written', () => {
+    const fail = (message: unknown) => { throw new Error(String(message)); };
+    const manifestRoot = project(); write(manifestRoot, 'src/pages/index.ts');
+    const plugin = cossackPages(); (plugin.configResolved as Function)({ root: manifestRoot });
+    write(manifestRoot, 'dist/client/.vite/manifest.json', '{}');
+    mkdirSync(join(manifestRoot, 'dist/client/cossack-manifest.json'), { recursive: true }); // unwritable target
+    const context = (error = vi.fn(fail), warn = vi.fn()) =>
+      ({ environment: { name: 'client', config: { build: { outDir: 'dist/client' } } }, error, warn });
+    const first = context();
+    expect(() => (plugin.writeBundle as Function).call(first)).toThrow(/cossack-manifest\.json/);
+    expect(first.error).toHaveBeenCalledTimes(1);
+
+    const routesRoot = project(); write(routesRoot, 'src/pages/index.ts');
+    const routesPlugin = cossackPages(); (routesPlugin.configResolved as Function)({ root: routesRoot });
+    write(routesRoot, '.cossack/routes.ts', 'export const authored = true;');
+    write(routesRoot, 'dist/client/.vite/manifest.json', '{}');
+    const second = context();
+    expect(() => (routesPlugin.writeBundle as Function).call(second)).toThrow(/routes manifest.*authored \.cossack\/routes\.ts/s);
+    expect(second.error).toHaveBeenCalledTimes(1);
+  });
+
   it('updates additions and deletions under the selected root and releases watcher listeners', () => {
     const root = project(); write(root, 'src/pages/home.ts');
     const plugin = cossackPages(); (plugin.configResolved as Function)({ root });

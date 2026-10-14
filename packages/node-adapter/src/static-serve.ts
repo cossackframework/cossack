@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Readable } from 'node:stream';
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
 
@@ -47,6 +48,28 @@ function normalizeUrlPath(urlPath: string): string {
     return normalizedPath;
 }
 
+/** Normalize a configured prefix to `/` or `/segment[/segment...]` without a trailing slash. */
+function normalizePrefix(prefix: string): string {
+    let normalized = prefix.startsWith('/') ? prefix : '/' + prefix;
+    while (normalized.length > 1 && normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+    return normalized;
+}
+
+/** Weak validator: the bytes are not hashed, so equal mtime and size count as equal. */
+function weakEtag(stats: fs.Stats): string {
+    return `W/"${Math.floor(stats.mtimeMs).toString(16)}-${stats.size.toString(16)}"`;
+}
+
+/** `If-None-Match` uses weak comparison (RFC 9110 §13.1.2). */
+function matchesIfNoneMatch(header: string | undefined, etag: string): boolean {
+    if (!header) return false;
+    const opaque = etag.replace(/^W\//, '');
+    return header.split(',').some(candidate => {
+        const value = candidate.trim();
+        return value === '*' || value.replace(/^W\//, '') === opaque;
+    });
+}
+
 /**
  * Create a middleware that serves static files from a directory.
  * This is for Node.js runtime only - uses fs to read files.
@@ -55,7 +78,8 @@ function normalizeUrlPath(urlPath: string): string {
  * @returns Hono middleware
  */
 export function serveStatic(options: StaticServeOptions) {
-    const { root, prefix = '/', index = true, cacheControl } = options;
+    const { root, index = true, cacheControl } = options;
+    const prefix = normalizePrefix(options.prefix ?? '/');
     // Resolve root once; every served path must resolve to within it.
     const resolvedRoot = path.resolve(root);
     const rootPrefix = resolvedRoot + path.sep;
@@ -66,38 +90,26 @@ export function serveStatic(options: StaticServeOptions) {
     };
 
     return async (c: Context, next: Next) => {
-        // Only handle GET requests
-        if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        const method = c.req.method;
+        if (method !== 'GET' && method !== 'HEAD') {
             return next();
         }
 
         const urlPath = normalizeUrlPath(c.req.path);
 
-        // Check if the path matches our prefix
-        if (!urlPath.startsWith(prefix)) {
-            return next();
-        }
+        // Match whole path segments: `/assets` must not serve `/assets-x`.
+        let relativePath: string;
+        if (prefix === '/') relativePath = urlPath;
+        else if (urlPath === prefix) relativePath = '/';
+        else if (urlPath.startsWith(prefix + '/')) relativePath = urlPath.slice(prefix.length);
+        else return next();
 
-        // Get the file path relative to the prefix
-        let relativePath = urlPath.substring(prefix.length);
-        if (relativePath === '') relativePath = '/';
-
-        // Build full file path
         let filePath: string;
         if (relativePath === '/') {
             if (!index) return next();
             filePath = path.join(root, 'index.html');
         } else {
-            // Try direct file first
             filePath = path.join(root, relativePath);
-
-            // If it doesn't exist and index is enabled, try index.html
-            if (index && !fs.existsSync(filePath)) {
-                const indexPath = path.join(filePath, 'index.html');
-                if (fs.existsSync(indexPath)) {
-                    filePath = indexPath;
-                }
-            }
         }
 
         // SECURITY: refuse any path that escapes the configured root (e.g.
@@ -107,22 +119,13 @@ export function serveStatic(options: StaticServeOptions) {
             return next();
         }
 
-        // Check if file exists and is not a directory
+        let file: fs.promises.FileHandle | undefined;
         try {
             let stats = await fs.promises.stat(filePath);
             if (stats.isDirectory()) {
-                if (index) {
-                    const indexPath = path.join(filePath, 'index.html');
-                    try {
-                        await fs.promises.access(indexPath);
-                        filePath = indexPath;
-                        stats = await fs.promises.stat(filePath);
-                    } catch {
-                        return next();
-                    }
-                } else {
-                    return next();
-                }
+                if (!index) return next();
+                filePath = path.join(filePath, 'index.html');
+                stats = await fs.promises.stat(filePath);
             }
 
             // Lexical containment does not stop a symlink inside the public
@@ -135,24 +138,40 @@ export function serveStatic(options: StaticServeOptions) {
             if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return next();
             if (!stats.isFile()) return next();
 
-            // Read (as a Buffer so binary assets aren't corrupted) and serve
-            // with the correct Content-Type. Previously c.html() forced
-            // text/html for every asset (CSS, JS, images, fonts).
-            const content = c.req.method === 'HEAD' ? null : await fs.promises.readFile(realFile);
-            const contentType = getContentType(filePath);
-            const headers = new Headers({ 'Content-Type': contentType });
+            // Describe the bytes actually sent: take size and validator from the open file.
+            if (method === 'GET') {
+                file = await fs.promises.open(realFile, 'r');
+                stats = await file.stat();
+                if (!stats.isFile()) return next();
+            }
+
+            const etag = weakEtag(stats);
+            const headers = new Headers({ ETag: etag });
             const resolvedCacheControl = typeof cacheControl === 'function'
                 ? cacheControl(filePath, urlPath)
                 : cacheControl;
             if (resolvedCacheControl) headers.set('Cache-Control', resolvedCacheControl);
 
-            return new Response(content === null ? null : new Uint8Array(content), {
-                status: 200,
-                headers,
-            });
-        } catch (e) {
+            if (matchesIfNoneMatch(c.req.header('if-none-match'), etag)) {
+                return new Response(null, { status: 304, headers });
+            }
+
+            // Serve with the correct Content-Type. Previously c.html() forced
+            // text/html for every asset (CSS, JS, images, fonts).
+            headers.set('Content-Type', getContentType(filePath));
+            headers.set('Content-Length', String(stats.size));
+            if (!file || stats.size === 0) return new Response(null, { status: 200, headers });
+
+            // Stream instead of buffering. `end` (inclusive) caps the body at the
+            // advertised length; the stream owns and closes the handle from here.
+            const stream = file.createReadStream({ end: stats.size - 1, autoClose: true });
+            file = undefined;
+            return new Response(Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>, { status: 200, headers });
+        } catch {
             // File doesn't exist or other error
             return next();
+        } finally {
+            await file?.close().catch(() => {});
         }
     };
 }

@@ -13,7 +13,6 @@ export default defineConfig({
     lib: {
       entry: { index: path.resolve(__dirname, 'src/index.ts'), server: path.resolve(__dirname, 'src/server.ts') },
       name: '@cossackframework/test-utils',
-      fileName: 'index',
       formats: ['es'],
       fileName: () => '[name].mjs',
     },

@@ -205,14 +205,23 @@ export function enableClientNavigation(
     onNavigate: (url: string, options?: NavigateOptions) => Promise<boolean | NavigateResult>,
     onPreFetch?: (url: string) => Promise<void>
 ) {
-    const isLocalLink = (target: HTMLAnchorElement) => {
+    // Return the href to route through the SPA, or undefined when the browser
+    // must handle the link. Only same-origin http(s) URLs are routes:
+    // `mailto:`, `tel:`, `javascript:`, other schemes and cross-origin links
+    // keep their native behaviour. Same-origin absolute URLs are routed by
+    // their path so the router sees the same shape as a relative link.
+    const localHref = (target: HTMLAnchorElement): string | undefined => {
         const href = target.getAttribute('href');
-        return href &&
-               !href.startsWith('http') &&
-               !href.startsWith('//') &&
-               !href.startsWith('#') &&
-               !target.hasAttribute('target') &&
-               !target.hasAttribute('download');
+        if (!href || href.startsWith('#') || target.hasAttribute('target') || target.hasAttribute('download')) return undefined;
+        let url: URL;
+        try {
+            url = new URL(href, window.location.href);
+        } catch {
+            return undefined;
+        }
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+        if (url.origin !== window.location.origin) return undefined;
+        return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(href.trim()) ? url.pathname + url.search + url.hash : href;
     };
 
     // Read `data-transition-types` from an anchor and split on whitespace.
@@ -249,9 +258,8 @@ export function enableClientNavigation(
         }
 
         const target = (e.target as Element).closest('a');
-        if (!target || !isLocalLink(target)) return;
-
-        const href = target.getAttribute('href')!;
+        const href = target ? localHref(target) : undefined;
+        if (!target || href === undefined) return;
         e.preventDefault();
 
         const options: NavigateOptions | undefined = (() => {
@@ -270,9 +278,8 @@ export function enableClientNavigation(
     let prefetchTimeout: any;
     const handleMouseOver = (e: MouseEvent) => {
         const target = (e.target as Element).closest('a');
-        if (!target || !isLocalLink(target) || !onPreFetch) return;
-
-        const href = target.getAttribute('href')!;
+        const href = target && onPreFetch ? localHref(target) : undefined;
+        if (href === undefined || !onPreFetch) return;
 
         // Wait 50ms of hover before prefetching to avoid noise
         clearTimeout(prefetchTimeout);

@@ -3,18 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import * as installed from '@cossackframework/scaffold';
+import { execPackageManager } from './package-manager.js';
 
-const execFileP = promisify(execFile);
 const require = createRequire(import.meta.url);
 const NAME = '@cossackframework/scaffold';
 const VERSION = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/;
 
 export async function resolveRegistryVersion(name, tag) {
   try {
-    const { stdout } = await execFileP('pnpm', ['view', `${name}@${tag}`, 'version', '--json'],
+    const { stdout } = await execPackageManager('pnpm', ['view', `${name}@${tag}`, 'version', '--json'],
       { timeout: 30_000, maxBuffer: 256 * 1024 });
     const parsed = JSON.parse(stdout);
     const version = Array.isArray(parsed) ? parsed.at(-1) : parsed;
@@ -35,7 +33,7 @@ export async function loadUpgradeScaffold(tag) {
   const close = () => fs.rm(directory, { recursive: true, force: true });
   try {
     await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-    await execFileP('pnpm', ['add', '--ignore-scripts', '--ignore-workspace', '--lockfile=false', '--save-exact', `${NAME}@${version}`],
+    await execPackageManager('pnpm', ['add', '--ignore-scripts', '--ignore-workspace', '--lockfile=false', '--save-exact', `${NAME}@${version}`],
       { cwd: directory, timeout: 120_000, maxBuffer: 1024 * 1024 });
     const fromTemporary = createRequire(path.join(directory, 'package.json'));
     const packagePath = fromTemporary.resolve(`${NAME}/package.json`);

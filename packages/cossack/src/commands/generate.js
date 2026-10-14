@@ -8,7 +8,7 @@ import {
   toKebab,
   toTitle,
 } from '../names.js';
-import { writeFile, exists } from '../fs-utils.js';
+import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import {
   pageTemplate,
   pageMdxTemplate,
@@ -69,7 +69,7 @@ async function generateCommandInner(args, ctx) {
     );
   }
 
-  const root = ctx.projectRoot || process.cwd();
+  const root = await findProjectRoot(ctx.cwd);
 
   switch (type) {
     case 'page':
@@ -193,7 +193,7 @@ function report(target, result, ctx) {
       // envelope without diagnostics (CLI-03 review finding).
       out.file('skipped', target);
       throw Object.assign(
-        new Error(`Refusing to overwrite ${path.relative(process.cwd(), target)}. Use --force to overwrite.`),
+        new Error(`Refusing to overwrite ${path.relative(ctx.cwd ?? process.cwd(), target)}. Use --force to overwrite.`),
         { code: 'COSSACK_FILE_EXISTS' },
       );
   }

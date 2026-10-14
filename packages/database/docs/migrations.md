@@ -143,6 +143,13 @@ Applied migrations are recorded in `_cossack_migrations` with their name,
 SHA-256 checksum, batch, and application timestamp. Editing an applied migration
 causes checksum validation to fail. Create a new migration instead.
 
+Operation-based migrations (the generated form) hash their declared operations,
+so their checksum is the same in every build. A callback-only migration hashes
+the normalized source of `up()` and `down()`: comments, whitespace, `;`,
+trailing commas and quote style are ignored. A build that rewrites the code
+(minification, renamed variables, older `async` targets) still changes it, so
+use `operations` when the checksum must survive different build tools.
+
 ## Targets and plans
 
 Select the environment and database target explicitly:
@@ -288,6 +295,24 @@ cossack-orm schema pull \
 
 Unknown physical database types are retained with a `custom:<type>` logical
 type rather than discarded.
+
+The comparison ignores differences that the database cannot store or that
+mean the same thing:
+
+- `now()`, `CURRENT_TIMESTAMP` and `transaction_timestamp()` are the same
+  default.
+- The enum `CHECK (column IN (...))` that the ORM creates is read back as an
+  `enum` column with the same values. Other check constraints still stop
+  PostgreSQL and MySQL introspection, because they cannot be represented.
+- On SQLite, a single `INTEGER PRIMARY KEY` matches a model key whether or not
+  the model marks it as generated. Only `UNIQUE` constraints mark a column as
+  unique. A `CREATE UNIQUE INDEX` stays an index.
+- On PostgreSQL, `increment` and identity columns match.
+- On MySQL, a column-level `UNIQUE` is recognized by its index name, which is
+  the column name. Indexes that MySQL creates for foreign keys are not reported.
+  Functional, prefix, `FULLTEXT` and `SPATIAL` indexes stop introspection.
+- Many-to-many join tables belong to their owning model and are not reported as
+  extra tables.
 
 ## Baseline an existing database
 

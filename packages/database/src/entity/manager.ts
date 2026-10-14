@@ -84,11 +84,23 @@ export class ModelManager<T extends BaseEntity> {
     ).execute();
   }
 
-  update(where: FindWhere<T>, values: Partial<EntityShape<T>>): Promise<QueryResult> {
-    return new MutationQueryBuilder(this.orm, this.metadata, "update", [values], where).execute();
+  /** Updates the rows matching `where`. An empty `where` is rejected; use updateAll(). */
+  update(where: FindWhere<T> | readonly FindWhere<T>[], values: Partial<EntityShape<T>>): Promise<QueryResult> {
+    return new MutationQueryBuilder(this.orm, this.metadata, "update", [values], where as FindWhere<T>).execute();
   }
 
-  delete(where: FindWhere<T>): Promise<QueryResult> {
-    return new MutationQueryBuilder(this.orm, this.metadata, "delete", undefined, where).execute();
+  /** Deletes the rows matching `where`. An empty `where` is rejected; use deleteAll(). */
+  delete(where: FindWhere<T> | readonly FindWhere<T>[]): Promise<QueryResult> {
+    return new MutationQueryBuilder(this.orm, this.metadata, "delete", undefined, where as FindWhere<T>).execute();
+  }
+
+  /** Deletes every row in the table. */
+  deleteAll(): Promise<QueryResult> {
+    return new MutationQueryBuilder(this.orm, this.metadata, "delete", undefined, undefined, undefined, { all: true }).execute();
+  }
+
+  /** Updates every row in the table. */
+  updateAll(values: Partial<EntityShape<T>>): Promise<QueryResult> {
+    return new MutationQueryBuilder(this.orm, this.metadata, "update", [values], undefined, undefined, { all: true }).execute();
   }
 }

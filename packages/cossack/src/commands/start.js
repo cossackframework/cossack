@@ -2,7 +2,7 @@ import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import { detectProjectRuntime } from '@cossackframework/scaffold';
 import { exists, findProjectRoot } from '../fs-utils.js';
-import { run } from '../spawn.js';
+import { resolveProjectTool, runProjectTool } from '../project-tools.js';
 import { runLifecycle } from '../lifecycle-process.js';
 import { runWithSpec } from '../command-spec.js';
 
@@ -14,13 +14,15 @@ export async function startCommand(args, ctx) {
     const adapter = await detectAdapter(root);
 
     if (adapter === 'cloudflare') {
-      if (ctx.flags.json)
-        return runLifecycle('start', 'wrangler', ['dev', ...args], {
+      if (ctx.flags.json) {
+        const wrangler = await resolveProjectTool(root, 'wrangler');
+        return runLifecycle('start', wrangler.command, [...wrangler.args, 'dev', ...args], {
           cwd: root,
           metadata: { adapter, tool: 'wrangler' },
         });
+      }
       console.log('  start   wrangler dev');
-      return run('wrangler', ['dev', ...args]);
+      return runProjectTool(root, 'wrangler', ['dev', ...args], { cwd: root });
     }
 
     // Process-based web adapters share the built entry and bounded lifecycle.

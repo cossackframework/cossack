@@ -174,8 +174,8 @@ function component(transport: 'http' | 'sse' = 'sse') {
         getInitialStateFromWindow: () => ({ componentRouteId: 'page', transport, scopeKey: 'user:alice' }),
         count: 0,
         getPublicState: () => ({ count: instance.count }),
-        loading: {}, _optimisticLockedKeys: {}, _optimisticPendingState: {},
-        _isOptimisticLocked: () => false, hasMethod: () => false,
+        loading: {},
+        hasMethod: () => false,
         requestUpdate: vi.fn(), setProperty: (key: string, value: unknown) => { instance[key] = value; },
     };
     proxyHttpMethods(instance, [{ name: 'run' }]);

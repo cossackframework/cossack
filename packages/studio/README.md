@@ -19,6 +19,11 @@ cossack studio --no-open --port 4983
 cossack studio --driver postgres
 ```
 
+The printed launch URL contains a one-time token. The first visit exchanges it
+for an HttpOnly, `SameSite=Strict` session cookie and the token stops working;
+later visits from the same browser use the cookie. To open Studio in another
+browser or profile, restart it to get a new launch URL.
+
 Remote D1 uses the project's authenticated Wrangler installation:
 
 ```sh
@@ -32,6 +37,12 @@ schema inspection. It shows exact row counts and adjustable pagination, with
 statement per execution. Its SQL editor includes syntax highlighting plus table
 and column completion. Remote D1 changes affect deployed data immediately.
 
+Batch delete and batch update apply all or nothing on SQLite, Turso,
+PostgreSQL and MySQL: Studio runs them in one transaction and rolls back if a
+selected row is stale or a statement fails. D1 (local and remote) has no
+interactive transactions, so batches there are best-effort. Rows changed
+before the failure stay changed, and the error reports how many.
+
 For local connections, Studio detects the ORM driver's dialect.
 `DB_CONNECTION` or `COSSACK_STUDIO_DRIVER` can distinguish SQLite-family
 adapters. PostgreSQL and MySQL drivers remain project dependencies. Studio
@@ -41,8 +52,16 @@ before `orm.config.ts` is imported. Existing shell variables keep precedence.
 
 Studio merges physical introspection with `orm.schema()`, displays logical
 types and relation provenance, surfaces drift, and hides migration bookkeeping.
-Its schema response also includes `inspection`: the shared read-only database
-facts used by `cossack orm schema inspect --json`. These facts include the
+The introspected schema is cached. Studio invalidates it after SQL console
+statements that may change the schema (DDL, writes, `SELECT … INTO`, PRAGMA
+writes) and after pragma edits. The Browse tab's refresh button re-introspects
+to pick up changes made outside Studio.
+
+The "Database capabilities and migrations" panel loads `inspection` on demand
+when it is opened: the shared read-only database facts used by
+`cossack orm schema inspect --json`. Programmatic callers use
+`StudioDatabase.getInspection()`; `getSchema()` includes `inspection` only
+after it has been loaded. These facts include the
 selected target and environment, driver/dialect capabilities, physical and
 model schema, known relationships, and applied, pending or changed migrations.
 Inspection does not create migration bookkeeping tables or apply migrations.

@@ -1,5 +1,6 @@
 import { commandSpecs } from '../command-specs.js';
-import { run, runCaptured } from '../spawn.js';
+import { findProjectRoot } from '../fs-utils.js';
+import { runProjectTool, runProjectToolCaptured } from '../project-tools.js';
 import { runWithSpec } from '../command-spec.js';
 
 const spec = commandSpecs.ssg;
@@ -46,18 +47,19 @@ export async function ssgCommand(args, ctx) {
           : '') +
         // --app, --template, --project-root have no plugin equivalent: the App
         // and template are always discovered from their conventional locations
-        // (src/App.ts, src/root.ts), and the project root is process.cwd().
+        // (src/App.ts, src/root.ts), and the project root is the nearest package.json.
         '\nNote: `--app`, `--template`, and `--project-root` have no equivalent — ' +
         'the App is loaded from `src/App.ts`, the template from `src/root.ts`, ' +
-        'and the project root is the current working directory.',
+        'and the project root is the nearest directory with a package.json.',
     );
   }
+  const root = await findProjectRoot(ctx.cwd);
   if (!ctx.flags.json) console.log('  ssg   vite build (SSG runs via the cossackSsg plugin)');
   const selectedEnvironment = ctx.flags.env ?? (process.env.CLOUDFLARE_ENV || undefined);
   const environment = ctx.flags.env === undefined ? undefined : { CLOUDFLARE_ENV: ctx.flags.env };
   if (ctx.flags.json === true) {
-    const { code } = await runCaptured('vite', ['build', ...viteArgs], {
-      ...(environment ? { env: environment } : {}), discardOutput: true,
+    const { code } = await runProjectToolCaptured(root, 'vite', ['build', ...viteArgs], {
+      ...(environment ? { env: environment } : {}), cwd: root, discardOutput: true,
     });
     return { exitCode: code, data: { exitCode: code,
       ...(selectedEnvironment ? { environment: selectedEnvironment } : {}),
@@ -68,9 +70,7 @@ export async function ssgCommand(args, ctx) {
       ...(code ? [{ code: 'COSSACK_SSG_BUILD_FAILED', severity: 'error',
         message: 'SSG build failed. Run cossack ssg without --json for tool diagnostics.' }] : [])] };
   }
-  return environment
-    ? run('vite', ['build', ...viteArgs], { env: environment })
-    : run('vite', ['build', ...viteArgs]);
+  return runProjectTool(root, 'vite', ['build', ...viteArgs], { cwd: root, ...(environment ? { env: environment } : {}) });
   });
 }
 

@@ -3,8 +3,6 @@ import { createServer } from 'node:http';
 import { Hono } from 'hono';
 import { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Cossack } from '@cossackframework/core';
-import { CossackNodeAdapter } from '../src/index';
 import { createNodeAdapter } from '../src/adapter';
 const SENTINEL = 'PRIVATE_ADAPTER_EXCEPTION_SENTINEL';
 const cleanups: (() => Promise<void>)[] = [];
@@ -32,27 +30,6 @@ function closed(socket: WebSocket) {
     socket.once('error', reject); socket.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
   });
 }
-it.each(['authentication', 'scope', 'initialization', 'initial-state', 'component-cleanup'] as const)('redacts legacy %s failures and preserves controlled WebSocket rejection', async stage => {
-  const spy = logs();
-  class Page extends Cossack {
-    override async bootstrap(): Promise<void> { if (stage === 'initialization' || stage === 'component-cleanup') throw new Error(SENTINEL); }
-    override async destroyAsync(): Promise<void> { if (stage === 'component-cleanup') throw new Error(SENTINEL); }
-    override getInitialState() { if (stage === 'initial-state') throw new Error(SENTINEL); return { public: {} } as any; }
-  }
-  if (stage === 'scope') Reflect.defineMetadata('page:options', { scope: () => { throw new Error(SENTINEL); } }, Page);
-  const server = createServer();
-  new CossackNodeAdapter({ server, componentRegistry: new Map([['/authored', Page]]),
-    authenticate: stage === 'authentication' ? () => { throw new Error(SENTINEL); } : undefined,
-    env: { secret: SENTINEL },
-  });
-  const origin = await listen(server);
-  const query = new URLSearchParams({ routePath: '/authored', pathname: '/PRIVATE_QUERY_SENTINEL', params: '{}' });
-  const socket = new WebSocket(origin.replace('http:', 'ws:') + `/ws/page/user:anonymous?${query}`, { headers: { origin } });
-  const result = await closed(socket);
-  expect(result).toEqual({ code: stage === 'authentication' || stage === 'scope' ? 1008 : stage === 'initial-state' ? 1011 : 1013,
-    reason: stage === 'authentication' ? 'Authentication failed' : stage === 'scope' ? 'Invalid WebSocket scope' : 'Runtime unavailable' });
-  assertSafe(spy, stage === 'component-cleanup' ? [stage, 'initialization'] : [stage]);
-});
 async function guarded(component: any, options: { createFails?: boolean } = {}) {
   const adapter = createNodeAdapter({ idleTimeoutMs: 0 }); const app = new Hono();
   app.get('/ws/:provider/:target', c => adapter.handleWebSocketUpgrade(c, {

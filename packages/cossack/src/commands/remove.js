@@ -71,7 +71,7 @@ async function removeCommandInner(args, ctx) {
 }
 
 export function removeHelp() {
-  return commandSpecs.remove.help(`cossack remove <ui|database|studio|auth|dashboard|markdown|examples>
+  return commandSpecs.remove.help(`cossack remove <${FEATURES.join('|')}>
 
 Remove a feature and any installed features that depend on it. Automatically
 added prerequisites are removed when no remaining feature needs them.`);

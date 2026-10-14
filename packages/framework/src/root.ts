@@ -55,9 +55,35 @@ const renderTag = (tag: HeadTag) => {
     if (['meta', 'link', 'base'].includes(tag.tag)) {
         return `<${tag.tag} ${attrs}>`;
     }
-    const children = tag.children ? escapeHtml(tag.children) : '';
+    const children = tag.children ? renderTagChildren(tag) : '';
     return `<${tag.tag} ${attrs}>${children}</${tag.tag}>`;
 };
+
+/**
+ * `<script>` and `<style>` are raw-text elements: the browser does not decode
+ * entities inside them, so HTML-escaping would corrupt the code (`&&` would
+ * become `&amp;&amp;`). Instead only the sequences that can end the element
+ * early are neutralised. Every other tag's text is ordinary HTML-escaped text.
+ */
+const renderTagChildren = (tag: HeadTag): string => {
+    const children = String(tag.children);
+    if (tag.tag === 'script') {
+        const type = String(tag.attributes?.type ?? '').toLowerCase();
+        // `<` can only occur inside JSON strings, where `<` is equivalent.
+        if (type.includes('json')) return children.replace(/</g, '\\u003c');
+        return escapeRawScript(children);
+    }
+    if (tag.tag === 'style') return escapeRawStyle(children);
+    return escapeHtml(children);
+};
+
+/** Neutralise `</script` and `<!--` in classic/module script text. */
+export const escapeRawScript = (text: string): string =>
+    text.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '\\x3C!--');
+
+/** Neutralise `</style` in style text (`\/` is an escaped `/` in CSS). */
+export const escapeRawStyle = (text: string): string =>
+    text.replace(/<\/(style)/gi, '<\\/$1');
 
 export const renderRoot = (props: RenderRootProps) => {
     // In development, Vite serves assets directly without a manifest.
@@ -90,7 +116,7 @@ export const renderRoot = (props: RenderRootProps) => {
         cssHtml = `<link rel="stylesheet" href="${escapeHtml(css!)}">`;
     } else if (css) {
         cssHtml = props.inlineCss
-            ? `<style>${props.inlineCss}</style><link rel="stylesheet" href="${escapeHtml(css)}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${escapeHtml(css)}"></noscript>`
+            ? `<style>${escapeRawStyle(props.inlineCss)}</style><link rel="stylesheet" href="${escapeHtml(css)}" media="print" onload="this.media='all'"><noscript><link rel="stylesheet" href="${escapeHtml(css)}"></noscript>`
             : `<link rel="stylesheet" href="${escapeHtml(css)}">`;
     }
 

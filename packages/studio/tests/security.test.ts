@@ -25,6 +25,46 @@ describe('Studio loopback security', () => {
     expect(target.headers.get('location')).toBe('/');
   });
 
+  it('consumes the launch token after the first session exchange', () => {
+    const security = createStudioSecurity(4983);
+    const first = response();
+    expect(security.authorize({
+      headers: { host: '127.0.0.1:4983' },
+      url: `/?token=${security.launchToken}`,
+    } as any, first as any)).toBe('redirect');
+
+    const replay = response();
+    expect(security.authorize({
+      headers: { host: '127.0.0.1:4983' },
+      url: `/?token=${security.launchToken}`,
+    } as any, replay as any)).toBe(false);
+    expect(replay.statusCode).toBe(401);
+    expect(replay.headers.has('set-cookie')).toBe(false);
+
+    const session = response();
+    expect(security.authorize({
+      headers: {
+        host: '127.0.0.1:4983',
+        cookie: `cossack_studio_session=${security.sessionToken}`,
+      },
+      url: '/',
+    } as any, session as any)).toBe(true);
+  });
+
+  it('does not consume the launch token on a rejected Host header', () => {
+    const security = createStudioSecurity(4983);
+    const rejected = response();
+    expect(security.authorize({
+      headers: { host: 'evil.example' },
+      url: `/?token=${security.launchToken}`,
+    } as any, rejected as any)).toBe(false);
+    const accepted = response();
+    expect(security.authorize({
+      headers: { host: '127.0.0.1:4983' },
+      url: `/?token=${security.launchToken}`,
+    } as any, accepted as any)).toBe('redirect');
+  });
+
   it('rejects missing sessions and cross-site Host/Origin headers', () => {
     const security = createStudioSecurity(4983);
     const missing = response();

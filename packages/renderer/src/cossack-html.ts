@@ -1,6 +1,7 @@
 import { serializeFormValues } from './ssr-form-values';
+import { analyzeTemplate, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
 import { ComponentResult, isComponentResult } from './component';
-import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
+import { CossackElement, pushCurrentInstance, popCurrentInstance, getComponentRange, setComponentRange, type ComponentRange } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
 
 export type TemplateResultType = 1 | 2;
@@ -111,6 +112,83 @@ export const escapeHtml = (unsafe: unknown): string => {
     .replace(/'/g, '&#039;');
 };
 
+/**
+ * Text for a node-position value that is not a template, list, directive or
+ * DOM node. Shared by SSR and the client so both render the same thing:
+ * functions render nothing (their source must never leak into the page) and
+ * any other object renders as `String(value)`, e.g. `[object Promise]` for a
+ * forgotten `await`.
+ */
+const nodeValueText = (value: unknown): string => typeof value === 'function' ? '' : String(value);
+
+/**
+ * Unwrap value directives that only make sense as their inner value when they
+ * land in a node position (`live`, `ifDefined`, `bind`).
+ */
+const unwrapNodeValue = (value: unknown): unknown => {
+  for (;;) {
+    if (value instanceof LiveResult || value instanceof IfDefinedResult) value = value.value;
+    else if (value instanceof BindResult) value = resolveField(value.component, value.fieldName);
+    else return value;
+  }
+};
+
+/**
+ * Text an attribute binding contributes to its value, identical on SSR (before
+ * escaping) and the client. `null`/`undefined`/`nothing` contribute nothing,
+ * functions never leak their source, and everything else, including arrays
+ * and templates, is `String(value)` (`a,b`, `[object Object]`), the same as
+ * Lit. Templates are never rendered as markup inside an attribute.
+ */
+const attributeValueText = (value: unknown): string => {
+  value = unwrapNodeValue(value);
+  if (value === nothing || value === null || value === undefined || typeof value === 'function') return '';
+  return String(value);
+};
+
+/** Values a client NodePart's `update()` dispatches to a dedicated handler. */
+const isPartDirective = (value: unknown): boolean =>
+  isComponentResult(value) || Array.isArray(value) || value instanceof RepeatResult ||
+  value instanceof KeyResult || value instanceof GuardResult || value instanceof CacheResult;
+
+/**
+ * Give a client-rendered child the next free `parent:n` id. Ids follow render
+ * order, so a first render (and hydration) matches SSR, but an id a live
+ * sibling still holds is skipped: `${cond ? component(A) : null}${component(B)}`
+ * must not hand A the id B kept from a render where A was absent.
+ */
+const assignChildId = (instance: CossackElement): void => {
+  const parent = instance.__parent;
+  if (!parent) return;
+  let id: string;
+  do {
+    id = `${parent._id}:${parent._childCounter++}`;
+  } while (parent._liveChildIds.has(id));
+  instance._id = id;
+  parent._liveChildIds.set(id, instance);
+};
+
+const advanceChildCounter = (instance: CossackElement): void => {
+  if (instance.__parent) instance.__parent._childCounter++;
+};
+
+const releaseChildId = (instance: CossackElement): void => {
+  const live = instance.__parent?._liveChildIds;
+  if (live?.get(instance._id) === instance) live.delete(instance._id);
+};
+
+const renderComponentSSR = (instance: CossackElement, opts: { hydrate?: boolean }): string => {
+  (instance as any).willUpdate(new Map());
+  // Framework components own render guards, loading output and development
+  // boundary wrappers. SSR must use the same template as their client render.
+  const wrappedRender = (instance as CossackElement & { _getWrappedTemplate?: () => unknown })._getWrappedTemplate;
+  const template = typeof wrappedRender === 'function'
+    ? wrappedRender.call(instance)
+    : instance._finalizeRenderOutput(instance.render());
+  if (!template) return '';
+  return renderTemplateMarkup(isTemplateResult(template) ? template : html`${template}`, opts);
+};
+
 const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string => {
   if (value === nothing || value === '' || value === null || value === undefined || value === false) {
     return '';
@@ -125,9 +203,11 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
     return value.map((v) => valueToString(v, opts)).join('');
   }
   if (isTemplateResult(value)) {
-    return renderToString(value, opts);
+    return renderTemplateMarkup(value, opts);
   }
-  if (value instanceof LiveResult) {
+  if (value instanceof LiveResult || value instanceof IfDefinedResult) {
+    // Node position has no attribute to omit: `ifDefined(undefined)` renders
+    // empty, every other wrapped value renders as itself (same as the client).
     return valueToString(value.value, opts);
   }
   if (value instanceof RepeatResult) {
@@ -182,30 +262,25 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
 
     pushCurrentInstance(instance);
     try {
-      (instance as any).willUpdate(new Map());
-      // Framework components own render guards, loading output and development
-      // boundary wrappers. SSR must use the same template as their client render.
-      const wrappedRender = (instance as CossackElement & { _getWrappedTemplate?: () => unknown })._getWrappedTemplate;
-      const template = typeof wrappedRender === 'function'
-        ? wrappedRender.call(instance)
-        : instance._finalizeRenderOutput(instance.render());
-      if (!template) return '';
-      return renderToString(isTemplateResult(template) ? template : html`${template}`, opts);
+      return renderComponentSSR(instance, opts);
     } finally {
       popCurrentInstance();
+      // An SSR instance lives for one render. Disconnect it so controllers
+      // release what hostConnected acquired (intervals, subscriptions);
+      // otherwise every request leaks them on long-lived servers. Core keeps
+      // the instance registered for state serialization; destroy() stays the
+      // owner's job.
+      try {
+        instance.disconnectedCallback();
+      } catch (error) {
+        console.error('[cossack] SSR component disconnection failed:', error);
+      }
     }
   }
   if (isUnsafeHTML(value)) {
     return value.value;
   }
-  if (typeof value === 'function') {
-    return '';
-  }
-  // Handle RefObject (object with .value property used for refs)
-  if (typeof value === 'object' && value !== null && 'value' in value) {
-    return '';
-  }
-  return escapeHtml(value);
+  return escapeHtml(nodeValueText(value));
 };
 
 // HTML attributes that serialize as presence attributes (emit the bare name
@@ -236,7 +311,29 @@ interface SpreadRenderContext {
   result: string;
 }
 
-const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
+/**
+ * SSR output for a `.prop` binding. Properties exist only on the live DOM, so
+ * SSR emits markup only for those with an attribute equivalent: `.value`
+ * (a temporary ` .value` attribute that serializeFormValues turns into the
+ * right markup for inputs, textareas and selects) and boolean properties
+ * such as `.checked`/`.disabled` (presence attributes). Every other property
+ * (`.innerHTML`, `.tabIndex`, custom element data) renders nothing; the
+ * client sets it on hydration.
+ */
+const propertyBindingSSR = (prop: string, value: unknown, directValue: boolean): string => {
+  if (value instanceof BindResult) value = resolveField(value.component, value.fieldName);
+  if (value instanceof LiveResult) value = value.value;
+  if (value === nothing) return '';
+  // Inputs and most elements take the value as a plain attribute. <textarea>,
+  // <select> and tags with a static default `value` need the structural
+  // serializeFormValues pass, which the temporary ` .value` attribute requests.
+  if (prop === 'value') return ` ${directValue ? 'value' : '.value'}="${escapeHtml(String(value ?? ''))}"`;
+  const attr = prop.toLowerCase();
+  if (BOOLEAN_ATTRS.has(attr)) return value ? ` ${attr}` : '';
+  return '';
+};
+
+const renderSpread = (obj: unknown, ctx: SpreadRenderContext, directValue = false): void => {
   if (obj === nothing || typeof obj !== 'object' || obj === null) return;
   for (const [k, v] of Object.entries(obj)) {
     if (k.startsWith('@')) continue;
@@ -249,28 +346,9 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       continue;
     }
     if (k.startsWith('.')) {
-      name = k === '.value' ? '.value' : k.slice(1);
-      // Unwrap result-wrapper directives routed through the spread (e.g.
-      // component(Input, { '.value': bind(this, 'name') }) or
-      // { '.value': live(x) }) so SSR emits the underlying value instead of
-      // "[object Object]". Mirrors the direct SSR .value branch. Boolean-ish
-      // attrs (.checked/.disabled) render as presence attributes.
-      if (val instanceof BindResult) {
-        val = resolveField(val.component, val.fieldName);
-      } else if (val instanceof LiveResult) {
-        val = val.value;
-      }
-      if (val === nothing) {
-        continue;
-      }
-      if (name === '.value') {
-        ctx.result += ` .value="${escapeHtml(String(val ?? ''))}"`;
-        continue;
-      }
-      if (BOOLEAN_ATTRS.has(name)) {
-        if (val) ctx.result += ` ${name}`;
-        continue;
-      }
+      // Same rules as a direct `.prop` binding (bind()/live() unwrapped).
+      ctx.result += propertyBindingSSR(k.slice(1), val, directValue);
+      continue;
     }
 
     if ((name === 'class' || name === 'className') && val instanceof IfDefinedResult) {
@@ -362,226 +440,101 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
-/**
- * Classify each value position (gap between `strings[i]` and `strings[i+1]`)
- * as a node position (`true`, child content) or an attribute position
- * (`false`, inside an element's opening tag).
- *
- * This mirrors the char-by-char tracking in `compileTemplate` and MUST stay
- * in sync with it: the SSR scanner uses this array to decide where to emit
- * hydratable node markers, and the client uses the same classification to
- * decide where to insert `<!--CRP_i-->` markers. Any divergence breaks the
- * lockstep hydration walk.
- */
-const classifyPositions = (strings: readonly string[]): boolean[] => {
-  const isNode: boolean[] = [];
-  let isInsideTag = false;
-  let insideAttrQuote: string | null = null;
-  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/;
-  for (let i = 0; i < strings.length - 1; i++) {
-    const str = strings[i];
-    for (let j = 0; j < str.length; j++) {
-      if (insideAttrQuote) {
-        if (str[j] === insideAttrQuote) insideAttrQuote = null;
-      } else if (isInsideTag && (str[j] === '"' || str[j] === "'")) {
-        if (j > 0 && str[j - 1] === '=') {
-          insideAttrQuote = str[j];
-        }
-      } else if (str[j] === '<' && str[j + 1] !== '!' && str[j + 1] !== '/') {
-        isInsideTag = true;
-      } else if (str[j] === '>') {
-        isInsideTag = false;
-      }
-    }
-    const match = str.match(attrMatch);
-    isNode[i] = !(isInsideTag && (match || insideAttrQuote));
+// Template analysis depends only on the static strings and the style scope,
+// so it is computed once per (strings, scope) and shared by every render and
+// every TemplateResult instance (e.g. each row of a list).
+const templateAnalyses = new WeakMap<TemplateStringsArray, Map<string, TemplateAnalysis>>();
+const getTemplateAnalysis = (result: TemplateResult): TemplateAnalysis => {
+  let byScope = templateAnalyses.get(result.strings);
+  if (!byScope) {
+    byScope = new Map();
+    templateAnalyses.set(result.strings, byScope);
   }
-  return isNode;
+  const scope = result.__cossackScope ?? '';
+  let analysis = byScope.get(scope);
+  if (!analysis) {
+    analysis = analyzeTemplate(result.strings, result.__cossackScope);
+    byScope.set(scope, analysis);
+  }
+  return analysis;
+};
+
+const rawTextString = (value: unknown): string => {
+  value = unwrapNodeValue(value);
+  if (value === nothing || value === null || value === undefined || value === false) return '';
+  if (Array.isArray(value)) return value.map(rawTextString).join('');
+  if (isUnsafeHTML(value)) return value.value;
+  return nodeValueText(value);
 };
 
 /**
- * Build markers that cannot collide with authored static template text.
- *
- * The markers exist only while template strings are joined for scanning and
- * are removed before parsing/serialization. Choosing a prefix absent from all
- * input strings preserves literal private-use characters (including strings
- * that resemble an older marker format) without requiring randomness.
+ * Text a raw-text binding contributes, identical on SSR and the client.
+ * `</script`, `<!--` (which switches script parsing into its escaped state)
+ * and `</style` would end or corrupt the element when SSR output is parsed.
+ * They are rewritten into forms that mean the same inside JS/JSON strings
+ * and CSS (`<\/`, `<`).
  */
-const createTemplateMarkers = (strings: readonly string[]) => {
-  let sequence = 0;
-  let prefix: string;
-  do {
-    prefix = `\uE000cossack:${sequence++}:`;
-  } while (strings.some((value) => value.includes(prefix)));
-  const suffix = ':\uE001';
-  return {
-    marker: (index: number): string => `${prefix}${index}${suffix}`,
-    pattern: new RegExp(`${prefix}(\\d+)${suffix}`, 'g'),
-  };
+const rawTextContent = (tag: string, value: unknown): string => {
+  const text = rawTextString(value);
+  if (tag === 'script') return text.replace(/<\/(script)/gi, '<\\/$1').replace(/<!--/g, '\\u003c!--');
+  if (tag === 'style') return text.replace(/<\/(style)/gi, '<\\/$1');
+  return text;
 };
 
-/** Add a scope attribute to static opening tags without touching nested values. */
-const scopeTemplateStrings = (strings: TemplateStringsArray, scopeId?: string): readonly string[] => {
-  if (!scopeId) return strings;
-  const markers = createTemplateMarkers(strings);
-  let source = '';
-  for (let i = 0; i < strings.length; i++) {
-    source += strings[i];
-    if (i < strings.length - 1) source += markers.marker(i);
-  }
-
-  let output = '';
-  let insideTag = false;
-  let quote: string | null = null;
-  let openingTag = '';
-  let rawTextTag = '';
-  for (let i = 0; i < source.length;) {
-    if (rawTextTag) {
-      const closing = `</${rawTextTag}`;
-      if (source.slice(i, i + closing.length).toLowerCase() === closing) {
-        rawTextTag = '';
-      } else {
-        output += source[i++];
-        continue;
-      }
-    }
-    if (!insideTag && source.startsWith('<!--', i)) {
-      const end = source.indexOf('-->', i + 4);
-      const next = end < 0 ? source.length : end + 3;
-      output += source.slice(i, next);
-      i = next;
-      continue;
-    }
-    if (!insideTag && source[i] === '<' && /[A-Za-z]/.test(source[i + 1] ?? '')) {
-      let end = i + 2;
-      while (end < source.length && !/[\s/>]/.test(source[end])) end++;
-      openingTag = source.slice(i + 1, end).toLowerCase();
-      output += source.slice(i, end);
-      output += ` data-cossack-scope="${scopeId}"`;
-      i = end;
-      insideTag = true;
-      continue;
-    }
-    const char = source[i++];
-    output += char;
-    if (insideTag) {
-      if (quote) {
-        if (char === quote) quote = null;
-      } else if (char === '"' || char === "'") {
-        quote = char;
-      } else if (char === '>') {
-        insideTag = false;
-        if (/^(script|style|textarea|title)$/.test(openingTag)) rawTextTag = openingTag;
-        openingTag = '';
-      }
-    }
-  }
-
-  const scoped: string[] = [];
-  let last = 0;
-  let marker: RegExpExecArray | null;
-  while ((marker = markers.pattern.exec(output))) {
-    scoped.push(output.slice(last, marker.index));
-    last = marker.index + marker[0].length;
-  }
-  scoped.push(output.slice(last));
-  return scoped;
-};
-
-interface NothingAttributeGroup {
-  first: number;
-  last: number;
-  prefix: string;
-  suffix: string;
-}
-
-/**
- * Find attributes containing one or more expressions. This lets SSR remove a
- * whole multi-expression attribute when any slot is `nothing`, even though
- * rendering otherwise streams through template strings from left to right.
- */
-const findNothingAttributeGroups = (
-  strings: readonly string[],
-  values: readonly unknown[],
-): Map<number, NothingAttributeGroup> => {
-  const templateMarkers = createTemplateMarkers(strings);
-  let source = '';
-  for (let i = 0; i < strings.length; i++) {
-    source += strings[i];
-    if (i < strings.length - 1) source += templateMarkers.marker(i);
-  }
-  const groups = new Map<number, NothingAttributeGroup>();
-  const tagPattern = /<(?![!/])(?:[^>"']|"[^"]*"|'[^']*')*>/g;
-  let tag: RegExpExecArray | null;
-  while ((tag = tagPattern.exec(source))) {
-    const attributePattern = /\s+([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/g;
-    let attribute: RegExpExecArray | null;
-    while ((attribute = attributePattern.exec(tag[0]))) {
-      const raw = attribute[0];
-      const markers = [...raw.matchAll(templateMarkers.pattern)];
-      if (markers.length === 0) continue;
-      const indices = markers.map((match) => Number(match[1]));
-      if (!indices.some((index) => values[index] === nothing)) continue;
-      const firstMarker = markers[0];
-      const lastMarker = markers[markers.length - 1];
-      groups.set(indices[0], {
-        first: indices[0],
-        last: indices[indices.length - 1],
-        prefix: raw.slice(0, firstMarker.index),
-        suffix: raw.slice(lastMarker.index! + lastMarker[0].length),
-      });
-    }
-  }
-  return groups;
+const rawTextSSR = (tag: string, value: unknown, first: boolean): string => {
+  const text = rawTextContent(tag, value);
+  // <script>/<style> content is not entity-decoded, so it is not escaped.
+  if (tag === 'script' || tag === 'style') return text;
+  const escaped = escapeHtml(text);
+  // The parser drops one leading newline in <textarea>; keep the author's.
+  return tag === 'textarea' && first && escaped.startsWith('\n') ? `\n${escaped}` : escaped;
 };
 
 class SSRScanner {
   private result: string = '';
   private stringIdx = 0;
   private charIdxForNext = 0;
-  private isNodePositions: boolean[];
-  private strings: readonly string[];
-  private nothingAttributeGroups: Map<number, NothingAttributeGroup>;
+  private analysis: TemplateAnalysis;
 
   constructor(private resultObj: TemplateResult, private opts: { hydrate?: boolean } = {}) {
-    this.strings = scopeTemplateStrings(resultObj.strings, resultObj.__cossackScope);
-    this.isNodePositions = classifyPositions(this.strings);
-    this.nothingAttributeGroups = findNothingAttributeGroups(this.strings, resultObj.values);
+    this.analysis = getTemplateAnalysis(resultObj);
   }
 
   scan(): string {
     const { values } = this.resultObj;
-    const strings = this.strings;
+    const { strings, bindings, attributeGroups } = this.analysis;
 
     while (this.stringIdx < strings.length) {
       const str = strings[this.stringIdx];
       const remaining = str.substring(this.charIdxForNext || 0);
 
-      const attrMatch = remaining.match(/(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/);
-
       this.result += remaining;
       this.charIdxForNext = 0;
 
       if (this.stringIdx < strings.length - 1) {
-        const val = values[this.stringIdx];
-        const nothingGroup = this.nothingAttributeGroups.get(this.stringIdx);
-        if (nothingGroup) {
-          if (this.result.endsWith(nothingGroup.prefix)) {
-            this.result = this.result.slice(0, -nothingGroup.prefix.length);
+        const binding = bindings[this.stringIdx];
+        let val = values[this.stringIdx];
+        // Attribute parts on the client compare live() against the DOM but
+        // otherwise treat it as its value; SSR has no DOM to compare against.
+        if (binding.kind === 'attribute' && val instanceof LiveResult) val = val.value;
+        // `nothing` in any slot of an attribute removes the whole attribute.
+        const group = attributeGroups.get(this.stringIdx);
+        if (group && group.indices.some((index) => values[index] === nothing)) {
+          if (this.result.endsWith(group.prefix)) {
+            this.result = this.result.slice(0, -group.prefix.length);
           }
-          this.stringIdx = nothingGroup.last;
-          this.charIdxForNext = nothingGroup.suffix.length;
+          this.stringIdx = group.indices[group.indices.length - 1];
+          this.charIdxForNext = group.suffixLength;
           this.stringIdx++;
           continue;
         }
-        if (attrMatch && !this.isNodePositions[this.stringIdx]) {
-          const fullMatch = attrMatch[0];
-          const name = attrMatch[1];
+        if (binding.kind === 'attribute' && binding.start) {
+          const fullMatch = str.slice(binding.prefixStart);
+          const name = binding.name;
 
           this.result = this.result.substring(0, this.result.length - fullMatch.length);
 
-          // Check if we opened a quote
-          const quote = fullMatch.endsWith('"') ? '"' : fullMatch.endsWith("'") ? "'" : '';
+          const quote = binding.quote;
 
           let replaced = true;
 
@@ -591,7 +544,7 @@ class SSRScanner {
             // spread attributes are appended, while a caller-supplied `class`
             // is merged into an existing `class="..."` on the current open tag.
             const ctx: SpreadRenderContext = { result: this.result };
-            renderSpread(val, ctx);
+            renderSpread(val, ctx, binding.directValue);
             this.result = ctx.result;
           } else if (name === 'ref') {
             // `ref` is a Cossack directive (value is a RefObject); it has no
@@ -610,34 +563,8 @@ class SSRScanner {
               this.result = this.result.trimEnd();
             }
           } else if (name.startsWith('.')) {
-            // Unwrap a `bind()` two-way value to the current field value so it
-            // follows the same emit rules as a plain property binding.
-            let propVal: unknown;
-            const isBind = val instanceof BindResult;
-            if (isBind) {
-              propVal = resolveField(val.component, val.fieldName);
-            } else {
-              propVal = val;
-            }
-            const attrName = name === '.value' ? '.value' : name.slice(1);
-            // For `bind()` on a known boolean attribute (.checked/.disabled),
-            // emit a bare attribute when truthy — matching how a checkbox
-            // serializes. Plain (non-bind) property bindings keep their
-            // original behavior (value="...") to avoid changing existing usage.
-            const isBooleanAttr = isBind && BOOLEAN_ATTRS.has(attrName);
-            if (attrName === '.value') {
-              const current = propVal instanceof LiveResult ? propVal.value : propVal;
-              this.result = this.result.trimEnd();
-              this.result += ` .value="${escapeHtml(String(current ?? ''))}"`;
-            } else if (isBooleanAttr) {
-              this.result = this.result.trimEnd();
-              if (propVal) this.result += ` ${attrName}`;
-            } else if (propVal !== null && propVal !== undefined && propVal !== false) {
-              this.result = this.result.trimEnd();
-              this.result += ` ${attrName}="${valueToString(propVal, this.opts)}"`;
-            } else {
-              this.result = this.result.trimEnd();
-            }
+            this.result = this.result.trimEnd();
+            this.result += propertyBindingSSR(name.slice(1), val, binding.directValue);
           } else if (val instanceof IfDefinedResult) {
             // `ifDefined`: drop the attribute only when the value is undefined;
             // render every other value (incl. false/null/0/'') as a normal
@@ -667,12 +594,11 @@ class SSRScanner {
             // around the value — emitting `class=foo bar baz` would make `bar`
             // and `baz` stray attributes (malformed HTML that breaks hydration).
             this.result += fullMatch;
-            const strVal = valueToString(val, this.opts);
+            const strVal = escapeHtml(attributeValueText(val));
             if (quote) {
               this.result += strVal;
               replaced = false; // leave the closing quote in the next string
             } else {
-              // strVal is already HTML-escaped by valueToString — don't double-escape.
               this.result += `"${strVal}"`;
             }
           }
@@ -684,14 +610,24 @@ class SSRScanner {
               this.charIdxForNext = 1;
             }
           }
-        } else if (this.opts.hydrate && this.isNodePositions[this.stringIdx]) {
+        } else if (binding.kind === 'raw-text') {
+          // Text inside <textarea>/<title>/<script>/<style>: the parser reads
+          // it as text, so hydration markers would show up verbatim. Emit the
+          // text only; the client binds it as a RawTextPart.
+          this.result += rawTextSSR(binding.tag, val, binding.first);
+        } else if (binding.kind === 'attribute') {
+          // A value inside an attribute that already started
+          // (`class="a ${x} b"`): interpolate text, never markup or markers.
+          this.result += escapeHtml(attributeValueText(val));
+        } else if (binding.kind === 'comment' || binding.kind === 'element') {
+          // Bindings inside comments, or in a tag outside any attribute value,
+          // have nowhere to render. The client drops them too.
+        } else if (binding.kind === 'node' && this.opts.hydrate) {
           // True node (child) position: wrap the rendered value in the SAME
           // marker comments the client renderer uses (`<!--CRP_i-->` start,
           // `<!--/CRP-->` end) so the client can bind NodeParts directly to
-          // the existing DOM instead of wiping it. Attribute-interior
-          // positions (open quote, no `name=` suffix) are NOT marked — they
-          // stay clean, matching the client's classification. Comments are
-          // invisible to users and ignored by search engines.
+          // the existing DOM instead of wiping it. Comments are invisible to
+          // users and ignored by search engines.
           this.result += `<!--CRP_${this.stringIdx}-->`;
           this.result += valueToString(val, this.opts);
           this.result += `<!--/CRP-->`;
@@ -704,14 +640,21 @@ class SSRScanner {
       }
       this.stringIdx++;
     }
-    return serializeFormValues(this.result);
+    return this.result;
   }
 }
 
-export const renderToString = (result: TemplateResult, opts: { hydrate?: boolean } = {}): string => {
-  const scanner = new SSRScanner(result, opts);
-  return scanner.scan();
-};
+/**
+ * Render a template to markup that may still contain temporary ` .value`
+ * attributes. Nested templates and components use this so the document is
+ * post-processed by serializeFormValues (a parse5 pass) once, at the
+ * outermost renderToString, instead of once per nested template.
+ */
+const renderTemplateMarkup = (result: TemplateResult, opts: { hydrate?: boolean }): string =>
+  new SSRScanner(result, opts).scan();
+
+export const renderToString = (result: TemplateResult, opts: { hydrate?: boolean } = {}): string =>
+  serializeFormValues(renderTemplateMarkup(result, opts));
 
 // --- Client-Side Implementation ---
 
@@ -725,6 +668,15 @@ export interface HydrationDiagnosticMetadata {
   expectedClientOnly?: boolean;
 }
 const HYDRATION_DEV = !!(import.meta as any).env?.DEV;
+const RENDERER_DEV = HYDRATION_DEV;
+
+/** Index of the `occurrence`-th (0-based) entry equal to `key`, or -1. */
+const nthIndex = (keys: readonly unknown[], key: unknown, occurrence: number): number => {
+  for (let i = 0, seen = 0; i < keys.length; i++) {
+    if (Object.is(keys[i], key) && seen++ === occurrence) return i;
+  }
+  return -1;
+};
 const hydrationMetadata = HYDRATION_DEV ? new WeakMap<object, HydrationDiagnosticMetadata & { boundary?: 'root' | 'component' }>() : undefined;
 const bindHydrationMetadata = (parts: Part[], metadata?: HydrationDiagnosticMetadata) => {
   if (!HYDRATION_DEV || !metadata) return;
@@ -871,6 +823,15 @@ class NodePart implements Part {
     this.updateNode(template, branch ?? null);
   }
   private componentInstance: CossackElement | null = null;
+  // Live view of this part's markers handed to component instances, so the
+  // range stays correct if the part is rebound to other anchors.
+  private readonly range: ComponentRange = (() => {
+    const part = this;
+    return {
+      get start() { return part.startNode; },
+      get end() { return part.endNode; },
+    };
+  })();
   private renderListener: ((t: TemplateResult | unknown | null) => void) | null = null;
   private _childParts: NodePart[] = [];
   private _partKeys: unknown[] = [];
@@ -916,6 +877,7 @@ class NodePart implements Part {
   }
 
   update(value: unknown) {
+    value = unwrapNodeValue(value);
     try {
       if (!(value instanceof CacheResult) && !(value instanceof GuardResult)) this._cacheDrafts.clear();
       if (this._hydrating) {
@@ -1036,6 +998,7 @@ class NodePart implements Part {
    * falls back to a full render).
    */
   private _hydrateValue(value: unknown) {
+    value = unwrapNodeValue(value);
     if (isComponentResult(value)) {
       this._adoptComponent(value);
       return;
@@ -1114,24 +1077,23 @@ class NodePart implements Part {
       this.updateNode(value);
       return;
     }
-    if (typeof value !== 'object') {
-      const text = String(value);
-      const node = this.startNode.nextSibling;
-      if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
-        if (node.nodeValue !== text) {
-          if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', domHydrationPath(node), 'text', 'text'), hydrationMetadata!.get(this)?.boundary ?? 'root', undefined, hydrationMetadata!.get(this), 'text-reconcile');
-          node.nodeValue = text;
-        }
-      } else {
-        this.clear();
-        this.startNode.parentNode!.insertBefore(document.createTextNode(text), this.endNode);
-      }
+    // Primitives, functions and plain objects (incl. Promises) render as text,
+    // the same as SSR's `escapeHtml(nodeValueText(value))`.
+    const text = nodeValueText(value);
+    if (text === '') {
+      this.clear();
       return;
     }
-    // Plain object (spread result, etc.): safe rebuild fallback.
-    this.clear();
-    this._clearTemplateCache();
-    this.updateNode(value);
+    const node = this.startNode.nextSibling;
+    if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
+      if (node.nodeValue !== text) {
+        if (HYDRATION_DEV) reportHydrationMismatch(new HydrateMismatch('text-content', domHydrationPath(node), 'text', 'text'), hydrationMetadata!.get(this)?.boundary ?? 'root', undefined, hydrationMetadata!.get(this), 'text-reconcile');
+        node.nodeValue = text;
+      }
+    } else {
+      this.clear();
+      this.startNode.parentNode!.insertBefore(document.createTextNode(text), this.endNode);
+    }
   }
 
   /**
@@ -1157,9 +1119,8 @@ class NodePart implements Part {
       if (result.serviceScope && typeof (this.componentInstance as any)._setServiceScope === 'function') {
         (this.componentInstance as any)._setServiceScope(result.serviceScope);
       }
-      if (this.componentInstance.__parent) {
-        this.componentInstance._id = `${this.componentInstance.__parent._id}:${(this.componentInstance.__parent as any)._childCounter++}`;
-      }
+      assignChildId(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
       if (HYDRATION_DEV) {
         const ownMetadata = (this.componentInstance as CossackElement & { hydrationMetadata?: HydrationDiagnosticMetadata }).hydrationMetadata;
         const inherited = hydrationMetadata!.get(this);
@@ -1214,6 +1175,11 @@ class NodePart implements Part {
         this.disposeComponent();
         throw error;
       }
+    } else {
+      // A retained child keeps its id but still takes its slot in this
+      // render's sequence, so later new siblings number after it.
+      advanceChildCounter(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
     }
     const instance = this.componentInstance;
     if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);
@@ -1300,6 +1266,8 @@ class NodePart implements Part {
       } catch {
         // Preserve the renderer's existing best-effort destruction behavior.
       } finally {
+        if (getComponentRange(instance) === this.range) setComponentRange(instance, undefined);
+        releaseChildId(instance);
         instance._frameworkRendererDetached?.();
       }
     }
@@ -1324,9 +1292,8 @@ class NodePart implements Part {
       if (result.serviceScope && typeof (this.componentInstance as any)._setServiceScope === 'function') {
         (this.componentInstance as any)._setServiceScope(result.serviceScope);
       }
-      if (this.componentInstance.__parent) {
-        this.componentInstance._id = `${this.componentInstance.__parent._id}:${this.componentInstance.__parent._childCounter++}`;
-      }
+      assignChildId(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
       this.renderListener = (template) => {
         this.updateComponentTemplate(template);
       };
@@ -1344,6 +1311,11 @@ class NodePart implements Part {
         this.disposeComponent();
         throw error;
       }
+    } else {
+      // A retained child keeps its id but still takes its slot in this
+      // render's sequence, so later new siblings number after it.
+      advanceChildCounter(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
     }
     const instance = this.componentInstance;
     if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);
@@ -1357,33 +1329,53 @@ class NodePart implements Part {
 
   private updateRepeat(result: RepeatResult) {
     const { items, keyFn, templateFn } = result;
-    const oldPartsMap = new Map<unknown, NodePart>();
+    // Key -> queue of parts. Duplicate keys are reused in order; every part
+    // left over (including parts from a previous unkeyed array render) is
+    // disposed so its DOM and components never leak.
+    const oldPartsMap = new Map<unknown, NodePart[]>();
+    const unkeyed: NodePart[] = [];
     this._childParts.forEach((part, i) => {
+      if (i >= this._partKeys.length) {
+        unkeyed.push(part);
+        return;
+      }
       const key = this._partKeys[i];
-      if (key !== undefined) oldPartsMap.set(key, part);
+      const queue = oldPartsMap.get(key);
+      if (queue) queue.push(part);
+      else oldPartsMap.set(key, [part]);
     });
     const newParts: NodePart[] = [];
     const newKeys: unknown[] = [];
+    const occurrences = new Map<unknown, number>();
+    let duplicateKey = false;
     let insertAfterNode: Node = this.startNode;
     try {
       items.forEach((item, index) => {
         const key = keyFn(item, index);
         newKeys.push(key);
-        let part = oldPartsMap.get(key);
+        const occurrence = occurrences.get(key) ?? 0;
+        occurrences.set(key, occurrence + 1);
+        if (occurrence > 0) duplicateKey = true;
+        let part = oldPartsMap.get(key)?.shift();
         if (part) {
-          oldPartsMap.delete(key);
           if (part.startNode.previousSibling !== insertAfterNode) this.movePart(part, insertAfterNode);
         } else {
           part = this.createChildPart(insertAfterNode);
         }
         // Record ownership before user templates/connection hooks can throw.
         newParts.push(part);
-        const draftIndex = this._draft?.snapshot.keys.findIndex(value => Object.is(value, key)) ?? -1;
-        if (this._draft && draftIndex !== -1) part.restoreDraft(this._draft.snapshot.children[draftIndex], this._draft.context);
+        if (this._draft) {
+          const draftIndex = nthIndex(this._draft.snapshot.keys, key, occurrence);
+          if (draftIndex !== -1) part.restoreDraft(this._draft.snapshot.children[draftIndex], this._draft.context);
+        }
         part.update(templateFn(item, index));
         insertAfterNode = part.endNode;
       });
-      oldPartsMap.forEach((part) => part.dispose());
+      if (duplicateKey && RENDERER_DEV) {
+        console.warn('[cossack/renderer] repeat() received a duplicate key. Keys must be unique; duplicates are matched by position and lose identity when the list reorders.');
+      }
+      oldPartsMap.forEach((queue) => queue.forEach((part) => part.dispose()));
+      unkeyed.forEach((part) => part.dispose());
       this._childParts = newParts;
       this._partKeys = newKeys;
     } catch (error) {
@@ -1613,6 +1605,7 @@ class NodePart implements Part {
       ? (this._draft?.snapshot.template ? { tree: this._draft.snapshot.template, context: this._draft.context } : undefined)
       : recovery ?? undefined;
     if (!this.startNode.parentNode) return;
+    value = unwrapNodeValue(value);
     if (isTemplateResult(value)) {
       // Check if we have a cached template with the same strings
       if (this._cachedTemplateIdentity === templateIdentity(value) && this._cachedParts) {
@@ -1655,11 +1648,12 @@ class NodePart implements Part {
         temp.innerHTML = value.value;
         parent.insertBefore(temp.content, this.endNode);
       }
-    } else if (
-      isComponentResult(value) ||
-      (typeof value === 'object' && value !== null && !(value instanceof Node) && !Array.isArray(value))
-    ) {
-      // Handle ComponentResult or other objects by wrapping in template
+    } else if (isPartDirective(value)) {
+      // Values that `update()` dispatches itself (components, lists, key,
+      // guard, cache) can reach here through key()/component render output.
+      // Wrapping them in a template routes them back through a child part's
+      // `update()`. Anything else must NOT be wrapped: `update()` would send it
+      // straight back here and recurse until the stack overflows.
       this._clearTemplateCache();
       this.clear();
       const container = document.createDocumentFragment();
@@ -1669,16 +1663,20 @@ class NodePart implements Part {
       this._clearTemplateCache();
       this.clear();
       this.startNode.parentNode!.insertBefore(value, this.endNode);
-    } else if (value === nothing || value === '' || value === null || value === undefined || value === false) {
+    } else if (value === nothing || value === '' || value === null || value === undefined || value === false || typeof value === 'function') {
       this._clearTemplateCache();
       this.clear();
     } else {
-      const text = String(value);
+      // Primitives and other objects (incl. Promises) render as text, matching SSR.
+      const text = nodeValueText(value);
       const node = this.startNode.nextSibling;
       if (node && node.nodeType === Node.TEXT_NODE && node.nextSibling === this.endNode) {
         if (node.nodeValue !== text) {
           node.nodeValue = text;
         }
+        // A cached template is never followed by a lone text node, but keep
+        // the bookkeeping honest if one was left behind.
+        this._clearTemplateCache();
       } else {
         this._clearTemplateCache();
         this.clear();
@@ -1735,19 +1733,26 @@ class SpreadPart implements Part {
   // remove only those (not the component's own classes) and merge with the
   // existing class list instead of overwriting it.
   private spreadClasses: string[] = [];
+  // One delegating listener per spread event key. The handler is swapped on
+  // each render, so fresh closures never pile up, and the storage is private
+  // to this part so an `@event` attribute part on the same element is
+  // independent of it.
+  private eventHandlers = new Map<string, { listener: EventListener; handler: EventListener | undefined }>();
   constructor(public element: Element) {}
   update(value: unknown) {
-    if (value !== nothing && (typeof value !== 'object' || value === null)) return;
-    const props = value === nothing ? {} : value as Record<string, unknown>;
+    // `nothing`, null, undefined and non-objects all spread nothing, which
+    // clears whatever a previous render applied (SSR renders them as empty).
+    const props = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
     const selectPending = this.selectCommit.cancel();
 
     for (const key of Object.keys(this.previousValues)) {
       if (!(key in props)) {
         if (key.startsWith('@')) {
-          const eventName = key.slice(1);
-          const propName = `__crp_handler_${eventName}`;
-          const oldHandler = (this.element as any)[propName];
-          if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
+          const entry = this.eventHandlers.get(key);
+          if (entry) {
+            this.element.removeEventListener(key.slice(1), entry.listener);
+            this.eventHandlers.delete(key);
+          }
         } else if (key.startsWith('.')) {
           // Detach a previously-bound writeback listener when the key is dropped.
           const state = this.bindStates.get(key);
@@ -1774,11 +1779,9 @@ class SpreadPart implements Part {
     for (const [key, val] of Object.entries(props)) {
       if (key.startsWith('@')) {
         const eventName = key.slice(1);
-        const propName = `__crp_handler_${eventName}`;
-        const oldHandler = (this.element as any)[propName];
-        if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
+        let entry = this.eventHandlers.get(key);
         if (val === nothing || (typeof val !== 'function' && !(val instanceof PreventDefaultResult))) {
-          (this.element as any)[propName] = undefined;
+          if (entry) entry.handler = undefined;
           continue;
         }
         // Unwrap `preventDefault(handler)` into a wrapper that prevents the
@@ -1803,8 +1806,16 @@ class SpreadPart implements Part {
         } else {
           handler = val as EventListener;
         }
-        (this.element as any)[propName] = handler;
-        this.element.addEventListener(eventName, handler);
+        if (!entry) {
+          const created: { listener: EventListener; handler: EventListener | undefined } = {
+            handler: undefined,
+            listener: (e: Event) => created.handler?.call(e.currentTarget, e),
+          };
+          entry = created;
+          this.eventHandlers.set(key, entry);
+          this.element.addEventListener(eventName, entry.listener);
+        }
+        entry.handler = handler;
       } else if (key.startsWith('.')) {
         const propName = key.slice(1);
         const priorBind = this.bindStates.get(key);
@@ -2009,6 +2020,10 @@ class AttributePart implements Part {
   // a different `bind(otherComponent, 'field')` recreates the listener instead
   // of silently writing to the old target.
   private bindListener: ((e: Event) => void) | null = null;
+  // `@event` binding: the current handler and the one listener that calls it.
+  private eventHandler: EventListener | undefined = undefined;
+  private eventListener: EventListener | null = null;
+  private eventListenerTarget: Element | null = null;
   private boundPropName: string | null = null;
   private boundComponent: unknown = null;
   private boundFieldName: string | null = null;
@@ -2023,11 +2038,19 @@ class AttributePart implements Part {
     this.boundFieldName = null;
   }
 
+  /**
+   * @param name     Binding name as authored (`.innerHTML`, `@myEvent`). The
+   *                 parser lowercases HTML attribute names, so the template
+   *                 analysis supplies the original case.
+   * @param domName  The marker attribute the parser actually created, which is
+   *                 what has to be removed from the element.
+   */
   constructor(
     public element: Element,
     public name: string,
     originalValue: string,
     multiState?: MultiMarkerState,
+    private domName: string = name,
   ) {
     // Parse all markers into segments (works for N=1 and N>1).
     const matches = [...originalValue.matchAll(/__CRP_(\d+)__/g)];
@@ -2048,23 +2071,23 @@ class AttributePart implements Part {
       if (this.bindListener) this._detachBindListener();
       if (this.isMulti && this.multiState) {
         this.multiState.currentValues[this.multiState.position] = nothing;
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
         return;
       }
       if (this.name.startsWith('@')) {
-        (this.element as any)[`__crp_handler_${this.name.slice(1)}`] = undefined;
-        this.element.removeAttribute(this.name);
+        this.eventHandler = undefined;
+        this.element.removeAttribute(this.domName);
       } else if (this.name.startsWith('.')) {
         const propName = this.name.slice(1);
         (this.element as any)[propName] = undefined;
         this.lastFormKind = null;
         this.lastFormValue = undefined;
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else if (this.name.startsWith('?')) {
         this.element.removeAttribute(this.name.slice(1));
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else {
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       }
       return;
     }
@@ -2100,7 +2123,7 @@ class AttributePart implements Part {
         // RefObject: assign the element to ref.value
         (value as { value: unknown }).value = this.element;
       }
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
       return;
     }
 
@@ -2110,32 +2133,32 @@ class AttributePart implements Part {
       const { currentValues, position } = this.multiState;
       currentValues[position] = value;
       if (currentValues.includes(nothing)) {
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
         return;
       }
       let result = this.segments[0];
       for (let i = 0; i < currentValues.length; i++) {
-        result += String(currentValues[i]) + this.segments[i + 1];
+        result += attributeValueText(currentValues[i]) + this.segments[i + 1];
       }
       this.element.setAttribute(this.name, result);
       return;
     }
 
     if (this.name.startsWith('@')) {
-      // Stable delegating wrapper: register a single listener on the element
-      // that delegates to whatever handler is stored at any given moment.
-      // This avoids remove/add churn during dispatch (re-entrancy) and
-      // correctly disables when value becomes non-function (null/undefined).
+      // Stable delegating wrapper: register a single listener per part that
+      // delegates to whatever handler is stored at any given moment. This
+      // avoids remove/add churn during dispatch (re-entrancy) and correctly
+      // disables when value becomes non-function (null/undefined). The state
+      // is per part, so a spread `@event` on the same element is unaffected.
       const eventName = this.name.slice(1);
-      const handlerProp = `__crp_handler_${eventName}`;
-      const wrapperProp = `__crp_wrapper_${eventName}`;
-      if (!(this.element as any)[wrapperProp]) {
-        const wrapper = (e: Event) => {
-          const current = (e.currentTarget as any)?.[handlerProp];
+      if (!this.eventListener || this.eventListenerTarget !== this.element) {
+        const listener = (e: Event) => {
+          const current = this.eventHandler;
           if (typeof current === 'function') current.call(e.currentTarget, e);
         };
-        (this.element as any)[wrapperProp] = wrapper;
-        this.element.addEventListener(eventName, wrapper);
+        this.eventListener = listener;
+        this.eventListenerTarget = this.element;
+        this.element.addEventListener(eventName, listener);
       }
       // Unwrap `preventDefault(handler)` into the inner handler; when present,
       // wrap it so the event's default is prevented first. `novalidate` (on by
@@ -2162,8 +2185,8 @@ class AttributePart implements Part {
           inner.call(e.currentTarget, e);
         };
       }
-      (this.element as any)[handlerProp] = typeof resolved === 'function' ? resolved : undefined;
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      this.eventHandler = typeof resolved === 'function' ? resolved as EventListener : undefined;
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);
       // `.value`/`.checked` on form fields get Lit-style dirty-checking so a
@@ -2203,29 +2226,29 @@ class AttributePart implements Part {
       } else {
         (this.element as any)[propName] = value;
       }
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (this.name.startsWith('?')) {
       const attrName = this.name.slice(1);
       if (value) this.element.setAttribute(attrName, '');
       else this.element.removeAttribute(attrName);
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (isIfDefined) {
       // `ifDefined`: drop only on `undefined`; render everything else (incl.
       // false/null/0/'') as a literal attribute string. Must be checked before
       // the `typeof value === 'boolean'` branch so `false` renders as "false".
       if (value === undefined) {
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else {
         this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
       }
     } else if (value === null || value === undefined) {
-      this.element.removeAttribute(this.name);
+      this.element.removeAttribute(this.domName);
     } else if (typeof value === 'boolean') {
       const serialized = serializeBooleanAttribute(this.name, value);
-      if (serialized === null) this.element.removeAttribute(this.name);
+      if (serialized === null) this.element.removeAttribute(this.domName);
       else this.element.setAttribute(this.name, serialized);
     } else {
-      this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
+      this.element.setAttribute(this.name, this.segments[0] + attributeValueText(value) + this.segments[1]);
     }
   }
 
@@ -2247,7 +2270,7 @@ class AttributePart implements Part {
       // Unsupported property: fall back to a plain property assignment so the
       // render still reflects the current field value, with no writeback.
       (this.element as any)[propName] = resolveField(bind.component, bind.fieldName);
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
       // Detach any listener from a previous bind() — switching from .value to
       // .foo on the same part would otherwise leave the old listener attached.
       if (this.bindListener) {
@@ -2332,7 +2355,33 @@ class AttributePart implements Part {
 
     // `.value`/`.checked` are not real HTML attributes — strip the binding
     // marker so it never appears in the DOM.
-    if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+    if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
+  }
+}
+
+interface RawTextState {
+  tag: string;
+  /** N+1 static text segments around N bindings. */
+  segments: string[];
+  /** Latest value per binding, shared by every part of the element. */
+  values: unknown[];
+}
+
+/**
+ * A binding inside `<textarea>`, `<title>`, `<script>` or `<style>`. The
+ * parser reads that content as text, so there are no comment anchors: the
+ * part owns the element's whole `textContent`.
+ */
+class RawTextPart implements Part {
+  constructor(public element: Element, private state: RawTextState, private position: number) {}
+
+  update(value: unknown) {
+    const { tag, segments, values } = this.state;
+    values[this.position] = value;
+    let text = segments[0];
+    for (let i = 0; i < values.length; i++) text += rawTextContent(tag, values[i]) + segments[i + 1];
+    // Hydration leaves matching SSR text alone.
+    if (this.element.textContent !== text) this.element.textContent = text;
   }
 }
 
@@ -2408,60 +2457,25 @@ const containerCache = new WeakMap<Node, { identity: object; parts: Part[] }>();
  * Shared by `render()` (append into a wiped container) and `hydrate()`
  * (rebind the parts to the existing SSR DOM).
  */
-const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
-  const parts: Part[] = [];
-  const strings = scopeTemplateStrings(result.strings, result.__cossackScope);
+// Parsed <template> per template identity (strings + type + scope). Each
+// render clones it instead of re-parsing the markup, as Lit does.
+const templateElements = new WeakMap<object, HTMLTemplateElement>();
+const getTemplateElement = (result: TemplateResult, { strings, bindings }: TemplateAnalysis): HTMLTemplateElement => {
+  const identity = templateIdentity(result);
+  const cached = templateElements.get(identity);
+  if (cached && cached.ownerDocument === document) return cached;
 
+  // Same classification as SSR: node bindings get comment anchors, attribute
+  // and raw-text bindings get inline placeholders, comment/element bindings
+  // are dropped.
   let htmlString = '';
-  let isInsideTag = false;
-  let insideAttrQuote: string | null = null; // tracks open quote char ('"' or "'")
-
-  const attrMatch = /(\.\.\.|[.@?]?[a-zA-Z0-9_:-]+)=["']?$/;
-
   for (let i = 0; i < strings.length - 1; i++) {
-    const str = strings[i];
-
-    // Track whether we're inside a tag and inside an attribute quote
-    for (let j = 0; j < str.length; j++) {
-      if (insideAttrQuote) {
-        if (str[j] === insideAttrQuote) insideAttrQuote = null;
-      } else if (isInsideTag && (str[j] === '"' || str[j] === "'")) {
-        if (j > 0 && str[j - 1] === '=') {
-          insideAttrQuote = str[j];
-        }
-      } else if (str[j] === '<' && str[j + 1] !== '!' && str[j + 1] !== '/') {
-        isInsideTag = true;
-      } else if (str[j] === '>') {
-        isInsideTag = false;
-      }
-    }
-
-    htmlString += str;
-
-    const match = str.match(attrMatch);
-    if (isInsideTag && (match || insideAttrQuote)) {
-      htmlString += `__CRP_${i}__`;
-      // Track quote state from the regex match
-      if (match && !insideAttrQuote) {
-        const quote = match[0].endsWith('"') ? '"' : match[0].endsWith("'") ? "'" : null;
-        if (quote) insideAttrQuote = quote;
-      }
-    } else {
-      htmlString += `<!--CRP_${i}-->`;
-    }
+    htmlString += strings[i];
+    const kind = bindings[i].kind;
+    if (kind === 'node') htmlString += `<!--CRP_${i}-->`;
+    else if (kind === 'attribute' || kind === 'raw-text') htmlString += `__CRP_${i}__`;
   }
-
-  const lastStr = strings[strings.length - 1];
-  for (let j = 0; j < lastStr.length; j++) {
-    if (insideAttrQuote) {
-      if (lastStr[j] === insideAttrQuote) insideAttrQuote = null;
-    } else if (lastStr[j] === '<' && lastStr[j + 1] !== '!' && lastStr[j + 1] !== '/') {
-      isInsideTag = true;
-    } else if (lastStr[j] === '>') {
-      isInsideTag = false;
-    }
-  }
-  htmlString += lastStr;
+  htmlString += strings[strings.length - 1];
 
   const template = document.createElement('template');
   if (result['_$litType$'] === 2) {
@@ -2478,6 +2492,25 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
   } else {
     template.innerHTML = htmlString;
   }
+  templateElements.set(identity, template);
+  return template;
+};
+
+const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
+  const parts: Part[] = [];
+  const analysis = getTemplateAnalysis(result);
+  const { bindings } = analysis;
+
+  // Property, event and boolean bindings keep the author's case
+  // (`.innerHTML`, `@myEvent`); the parser lowercased the attribute name.
+  // Plain attributes use the parser's name, which also applies SVG case
+  // adjustments such as `viewBox`.
+  const authoredName = (index: number, domName: string): string => {
+    const binding = bindings[index];
+    return binding?.kind === 'attribute' && /^[.@?]/.test(binding.name) ? binding.name : domName;
+  };
+
+  const template = getTemplateElement(result, analysis);
   const instance = template.content.cloneNode(true);
 
   const walker = document.createTreeWalker(instance, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
@@ -2490,7 +2523,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
 
   nodes.forEach((node) => {
     if (node.nodeType === Node.COMMENT_NODE) {
-      const match = node.nodeValue?.match(/CRP_(\d+)/);
+      const match = node.nodeValue?.match(/^CRP_(\d+)$/);
       if (match) {
         const index = parseInt(match[1]);
         const endNode = document.createComment('/CRP');
@@ -2500,6 +2533,27 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
+
+      if (RAW_TEXT_TAGS.has(el.localName)) {
+        // Raw-text bindings: one RawTextPart per binding, all sharing the
+        // element's text segments so the whole text is re-joined per update.
+        const text = el.textContent ?? '';
+        const matches = [...text.matchAll(/__CRP_(\d+)__/g)].filter((m) => bindings[Number(m[1])]?.kind === 'raw-text');
+        if (matches.length > 0) {
+          const segments: string[] = [];
+          let lastEnd = 0;
+          for (const m of matches) {
+            segments.push(text.slice(lastEnd, m.index));
+            lastEnd = m.index! + m[0].length;
+          }
+          segments.push(text.slice(lastEnd));
+          const shared = { tag: el.localName, segments, values: new Array<unknown>(matches.length).fill(undefined) };
+          matches.forEach((m, position) => {
+            parts[Number(m[1])] = new RawTextPart(el, shared, position);
+          });
+          el.textContent = segments.join('');
+        }
+      }
 
       Array.from(el.attributes).forEach((attr) => {
         const allMatches = [...attr.value.matchAll(/__CRP_(\d+)__/g)];
@@ -2514,7 +2568,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
               parts[index] = part;
               el.removeAttribute('...');
             } else {
-              const part = new AttributePart(el, attr.name, attr.value);
+              const part = new AttributePart(el, authoredName(index, attr.name), attr.value, undefined, attr.name);
               parts[index] = part;
             }
           }
@@ -2533,7 +2587,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
         for (let pos = 0; pos < indices.length; pos++) {
           const index = indices[pos];
           if (!parts[index]) {
-            const part = new AttributePart(el, attr.name, attr.value, { currentValues, position: pos });
+            const part = new AttributePart(el, authoredName(index, attr.name), attr.value, { currentValues, position: pos }, attr.name);
             parts[index] = part;
           }
         }
@@ -2745,9 +2799,11 @@ const reconcileNodeLists = (
         throw new HydrateMismatch('element-namespace', nodePath, describeNode(bpNode), describeNode(exNode));
       }
       map.set(bpNode, exNode);
-      if (bpNode.nodeName === 'TEXTAREA') {
-        // Native textarea values are text in SSR and properties on the client.
-        // There are no child comment anchors inside this raw-text element.
+      if (RAW_TEXT_TAGS.has((bpNode as Element).localName)) {
+        // Raw-text content has no child nodes or comment anchors to adopt.
+        // Bindings there are RawTextParts that reconcile the text themselves,
+        // and native textarea values are text in SSR but properties on the
+        // client.
         ei++;
         continue;
       }
@@ -2815,7 +2871,7 @@ const rebindParts = (parts: Part[], map: Map<Node, Node>) => {
       part.startNode = start as Comment;
       part.endNode = end as Comment;
       part._beginHydration();
-    } else if (part instanceof AttributePart || part instanceof SpreadPart) {
+    } else if (part instanceof AttributePart || part instanceof SpreadPart || part instanceof RawTextPart) {
       const el = map.get((part as any).element);
       if (!el) throw new HydrateMismatch('missing-part-element', 'part', 'attribute element', 'missing element');
       (part as any).element = el;

@@ -19,7 +19,7 @@ vi.mock('../src/lifecycle-process.js', () => ({
 const projectRoot = await findProjectRoot(process.cwd());
 const projectRequire = createRequire(path.join(projectRoot, 'package.json'));
 const viteExecutable = path.join(path.dirname(projectRequire.resolve('vite/package.json')), 'bin/vite.js');
-const viteOptions = { cwd: projectRoot, shell: false };
+const viteOptions = { cwd: projectRoot };
 
 const temporaryDirectories = [];
 afterEach(async () => {
@@ -48,11 +48,10 @@ describe('command dispatch', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await dispatch([command, ...args])).toBe(0);
     if (command === 'dev') {
-      expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', [viteCommand, ...args], expect.objectContaining({
-        cwd: process.cwd(), metadata: { tool: 'vite' }, json: false,
+      expect(runLifecycle).toHaveBeenCalledWith('dev', process.execPath, [viteExecutable, viteCommand, ...args], expect.objectContaining({
+        cwd: projectRoot, metadata: { tool: 'vite' }, json: false,
       }));
-    } else if (command === 'build') expect(run).toHaveBeenCalledWith(process.execPath, [viteExecutable, viteCommand, ...args], viteOptions);
-    else expect(run).toHaveBeenCalledWith('vite', [viteCommand, ...args]);
+    } else expect(run).toHaveBeenCalledWith(process.execPath, [viteExecutable, viteCommand, ...args], viteOptions);
   });
 
   it.each([
@@ -70,13 +69,12 @@ describe('command dispatch', () => {
         : ['build', '--mode', 'staging'];
     const options = { env: { CLOUDFLARE_ENV: 'staging' } };
     if (command === 'dev') {
-      expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', expectedArgs, expect.objectContaining({
+      expect(runLifecycle).toHaveBeenCalledWith('dev', process.execPath, [viteExecutable, ...expectedArgs], expect.objectContaining({
         env: options.env,
         metadata: { tool: 'vite', environment: 'staging' },
       }));
     } else {
-      if (command === 'build') expect(run).toHaveBeenCalledWith(process.execPath, [viteExecutable, ...expectedArgs], { ...options, ...viteOptions });
-      else expect(run).toHaveBeenCalledWith('vite', expectedArgs, options);
+      expect(run).toHaveBeenCalledWith(process.execPath, [viteExecutable, ...expectedArgs], { ...options, ...viteOptions });
     }
     expect(viteCommand).toBe(command === 'dev' ? 'dev' : 'build');
   });
@@ -84,11 +82,8 @@ describe('command dispatch', () => {
   it.each(['build', 'ssg'])('%s forwards --env to Vite through JSON child environment', async command => {
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await dispatch([command, '--env=staging', '--json', '--mode', 'preview'])).toBe(0);
-    if (command === 'build') expect(runCaptured).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build', '--mode', 'preview'], {
+    expect(runCaptured).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build', '--mode', 'preview'], {
       ...viteOptions, env: { CLOUDFLARE_ENV: 'staging' }, discardOutput: true,
-    });
-    else expect(runCaptured).toHaveBeenCalledWith('vite', ['build', '--mode', 'preview'], {
-      env: { CLOUDFLARE_ENV: 'staging' }, discardOutput: true,
     });
     expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ command, ok: true,
       data: { environment: 'staging' } });
@@ -99,14 +94,13 @@ describe('command dispatch', () => {
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await dispatch([command, '--json'])).toBe(0);
     if (command === 'dev') {
-      expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', ['dev'], expect.objectContaining({
+      expect(runLifecycle).toHaveBeenCalledWith('dev', process.execPath, [viteExecutable, 'dev'], expect.objectContaining({
         metadata: { tool: 'vite', environment: 'staging' },
       }));
     } else {
       expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ command, ok: true,
         data: { environment: 'staging' } });
-      if (command === 'build') expect(runCaptured).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build'], { ...viteOptions, discardOutput: true });
-      else expect(runCaptured).toHaveBeenCalledWith('vite', ['build'], { discardOutput: true });
+      expect(runCaptured).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build'], { ...viteOptions, discardOutput: true });
     }
   });
 
@@ -127,20 +121,19 @@ describe('command dispatch', () => {
   it('leaves arguments after -- untouched, including help', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await dispatch(['dev', '--', '--help']);
-    expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', ['dev', '--', '--help'], expect.any(Object));
+    expect(runLifecycle).toHaveBeenCalledWith('dev', process.execPath, [viteExecutable, 'dev', '--', '--help'], expect.any(Object));
   });
 
   it('leaves Cloudflare-looking arguments after -- to the underlying tool', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await dispatch(['dev', '--', '--env', 'staging']);
-    expect(runLifecycle).toHaveBeenCalledWith('dev', 'vite', ['dev', '--', '--env', 'staging'], expect.any(Object));
+    expect(runLifecycle).toHaveBeenCalledWith('dev', process.execPath, [viteExecutable, 'dev', '--', '--env', 'staging'], expect.any(Object));
   });
 
   it.each(['build', 'ssg'])('%s consumes --json and emits exactly one envelope', async command => {
     const output = vi.spyOn(console, 'log').mockImplementation(() => {});
     expect(await dispatch([command, '--json', '--mode', 'staging'])).toBe(0);
-    if (command === 'build') expect(runCaptured).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build', '--mode', 'staging'], { ...viteOptions, discardOutput: true });
-    else expect(runCaptured).toHaveBeenCalledWith('vite', ['build', '--mode', 'staging'], { discardOutput: true });
+    expect(runCaptured).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build', '--mode', 'staging'], { ...viteOptions, discardOutput: true });
     expect(run).not.toHaveBeenCalled();
     expect(output).toHaveBeenCalledTimes(1);
     expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({
@@ -159,7 +152,7 @@ describe('command dispatch', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await dispatch(['ssg', '--base-url', 'https://example.test', '--mode', 'staging']);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('--base-url https://example.test'));
-    expect(run).toHaveBeenCalledWith('vite', ['build', '--mode', 'staging']);
+    expect(run).toHaveBeenCalledWith(process.execPath, [viteExecutable, 'build', '--mode', 'staging'], viteOptions);
   });
 
   it('creates no project or manifest for create --dry-run', async () => {

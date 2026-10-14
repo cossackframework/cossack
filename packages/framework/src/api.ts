@@ -1,7 +1,7 @@
 /** Declared native HTTP contracts. This entry uses only portable Web APIs. */
 import type { Context } from 'hono';
 import { createServerFailureContext, logServerFailure } from './server-logging.js';
-import { readBoundedBody } from './request-body.js';
+import { discardRequestBody, readBoundedBody } from './request-body.js';
 import { HTTPException } from 'hono/http-exception';
 import { getAuthorizationFailure, isActionValidationError, isClientVisibleError, isInputSchema,
     snapshotRpcValue, type InputOf, type InputSchema, type RawInputOf, type RpcSerialized } from '@cossackframework/core';
@@ -211,7 +211,7 @@ async function readJsonBody(request: Request, limit: number, signal: AbortSignal
     if (!request.body) return undefined;
     const media = request.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase();
     if (!media || !(media === 'application/json' || /^application\/[a-z0-9!#$&^_.+-]+\+json$/.test(media))) {
-        void request.body.cancel().catch(() => {});
+        await discardRequestBody(request, limit);
         throw new ApiFailure(415, 'COSSACK_API_MEDIA_TYPE', 'Expected a JSON request body.');
     }
     const bytes = await readBoundedBody(request.body, limit,

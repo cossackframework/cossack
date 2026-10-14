@@ -42,6 +42,12 @@ function nodesFor(strings: TemplateStringsArray, values: readonly SQLInterpolati
     if (value instanceof SQLFragment) {
       nodes.push({ kind: "fragment", value });
     } else if (Array.isArray(value)) {
+      if (value.length === 0) {
+        throw new ConfigurationError(
+          "Cannot interpolate an empty array into SQL: it would compile to an invalid list such as IN (). " +
+          "Check for an empty list before building the query.",
+        );
+      }
       value.forEach((item, itemIndex) => {
         if (itemIndex > 0) nodes.push({ kind: "text", value: ", " });
         nodes.push({ kind: "value", value: item });
@@ -82,6 +88,12 @@ function makeTag(
     return new SQLFragment([{ kind: "identifier", path }]);
   };
   tag.join = (values, separator = new SQLFragment([{ kind: "text", value: ", " }])) => {
+    if (values.length === 0) {
+      throw new ConfigurationError(
+        "sql.join() received an empty list; it would compile to an invalid list such as IN (). " +
+        "Check for an empty list before building the query.",
+      );
+    }
     const nodes: SQLNode[] = [];
     values.forEach((value, index) => {
       if (index > 0) nodes.push({ kind: "fragment", value: separator });

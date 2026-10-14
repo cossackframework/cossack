@@ -2,13 +2,14 @@ import { spawn } from 'node:child_process';
 
 /**
  * Spawn a command inheriting stdio. Resolves with the exit code.
- * Uses shell:true so `vite`/`wrangler`/`cossack` resolve from node_modules/.bin.
+ * Never uses a shell: callers pass an absolute executable (normally
+ * `process.execPath` plus a resolved tool entry, see project-tools.js).
  */
 export function run(cmd, args = [], opts = {}) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       stdio: opts.stdio ?? 'inherit',
-      shell: opts.shell ?? process.platform === 'win32',
+      shell: false,
       cwd: opts.cwd || process.cwd(),
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
     });
@@ -32,7 +33,7 @@ export function runCaptured(cmd, args = [], opts = {}) {
     const child = spawn(cmd, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: isolated,
-      shell: opts.shell ?? process.platform === 'win32',
+      shell: false,
       cwd: opts.cwd || process.cwd(),
       env: opts.env ? { ...process.env, ...opts.env } : process.env,
     });

@@ -15,7 +15,10 @@ import { fileURLToPath } from 'node:url';
 import { App } from '../App';
 import { template } from '../root';
 
-export const env = { ...process.env };
+export function createEnv(variables: Record<string, string | undefined> = process.env) {
+  return { ...variables };
+}
+export const env = import.meta.env.DEV ? {} : createEnv();
 export const frameworkApp = createApp({
   AppComponent: App,
   htmlTemplate: template,
@@ -49,6 +52,10 @@ supervises Electron, which runs the development module loader and asset server.
 Pages retain the private origin and native request checks. Source edits reload
 managed windows. Changes under `src/desktop/`, to the Vite configuration, or to
 root `.env*` files restart Electron. Reloads do not undo application side effects.
+Development passes only declared bindings: the `env` given to
+`createDesktopApp()` and the bootstrap's `env` export, or the result of an
+exported `createEnv(variables)`, which receives the root `.env*` values for the
+`desktop` mode and the process variables. Other host variables are not exposed.
 Page syntax errors remain visible and source repair can recover without
 restarting the CLI.
 
@@ -123,6 +130,12 @@ const close = configureDesktopClose({
   onQuit: () => desktop.quit(),
 });
 ```
+
+`desktop.mainWindow` is a live getter. It changes when the main window closes
+while another managed window stays open, and when macOS activation, a second
+instance or `desktop.show()` must create a new window. `desktop.shell` is
+stable and its window methods always target the current main window. A close
+policy applies to the window it was given.
 
 `quit` closes the application, `hide-to-tray` hides only while its tray is
 alive and otherwise quits, and `confirm-quit` uses an asynchronous native

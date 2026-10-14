@@ -4,6 +4,7 @@ import { Icon } from '../icons/Icon';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu';
 import type { GlobalAttributes, AnchorAttributes, ControlEvent } from '../native-attributes';
+import { ControlledValue } from '../native-attributes';
 
 export type SidebarLinkProps = Omit<AnchorAttributes, 'href' | 'role' | 'tabindex' | 'aria-current' | 'aria-label' | 'aria-labelledby'>;
 type SidebarItemBase = { value: string; label: string; icon?: IconEntry; active?: boolean; linkProps?: SidebarLinkProps };
@@ -53,11 +54,15 @@ export class Sidebar extends Cossack {
     private rootElement?: HTMLElement;
     private focusRepair?: { element: HTMLElement; value?: string };
     private generation = 0;
+    private controlled = new ControlledValue<boolean>();
 
     private hasActive(item: SidebarItem): boolean { return !!item.active || !!item.children?.some(child => this.hasActive(child)); }
     private isExpanded(item: SidebarItem) {
         return Object.hasOwn(this.expandedGroups, item.value) ? this.expandedGroups[item.value] : this.hasActive(item);
     }
+    /** Collapsed state the next toggle builds on, including a proposal the parent has not rendered yet. */
+    private collapsedBase() { return this.controlled.base(this.props, !!this.props.collapsed); }
+    private propose(collapsed: boolean) { this.props.onToggle?.(this.controlled.emit(this.props, collapsed)); }
     private validate() {
         const p = this.props;
         if (typeof p.id !== 'string' || !p.id || /\s/.test(p.id)) throw new Error('Sidebar requires a nonempty id without whitespace.');
@@ -123,7 +128,7 @@ export class Sidebar extends Cossack {
                 ${brand != null ? html`<div class="cs-sidebar__brand flex-1 min-w-0">${brand}</div>` : html`<span class=${rail ? 'sr-only' : 'text-sm font-semibold truncate flex-1'}>${title}</span>`}
                 ${onToggle ? html`<button type="button" class="cs-sidebar__toggle size-7 inline-flex items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label=${collapsed ? expandLabel : collapseLabel} aria-expanded=${!collapsed} aria-controls=${`${id}-nav`}
-                    @click=${()=>this.props.onToggle?.(!this.props.collapsed)}><span aria-hidden="true">${component(Icon,{entry:HamburgerMenuIcon,size:16})}</span></button>` : null}
+                    @click=${()=>this.propose(!this.collapsedBase())}><span aria-hidden="true">${component(Icon,{entry:HamburgerMenuIcon,size:16})}</span></button>` : null}
             </div>
             <nav ...=${navProps} id=${`${id}-nav`} aria-label=${label} tabindex="-1" class="cs-sidebar__nav flex-1 overflow-y-auto py-2 px-2"><ul class="space-y-0.5">${repeat(items,item=>item.value,item=>this.renderItem(item,rail))}</ul></nav>
             ${footer != null ? html`<div class=${`cs-sidebar__footer group border-t p-2 shrink-0 ${rail ? 'is-collapsed' : ''}`}>${footer}</div>` : null}
@@ -168,7 +173,7 @@ export class Sidebar extends Cossack {
             const row = details.parentElement;
             const value = row?.dataset.sidebarValue;
             if (value !== undefined) { event.preventDefault(); details.querySelector<HTMLElement>(':scope > summary')?.focus(); details.open=false; this.expandedGroups={...this.expandedGroups,[value]:false}; }
-        } else if (this.props.collapsible === 'offcanvas' && !this.props.collapsed && this.props.onToggle) { event.preventDefault(); this.props.onToggle(true); }
+        } else if (this.props.collapsible === 'offcanvas' && !this.collapsedBase() && this.props.onToggle) { event.preventDefault(); this.propose(true); }
     }
     @Client()
     private handleLinkNavigation(event: MouseEvent, item: SidebarItem) {

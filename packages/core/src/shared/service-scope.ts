@@ -333,9 +333,11 @@ export class ServiceScope {
             for (const result of results) if (Array.isArray(result)) errors.push(...result);
             this.childDisposals.clear();
             complete(errors);
-            // Browser root scopes can outlive thousands of layout changes.
-            // Completed successful child hooks need no retained completion.
-            if (!errors.length) this.parent?.childDisposals.delete(this.disposal!);
+            // Browser root scopes can outlive thousands of layout changes, so
+            // never retain a completed child disposal. A parent disposal that
+            // is already running captured this promise and still receives its
+            // errors; a completed one was reported by whoever disposed it.
+            this.parent?.childDisposals.delete(this.disposal!);
         });
         return this.disposal;
     }

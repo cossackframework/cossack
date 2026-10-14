@@ -1,17 +1,21 @@
 import {
   coerceCellValue,
   interpolateSqlParameters,
+  limitStatementRows,
   parseSingleStatement,
   quoteIdentifier,
+  statementMayChangeSchema,
 } from './sql.js';
 import { findObject, introspectSchema } from './schema.js';
 import { normalizeQueryResult } from './transport.js';
+import type { DatabaseInspection } from '@cossackframework/database/tooling';
 import type {
   StudioColumn,
   StudioConnection,
   StudioObject,
   StudioPragma,
   StudioPragmaOption,
+  StudioExecutor,
   StudioSchema,
 } from './schema-types.js';
 import type {
@@ -23,6 +27,8 @@ import type {
   MutationResult,
   TransportQueryResult,
 } from './query-types.js';
+
+const CONSOLE_ROW_LIMIT = 1_000;
 
 interface PragmaOption extends StudioPragmaOption {
   sql: string;
@@ -184,23 +190,96 @@ function isSqliteProvider(provider: StudioConnection['info']['provider']): boole
 
 export class StudioDatabase {
   private schema?: StudioSchema;
+  private schemaLoad?: Promise<StudioSchema>;
+  private inspection?: DatabaseInspection;
+  private inspectionLoad?: Promise<DatabaseInspection | undefined>;
+  private databaseVersion?: string;
+  private generation = 0;
 
   constructor(
     readonly connection: StudioConnection,
     private readonly options: { applicationName?: string } = {},
   ) {}
 
+  /**
+   * Return the introspected schema. The result is cached: Studio invalidates
+   * it after statements that may change the schema (console DDL/writes and
+   * PRAGMA writes). `refresh` forces a fresh introspection, e.g. to pick up
+   * changes made outside Studio. Migration inspection is not part of this
+   * call; it is attached only once loaded through `getInspection()`.
+   */
   async getSchema(refresh = false): Promise<StudioSchema> {
-    if (!this.schema || refresh) {
-      const inspection = await this.connection.inspect?.();
-      this.schema = await introspectSchema(
+    if (refresh) this.invalidateSchema();
+    if (this.schema) return this.withInspection(this.schema);
+    if (!this.schemaLoad) {
+      const generation = this.generation;
+      const load = introspectSchema(
         this.connection,
         this.options.applicationName ?? 'Cossack application',
-        this.schema?.connection.databaseVersion,
-      );
-      if (inspection) this.schema.inspection = inspection;
+        this.databaseVersion,
+      ).then((schema) => {
+        if (generation === this.generation) {
+          this.schema = schema;
+          this.databaseVersion = schema.connection.databaseVersion;
+        }
+        return schema;
+      }).finally(() => {
+        if (this.schemaLoad === load) this.schemaLoad = undefined;
+      });
+      this.schemaLoad = load;
     }
-    return this.schema;
+    return this.withInspection(await this.schemaLoad);
+  }
+
+  /**
+   * Lazily load shared migration/capability inspection. It can be expensive
+   * (remote D1 runs several Wrangler commands), so only views that display
+   * it request it. The result is cached until the schema is invalidated.
+   */
+  async getInspection(refresh = false): Promise<DatabaseInspection | undefined> {
+    if (!this.connection.inspect) return undefined;
+    if (refresh) {
+      this.inspection = undefined;
+      this.inspectionLoad = undefined;
+    }
+    if (this.inspection) return this.inspection;
+    if (!this.inspectionLoad) {
+      const generation = this.generation;
+      const load = this.connection.inspect().then((inspection) => {
+        if (generation === this.generation) this.inspection = inspection;
+        return inspection;
+      }).finally(() => {
+        if (this.inspectionLoad === load) this.inspectionLoad = undefined;
+      });
+      this.inspectionLoad = load;
+    }
+    return this.inspectionLoad;
+  }
+
+  /** Drop cached schema and inspection so the next read introspects again. */
+  invalidateSchema(): void {
+    this.generation++;
+    this.schema = undefined;
+    this.schemaLoad = undefined;
+    this.inspection = undefined;
+    this.inspectionLoad = undefined;
+  }
+
+  private withInspection(schema: StudioSchema): StudioSchema {
+    const inspectionAvailable = typeof this.connection.inspect === 'function';
+    const { inspection: _previous, ...rest } = schema;
+    return {
+      ...rest,
+      ...(inspectionAvailable ? { inspectionAvailable } : {}),
+      ...(this.inspection ? { inspection: this.inspection } : {}),
+    };
+  }
+
+  /** Find an object, re-introspecting once if the cached schema lacks it. */
+  private async findSchemaObject(name: string): Promise<StudioObject> {
+    const cached = await this.getSchema();
+    if (cached.objects.some((object) => object.name === name)) return findObject(cached, name);
+    return findObject(await this.getSchema(true), name);
   }
 
   async browse(
@@ -208,7 +287,7 @@ export class StudioDatabase {
     optionsOrPage: BrowseOptions | number = {},
     legacyPageSize = 100,
   ): Promise<TransportQueryResult> {
-    const object = findObject(await this.getSchema(true), name);
+    const object = await this.findSchemaObject(name);
     const options = typeof optionsOrPage === 'number'
       ? { page: optionsOrPage, pageSize: legacyPageSize }
       : optionsOrPage;
@@ -267,11 +346,17 @@ export class StudioDatabase {
   }
 
   async executeSql(input: string): Promise<TransportQueryResult> {
-    const statement = parseSingleStatement(input);
+    const provider = this.connection.info.provider;
+    const statement = parseSingleStatement(input, provider);
     try {
-      const result = normalizeQueryResult(await this.connection.execute(statement));
-      await this.getSchema(true);
-      return result;
+      let raw;
+      try {
+        raw = await this.executeBounded(statement);
+      } finally {
+        // A failed statement may still have partially applied (e.g. MySQL DDL).
+        if (statementMayChangeSchema(statement, provider)) this.invalidateSchema();
+      }
+      return normalizeQueryResult(raw, CONSOLE_ROW_LIMIT);
     } catch (error: any) {
       return {
         columns: [],
@@ -285,7 +370,7 @@ export class StudioDatabase {
   }
 
   async explainSql(input: string): Promise<TransportQueryResult> {
-    const statement = parseSingleStatement(input);
+    const statement = parseSingleStatement(input, this.connection.info.provider);
     const prefix = this.connection.info.provider === 'postgres'
       ? 'EXPLAIN (FORMAT JSON) '
       : this.connection.info.provider === 'mysql'
@@ -305,6 +390,28 @@ export class StudioDatabase {
         error: error?.message ?? String(error),
       };
     }
+  }
+
+  /**
+   * Run a console statement, asking the database for at most one row more
+   * than the console displays so large SELECTs are not fully materialised.
+   * The bounded form is a derived table; when a database rejects it (for
+   * example MySQL with duplicate column names) the original query runs.
+   */
+  private async executeBounded(statement: string) {
+    const bounded = limitStatementRows(
+      statement,
+      this.connection.info.provider,
+      CONSOLE_ROW_LIMIT + 1,
+    );
+    if (bounded) {
+      try {
+        return await this.connection.execute(bounded);
+      } catch {
+        // Fall through: report errors from the statement the user wrote.
+      }
+    }
+    return this.connection.execute(statement);
   }
 
   async getPragmas(): Promise<StudioPragma[]> {
@@ -369,7 +476,11 @@ export class StudioDatabase {
       sqlValue = option.sql;
     }
 
-    await this.connection.execute(`PRAGMA ${definition.name} = ${sqlValue}`);
+    try {
+      await this.connection.execute(`PRAGMA ${definition.name} = ${sqlValue}`);
+    } finally {
+      this.invalidateSchema();
+    }
     return this.getPragmas();
   }
 
@@ -403,7 +514,7 @@ export class StudioDatabase {
       ({ sql, parameters } = this.bind(sql, values));
     }
     const result = await this.connection.execute(sql, parameters);
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async update(
@@ -434,7 +545,7 @@ export class StudioDatabase {
     if (result.affectedRows !== 1) {
       throw new Error(`Stale update: expected one affected row, received ${result.affectedRows}.`);
     }
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async updateRow(
@@ -470,7 +581,7 @@ export class StudioDatabase {
     if (result.affectedRows !== 1) {
       throw new Error(`Stale update: expected one affected row, received ${result.affectedRows}.`);
     }
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async delete(tableName: string, key: Record<string, unknown>): Promise<MutationResult> {
@@ -483,7 +594,7 @@ export class StudioDatabase {
     if (result.affectedRows !== 1) {
       throw new Error(`Stale delete: expected one affected row, received ${result.affectedRows}.`);
     }
-    return { affectedRows: result.affectedRows, schema: await this.getSchema(true) };
+    return { affectedRows: result.affectedRows, schema: await this.getSchema() };
   }
 
   async deleteMany(
@@ -492,21 +603,12 @@ export class StudioDatabase {
   ): Promise<MutationResult> {
     const object = await this.mutableTable(tableName);
     if (!keys.length) throw new Error('Select at least one row.');
-    let affectedRows = 0;
-    for (const key of keys.slice(0, 1_000)) {
+    const statements = keys.slice(0, 1_000).map((key) => {
       const where = this.keyPredicate(object, key);
-      let sql = `DELETE FROM ${this.quote(object.name)} WHERE ${where.sql}`;
-      let parameters = where.parameters;
-      ({ sql, parameters } = this.bind(sql, parameters));
-      const result = await this.connection.execute(sql, parameters);
-      if (result.affectedRows !== 1) {
-        throw new Error(
-          `Batch delete stopped after ${affectedRows} row(s): a selected row was stale.`,
-        );
-      }
-      affectedRows += result.affectedRows;
-    }
-    return { affectedRows, schema: await this.getSchema(true) };
+      return this.bind(`DELETE FROM ${this.quote(object.name)} WHERE ${where.sql}`, where.parameters);
+    });
+    const affectedRows = await this.runBatch('delete', statements);
+    return { affectedRows, schema: await this.getSchema() };
   }
 
   async updateMany(
@@ -521,22 +623,53 @@ export class StudioDatabase {
     if (!keys.length) throw new Error('Select at least one row.');
     const nextValue = value.mode === 'null' ? null : this.coerceValue(value.value, column);
     if (nextValue === null && !column.nullable) throw new Error(`${column.name} does not allow NULL.`);
-    let affectedRows = 0;
-    for (const key of keys.slice(0, 1_000)) {
+    const statements = keys.slice(0, 1_000).map((key) => {
       const where = this.keyPredicate(object, key);
-      let sql = `UPDATE ${this.quote(object.name)} SET ${this.quote(column.name)} = ? ` +
-        `WHERE ${where.sql}`;
-      let parameters: unknown[] = [nextValue, ...where.parameters];
-      ({ sql, parameters } = this.bind(sql, parameters));
-      const result = await this.connection.execute(sql, parameters);
-      if (result.affectedRows !== 1) {
-        throw new Error(
-          `Batch update stopped after ${affectedRows} row(s): a selected row was stale.`,
-        );
+      return this.bind(
+        `UPDATE ${this.quote(object.name)} SET ${this.quote(column.name)} = ? WHERE ${where.sql}`,
+        [nextValue, ...where.parameters],
+      );
+    });
+    const affectedRows = await this.runBatch('update', statements);
+    return { affectedRows, schema: await this.getSchema() };
+  }
+
+  /**
+   * Run single-row batch statements, each of which must affect exactly one
+   * row. Local connections with transaction support apply all or nothing.
+   * Connections without transactions (remote and local D1) are best-effort:
+   * rows changed before a failure stay changed, and the error says how many.
+   */
+  private async runBatch(
+    kind: 'delete' | 'update',
+    statements: Array<{ sql: string; parameters: unknown[] }>,
+  ): Promise<number> {
+    const run = async (execute: StudioExecutor, atomic: boolean) => {
+      let affectedRows = 0;
+      for (const statement of statements) {
+        let result;
+        try {
+          result = await execute(statement.sql, statement.parameters);
+        } catch (error: any) {
+          if (!atomic) {
+            throw new Error(
+              `Batch ${kind} stopped after ${affectedRows} row(s): ${error?.message ?? String(error)}`,
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+        if (result.affectedRows !== 1) {
+          throw new Error(atomic
+            ? `Batch ${kind} rolled back: a selected row was stale. No rows were changed.`
+            : `Batch ${kind} stopped after ${affectedRows} row(s): a selected row was stale.`);
+        }
+        affectedRows += result.affectedRows;
       }
-      affectedRows += result.affectedRows;
-    }
-    return { affectedRows, schema: await this.getSchema(true) };
+      return affectedRows;
+    };
+    if (this.connection.transaction) return this.connection.transaction(run);
+    return run((sql, parameters) => this.connection.execute(sql, parameters), false);
   }
 
   close(): Promise<void> {
@@ -754,7 +887,7 @@ export class StudioDatabase {
   }
 
   private async mutableTable(name: string): Promise<StudioObject> {
-    const object = findObject(await this.getSchema(true), name);
+    const object = await this.findSchemaObject(name);
     if (!object.editable) throw new Error(object.readOnlyReason ?? 'This database object is read-only.');
     return object;
   }

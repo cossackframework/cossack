@@ -116,6 +116,12 @@ export interface BootstrapOptions {
   providerTargets?: Record<string, string>;
   /** Skip calling `init()` after bootstrap. */
   skipInit?: boolean;
+  /**
+   * Skip calling `get()` after bootstrap. HTTP verb handlers set this: `get()`
+   * is the GET handler itself, so it must not run before `post()` or twice
+   * for a GET.
+   */
+  skipGet?: boolean;
   /** Defer `onMount()`/`clientInit()` to a later manual call. */
   deferMount?: boolean;
   /** @internal Prepare navigation without binding shared services or activating browser hooks. */

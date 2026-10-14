@@ -43,14 +43,13 @@ function fixture(kind: 'http' | 'sse' | 'service', timeout?: number) {
         target = scope.resolve(Counter);
     } else {
         target = { constructor: Counter, count: 0, previewCount: 0, draft: 'original', loading: first.loading,
-            __cossack_proxies: new Map(), _optimisticLockedKeys: {}, _optimisticPendingState: {},
+            __cossack_proxies: new Map(),
             requestUpdate: first.requestUpdate, getPublicState() { return { count: this.count }; },
             getInitialStateFromWindow: () => ({ componentRouteId: 'counter', transport: kind, scopeKey: 'one' }),
             getMethod: () => () => {
                 optimistic(target).increment('count', 1); optimistic(target).increment('previewCount', 1);
             },
             setProperty(key: string, value: unknown) { this[key] = value; noteOptimisticWrite(this, key); },
-            _isOptimisticLocked: () => false,
         };
         proxyHttpMethods(target, [{ name: 'run' }]);
     }

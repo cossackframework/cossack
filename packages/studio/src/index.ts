@@ -212,9 +212,17 @@ export async function runStudio(options: StudioRunOptions = {}): Promise<void> {
         }
         const webRequest = await toWebRequest(request, security.origin);
         await writeWebResponse(await fetchApp(webRequest, env), response);
-      } catch (error: any) {
-        if (!response.headersSent) response.statusCode = 500;
-        response.end(error?.message ?? String(error));
+      } catch (error) {
+        // Never echo internal error details (paths, SQL, driver messages) to
+        // the browser; they are logged for the developer running Studio.
+        console.error('Cossack Studio request failed:', error);
+        if (!response.headersSent) {
+          response.statusCode = 500;
+          response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          response.end('Internal Server Error');
+        } else {
+          response.destroy();
+        }
       }
     });
 

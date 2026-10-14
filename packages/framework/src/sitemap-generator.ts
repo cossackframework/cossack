@@ -1,4 +1,5 @@
 import type { MarkdownFrontmatter } from './markdown-frontmatter.js';
+import { classifyRoute } from './route-ids.js';
 import type { Cossack, PageOptions } from '@cossackframework/core';
 
 // Re-export types from core
@@ -28,19 +29,18 @@ export interface SitemapEntry {
 
 /**
  * Check if a route should be excluded from the sitemap.
- * API routes, 404 pages, and error pages are excluded.
+ * API routes, 404 pages, and error pages are excluded. Classification uses
+ * whole path segments (the router's `classifyRoute`), so `/error-codes` and
+ * `/404-stories` stay while `/api` and `/blog/404` are dropped.
  */
 function shouldExcludeRoute(routePath: string): boolean {
-  // Exclude API routes
-  if (routePath.includes('/api/')) return true;
-
-  // Exclude 404 pages
-  if (routePath.includes('/404')) return true;
-
-  // Exclude error pages
-  if (routePath.includes('/error')) return true;
-
-  return false;
+  let path = routePath;
+  if (/^https?:\/\//.test(path)) {
+    try { path = new URL(path).pathname; } catch { return false; }
+  }
+  if (!path.startsWith('/')) path = '/' + path;
+  if (path !== '/' && path.endsWith('/')) path = path.replace(/\/+$/, '') || '/';
+  return classifyRoute(path) !== 'page';
 }
 
 /**

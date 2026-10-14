@@ -135,6 +135,11 @@ catch-alls. Fewer route groups win an otherwise equal match. This preserves
 directory names such as `(account)` and `[id]` that a public URL cannot identify.
 An explicit 404 directory can own a namespace without an ordinary page.
 
+Unknown `/api` paths, and clients whose `Accept` header asks for JSON but not
+HTML, receive a JSON `{ "error": "Not Found", "code": "COSSACK_NOT_FOUND" }`
+response with status 404. Every other request renders the nearest 404 boundary,
+whatever its method, so a browser form POST to a page path shows the page's 404.
+
 For example, `/users/alice/missing` can select
 `src/pages/(account)/users/[id]/404/index.ts`. The boundary and its layout
 middleware receive `id: 'alice'`, including through `getRequestContext()`.
@@ -151,6 +156,11 @@ a response such as 403. A source middleware declaration already entered in the
 request runs once, including when a page fails and selects an error boundary.
 Global bootstrap middleware remains part of the same request. Error boundaries
 use the failing page's source ancestry and preserve status 500.
+
+An authorization denial (401 or 403) on a browser navigation to a page, that
+is a GET with `Accept: text/html`, renders the nearest error boundary with the
+denial status. API routes, `/crpc`, transports and clients that do not ask for
+HTML receive the JSON `{ error, code, requestId }` body instead.
 
 Every 404 and error component has its own source ID. Boundaries have no public
 route alias. Inspect a specific boundary with its source path:

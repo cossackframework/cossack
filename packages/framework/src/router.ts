@@ -12,7 +12,6 @@ import { renderRoot, TemplateHelpers } from './root.js';
 import { Page, PageOptions, Cossack, User, setPublicUserProjection, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
   createInstance,
-  createLayoutServiceScope,
   createRootServiceScope,
   snapshotRpcValue,
   RpcError,
@@ -89,6 +88,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
   return c.json({ _cossack_redirect: location });
 }
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
+import { createServiceScopeChain } from './service-scope-chain.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
@@ -108,7 +108,8 @@ import {
   attachCoordinatorRuntime,
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
-import { readRpcRequest } from './transports/http.js';
+import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.js';
+import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
@@ -229,19 +230,23 @@ function getLocalePreloadHref(manifest: Record<string, any>): string | undefined
 
 const { pages, layouts, loadings } = registry;
 
-/** Maximum byte size for inlining CSS (20 KiB). */
+/** Maximum byte size for inlining CSS (25 KiB). */
 const CSS_INLINE_THRESHOLD = 25600;
 
-/** Cached CSS content after first read. */
-let cachedInlineCss: string | undefined | null = null;
+/**
+ * Cached inlining decision: `undefined` = not decided yet, `null` = do not
+ * inline (no CSS entry, fetch failed, or too large), string = CSS to inline.
+ */
+let cachedInlineCss: string | null | undefined;
 
 /**
  * Read the entry-client CSS file and return its content if below the inline threshold.
  * Returns `undefined` in dev mode or if the CSS exceeds the threshold.
- * Results are cached after the first successful read.
+ * Both the positive and the negative decision are cached after the first read,
+ * so SSR does not re-fetch and re-encode the bundle on every request.
  */
 async function getInlineCss(env: any): Promise<string | undefined> {
-  if (cachedInlineCss !== null) return cachedInlineCss || undefined;
+  if (cachedInlineCss !== undefined) return cachedInlineCss ?? undefined;
 
   const manifest = await getManifest(env);
   const entry = manifest['src/client/entry-client.ts'];
@@ -252,10 +257,12 @@ async function getInlineCss(env: any): Promise<string | undefined> {
 
   const cssPath = `/${entry.css[0]}`;
 
+  // Without an assets binding there is nothing to read yet; decide later.
+  if (!env?.ASSETS?.fetch) return undefined;
   try {
-    if (!env?.ASSETS?.fetch) return undefined;
     const res = await env.ASSETS.fetch(new Request(`https://assets.local${cssPath}`));
     if (!res.ok) {
+      await res.body?.cancel();
       cachedInlineCss = null;
       return undefined;
     }
@@ -266,7 +273,7 @@ async function getInlineCss(env: any): Promise<string | undefined> {
       return cssText;
     }
 
-    // CSS too large — don't inline, but cache the decision
+    // CSS too large: don't inline, and cache the decision.
     cachedInlineCss = null;
     return undefined;
   } catch (e) {
@@ -314,6 +321,20 @@ function getLayoutStack(pagePath: string) {
 function findNearestSpecialPage(pagePath: string, type: '404' | 'error') {
   const path = resolveNearestSpecialPage(pagePath, Object.keys(pages), type);
   return path ? { path, component: getModuleDefault(pages[path] as object) as new () => Cossack } : null;
+}
+
+const TRANSPORT_PATH = /^\/(?:crpc|upload)$|^\/(?:sse|ws)\//;
+
+/**
+ * A browser navigation to a page route: GET/HEAD, not a transport or API path,
+ * and an Accept header that asks for HTML. Such requests receive an HTML error
+ * document; API routes, transports and other clients keep JSON errors.
+ */
+function wantsHtmlDocument(c: Context): boolean {
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return false;
+  const path = c.req.path;
+  if (TRANSPORT_PATH.test(path) || classifyRoute(path) === 'api') return false;
+  return (c.req.header('accept') ?? '').toLowerCase().includes('text/html');
 }
 
 export interface CreateAppOptions {
@@ -371,11 +392,20 @@ export function createApp(options: CreateAppOptions = {}) {
     });
     logConfigRequirementFailure(error);
     const denial = getAuthorizationFailure(error);
-    if (denial) return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
+    if (denial) {
+      if (wantsHtmlDocument(c)) {
+        const route = c.req.matchedRoutes.findLast(route => route.path !== '*')?.path;
+        const anchor = (route ? pagePathByRoute.get(route) : undefined) ?? resolveNotFound(c.req.path)?.path;
+        return renderDenialDocument(c, denial, anchor, context.requestId);
+      }
+      return c.json({ error: denial.message, code: denial.code, requestId: context.requestId }, denial.status);
+    }
     logServerFailure(context, 'request', 'middleware', 'COSSACK_REQUEST_INTERNAL');
     return c.json({ error: 'Internal Server Error', code: 'COSSACK_REQUEST_INTERNAL', requestId: context.requestId }, 500);
   });
   const resolveNotFound = createNotFoundResolver(Object.keys(pages));
+  /** Hono route pattern -> page file path, filled while page routes register. */
+  const pagePathByRoute = new Map<string, string>();
   const executedPolicies = Symbol('cossack:executed-route-policies');
   const policy = (source: string, index: number, middleware: Middleware): Middleware => async (c, next) => {
     const context = c as Context & { [executedPolicies]?: Set<string> };
@@ -416,6 +446,18 @@ export function createApp(options: CreateAppOptions = {}) {
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
   };
+
+  // Unread request bodies — on Workers, sending a response while the request
+  // body is still unread (an early rejection, a denied handler, a handler that
+  // ignores its body) leaves the sender writing after the response; workerd
+  // then fails the next request on that connection. Drain whatever the
+  // pipeline left unread, within the upload limit, before the response leaves.
+  // Outermost on purpose: it also covers responses produced by `app.onError`.
+  const unreadBodyLimit = options.rpc?.maxUploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES;
+  app.use('*', async (c, next) => {
+    await next();
+    await discardRequestBody(c.req.raw, unreadBodyLimit);
+  });
 
   // Request-context middleware — scopes the Hono `Context` into
   // AsyncLocalStorage FIRST so `cookie()` / `session()` / `getRequestContext()`
@@ -542,22 +584,17 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // Bootstrap Layouts
         const layoutStates: Record<string, any> = {};
-        let activeServiceScope = requestServiceScope;
-        for (const lPath of layoutPaths) {
-          const LComp = getModuleDefault(layouts[lPath] as object) as new () => Cossack;
-          const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
-            ownerRouteId: routePathToIdMap.get(lPath),
-            ownerRoutePath: lPath,
-            scopeKey,
-          });
-          layoutServiceScope.bindRequest({ context: c, user, env: c.env });
-          const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
-          requestComponents.push(lInst);
-          await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
-          layoutInstances.push(lInst);
-          layoutStates[lPath] = lInst.getInitialState();
-          activeServiceScope = layoutServiceScope;
-        }
+        const { scope: activeServiceScope } = await createServiceScopeChain({
+          componentPath: path, layouts, routePathToIdMap, scopeKey,
+          facilities: { context: c, user, env: c.env }, root: requestServiceScope,
+          onLayout: async ({ path: lPath, component: LComp, scope: layoutServiceScope }) => {
+            const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
+            requestComponents.push(lInst);
+            await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
+            layoutInstances.push(lInst);
+            layoutStates[lPath] = lInst.getInitialState();
+          },
+        });
 
         const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
         requestComponents.push(pageInstance);
@@ -593,6 +630,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // the scope: first initialization wins and later requests hydrate the
         // snapshot instead of overwriting it. Node keeps the
         // process-local store entry for the SSE endpoint and /crpc.
+        let registerLocalSseState = false;
         if (pageOptions?.transport === 'sse') {
           const componentRouteId = routePathToIdMap.get(path);
           const sseStub = componentRouteId ? getSseScopeStub(c.env, componentRouteId, scopeKey) : undefined;
@@ -605,7 +643,7 @@ export function createApp(options: CreateAppOptions = {}) {
           } else if (isCloudflareRuntime()) {
             throw new Error(`${sseBindingMissingMessage()} (page: ${path})`);
           } else {
-            registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
+            registerLocalSseState = true;
           }
         }
 
@@ -629,6 +667,9 @@ export function createApp(options: CreateAppOptions = {}) {
         layoutPaths.forEach((layoutPath, index) => {
           layoutStates[layoutPath] = layoutInstances[index].getInitialState();
         });
+        // The process-local store keeps a detached snapshot of the rendered
+        // state, never this instance: the request destroys it in `finally`.
+        if (registerLocalSseState) registerSseStoreEntry(routerContext, path, scopeKey, pageInstance.getPublicState());
 
         // Head Merging (page → layouts → app, inside-out)
         const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
@@ -711,6 +752,7 @@ export function createApp(options: CreateAppOptions = {}) {
         if (denial) {
           const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
           c.header('X-Cossack-Request-Id', requestId);
+          if (wantsHtmlDocument(c)) return renderDenialDocument(c, denial, path, requestId);
           return c.json({ error: denial.message, code: denial.code, requestId }, denial.status);
         }
         c.header('X-Cossack-Request-Id', failureContext.requestId);
@@ -753,6 +795,30 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     };
     await dispatch(0);
     return c.res;
+  };
+
+  /**
+   * Browser navigations that are denied (401/403) render the nearest error
+   * boundary with the denial status, like SSR failures render it with 500.
+   * Without a usable boundary (or when the boundary itself is denied) a
+   * minimal HTML document carries the status instead.
+   */
+  const renderDenialDocument = async (
+    c: Context, denial: { status: 401 | 403; message: string }, anchorPath: string | undefined, requestId: string,
+  ): Promise<Response> => {
+    c.header('X-Cossack-Request-Id', requestId);
+    if (!c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'private, no-store');
+    const errorPage = anchorPath ? findNearestSpecialPage(anchorPath, 'error') : null;
+    if (errorPage && anchorPath !== errorPage.path) {
+      try {
+        c.status(denial.status);
+        return await renderBoundary(errorPage.component, errorPage.path, c);
+      } catch {
+        logServerFailure(createServerFailureContext(c, { route: filePathToHttpRoute(errorPage.path), action: 'render',
+          runtime: options.runtimeAdapter?.name ?? 'cloudflare' }), 'ssr', 'render', 'COSSACK_SSR_INTERNAL');
+      }
+    }
+    return c.html(`<h1>${escapeHtml(denial.message)}</h1>`, denial.status);
   };
 
   // Transport routes
@@ -823,18 +889,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
-          const rootScope = createRootServiceScope();
-          rootScope.bindRequest({ context: componentContext, user, env: c.env });
+          const { root: rootScope, scope: activeScope } = await createServiceScopeChain({
+            componentPath, layouts, routePathToIdMap, scopeKey,
+            facilities: { context: componentContext, user, env: c.env },
+          });
           let instance: Cossack | undefined;
           try {
-            let activeScope = rootScope;
-            for (const layoutPath of getLayoutStack(componentPath)) {
-              const Layout = getModuleDefault(layouts[layoutPath]) as new () => Cossack;
-              activeScope = createLayoutServiceScope(activeScope, Layout, {
-                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey,
-              });
-              activeScope.bindRequest({ context: componentContext, user, env: c.env });
-            }
             instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
             instance.__cossack_rpcOwner = componentPath;
             instance._ownServiceScopeLifetime(rootScope);
@@ -887,21 +947,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       requestScope.bindRequest({ context: c, user, env: c.env });
       let responseOwnsCleanup = false;
       try {
-        let activeScope = requestScope;
-        let ownerScope: ReturnType<typeof createLayoutServiceScope> | undefined;
-        for (const layoutPath of getLayoutStack(ownerPath)) {
-          const layoutModule = layouts[layoutPath];
-          if (!layoutModule) return c.json({ error: 'Service layout not found' }, 404);
-          const LayoutComponent = getModuleDefault(layoutModule as object) as new () => Cossack;
-          const nextScope = createLayoutServiceScope(activeScope, LayoutComponent, {
-            ownerRouteId: routePathToIdMap.get(layoutPath),
-            ownerRoutePath: layoutPath,
-            scopeKey: clientScopeKey,
-          });
-          nextScope.bindRequest({ context: c, user, env: c.env });
-          activeScope = nextScope;
-          if (layoutPath === ownerPath) ownerScope = nextScope;
-        }
+        const chain = await createServiceScopeChain({
+          componentPath: ownerPath, layouts, routePathToIdMap, scopeKey: clientScopeKey,
+          facilities: { context: c, user, env: c.env }, root: requestScope,
+        });
+        const ownerScope = chain.layouts.find(layout => layout.path === ownerPath)?.scope;
         if (!ownerScope) return c.json({ error: 'Service owner is not active' }, 400);
         const owned = ownerScope.getOwnedService(slot);
         if (!owned) return c.json({ error: `Unknown service slot '${slot}'` }, 404);
@@ -1069,14 +1119,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     ): Promise<Response> => {
       try {
         if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
-        let activeScope = requestScope;
-        for (const layoutPath of getLayoutStack(componentPath)) {
-          const LayoutClass = getModuleDefault(layouts[layoutPath] as object) as new () => Cossack;
-          activeScope = createLayoutServiceScope(activeScope, LayoutClass, {
-            ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: effectiveScopeKey,
-          });
-          activeScope.bindRequest({ context: componentContext, user, env: c.env });
-        }
+        const { scope: activeScope } = await createServiceScopeChain({
+          componentPath, layouts, routePathToIdMap, scopeKey: effectiveScopeKey,
+          facilities: { context: componentContext, user, env: c.env }, root: requestScope,
+        });
         componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
         componentInstance.__cossack_rpcOwner = componentPath;
         const coordinatorRuntime = sseStub ? attachCoordinatorRuntime(componentInstance, sseStub) : undefined;
@@ -1344,6 +1390,9 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // path position — and `import.meta.glob` yields keys in lexicographic order,
   // where `[id]` sorts before `new`, which broke `/dashboard/users/new`
   // (matched `:id = 'new'`). See `compareHttpRoutes` for the comparator.
+  const apiHandlerOptions = (componentPath: string) => ({
+    componentPath, layouts, routePathToIdMap, runtimeInfo: resolveRuntimeInfo,
+  });
   const pagePaths = resolvePageRouteFiles(Object.keys(pages)).sort((a, b) =>
     compareHttpRoutes(filePathToHttpRoute(a), filePathToHttpRoute(b)),
   );
@@ -1351,6 +1400,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     let httpRoute = filePathToHttpRoute(path);
 
     if (httpRoute.endsWith('/404') || httpRoute.endsWith('/error')) continue;
+    pagePathByRoute.set(httpRoute, path);
 
     const module = pages[path] as any;
     const mainExport = getModuleDefault(module);
@@ -1382,7 +1432,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (isApiRoute) {
         // GET -> JSON. `get()` is the canonical HTTP-GET handler; `init()` is
         // kept as a server-side alias for backward compatibility.
-        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init']));
+        app.get(httpRoute, createApiHandler(PageComponent, ['get', 'init'], apiHandlerOptions(path)));
       } else {
         const ssrHandler = createSsrHandler(PageComponent, path, pageOptions);
         app.get(httpRoute, ssrHandler);
@@ -1393,8 +1443,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       if (pageOptions?.transport === 'http') {
         const httpMethods = ['post', 'put', 'patch', 'delete'];
         for (const method of httpMethods) {
-          if (method in PageComponent.prototype) {
-            (app as any)[method](httpRoute, createApiHandler(PageComponent, method));
+          // Only authored methods (stopping before Cossack.prototype) become
+          // routes; a framework default can never expose a public verb.
+          if (typeof getAuthoredRouteMember(PageComponent, method)?.value === 'function') {
+            (app as any)[method](httpRoute, createApiHandler(PageComponent, method, apiHandlerOptions(path)));
           }
         }
       }
@@ -1416,6 +1468,14 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   }
 
   app.notFound(async (c) => {
+    // API paths and clients that ask for JSON (but not HTML) get a
+    // machine-readable 404. Every other request, including a browser form
+    // POST to a page path, renders the route's nearest HTML 404 boundary.
+    const accept = c.req.header('accept') ?? '';
+    const wantsJson = /\bapplication\/(?:[\w.+-]+\+)?json\b/i.test(accept) && !/\btext\/html\b/i.test(accept);
+    if (classifyRoute(c.req.path) === 'api' || wantsJson) {
+      return c.json({ error: 'Not Found', code: 'COSSACK_NOT_FOUND' }, 404);
+    }
     const selected = resolveNotFound(c.req.path);
     if (selected) {
       const component = getModuleDefault(pages[selected.path] as object) as new () => Cossack;

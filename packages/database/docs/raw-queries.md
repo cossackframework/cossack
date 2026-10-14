@@ -102,6 +102,11 @@ const result = await orm.sql`
 `;
 ```
 
+An empty list throws a `ConfigurationError`, both in `sql.join([])` and when
+you interpolate an empty array directly. Otherwise the query would compile to
+`IN ()`, which is invalid SQL. Check for an empty list before you build the
+query.
+
 Use `values()` for object or bulk inserts:
 
 ```ts

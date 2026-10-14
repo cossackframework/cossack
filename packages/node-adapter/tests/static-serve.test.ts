@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import fsModule from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { createStaticAssets, serveStatic } from '../src/static-serve.js';
 
 const temporaryDirectories: string[] = [];
@@ -105,5 +107,90 @@ describe('serveStatic', () => {
 
         const response = await app.request('/');
         expect(await response.text()).toBe('SSR');
+    });
+    it('matches the prefix only on a path-segment boundary, with or without a trailing slash', async () => {
+        const root = fixture();
+        fs.writeFileSync(path.join(root, '-x.txt'), 'outside the prefix');
+        for (const prefix of ['/static', '/static/']) {
+            const app = new Hono();
+            app.use('*', serveStatic({ root, prefix }));
+            app.get('*', (c) => c.text('framework response'));
+            expect(await (await app.request('/static-x.txt')).text()).toBe('framework response');
+            expect(await (await app.request('/staticlogo.svg')).text()).toBe('framework response');
+            expect(await (await app.request('/static/logo.svg')).text()).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
+            expect(await (await app.request('/static/assets/entry.abc12345.js')).text()).toBe('export const ready = true;');
+            expect(await (await app.request('/static')).text()).toBe('static index');
+            expect(await (await app.request('/static/')).text()).toBe('static index');
+        }
+    });
+
+    it('sets Content-Length on GET and HEAD and streams binary files intact', async () => {
+        const root = fixture();
+        const bytes = new Uint8Array(300 * 1024).map((_value, index) => (index * 31) % 256);
+        fs.writeFileSync(path.join(root, 'blob.bin'), bytes);
+        const app = new Hono();
+        app.use('*', serveStatic({ root }));
+        const response = await app.request('/blob.bin');
+        expect(response.headers.get('content-length')).toBe(String(bytes.byteLength));
+        expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+        const head = await app.request('/blob.bin', { method: 'HEAD' });
+        expect(head.status).toBe(200);
+        expect(head.headers.get('content-length')).toBe(String(bytes.byteLength));
+        expect(head.headers.get('content-type')).toBe('application/octet-stream');
+        expect(await head.text()).toBe('');
+        fs.writeFileSync(path.join(root, 'empty.txt'), '');
+        const empty = await app.request('/empty.txt');
+        expect(empty.status).toBe(200);
+        expect(empty.headers.get('content-length')).toBe('0');
+        expect(await empty.text()).toBe('');
+    });
+
+    it('neither blocks on synchronous existence checks nor buffers whole files', async () => {
+        const root = fixture();
+        const exists = vi.spyOn(fsModule, 'existsSync');
+        const readFile = vi.spyOn(fsModule.promises, 'readFile');
+        syncBuiltinESMExports();
+        try {
+            const app = new Hono();
+            app.use('*', serveStatic({ root }));
+            expect(await (await app.request('/logo.svg')).text()).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
+            expect(await (await app.request('/assets/')).status).toBe(404);
+            expect(await (await app.request('/missing')).status).toBe(404);
+            expect(exists).not.toHaveBeenCalled();
+            expect(readFile).not.toHaveBeenCalled();
+        } finally {
+            exists.mockRestore();
+            readFile.mockRestore();
+            syncBuiltinESMExports();
+        }
+    });
+
+    it('sends a weak ETag and answers a matching If-None-Match with an empty 304', async () => {
+        const root = fixture();
+        const file = path.join(root, 'logo.svg');
+        const app = new Hono();
+        app.use('*', serveStatic({ root, cacheControl: 'public, max-age=0, must-revalidate' }));
+        const stats = fs.statSync(file);
+        const expected = `W/"${Math.floor(stats.mtimeMs).toString(16)}-${stats.size.toString(16)}"`;
+        const first = await app.request('/logo.svg');
+        expect(first.headers.get('etag')).toBe(expected);
+        expect((await app.request('/logo.svg', { method: 'HEAD' })).headers.get('etag')).toBe(expected);
+
+        for (const condition of [expected, expected.slice(2), `"other", ${expected}`, '*']) {
+            const cached = await app.request('/logo.svg', { headers: { 'if-none-match': condition } });
+            expect(cached.status).toBe(304);
+            expect(cached.headers.get('etag')).toBe(expected);
+            expect(cached.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+            expect(await cached.text()).toBe('');
+        }
+        const stale = await app.request('/logo.svg', { headers: { 'if-none-match': 'W/"0-0"' } });
+        expect(stale.status).toBe(200);
+        expect(await stale.text()).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
+
+        fs.writeFileSync(file, '<svg xmlns="http://www.w3.org/2000/svg" width="2"/>');
+        fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+        const changed = await app.request('/logo.svg', { headers: { 'if-none-match': expected } });
+        expect(changed.status).toBe(200);
+        expect(changed.headers.get('etag')).not.toBe(expected);
     });
 });

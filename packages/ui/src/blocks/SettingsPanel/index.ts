@@ -6,6 +6,7 @@ import { Input } from '../../components/Input.js';
 import { Button } from '../../components/Button.js';
 import { Badge } from '../../components/Badge.js';
 import type { GlobalAttributes } from '../../native-attributes.js';
+import { ControlledValue } from '../../native-attributes.js';
 
 export type SettingsValues = Readonly<Record<string, boolean | string>>;
 type RowIdentity = {
@@ -47,6 +48,9 @@ export class SettingsPanel extends Cossack {
     @ClientState() private localValues: SettingsValues | undefined;
     private initialValues?: SettingsValues;
     private controlled?: boolean;
+    // A controlled parent applies onChange in a later render. Until it replaces
+    // props, edits build on, and controls show, the last emitted values.
+    private pending = new ControlledValue<Record<string, boolean | string>>();
     private root = createRef<HTMLDivElement>();
     private connected = false;
     private generation = 0;
@@ -71,15 +75,15 @@ export class SettingsPanel extends Cossack {
         return this.snapshot(this.props.values ?? this.localValues ?? this.initialValues);
     }
     private controlId(key: string) { return `${this.props.id}-field-${encodeURIComponent(key)}`; }
+    /** Values the controls show and the next edit builds on: pending emitted values, then props. */
+    private shownValues(): Record<string, boolean | string> { return this.pending.base(this.props, this.currentValues()); }
     private syncControls() {
-        const values = this.currentValues();
+        const values = this.shownValues();
         for (const input of this.root.value?.querySelectorAll<HTMLInputElement>('input[data-setting-control]') ?? []) {
             const key = input.dataset.settingControl!;
             if (!Object.hasOwn(values, key)) continue;
-            if (input.type === 'checkbox') {
-                input.checked = values[key] as boolean;
-                input.setAttribute('aria-checked', String(values[key]));
-            } else if (input.value !== values[key]) input.value = values[key] as string;
+            if (input.type === 'checkbox') input.checked = values[key] as boolean;
+            else if (input.value !== values[key]) input.value = values[key] as string;
         }
     }
     private resetListener = (event: Event) => {
@@ -90,8 +94,7 @@ export class SettingsPanel extends Cossack {
             if (!this.connected || generation !== this.generation || event.defaultPrevented) return;
             const next = this.snapshot(this.initialValues ?? {});
             if (this.props.values === undefined) this.localValues = { ...this.initialValues };
-            try { this.props.onChange?.({ ...next }); }
-            finally { this.syncControls(); }
+            this.emitChange(next);
         }, 0);
         this.resetTimers.add(timer);
     };
@@ -208,9 +211,16 @@ export class SettingsPanel extends Cossack {
     @Client()
     private updateValue(key: string, value: boolean | string, control: HTMLInputElement) {
         if (control.matches(':disabled') || control.readOnly) return;
-        const next = { ...this.currentValues(), [key]: value };
+        const next = { ...this.shownValues(), [key]: value };
         if (this.props.values === undefined) this.localValues = { ...this.initialValues, ...this.localValues, [key]: value };
+        this.emitChange(next);
+    }
+    private emitChange(next: Record<string, boolean | string>) {
+        // Controls show the emitted values until the parent re-renders. Writing
+        // stale props back here would revert the keystroke and move the caret.
+        this.pending.emit(this.props, next);
         try { this.props.onChange?.({ ...next }); }
+        catch (error) { this.pending.reset(); throw error; }
         finally { this.syncControls(); }
     }
 }

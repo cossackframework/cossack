@@ -1,7 +1,8 @@
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
-import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths, dateLabel } from "../internal/date";
+import { ControlledValue } from "../native-attributes";
+import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths } from "../internal/date";
 
 export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'> & {
     /** Stable page-unique ID for the calendar and month heading. */
@@ -21,27 +22,52 @@ export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'
     locale?: string;
     /** Sunday=0 through Saturday=6. Default Sunday. */
     weekStartsOn?: number;
-    /** Reference day for initial focus/today marker. Default current UTC day; provide for deterministic SSR. */
+    /**
+     * Reference day for initial focus and the today marker. When omitted, the
+     * viewer's current UTC day is resolved once after mount, so server and
+     * hydration renders agree; until then the current month is shown unmarked.
+     */
     today?: string;
     previousLabel?: string;
     nextLabel?: string;
 };
 
 /** A Gregorian date grid with one day in the tab order and bounded keyboard navigation. */
+const utcToday = () => new Date().toISOString().slice(0, 10);
+
+type CalendarFormats = { day: Intl.NumberFormat; full: Intl.DateTimeFormat; longWeekday: Intl.DateTimeFormat; shortWeekday: Intl.DateTimeFormat; month: Intl.DateTimeFormat };
+const formatCache = new Map<string, CalendarFormats>();
+/** Intl formatters are costly to build; keep a few per locale instead of five per render. */
+function calendarFormats(locale: string): CalendarFormats {
+    let formats = formatCache.get(locale);
+    if (!formats) {
+        const date = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(locale, { ...options, calendar: 'gregory', timeZone: 'UTC' });
+        formats = { day: new Intl.NumberFormat(locale), full: date({ dateStyle: 'full' }), longWeekday: date({ weekday: 'long' }),
+            shortWeekday: date({ weekday: 'short' }), month: date({ year: 'numeric', month: 'long' }) };
+        if (formatCache.size >= 16) formatCache.delete(formatCache.keys().next().value!);
+        formatCache.set(locale, formats);
+    }
+    return formats;
+}
+
 @Component()
 export class Calendar extends Cossack {
     declare props: CalendarProps;
     @ClientState() private draft: string | undefined;
     @ClientState() private cursor: string | undefined;
+    @ClientState() private clientToday: string | undefined;
     private initialValue: string | undefined;
     private cursorOwner: string | undefined;
     private root?: HTMLDivElement;
+    private controlled = new ControlledValue<string>();
     private get selected() { this.initialValue ??= this.props.defaultValue ?? ''; return this.props.value ?? this.draft ?? this.initialValue; }
-    private get referenceDay() { return this.props.today || new Date().toISOString().slice(0, 10); }
+    private get referenceDay(): string | undefined { return this.props.today || this.clientToday; }
+    /** Day that anchors the shown month: the reference day, or the first of the current UTC month before mount. */
+    private get anchorDay() { return this.referenceDay ?? `${utcToday().slice(0, 7)}-01`; }
     private get contextKey() { return JSON.stringify([this.selected, this.props.min, this.props.max, this.referenceDay]); }
     private get focusedDate() {
         const range = dateRange(this.props.min, this.props.max);
-        return clampDate(this.cursorOwner === this.contextKey && this.cursor ? this.cursor : this.selected || this.referenceDay, range.first, range.last);
+        return clampDate(this.cursorOwner === this.contextKey && this.cursor ? this.cursor : this.selected || this.anchorDay, range.first, range.last);
     }
 
     render() {
@@ -49,15 +75,12 @@ export class Calendar extends Cossack {
             locale = 'en-US', weekStartsOn = 0, today: _today, previousLabel = 'Previous month', nextLabel = 'Next month', ...rest } = this.props;
         if (typeof id !== 'string' || !id || /\s/.test(id)) throw new Error('Calendar requires a nonempty, whitespace-free id.');
         if (!Number.isInteger(weekStartsOn) || weekStartsOn < 0 || weekStartsOn > 6) throw new RangeError('Calendar weekStartsOn must be an integer from 0 to 6.');
-        parseDate(this.selected, 'value'); parseDate(this.referenceDay, 'today');
+        parseDate(this.selected, 'value'); parseDate(this.props.today, 'today');
         const range = dateRange(min, max), focus = this.focusedDate, date = parseDate(focus)!;
         const year = date.getUTCFullYear(), month = date.getUTCMonth() + 1, first = dateFromParts(year, month, 1);
         const padding = (first.getUTCDay() - weekStartsOn + 7) % 7, count = monthDays(year, month);
         const cells = Array.from({ length: Math.ceil((padding + count) / 7) * 7 }, (_, i) => i < padding || i >= padding + count ? undefined : isoDate(dateFromParts(year, month, i - padding + 1)));
-        const dayNumber = new Intl.NumberFormat(locale);
-        const fullDate = new Intl.DateTimeFormat(locale, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
-        const longWeekday = new Intl.DateTimeFormat(locale, { weekday: 'long', calendar: 'gregory', timeZone: 'UTC' });
-        const shortWeekday = new Intl.DateTimeFormat(locale, { weekday: 'short', calendar: 'gregory', timeZone: 'UTC' });
+        const { day: dayNumber, full: fullDate, longWeekday, shortWeekday, month: monthTitle } = calendarFormats(locale);
         const rows = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
         const previous = clampDate(shiftMonths(focus, -1), range.first, range.last), next = clampDate(shiftMonths(focus, 1), range.first, range.last);
         return html`<div ref=${(element: Element) => this.connect(element as HTMLDivElement)} id=${id} role="group" aria-label="Calendar"
@@ -66,7 +89,7 @@ export class Calendar extends Cossack {
                 <button type="button" aria-label=${previousLabel} ?disabled=${disabled || previous.slice(0, 7) === focus.slice(0, 7)}
                     class="cs-calendar__prev size-8 rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
                     @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.move(previous, event.currentTarget, false)}><span aria-hidden="true">‹</span></button>
-                <span id=${`${id}-month`} aria-live="polite" aria-atomic="true" class="cs-calendar__title text-sm font-medium">${dateLabel(focus, locale, { year: 'numeric', month: 'long' })}</span>
+                <span id=${`${id}-month`} aria-live="polite" aria-atomic="true" class="cs-calendar__title text-sm font-medium">${monthTitle.format(date)}</span>
                 <button type="button" aria-label=${nextLabel} ?disabled=${disabled || next.slice(0, 7) === focus.slice(0, 7)}
                     class="cs-calendar__next size-8 rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
                     @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.move(next, event.currentTarget, false)}><span aria-hidden="true">›</span></button>
@@ -94,6 +117,10 @@ export class Calendar extends Cossack {
     @Client()
     private connect(root: HTMLDivElement) {
         this.root = root;
+        // Resolve "today" on the client only, after the hydrating render matched the server.
+        if (!this.props.today && this.clientToday === undefined) queueMicrotask(() => {
+            if (this.root === root && this.clientToday === undefined) this.clientToday = utcToday();
+        });
         const previous = root.ownerDocument.activeElement;
         const ownedFocus = previous instanceof HTMLButtonElement && root.contains(previous) && !!previous.dataset.date;
         queueMicrotask(() => {
@@ -150,9 +177,9 @@ export class Calendar extends Cossack {
     private select(iso: string, source: HTMLButtonElement) {
         const range = dateRange(this.props.min, this.props.max);
         if (this.props.disabled || this.props.readonly || source.matches(':disabled') || iso < range.first || iso > range.last) return;
-        const previous = this.selected;
+        const changed = this.controlled.changed(this.props, this.selected, iso);
         this.draft = iso;
-        if (iso !== previous) this.props.onChange?.(iso);
+        if (changed) this.props.onChange?.(this.controlled.emit(this.props, iso));
         this.props.onSelect?.(iso);
         this.cursorOwner = this.contextKey;
         this.cursor = iso;

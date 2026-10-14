@@ -120,7 +120,7 @@ function invalidateClientPageCache(): void {
     (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
-/** Per-call loading and optimistic-lock lifecycle shared by the transport proxies. */
+/** Per-call loading and optimistic lifecycle shared by the transport proxies. */
 function createCallLifecycle(component: any, name: string, call: OptimisticCall, trace?: DevelopmentRpcTrace) {
     let cleaned = false;
     let success = false;
@@ -131,20 +131,7 @@ function createCallLifecycle(component: any, name: string, call: OptimisticCall,
         try {
             finishOptimisticCall(call, success);
             if (component.loading[name] > 0) component.loading[name]--;
-            if (!component.loading[name]) {
-                delete component.loading[name];
-                const lockedKeys = component._optimisticLockedKeys[name];
-                delete component._optimisticLockedKeys[name];
-                if (lockedKeys) {
-                    for (const key of lockedKeys) {
-                        if (component._isOptimisticLocked(key)) continue;
-                        if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
-                            component.setProperty(key, component._optimisticPendingState[key]);
-                        }
-                        delete component._optimisticPendingState[key];
-                    }
-                }
-            }
+            if (!component.loading[name]) delete component.loading[name];
             component.requestUpdate();
         } catch (error) {
             trace?.finish('failed');
@@ -215,11 +202,13 @@ function serverMethodTimeout(constructor: any, name: string): number | undefined
 
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
 export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[]): void {
-    const initialState = component.getInitialStateFromWindow();
-    const componentRouteId = component.constructor.name === 'App'
+    // Persistent App/layout instances outlive SPA navigations, which replace
+    // the window state. Resolve scopeKey/pageParams (and a fallback route id)
+    // on every call instead of freezing the first page's values.
+    const resolveRouteId = (initialState: any) => component.constructor.name === 'App'
         ? initialState?.appRouteId
         : component.__cossack_componentRouteId || initialState?.componentRouteId;
-    if (!componentRouteId) {
+    if (!resolveRouteId(component.getInitialStateFromWindow())) {
         console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
         return;
     }
@@ -229,6 +218,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
         if (isSharedMethod(component.constructor, name)) continue;
         const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
+            const initialState = component.getInitialStateFromWindow();
+            const componentRouteId = resolveRouteId(initialState);
             const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
@@ -446,9 +437,11 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
             };
             const { cleanup: finish, succeed, fail } = createCallLifecycle(component, name, optimisticCall, trace);
             const cleanup = () => { if (deadlineTimer !== undefined) clearTimeout(deadlineTimer); finish(); };
-            // Keep serializable args (primitives, plain objects, arrays), drop
-            // non-transportable UI objects (DOM nodes, Event).
-            let payload = args.filter(isWsTransportable);
+            // Keep serializable args (primitives, plain objects, arrays) and
+            // replace non-transportable UI objects (DOM nodes, Event) with
+            // null, exactly like the HTTP path, so positional parameters keep
+            // their slots: save(evt, id) still receives id second.
+            let payload = args.map(arg => isWsTransportable(arg) ? arg : null);
             const queue = new SocketFrameQueue(frame => {
                 if (controller.signal.aborted) return;
                 interruptionError = new RpcError(frame.code, frame.message, { requestId, fieldErrors: frame.fieldErrors });

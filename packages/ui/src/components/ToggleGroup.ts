@@ -1,6 +1,7 @@
 import { html, classMap, repeat, PreventDefaultResult, preventDefault } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client, createRef, type RefObject } from '@cossackframework/core';
 import type { GlobalAttributes, ControlEvent } from '../native-attributes';
+import { ControlledValue } from '../native-attributes';
 
 export type ToggleGroupItem = { value: string; disabled?: boolean } &
     ({ label?: string; ariaLabel?: string } | { label: unknown; ariaLabel: string });
@@ -26,6 +27,7 @@ export class ToggleGroup extends Cossack {
     private resize?: ResizeObserver;
     private repairFocus?: HTMLButtonElement;
     private generation = 0;
+    private controlled = new ControlledValue<readonly string[]>();
     groupRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
 
     private selection() {
@@ -39,9 +41,10 @@ export class ToggleGroup extends Cossack {
     @Client() toggle(value: string) {
         const item = this.props.items?.find(item => item.value === value);
         if (!item || item.disabled || this.props.disabled || this.buttons().find(button => button.dataset.value === value)?.matches(':disabled')) return;
-        const current = this.selection();
+        const current = this.controlled.base(this.props, this.selection());
         const next = this.props.type === 'multiple' ? current.includes(value) ? current.filter(item => item !== value) : [...current, value] : current.includes(value) ? [] : [value];
         if (this.props.value === undefined) this.localSelected = next;
+        this.controlled.emit(this.props, next);
         if (this.props.type === 'multiple') this.props.onChange?.([...next]);
         else this.props.onChange?.(next[0] ?? '');
     }

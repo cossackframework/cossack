@@ -125,6 +125,10 @@ const styles = { color: 'red', display: isVisible ? 'block' : 'none' };
 html`<div class="${classMap(classes)}" style="${styleMap(styles)}">...</div>`;
 ```
 
+`styleMap` keys can be CSS property names (`'font-size'`, `'--gap'`) or
+camelCase names (`fontSize`, `backgroundColor`), which are converted to
+dash-case. Custom properties (`--name`) are used exactly as written.
+
 ### `ref`
 
 Get a reference to the DOM element.
@@ -267,10 +271,12 @@ Omit an attribute only when its value is `undefined`. Render every other value
 Lit-faithful `ifDefined` directive.
 
 By default a plain Cossack attribute binding like `href="${url}"` omits the
-attribute for `null`/`undefined`/`false`. `ifDefined` narrows that to
-`undefined`-only omission. It renders `false`/`null` as the literal strings
-`"false"`/`"null"`. This is useful for data attributes where you want the literal
-value rather than an omission.
+attribute for `null` and `undefined`. It renders `false` as the string
+`"false"`, the same as Lit. Only boolean attributes such as `disabled` or
+`hidden` are omitted for `false`; use `?attr=${condition}` to toggle any other
+attribute. `ifDefined` narrows the omission to `undefined` only, so `null`
+renders as the literal string `"null"`. This is useful for data attributes
+where you want the literal value rather than an omission.
 
 ```typescript
 import { ifDefined } from '@cossackframework/renderer';

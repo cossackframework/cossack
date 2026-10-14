@@ -55,8 +55,17 @@ export async function serveStudioAsset(
   response: ServerResponse,
   root: string,
 ): Promise<boolean> {
-  const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://studio.local').pathname);
-  if (pathname === '/' || !['GET', 'HEAD'].includes(request.method ?? 'GET')) return false;
+  if (!['GET', 'HEAD'].includes(request.method ?? 'GET')) return false;
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://studio.local').pathname);
+  } catch {
+    response.statusCode = 400;
+    response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    response.end('Bad Request');
+    return true;
+  }
+  if (pathname === '/' || pathname.includes('\0')) return false;
   const relative = pathname.replace(/^\/+/, '');
   const resolved = path.resolve(root, relative);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return false;

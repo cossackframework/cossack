@@ -2,6 +2,7 @@ import { showCommandHelp, validateCommand } from '../command-spec.js';
 import { commandSpecs } from '../command-specs.js';
 import path from 'node:path';
 import { createApp } from '@cossackframework/scaffold';
+import { projectNameProblem } from '@cossackframework/scaffold/registry';
 import { renderBanner } from '../banner.js';
 import { flagString } from '../flags.js';
 import { readPackageVersion } from '../pkg.js';
@@ -22,6 +23,11 @@ export async function createCommand(args, ctx) {
   const selectedPackageManager = normalizePackageManager(requestedPackageManager);
 
   try {
+    // The directory name becomes the package name and the Cloudflare Worker name.
+    const nameProblem = projectNameProblem(path.basename(path.resolve(ctx.cwd ?? process.cwd(), projectName)));
+    if (nameProblem) {
+      throw Object.assign(new Error(`${nameProblem} Example: cossack create my-app`), { code: 'COSSACK_PROJECT_NAME_INVALID' });
+    }
     const currentVersion = readPackageVersion();
     const packageManager = selectedPackageManager ?? detectInvokedPackageManager();
     const commands = packageManagerCommands(packageManager);
@@ -87,5 +93,7 @@ export async function createCommand(args, ctx) {
 export function createHelp() {
   return commandSpecs.create.help(`cossack create <project-name>
 
-Scaffold a new Cossack project.`);
+Scaffold a new Cossack project. The last path segment of <project-name> is
+used as the package name and the Cloudflare Worker name, so it must be 1-63
+lowercase letters, digits and dashes, and start and end with a letter or digit.`);
 }

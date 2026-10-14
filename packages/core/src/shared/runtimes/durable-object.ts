@@ -86,7 +86,7 @@ export class DurableObjectRuntime implements CossackServerRuntime {
         const authorize: SocketOperationAuthorizer<WebSocket> | undefined = this.authorizePeer
             ? (socket, operation) => this.authorizePeer!(socket, socket.deserializeAttachment?.() ?? {}, operation)
             : undefined;
-        await this.delivery.send(client, JSON.stringify(message), socket => socket.readyState === 1, authorize,
+        await this.delivery.send(client, message, socket => socket.readyState === 1, authorize,
             () => logRuntimeFailure({ runtime: 'cloudflare' }, 'delivery'));
     }
 

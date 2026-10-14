@@ -114,11 +114,48 @@ interface PGClient {
   connect(): Promise<void>;
   query(text: string, parameters?: readonly unknown[]): Promise<{ rows: unknown[]; rowCount?: number | null }>;
   end(): Promise<void>;
+  on?(event: "error" | "end", listener: () => void): unknown;
+}
+
+/**
+ * One lazily opened connection shared by a driver instance. A failed connect,
+ * an `error` or an `end` event drops it so the next query opens a new one.
+ * Create the adapter per request in Workers: sockets cannot cross requests.
+ */
+class SharedConnection<Connection extends { end(): Promise<void>; on?(event: "error" | "end", listener: () => void): unknown }> {
+  private current: Promise<Connection> | undefined;
+
+  constructor(private readonly open: () => Promise<Connection>) {}
+
+  get(): Promise<Connection> {
+    if (this.current) return this.current;
+    const opening = this.open().then((connection) => {
+      const drop = () => { if (this.current === opening) this.current = undefined; };
+      connection.on?.("error", drop);
+      connection.on?.("end", drop);
+      return connection;
+    });
+    this.current = opening;
+    opening.catch(() => { if (this.current === opening) this.current = undefined; });
+    return opening;
+  }
+
+  async close(): Promise<void> {
+    const current = this.current;
+    this.current = undefined;
+    const connection = await current?.catch(() => undefined);
+    await connection?.end();
+  }
 }
 
 class HyperdrivePostgresDriver implements Driver {
   readonly dialect = "postgres" as const;
   readonly capabilities = capabilities({ reserveConnection: true, parameterLimit: 65_535 });
+  private readonly shared = new SharedConnection(async () => {
+    const client = this.createClient();
+    await client.connect();
+    return client;
+  });
 
   constructor(
     private readonly createClient: () => PGClient,
@@ -130,17 +167,12 @@ class HyperdrivePostgresDriver implements Driver {
     operation: QueryOperation = "raw",
   ): Promise<QueryResult<Row>> {
     const start = performance.now();
-    const client = this.reserved ?? this.createClient();
-    if (!this.reserved) await client.connect();
-    try {
-      const result = await client.query(query.text, query.parameters);
-      return {
-        rows: result.rows as Row[],
-        meta: meta("postgres", operation, start, { rowsAffected: result.rowCount ?? 0 }),
-      };
-    } finally {
-      if (!this.reserved) await client.end();
-    }
+    const client = this.reserved ?? await this.shared.get();
+    const result = await client.query(query.text, query.parameters);
+    return {
+      rows: result.rows as Row[],
+      meta: meta("postgres", operation, start, { rowsAffected: result.rowCount ?? 0 }),
+    };
   }
 
   async transaction<T>(callback: (driver: Driver) => Promise<T>): Promise<T> {
@@ -173,7 +205,9 @@ class HyperdrivePostgresDriver implements Driver {
     return introspectPostgres((text, parameters = []) => this.execute({ text, parameters }, "select"));
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    await this.shared.close();
+  }
 }
 
 interface MySQLConnection {
@@ -182,11 +216,13 @@ interface MySQLConnection {
   commit(): Promise<void>;
   rollback(): Promise<void>;
   end(): Promise<void>;
+  on?(event: "error" | "end", listener: () => void): unknown;
 }
 
 class HyperdriveMySQLDriver implements Driver {
   readonly dialect = "mysql" as const;
   readonly capabilities = capabilities({ returning: false, reserveConnection: true, parameterLimit: 65_535 });
+  private readonly shared = new SharedConnection(() => this.createConnection());
 
   constructor(
     private readonly createConnection: () => Promise<MySQLConnection>,
@@ -198,20 +234,16 @@ class HyperdriveMySQLDriver implements Driver {
     operation: QueryOperation = "raw",
   ): Promise<QueryResult<Row>> {
     const start = performance.now();
-    const connection = this.reserved ?? await this.createConnection();
-    try {
-      const [raw] = await connection.execute(query.text, query.parameters);
-      const info = raw as { affectedRows?: number; insertId?: number };
-      return {
-        rows: Array.isArray(raw) ? raw as Row[] : [],
-        meta: meta("mysql", operation, start, {
-          rowsAffected: info.affectedRows ?? 0,
-          ...(info.insertId === undefined ? {} : { lastInsertId: info.insertId }),
-        }),
-      };
-    } finally {
-      if (!this.reserved) await connection.end();
-    }
+    const connection = this.reserved ?? await this.shared.get();
+    const [raw] = await connection.execute(query.text, query.parameters);
+    const info = raw as { affectedRows?: number; insertId?: number };
+    return {
+      rows: Array.isArray(raw) ? raw as Row[] : [],
+      meta: meta("mysql", operation, start, {
+        rowsAffected: info.affectedRows ?? 0,
+        ...(info.insertId === undefined ? {} : { lastInsertId: info.insertId }),
+      }),
+    };
   }
 
   async transaction<T>(callback: (driver: Driver) => Promise<T>): Promise<T> {
@@ -242,7 +274,9 @@ class HyperdriveMySQLDriver implements Driver {
     return introspectMySQL((text, parameters = []) => this.execute({ text, parameters }, "select"));
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    await this.shared.close();
+  }
 }
 
 export async function hyperdrivePostgres(binding: HyperdriveBinding): Promise<Adapter> {
@@ -264,9 +298,11 @@ export async function hyperdriveMySQL(binding: HyperdriveBinding): Promise<Adapt
       user: binding.user,
       password: binding.password,
       database: binding.database,
+      // The ORM stores DATETIME values in UTC; keep mysql2 from applying the local zone.
+      timezone: "Z",
       disableEval: true,
     }) as Promise<MySQLConnection>),
   };
 }
 
-export { D1Driver };
+export { D1Driver, HyperdrivePostgresDriver, HyperdriveMySQLDriver };

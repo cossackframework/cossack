@@ -1,11 +1,11 @@
 import 'reflect-metadata';
-import { transformWithOxc } from 'vite';
+import { transformWithOxc, parseSync } from 'vite';
 /**
  * Unit tests for vite-security-plugin
  * Tests the code stripping functionality to ensure server-only code is properly removed from client bundles.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -67,6 +67,52 @@ describe('ORM and session server-only imports', () => {
     expect(() => stripClientServerOnlyImports(`
       import { sql } from '@cossackframework/database';
       export const leaked = sql;
+    `, '/src/leak.ts')).toThrow(/server-only import/);
+  });
+
+  it('ignores type-only imports and type positions when checking server-only references', () => {
+    const source = `
+      import type { Generated } from '@cossackframework/database';
+      import { type Selectable, Model } from '@cossackframework/database';
+      import type * as Db from '@cossackframework/database/types';
+      class State {}
+      export class Page {
+        @State() user: Generated<number> | null = null;
+        rows: Array<Selectable<Db.Row>> = [];
+        cast(value: unknown) { return value as Selectable<{ id: Generated<number> }>; }
+        load<T extends Db.Row>(input: T): Generated<T['id']> { return input.id satisfies Db.Id; }
+      }
+      export type Alias = Selectable<Db.Row>;
+      export interface Shape { id: Generated<number> }
+    `;
+    const result = stripClientServerOnlyImports(source, '/src/pages/users/index.ts');
+    expect(result).not.toMatch(/\bModel\b/);
+    expect(result).toContain('user: Generated<number> | null');
+    // A runtime value referenced next to type-only names still fails.
+    expect(() => stripClientServerOnlyImports(`
+      import { type Selectable, Model } from '@cossackframework/database';
+      export const leaked: Selectable<{}> = Model;
+    `, '/src/leak.ts')).toThrow(/server-only import.*\(Model\)/);
+    // The full client transform accepts a page using database types in @State.
+    const page = `
+      import { Cossack, Page, State, Server } from '@cossackframework/core';
+      import type { Generated } from '@cossackframework/database';
+      import { type Selectable, Model } from '@cossackframework/database';
+      @Page()
+      export default class UsersPage extends Cossack {
+        @State() user: Generated<number> | null = null;
+        @State() rows: Selectable<{ id: number }>[] = [];
+        @Server() async load() { return Model.all(); }
+        render() { return String(this.user); }
+      }
+    `;
+    const transformed = (cossackSecurityPlugin().transform as Function)
+      .call({ environment: { name: 'client' } }, page, '/src/pages/users/index.ts');
+    expect(transformed.code).not.toMatch(/\bModel\b/);
+    // Enums are runtime code.
+    expect(() => stripClientServerOnlyImports(`
+      import { Model } from '@cossackframework/database';
+      export enum Kind { A = Model.kind }
     `, '/src/leak.ts')).toThrow(/server-only import/);
   });
 
@@ -186,6 +232,27 @@ describe('server$ compiler macro', () => {
     expect(result).toContain('@__CossackServerResource({ serverResource: true })');
     expect(result).toContain('return this.find(id)');
     expect(result).toContain('return this.__serverResourceResult("users", await');
+  });
+
+  it('names generated resource methods from the project-relative path, not the checkout path', () => {
+    const source = `import { server$ } from '@cossackframework/core';
+      export default class Users extends Cossack { users = server$(() => 1, { initial: 0 }); }`;
+    const method = (code: string) => /__cossack_server_resource_[a-z0-9]+/.exec(code)?.[0];
+    const runPlugin = (root: string, id: string, environment: string) => {
+      const plugin = cossackSecurityPlugin({ devWarning: false });
+      (plugin.configResolved as Function)({ root });
+      return (plugin.transform as Function).call({ environment: { name: environment }, warn: () => {} }, source, id).code as string;
+    };
+    const server = method(runPlugin('/home/ci/build-a', '/home/ci/build-a/src/pages/users/index.ts', 'ssr'));
+    const client = method(runPlugin('/srv/other/checkout', '/srv/other/checkout/src/pages/users/index.ts', 'client'));
+    const windows = method(runPlugin('C:\\work\\app', 'C:\\work\\app\\src\\pages\\users\\index.ts?v=1', 'client'));
+    expect(server).toBeTruthy();
+    expect(client).toBe(server);
+    expect(windows).toBe(server);
+    // Direct calls agree with the build when given the same root.
+    expect(method(transformServerResources(source, '/x/y/src/pages/users/index.ts', undefined, '/x/y'))).toBe(server);
+    // A different project-relative path yields a different name.
+    expect(method(runPlugin('/home/ci/build-a', '/home/ci/build-a/src/pages/admin/index.ts', 'ssr'))).not.toBe(server);
   });
 
   it('requires initial for fields', () => {
@@ -330,6 +397,21 @@ export class TestPage extends Cossack {
       const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, true);
       expect(result).toContain('clientMethod() {');
       expect(result).toContain("return 'client'");
+    });
+
+    it.each([true, false])('escapes string-literal member names in method and field stubs (devWarning=%s)', (devWarning) => {
+      const code = `
+@Page()
+export class Quoted extends Cossack {
+    "it's"() { return 'secret'; }
+    @Server() "a'b" = async () => 'secret';
+    @Server() "c\\\\'); globalThis.pwned = 1; ('" = function () { return 'secret'; };
+}`;
+      const result = transformCossackClass(code, 'test.ts', isClientSafeMethod, BUILTIN_METHODS, devWarning);
+      expect(parseSync('quoted.ts', result, { lang: 'ts' }).errors).toEqual([]);
+      expect(result).not.toContain("'secret'");
+      expect(result).toContain(String.raw`__cossack_proxies?.get('it\'s')`);
+      expect(result).toContain(String.raw`__cossack_proxies?.get('a\'b')`);
     });
 
     it('should keep @On decorated methods (regression: previously stripped)', () => {
@@ -2125,6 +2207,16 @@ describe('server-only module detection', () => {
       expect(stub).not.toContain("export const User");
     });
 
+    it('escapes interpolated export names and module labels', async () => {
+      const p = track(tempFile('quoted.ts', `import { sql } from '@cossackframework/database';\nconst a = 1, b = 2;\nexport const listUsers = () => [];\nexport { a as "it's", b as "x\\\\'); globalThis.pwned = 1; ('" };\n`));
+      const stub = generateServerOnlyStub(p, "o'brien\n/svc");
+      expect(parseSync('stub.js', stub).errors).toEqual([]);
+      const module = await import(`data:text/javascript,${encodeURIComponent(stub)}`);
+      expect(() => module["it's"]()).toThrow("o'brien\n/svc.it's is server-only");
+      expect(() => module.listUsers()).toThrow('server-only');
+      expect((globalThis as any).pwned).toBeUndefined();
+    });
+
     it('falls back to a throwing Proxy when exports cannot be parsed', () => {
       const stub = generateServerOnlyStub('/does/not/exist.ts', 'svc');
       expect(stub).toContain('Proxy');
@@ -2515,5 +2607,46 @@ class Demo extends Cossack {
     expect(result.diagnostics).toEqual([expect.objectContaining({
       code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: 'demo.ts',
     })]);
+  });
+});
+
+describe('cross-file base class warning', () => {
+  const run = (source: string, id: string) => {
+    const warn = vi.fn();
+    const result = (cossackSecurityPlugin().transform as Function).call({ environment: { name: 'client' }, warn }, source, id);
+    return { warn, code: result.code as string };
+  };
+  const subclass = (decorator = '') => `
+    import { BasePage } from '../../lib/base-page';
+    ${decorator}
+    export default class ReportPage extends BasePage {
+      render() { return 'report'; }
+      async loadSecrets() { return process.env.SECRET; }
+      get title() { return 'Report'; }
+    }
+  `;
+
+  it.each(['/src/pages/reports/index.ts', '/src/components/report.ts'])('warns for an undecorated subclass of an imported base in %s', id => {
+    const { warn, code } = run(subclass(), id);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain('ReportPage');
+    expect(message).toContain('BasePage');
+    expect(message).toContain('loadSecrets');
+    expect(message).not.toMatch(/\brender\b|\btitle\b/);
+    expect(message).toMatch(/@Page|@Component/);
+    expect(message).toContain('docs/client-bundle.md#build-failures-and-class-discovery');
+    // Stripping semantics are unchanged: the class is not transformed.
+    expect(code).toContain('process.env.SECRET');
+  });
+
+  it.each([
+    ['decorated with @Page', `import { Page } from '@cossackframework/core';\n${subclass('@Page()')}`, '/src/pages/reports/index.ts'],
+    ['outside pages and components', subclass(), '/src/lib/report.ts'],
+    ['only built-in methods', `import { BasePage } from './base'; export default class P extends BasePage { render() { return ''; } }`, '/src/pages/p.ts'],
+    ['a local base class', `class BasePage {} export default class P extends BasePage { load() {} }`, '/src/pages/p.ts'],
+    ['a framework base', `import { Cossack } from '@cossackframework/core'; export default class P extends Cossack { load() {} }`, '/src/pages/p.ts'],
+  ])('does not warn for %s', (_label, source, id) => {
+    expect(run(source, id).warn).not.toHaveBeenCalled();
   });
 });

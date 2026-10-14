@@ -280,9 +280,12 @@ describe("Switch", () => {
         expect(out).toContain("sr-only");
     });
 
-    it("reflects aria-checked from the checked prop", () => {
-        expect(renderComp(Switch, { checked: true })).toContain('aria-checked="true"');
-        expect(renderComp(Switch, { checked: false })).toContain('aria-checked="false"');
+    it("reflects the checked prop natively without a redundant aria-checked", () => {
+        const on = renderComp(Switch, { checked: true }).match(/<input\b[^>]*>/)![0];
+        const off = renderComp(Switch, { checked: false }).match(/<input\b[^>]*>/)![0];
+        expect(on).toMatch(/\bchecked(?:=|\s|>)/);
+        expect(off).not.toMatch(/\bchecked(?:=|\s|>)/);
+        expect(on + off).not.toContain('aria-checked');
     });
 });
 

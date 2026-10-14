@@ -74,11 +74,11 @@ import {
 import { StateContainer } from './state-container';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { noteOptimisticWrite } from './optimistic-state';
-import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
+import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath, toRawStoreValue } from './store';
 import { snapshotNavigationDraft } from './navigation-draft';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
-import { supportsViewTransitions, type NavigateOptions, type NavigateResult } from '../client/navigation';
+import { supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions, type NavigateResult } from '../client/navigation';
 import type {
     ComponentState,
     SerializedComponentState,
@@ -98,6 +98,8 @@ import type { ServiceScope } from './service-scope';
 // RPC tree reconstruction is synchronous, including nested renderer components.
 // It binds resource getters without dispatching unrelated read operations.
 let rpcReconstructionDepth = 0;
+/** Re-renders chained onto one update before the loop is stopped (state written on every render). */
+const MAX_UPDATE_RERUNS = 25;
 import { TaskCommitError, type TaskContext } from './task';
 import { getActionIdentityScope, type ActionIdentity } from './action-identity-scope';
 
@@ -132,11 +134,19 @@ interface ServerResourceEntry {
  * Shared by `@OnWindow({ debounce })`, `@OnDocument({ debounce })`, and the
  * `@Debounce(ms)` method decorator.
  */
-function createDebounce(fn: Function, ms: number) {
+function createDebounce(fn: Function, ms: number): { fn: (...args: any[]) => void; cancel: () => void } {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    return (...args: any[]) => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => fn(...args), ms);
+    return {
+        fn: (...args: any[]) => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => { timer = null; fn(...args); }, ms);
+        },
+        // Registered in the component's cleanup list so a pending trailing
+        // call never runs against a destroyed component.
+        cancel: () => {
+            if (timer) clearTimeout(timer);
+            timer = null;
+        },
     };
 }
 
@@ -443,6 +453,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
 
     public invalidate$<Name extends ServerResourceName<T, this>>(name: Name): void {
+        // Like refresh$/load$/resourceStatus$, accept a declared field that
+        // was never read. Binding suppresses the load; the next read starts it.
+        this._bindServerResourceField(name, true);
         if (!this._serverResources.delete(name)) throw new Error(`[Cossack] Unknown server$ resource "${name}".`);
         if (!this.isServer) void this.requestUpdate();
     }
@@ -453,6 +466,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     }
     // Standard Properties
     protected container?: Element;
+    /** True while an update pass renders and commits; writes then request a re-run. */
+    private _updateCommitting = false;
+    private _updateRerunRequested = false;
     protected isServer: boolean = isServer;
     
     private _c!: Context;
@@ -584,8 +600,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             ' was called during a synchronous render phase (render/head/loadingTemplate). Server methods return Promises that ' +
             'render as "[object Promise]". Move the call into an event handler, ' +
             'or load data in get()/init() before render.';
-        const env = (globalThis as any).process?.env?.NODE_ENV;
-        if (env === 'production') {
+        // The app's Vite build flag, not NODE_ENV (absent in browsers).
+        if (!import.meta.env?.DEV) {
             // eslint-disable-next-line no-console
             console.warn(msg);
             return;
@@ -609,22 +625,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public loading: Record<string, number> = {};
     private _lastHeadTags?: string;
 
-    // Tracks @State keys modified by optimistic handlers per action
-    private _optimisticLockedKeys: Record<string, Set<string>> = {};
-    // Buffers server state updates for locked keys
-    private _optimisticPendingState: Record<string, any> = {};
-
     // Track observed elements per visible task for auto-refresh on navigation
     private _visibleTaskObservers: Map<string | symbol, { observer: IntersectionObserver, observed: Set<Element> }> = new Map();
-
-    private _isOptimisticLocked(key: string): boolean {
-        for (const action of Object.keys(this._optimisticLockedKeys)) {
-            if (this.loading[action] && this._optimisticLockedKeys[action]?.has(key)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     @Server({ rpc: false })
     private _runtime?: CossackServerRuntime;
@@ -638,6 +640,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     private _taskExecutions = new Map<string | symbol, AbortController>();
     private _taskCleanupPending = new Map<string | symbol, Promise<void>>();
     private isBootstrapping: boolean = false;
+    /** Set once bootstrap() ran (App, layouts, pages); component() children are never bootstrapped. */
+    private _frameworkBootstrapped = false;
     private eventCleanupFns: (() => void)[] = [];
     /**
      * Dotted paths of state changes accumulated since the last task run, used
@@ -815,6 +819,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.activeComponents.set(component._id, component);
             const childState = this._childrenStateRegistry[component._id];
             if (childState) {
+                // In the browser, restored state belongs to the one instance
+                // that hydrates the SSR child. Consume it so a later child that
+                // reuses the id never inherits a sibling's state. Server render
+                // passes create fresh instances for the same positional ids and
+                // must each receive the state again.
+                if (!this.isServer) delete this._childrenStateRegistry[component._id];
                 component.initializeState(childState);
             }
         }
@@ -1087,7 +1097,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount, stageNavigation }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, skipGet, deferMount, stageNavigation }: BootstrapOptions = {}) {
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         // Transition to Bootstrapping phase from Creating phase
@@ -1096,6 +1106,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         try {
             this.__cossack_componentRouteId = initialState?.componentRouteId;
             this.isBootstrapping = true;
+            this._frameworkBootstrapped = true;
 
             if (!this._id) this._id = 'root';
 
@@ -1191,8 +1202,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // the security plugin strips them from client bundles, so we must not
         // invoke them during hydration (use clientInit() for client-side setup).
         if (this.isServer) {
-            await this.get();
-            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+            if (!skipGet) {
+                await this.get();
+                if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+            }
             if (!skipInit) {
                 await this.init();
                 if (this.isInPhase(LifecyclePhase.Destroyed)) return;
@@ -1418,6 +1431,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (!scope || this._navigationScopeRemoval) return;
         retiringNavigationScopes.add(scope);
         this._navigationScopeRemoval = Promise.all([...rendererScopeAttachments.get(scope) ?? []]).then(() => {});
+    }
+
+    /** Seed resolved server$ entries from serialized SSR state without replacing live entries. */
+    private _hydrateServerResources(resources: NonNullable<SerializedComponentState['serverResources']>): void {
+        for (const [name, resource] of Object.entries(resources)) {
+            if (this._serverResources.has(name)) continue;
+            this._serverResources.set(name, { argsKey: resource.argsKey, value: resource.value, hasValue: true, resolved: true });
+        }
     }
 
     /** @internal Restore retained request/resource ownership after an abandoned publication. */
@@ -1716,7 +1737,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                     fieldErrors: isActionValidationError(e) || e instanceof RpcError ? e.fieldErrors : undefined,
                     message: denial?.message ?? (isClientVisibleError(e) || e instanceof RpcError ? e.message : 'Internal Server Error') });
             }
-            logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
+            // Match the HTTP path's classification: authorization denials,
+            // validation and client-visible errors, rate limits and
+            // cancellations are expected outcomes, not internal failures.
+            const expected = cancellation.cancelled || !!getAuthorizationFailure(e) || isActionValidationError(e)
+                || isClientVisibleError(e)
+                || (e instanceof RpcError && (e.code === 'COSSACK_RPC_CANCELLED' || e.code === 'COSSACK_RPC_RATE_LIMITED'));
+            if (!expected) {
+                logRuntimeFailure(failureContext, 'action', 'COSSACK_RPC_INTERNAL_ERROR');
+                // The redacted record carries no exception; show it locally.
+                if (import.meta.env?.DEV) console.error(`[Cossack] Server action '${this.constructor.name}.${action}' failed:`, e);
+            }
         } finally {
             if (iterator) {
                 const stream = iterator;
@@ -1975,7 +2006,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (options?.throttle) {
                 handler = createThrottle(handler, options.throttle);
             } else if (options?.debounce) {
-                handler = createDebounce(handler, options.debounce);
+                const debounced = createDebounce(handler, options.debounce);
+                handler = debounced.fn;
+                this.eventCleanupFns.push(debounced.cancel);
             }
             target.addEventListener(eventName, handler as EventListener);
             this.eventCleanupFns.push(() => target.removeEventListener(eventName, handler as EventListener));
@@ -1986,9 +2019,52 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // layout components don't have one (their content is composed into the
         // App), so fall back to document-level delegation — a page-level @On
         // handler is expected to observe events across the whole page.
-        const onTarget: EventTarget | undefined = this.container || (typeof document !== 'undefined' ? document : undefined);
-        if (onTarget) {
+        // component() children have no container; the renderer gives them the
+        // comment markers around their output instead. Delegate from the
+        // markers' parent and only handle events whose target lies between
+        // the markers, so siblings and the rest of the page never trigger it.
+        // Same registered symbol as the renderer's COMPONENT_RANGE.
+        const rangeKey = Symbol.for('@cossackframework/renderer/component-range');
+        const range = this.container ? undefined
+            : (this as unknown as Record<symbol, { readonly start: Comment; readonly end: Comment } | undefined>)[rangeKey];
+        if (range && typeof document !== 'undefined') {
             const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+            const inRange = (node: unknown): boolean => node instanceof Node
+                && (range.start.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+                && (range.end.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+            let cancelled = false;
+            this.eventCleanupFns.push(() => { cancelled = true; });
+            // Top-level markers sit in the renderer's staging fragment until
+            // the current render inserts it; resolve the parent afterwards.
+            queueMicrotask(() => {
+                if (cancelled) return;
+                const parent = range.start.parentNode;
+                const target: EventTarget = parent && parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE ? parent : document;
+                for (const { eventName, propertyKey } of domEvents) {
+                    if (eventName === 'mount' || eventName === 'navigate-complete') continue;
+                    if (!this.hasMethod(propertyKey)) continue;
+                    const method = this.getMethod(propertyKey) as Function;
+                    attach(target, eventName, function (this: unknown, event: Event) {
+                        if (inRange(event.target)) return method.call(this, event);
+                    });
+                }
+            });
+        }
+        // Bootstrapped pages and layouts without a container still delegate from
+        // document. A component() child with neither container nor range (for
+        // example rendered outside the renderer) skips @On rather than firing
+        // for every unrelated event on the page.
+        const onTarget: EventTarget | undefined = range ? undefined : this.container
+            || (this._frameworkBootstrapped && typeof document !== 'undefined' ? document : undefined);
+        const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+        if (!onTarget && !range) {
+            for (const { eventName } of domEvents) {
+                if (eventName === 'mount' || eventName === 'navigate-complete') continue;
+                if (import.meta.env?.DEV) {
+                    console.warn(`[Cossack] @On('${eventName}') on ${this.constructor.name} was not attached: this component has no container or rendered range. Use a template event binding (e.g. @${eventName}=\${...}) on the element instead.`);
+                }
+            }
+        } else if (onTarget) {
             for (const { eventName, propertyKey } of domEvents) {
                 // Lifecycle events are handled by setupLifecycleEventHandlers()
                 if (eventName === 'mount' || eventName === 'navigate-complete') continue;
@@ -2053,7 +2129,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
         };
 
-        apply('cossack:debounce', createDebounce, 'Debounce');
+        apply('cossack:debounce', (fn, ms) => {
+            const debounced = createDebounce(fn, ms);
+            this.eventCleanupFns.push(debounced.cancel);
+            return debounced.fn;
+        }, 'Debounce');
         apply('cossack:throttle', createThrottle, 'Throttle');
     }
 
@@ -2078,8 +2158,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
             if (strategy === 'intersection-observer') {
                 if (!this.container) {
-                     console.warn(`[Cossack] Cannot setup intersection observer for '${String(propertyKey)}': container not found.`);
-                     continue;
+                    // Never observe document-level stand-ins: a nested
+                    // component() child has no container of its own.
+                    if (import.meta.env?.DEV) {
+                        console.warn(`[Cossack] @VisibleTask '${String(propertyKey)}' on ${this.constructor.name} was not set up: the component has no container (nested component() children and pages composed into the App have none). Use strategy 'document-ready' or observe an element from onMount().`);
+                    }
+                    continue;
                 }
 
                 // Collect initial target elements. When a selector is provided we
@@ -2133,6 +2217,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
      * same broadcast / re-render path at any depth.
      */
     private initializeState(serializedState?: SerializedComponentState) {
+        // Nested component() children receive their SSR state here (via the
+        // parent's registry) rather than through bootstrap(); hydrate their
+        // server$ results too so they neither refetch nor flash `initial`.
+        // Client only: on the server, serialized state may come from a client.
+        if (!this.isServer && serializedState?.serverResources) this._hydrateServerResources(serializedState.serverResources);
         const { state: stateProperties, store: storeProperties,
             clientState: clientStateProperties, clientStore: clientStoreProperties } = collectReactiveMetadata(this.constructor);
 
@@ -2242,6 +2331,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 Object.defineProperty(this, key, {
                     get: () => readStoreValue(),
                     set: (newValue: any) => {
+                        // Assigning the store's own proxy (or a nested store
+                        // proxy) back must store the raw target; otherwise
+                        // reads would wrap a proxy in a proxy.
+                        newValue = toRawStoreValue(newValue);
                         const oldValue = isPublic
                             ? this._stateContainer.getPublic(key)
                             : this._stateContainer.getInternal(key);
@@ -2418,29 +2511,55 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this.dirtyProperties.add(changedKey);
         if (!this.broadcastScheduled) {
             this.broadcastScheduled = true;
-            queueMicrotask(async () => {
-                // Snapshot so async tasks don't observe paths added during the
-                // run, and clear so the next cycle starts fresh. If runTasks
-                // early-returns (isRunningTasks), the snapshot is unused but
-                // _dirtyPaths was already cleared — so re-add the paths to keep
-                // them visible to the in-progress run.
-                const paths = new Set(this._dirtyPaths);
-                this._dirtyPaths.clear();
-                const ran = await this.runTasks(paths);
-                if (!ran) {
-                    // Another run was in progress; preserve these paths for it.
-                    for (const p of paths) this._dirtyPaths.add(p);
-                }
-                const partialState: Record<string, any> = {};
-                for (const key of this.dirtyProperties) {
-                    partialState[key] = this._stateContainer.getPublic(key);
-                }
+            queueMicrotask(() => { void this._flushStateBroadcast(); });
+        }
+    }
 
-                this._runtime?.broadcastState(partialState);
-                this._runtime?.persistState();
-                this.dirtyProperties.clear();
-                this.broadcastScheduled = false;
-            });
+    /**
+     * Deliver the batched state change. Any failure (a throwing task, a socket
+     * `send` throwing inside `broadcastState`, a rejected storage put) is
+     * logged as a delivery failure and never wedges the component: the batch
+     * flag is always released so the next state change broadcasts again.
+     */
+    private async _flushStateBroadcast(): Promise<void> {
+        let snapshotTaken = false;
+        let persisted: Promise<void> | undefined;
+        try {
+            // Snapshot so async tasks don't observe paths added during the
+            // run, and clear so the next cycle starts fresh. If runTasks
+            // early-returns (isRunningTasks), the snapshot is unused but
+            // _dirtyPaths was already cleared — so re-add the paths to keep
+            // them visible to the in-progress run.
+            const paths = new Set(this._dirtyPaths);
+            this._dirtyPaths.clear();
+            const ran = await this.runTasks(paths);
+            if (!ran) {
+                // Another run was in progress; preserve these paths for it.
+                for (const p of paths) this._dirtyPaths.add(p);
+            }
+            const partialState: Record<string, any> = {};
+            for (const key of this.dirtyProperties) {
+                partialState[key] = this._stateContainer.getPublic(key);
+            }
+            // Release the batch before delivery: writes made by delivery or
+            // while persistence is pending schedule their own broadcast.
+            this.dirtyProperties.clear();
+            this.broadcastScheduled = false;
+            snapshotTaken = true;
+
+            this._runtime?.broadcastState(partialState);
+            persisted = this._runtime?.persistState();
+        } catch {
+            logRuntimeFailure(this._failureContext(), 'delivery');
+        } finally {
+            // Keep undelivered keys dirty so the next change re-sends them.
+            if (!snapshotTaken) this.broadcastScheduled = false;
+        }
+        if (!persisted) return;
+        try {
+            await persisted;
+        } catch {
+            logRuntimeFailure(this._failureContext(), 'delivery');
         }
     }
 
@@ -2707,6 +2826,17 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this._render();
     }
     
+    /**
+     * The renderer's `requestUpdate()` joins the in-flight update promise, so a
+     * write from `updated()`, a controller's `hostUpdated()`, or a nested
+     * child's `onMount()` during the parent commit would otherwise be dropped.
+     * Mark a re-run instead; `_performOwnedUpdate` chains it.
+     */
+    public override requestUpdate(name?: string, oldValue?: unknown) {
+        if (this._updateCommitting) this._updateRerunRequested = true;
+        return super.requestUpdate(name, oldValue);
+    }
+
     // Override performUpdate to wrap template with devtools markers for client-side rendering
     protected async performUpdate() {
         return this._performOwnedUpdate(() => true, false);
@@ -2733,10 +2863,43 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             return false;
         }
 
+        const elementInternal = this.getElementInternal();
+        const pendingUpdate = elementInternal.__updatePromise;
+        let shouldUpdate = false;
+        let reruns = 0;
+        try {
+            for (;;) {
+                this._updateRerunRequested = false;
+                if (this._performOwnedUpdatePass(isCurrent, propagateError)) shouldUpdate = true;
+                if (!this._updateRerunRequested || !active()) break;
+                if (++reruns > MAX_UPDATE_RERUNS) {
+                    if (import.meta.env?.DEV) {
+                        console.warn(`[Cossack] ${this.constructor.name} kept requesting a re-render while updating; stopped after ${MAX_UPDATE_RERUNS} re-renders in one update. A state write in updated(), a controller hostUpdated(), or a child onMount() probably changes state on every render.`);
+                    }
+                    break;
+                }
+                // Let synchronous follow-up writes batch into the re-run. The
+                // original update promise stays installed so callers awaiting
+                // `requestUpdate()` observe the final commit.
+                await Promise.resolve();
+                if (!active()) break;
+            }
+        } finally {
+            this._updateRerunRequested = false;
+            if (elementInternal.__updatePromise === pendingUpdate) {
+                elementInternal.__changedProperties = new Map();
+                elementInternal.__updatePromise = null;
+            }
+        }
+        return shouldUpdate;
+    }
+
+    /** One synchronous willUpdate → render → commit → updated pass. */
+    private _performOwnedUpdatePass(isCurrent: () => boolean, propagateError: boolean): boolean {
+        const active = () => isCurrent() && !this.isInPhase(LifecyclePhase.Destroyed);
         const failureContext = this.isServer ? this._failureContext() : undefined;
         let shouldUpdate = false;
         const elementInternal = this.getElementInternal();
-        const pendingUpdate = elementInternal.__updatePromise;
         const changedProperties = elementInternal.__changedProperties;
         const controllers = elementInternal.__controllers;
         try {
@@ -2769,6 +2932,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 this.willUpdate(changedProperties);
                 if (!isCurrent() || this.isInPhase(LifecyclePhase.Destroyed)) return false;
 
+                // Writes from here on (render commit, nested child mounts,
+                // updated(), hostUpdated()) are not reflected in this pass:
+                // collect them in a fresh map and request a re-run.
+                elementInternal.__changedProperties = new Map();
+                this._updateCommitting = true;
                 this.resetRenderState();
                 pushCurrentInstance(this);
 
@@ -2797,10 +2965,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             if (failureContext) logRuntimeFailure(failureContext, 'dispatch', 'COSSACK_RUNTIME_FAILED');
             else console.error('Error during update:', e);
         } finally {
-            if (elementInternal.__updatePromise === pendingUpdate) {
-                elementInternal.__changedProperties = new Map();
-                elementInternal.__updatePromise = null;
-            }
+            this._updateCommitting = false;
         }
         return shouldUpdate;
     }
@@ -3031,7 +3196,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // snapshots the new state.
             await this.requestUpdate();
         };
-        const transition = types && types.length
+        // The object form is only understood by engines with types support;
+        // older engines (Chrome < 125, Safari 18) never run its update.
+        const transition = types?.length && supportsViewTransitionTypes()
             ? (document as any).startViewTransition({ update, types })
             : (document as any).startViewTransition(update);
         // A superseding transition may reject `ready` even though its DOM

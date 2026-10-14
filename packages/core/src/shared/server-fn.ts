@@ -33,14 +33,15 @@ const RENDER_GUARD_MESSAGE =
   'client bundle.';
 
 /**
- * Whether the framework is running in production mode. Mirrors the convention
- * in `head.ts` (reads `globalThis.process.env.NODE_ENV`) so it works in Node
- * tests, Cloudflare Workers (where `process` may be polyfilled), and browser
- * bundles alike.
+ * Whether development diagnostics are enabled. Uses the consuming
+ * application's Vite build flag (`import.meta.env.DEV`), like the rest of
+ * core. `process.env.NODE_ENV` is absent in browsers, so reading it treated
+ * every production browser bundle as development and threw mid-render. When
+ * no Vite flag exists (an unbundled runtime) the guard defaults to the
+ * non-crashing production behaviour.
  */
-function isProdEnv(): boolean {
-  const env = (globalThis as any).process?.env?.NODE_ENV;
-  return env === 'production';
+function isDevEnv(): boolean {
+  return !!import.meta.env?.DEV;
 }
 
 /**
@@ -57,7 +58,7 @@ function isProdEnv(): boolean {
  */
 export function assertNotRendering(): void {
   if (renderingDepth <= 0) return;
-  if (isProdEnv()) {
+  if (!isDevEnv()) {
     // eslint-disable-next-line no-console
     console.warn(RENDER_GUARD_MESSAGE);
     return;

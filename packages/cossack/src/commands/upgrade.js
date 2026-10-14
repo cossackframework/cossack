@@ -2,8 +2,6 @@ import { commandSpecs } from '../command-specs.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import {
   dependencyBaseline,
   planDependencyChanges,
@@ -17,9 +15,8 @@ import {
   hashFile,
 } from '../fs-utils.js';
 import { flagString, flagList } from '../flags.js';
-import { detectProjectPackageManager } from '../package-manager.js';
+import { detectProjectPackageManager, execPackageManager } from '../package-manager.js';
 
-const execFileP = promisify(execFile);
 
 const COSSACK_PKG_PATTERN = /^(@cossackframework\/.+|cossack)$/;
 
@@ -311,7 +308,7 @@ export async function detectPackageManager(root) {
 
 async function runInstall(pm, cwd) {
   try {
-    await execFileP(pm, ['install'], { cwd, timeout: 120_000, maxBuffer: 1024 * 1024 });
+    await execPackageManager(pm, ['install'], { cwd, timeout: 120_000, maxBuffer: 1024 * 1024 });
   } catch (err) {
     throw Object.assign(new Error(`Dependency installation with ${pm} failed.`),
       { code: 'COSSACK_UPGRADE_INSTALL_FAILED' });

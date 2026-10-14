@@ -115,7 +115,7 @@ describe('ordinary JSON lifetime through the public component proxy', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const component: any = {
             constructor: class Client {}, __cossack_componentRouteId: 'page', __cossack_proxies: new Map(),
-            loading: {}, _optimisticLockedKeys: {}, _optimisticPendingState: {}, _isOptimisticLocked: () => false,
+            loading: {},
             count: 0,
             getInitialStateFromWindow: () => ({ componentRouteId: 'page', transport: 'http' }),
             getPublicState: () => ({ count: component.count }),

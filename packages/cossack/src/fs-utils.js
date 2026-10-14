@@ -95,11 +95,9 @@ export async function listFiles(root) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const e of entries) {
       const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      // Dirent types come from lstat, so symlinked directories (for example
+      // node_modules links) are neither directories nor files here.
       if (e.isDirectory()) {
-        await fs.realpath(path.join(dir, e.name)).then((d) => {
-          // skip symlinked dirs (e.g. node_modules)
-        }).catch(() => {});
-        if (e.isSymbolicLink()) continue;
         await walk(path.join(dir, e.name), rel);
       } else if (e.isFile()) {
         out.push(rel);

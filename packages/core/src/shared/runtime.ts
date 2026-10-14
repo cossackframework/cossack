@@ -206,7 +206,7 @@ export class InMemoryWebSocketRuntime<
 
     async sendToClient(client: Client, message: Record<string, unknown>): Promise<void> {
         const authorizer = typeof client === 'object' && client !== null ? this.authorizers.get(client) : undefined;
-        await this.delivery.send(client, JSON.stringify(message), candidate => this.isOpen(candidate),
+        await this.delivery.send(client, message, candidate => this.isOpen(candidate),
             authorizer ?? this.options.authorize, error => this.options.onError?.(error));
     }
 
@@ -220,10 +220,9 @@ export class InMemoryWebSocketRuntime<
     }
 
     private broadcast(message: Record<string, unknown>): void {
-        const encoded = JSON.stringify(message);
         for (const client of this.clients) {
             const authorizer = typeof client === 'object' && client !== null ? this.authorizers.get(client) : undefined;
-            void this.delivery.send(client, encoded, candidate => this.isOpen(candidate),
+            void this.delivery.send(client, message, candidate => this.isOpen(candidate),
                 authorizer ?? this.options.authorize, error => this.options.onError?.(error));
         }
     }

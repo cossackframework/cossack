@@ -10,6 +10,24 @@ const props = {
 };
 
 describe('renderRoot', () => {
+    it('emits head() script and style children as raw text, neutralising only closing sequences', () => {
+        const out = renderRoot({ ...props, headTags: [
+            { tag: 'script', children: 'if (a && b < c) { x("</script><img src=x>"); y("<!--"); }' },
+            { tag: 'script', attributes: { type: 'application/ld+json' }, children: '{"name":"A & B </script> <!--"}' },
+            { tag: 'style', children: 'a > b { content: "&"; } </STYLE><script>' },
+            { tag: 'title', children: 'A & B' },
+        ] });
+        expect(out).toContain(String.raw`if (a && b < c) { x("<\/script><img src=x>"); y("\x3C!--"); }`);
+        expect(out).not.toMatch(/&amp;&amp;/);
+        expect(out).toContain('{"name":"A & B \\u003c/script> \\u003c!--"}');
+        expect(JSON.parse(/ld\+json" data-cossack="">(.*?)<\/script>/.exec(out)![1])).toEqual({ name: 'A & B </script> <!--' });
+        expect(out).toContain(String.raw`a > b { content: "&"; } <\/STYLE><script>`);
+        expect(out).toContain('<title data-cossack="">A &amp; B</title>');
+        // Each raw-text element closes exactly where the framework closes it.
+        expect(out.match(/<\/script>/gi)?.length).toBe(4);
+        expect(out.match(/<\/style>/gi)?.length).toBe(1);
+    });
+
     it('renders the real default template, state, styles and scripts', () => {
         const out = renderRoot(props);
         expect(out).toContain('<!DOCTYPE html>');

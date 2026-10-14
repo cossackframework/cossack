@@ -10,6 +10,7 @@
  * TypeScript compiler, scaffold recipes or provider SDKs.
  */
 import { commandSpecs } from './command-specs.js';
+import { FEATURES } from '@cossackframework/scaffold/registry';
 import { renderBanner } from './banner.js';
 import { parseFlags, requestsJSON, requestsHelp } from './flags.js';
 import { commandFailure, diagnosticCode, diagnosticMessage, writeResult } from './output.js';
@@ -179,6 +180,19 @@ async function buildCtx(flags) {
   };
 }
 
+/** Wrap a comma-separated list into help-column lines. */
+function wrapList(items, indent, width = 79) {
+  const lines = [];
+  let line = '';
+  for (const [index, item] of items.entries()) {
+    const word = item + (index < items.length - 1 ? ',' : '.');
+    if (line && indent + line.length + 1 + word.length > width) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  return lines.map(entry => ' '.repeat(indent) + entry).join('\n');
+}
+
 function printHelp(asText = false) {
   const help = `${renderBanner()}
 
@@ -198,11 +212,12 @@ Commands:
                                Types: page(p) component(c) layout(l) middleware(m) service(s)
                                       model migration seeder
   delete <type> <name>    (d)  Delete a generated file/folder.
-  add <feature>                Add a feature (ui, database, studio, auth, dashboard, markdown, examples).
+  add <feature>                Add a feature and its prerequisites. Features:
+${wrapList(FEATURES, 31)}
   remove <feature>             Remove a feature and its dependents.
   adapter <node|cloudflare>    Switch the active runtime adapter.
   lang <subcommand>            Manage localization catalogs under src/lang/.
-                               Subcommands: publish, add <locale>.
+                               Subcommands: publish, add <locale>, extract, check, types.
   migration <sub> (migrate)    Run ORM migrations. Subcommands: generate, snapshot,
                                squash, up, down, status, rehash, check, baseline, plan.
   schema <sub>                 ORM schema commands: inspect, pull, diff, check.

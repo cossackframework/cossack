@@ -55,6 +55,20 @@ describe('Directives', () => {
     expect(styleMap(styles)).toBe('color:red;font-size:12px');
   });
 
+  it('styleMap dash-cases camelCase keys and keeps custom properties', () => {
+    expect(styleMap({
+      backgroundColor: 'red',
+      borderTopLeftRadius: '2px',
+      '--brandColor': 'blue',
+      '--my-var': '1px',
+      'font-size': '3px',
+      webkitTransition: 'none',
+      WebkitAppearance: 'none',
+      msTransform: 'none',
+    })).toBe('background-color:red;border-top-left-radius:2px;--brandColor:blue;--my-var:1px;font-size:3px;'
+      + '-webkit-transition:none;-webkit-appearance:none;-ms-transform:none');
+  });
+
   it('ref callback is called', () => {
     const container = document.createElement('div');
     const spy = vi.fn();

@@ -105,13 +105,23 @@ export const classMap = (classInfo: Record<string, string | boolean | number>) =
 };
 
 /**
- * Generates a style string from an object.
- * Usage: style="${styleMap({ color: 'red' })}"
+ * CSS property name for a styleMap key. Keys containing a dash (`font-size`,
+ * `--custom-prop`) are used as written; camelCase keys are dash-cased the way
+ * Lit does it (`backgroundColor` -> `background-color`,
+ * `webkitTransition` -> `-webkit-transition`).
+ */
+const cssPropertyName = (key: string): string =>
+  key.includes('-') ? key : key.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, '-$&').toLowerCase();
+
+/**
+ * Generates a style string from an object. Keys may be CSS names
+ * (`'font-size'`, `'--gap'`) or camelCase (`fontSize`).
+ * Usage: style="${styleMap({ color: 'red', backgroundColor: 'white' })}"
  */
 export const styleMap = (styleInfo: Record<string, string | undefined | null>) => {
   return Object.keys(styleInfo)
     .filter((key) => styleInfo[key] != null)
-    .map((key) => `${key}:${styleInfo[key]}`)
+    .map((key) => `${cssPropertyName(key)}:${styleInfo[key]}`)
     .join(';');
 };
 
@@ -223,12 +233,13 @@ export const preventDefault = (
  * the Lit-faithful `ifDefined` directive.
  *
  * By default a plain Cossack attribute binding `href="${url}"` already omits the
- * attribute for `null`/`undefined`/`false`, and renders everything else. The
- * difference `ifDefined` makes is two-fold:
+ * attribute for `null`/`undefined` and renders everything else; `false` renders
+ * as `"false"` (only boolean attributes such as `disabled` are omitted for
+ * `false`). The difference `ifDefined` makes is two-fold:
  *
- *  1. Only `undefined` drops the attribute — `null` is rendered as `"null"`,
- *     `false` as `"false"` (useful for data attributes where you want the
- *     literal string rather than an omission).
+ *  1. Only `undefined` drops the attribute — `null` is rendered as `"null"`
+ *     (useful for data attributes where you want the literal string rather
+ *     than an omission).
  *  2. When the value transitions from defined back to `undefined` on a
  *     re-render, the attribute is explicitly removed.
  *

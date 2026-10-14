@@ -56,11 +56,16 @@ export class Popover extends Cossack {
             resize.observe(panel);
             if (this.button) resize.observe(this.button);
             const disabled = new MutationObserver(() => { if (this.button?.matches(':disabled')) this.hide(); });
-            if (this.button) {
-                disabled.observe(this.button, { attributes: true, attributeFilter: ['disabled'] });
-                for (let ancestor = this.button.parentElement; ancestor; ancestor = ancestor.parentElement) {
-                    if (ancestor.tagName === 'FIELDSET') disabled.observe(ancestor, { attributes: true, attributeFilter: ['disabled'] });
-                }
+            const button = this.button;
+            if (button) {
+                disabled.observe(button, { attributes: true, attributeFilter: ['disabled'] });
+                // Refs run before a client render adopts its nodes; walk ancestors once connected.
+                queueMicrotask(() => {
+                    if (!active) return;
+                    for (let ancestor = button.parentElement; ancestor; ancestor = ancestor.parentElement) {
+                        if (ancestor.tagName === 'FIELDSET') disabled.observe(ancestor, { attributes: true, attributeFilter: ['disabled'] });
+                    }
+                });
             }
             this.cleanup = () => {
                 active = false;

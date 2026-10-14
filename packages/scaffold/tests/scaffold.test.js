@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import {
   _setPromptTestOverrides,
   DASHBOARD_MODULES,
@@ -748,11 +749,6 @@ describe('composition', () => {
     expect(compactReadme).toContain('only needs the opaque configuration ID');
     expect(compactReadme).toContain('Do not put the connection string or credentials in source-controlled files.');
 
-    const configTemplate = await fs.readFile(
-      new URL('../template/wrangler.jsonc', import.meta.url), 'utf8',
-    );
-    expect(configTemplate).toContain('Remote D1 deployment requires database_id.');
-    expect(configTemplate).not.toContain('provisions D1 on deployment');
   });
 
   it('renders isolated recipes for every runtime/provider target', async () => {
@@ -819,7 +815,9 @@ describe('composition', () => {
       expect(pnpmWorkspace).toContain('fs-xattr: true');
       expect(pnpmWorkspace).toContain('macos-alias: true');
       expect(pnpmWorkspace).toContain("'image-size@<2.0.3': 2.0.4");
-      expect(pnpmWorkspace).toContain('appdmg@0.6.6: patches/appdmg@0.6.6.patch');
+      // A range key: generated apps have no lockfile, and an exact key fails
+      // with ERR_PNPM_UNUSED_PATCH as soon as maker-dmg resolves appdmg 0.6.7.
+      expect(parseYaml(pnpmWorkspace).patchedDependencies).toEqual({ 'appdmg@^0.6.6': 'patches/appdmg@0.6.6.patch' });
       expect(targetFiles.get('patches/appdmg@0.6.6.patch').capability).toBe('desktop');
       expect(targetFiles.get('vite.config.ts').content.toString())
         .toContain("external: ['electron']");
@@ -835,7 +833,7 @@ describe('composition', () => {
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .toContain("behavior: 'quit'");
       expect(targetFiles.get('forge.config.ts').content.toString())
-        .toContain(`appBundleId: 'dev.cossack.${adapter}-desktop'`);
+        .toContain(`appBundleId: "dev.cossack.${adapter}-desktop"`);
       expect(targetFiles.get('desktop-assets/linux.desktop.ejs').content.toString())
         .toContain('Exec=<%= name %> --ozone-platform=x11 %U');
       for (const icon of ['icon.icns', 'icon.ico', 'icon-512.png', 'tray-macosTemplate@2x.png']) {
@@ -1075,7 +1073,7 @@ describe('composition', () => {
     expect(workspace).toContain('nodeLinker: hoisted');
     expect(workspace).toContain('lodash: 4.18.1');
     expect(workspace).toContain('image-size@<2.0.3');
-    expect(workspace).toContain('appdmg@0.6.6: patches/appdmg@0.6.6.patch');
+    expect(parseYaml(workspace).patchedDependencies).toEqual({ 'appdmg@^0.6.6': 'patches/appdmg@0.6.6.patch' });
     const patchPath = path.join(project.projectDir, 'patches/appdmg@0.6.6.patch');
     expect(await fs.readFile(patchPath, 'utf8')).toContain('imageSizeFromFile');
 

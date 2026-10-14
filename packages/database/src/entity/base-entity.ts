@@ -74,19 +74,34 @@ export abstract class BaseEntity {
     return manager(this).upsert(values, conflict);
   }
 
+  /** Updates rows matching `where`; an empty `where` throws. Use updateAll() for every row. */
   static update<T extends BaseEntity>(
     this: EntityTarget<T>,
-    where: FindWhere<T>,
+    where: FindWhere<T> | readonly FindWhere<T>[],
     values: Partial<EntityShape<T>>,
   ): Promise<QueryResult> {
     return manager(this).update(where, values);
   }
 
+  /** Updates every row in the table. */
+  static updateAll<T extends BaseEntity>(
+    this: EntityTarget<T>,
+    values: Partial<EntityShape<T>>,
+  ): Promise<QueryResult> {
+    return manager(this).updateAll(values);
+  }
+
+  /** Deletes rows matching `where`; an empty `where` throws. Use deleteAll() for every row. */
   static delete<T extends BaseEntity>(
     this: EntityTarget<T>,
-    where: FindWhere<T>,
+    where: FindWhere<T> | readonly FindWhere<T>[],
   ): Promise<QueryResult> {
     return manager(this).delete(where);
+  }
+
+  /** Deletes every row in the table. */
+  static deleteAll<T extends BaseEntity>(this: EntityTarget<T>): Promise<QueryResult> {
+    return manager(this).deleteAll();
   }
 
   static query<T extends BaseEntity>(this: EntityTarget<T>, alias?: string): SelectQueryBuilder<T> {

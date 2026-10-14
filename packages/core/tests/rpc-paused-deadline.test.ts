@@ -23,7 +23,7 @@ function target(kind: 'component' | 'service') {
     const host: any = { ...consumer, constructor: class Page {}, __cossack_proxies: new Map(),
         getInitialStateFromWindow: () => ({ componentRouteId: 'page', transport: 'http' }),
         count: 0, getPublicState: () => ({ count: host.count }),
-        _optimisticLockedKeys: {}, _optimisticPendingState: {}, _isOptimisticLocked: () => false, hasMethod: () => false,
+        hasMethod: () => false,
         setProperty(key: string, value: unknown) { this[key] = value; },
     };
     Reflect.defineMetadata('cossack:server-methods', { run: { timeout: 50 } }, host.constructor);

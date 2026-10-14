@@ -104,9 +104,7 @@ describe('SSE store bounding (connection counting)', () => {
         // bounded by the LRU hard cap instead.
         const ctx = makeCtx();
         const scopeKey = 'user:alice';
-        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, {
-            getPublicState: () => ({ count: 0 }),
-        } as any);
+        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, { count: 0 });
         expect(__sseStoreSize()).toBe(1);
 
         const controller = new AbortController();
@@ -124,8 +122,8 @@ describe('SSE store bounding (connection counting)', () => {
         const ctx = makeCtx();
         const scopeKey = 'user:ssr-replacement';
         const controller = new AbortController();
-        const instance = (count: number) => ({ count, getPublicState() { return { count: this.count }; } });
-        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(0) as any);
+        const instance = (count: number) => ({ count });
+        registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(0));
         const before = syncSseState(`sse_page:${scopeKey}`, { count: 1 });
         const response = await handleSseEndpoint(ctx)(makeSignalContext({ id: 'ssr-replacement' }, scopeKey, controller));
         const reader = response.body!.getReader();
@@ -136,7 +134,7 @@ describe('SSE store bounding (connection counting)', () => {
             expect(initial).toContain('data: {"count":1}');
             expect(decoder.decode((await reader.read()).value)).toContain('event: connected');
 
-            registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(6) as any);
+            registerSseStoreEntry(ctx, '/src/pages/sse/index.ts', scopeKey, instance(6));
             const replacementRead = reader.read();
             await vi.advanceTimersByTimeAsync(200);
             const replacement = decoder.decode((await replacementRead).value);
@@ -159,7 +157,7 @@ describe('SSE store bounding (connection counting)', () => {
     });
 
     const ssrPage = '/src/pages/sse/index.ts';
-    const instance = (count = 0) => ({ count, getPublicState() { return { count: this.count }; } }) as any;
+    const instance = (count = 0) => ({ count });
 
     it('bounds the store on SSR registration', () => {
         __resetSseStore();

@@ -9,7 +9,7 @@ import { ServiceScope } from '../src/shared/service-scope';
 const id = '12345678-1234-4123-8123-123456789abc';
 const secret = 'private-config-token-sentinel';
 const error = () => Object.assign(new Error(secret), { config: { token: secret } });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 async function context() {
     let result!: Context;
     const app = new Hono(); app.get('/items/:id', c => {
@@ -27,6 +27,8 @@ function assertSafe(logged: ReturnType<typeof vi.spyOn>) {
 }
 
 it('correlates socket iterator and cleanup failures without logging exceptions', async () => {
+    // Production redaction contract; development also prints the exception.
+    vi.stubEnv('DEV', false);
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     class Actions extends Cossack {
         @Server() stream() { return { [Symbol.asyncIterator]() { return { next: async () => { throw error(); }, return: async () => { throw error(); } }; } }; }

@@ -39,6 +39,13 @@ vi.mock('@cossackframework/renderer', () => {
     };
 });
 
+// Wrap the types detector so tests can force either engine; it delegates to
+// the real (cached) detection by default.
+vi.mock('../src/client/navigation', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../src/client/navigation')>();
+  return { ...mod, supportsViewTransitionTypes: vi.fn(mod.supportsViewTransitionTypes) };
+});
+
 import { supportsViewTransitions, supportsViewTransitionTypes } from '../src/client/navigation';
 import { Cossack } from '../src/shared/cossack';
 
@@ -140,6 +147,7 @@ describe('Cossack.prototype.startViewTransition', () => {
 
   it('passes types via the object form when types are provided', async () => {
     const doc = mockStartViewTransition();
+    vi.mocked(supportsViewTransitionTypes).mockReturnValueOnce(true);
 
     const callback = vi.fn(() => 42);
     const result = await component.startViewTransition(callback, ['nav-forward']);
@@ -151,6 +159,29 @@ describe('Cossack.prototype.startViewTransition', () => {
     expect(arg.types).toEqual(['nav-forward']);
     expect(typeof arg.update).toBe('function');
     expect(result).toBe(42);
+  });
+
+  it('falls back to the callback form (dropping types) on engines without types support', async () => {
+    // Chrome < 125 / Safari 18 accept only the callback form; passing an
+    // object there never runs the update.
+    const doc = { ...(document as any) };
+    doc.startViewTransition = vi.fn((arg) => {
+      const updateCallbackDone = Promise.resolve().then(() => {
+        if (typeof arg === 'function') return arg();
+      });
+      return {
+        updateCallbackDone,
+        ready: updateCallbackDone.then(() => undefined),
+        finished: updateCallbackDone.then(() => undefined),
+      };
+    });
+    vi.stubGlobal('document', doc);
+    vi.mocked(supportsViewTransitionTypes).mockReturnValueOnce(false);
+
+    const callback = vi.fn(() => 'ran');
+    await expect(component.startViewTransition(callback, ['nav-forward'])).resolves.toBe('ran');
+    expect(typeof doc.startViewTransition.mock.calls[0][0]).toBe('function');
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 
   it('uses the callback form when no types are provided', async () => {

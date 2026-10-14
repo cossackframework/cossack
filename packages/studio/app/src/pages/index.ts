@@ -146,6 +146,7 @@ export default class StudioPage extends Cossack {
   @ClientState() historyOpen = false;
   @ClientState() sqlOutput: 'results' | 'explain' = 'results';
   @ClientState() relationExpansions: Record<string, RelationExpansion> = {};
+  @ClientState() inspectionLoading = false;
 
   private disconnectTheme?: () => void;
   private insertTemporalDefaults = { date: '', datetime: '', timestamp: '' };
@@ -1315,6 +1316,46 @@ export default class StudioPage extends Cossack {
   }
 
   @Server()
+  async refreshSchema(): Promise<void> {
+    this.schema = await getStudioDatabase().getSchema(true);
+  }
+
+  @Server()
+  async loadInspection(): Promise<void> {
+    const database = getStudioDatabase();
+    await database.getInspection();
+    this.schema = await database.getSchema();
+  }
+
+  @Client()
+  async refreshRows() {
+    try {
+      await this.refreshSchema();
+      studioSchemaCatalog.set(this.activeSchema);
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+      return;
+    }
+    await this.reloadRows();
+  }
+
+  @Client()
+  async onInspectionToggle(event: Event) {
+    const details = event.currentTarget as HTMLDetailsElement | null;
+    if (!details?.open || this.activeSchema.inspection || this.inspectionLoading) return;
+    this.inspectionLoading = true;
+    try {
+      await this.loadInspection();
+    } catch (error: any) {
+      this.message = error?.message ?? String(error);
+      this.messageError = true;
+    } finally {
+      this.inspectionLoading = false;
+    }
+  }
+
+  @Server()
   async loadPragmas(): Promise<StudioPragma[]> {
     this.pragmas = await getStudioDatabase().getPragmas();
     this.message = '';
@@ -1572,11 +1613,17 @@ export default class StudioPage extends Cossack {
             </span>
             ${component(Badge, { variant: remote ? 'destructive' : 'secondary' },
               `${schema.connection.label}${remote ? ' · REMOTE D1' : ' · local'}`)}
-            ${schema.inspection ? html`<details data-testid="database-inspection" class="text-xs">
+            ${schema.inspection || schema.inspectionAvailable ? html`<details
+              data-testid="database-inspection"
+              class="text-xs"
+              @toggle="${(event: Event) => this.onInspectionToggle(event)}"
+            >
               <summary>Database capabilities and migrations</summary>
-              <p>Target: ${schema.inspection.target.provider ?? schema.inspection.dialect} · ${schema.inspection.target.target ?? 'unspecified'} ${schema.inspection.target.environment ?? ''}</p>
-              <p>Transactions: ${schema.inspection.capabilities.driver.transactions ? 'supported' : 'unavailable'}; nested savepoints: ${schema.inspection.capabilities.driver.savepoints ? 'supported' : 'unavailable'}</p>
-              <ul>${schema.inspection.migrations.map(item => html`<li>${item.name}: ${item.state}</li>`)}</ul>
+              ${schema.inspection ? html`
+                <p>Target: ${schema.inspection.target.provider ?? schema.inspection.dialect} · ${schema.inspection.target.target ?? 'unspecified'} ${schema.inspection.target.environment ?? ''}</p>
+                <p>Transactions: ${schema.inspection.capabilities.driver.transactions ? 'supported' : 'unavailable'}; nested savepoints: ${schema.inspection.capabilities.driver.savepoints ? 'supported' : 'unavailable'}</p>
+                <ul>${schema.inspection.migrations.map(item => html`<li>${item.name}: ${item.state}</li>`)}</ul>
+              ` : html`<p>${this.inspectionLoading ? 'Loading…' : 'Open to load migration status.'}</p>`}
             </details>` : ''}
             ${schema.connection.databaseVersion ? html`
               <span
@@ -1693,7 +1740,7 @@ export default class StudioPage extends Cossack {
             </div>
             <div class="flex items-center gap-1">
               ${this.tab === 'browse' && object
-                ? this.iconButton('studio-refresh-rows-tip', RefreshIcon, 'Refresh rows', () => this.reloadRows(), {
+                ? this.iconButton('studio-refresh-rows-tip', RefreshIcon, 'Refresh rows', () => this.refreshRows(), {
                     disabled: this.browseLoading,
                     'data-testid': 'refresh-rows',
                   })

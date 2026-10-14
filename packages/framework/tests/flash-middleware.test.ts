@@ -103,7 +103,7 @@ function getSetCookie(res: Response, name: string): string | undefined {
 }
 
 describe('flash middleware — two-phase cookie lifecycle', () => {
-    it.each(['/crpc', '/upload', '/sse', '/ws/page/example'])('preserves incoming flash on %s, including failed outgoing writes', async path => {
+    it.each(['/crpc', '/upload', '/sse/page.example', '/ws/page/example'])('preserves incoming flash on %s, including failed outgoing writes', async path => {
         const app = makeApp();
         app.all(path, c => {
             if (c.req.query('fail')) { flash('success', 'partial'); return c.text('rejected', 400); }

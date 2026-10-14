@@ -83,6 +83,11 @@ hydration envelope, including `public` and any production metadata. Bootstrap
 options such as context, user and environment retain their production meaning.
 Browser identity comes from hydrated metadata.
 
+`click(selector)` activates the element like a user click. A disabled form
+control, or a control inside a disabled `<fieldset>`, ignores the click, so its
+handlers do not run. `type(selector, text)` sets the value of an input or
+textarea and dispatches `input` and `change` events.
+
 `unmount()` is awaitable and idempotent. It waits for component, descendant and
 owned-service cleanup, and removes the DOM even if cleanup fails. Failed
 bootstrap also removes the container and attempts component cleanup.

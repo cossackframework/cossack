@@ -78,6 +78,11 @@ const adapter = await mysql({
 });
 ```
 
+The adapter sets the mysql2 `timezone` option to `"Z"` (UTC) unless you pass
+your own `timezone`, in the options object or as a `timezone` URL parameter.
+The ORM stores datetimes in UTC, so a different time zone shifts the values
+that you read.
+
 Turso (choose the client matching the connection):
 
 ```sh
@@ -255,9 +260,14 @@ import {
 const adapter = await hyperdriveMySQL(env.HYPERDRIVE);
 ```
 
-Hyperdrive owns the global connection pool. The adapters create request-local
-clients and release them deterministically. Enable `nodejs_compat` for the
-official `pg` and `mysql2` drivers. See Cloudflare's
+Hyperdrive owns the global connection pool. Each adapter opens one client the
+first time it runs a query and uses that client for all later queries. A
+transaction or `reserve()` call uses its own client and closes it when the
+callback ends. `orm.close()` closes the shared client. A Worker cannot use a
+socket that another request opened, so create the adapter and the ORM for each
+request and close them at the end. The generated `createRequestORM()` and
+`ormMiddleware()` do this. Enable `nodejs_compat` for the official `pg` and
+`mysql2` drivers. See Cloudflare's
 [Hyperdrive driver guidance](https://developers.cloudflare.com/hyperdrive/).
 
 ## Custom Runtime

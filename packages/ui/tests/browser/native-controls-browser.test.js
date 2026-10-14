@@ -135,12 +135,13 @@ window.verifySelectBindings=async()=>{
     await page.keyboard.press('Tab');await browserExpect(toggle).toBeFocused();
     await browserExpect(page.locator('.cs-switch__track')).not.toHaveCSS('box-shadow','none');
     await page.keyboard.press('Space');await browserExpect(toggle).toBeChecked();
-    await browserExpect(toggle).toHaveAttribute('aria-checked','true');
+    // The native checkbox exposes its checked state; a static aria-checked would go stale.
+    await browserExpect(toggle).not.toHaveAttribute('aria-checked');
     await page.getByRole('button',{name:'Save',exact:true}).click();await browserExpect(page.locator('#submits')).toHaveText('1');
     expect(await page.evaluate(()=>window.formData)).toEqual({email:'user@example.test',accepted:'yes',enabled:'yes',plan:'free',level:'1500'});
     await page.getByRole('button',{name:'Reset controls',exact:true}).click();
     await browserExpect(checkbox).not.toBeChecked();await browserExpect(toggle).not.toBeChecked();
-    await browserExpect(toggle).toHaveAttribute('aria-checked','false');
+    await browserExpect(toggle).not.toHaveAttribute('aria-checked');
     await page.evaluate(()=>window.setDisabled(true));
     await browserExpect(email).toBeDisabled();await browserExpect(checkbox).toBeDisabled();await browserExpect(toggle).toBeDisabled();
     await browserExpect(page.getByRole('button',{name:'Save',exact:true})).toBeDisabled();

@@ -17,6 +17,8 @@ import { writeFile, exists, findProjectRoot } from '../fs-utils.js';
 import { flagString } from '../flags.js';
 import { defaultLangCatalog, langJsonTemplate } from '../templates.js';
 import { createCommandOutput, runWithSpec } from '../command-spec.js';
+import { createJsoncEditor, jsoncProperty, parseJsoncObject } from '../jsonc-edit.js';
+import ts from 'typescript-api';
 
 const spec = commandSpecs.lang;
 
@@ -44,7 +46,7 @@ export async function langCommand(args, ctx) {
 async function publish(args, ctx) {
   const flags = ctx.flags;
   const locale = validateLocalizationLocale(flagString(flags.locale) || DEFAULT_LOCALE);
-  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
+  const root = await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
 
   // When publishing a non-default locale, seed it with empty values against
@@ -56,7 +58,7 @@ async function publish(args, ctx) {
       langJsonTemplate(defaultLangCatalog()),
       ctx,
     );
-    reportFile(`src/lang/${locale}.json`, result, ctx);
+    reportFile(root, `src/lang/${locale}.json`, result, ctx);
     if (result !== 'skipped') {
       // Wire {{ cossackLang }} and APP_LOCALE so the feature is fully
       // active immediately — no manual edits needed.
@@ -74,7 +76,7 @@ async function publish(args, ctx) {
 
   const entries = await seedEntries(root, locale);
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
-  reportFile(`src/lang/${locale}.json`, result, ctx);
+  reportFile(root, `src/lang/${locale}.json`, result, ctx);
   if (result !== 'skipped') {
     await wireRootTemplate(root, ctx);
     await wireAppLocaleEnv(root, locale, ctx);
@@ -104,7 +106,7 @@ async function addLocale(args, ctx) {
       { code: 'COSSACK_LOCALE_DEFAULT' });
   }
 
-  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
+  const root = await findProjectRoot(ctx.cwd);
   const target = path.resolve(root, 'src', 'lang', `${locale}.json`);
   if ((await exists(target)) && !ctx.force && !ctx.dryRun) {
     ctx.out?.line(`  exists   src/lang/${locale}.json (use --force to overwrite)`);
@@ -113,7 +115,7 @@ async function addLocale(args, ctx) {
 
   const entries = await seedEntries(root, locale);
   const result = await writeFile(target, langJsonTemplate(entries), ctx);
-  reportFile(`src/lang/${locale}.json`, result, ctx);
+  reportFile(root, `src/lang/${locale}.json`, result, ctx);
   return 0;
 }
 
@@ -213,25 +215,23 @@ async function wireAppLocaleEnv(root, locale, ctx) {
   } catch {
     return;
   }
-  if (/\bAPP_LOCALE\b/.test(content)) {
-    return; // already present
+  // Edit through the JSONC parser so comments, nested objects and unrelated
+  // formatting survive; a regex cannot tell a "vars" key from a comment.
+  const parsed = parseJsoncObject(content, target);
+  if (!parsed || !parsed.root || !ts.isObjectLiteralExpression(parsed.root)) {
+    ctx.out?.line('  skipped  wrangler.jsonc is not a valid JSONC object; add APP_LOCALE to "vars" manually.');
+    return;
   }
-  // Inject APP_LOCALE into the vars block. JSONC allows trailing commas,
-  // so we append after the last entry in the vars object.
-  const varsMatch = content.match(/"vars"\s*:\s*\{([\s\S]*?)\}/);
-  let updated;
-  if (varsMatch) {
-    const varsBody = varsMatch[1].trimEnd();
-    const separator = varsBody.endsWith(',') ? '' : ',';
-    const replacement = `"vars": {${varsBody}${separator}\n    // Default locale for __(). Override per-request via cookie or Accept-Language.\n    "APP_LOCALE": "${locale}"\n  }`;
-    updated = content.replace(/"vars"\s*:\s*\{[\s\S]*?\}/, replacement);
-  } else {
-    // No vars block — add one before the closing brace.
-    updated = content.replace(
-      /\n(\s*)\}\s*$/,
-      `\n  "vars": {\n    "APP_LOCALE": "${locale}"\n  }\n$1}`,
-    );
+  const vars = jsoncProperty(parsed.root, 'vars');
+  if (vars && !ts.isObjectLiteralExpression(vars)) {
+    ctx.out?.line('  skipped  wrangler.jsonc "vars" is not an object; add APP_LOCALE manually.');
+    return;
   }
+  if (parsed.value.vars && Object.hasOwn(parsed.value.vars, 'APP_LOCALE')) return; // already present
+  const editor = createJsoncEditor(content, parsed.source);
+  if (vars) editor.set(vars, 'APP_LOCALE', locale);
+  else editor.set(parsed.root, 'vars', { APP_LOCALE: locale });
+  const updated = editor.apply();
   if (ctx.dryRun) {
     ctx.out?.file('planned', target);
     return;
@@ -240,7 +240,7 @@ async function wireAppLocaleEnv(root, locale, ctx) {
   ctx.out?.file('created', target);
 }
 
-function reportFile(rel, result, ctx) {
+function reportFile(root, rel, result, ctx) {
   const out = ctx.out;
   const action = { wrote: 'created', overwrote: 'overwritten', 'dry-run': 'planned', skipped: 'skipped' }[result];
   if (!out) {
@@ -249,7 +249,7 @@ function reportFile(rel, result, ctx) {
     else if (ctx.flags.json !== true) console.log(`  ${action}  ${rel}`);
     return;
   }
-  out.file(action, path.resolve(process.cwd(), rel));
+  out.file(action, path.resolve(root, rel));
 }
 
 export function langHelp() {
@@ -258,7 +258,9 @@ export function langHelp() {
 Manage localization catalogs under src/lang/.
 
 Subcommands:
-  publish                Create src/lang/en.json with starter keys.
+  publish                Create src/lang/<locale>.json (default en) with a
+                         starter catalog, and wire root.ts and APP_LOCALE.
+                         It does not scan your sources; use extract.
   add <locale>           Create src/lang/<locale>.json with empty values,
                          mirroring the keys of an existing en.json.
   extract                List static translation calls and unresolved keys.
@@ -268,7 +270,7 @@ Subcommands:
 
 /** Analysis is shared with local agent tools; only types performs an explicit write. */
 async function analyze(sub, ctx) {
-  const root = ctx.projectRoot || await findProjectRoot(ctx.cwd);
+  const root = await findProjectRoot(ctx.cwd);
   const report = await inspectLocalization(root, { locale: flagString(ctx.flags.locale) || DEFAULT_LOCALE });
   let generated = false;
   if (sub === 'types' && report.valid) {

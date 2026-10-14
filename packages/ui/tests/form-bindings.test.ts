@@ -31,6 +31,14 @@ it('keeps the existing native Form path and rejects competing submit owners', ()
   const { bindings } = fixture(); const form = new Form(); form.props = { method: 'post' }; expect(renderToString(form.render())).not.toContain('novalidate');
   form.props = { bindings: bindings.form(async () => 'saved'), submit: () => {} }; expect(() => form.render()).toThrow('either typed bindings or submit'); bindings.dispose();
 });
+it('rejects a native @submit or @reset that submit or bindings would silently override', () => {
+  const { bindings } = fixture(); const form = new Form();
+  form.props = { submit: () => {}, '@submit': () => {} }; expect(() => form.render()).toThrow('@submit');
+  form.props = { bindings: bindings.form(async () => 'saved'), '@submit': () => {} }; expect(() => form.render()).toThrow('@submit');
+  form.props = { bindings: bindings.form(async () => 'saved'), '@reset': () => {} }; expect(() => form.render()).toThrow('@reset');
+  form.props = { '@submit': () => {} }; expect(() => form.render()).not.toThrow();
+  bindings.dispose();
+});
 
 it('preserves precise public field values and parsed submit result types', () => {
   const { bindings } = fixture();

@@ -87,6 +87,31 @@ describe('InMemoryRateLimitStore', () => {
         expect((s as any).entries.size).toBe(5);
     });
 
+    it('does not scan every bucket on each new-key insert at capacity', () => {
+        const s = new InMemoryRateLimitStore(50);
+        for (let i = 0; i < 50; i++) s.hit(`live${i}`, 60_000);
+        const prune = vi.spyOn(s, 'prune');
+        for (let i = 0; i < 1000; i++) expect(s.hit(`flood${i}`, 60_000).count).toBe(1);
+        // Full prunes are rate-limited; head eviction is O(1) per insert.
+        expect(prune.mock.calls.length).toBeLessThanOrEqual(1);
+        expect((s as any).entries.size).toBe(50);
+        // The newest callers survive; the oldest windows were evicted first.
+        expect((s as any).entries.has('flood999')).toBe(true);
+        expect((s as any).entries.has('live0')).toBe(false);
+    });
+
+    it('drops expired head buckets before evicting live ones', async () => {
+        const s = new InMemoryRateLimitStore(3);
+        s.hit('short', 10);
+        s.hit('a', 60_000); s.hit('b', 60_000);
+        s.hit('fill', 60_000); // first capacity insert: full prune budget spent here
+        await new Promise((r) => setTimeout(r, 20));
+        s.hit('a', 60_000); s.hit('b', 60_000);
+        expect(s.hit('c', 60_000).count).toBe(1);
+        // a and b keep their quota: only the oldest live window was evicted.
+        expect(s.hit('b', 60_000).count).toBe(3);
+    });
+
     it('evicts the oldest live buckets instead of rejecting new callers when full', () => {
         const s = new InMemoryRateLimitStore(3);
         s.hit('a', 60_000); s.hit('b', 60_000); s.hit('c', 60_000);

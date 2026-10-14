@@ -90,30 +90,28 @@ describe('adapter switching', () => {
   it('generates stable Desktop identifiers for direct creation, later addition, and unusual names', async () => {
     const direct = await create('node', 'minimal', { features: 'desktop' });
     expect(await fs.readFile(path.join(direct.projectDir, 'forge.config.ts'), 'utf8'))
-      .toContain("appBundleId: 'dev.cossack.app'");
+      .toContain('appBundleId: "dev.cossack.app"');
 
+    // New projects must use valid names; existing projects keep whatever
+    // directory name they have when a feature is added later.
     const root = await temporaryDirectory();
-    const unusual = await createApp('My SUPER__App!!!', {
-      cwd: root,
-      adapter: 'cloudflare',
-      preset: 'minimal',
-      features: 'desktop',
-      interactive: false,
-    });
-    expect(await fs.readFile(path.join(unusual.projectDir, 'forge.config.ts'), 'utf8'))
-      .toContain("appBundleId: 'dev.cossack.my-super-app'");
-    expect(await fs.readFile(path.join(unusual.projectDir, 'desktop-assets/linux.desktop.ejs'), 'utf8'))
+    const renamed = async (name, adapter) => {
+      const project = await createApp('app', { cwd: root, adapter, preset: 'minimal', interactive: false });
+      const target = path.join(root, name);
+      await fs.rename(project.projectDir, target);
+      await addFeature(target, 'desktop', { interactive: false });
+      return target;
+    };
+    const unusual = await renamed('My SUPER__App!!!', 'cloudflare');
+    const forge = await fs.readFile(path.join(unusual, 'forge.config.ts'), 'utf8');
+    expect(forge).toContain('appBundleId: "dev.cossack.my-super-app"');
+    expect(forge).toContain('name: "My SUPER__App!!!"');
+    expect(await fs.readFile(path.join(unusual, 'desktop-assets/linux.desktop.ejs'), 'utf8'))
       .toContain('StartupWMClass=dev.cossack.my-super-app');
 
-    const fallback = await createApp('___', {
-      cwd: root,
-      adapter: 'node',
-      preset: 'minimal',
-      interactive: false,
-    });
-    await addFeature(fallback.projectDir, 'desktop', { interactive: false });
-    expect(await fs.readFile(path.join(fallback.projectDir, 'forge.config.ts'), 'utf8'))
-      .toContain("appBundleId: 'dev.cossack.app'");
+    const fallback = await renamed('___', 'node');
+    expect(await fs.readFile(path.join(fallback, 'forge.config.ts'), 'utf8'))
+      .toContain('appBundleId: "dev.cossack.app"');
   });
 
   it.each(['minimal', 'database', 'auth', 'full-stack'])(

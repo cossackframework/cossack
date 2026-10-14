@@ -20,7 +20,7 @@ overrides:
   brace-expansion@>=2.0.0 <2.1.7: 2.1.7
 
 patchedDependencies:
-  appdmg@0.6.6: b79de5cc1695d87f92549dfb4d17f7e5b17aebb2802c5c18b8180f41eadbcf67
+  appdmg@^0.6.6: b79de5cc1695d87f92549dfb4d17f7e5b17aebb2802c5c18b8180f41eadbcf67
 
 importers:
 
@@ -157,6 +157,9 @@ importers:
       typescript-api:
         specifier: npm:typescript@6.0.3
         version: typescript@6.0.3
+      vite:
+        specifier: ^8.1.4
+        version: 8.1.4(@types/node@26.0.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.0)(yaml@2.9.0)
       zod:
         specifier: ^4.6.5
         version: 4.6.5

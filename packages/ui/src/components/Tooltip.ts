@@ -22,7 +22,7 @@ export class Tooltip extends Cossack {
         return html`<span ref=${(element: Element) => { this.wrapper = element as HTMLSpanElement; }} class="cs-tooltip relative inline-flex" ...=${rest}>
             ${this.children}
             <span ref=${(element: Element) => { if (this.wrapper) this.hover.attach(element as HTMLElement, this.wrapper); }} id=${id} role="tooltip" popover="manual"
-                class="cs-tooltip__bubble z-50 px-2 py-1 text-xs rounded-md bg-foreground text-background whitespace-normal break-words">${label}</span>
+                class="cs-tooltip__bubble px-2 py-1 text-xs rounded-md bg-foreground text-background whitespace-normal break-words">${label}</span>
         </span>`;
     }
     onCleanup() { this.hover.disconnect(); this.wrapper = undefined; }

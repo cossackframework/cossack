@@ -104,7 +104,7 @@ export function checkRouteModel(effective) {
       add('COSSACK_ROUTE_DISPATCH_UNKNOWN', 'Declared member precedence could not be resolved statically.', page.source);
     }
     if (page.inheritance.status === 'unresolved') {
-      add('COSSACK_ROUTE_INHERITANCE_UNKNOWN', 'Base declarations could not be resolved statically.', page.source);
+      add('COSSACK_ROUTE_INHERITANCE_UNKNOWN', `Base declarations could not be resolved statically${page.inheritance.reason ? `: ${page.inheritance.reason}` : ''}.`, page.source);
     }
     if (page.methodExtraction.method !== 'compiler') {
       add('COSSACK_ROUTE_METHODS_UNKNOWN', 'Own-method compiler classification is unavailable.', page.source);

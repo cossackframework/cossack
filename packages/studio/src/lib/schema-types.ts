@@ -24,11 +24,24 @@ export interface StudioQueryResult {
   durationMs: number;
 }
 
+export type StudioExecutor = (
+  sql: string,
+  parameters?: readonly unknown[],
+) => Promise<StudioQueryResult>;
+
 export interface StudioConnection {
   readonly info: StudioConnectionInfo;
   readonly logicalSchema?: OrmSchema;
   inspect?(): Promise<DatabaseInspection>;
   execute(sql: string, parameters?: readonly unknown[]): Promise<StudioQueryResult>;
+  /**
+   * Run several statements exclusively on this connection. When `atomic` is
+   * true the statements run in one transaction that rolls back if the
+   * callback throws; otherwise they run in order without rollback.
+   */
+  transaction?<T>(
+    callback: (execute: StudioExecutor, atomic: boolean) => Promise<T>,
+  ): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -124,7 +137,10 @@ export interface StudioObject {
 }
 
 export interface StudioSchema {
+  /** Loaded lazily through `StudioDatabase.getInspection()`. */
   inspection?: DatabaseInspection;
+  /** Whether the connection can provide `inspection` on demand. */
+  inspectionAvailable?: boolean;
   connection: StudioConnectionInfo;
   applicationName: string;
   objects: StudioObject[];

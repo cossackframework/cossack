@@ -207,7 +207,13 @@ export async function extractMethodClassificationsFromAst(code: string, file = '
   if (typeof inspectCompilerMethods !== 'function') {
     return { methods: [], reason: 'The framework package does not expose compiler inspection metadata.' };
   }
-  const result = inspectCompilerMethods(code, compilerId);
+  // `compilerId` is the absolute file and `file` its project-relative path:
+  // recover the project root so generated server$ names match the build.
+  const normalizedId = compilerId.replace(/\\/g, '/');
+  const relative = file.replace(/\\/g, '/').replace(/^\/?/, '/');
+  const root = normalizedId !== relative && normalizedId.endsWith(relative)
+    ? normalizedId.slice(0, -relative.length) || '/' : undefined;
+  const result = inspectCompilerMethods(code, compilerId, root);
   if (result.diagnostics.length) {
     return { methods: [], reason: result.diagnostics.map((d: AstNode) => d.message).join(' ') };
   }

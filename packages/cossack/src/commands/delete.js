@@ -7,7 +7,7 @@ import {
   resolveFileTarget,
   toKebab,
 } from '../names.js';
-import { exists, removeIfEmptyDir } from '../fs-utils.js';
+import { exists, findProjectRoot, removeIfEmptyDir } from '../fs-utils.js';
 
 const TYPE_ALIASES = {
   page: 'page',
@@ -52,7 +52,7 @@ async function deleteCommandInner(args, ctx) {
     );
   }
 
-  const root = ctx.projectRoot || process.cwd();
+  const root = await findProjectRoot(ctx.cwd);
 
   // Resolve candidate target(s)
   const candidates = resolveCandidates(type, nameArg, root);

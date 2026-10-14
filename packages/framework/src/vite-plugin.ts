@@ -463,8 +463,14 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
 
       const clientOutDir = resolve(projectRoot, this.environment.config.build.outDir);
       const src = resolve(clientOutDir, '.vite', 'manifest.json');
-      if (!existsSync(src)) return;
+      if (!existsSync(src)) {
+        this.warn('[cossack] No client build manifest at .vite/manifest.json; production pages will not load client scripts. ' +
+          'Set build.manifest: true for the client environment.');
+        return;
+      }
 
+      // Without this copy, production SSR renders pages with no client
+      // scripts (no hydration). Fail the build instead of shipping that.
       try {
         const data = readFileSync(src, 'utf-8');
         const destDir = clientOutDir;
@@ -472,19 +478,18 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         const dest = resolve(destDir, 'cossack-manifest.json');
         writeFileSync(dest, data);
       } catch (e) {
-        // Non-fatal: SSR will fall back to empty manifest.
-        console.warn('[cossack] Could not emit cossack-manifest.json:', e);
+        this.error(`[cossack] Could not emit cossack-manifest.json: ${e instanceof Error ? e.message : String(e)}`);
       }
 
       // Emit the routes manifest consumed by the `cossack ssg` CLI. This is the
       // single source of truth for component route IDs (cmp_N) — the SSG build
       // reads it instead of re-scanning `src/pages` and re-deriving IDs, so the
-      // IDs can never drift from what the SSR router assigns here.
+      // IDs can never drift from what the SSR router assigns here. Route
+      // conflicts and write failures fail the build.
       try {
         emitRoutesManifest(projectRoot, clientOutDir, markdownEnabled);
       } catch (e) {
-        // Non-fatal: SSG will surface a clear error if the manifest is missing.
-        console.warn('[cossack] Could not emit routes manifest:', e);
+        this.error(`[cossack] Could not emit routes manifest: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
   };

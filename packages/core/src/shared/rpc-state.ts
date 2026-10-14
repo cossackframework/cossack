@@ -65,15 +65,11 @@ export function applyStateToComponent(
             continue;
         }
         if (call || requestState) acceptSettledOptimisticSnapshot(component, key, data[key], true);
-        if (component._isOptimisticLocked?.(key)) {
-            component._optimisticPendingState[key] = data[key];
-        } else {
-            if (typeof component.setProperty === 'function') component.setProperty(key, data[key]);
-            else component[key] = data[key];
-            // A publication correlated to an in-flight call (no request
-            // snapshot: SSE/broadcast path) is server state for that call.
-            if (call && !requestState) recordPublished(call, component, key);
-        }
+        if (typeof component.setProperty === 'function') component.setProperty(key, data[key]);
+        else component[key] = data[key];
+        // A publication correlated to an in-flight call (no request
+        // snapshot: SSE/broadcast path) is server state for that call.
+        if (call && !requestState) recordPublished(call, component, key);
     }
 }
 

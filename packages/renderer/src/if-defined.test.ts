@@ -121,3 +121,23 @@ it('merges optional spread classes without replacing template classes', () => {
   render(template(''), container);
   expect(element.getAttribute('class')).toBe('base');
 });
+
+// docs/template.md documents these plain-binding rules next to ifDefined.
+describe('plain attribute bindings (documented defaults)', () => {
+  const cases: [unknown, string | null][] = [[false, 'false'], [null, null], [undefined, null], [0, '0']];
+  for (const [value, expected] of cases) {
+    it(`renders href="\${${String(value)}}" the same on SSR and client`, () => {
+      const template = html`<a href="${value}">link</a>`;
+      const ssr = document.createElement('div');
+      ssr.innerHTML = renderToString(template);
+      expect(ssr.querySelector('a')!.getAttribute('href')).toBe(expected);
+      const client = document.createElement('div');
+      render(template, client);
+      expect(client.querySelector('a')!.getAttribute('href')).toBe(expected);
+    });
+  }
+
+  it('omits boolean attributes for false', () => {
+    expect(renderToString(html`<button disabled="${false}">x</button>`)).toBe('<button>x</button>');
+  });
+});

@@ -1,6 +1,6 @@
 import { commandSpecs } from '../command-specs.js';
 import { generateRoutes } from '@cossackframework/framework/route-codegen';
-import { buildRouteModel, buildEffectiveRouteModel, layoutStackForPage } from '../scan-routes.js';
+import { buildEffectiveRouteModel, layoutStackForPage } from '../scan-routes.js';
 import { findProjectRoot } from '../fs-utils.js';
 import { runWithSpec } from '../command-spec.js';
 
@@ -13,7 +13,8 @@ export async function routesCommand(args, ctx) {
   // source-level @Page options come from the effective model; the compact
   // model still drives the human table.
   const effective = await buildEffectiveRouteModel(root, { environment: ctx.flags.env ?? process.env.CLOUDFLARE_ENV, includeMarkdown: ctx.flags.markdown });
-  const model = buildRouteModel(root, effective.discovery);
+  // The compact model (route table input) comes from the same discovery pass.
+  const model = effective.routeModel;
   let generation;
   if (ctx.flags.generate === true) {
     const dryRun = ctx.dryRun === true;

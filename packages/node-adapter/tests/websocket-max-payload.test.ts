@@ -2,8 +2,7 @@ import { createServer } from 'node:http';
 import { Hono } from 'hono';
 import { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Cossack } from '@cossackframework/core';
-import { CossackNodeAdapter, DEFAULT_WEBSOCKET_MAX_PAYLOAD } from '../src/index';
+import { DEFAULT_WEBSOCKET_MAX_PAYLOAD } from '../src/index';
 import { createNodeAdapter } from '../src/adapter';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -24,20 +23,6 @@ async function closeCodeAfterSending(url: string, origin: string, bytes: number)
   return closed;
 }
 
-class StatePage extends Cossack {
-  override async bootstrap(): Promise<void> {}
-  override getInitialState() { return { public: { count: 0 } } as any; }
-}
-
-async function legacyAdapter(maxPayload?: number) {
-  const server = createServer();
-  new CossackNodeAdapter({ server, componentRegistry: new Map([['/counter', StatePage]]), ...(maxPayload ? { maxPayload } : {}) });
-  const port = await listen(server);
-  cleanups.push(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
-  const query = new URLSearchParams({ routePath: '/counter', params: '{}' });
-  return { url: `ws://127.0.0.1:${port}/ws/page/user:anonymous?${query}`, origin: `http://127.0.0.1:${port}` };
-}
-
 async function guardedAdapter(maxPayload?: number) {
   const runtime = createNodeAdapter({ idleTimeoutMs: 0, ...(maxPayload ? { maxPayload } : {}) });
   const component = { _id: 'page', activeComponents: new Map(), getInitialState: () => ({ public: { count: 1 } }), destroyAsync: vi.fn(async () => {}), executeAction: vi.fn(async () => {}) };
@@ -56,19 +41,17 @@ it('defaults the WebSocket frame limit to 1 MiB', () => {
   expect(DEFAULT_WEBSOCKET_MAX_PAYLOAD).toBe(1024 * 1024);
 });
 
-it.each([['CossackNodeAdapter', legacyAdapter], ['createNodeAdapter', guardedAdapter]] as const)(
-  '%s closes with 1009 when a frame exceeds the default limit', async (_name, create) => {
-    const { url, origin } = await create();
+it('closes with 1009 when a frame exceeds the default limit', async () => {
+    const { url, origin } = await guardedAdapter();
     expect(await closeCodeAfterSending(url, origin, 1024 * 1024 + 1)).toBe(1009);
   });
 
-it.each([['CossackNodeAdapter', legacyAdapter], ['createNodeAdapter', guardedAdapter]] as const)(
-  '%s honours a configured maxPayload', async (_name, create) => {
-    const { url, origin } = await create(1024);
+it('honours a configured maxPayload', async () => {
+    const { url, origin } = await guardedAdapter(1024);
     expect(await closeCodeAfterSending(url, origin, 2048)).toBe(1009);
   });
 
 it('rejects an invalid maxPayload', () => {
   expect(() => createNodeAdapter({ maxPayload: 0 })).toThrow(TypeError);
-  expect(() => new CossackNodeAdapter({ server: createServer(), componentRegistry: new Map(), maxPayload: -1 })).toThrow(TypeError);
+  expect(() => createNodeAdapter({ maxPayload: -1 })).toThrow(TypeError);
 });

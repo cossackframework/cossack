@@ -53,6 +53,8 @@ export declare const FEATURE_REGISTRY: Record<Feature, { requires: Feature[] }>;
 export declare const PRESET_REGISTRY: Record<Preset, { features: Feature[]; dashboardModules?: readonly DashboardModule[] }>;
 export declare const DATABASE_PROVIDERS: Record<DatabaseProvider, { adapters: readonly Adapter[] }>;
 export declare function parseList(value: unknown): string[];
+/** Why `name` cannot be a project (package and Cloudflare Worker) name, or null when it can. */
+export declare function projectNameProblem(name: string): string | null;
 export declare function resolveFeatures(features: Feature[] | string): Feature[];
 export declare function removeFeature(features: Feature[] | string, feature: Feature): Feature[];
 export declare function resolveDashboardModules(value: DashboardModule[] | string | undefined, dashboardSelected: boolean): DashboardModule[];
