@@ -433,7 +433,9 @@ export class ORM {
           const key = this.states.get(entity)?.raw[relation.joinColumn];
           (entity as unknown as Record<string, unknown>)[property] = key == null ? null : (byKey.get(String(key)) ?? null);
         }
-      } else if (relation.kind === "one-to-many") {
+      } else if (relation.kind === "one-to-many" || relation.kind === "one-to-one") {
+        // One-to-many, and the inverse side of a one-to-one: the target holds the join column.
+        const single = relation.kind === "one-to-one";
         const inverse = targetMetadata.relations.find((candidate) => candidate.propertyName === relation.inverseProperty);
         // The child's join column references this field, which is not always the primary key
         // (for example `@JoinColumn({ referencedColumnName: "email" })`).
@@ -453,7 +455,8 @@ export class ORM {
         }
         for (const entity of entities) {
           const key = (entity as unknown as Record<string, unknown>)[ownerColumn.propertyName];
-          (entity as unknown as Record<string, unknown>)[property] = groups.get(String(key)) ?? [];
+          const group = groups.get(String(key));
+          (entity as unknown as Record<string, unknown>)[property] = single ? (group?.[0] ?? null) : (group ?? []);
         }
       } else if (relation.kind === "many-to-many") {
         const ownerRelation = relation.joinTable
