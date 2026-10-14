@@ -258,6 +258,25 @@ interface SpreadRenderContext {
   result: string;
 }
 
+/**
+ * SSR output for a `.prop` binding. Properties exist only on the live DOM, so
+ * SSR emits markup only for those with an attribute equivalent: `.value`
+ * (a temporary ` .value` attribute that serializeFormValues turns into the
+ * right markup for inputs, textareas and selects) and boolean properties
+ * such as `.checked`/`.disabled` (presence attributes). Every other property
+ * (`.innerHTML`, `.tabIndex`, custom element data) renders nothing; the
+ * client sets it on hydration.
+ */
+const propertyBindingSSR = (prop: string, value: unknown): string => {
+  if (value instanceof BindResult) value = resolveField(value.component, value.fieldName);
+  if (value instanceof LiveResult) value = value.value;
+  if (value === nothing) return '';
+  if (prop === 'value') return ` .value="${escapeHtml(String(value ?? ''))}"`;
+  const attr = prop.toLowerCase();
+  if (BOOLEAN_ATTRS.has(attr)) return value ? ` ${attr}` : '';
+  return '';
+};
+
 const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
   if (obj === nothing || typeof obj !== 'object' || obj === null) return;
   for (const [k, v] of Object.entries(obj)) {
@@ -271,28 +290,9 @@ const renderSpread = (obj: unknown, ctx: SpreadRenderContext): void => {
       continue;
     }
     if (k.startsWith('.')) {
-      name = k === '.value' ? '.value' : k.slice(1);
-      // Unwrap result-wrapper directives routed through the spread (e.g.
-      // component(Input, { '.value': bind(this, 'name') }) or
-      // { '.value': live(x) }) so SSR emits the underlying value instead of
-      // "[object Object]". Mirrors the direct SSR .value branch. Boolean-ish
-      // attrs (.checked/.disabled) render as presence attributes.
-      if (val instanceof BindResult) {
-        val = resolveField(val.component, val.fieldName);
-      } else if (val instanceof LiveResult) {
-        val = val.value;
-      }
-      if (val === nothing) {
-        continue;
-      }
-      if (name === '.value') {
-        ctx.result += ` .value="${escapeHtml(String(val ?? ''))}"`;
-        continue;
-      }
-      if (BOOLEAN_ATTRS.has(name)) {
-        if (val) ctx.result += ` ${name}`;
-        continue;
-      }
+      // Same rules as a direct `.prop` binding (bind()/live() unwrapped).
+      ctx.result += propertyBindingSSR(k.slice(1), val);
+      continue;
     }
 
     if ((name === 'class' || name === 'className') && val instanceof IfDefinedResult) {
@@ -488,34 +488,8 @@ class SSRScanner {
               this.result = this.result.trimEnd();
             }
           } else if (name.startsWith('.')) {
-            // Unwrap a `bind()` two-way value to the current field value so it
-            // follows the same emit rules as a plain property binding.
-            let propVal: unknown;
-            const isBind = val instanceof BindResult;
-            if (isBind) {
-              propVal = resolveField(val.component, val.fieldName);
-            } else {
-              propVal = val;
-            }
-            const attrName = name === '.value' ? '.value' : name.slice(1);
-            // For `bind()` on a known boolean attribute (.checked/.disabled),
-            // emit a bare attribute when truthy — matching how a checkbox
-            // serializes. Plain (non-bind) property bindings keep their
-            // original behavior (value="...") to avoid changing existing usage.
-            const isBooleanAttr = isBind && BOOLEAN_ATTRS.has(attrName);
-            if (attrName === '.value') {
-              const current = propVal instanceof LiveResult ? propVal.value : propVal;
-              this.result = this.result.trimEnd();
-              this.result += ` .value="${escapeHtml(String(current ?? ''))}"`;
-            } else if (isBooleanAttr) {
-              this.result = this.result.trimEnd();
-              if (propVal) this.result += ` ${attrName}`;
-            } else if (propVal !== null && propVal !== undefined && propVal !== false) {
-              this.result = this.result.trimEnd();
-              this.result += ` ${attrName}="${valueToString(propVal, this.opts)}"`;
-            } else {
-              this.result = this.result.trimEnd();
-            }
+            this.result = this.result.trimEnd();
+            this.result += propertyBindingSSR(name.slice(1), val);
           } else if (val instanceof IfDefinedResult) {
             // `ifDefined`: drop the attribute only when the value is undefined;
             // render every other value (incl. false/null/0/'') as a normal
@@ -1914,11 +1888,19 @@ class AttributePart implements Part {
     this.boundFieldName = null;
   }
 
+  /**
+   * @param name     Binding name as authored (`.innerHTML`, `@myEvent`). The
+   *                 parser lowercases HTML attribute names, so the template
+   *                 analysis supplies the original case.
+   * @param domName  The marker attribute the parser actually created, which is
+   *                 what has to be removed from the element.
+   */
   constructor(
     public element: Element,
     public name: string,
     originalValue: string,
     multiState?: MultiMarkerState,
+    private domName: string = name,
   ) {
     // Parse all markers into segments (works for N=1 and N>1).
     const matches = [...originalValue.matchAll(/__CRP_(\d+)__/g)];
@@ -1939,23 +1921,23 @@ class AttributePart implements Part {
       if (this.bindListener) this._detachBindListener();
       if (this.isMulti && this.multiState) {
         this.multiState.currentValues[this.multiState.position] = nothing;
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
         return;
       }
       if (this.name.startsWith('@')) {
         (this.element as any)[`__crp_handler_${this.name.slice(1)}`] = undefined;
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else if (this.name.startsWith('.')) {
         const propName = this.name.slice(1);
         (this.element as any)[propName] = undefined;
         this.lastFormKind = null;
         this.lastFormValue = undefined;
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else if (this.name.startsWith('?')) {
         this.element.removeAttribute(this.name.slice(1));
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else {
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       }
       return;
     }
@@ -1991,7 +1973,7 @@ class AttributePart implements Part {
         // RefObject: assign the element to ref.value
         (value as { value: unknown }).value = this.element;
       }
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
       return;
     }
 
@@ -2001,7 +1983,7 @@ class AttributePart implements Part {
       const { currentValues, position } = this.multiState;
       currentValues[position] = value;
       if (currentValues.includes(nothing)) {
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
         return;
       }
       let result = this.segments[0];
@@ -2054,7 +2036,7 @@ class AttributePart implements Part {
         };
       }
       (this.element as any)[handlerProp] = typeof resolved === 'function' ? resolved : undefined;
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);
       // `.value`/`.checked` on form fields get Lit-style dirty-checking so a
@@ -2094,26 +2076,26 @@ class AttributePart implements Part {
       } else {
         (this.element as any)[propName] = value;
       }
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (this.name.startsWith('?')) {
       const attrName = this.name.slice(1);
       if (value) this.element.setAttribute(attrName, '');
       else this.element.removeAttribute(attrName);
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (isIfDefined) {
       // `ifDefined`: drop only on `undefined`; render everything else (incl.
       // false/null/0/'') as a literal attribute string. Must be checked before
       // the `typeof value === 'boolean'` branch so `false` renders as "false".
       if (value === undefined) {
-        this.element.removeAttribute(this.name);
+        this.element.removeAttribute(this.domName);
       } else {
         this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
       }
     } else if (value === null || value === undefined) {
-      this.element.removeAttribute(this.name);
+      this.element.removeAttribute(this.domName);
     } else if (typeof value === 'boolean') {
       const serialized = serializeBooleanAttribute(this.name, value);
-      if (serialized === null) this.element.removeAttribute(this.name);
+      if (serialized === null) this.element.removeAttribute(this.domName);
       else this.element.setAttribute(this.name, serialized);
     } else {
       this.element.setAttribute(this.name, this.segments[0] + String(value) + this.segments[1]);
@@ -2138,7 +2120,7 @@ class AttributePart implements Part {
       // Unsupported property: fall back to a plain property assignment so the
       // render still reflects the current field value, with no writeback.
       (this.element as any)[propName] = resolveField(bind.component, bind.fieldName);
-      if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+      if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
       // Detach any listener from a previous bind() — switching from .value to
       // .foo on the same part would otherwise leave the old listener attached.
       if (this.bindListener) {
@@ -2223,7 +2205,7 @@ class AttributePart implements Part {
 
     // `.value`/`.checked` are not real HTML attributes — strip the binding
     // marker so it never appears in the DOM.
-    if (this.element.hasAttribute(this.name)) this.element.removeAttribute(this.name);
+    if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
   }
 }
 
@@ -2341,6 +2323,15 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
   }
   htmlString += strings[strings.length - 1];
 
+  // Property, event and boolean bindings keep the author's case
+  // (`.innerHTML`, `@myEvent`); the parser lowercased the attribute name.
+  // Plain attributes use the parser's name, which also applies SVG case
+  // adjustments such as `viewBox`.
+  const authoredName = (index: number, domName: string): string => {
+    const binding = bindings[index];
+    return binding?.kind === 'attribute' && /^[.@?]/.test(binding.name) ? binding.name : domName;
+  };
+
   const template = document.createElement('template');
   if (result['_$litType$'] === 2) {
     // Parsing through an SVG element gives every fragment child the correct
@@ -2413,7 +2404,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
               parts[index] = part;
               el.removeAttribute('...');
             } else {
-              const part = new AttributePart(el, attr.name, attr.value);
+              const part = new AttributePart(el, authoredName(index, attr.name), attr.value, undefined, attr.name);
               parts[index] = part;
             }
           }
@@ -2432,7 +2423,7 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
         for (let pos = 0; pos < indices.length; pos++) {
           const index = indices[pos];
           if (!parts[index]) {
-            const part = new AttributePart(el, attr.name, attr.value, { currentValues, position: pos });
+            const part = new AttributePart(el, authoredName(index, attr.name), attr.value, { currentValues, position: pos }, attr.name);
             parts[index] = part;
           }
         }
