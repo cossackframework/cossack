@@ -4,7 +4,7 @@ import { Icon } from '../icons/Icon';
 import type { IconEntry } from '@cossackframework/solar-icons/types';
 import { HamburgerMenuIcon } from '@cossackframework/solar-icons/hamburger-menu';
 import type { GlobalAttributes, AnchorAttributes, ControlEvent } from '../native-attributes';
-import { ControlledValue } from '../internal/controlled';
+import { ControlledValue } from '../native-attributes';
 
 export type SidebarLinkProps = Omit<AnchorAttributes, 'href' | 'role' | 'tabindex' | 'aria-current' | 'aria-label' | 'aria-labelledby'>;
 type SidebarItemBase = { value: string; label: string; icon?: IconEntry; active?: boolean; linkProps?: SidebarLinkProps };

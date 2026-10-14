@@ -1,7 +1,7 @@
 import { html, classMap, live, PreventDefaultResult, preventDefault, type nothing } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { InputAttributes, GlobalAttributes, ControlEvent } from "../native-attributes";
-import { ControlledValue } from "../internal/controlled";
+import { ControlledValue } from "../native-attributes";
 
 type OTPAttributes = Pick<InputAttributes, keyof GlobalAttributes<HTMLInputElement> |
     'name' | 'form' | 'required' | '?required' | 'disabled' | '?disabled' | 'readonly' | '?readonly' | 'enterkeyhint'>;

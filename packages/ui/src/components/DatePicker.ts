@@ -3,7 +3,7 @@ import { Cossack, Component, Client, ClientState } from "@cossackframework/core"
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
 import { Calendar } from "./Calendar";
 import { parseDate, dateRange, dateLabel } from "../internal/date";
-import { ControlledValue } from "../internal/controlled";
+import { ControlledValue } from "../native-attributes";
 
 export type DatePickerProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'role'> & {
     /** Stable page-unique input ID. Label with for=id or aria-label. */

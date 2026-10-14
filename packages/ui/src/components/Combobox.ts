@@ -1,7 +1,7 @@
 import { html, classMap, live, repeat, PreventDefaultResult, preventDefault, type nothing } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
-import { ControlledValue } from "../internal/controlled";
+import { ControlledValue } from "../native-attributes";
 
 export type ComboboxOption = { value: string; label: string; disabled?: boolean };
 export type ComboboxProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'role' | 'aria-expanded' | 'aria-controls' | 'aria-activedescendant' | 'aria-autocomplete' | 'aria-haspopup'> & {

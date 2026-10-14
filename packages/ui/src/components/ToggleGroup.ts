@@ -1,7 +1,7 @@
 import { html, classMap, repeat, PreventDefaultResult, preventDefault } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client, createRef, type RefObject } from '@cossackframework/core';
 import type { GlobalAttributes, ControlEvent } from '../native-attributes';
-import { ControlledValue } from '../internal/controlled';
+import { ControlledValue } from '../native-attributes';
 
 export type ToggleGroupItem = { value: string; disabled?: boolean } &
     ({ label?: string; ariaLabel?: string } | { label: unknown; ariaLabel: string });

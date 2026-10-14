@@ -1,7 +1,7 @@
 import { html } from "@cossackframework/renderer";
 import { Cossack, Component, ClientState, Client, createRef } from "@cossackframework/core";
 
-import { ControlledValue } from "../internal/controlled";
+import { ControlledValue } from "../native-attributes";
 import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 
 export type CollapsibleProps = DisclosureProps & {

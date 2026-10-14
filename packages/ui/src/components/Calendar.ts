@@ -1,7 +1,7 @@
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
-import { ControlledValue } from "../internal/controlled";
+import { ControlledValue } from "../native-attributes";
 import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths, dateLabel } from "../internal/date";
 
 export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'> & {

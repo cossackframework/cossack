@@ -108,6 +108,8 @@ export type { TableCellAttributes, TableHeadAttributes, ControlEvent, NativeEven
 
 export { isCalendarDate } from './internal/date';
 
+export { ControlledValue } from './internal/controlled';
+
 export type { DialogControlProps } from './internal/dialog';
 
 export type { MenuItem, MenuPanelProps } from './internal/menu';

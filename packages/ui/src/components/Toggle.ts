@@ -2,7 +2,7 @@ import { html, classMap, PreventDefaultResult, preventDefault } from "@cossackfr
 import { Cossack, Component, ClientState } from "@cossackframework/core";
 
 import type { ButtonAttributes, ControlEvent } from '../native-attributes';
-import { ControlledValue } from '../internal/controlled';
+import { ControlledValue } from '../native-attributes';
 
 export type ToggleProps = Omit<ButtonAttributes, 'type' | 'role' | 'aria-pressed' | 'popovertarget' | 'popovertargetaction'> & {
     pressed?: boolean;

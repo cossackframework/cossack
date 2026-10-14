@@ -113,3 +113,8 @@ export type TableCellAttributes = GlobalAttributes<HTMLTableCellElement> & Attri
 export type TableHeadAttributes = TableCellAttributes & Attributes<{
     scope: 'row' | 'col' | 'rowgroup' | 'colgroup'; abbr: string;
 }>;
+
+// Runtime helpers shared by components live in src/internal. Components import
+// them through this module because `cossack add ui` rewrites this path to
+// "@cossackframework/ui" when it ejects a component into an application.
+export { ControlledValue } from './internal/controlled';

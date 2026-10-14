@@ -7,7 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
-import { ControlledValue } from "../internal/controlled";
+import { ControlledValue } from "../native-attributes";
 import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
