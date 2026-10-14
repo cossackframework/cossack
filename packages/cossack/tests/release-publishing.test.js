@@ -52,22 +52,30 @@ describe('release publishing coverage', () => {
     expect(workflow.jobs.publish.environment).toBe('Publish to npm');
     expect(workflow.jobs.publish.permissions['id-token']).toBe('write');
   });
-  it('type checks and unit tests every package, Desktop included, before publishing', () => {
-    const runs = steps.map(step => step.run ?? '');
-    const publishAt = runs.findIndex(run => run.includes('publish --access public'));
-    const typecheckAt = runs.indexOf('pnpm run typecheck');
-    const unitAt = runs.indexOf('pnpm run test:unit');
-    expect(typecheckAt).toBeGreaterThan(-1);
-    expect(unitAt).toBeGreaterThan(-1);
-    expect(Math.max(typecheckAt, unitAt)).toBeLessThan(publishAt);
+  it('runs every package test suite, Desktop unit tests included, before publishing', () => {
+    // publish waits for the integration and e2e workflows of the same run.
+    expect(workflow.jobs.publish.needs).toEqual(expect.arrayContaining(['verify-release', 'integration', 'e2e']));
+    expect(workflow.jobs.integration.uses).toBe('./.github/workflows/integration-tests.yml');
+    expect(workflow.jobs.e2e).toMatchObject({ needs: 'verify-release', uses: './.github/workflows/e2e-tests.yml' });
     const workspace = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
     expect(workspace.scripts['test:unit']).toContain('--filter "./packages/*"');
     expect(workspace.scripts['test:unit']).not.toContain('!@cossackframework/desktop');
     const e2e = parse(readFileSync(path.join(root, '.github/workflows/e2e-tests.yml'), 'utf8'));
-    const e2eRuns = e2e.jobs['e2e-tests'].steps.map(step => step.run ?? '');
-    expect(e2eRuns).toContain('pnpm run typecheck');
-    expect(e2eRuns).toContain('pnpm run test:unit');
+    const integration = parse(readFileSync(path.join(root, '.github/workflows/integration-tests.yml'), 'utf8'));
+    expect(e2e.on).toHaveProperty('workflow_call');
+    expect(integration.on).toHaveProperty('workflow_call');
+    const e2eSteps = e2e.jobs['e2e-tests'].steps;
+    const e2eRuns = e2eSteps.map(step => step.run ?? '');
+    for (const command of ['pnpm run typecheck', 'pnpm run test:unit', 'pnpm run test:scaffold:local',
+      'pnpm --filter @cossackframework/framework run test:e2e', 'pnpm --filter @cossackframework/studio exec playwright test']) {
+      expect(e2eRuns, command).toContain(command);
+    }
     expect(e2eRuns.join('\n')).not.toMatch(/exclude-desktop|!@cossackframework\/desktop/);
+    // Called from publish.yml the event is release or workflow_dispatch, so
+    // the optional suites (tarball run, Studio) are never skipped.
+    const detection = e2eSteps.find(step => step.id === 'changes');
+    expect(detection.env.EVENT_NAME).toBe('${{ github.event_name }}');
+    expect(detection.run).toContain('"$EVENT_NAME" != pull_request && "$EVENT_NAME" != push');
   });
   it('verifies the release tag, target branch and versions before testing or publishing', () => {
     const verify = workflow.jobs['verify-release'];
@@ -113,6 +121,36 @@ describe('release version check', () => {
   it('matches the current workspace', () => {
     const { version } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
     expect(verifyReleaseVersion(version, root)).toEqual([]);
+  });
+});
+
+describe('workflow coverage', () => {
+  const read = name => parse(readFileSync(path.join(root, '.github/workflows', name), 'utf8'));
+  it('runs CLI integration for PRs that change any package, script or dependency manifest', () => {
+    const paths = read('integration-tests.yml').on.pull_request.paths;
+    for (const pattern of ['packages/**', 'scripts/**', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+      expect(paths, pattern).toContain(pattern);
+    }
+  });
+  it('restores cached Playwright browsers keyed on the Playwright version before every install', () => {
+    const directory = path.join(root, '.github/workflows');
+    let installs = 0;
+    for (const name of readdirSync(directory).filter(file => /\.ya?ml$/.test(file))) {
+      for (const [jobName, job] of Object.entries(read(name).jobs)) {
+        const jobSteps = job.steps ?? [];
+        jobSteps.forEach((step, index) => {
+          if (!/playwright install\b/.test(step.run ?? '')) return;
+          installs++;
+          const before = jobSteps.slice(0, index);
+          const version = before.find(candidate => candidate.id === 'playwright');
+          expect(version?.run, `${name}:${jobName}`).toContain("require('playwright-core/package.json').version");
+          const cache = before.find(candidate => candidate.uses?.startsWith('actions/cache@'));
+          expect(cache?.with?.path, `${name}:${jobName}`).toBe('~/.cache/ms-playwright');
+          expect(cache?.with?.key, `${name}:${jobName}`).toContain('${{ steps.playwright.outputs.version }}');
+        });
+      }
+    }
+    expect(installs).toBeGreaterThanOrEqual(3);
   });
 });
 

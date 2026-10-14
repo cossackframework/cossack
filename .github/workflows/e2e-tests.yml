@@ -1,11 +1,15 @@
 name: E2E Tests
 
+# Typecheck, every package's unit tests, the generated-app tarball run and the
+# Framework/Studio Playwright suites. publish.yml calls this workflow before
+# every release, where every optional suite runs.
 on:
   push:
     branches: [master, main]
   pull_request:
     branches: [master, main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -29,6 +33,9 @@ jobs:
         id: changes
         shell: bash
         env:
+          # In a workflow_call run this is the caller's event (release or
+          # workflow_dispatch from publish.yml).
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -36,8 +43,10 @@ jobs:
           generated_app=false
           studio=false
 
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}"; then
-            # Be conservative when GitHub does not provide a usable base commit.
+          if [[ "$EVENT_NAME" != pull_request && "$EVENT_NAME" != push ]] ||
+             [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "$BASE_SHA^{commit}"; then
+            # Releases and manual runs test everything. Also be conservative
+            # when GitHub does not provide a usable base commit.
             desktop=true
             generated_app=true
             studio=true
@@ -100,6 +109,19 @@ jobs:
       # Linux. Only the platform installers (desktop.yml) stay manual.
       - name: Check package types
         run: pnpm run typecheck
+
+      - name: Read Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the Playwright version, which pins the browser builds. With a
+      # cache hit the install below skips the download and only adds system
+      # libraries (--with-deps), which the cache does not hold.
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
 
       - name: Install Chromium and recording dependencies
         run: pnpm --filter @cossackframework/framework exec playwright install chromium --with-deps
