@@ -330,9 +330,16 @@ maximum falls back to `100`.
 
 `cossack add ui <component>` copies a single component into your project at
 `src/components/ui/<Component>.ts` so you can customize it. The ejected copy is
-yours. Run the command again with `--force` to overwrite it. Shared private animation helpers
-are included in ejected Accordion and Collapsible source. Toaster is ejected
+yours. Run the command again with `--force` to overwrite it. Toaster is ejected
 from the package's Toast module.
+
+Some components use private helpers: dialog (Modal, Sheet, Drawer, AlertDialog,
+Command), hover (Tooltip, HoverCard), disclosure (Accordion, Collapsible), menu
+(DropdownMenu, ContextMenu, Menubar) and date (Calendar, DatePicker). Ejection
+copies each helper the component needs to `src/components/ui/internal/`, and
+the ejected component imports it from there. Ejected components share one copy
+of each helper. A later ejection keeps an existing helper, including your
+edits. `--force` replaces it together with the component.
 
 Available component names (kebab-case, passed to `cossack add ui <name>`):
 

@@ -56,15 +56,19 @@ export async function addCommand(args, ctx) {
       return ctx.out.data({ feature, status: result.status });
     }
     if (uiComponent) {
-      const target = path.join(
-        root,
-        'src/components/ui',
-        `${uiComponent.className}.ts`,
-      );
+      const directory = path.join(root, 'src/components/ui');
+      const target = path.join(directory, `${uiComponent.className}.ts`);
       const status = await writeFile(target, uiComponent.template(), ctx);
       if (status === 'skipped') throw Object.assign(new Error(`File already exists: ${target}. Use --force to overwrite.`),
         { code: 'COSSACK_FILE_EXISTS' });
       ctx.out.file(status === 'dry-run' ? 'planned' : 'created', target);
+      // Private helpers are shared by ejected components. A later ejection keeps an
+      // existing (possibly customized) helper; --force refreshes it with the component.
+      for (const helper of uiComponent.helpers()) {
+        const helperTarget = path.join(directory, helper.path);
+        const helperStatus = await writeFile(helperTarget, helper.content, ctx);
+        ctx.out.file({ 'dry-run': 'planned', skipped: 'preserved', overwrote: 'overwritten', wrote: 'created' }[helperStatus], helperTarget);
+      }
     }
     if (result.status === 'present') return ctx.out.data({ feature, status: result.status });
 

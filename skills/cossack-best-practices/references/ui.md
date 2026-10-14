@@ -133,7 +133,9 @@ colors (used by Badge, Alert, Toast).
 
 `cossack add ui <component>` copies a single component into
 `src/components/ui/<Component>.ts` for customization. The ejected copy is yours
-— re-run with `--force` to overwrite. Full kebab-case names: `button`, `input`,
+— re-run with `--force` to overwrite. Private helpers it needs (dialog, hover,
+disclosure, menu, date) are copied once to `src/components/ui/internal/` and
+shared by ejected components; later ejections keep them unless `--force`. Full kebab-case names: `button`, `input`,
 `textarea`, `native-select`, `input-group`, `label`, `checkbox`,
 `switch`, `radio-group`, `slider`, `input-otp`, `password-input`, `field`,
 `toggle`, `toggle-group`, `badge`, `kbd`, `card`, `separator`, `table`,
