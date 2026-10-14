@@ -13,8 +13,8 @@ function component(transport: 'http' | 'sse' | 'websocket' = 'http', socket?: an
         constructor: class Page {}, __cossack_proxies: new Map(),
         getInitialStateFromWindow: () => ({ componentRouteId: 'private-route', transport, scopeKey: 'secret-scope' }),
         count: 0, getPublicState: () => ({ count: target.count }),
-        loading: {}, _optimisticLockedKeys: {}, _optimisticPendingState: {},
-        _isOptimisticLocked: () => false, hasMethod: () => false,
+        loading: {},
+        hasMethod: () => false,
         requestUpdate: vi.fn(), setProperty(key: string, value: unknown) { this[key] = value; },
         websockets: new Map(socket ? [['private-provider', socket]] : []), consume: () => undefined,
     };

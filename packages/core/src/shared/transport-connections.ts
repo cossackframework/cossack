@@ -237,23 +237,7 @@ export function connectWebSocket(component: any): void {
                 if (hasOptimisticCalls(component, action)) return;
                 if (component.loading[action]) {
                     component.loading[action]--;
-                    if (component.loading[action] <= 0) {
-                        delete component.loading[action];
-                        // Release the optimistic lock and discard any buffered
-                        // pending state for the locked keys. Capture the set
-                        // BEFORE deleting (the previous code deleted first, then
-                        // read undefined — leaving _optimisticPendingState to
-                        // grow without bound). The authoritative post-action
-                        // value arrives in the next state-update and is applied
-                        // directly via setProperty once the lock is released.
-                        const lockedKeys = component._optimisticLockedKeys[action];
-                        delete component._optimisticLockedKeys[action];
-                        if (lockedKeys) {
-                            for (const key of lockedKeys) {
-                                delete component._optimisticPendingState[key];
-                            }
-                        }
-                    }
+                    if (component.loading[action] <= 0) delete component.loading[action];
                 }
                 component.requestUpdate();
             } else if (data.type === 'client-action') {
@@ -433,17 +417,7 @@ export function connectSSE(component: any): void {
             if (hasOptimisticCalls(component, action)) return;
             if (component.loading[action]) {
                 component.loading[action]--;
-                if (component.loading[action] <= 0) {
-                    delete component.loading[action];
-                    // Capture locked keys BEFORE deleting (see WS handler).
-                    const lockedKeys = component._optimisticLockedKeys[action];
-                    delete component._optimisticLockedKeys[action];
-                    if (lockedKeys) {
-                        for (const key of lockedKeys) {
-                            delete component._optimisticPendingState[key];
-                        }
-                    }
-                }
+                if (component.loading[action] <= 0) delete component.loading[action];
             }
             component.requestUpdate();
         } catch (e) {

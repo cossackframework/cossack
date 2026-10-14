@@ -22,7 +22,7 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
     })));
     const target: any = {
         constructor: class Counter {}, count: 0, title: 'original', cart: { rows: [1] }, local: 'original', items: ['base'],
-        loading: {}, _optimisticLockedKeys: {}, _optimisticPendingState: {}, __cossack_proxies: new Map(),
+        loading: {}, __cossack_proxies: new Map(),
         websockets: new Map([['page', ws]]), consume: () => undefined,
         getInitialStateFromWindow: () => ({ componentRouteId: 'counter', scopeKey: 'one', transport }),
         getPublicState() { return { count: this.count, title: this.title, cart: this.cart }; },
@@ -31,7 +31,6 @@ function fixture(transport: 'http' | 'sse' | 'ws', timeout?: number) {
             if (patch.nested) target.cart.rows.push(patch.nested);
             else Object.assign(target, patch);
         },
-        _isOptimisticLocked(key: string) { return Object.keys(this.loading).some(name => this._optimisticLockedKeys[name]?.has(key)); },
         setProperty(key: string, value: unknown) { this[key] = value; }, requestUpdate: vi.fn(),
     };
     Reflect.defineMetadata('cossack:state', { count: {}, title: {} }, target.constructor);

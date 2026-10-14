@@ -625,22 +625,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     public loading: Record<string, number> = {};
     private _lastHeadTags?: string;
 
-    // Tracks @State keys modified by optimistic handlers per action
-    private _optimisticLockedKeys: Record<string, Set<string>> = {};
-    // Buffers server state updates for locked keys
-    private _optimisticPendingState: Record<string, any> = {};
-
     // Track observed elements per visible task for auto-refresh on navigation
     private _visibleTaskObservers: Map<string | symbol, { observer: IntersectionObserver, observed: Set<Element> }> = new Map();
-
-    private _isOptimisticLocked(key: string): boolean {
-        for (const action of Object.keys(this._optimisticLockedKeys)) {
-            if (this.loading[action] && this._optimisticLockedKeys[action]?.has(key)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     @Server({ rpc: false })
     private _runtime?: CossackServerRuntime;

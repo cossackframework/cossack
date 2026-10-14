@@ -206,11 +206,11 @@ type Transport = 'http' | 'sse' | 'websocket' | 'service';
 function clientSurface(constructor: any, transport: Transport) {
     const client: any = {
         constructor, count: 0, loading: {}, websockets: new Map(), __cossack_proxies: new Map(),
-        _optimisticLockedKeys: {}, _optimisticPendingState: {},
+       
         getInitialStateFromWindow: () => ({ componentRouteId: ids.routePathToIdMap.get(transport === 'sse' ? ssePath : httpPath), transport, scopeKey: 'user:anonymous' }),
         getPublicState: () => ({ count: client.count }),
         getProperty(key: string) { return client[key]; },
-        consume() {}, hasMethod: () => false, getMethod() {}, _isOptimisticLocked: () => false,
+        consume() {}, hasMethod: () => false, getMethod() {},
         setProperty(key: string, value: unknown) { client[key] = value; }, requestUpdate() {},
     };
     return client;

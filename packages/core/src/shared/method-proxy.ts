@@ -120,7 +120,7 @@ function invalidateClientPageCache(): void {
     (globalThis as { __cossack_invalidatePageCache?: () => void }).__cossack_invalidatePageCache?.();
 }
 
-/** Per-call loading and optimistic-lock lifecycle shared by the transport proxies. */
+/** Per-call loading and optimistic lifecycle shared by the transport proxies. */
 function createCallLifecycle(component: any, name: string, call: OptimisticCall, trace?: DevelopmentRpcTrace) {
     let cleaned = false;
     let success = false;
@@ -131,20 +131,7 @@ function createCallLifecycle(component: any, name: string, call: OptimisticCall,
         try {
             finishOptimisticCall(call, success);
             if (component.loading[name] > 0) component.loading[name]--;
-            if (!component.loading[name]) {
-                delete component.loading[name];
-                const lockedKeys = component._optimisticLockedKeys[name];
-                delete component._optimisticLockedKeys[name];
-                if (lockedKeys) {
-                    for (const key of lockedKeys) {
-                        if (component._isOptimisticLocked(key)) continue;
-                        if (success && Object.prototype.hasOwnProperty.call(component._optimisticPendingState, key)) {
-                            component.setProperty(key, component._optimisticPendingState[key]);
-                        }
-                        delete component._optimisticPendingState[key];
-                    }
-                }
-            }
+            if (!component.loading[name]) delete component.loading[name];
             component.requestUpdate();
         } catch (error) {
             trace?.finish('failed');

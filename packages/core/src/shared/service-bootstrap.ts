@@ -329,11 +329,7 @@ export function proxyServiceMethods(component: any, serviceInstance: any): void 
                 // Sync updated state back to the service instance
                 for (const key in data) {
                     if (RESERVED_STATE_KEYS.has(key)) continue;
-                    if (component._isOptimisticLocked(key)) {
-                        component._optimisticPendingState[key] = data[key];
-                    } else {
-                        serviceInstance[key] = data[key];
-                    }
+                    serviceInstance[key] = data[key];
                 }
 
                 component.requestUpdate();

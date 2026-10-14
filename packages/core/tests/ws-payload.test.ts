@@ -22,13 +22,10 @@ function makeComponent() {
         websockets: new Map(),
         __cossack_proxies: new Map(),
         loading: {},
-        _optimisticLockedKeys: {},
-        _optimisticPendingState: {},
         consume: () => undefined,
         hasMethod: () => false,
         getMethod: () => undefined,
         getPublicState: () => ({}),
-        _isOptimisticLocked: () => false,
         setProperty(key: string, val: unknown) { (this as any)[key] = val; },
         requestUpdate() {},
     };
