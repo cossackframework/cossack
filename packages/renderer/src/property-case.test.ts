@@ -63,4 +63,14 @@ describe('camelCase property bindings', () => {
     expect(renderToString(html`<div ...=${{ '.innerHTML': '<b>x</b>', '.tabIndex': 1, id: 'a', '.hidden': true }}></div>`))
       .toBe('<div id="a" hidden></div>');
   });
+
+  it('SSR unwraps live() before serializing property bindings', () => {
+    expect(renderToString(html`<input type="checkbox" .checked=${live(false)}>`)).toBe('<input type="checkbox">');
+    expect(renderToString(html`<input type="checkbox" .checked=${live(true)}>`)).toBe('<input type="checkbox" checked>');
+    expect(renderToString(html`<input .value=${live('x')}>`)).toBe('<input value="x">');
+    expect(renderToString(html`<select><option .selected=${live(false)}>a</option><option .selected=${live(true)}>b</option></select>`))
+      .toBe('<select><option>a</option><option selected>b</option></select>');
+    expect(renderToString(html`<input type="checkbox" ?checked=${live(false)} .disabled=${live(true)}>`)).toBe('<input type="checkbox" disabled>');
+    expect(renderToString(html`<input ...=${{ '.checked': live(false), '.value': live('y') }}>`)).toBe('<input value="y">');
+  });
 });
