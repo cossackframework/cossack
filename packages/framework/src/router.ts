@@ -108,7 +108,8 @@ import {
   attachCoordinatorRuntime,
 } from './transports/sse.js';
 import { handleWebSocketProxy } from './transports/websocket.js';
-import { readRpcRequest } from './transports/http.js';
+import { readRpcRequest, RPC_UPLOAD_REQUEST_MAX_BYTES } from './transports/http.js';
+import { discardRequestBody } from './request-body.js';
 import { protectTransport } from './transports/security.js';
 import { createLocaleMiddleware } from './middlewares/locale.js';
 import { createFlashMiddleware } from './middlewares/flash.js';
@@ -445,6 +446,18 @@ export function createApp(options: CreateAppOptions = {}) {
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
   };
+
+  // Unread request bodies — on Workers, sending a response while the request
+  // body is still unread (an early rejection, a denied handler, a handler that
+  // ignores its body) leaves the sender writing after the response; workerd
+  // then fails the next request on that connection. Drain whatever the
+  // pipeline left unread, within the upload limit, before the response leaves.
+  // Outermost on purpose: it also covers responses produced by `app.onError`.
+  const unreadBodyLimit = options.rpc?.maxUploadBytes ?? RPC_UPLOAD_REQUEST_MAX_BYTES;
+  app.use('*', async (c, next) => {
+    await next();
+    await discardRequestBody(c.req.raw, unreadBodyLimit);
+  });
 
   // Request-context middleware — scopes the Hono `Context` into
   // AsyncLocalStorage FIRST so `cookie()` / `session()` / `getRequestContext()`
