@@ -13,8 +13,17 @@ export interface OAuthUser {
     id: string;
     nickname?: string;
     name?: string;
-    /** May be `null` for providers/users that hide it (e.g. GitHub). */
+    /**
+     * First-party providers set this only to an address the provider marks
+     * verified or confirmed (GitHub, GitLab, Google). Otherwise it is `null`
+     * or absent. Microsoft returns its `email` claim; check `emailVerified`.
+     */
     email?: string | null;
+    /**
+     * `true` only when the provider asserted ownership of `email`. Require it
+     * before matching or linking local accounts by email.
+     */
+    emailVerified?: boolean;
     avatar?: string;
     /** The full, unmodified user-info response from the provider. */
     raw: Record<string, unknown>;
@@ -58,8 +67,10 @@ export interface OAuthProviderConfig<TProviderOpts = Record<string, unknown>> {
 /** Google OIDC options. */
 export interface GoogleProviderOptions {
     /**
-     * Hosted-domain hint (`hd`). Restricts sign-in to a specific Google
-     * Workspace domain; passed as the `hd` authorize param.
+     * Google Workspace domain. Sent as the `hd` authorize param (an account
+     * picker hint only) and enforced on the callback: the user-info stage fails
+     * with `COSSACK_OAUTH_USER_INFO_FAILED` unless the provider's `hd` claim
+     * equals this value and `email_verified` is `true`.
      */
     hostedDomain?: string;
     /**

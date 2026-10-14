@@ -354,10 +354,24 @@ describe('generated auth security', () => {
     const { api, OAuthAccount, User, createSession } = await generatedAuth();
     OAuthAccount.findOne.mockResolvedValue(null);
     User.findOne.mockResolvedValue({ id: 'victim', email: 'victim@example.com' });
-    await expect(api.handleOAuthUser('github', { id: 'attacker', email: 'victim@example.com' }, {}, {}))
+    await expect(api.handleOAuthUser('github', { id: 'attacker', email: 'victim@example.com', emailVerified: true }, {}, {}))
       .rejects.toThrow('before linking');
     expect(OAuthAccount.insert).not.toHaveBeenCalled();
     expect(createSession).not.toHaveBeenCalled();
     expect(User.insert).not.toHaveBeenCalled();
+  });
+
+  it('never stores an email address the provider did not verify', async () => {
+    const { api, OAuthAccount, User, createSession } = await generatedAuth();
+    OAuthAccount.findOne.mockResolvedValue(null);
+    User.findOne.mockResolvedValue({ id: 'new' });
+    createSession.mockResolvedValue({ headers: new Headers() });
+    const context = { header: vi.fn(), redirect: vi.fn() };
+    // The harness has no framework config() for the final redirect; the
+    // account is provisioned before that point.
+    await api.handleOAuthUser('microsoft', { id: 'attacker', email: 'victim@example.com' }, {}, context).catch(() => {});
+    // The unverified address was never looked up or stored.
+    expect(User.findOne).not.toHaveBeenCalledWith({ where: { email: 'victim@example.com' } });
+    expect(User.insert).toHaveBeenCalledWith(expect.objectContaining({ email: 'microsoft-attacker@oauth.invalid' }));
   });
 });

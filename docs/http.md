@@ -370,7 +370,7 @@ option on `getFormData()`, and the persistent DB-backed `session()`.
 | `flashed(key)` / `flashedAll()` / `hasFlashed(key)` | Read previously-flashed values during this request. |
 | `flashInput(formData, { fields: ['name'] })` | Copy selected public leaves for repopulation. The namespace keeps input separate from messages. |
 | `old(key)` | Read a stashed input field for repopulating the form. |
-| `this.back(fallback)` | Redirect to the request's `Referer` (falls back to `fallback`). |
+| `this.back(fallback)` | Redirect to the request's same-origin `Referer` (otherwise to `fallback`). |
 
 ### How it works
 

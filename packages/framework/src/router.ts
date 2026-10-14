@@ -9,7 +9,7 @@ import { getForwardedServerMethodClass } from '@cossackframework/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { Page, PageOptions, Cossack, User, type CossackRuntimeInfo, type Middleware } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, setPublicUserProjection, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
   createInstance,
   createLayoutServiceScope,
@@ -121,6 +121,7 @@ import type { ConfigRuntime, ConfigRequirementContext } from './config-requireme
 import { assertRuntimeTransportSupport, type CossackRuntimeAdapter } from './runtime-adapter.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from './runtime-websocket.js';
 import { createAssetsMiddleware } from './assets.js';
+import { realtimeObjectName } from './realtime-scope.js';
 import { createRpcStreamResponse, isRpcStream, retainRpcResponseBody } from './transports/rpc-stream.js';
 import { logRpcFailure, type RpcFailureContext } from './transports/rpc-logging.js';
 import { retainResponseLifetime } from './response-lifetime.js';
@@ -325,6 +326,12 @@ export interface CreateAppOptions {
    */
   allowedOrigins?: string[];
   /**
+   * Request-body limits for RPC transports. Larger requests get 413
+   * `COSSACK_RPC_REQUEST_TOO_LARGE`. Defaults: 1 MiB JSON (`/crpc`) and
+   * 32 MiB multipart (`/upload`, files included).
+   */
+  rpc?: { maxJsonBytes?: number; maxUploadBytes?: number };
+  /**
    * Localization options. The locale middleware always runs (it's a no-op
    * when the project has no `src/lang/` folder). Enable `autoDetectBrowser`
    * to honor the `Accept-Language` header for visitors without a locale
@@ -335,6 +342,12 @@ export interface CreateAppOptions {
   };
   /** Optional process runtime integration (for example the Node adapter). */
   runtimeAdapter?: CossackRuntimeAdapter;
+  /**
+   * Extra user fields to expose in the browser hydration payload
+   * (`this.user` on the client). By default only `{ id }` is serialized; `id`
+   * always comes from the authenticated user. Return only non-sensitive data.
+   */
+  publicUser?: PublicUserProjection;
 }
 
 @Page({ transport: 'http' })
@@ -345,6 +358,7 @@ class RouterFallbackApp extends Cossack {
 }
 
 export function createApp(options: CreateAppOptions = {}) {
+  setPublicUserProjection(options.publicUser);
   // strict:false so trailing slashes match (e.g. /dashboard/ -> /dashboard).
   // Hono's getPathNoStrict strips a single trailing slash before route matching,
   // so users get the same page whether or not they type the slash.
@@ -398,6 +412,7 @@ export function createApp(options: CreateAppOptions = {}) {
     pages,
     layouts,
     allowedOrigins: options.allowedOrigins,
+    rpcBodyLimits: { jsonBytes: options.rpc?.maxJsonBytes, uploadBytes: options.rpc?.maxUploadBytes },
     runtimeInfo: resolveRuntimeInfo,
     getMiddlewares,
   };
@@ -484,10 +499,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // For durable-object transport, query the DO for existing state before SSR
         // Only for stateful pages — stateless DOs don't persist state
         let doInitialState: any = undefined;
-        let doIdName: string = c.req.url; // Default: per-URL
-        if (pageOptions?.transport === 'durable-object' && pageOptions?.scope) {
-          doIdName = scopeKey;
-        }
+        const doIdName = realtimeObjectName(pageOptions, scopeKey, path, c.req.param() || {});
         assertRuntimeTransportSupport(options.runtimeAdapter, pageOptions);
         if (!options.runtimeAdapter && pageOptions?.transport === 'durable-object' && pageOptions?.stateful === true) {
           try {
@@ -565,7 +577,7 @@ export function createApp(options: CreateAppOptions = {}) {
           env: c.env,
           runtime: runtimeInfo,
           page: c.req.path,
-          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: scopeKey } : undefined,
+          providerTargets: options.runtimeAdapter && pageOptions?.transport === 'durable-object' ? { page: doIdName } : undefined,
           initialState: doInitialState,
           skipInit: shouldSkipInit,
         });
@@ -626,14 +638,16 @@ export function createApp(options: CreateAppOptions = {}) {
         // For durable-object transport, add the DO ID to providerTargets
         // Also add routePath to metadata for client WebSocket connections
         if (pageOptions?.transport === 'durable-object' && options.runtimeAdapter) {
+          // Process-local runtimes name the shared instance exactly as Cloudflare
+          // names its Durable Object, so a page behaves the same on both.
           pageInitialState.providerTargets = {
             ...(pageInitialState.providerTargets || {}),
-            page: scopeKey,
+            page: doIdName,
           };
           if (pageInitialState.metadata) pageInitialState.metadata.routePath = filePathToRoutePath(path);
         } else if (pageOptions?.transport === 'durable-object') {
           const doBinding = c.env.COSSACK_OBJECT;
-          // Use scoped ID (from scope function) or URL-based ID (default)
+          // Use scoped ID (from scope function) or page-instance ID (default)
           const doId = doBinding.idFromName(doIdName);
           // Convert DurableObjectId to string for client-side use
           pageInitialState.providerTargets = {
@@ -675,6 +689,8 @@ export function createApp(options: CreateAppOptions = {}) {
 
         c.header('X-Cossack-Request-Id', failureContext.requestId);
         c.header('Content-Type', 'text/html');
+        // Personalized HTML must never be stored by shared caches.
+        if (user) c.header('Cache-Control', 'private, no-store');
         const manifest = await getManifest(c.env);
         const modulePreloads = getModulePreloads(manifest, path);
         return c.body(
@@ -766,8 +782,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       } catch (error) {
         return c.text(error instanceof Error ? error.message : String(error), 400);
       }
-      // Default scopes are recomputed from the authenticated user. Custom
-      // scope functions receive the same query values emitted during SSR.
+      // The target is recomputed from the route, never trusted from the client:
+      // without `scope`, one shared instance per page plus route params (as on
+      // Cloudflare); with `scope`, the scope key. Custom scope functions receive
+      // the same query values emitted during SSR.
       let routeParams: Record<string, string>;
       try {
         routeParams = decodeRuntimeRouteParams(c.req.query('params'));
@@ -775,7 +793,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         return c.text('Invalid WebSocket route params', 400);
       }
       const componentContext = withRuntimeRouteParams(c, routeParams);
-      const expectedTarget = await resolveSseScopeKey(componentContext, pageOptions);
+      const scopeKey = await resolveSseScopeKey(componentContext, pageOptions);
+      const objectName = async (context: Context) =>
+        realtimeObjectName(pageOptions, await resolveSseScopeKey(context, pageOptions), componentPath, routeParams);
+      const expectedTarget = await objectName(componentContext);
       let rejectAuthorization = target !== expectedTarget;
 
       const pathname = c.req.query('pathname') || '/';
@@ -787,7 +808,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       const authSnapshot = snapshotRealtimeRequest(c, routeParams, getLocale());
       const authorize = async (operation: (fresh: Context) => Promise<void>) => !rejectAuthorization && (await withRealtimeAuthorization(
         authSnapshot, identity, getMiddlewares(componentPath), async fresh =>
-          fresh.get('user')?.id === originalUserId && await resolveSseScopeKey(fresh, pageOptions) === expectedTarget,
+          fresh.get('user')?.id === originalUserId && await objectName(fresh) === expectedTarget,
         operation,
       )) !== null;
       const runtimeInfo = await resolveRuntimeInfo();
@@ -810,7 +831,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
             for (const layoutPath of getLayoutStack(componentPath)) {
               const Layout = getModuleDefault(layouts[layoutPath]) as new () => Cossack;
               activeScope = createLayoutServiceScope(activeScope, Layout, {
-                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: expectedTarget,
+                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey,
               });
               activeScope.bindRequest({ context: componentContext, user, env: c.env });
             }
@@ -836,7 +857,7 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
   // streaming, cookies and cleanup use the same action pipeline.
   const handleRpc: Handler = async (c) => {
     const startedAt = performance.now();
-    const body = await readRpcRequest(c);
+    const body = await readRpcRequest(c, routerContext.rpcBodyLimits);
     const { componentRouteId, action, state, payload, target, scopeKey: clientScopeKey } = body;
     const requestId = c.res.headers.get('X-Cossack-Request-Id') ?? crypto.randomUUID();
     if (typeof action !== 'string' || !action) return c.json({ error: 'Invalid action', code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);

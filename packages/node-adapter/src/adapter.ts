@@ -23,9 +23,22 @@ export interface NodeUpgradeServer {
   off(event: 'upgrade', listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown;
   off(event: 'close', listener: () => void): unknown;
 }
+/** Default largest accepted WebSocket message (1 MiB). Larger frames close the socket with 1009. */
+export const DEFAULT_WEBSOCKET_MAX_PAYLOAD = 1024 * 1024;
+/** @internal Validates the ws `maxPayload`; the ws default (100 MiB) is never used. */
+export function websocketMaxPayload(value: number | undefined): number {
+  const maxPayload = value ?? DEFAULT_WEBSOCKET_MAX_PAYLOAD;
+  if (!Number.isSafeInteger(maxPayload) || maxPayload < 1) throw new TypeError('WebSocket maxPayload must be a positive integer byte count');
+  return maxPayload;
+}
 export interface NodeAdapterOptions {
   maxInstances?: number;
   idleTimeoutMs?: number;
+  /**
+   * Largest accepted WebSocket message in bytes. Defaults to 1 MiB. Larger
+   * messages close the connection with code 1009 before they are parsed.
+   */
+  maxPayload?: number;
 }
 interface Entry {
   runtime: InMemoryWebSocketRuntime<WebSocket>;
@@ -37,7 +50,7 @@ interface Entry {
 
 /** Run the entire application's middleware before accepting a Node upgrade. */
 export function createNodeAdapter(options: NodeAdapterOptions = {}) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: websocketMaxPayload(options.maxPayload) });
   const handshakeHeaders = new WeakMap<IncomingMessage, Headers>();
   wss.on('headers', (headers, request) => {
     const response = handshakeHeaders.get(request);

@@ -141,7 +141,6 @@ export default defineConfig({
           'hono/cors',
           'reflect-metadata',
           '@aws-sdk/client-s3',
-          '@aws-sdk/s3-request-presigner',
         ],
       },
       // The cloudflare plugin configures the SSR/worker environment

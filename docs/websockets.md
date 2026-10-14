@@ -103,6 +103,12 @@ The Node adapter passes each connection's upgrade context into its shared
 runtime. The framework includes decoded page route params. See
 [rate limiting](./rate-limiting.md) for counter-store guarantees.
 
+On Node, a `durable-object` page uses the same instance identity as on
+Cloudflare: one in-memory instance per page plus route params, or one per scope
+key when the page sets `scope`. Users who open `/room/1` share one instance on
+both runtimes. Node instances live in one process, so they are not shared across
+machines and do not survive a restart.
+
 ## Stateless vs Stateful Durable Objects
 
 By default, `transport: 'durable-object'` creates a stateless DO that acts as a WebSocket hub only. State lives in memory during the session. The framework does not persist it to DO storage. This fits applications that use a database (D1, R2) as the source of truth.
@@ -124,7 +130,7 @@ To persist state in DO storage (survives reconnections and DO eviction), add `st
 
 ## Scope : controlling which Durable Object instance a page connects to
 
-By default, each URL gets its own Durable Object instance (per-URL scope). The `scope` option on `@Page` overrides this. It receives the Hono `Context` and returns a scope-key string, which becomes the Durable Object ID name. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state. This is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
+By default, each page instance gets its own Durable Object instance: the page component plus its route params. The host and query string are not part of the identity, so `/room/1?utm=x` and `/room/1` share one instance, and `/room/2` gets another. The WebSocket proxy recomputes this id from the route and params it receives and rejects a connection that names a different Durable Object. The `scope` option on `@Page` overrides this. It receives the Hono `Context` and returns a scope-key string, which becomes the Durable Object ID name. Users (and tabs) that resolve to the same scope key land on the same DO instance and share state. This is the mechanism behind multiplayer features (shared whiteboards, chat rooms, collaborative docs).
 
 ```typescript
 // All members of a team share one DO instance for this page
@@ -144,7 +150,7 @@ By default, each URL gets its own Durable Object instance (per-URL scope). The `
 
 The scope function is evaluated once during SSR with the full request context (including params and query). The resulting `scopeKey` is embedded in the page's initial state and reused as the DO ID name. SSR, the WebSocket connection, and `/crpc` then agree on the same instance, even when scope depends on params not present in later requests.
 
-The same `scope` option also applies to the `sse` transport (where the default is per-user instead of per-URL). Without `scope`, the default per-URL behavior is unchanged.
+The same `scope` option also applies to the `sse` transport (where the default is per-user instead of per-page-instance). Without `scope`, the default per-page-instance behavior is unchanged.
 
 This architecture has three parts: `StateProvider`, `Channel`, and `Event`.
 

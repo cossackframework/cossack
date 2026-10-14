@@ -33,6 +33,9 @@ export function createAssetsMiddleware(ctx: RouterContext): MiddlewareHandler {
     // matchers. Such requests stay in the normal SSR/404 pipeline.
     if (/%(?:2f|5c)/i.test(new URL(c.req.url).pathname)) return next();
     const pathname = c.req.path;
+    // Empty segments (`//host`) and backslashes can turn an alias redirect
+    // into a protocol-relative, off-site Location. Leave them to SSR/404.
+    if (pathname.includes('//') || pathname.includes('\\')) return next();
     const canonical = pathname.endsWith('/index.html')
       ? pathname.slice(0, -'/index.html'.length) || '/'
       : pathname.endsWith('.html') ? pathname.slice(0, -'.html'.length) || '/' : pathname;
@@ -67,7 +70,7 @@ export function createAssetsMiddleware(ctx: RouterContext): MiddlewareHandler {
       index = position;
       const middleware = middlewares[position];
       if (!middleware) {
-        c.res = alias ? c.redirect(`${canonical}${new URL(c.req.url).search}`, 308) : response!;
+        c.res = alias ? c.redirect(`/${canonical.replace(/^[/\\]+/, '')}${new URL(c.req.url).search}`, 308) : response!;
         return;
       }
       const result = await middleware(context, () => dispatch(position + 1));

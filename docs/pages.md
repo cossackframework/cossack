@@ -31,7 +31,7 @@ The `@Page` decorator accepts an optional object with these properties:
 | `channels` | `string[]` | A list of state synchronization channels this page belongs to. Default is `['global']`. |
 | `providers` | `{ [key: string]: StateProvider }` | Custom state providers for this component. |
 | `stateful` | `boolean` | When using `transport: 'durable-object'`, set to `true` to persist state in DO storage. Default is `false` (stateless). |
-| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry or DO instance) a request connects to. Default is per-user for SSE, per-URL for DO. |
+| `scope` | `(c: Context) => string \| Promise<string>` | Determines which state backend (SSE store entry or DO instance) a request connects to. Default is per-user for SSE, per page instance (component + route params) for DO. |
 
 ## Scope
 

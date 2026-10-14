@@ -1271,15 +1271,17 @@ export async function handleOAuthUser(
   let user = account
     ? await User.findOne({ where: { id: account.userId } })
     : null;
-  if (!user && oauthUser.email) {
-    const existing = await User.findOne({ where: { email: oauthUser.email } });
+  // Only an address the provider verified may identify or claim an account.
+  const verifiedEmail = oauthUser.emailVerified === true ? oauthUser.email : null;
+  if (!user && verifiedEmail) {
+    const existing = await User.findOne({ where: { email: verifiedEmail } });
     if (existing) throw new ClientVisibleError('Sign in to your existing account before linking an OAuth provider.');
   }
   if (!user) {
     const id = uuidv7();
     await User.insert({
       id,
-      email: oauthUser.email ?? \`\${provider}-\${oauthUser.id}@oauth.invalid\`,
+      email: verifiedEmail ?? \`\${provider}-\${oauthUser.id}@oauth.invalid\`,
       name: oauthUser.name ?? oauthUser.nickname ?? null,
       passwordHash: null,
       avatar: oauthUser.avatar ?? null,

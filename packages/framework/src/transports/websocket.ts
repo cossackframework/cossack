@@ -4,7 +4,7 @@ import { getLocale, isOriginAllowed } from '@cossackframework/core';
 import type { RouterContext } from '../route-ids.js';
 import { getModuleDefault } from '../module-default.js';
 import { decodeRuntimeRouteParams, withRuntimeRouteParams } from '../runtime-websocket.js';
-import { resolveRealtimeScopeKey } from '../realtime-scope.js';
+import { realtimeObjectName, resolveRealtimeScopeKey } from '../realtime-scope.js';
 import { captureRealtimeIdentity } from '../realtime-identity.js';
 
 /** WebSocket proxy handler — forwards WebSocket upgrade requests to the appropriate Durable Object. */
@@ -40,7 +40,11 @@ export function handleWebSocketProxy(ctx: RouterContext) {
         let id: unknown;
         let rejectAuthorization = false;
         try {
-            if (typeof pageOptions?.scope === 'function' && doBinding.idFromName(scopeKey).toString() !== durableObjectId) rejectAuthorization = true;
+            // The client chooses the target id. Recompute it from the page
+            // identity (custom scope key, or component + route params) so a
+            // client cannot join another page's Durable Object.
+            const expected = doBinding.idFromName(realtimeObjectName(pageOptions as any, scopeKey, componentPath, params));
+            if (expected.toString() !== durableObjectId) rejectAuthorization = true;
             id = doBinding.idFromString(durableObjectId);
         } catch { return new Response('Invalid WebSocket target', { status: 400 }); }
         const stub = doBinding.get(id);
@@ -55,15 +59,15 @@ export function handleWebSocketProxy(ctx: RouterContext) {
         request.headers.delete('X-Cossack-Realtime-Scope');
         request.headers.delete('X-Cossack-Realtime-Locale');
         request.headers.delete('X-Cossack-Realtime-Target-Valid');
-        if (user) {
-            request.headers.set('X-User-ID', user.id);
-            request.headers.set('X-User-Data', JSON.stringify(user));
-        }
+        // Only the id crosses the hop. Ids and scope keys are percent-encoded
+        // so any string (e.g. non-Latin-1) is a valid header value. The Durable Object re-runs middleware to resolve the
+        // full user and rejects the peer if the fresh id differs.
+        if (user) request.headers.set('X-User-ID', encodeURIComponent(String(user.id)));
         let identity: Awaited<ReturnType<typeof captureRealtimeIdentity>>;
         try { identity = await captureRealtimeIdentity(c); }
         catch { identity = null; rejectAuthorization = true; }
         if (identity) request.headers.set('X-Cossack-Realtime-Identity', JSON.stringify(identity));
-        request.headers.set('X-Cossack-Realtime-Scope', scopeKey);
+        request.headers.set('X-Cossack-Realtime-Scope', encodeURIComponent(scopeKey));
         request.headers.set('X-Cossack-Realtime-Locale', getLocale());
         request.headers.set('X-Cossack-Realtime-Target-Valid', rejectAuthorization ? 'false' : 'true');
 

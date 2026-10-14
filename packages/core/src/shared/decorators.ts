@@ -131,6 +131,11 @@ export interface ServerOptions {
   timeout?: number;
   /** @internal Compiler marker for generated server$ loaders. */
   serverResource?: boolean;
+  /**
+   * @internal `false` marks a server-only data field without registering it
+   * as an RPC action (framework-internal fields).
+   */
+  rpc?: false;
 }
 
 /**
@@ -151,7 +156,11 @@ export function Server(options: ServerOptions = {}): any {
 
 function registerServer(options: ServerOptions): any {
   const timeout = validateServerMethodTimeout(options.timeout);
-  return (target: any, propertyKey: string | symbol) => {
+  return (target: any, propertyKey: string | symbol, descriptor?: PropertyDescriptor) => {
+    // Only methods (and function-valued fields, whose value is unknown at
+    // decoration time) are RPC actions. Accessors and internal server-only
+    // fields keep the decorator as a marker but are never remotely callable.
+    if (options.rpc === false || (descriptor && typeof descriptor.value !== 'function')) return;
     const serverMethods = Reflect.hasOwnMetadata('cossack:server-methods', target.constructor)
       ? Reflect.getOwnMetadata('cossack:server-methods', target.constructor)
       : {};

@@ -321,6 +321,8 @@ export interface RouterContext {
   layouts: Record<string, any>;
   /** Allowed Origin values for transport requests. Defaults to same-origin. */
   allowedOrigins?: string[];
+  /** Request-body limits for `/crpc` and `/upload`. */
+  rpcBodyLimits?: import('./transports/http.js').RpcBodyLimits;
   /** Resolve framework-owned runtime identity for reconstructed components. */
   runtimeInfo?: () => Promise<import('@cossackframework/core').CossackRuntimeInfo>;
   /** Page and enclosing layout guards, also enforced on transport endpoints. */

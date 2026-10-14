@@ -1,7 +1,7 @@
 import type { DatabaseValue, QueryResult } from "../adapter/types.js";
 import { ConfigurationError, UnsupportedCapabilityError } from "../errors.js";
 import type { BaseEntity } from "../entity/base-entity.js";
-import type { EntityMetadata } from "../metadata/types.js";
+import type { ColumnMetadata, EntityMetadata } from "../metadata/types.js";
 import type { ORM } from "../orm.js";
 import { SQLFragment, type SQLNode } from "../sql/fragment.js";
 import { compileWhere, ExpressionBuilder } from "./expression.js";
@@ -20,8 +20,25 @@ interface JoinClause {
   readonly on: SQLFragment;
 }
 
+/**
+ * Columns a query loads when it does not name its own selection. `select: false`
+ * columns are omitted, except primary, version and owned relation join columns,
+ * which identity, optimistic locking and relation loading depend on.
+ */
+export function defaultSelectColumns(metadata: EntityMetadata): readonly ColumnMetadata[] {
+  const required = new Set<string>();
+  for (const relation of metadata.relations) {
+    if (relation.owner && relation.joinColumn && relation.kind !== "many-to-many") required.add(relation.joinColumn);
+    if (relation.joinTable) required.add(metadata.columnByProperty.get(relation.joinTable.referencedProperty)?.columnName ?? "");
+  }
+  return metadata.columns.filter((column) =>
+    column.select !== false || column.primary || column.version || required.has(column.columnName));
+}
+
 export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
   private selections: SQLFragment[] = [];
+  /** Entity properties named by select()/addSelect(); undefined for default or raw selections. */
+  private selectedProperties: string[] | undefined;
   private predicate?: SQLFragment;
   private joins: JoinClause[] = [];
   private groups: SQLFragment[] = [];
@@ -41,11 +58,29 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     ...properties: readonly K[]
   ): SelectQueryBuilder<T, Pick<EntityShape<T>, K>> {
     this.selections = properties.map((property) => this.expression().column(property));
+    this.selectedProperties = [...properties];
     return this as unknown as SelectQueryBuilder<T, Pick<EntityShape<T>, K>>;
+  }
+
+  /**
+   * Adds properties to the current selection. Without a prior select(), this
+   * extends the default columns, so it is the way to load `select: false` columns.
+   */
+  addSelect(...properties: readonly (keyof EntityShape<T> & string)[]): this {
+    if (this.selections.length && !this.selectedProperties) {
+      this.selections = [...this.selections, ...properties.map((property) => this.expression().column(property))];
+      return this;
+    }
+    const base = this.selectedProperties ?? defaultSelectColumns(this.metadata).map((column) => column.propertyName);
+    const merged = [...new Set([...base, ...properties])];
+    this.selections = merged.map((property) => this.expression().column(property as keyof EntityShape<T> & string));
+    this.selectedProperties = merged;
+    return this;
   }
 
   selectRaw<R>(fragment: SQLFragment<R>): SelectQueryBuilder<T, R> {
     this.selections = [fragment];
+    this.selectedProperties = undefined;
     return this as unknown as SelectQueryBuilder<T, R>;
   }
 
@@ -113,7 +148,7 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     const sql = this.orm.sql;
     const selections = this.selections.length
       ? sql.join(this.selections)
-      : sql.fragment`${sql.id(this.alias)}.*`;
+      : sql.join(defaultSelectColumns(this.metadata).map((column) => sql.id(this.alias, column.columnName)));
     const nodes: SQLNode[] = [
       { kind: "text", value: `SELECT${this.distinctValue ? " DISTINCT" : ""} ` },
       { kind: "fragment", value: selections },
@@ -135,7 +170,9 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
     if (this.predicate) nodes.push({ kind: "text", value: " WHERE " }, { kind: "fragment", value: this.predicate });
     if (this.groups.length) nodes.push({ kind: "text", value: " GROUP BY " }, { kind: "fragment", value: sql.join(this.groups) });
     const paginated = this.limitValue !== undefined || this.offsetValue !== undefined;
-    const simple = !this.joins.length && !this.groups.length && !this.distinctValue && !this.selections.length;
+    const entityRows = !this.selections.length || Boolean(this.metadata.primaryColumns.length && this.selectedProperties
+      && this.metadata.primaryColumns.every((primary) => this.selectedProperties!.includes(primary.propertyName)));
+    const simple = !this.joins.length && !this.groups.length && !this.distinctValue && entityRows;
     if (paginated && !simple && !this.aggregateMode && !this.orders.length) {
       throw new ConfigurationError("Pagination of joined, grouped, distinct or projected results requires explicit unique ordering.");
     }
@@ -300,8 +337,16 @@ export class MutationQueryBuilder<T extends BaseEntity> {
     const columns = properties.map((property) => {
       const column = this.metadata.columnByProperty.get(property);
       if (!column) throw new ConfigurationError(`Unknown property ${this.metadata.modelName}.${property}.`);
+      if (this.kind !== "update" && !column.insert) {
+        throw new ConfigurationError(`${this.metadata.modelName}.${property} cannot be inserted: its column is declared with insert: false.`);
+      }
+      if (this.kind === "update" && !column.update) {
+        throw new ConfigurationError(`${this.metadata.modelName}.${property} cannot be updated: its column is declared with update: false.`);
+      }
       return column;
     });
+    // An upsert inserts every given column but only overwrites updatable ones on conflict.
+    const updatable = columns.filter((column) => column.update);
     if (this.kind === "insert" || this.kind === "upsert") {
       const nodes: SQLNode[] = [
         { kind: "text", value: "INSERT INTO " },
@@ -332,7 +377,8 @@ export class MutationQueryBuilder<T extends BaseEntity> {
         }
         if (this.orm.driver.dialect === "mysql") {
           nodes.push({ kind: "text", value: " ON DUPLICATE KEY UPDATE " });
-          columns.forEach((column, index) => {
+          const assignments = updatable.length ? updatable : [this.metadata.columns.find((column) => column.columnName === conflicts[0])!];
+          assignments.forEach((column, index) => {
             if (index) nodes.push({ kind: "text", value: ", " });
             nodes.push(
               { kind: "identifier", path: [column.columnName] },
@@ -347,8 +393,9 @@ export class MutationQueryBuilder<T extends BaseEntity> {
             if (index) nodes.push({ kind: "text", value: ", " });
             nodes.push({ kind: "identifier", path: [column!] });
           });
-          nodes.push({ kind: "text", value: ") DO UPDATE SET " });
-          columns.filter((column) => !conflicts.includes(column.columnName)).forEach((column, index) => {
+          const assignments = updatable.filter((column) => !conflicts.includes(column.columnName));
+          nodes.push({ kind: "text", value: assignments.length ? ") DO UPDATE SET " : ") DO NOTHING" });
+          assignments.forEach((column, index) => {
             if (index) nodes.push({ kind: "text", value: ", " });
             nodes.push(
               { kind: "identifier", path: [column.columnName] },
@@ -392,7 +439,7 @@ export class MutationQueryBuilder<T extends BaseEntity> {
     return new SQLFragment(nodes);
   }
 
-  execute<Row = Record<string, unknown>>(): Promise<QueryResult<Row>> {
+  async execute<Row = Record<string, unknown>>(): Promise<QueryResult<Row>> {
     return this.orm.executeFragment<Row>(this.toSQL(), this.kind === "upsert" ? "insert" : this.kind);
   }
 

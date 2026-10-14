@@ -250,6 +250,104 @@ describe('createAuth — createLoginHandler', () => {
     });
 });
 
+describe('createAuth — createLoginHandler request guards', () => {
+    const user: User = { id: 'u1', email: 'a@b.io', name: 'Tan' };
+    const body = JSON.stringify({ email: 'a@b.io', password: 'pw' });
+
+    function setup() {
+        const validateCredentials = vi.fn(async () => user);
+        const createSession = vi.fn(async () => {
+            const headers = new Headers();
+            headers.append('Set-Cookie', 'session=abc; Path=/; HttpOnly');
+            return { headers };
+        });
+        const kit = createAuth<User>({
+            extractSessionId: () => undefined,
+            validateSessionId: async () => null,
+            resolveUserById: async () => null,
+        });
+        const app = buildApp(kit, kit.createLoginHandler({ validateCredentials, createSession }));
+        const post = (headers: Record<string, string>, payload: string = body) =>
+            app.request('http://localhost/api/login', { method: 'POST', headers, body: payload });
+        return { post, validateCredentials, createSession };
+    }
+
+    it.each([
+        ['text/plain (cross-site form)', { 'Content-Type': 'text/plain' }],
+        ['urlencoded form', { 'Content-Type': 'application/x-www-form-urlencoded' }],
+        ['multipart form', { 'Content-Type': 'multipart/form-data; boundary=x' }],
+        ['missing content type', {}],
+        ['json lookalike', { 'Content-Type': 'application/jsonp' }],
+    ])('rejects %s with 415 before reading credentials', async (_label, headers) => {
+        const { post, validateCredentials, createSession } = setup();
+        const res = await post(headers as Record<string, string>);
+        expect(res.status).toBe(415);
+        expect(res.headers.get('set-cookie')).toBeNull();
+        expect(validateCredentials).not.toHaveBeenCalled();
+        expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it('accepts application/json with parameters', async () => {
+        const { post } = setup();
+        const res = await post({ 'Content-Type': 'Application/JSON; charset=utf-8' });
+        expect(res.status).toBe(200);
+    });
+
+    it.each(['cross-site'])('rejects Sec-Fetch-Site: %s with 403', async site => {
+        const { post, validateCredentials } = setup();
+        const res = await post({ 'Content-Type': 'application/json', 'Sec-Fetch-Site': site });
+        expect(res.status).toBe(403);
+        expect(validateCredentials).not.toHaveBeenCalled();
+    });
+
+    it.each(['same-origin', 'none'])('allows Sec-Fetch-Site: %s', async site => {
+        const { post } = setup();
+        const res = await post({ 'Content-Type': 'application/json', 'Sec-Fetch-Site': site });
+        expect(res.status).toBe(200);
+    });
+
+    it.each(['https://evil.example', 'http://localhost.evil.example', 'https://localhost', 'null'])(
+        'rejects a foreign Origin %s with 403', async origin => {
+            const { post, validateCredentials } = setup();
+            const res = await post({ 'Content-Type': 'application/json', Origin: origin });
+            expect(res.status).toBe(403);
+            expect(validateCredentials).not.toHaveBeenCalled();
+        });
+
+    it('rejects a foreign Origin even when Sec-Fetch-Site claims same-site', async () => {
+        const { post } = setup();
+        const res = await post({ 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-site', Origin: 'http://sub.localhost' });
+        expect(res.status).toBe(403);
+    });
+
+    it('allows a matching Origin', async () => {
+        const { post } = setup();
+        const res = await post({ 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'same-origin', Origin: 'http://localhost' });
+        expect(res.status).toBe(200);
+        expect(res.headers.get('set-cookie')).toBe('session=abc; Path=/; HttpOnly');
+    });
+
+    it('allows the https Origin behind a TLS-terminating proxy', async () => {
+        const { post } = setup();
+        const res = await post({ 'Content-Type': 'application/json', Origin: 'https://localhost', 'X-Forwarded-Proto': 'https' });
+        expect(res.status).toBe(200);
+    });
+
+    it.each(['{"email":', 'not json', ''])('returns 400 for malformed JSON %j', async payload => {
+        const { post, validateCredentials } = setup();
+        const res = await post({ 'Content-Type': 'application/json' }, payload);
+        expect(res.status).toBe(400);
+        expect(validateCredentials).not.toHaveBeenCalled();
+    });
+
+    it.each(['null', '[]', '"pw"', '42'])('returns 400 for non-object JSON %s', async payload => {
+        const { post, validateCredentials } = setup();
+        const res = await post({ 'Content-Type': 'application/json' }, payload);
+        expect(res.status).toBe(400);
+        expect(validateCredentials).not.toHaveBeenCalled();
+    });
+});
+
 describe('createAuth — reusable createSession', () => {
     it('exposes createSession on the kit when configured on the provider', async () => {
         let captured: User | undefined;

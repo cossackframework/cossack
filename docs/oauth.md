@@ -79,8 +79,8 @@ a password-reset token. Remove abandoned expired rows through application cleanu
 Consumption happens after signed-cookie and state validation, before token
 exchange. Concurrent callbacks have one winner. Failed exchange, profile or
 account mapping does not restore the state. Start a new flow to retry. Cookie
-cleanup alone cannot provide this property. Stateless mode deliberately leaves
-CSRF and replay protection to the application.
+cleanup alone cannot provide this property. Stateless mode uses a signed,
+expiring `state` instead, and leaves replay protection to the application.
 
 This store supplies the one-time state boundary described in
 [OAuth Security BCP](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.7.1).
@@ -217,13 +217,14 @@ async onUser(oauthUser, tokens, c) {
     if (link) {
         // 2a. Existing link → reuse the linked user.
         userId = link.userId;
-    } else if (oauthUser.email) {
-        // A matching email alone does not prove account ownership.
+    } else if (oauthUser.email && oauthUser.emailVerified) {
+        // Only provider-verified emails reach this branch. A matching email
+        // still does not prove ownership of the existing local account.
         const existing = await db.users.findUnique({ where: { email: oauthUser.email } });
         if (existing) throw new Error('Sign in before linking this provider.');
         userId = (await db.users.create({ data: { email: oauthUser.email, ... } })).id;
     } else {
-        // 2c. No link, no usable email → create a new user.
+        // 2c. No link, no verified email → create a new user without one.
         userId = (await db.users.create({ data: { /* ... */ } })).id;
     }
 
@@ -268,11 +269,27 @@ interface OAuthUser {
     id: string;            // stable, provider-scoped
     nickname?: string;     // GitHub login, GitLab username, ...
     name?: string;
-    email?: string | null; // null when hidden (GitHub) and unresolvable
+    email?: string | null; // only a provider-verified address; see below
+    emailVerified?: boolean; // true only when the provider asserted ownership
     avatar?: string;
     raw: Record<string, unknown>; // full provider payload
 }
 ```
+
+`email` is set only when the provider marks the address verified. Otherwise
+it is `null` or absent. Unverified addresses are dropped because a user can add
+somebody else's address to their provider account without confirming it.
+
+| Provider | `email` source | `emailVerified` |
+| --- | --- | --- |
+| GitHub | Profile email if `/user/emails` lists it as verified, else the verified primary. Needs the `user:email` scope (default); without it `email` is `null`. | `true` when `email` is set |
+| GitLab | Primary email of a confirmed account (`confirmed_at`), else the first confirmed `/user/emails` entry. | `true` when `email` is set |
+| Google | `email` claim only when `email_verified` is `true`. | `true` when `email` is set |
+| Microsoft | `email` claim only. `preferred_username` (a UPN) and Graph `mail` are never used. Microsoft does not verify this claim. | `true` only when the optional `xms_edov` claim is `true` |
+| Facebook | Graph `email` field. | not set |
+
+Require `emailVerified === true` before matching or creating local accounts by
+email. Custom providers should set `emailVerified` the same way.
 
 ## Provider-specific options
 
@@ -298,6 +315,13 @@ providers: {
 }
 ```
 
+Google's `hostedDomain` is enforced on the callback, not only hinted. The
+`hd` authorize parameter only preselects accounts in Google's picker, and a user
+can remove it. The callback therefore requires the provider-issued `hd` claim to
+equal `hostedDomain` and `email_verified` to be `true`. Other accounts, including
+personal Gmail accounts, fail with `COSSACK_OAUTH_USER_INFO_FAILED` (`user-info`,
+502) before `onUser` runs.
+
 ## Custom providers
 
 ```ts
@@ -312,7 +336,10 @@ const discord = defineOAuthProvider({
     normalizeUser: (raw) => ({
         id: String(raw.id),
         nickname: raw.username as string,
-        email: raw.email as string | null,
+        // Discord reports whether the address is verified. Only a verified
+        // email may be used to identify or create an account.
+        email: raw.verified === true ? (raw.email as string | null) : null,
+        emailVerified: raw.verified === true && typeof raw.email === 'string',
         avatar: raw.avatar
             ? `https://cdn.discordapp.com/avatars/${raw.id}/${raw.avatar}.png`
             : undefined,
@@ -332,6 +359,10 @@ export const oauth = createOAuth({
 
 Custom provider ids must not shadow a first-party id (`github`, `google`,
 `gitlab`, `facebook`, `microsoft`).
+
+Set `emailVerified: true` only when the provider confirms the address. The
+generated `handleOAuthUser` ignores any email without it and stores a
+placeholder address for the new account instead.
 
 ## Overriding cookie defaults
 
@@ -356,14 +387,27 @@ createOAuth({
 ## Stateless mode (advanced)
 
 For cookie-less API clients, pass `stateless: true`. In this mode the package
-does not set a state cookie, and PKCE is disabled
-as well, because the `code_verifier` cannot be recovered without a cookie store.
+does not set a state cookie and does not use a state store. PKCE is disabled,
+because the `code_verifier` cannot be recovered without a cookie.
 
-You are then responsible for CSRF protection of the callback. For example,
-include a signed `state` value in the authorize URL. Make sure that the value is
-valid when the callback arrives. Without PKCE you also lose the defense against
-authorization-code injection. Stateless mode is riskier than the default.
-Use it only when you cannot use cookies.
+The `secret` is still required, as in cookie mode. On redirect, the package
+generates `state` as a signed token: a random nonce, the provider ID and an
+absolute expiry, signed with HMAC-SHA256 under `secret`. The expiry is
+`cookie.maxAge` seconds (default 600). On callback, the package checks the
+signature (without an early mismatch exit), the provider and the expiry before
+token exchange. A forged, tampered, expired or other-provider `state` fails with
+`COSSACK_OAUTH_STATE_INVALID` (400). The provider is not contacted.
+
+This is weaker than cookie mode:
+
+- The state is not bound to the browser that started the flow. Anyone holding a
+  fresh state value can use it until it expires.
+- The state is not single-use. Replay protection inside the expiry window
+  depends on the provider's one-time authorization codes.
+- Without PKCE there is no defense against authorization-code injection.
+
+Use stateless mode only when you cannot use cookies. Keep `cookie.maxAge`
+short. Custom `state` values from the application are rejected.
 
 ```ts
 createOAuth({ secret: env.OAUTH_STATE_SECRET, stateless: true, providers: { /* ... */ } });

@@ -798,9 +798,21 @@ export function RateLimit(first: RateLimitOptions | HonoHandler, second?: HonoHa
     };
 }
 
+/**
+ * The matched route template (`/api/items/:id`), so every concrete path of one
+ * route shares a budget. Falls back to the concrete path outside a Hono router.
+ */
+function rateLimitRoute(c: Context): string {
+    try {
+        const template = (c.req as { routePath?: unknown }).routePath;
+        if (typeof template === 'string' && template) return template;
+    } catch { /* not routed through Hono */ }
+    return c.req.path;
+}
+
 function wrapHandler(options: RateLimitOptions, handler: HonoHandler): HonoHandler {
     return async (c: Context) => {
-        const blocked = await enforceRateLimit(c, `route:${c.req.method}:${c.req.path}`, options);
+        const blocked = await enforceRateLimit(c, `route:${c.req.method}:${rateLimitRoute(c)}`, options);
         if (blocked) return blocked;
         assertRateLimitNotAborted(c.req?.raw?.signal);
         return handler(c);

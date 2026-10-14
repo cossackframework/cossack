@@ -367,13 +367,13 @@ export function transformServerResources(code: string, id: string, sources?: Res
 
   const replacements: MacroReplacement[] = [];
   let hasGeneratedResources = false;
+  const allowedCalls = new Set<number>();
   for (const cls of findClasses(program)) {
     if (!frameworkClasses(program).has(cls)) continue;
-    const className = cls.id?.name ?? 'Anonymous';
+    const className = classNameOf(program, cls) ?? 'Anonymous';
     let inlineOrdinal = 0;
     const generated: string[] = [];
     const fields: string[] = [];
-    const allowedCalls = new Set<number>();
 
     const compileCall = (call: any, name: string): string => {
       if (call.arguments?.length < 1 || call.arguments.length > 2) {
@@ -428,19 +428,6 @@ export function transformServerResources(code: string, id: string, sources?: Res
     };
     if (render) visitRender(render.value.body);
 
-    // Any remaining macro call in this class is in an unsupported location.
-    const scan = (node: any) => {
-      if (!node || typeof node.type !== 'string') return;
-      if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && bindings.has(node.callee.name) && !allowedCalls.has(node.start)) {
-        throw new Error(`[Cossack server$] ${id}: server$ is only valid as a class-field initializer or a direct call inside render().`);
-      }
-      for (const value of Object.values(node)) {
-        if (Array.isArray(value)) value.forEach(scan);
-        else if (value && typeof (value as any).type === 'string') scan(value);
-      }
-    };
-    scan(cls.body);
-
     if (fields.length) {
       if ((cls.body?.body ?? []).some((member: any) => memberKeyName(member.key) === '__cossackResourceFields')) {
         throw new Error(`[Cossack server$] ${id}: __cossackResourceFields is reserved for the resource compiler.`);
@@ -448,6 +435,22 @@ export function transformServerResources(code: string, id: string, sources?: Res
       generated.push(`\n    static readonly __cossackResourceFields = ${JSON.stringify(fields)};\n`);
     }
     if (generated.length) replacements.push({ start: cls.body.end - 1, end: cls.body.end - 1, replacement: generated.join('') });
+  }
+  // Any remaining macro call is in an unsupported location: module scope, a
+  // non-framework class, a method other than render(), or a nested function.
+  // Left in place, its loader would ship to the client verbatim.
+  const scan = (node: any) => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'CallExpression' && node.callee?.type === 'Identifier' && bindings.has(node.callee.name) && !allowedCalls.has(node.start)) {
+      throw new Error(`[Cossack server$] ${id}: server$ is only valid as a class-field initializer or a direct call inside render() of a component class.`);
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(scan);
+      else if (value && typeof (value as any).type === 'string') scan(value);
+    }
+  };
+  for (const statement of program.body ?? []) {
+    if (statement.type !== 'ImportDeclaration') scan(statement);
   }
   let result = code;
   for (const item of replacements.sort((a, b) => b.start - a.start)) result = result.slice(0, item.start) + item.replacement + result.slice(item.end);
@@ -837,23 +840,62 @@ function isClassNode(node: any): boolean {
   return node?.type === 'ClassDeclaration' || node?.type === 'ClassExpression';
 }
 
+interface ClassIndex {
+  /** Classes not contained in another class, in source order. */
+  outer: any[];
+  /** Classes declared inside another class's body or members. */
+  nested: any[];
+  /** `const Page = class extends Cossack {}` binds an anonymous class to a name. */
+  bindingNames: WeakMap<any, string>;
+}
+
+const classIndexes = new WeakMap<any, ClassIndex>();
+
 /**
- * Yield every class node anywhere in `program`. A class may be the
- * `declaration` of an `ExportNamedDeclaration`/`ExportDefaultDeclaration`, or a
- * top-level/`Program`-body class, or nested in an `ExportDefaultDeclaration`
- * (anonymous default class). We walk the top level + one level of export
- * wrappers; deeply-nested classes are not currently processed.
+ * Index every class anywhere in `program`: declarations, `export default`,
+ * class expressions in variable initializers or call arguments
+ * (`wrap(class extends Cossack {})`), and classes inside function bodies.
+ * A class must never escape stripping because of where it is written.
+ */
+function classIndex(program: any): ClassIndex {
+  const cached = classIndexes.get(program);
+  if (cached) return cached;
+  const index: ClassIndex = { outer: [], nested: [], bindingNames: new WeakMap() };
+  const visit = (node: any, insideClass: boolean): void => {
+    if (!node || typeof node.type !== 'string') return;
+    if (node.type === 'VariableDeclarator' && node.id?.type === 'Identifier') {
+      const init = unwrapExpression(node.init);
+      if (isClassNode(init) && !init.id) index.bindingNames.set(init, node.id.name);
+    }
+    const isClass = isClassNode(node);
+    if (isClass) (insideClass ? index.nested : index.outer).push(node);
+    for (const key of Object.keys(node)) {
+      if (key === 'parent') continue;
+      const value = node[key];
+      if (Array.isArray(value)) {
+        for (const child of value) visit(child, insideClass || isClass);
+      } else if (value && typeof value.type === 'string') {
+        visit(value, insideClass || isClass);
+      }
+    }
+  };
+  for (const statement of program?.body ?? []) visit(statement, false);
+  classIndexes.set(program, index);
+  return index;
+}
+
+/** Name a class is referenced by: its own id or the variable it is assigned to. */
+function classNameOf(program: any, cls: any): string | undefined {
+  return cls.id?.name ?? classIndex(program).bindingNames.get(cls);
+}
+
+/**
+ * Yield every class that is not nested inside another class. Classes nested in
+ * a class body are rejected by {@link frameworkClasses} when they are framework
+ * classes, because stripping the outer member would overlap their edits.
  */
 function* findClasses(program: any): Generator<any> {
-  for (const stmt of program?.body ?? []) {
-    if (isClassNode(stmt)) yield stmt;
-    else if (
-      (stmt?.type === 'ExportNamedDeclaration' || stmt?.type === 'ExportDefaultDeclaration') &&
-      isClassNode(stmt.declaration)
-    ) {
-      yield stmt.declaration;
-    }
-  }
+  yield* classIndex(program).outer;
 }
 
 const TYPED_DECORATOR_NAMES = new Set(['Server', 'State']);
@@ -936,8 +978,29 @@ function typedDecoratorBindings(program: any): { aliases: Map<string, string>; n
   return { aliases, namespaces };
 }
 
+const frameworkClassSets = new WeakMap<any, { selected: Set<any>; hidden?: any }>();
+
 /** Resolve component aliases and local inheritance before selecting classes. */
 function frameworkClasses(program: any): Set<any> {
+  return frameworkClassSelection(program).selected;
+}
+
+/**
+ * Fail closed for the client build: a framework class inside another class's
+ * member would be emitted verbatim when that member is kept, or overlap its
+ * stub edits. Server builds keep every body, so they allow the pattern (for
+ * example a Durable Object subclassing a component inside a method).
+ */
+function assertNoHiddenFrameworkClass(program: any): void {
+  const { hidden } = frameworkClassSelection(program);
+  if (hidden) {
+    throw new Error(`[Cossack Security] Framework class ${classNameOf(program, hidden) ?? '(anonymous)'} is declared inside another class. Move it to module scope so its server-only members can be stripped.`);
+  }
+}
+
+function frameworkClassSelection(program: any): { selected: Set<any>; hidden?: any } {
+  const cached = frameworkClassSets.get(program);
+  if (cached) return cached;
   const bases = new Set(['Cossack', 'CossackElement']);
   const decorators = new Set(['Page', 'Component', 'Service']);
   const serverDecorators = new Set(['Server']);
@@ -963,25 +1026,29 @@ function frameworkClasses(program: any): Set<any> {
     const callee = decoratorCallee(decorator);
     return matches(callee, serverDecorators) || typedMemberDecorator(callee) === 'Server';
   };
+  const isFramework = (cls: any) => {
+    const decorated = (cls.decorators ?? []).some((d: any) =>
+      matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, decorators));
+    const serverMember = (cls.body?.body ?? []).some((member: any) =>
+      (member.decorators ?? []).some(isServerDecorator));
+    return matches(cls.superClass, bases) || decorated || serverMember;
+  };
   const selected = new Set<any>();
-  const classes = [...findClasses(program)];
+  const { outer, nested } = classIndex(program);
   let changed = true;
   while (changed) {
     changed = false;
-    for (const cls of classes) {
-      if (selected.has(cls)) continue;
-      const decorated = (cls.decorators ?? []).some((d: any) =>
-        matches(d.expression?.type === 'CallExpression' ? d.expression.callee : d.expression, decorators));
-      const serverMember = (cls.body?.body ?? []).some((member: any) =>
-        (member.decorators ?? []).some(isServerDecorator));
-      if (matches(cls.superClass, bases) || decorated || serverMember) {
-        selected.add(cls);
-        if (cls.id?.name) bases.add(cls.id.name);
-        changed = true;
-      }
+    for (const cls of outer) {
+      if (selected.has(cls) || !isFramework(cls)) continue;
+      selected.add(cls);
+      const name = classNameOf(program, cls);
+      if (name) bases.add(name);
+      changed = true;
     }
   }
-  return selected;
+  const result = { selected, hidden: nested.find(isFramework) };
+  frameworkClassSets.set(program, result);
+  return result;
 }
 
 /** The static name of a class's `superClass` (e.g. `Cossack`), or null. */
@@ -1001,7 +1068,9 @@ function superclassName(cls: any): string | null {
 function memberKeyName(key: any): string | null {
   if (!key) return null;
   if (key.type === 'Identifier') return key.name;
-  if (key.type === 'PrivateIdentifier') return key.name;
+  // `#load` and `load` are different members; keying both as "load" let a
+  // preserved public method keep a private server method's body.
+  if (key.type === 'PrivateIdentifier') return `#${key.name}`;
   if (key.type === 'Literal' && typeof key.value === 'string') return key.value;
   return null;
 }
@@ -1138,36 +1207,59 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
   return methods;
 }
 
+/** Static name of `this.<name>` / `this.#name`, or null. */
+function thisMemberName(node: any): string | null {
+  if (node?.type !== 'MemberExpression' || node.object?.type !== 'ThisExpression' || node.computed) return null;
+  if (node.property?.type === 'Identifier') return node.property.name;
+  if (node.property?.type === 'PrivateIdentifier') return `#${node.property.name}`;
+  return null;
+}
+
 /**
- * Walk `node`'s subtree and collect every `this.<name>(...)` call's `<name>`.
- * Used by the transitive-preservation closure: a preserved method that calls
- * `this.foo(...)` preserves `foo`. Only static member names are considered
- * (`this[dyn]()` is ignored — we can't match it by name).
+ * Walk a preserved member body and collect every `this.<name>(...)` call.
+ * `calls` run while the member runs on the client, so they preserve their
+ * target. `handlerCalls` sit inside a function written in an event slot
+ * (`@click=${() => this.remove(id)}`, or `onClose: () => this.save()` when
+ * `handlerProperties` is set): they run later, exactly like a bare
+ * `@click=${this.remove}` reference, so they are an RPC boundary and must not
+ * pull a server-only body into the client.
+ * Only static member names are considered (`this[dyn]()` is ignored).
  */
-function collectThisCalls(node: any): string[] {
-  const names: string[] = [];
-  const visit = (n: any) => {
+function collectThisCallsByPosition(node: any, handlerProperties: boolean): { calls: string[]; handlerCalls: string[] } {
+  const calls: string[] = [];
+  const handlerCalls: string[] = [];
+  const visit = (n: any, handlerPosition: boolean, inHandler: boolean) => {
     if (!n || typeof n.type !== 'string') return;
-    if (
-      n.type === 'CallExpression' &&
-      n.callee?.type === 'MemberExpression' &&
-      n.callee.object?.type === 'ThisExpression' &&
-      !n.callee.computed &&
-      n.callee.property?.type === 'Identifier'
-    ) {
-      names.push(n.callee.property.name);
+    if (handlerPosition && (n.type === 'ArrowFunctionExpression' || n.type === 'FunctionExpression')) {
+      visit(n.body, false, true);
+      return;
+    }
+    if (n.type === 'CallExpression') {
+      const name = thisMemberName(n.callee);
+      if (name) (inHandler ? handlerCalls : calls).push(name);
+    }
+    if (n.type === 'TaggedTemplateExpression' && n.quasi?.type === 'TemplateLiteral') {
+      visit(n.tag, false, inHandler);
+      n.quasi.expressions.forEach((expression: any, index: number) =>
+        visit(expression, isTemplateEventBinding(n.quasi.quasis[index]), inHandler));
+      return;
+    }
+    if (n.type === 'Property') {
+      if (n.computed) visit(n.key, false, inHandler);
+      visit(n.value, handlerProperties && isHandlerProperty(n.key), inHandler);
+      return;
     }
     for (const k of Object.keys(n)) {
       const v = n[k];
       if (Array.isArray(v)) {
-        for (const c of v) visit(c);
+        for (const c of v) visit(c, handlerPosition, inHandler);
       } else if (v && typeof v.type === 'string') {
-        visit(v);
+        visit(v, handlerPosition, inHandler);
       }
     }
   };
-  visit(node);
-  return names;
+  visit(node, false, false);
+  return { calls, handlerCalls };
 }
 
 /** Helpers for recognizing bare method values in render event-handler slots. */
@@ -1239,9 +1331,17 @@ function computeAutomaticRpcSet(
   cls: any,
   methods: AstMethod[],
   preserved: Set<string>,
+  handlerCalls: Iterable<string> = [],
 ): Set<string> {
   const byName = new Map(methods.map((method) => [method.name, method]));
   const automatic = new Set<string>();
+  const register = (reference: string) => {
+    const target = byName.get(reference);
+    if (target && !reference.startsWith('#') && !preserved.has(reference) && !target.hasServerDecorator) {
+      automatic.add(reference);
+    }
+  };
+  for (const reference of handlerCalls) register(reference);
 
   for (const member of cls?.body?.body ?? []) {
     const name = memberKeyName(member.key);
@@ -1253,12 +1353,7 @@ function computeAutomaticRpcSet(
         : undefined;
     if (!body) continue;
 
-    for (const reference of collectRenderHandlerReferences(body)) {
-      const target = byName.get(reference);
-      if (target && !preserved.has(reference) && !target.hasServerDecorator) {
-        automatic.add(reference);
-      }
-    }
+    for (const reference of collectRenderHandlerReferences(body)) register(reference);
   }
 
   return automatic;
@@ -1270,7 +1365,7 @@ function computeAutomaticRpcSet(
  * name) and then computes the complete transitive closure — any `this.foo(...)` call from a preserved method to another method
  * on the same class preserves `foo` as well.
  *
- * AST-driven: call edges come from {@link collectThisCalls} walking each
+ * AST-driven: call edges come from {@link collectThisCallsByPosition} walking each
  * preserved method's body node, so string/comment content is naturally ignored
  * and computed `this[dyn]()` calls can't fool the closure.
  */
@@ -1279,7 +1374,7 @@ function computePreservedSet(
   methods: AstMethod[],
   isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
   builtinMethods: ReadonlySet<string>,
-): Set<string> {
+): { preserved: Set<string>; handlerCalls: Set<string> } {
   const byName = new Map<string, AstMethod>();
   for (const m of methods) {
     if (!byName.has(m.name)) byName.set(m.name, m);
@@ -1312,7 +1407,7 @@ function computePreservedSet(
         (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
       ) {
         // Arrow concise-body is an Expression (no BlockStatement); use the
-        // value body if present, else the value itself so `collectThisCalls`
+        // value body if present, else the value itself so the call walker
         // walks the expression.
         bodyByName.set(name, value.body ?? value);
       }
@@ -1321,11 +1416,17 @@ function computePreservedSet(
 
   // Visit each reachable method once. The finite worklist also handles cycles
   // without imposing an arbitrary limit on valid client helper chains.
+  const handlerCalls = new Set<string>();
   const pending = [...preserved];
   for (let index = 0; index < pending.length; index++) {
     const body = bodyByName.get(pending[index]);
     if (!body) continue;
-    for (const callee of collectThisCalls(body)) {
+    // Template `@event` slots are handlers in any client method. `onX:` object
+    // properties are component props only in render(); elsewhere they are
+    // usually library callbacks that must run on the client.
+    const reached = collectThisCallsByPosition(body, pending[index] === 'render');
+    reached.handlerCalls.forEach(name => handlerCalls.add(name));
+    for (const callee of reached.calls) {
       const target = byName.get(callee);
       // Explicit server methods remain RPC boundaries, including their callees.
       if (target && !target.hasServerDecorator && !preserved.has(callee)) {
@@ -1335,7 +1436,7 @@ function computePreservedSet(
     }
   }
 
-  return preserved;
+  return { preserved, handlerCalls };
 }
 
 /** Shared classification used by both build environments and inspection. */
@@ -1347,8 +1448,8 @@ function analyzeClassMethods(
   builtins: ReadonlySet<string>,
 ) {
   const methods = collectAstMethods(cls, code, program);
-  const preserved = computePreservedSet(cls, methods, policy, builtins);
-  const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved);
+  const { preserved, handlerCalls } = computePreservedSet(cls, methods, policy, builtins);
+  const automaticRpc = computeAutomaticRpcSet(cls, methods, preserved, handlerCalls);
   return { methods, preserved, automaticRpc };
 }
 
@@ -1418,7 +1519,7 @@ export function inspectCompilerMethods(code: string, id: string): {
       if (base.type === 'MemberExpression' && !base.computed && namespaces.has(base.object?.name) &&
           ['Cossack', 'CossackElement'].includes(base.property?.name)) return { status: 'resolved', bases };
       if (base.type !== 'Identifier') return { status: 'unresolved', bases };
-      const local = originalClasses.find(candidate => candidate.id?.name === base.name);
+      const local = originalClasses.find(candidate => classNameOf(originalProgram, candidate) === base.name);
       if (!local) {
         return { status: roots.has(base.name) ? 'resolved' : 'unresolved', bases: roots.has(base.name) ? bases : [...bases, base.name] };
       }
@@ -1435,8 +1536,8 @@ export function inspectCompilerMethods(code: string, id: string): {
       const { methods, preserved, automaticRpc } = analyzeClassMethods(
         cls, code, program, isClientSafeMethod, BUILTIN_METHODS,
       );
-      const className = cls.id?.name ?? 'Anonymous';
-      const originalClass = originalClasses.find(candidate => (candidate.id?.name ?? 'Anonymous') === className);
+      const className = classNameOf(program, cls) ?? 'Anonymous';
+      const originalClass = originalClasses.find(candidate => (classNameOf(originalProgram, candidate) ?? 'Anonymous') === className);
       const originals = originalClass ? collectAstMethods(originalClass, authored, originalProgram) : [];
       classes.push({
         name: className,
@@ -1445,7 +1546,8 @@ export function inspectCompilerMethods(code: string, id: string): {
         members: (cls.body?.body ?? [])
           .filter((member: any) => ['MethodDefinition', 'PropertyDefinition'].includes(member.type) && member.kind !== 'constructor' && !member.declare)
           .map((member: any): CompilerMemberFact => ({
-            name: member.computed && member.key?.type !== 'Literal' ? null : memberKeyName(member.key),
+            name: member.computed && member.key?.type !== 'Literal' ? null
+              : member.key?.type === 'PrivateIdentifier' ? member.key.name : memberKeyName(member.key),
             kind: member.type === 'PropertyDefinition' ? 'field' : member.kind === 'get' ? 'get' : member.kind === 'set' ? 'set' : 'method',
             static: Boolean(member.static),
             private: member.key?.type === 'PrivateIdentifier',
@@ -1593,7 +1695,8 @@ function extractServerOnlyMethodNames(
     if (!preserved.has(m.name)) {
       result.push({
         name: m.name,
-        registerForRpc: m.hasServerDecorator || automaticRpc.has(m.name),
+        // Private members cannot be invoked by name, so they never get a proxy.
+        registerForRpc: !m.name.startsWith('#') && (m.hasServerDecorator || automaticRpc.has(m.name)),
       });
     }
   }
@@ -1972,15 +2075,19 @@ export function transformCossackClass(
 ): string {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
-  code = stripSsgGenerateStaticParams(code);
+  const staticParams = stripSsgStaticParams(code);
+  code = staticParams.code;
   const serverInput = stripServerActionInput(code);
   code = serverInput.code;
-  const bodyDependencies = new Set(serverInput.bindings);
+  // Module bindings referenced only by removed code (stubbed bodies, input
+  // contracts, SSG param loaders) are removed when nothing else uses them.
+  const bodyDependencies = new Set([...serverInput.bindings, ...staticParams.bindings]);
 
   const program = parseProgram(code);
   if (!program) {
     throw new Error(`[Cossack Security] Could not parse ${id}; refusing to emit unstripped client code.`);
   }
+  assertNoHiddenFrameworkClass(program);
 
   // Collect, per class, the splices to apply. We record replacements as
   // file-relative offsets and apply them in reverse order at the end.
@@ -2001,7 +2108,7 @@ export function transformCossackClass(
   for (const cls of findClasses(program)) {
     if (!frameworkClasses(program).has(cls)) continue;
 
-    const className = cls.id?.name ?? 'Anonymous';
+    const className = classNameOf(program, cls) ?? 'Anonymous';
 
     const { methods, preserved, automaticRpc } = analyzeClassMethods(
       cls, code, program, isClientSafeMethodFn, builtinMethods,
@@ -2068,7 +2175,7 @@ export function transformCossackClass(
     }
   }
 
-  if (replacements.length === 0) return stripInputDependencies(code, serverInput.bindings);
+  if (replacements.length === 0) return stripInputDependencies(code, bodyDependencies, serverInput.bindings);
 
   // The rewritten signatures reference RpcCall; ensure the emitted module has
   // a type-only import available (the bundler erases it in production).
@@ -2116,59 +2223,72 @@ function findConstructor(cls: any): any | null {
  * Exported for unit testing.
  */
 export function stripSsgGenerateStaticParams(code: string): string {
-  if (!code.includes('generateStaticParams')) return code;
-  const program = parseProgram(code);
-  if (!program) return code;
-
-  const replacements: Array<{ start: number; end: number; replacement: string }> = [];
-
-  for (const cls of findClasses(program)) {
-    const decos = cls.decorators ?? [];
-    for (const deco of decos) {
-      const decoText = sourceSlice(code, deco);
-      if (!/@(Page|Component)\b/.test(decoText)) continue;
-      // The decorator argument is an ObjectExpression inside the call.
-      const value = findGenerateStaticParamsValueNode(deco, code);
-      if (value) {
-        replacements.push({
-          start: value.start,
-          end: value.end,
-          replacement: 'async () => []',
-        });
-      }
-    }
-  }
-
-  if (replacements.length === 0) return code;
-
-  let result = code;
-  for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
-    result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
-  }
-  return result;
+  return stripSsgStaticParams(code).code;
 }
 
 /**
- * Within a `@Page(...)` / `@Component(...)` decorator call's argument object,
- * find the `generateStaticParams` property's VALUE node (the function), but only
- * if it lives under an `ssg: { ... }` object literal. Returns the value node or
- * null. Mirrors the old `findSsgObjectLiteral` + `findGenerateStaticParamsValue`
- * pair, but via AST.
+ * Strip every `ssg.generateStaticParams` value from class decorator calls and
+ * report the module bindings it referenced. Fail closed on the decorator name:
+ * aliased (`import { Page as P }`), namespaced (`@core.Page`) and wrapped
+ * decorators all receive the same treatment, because the option is SSG-only
+ * whichever decorator carries it.
  */
-function findGenerateStaticParamsValueNode(decoratorNode: any, code: string): any | null {
-  const expr = decoratorNode.expression;
-  // @Page / @Component are call decorators: `@Page({ ... })`.
+function stripSsgStaticParams(code: string): { code: string; bindings: Set<string> } {
+  const bindings = new Set<string>();
+  if (!code.includes('generateStaticParams')) return { code, bindings };
+  const program = parseProgram(code);
+  if (!program) return { code, bindings };
+
+  // `@Page(options)` may reference a module-level `const options = { ... }`.
+  const objectBindings = new Map<string, any>();
+  for (const statement of program.body ?? []) {
+    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
+    if (declaration?.type !== 'VariableDeclaration') continue;
+    for (const declarator of declaration.declarations) {
+      const init = unwrapExpression(declarator.init);
+      if (declarator.id?.type === 'Identifier' && init?.type === 'ObjectExpression') objectBindings.set(declarator.id.name, init);
+    }
+  }
+
+  const replacements = new Map<number, { start: number; end: number; replacement: string }>();
+  for (const cls of [...classIndex(program).outer, ...classIndex(program).nested]) {
+    for (const deco of cls.decorators ?? []) {
+      const value = findGenerateStaticParamsValueNode(deco, objectBindings);
+      if (!value) continue;
+      inputRuntimeReferences(value).forEach(name => bindings.add(name));
+      replacements.set(value.start, { start: value.start, end: value.end, replacement: 'async () => []' });
+    }
+  }
+
+  if (replacements.size === 0) return { code, bindings };
+
+  let result = code;
+  for (const r of [...replacements.values()].sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
+  }
+  return { code: result, bindings };
+}
+
+/**
+ * Within a class decorator call's argument object, find the
+ * `generateStaticParams` property's VALUE node, but only if it lives under an
+ * `ssg: { ... }` object literal. The argument may be an inline object or a
+ * module-level `const` object. Returns the value node or null.
+ */
+function findGenerateStaticParamsValueNode(decoratorNode: any, objectBindings: Map<string, any>): any | null {
+  const expr = unwrapExpression(decoratorNode.expression);
   if (!expr || expr.type !== 'CallExpression') return null;
-  const arg = expr.arguments?.[0];
+  let arg = unwrapExpression(expr.arguments?.[0]);
+  if (arg?.type === 'Identifier') arg = objectBindings.get(arg.name);
   if (!arg || arg.type !== 'ObjectExpression') return null;
 
   for (const prop of arg.properties) {
-    if (prop.type !== 'Property') continue;
+    if (prop.type !== 'Property' || prop.computed) continue;
     if (memberKeyName(prop.key) !== 'ssg') continue;
-    const ssgVal = prop.value;
+    const ssgVal = unwrapExpression(prop.value);
     if (!ssgVal || ssgVal.type !== 'ObjectExpression') return null; // boolean form
     for (const ssgProp of ssgVal.properties) {
-      if (ssgProp.type !== 'Property') continue;
+      if (ssgProp.type !== 'Property' || ssgProp.computed) continue;
       if (memberKeyName(ssgProp.key) === 'generateStaticParams') {
         return ssgProp.value;
       }

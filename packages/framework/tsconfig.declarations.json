@@ -70,7 +70,6 @@
     "src/lang/**",
     "src/models/**",
     "src/pages/**",
-    "src/services/**",
-    "src/storage/s3.ts"
+    "src/services/**"
   ]
 }

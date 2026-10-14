@@ -20,13 +20,16 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
                 ? suppliedId : crypto.randomUUID();
             c.res.headers.set('X-Cossack-Request-Id', requestId);
             try {
-                const body = await readRpcRequest(c);
+                const body = await readRpcRequest(c, ctx.rpcBodyLimits);
                 if (!body || typeof body !== 'object' || Array.isArray(body)) {
                     return c.json({ error: 'Invalid transport body' }, 400);
                 }
                 const routeId = body.service?.ownerRouteId ?? body.componentRouteId;
                 componentPath = typeof routeId === 'string' ? ctx.routeIdMap.get(routeId) : undefined;
             } catch (error) {
+                if (error instanceof RpcError && error.code === 'COSSACK_RPC_REQUEST_TOO_LARGE') {
+                    return c.json({ error: error.message, code: error.code, requestId }, 413);
+                }
                 return c.json({ error: error instanceof RpcError ? error.message : 'Invalid transport body',
                     code: 'COSSACK_RPC_REQUEST_INVALID', requestId }, 400);
             }

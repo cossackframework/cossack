@@ -168,7 +168,9 @@ export function connectWebSocket(component: any): void {
             params: JSON.stringify(initialState?.metadata?.params || {}),
         }).toString();
 
-        const wsUrl = `/ws/${providerName}/${target}?${params}`;
+        // Targets can be scope keys or object names (`team:a`, `page:[...]`), so
+        // encode them as single path segments. The server decodes route params.
+        const wsUrl = `/ws/${encodeURIComponent(providerName)}/${encodeURIComponent(target)}?${params}`;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const fullWsUrl = `${protocol}//${window.location.host}${wsUrl}`;
 

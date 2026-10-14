@@ -452,9 +452,14 @@ describe('shared generated production Node app', () => {
       const origin = 'http://127.0.0.1:' + server.address().port;
       env.APP_URL = origin;
       const rendered = await app.request('/live', {}, env);
-      if (rendered.status !== 200 || !(await rendered.text()).includes('user:anonymous')) throw new Error('WebSocket page SSR failed');
+      const html = rendered.status === 200 ? await rendered.text() : '';
+      const initial = html.match(/window\\.__INITIAL_STATE__ = (.*?)<\\/script>/s);
+      if (!initial) throw new Error('WebSocket page SSR failed');
+      // Connect to the target SSR emitted, encoded as one path segment, as the browser does.
+      const target = JSON.parse(initial[1]).providerTargets.page;
+      if (typeof target !== 'string' || !target.startsWith('page:')) throw new Error('Unexpected WebSocket target ' + target);
       const query = new URLSearchParams({ routePath: '/live', pathname: '/live', params: '{}' });
-      const url = origin.replace('http:', 'ws:') + '/ws/page/user:anonymous?' + query;
+      const url = origin.replace('http:', 'ws:') + '/ws/page/' + encodeURIComponent(target) + '?' + query;
       const rejectUpgrade = (target, requestOrigin) => new Promise((resolve, reject) => {
         const socket = new WebSocket(target, { headers: { origin: requestOrigin } });
         socket.on('error', () => {});
@@ -468,7 +473,7 @@ describe('shared generated production Node app', () => {
       try {
         await rejectUpgrade(url, 'https://untrusted.example');
         await new Promise((resolve, reject) => {
-          const denied = new WebSocket(url.replace('user:anonymous', 'user:other'), { headers: { origin } });
+          const denied = new WebSocket(url.replace(encodeURIComponent(target), encodeURIComponent('user:other')), { headers: { origin } });
           const frames = [];
           denied.on('message', data => frames.push(JSON.parse(String(data))));
           denied.once('error', reject);

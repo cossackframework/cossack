@@ -53,6 +53,25 @@ export interface SessionMiddlewareOptions {
   ) => string | undefined | Promise<string | undefined>;
   /** Whether anonymous cookies are HTTP-only. Defaults to true. */
   httpOnly?: boolean;
+  /**
+   * The cookie `Secure` attribute. `'auto'` (default) sets it for HTTPS request
+   * URLs, and for `X-Forwarded-Proto: https` only when `trustProxy` is true.
+   */
+  secure?: boolean | 'auto';
+  /**
+   * Trust `X-Forwarded-Proto` from a TLS-terminating proxy (nginx, Fly, a load
+   * balancer). Enable only when that proxy always overwrites the header; a
+   * client can otherwise send it. Defaults to false.
+   */
+  trustProxy?: boolean;
+}
+
+function isSecureRequest(context: Context, secure: boolean | 'auto', trustProxy: boolean): boolean {
+  if (typeof secure === 'boolean') return secure;
+  if (context.req.url.startsWith('https://')) return true;
+  if (!trustProxy) return false;
+  // The first value is the original client-facing hop.
+  return context.req.header('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase() === 'https';
 }
 
 async function resolveStore(
@@ -77,6 +96,8 @@ export function createSessionMiddleware(
   const cookieName = options.cookieName ?? DEFAULT_COOKIE_NAME;
   const ttl = options.ttl ?? DEFAULT_TTL_MS;
   const httpOnly = options.httpOnly ?? true;
+  const secure = options.secure ?? 'auto';
+  const trustProxy = options.trustProxy ?? false;
 
   return async (context, next) => {
     const store = await resolveStore(context, options.store);
@@ -94,6 +115,8 @@ export function createSessionMiddleware(
       authProvidedId = false;
     }
     let issuedAnonymousId = false;
+    // A write slides the stored expiry, so the browser cookie must slide too.
+    let written = false;
     if (!sessionId) {
       sessionId = await store.create(ttl);
       issuedAnonymousId = true;
@@ -108,7 +131,10 @@ export function createSessionMiddleware(
       id: currentId,
       get: <T = unknown>(key: string) => store.get<T>(currentId(), key),
       getAll: () => store.getAll(currentId()),
-      set: (key, value) => store.set(currentId(), key, value, ttl),
+      async set(key, value) {
+        await store.set(currentId(), key, value, ttl);
+        written = true;
+      },
       unset: (key) => store.unset(currentId(), key),
       async bindUser(userId) {
         assertResponseHeadersMutable(context, 'rotate a session');
@@ -137,10 +163,10 @@ export function createSessionMiddleware(
     await next();
 
     if (destroyed && !authProvidedId) deleteCookie(context, cookieName, { path: '/' });
-    if (!destroyed && issuedAnonymousId && !authProvidedId) {
+    if (!destroyed && (issuedAnonymousId || written) && !authProvidedId) {
       setCookie(context, cookieName, sessionId, {
         httpOnly,
-        secure: context.req.url.startsWith('https://'),
+        secure: isSecureRequest(context, secure, trustProxy),
         sameSite: 'Lax',
         path: '/',
         maxAge: Math.floor(ttl / 1000),

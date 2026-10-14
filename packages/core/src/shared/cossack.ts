@@ -89,7 +89,7 @@ import type {
     CossackInternalState,
     CossackRuntimeInfo,
 } from './component-types';
-import type { User } from './user';
+import { toPublicUser, type User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
 import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus, type ServerResourceReconciliation } from './server-resource';
 import type { ServiceClass } from './container';
@@ -596,10 +596,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     @ClientState()
     private _cossack_path: string = '';
 
-    @Server()
+    @Server({ rpc: false })
     private _cossack_provider_name?: string;
 
-    @Server()
+    @Server({ rpc: false })
     private _cossack_ws_context?: unknown;
 
     @Client()
@@ -626,7 +626,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return false;
     }
 
-    @Server()
+    @Server({ rpc: false })
     private _runtime?: CossackServerRuntime;
 
     private dirtyProperties: Set<string> = new Set();
@@ -2971,7 +2971,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
 
     /**
      * Redirect back to the previous page (the request's `Referer`), with an
-     * optional fallback if there is no referer. Pairs naturally with `flash()`
+     * optional fallback if there is no same-origin referer. Pairs naturally with `flash()`
      * for the POST→redirect→GET pattern:
      *
      *   async post() {
@@ -2990,8 +2990,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
             return this.redirect(fallback);
         }
-        const referer = this.c.req.header('referer') || fallback;
-        return this.c.redirect(referer, 302);
+        // Referer is client-controlled: only follow it within this origin.
+        const referer = this.c.req.header('referer');
+        let target = fallback;
+        if (referer) {
+            try { if (new URL(referer).origin === new URL(this.c.req.url).origin) target = referer; }
+            catch { /* Malformed or relative referer: use the fallback. */ }
+        }
+        return this.c.redirect(target, 302);
     }
 
     /**
@@ -3048,8 +3054,11 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     /**
      * Serialize the component's state for transmission between server and client.
      * Returns a unified SerializedComponentState containing public state, metadata, and children.
+     * The user is reduced to its browser-visible projection (`{ id }` by
+     * default). Pass `{ user: false }` for snapshots that outlive the request,
+     * such as Durable Object storage.
      */
-    public getInitialState(): SerializedComponentState {
+    public getInitialState(options: { user?: boolean } = {}): SerializedComponentState {
         const ambient = this._ambientContext() as Context | undefined;
         const params = ambient?.req.param() || {};
         const requestUrl = ambient?.req.url;
@@ -3063,7 +3072,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 pathname: ambient?.req.path,
                 url: destination ? destination.pathname + destination.search : undefined,
                 params,
-                user: this._ambientUser(),
+                ...(options.user === false ? {} : { user: toPublicUser(this._ambientUser()) }),
             },
         };
         if (this._ownsServiceScope) {
@@ -3098,7 +3107,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Add nested children states
         const childrenState: Record<string, SerializedComponentState> = {};
         for (const [id, comp] of this.activeComponents) {
-            childrenState[id] = comp.getInitialState();
+            childrenState[id] = comp.getInitialState(options);
         }
         serializedState.children = childrenState;
 

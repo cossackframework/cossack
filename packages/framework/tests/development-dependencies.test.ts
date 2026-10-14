@@ -40,7 +40,7 @@ describe('demo development dependency discovery', () => {
     expect(config.environments?.client?.optimizeDeps?.include).not.toContain('@cossackframework/renderer/server');
   });
   it('pre-bundles storage SDKs only on the server without disabling discovery', () => {
-    const sdks = ['@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'];
+    const sdks = ['@aws-sdk/client-s3'];
     for (const sdk of sdks) {
       expect(config.environments?.ssr?.optimizeDeps?.include).toContain(sdk);
       expect(config.environments?.client?.optimizeDeps?.include).not.toContain(sdk);

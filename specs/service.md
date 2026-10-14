@@ -100,7 +100,10 @@ Choose ownership by state lifetime, not convenience:
 | Request root scope | One SSR/SSG/RPC request | Request-local work, nothing shared with other requests |
 
 A global singleton must not retain request-specific or user-specific mutable
-state. Concurrent requests in one isolate can observe each other's data. The
+state. Concurrent requests in one isolate can observe each other's data.
+Component bootstrap enforces this for the legacy constructor-injection bridge:
+an undeclared singleton service that declares `@State`/`@Store` throws, naming
+the `@Page({ services: [...] })` fix. The
 resolution error's scope chain shows which layouts are active and what they
 declare, so a misplaced declaration is visible without tracing framework
 internals. Undeclared constructor injection falls back to the global container

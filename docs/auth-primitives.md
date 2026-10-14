@@ -41,7 +41,12 @@ factor or choose a custom hasher.
 `createCredentialVerifier` takes typed `find`, `passwordHash` and `user`
 callbacks. Account records can include secrets. The `user` callback returns the
 safe application user only after successful verification. Missing accounts,
-missing hashes and rejected passwords return `null`. Identifier normalization,
+missing hashes and rejected passwords return `null`. For a missing account or
+hash, the verifier still runs `hasher.verify` against a dummy hash that the
+same hasher creates once, on first use. The result is discarded. This keeps the
+work, and so the response time, close to a wrong password, so timing does not
+reveal which identifiers exist. Lookup time in `find` remains the application's
+responsibility. Identifier normalization,
 password policy and rate limiting belong to the application.
 
 An optional `replacePasswordHash(record, expectedHash, replacement)` callback

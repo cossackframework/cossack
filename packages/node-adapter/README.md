@@ -93,6 +93,9 @@ route/provider/scope share one initialization and process-local state.
 
 `maxInstances` defaults to 512 and includes pending initialization.
 `idleTimeoutMs` defaults to 15 minutes. Pruning runs on socket activity.
+`maxPayload` caps one WebSocket message at 1 MiB by default. A larger message
+closes the socket with code 1009 before the server parses it. Raise it only for
+components that need bigger RPC payloads.
 Call `await runtime.dispose()` before closing an embedded server. It detaches
 upgrade listeners, ends sockets, waits for pending initialization and active
 actions, and destroys components/services. Repeated calls share the same result.

@@ -126,8 +126,9 @@ describe('framework publication contract', () => {
       'unified',
       'vfile-matter',
     ]);
+    expect(frameworkPackage.dependencies).not.toHaveProperty('@aws-sdk/s3-request-presigner');
+    expect(frameworkPackage.devDependencies).not.toHaveProperty('@aws-sdk/s3-request-presigner');
     for (const name of [
-      '@aws-sdk/s3-request-presigner',
       '@cossackframework/solar-icons',
       '@cossackframework/ui',
       'tsx',

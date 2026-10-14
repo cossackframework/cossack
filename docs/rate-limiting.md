@@ -84,6 +84,11 @@ export const GET = RateLimit({ window: 10_000, max: 3 }, (c) => {
 export const POST = RateLimit((c) => c.json({ ok: true }));
 ```
 
+The wrapper keys each budget by HTTP method and the matched route template, not
+the concrete URL. A caller who requests `/api/items/1`, `/api/items/2` and so on
+spends one shared budget for `/api/items/:id`. Outside a Hono router the wrapper
+falls back to the request path.
+
 ## Class-based API routes & `@Server` methods (decorator)
 
 The decorator form works on class-based API handlers (`get`/`post`/…) and

@@ -6,6 +6,7 @@ import type {
     GoogleProviderOptions,
 } from '../types';
 import { createNormalizer, decodeJwtPayload } from '../provider';
+import { OAuthError } from '../errors';
 
 export type { GoogleProviderOptions };
 
@@ -22,7 +23,11 @@ function optionsOf(config: OAuthProviderConfig<GoogleProviderOptions>): GooglePr
  *
  * Default scopes: `['openid', 'email', 'profile']`. Email/name/picture are
  * resolved from the `id_token` JWT claims (preferred for accuracy), with
- * fallback to the userinfo payload.
+ * fallback to the userinfo payload. `email` is `null` unless `email_verified`
+ * is `true`.
+ *
+ * When `hostedDomain` is set, the `hd` authorize param is only a UI hint; the
+ * domain is enforced here by requiring the verified `hd` claim to match.
  */
 export function createGoogleProvider(
     opts: GoogleProviderOptions = {},
@@ -56,7 +61,16 @@ export function createGoogleProvider(
             const merged: Record<string, unknown> = { ...raw, ...claims };
             // Prefer the stable subject claim from the id_token when present.
             if (typeof claims.sub === 'string') merged.id = claims.sub;
-            return fallback(merged, tokens);
+            // `hd` on the authorize URL can be removed by the user. Only the
+            // provider-issued `hd` claim of a verified account proves membership.
+            if (opts.hostedDomain !== undefined &&
+                (merged.hd !== opts.hostedDomain || merged.email_verified !== true)) {
+                throw new OAuthError('COSSACK_OAUTH_USER_INFO_FAILED');
+            }
+            const emailVerified = merged.email_verified === true;
+            if (!emailVerified) merged.email = null;
+            const user = fallback(merged, tokens);
+            return { ...user, emailVerified: emailVerified && typeof user.email === 'string' };
         },
     };
 }

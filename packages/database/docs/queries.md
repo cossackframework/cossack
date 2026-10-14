@@ -145,6 +145,17 @@ const rows = await User.query("user")
   .getRawMany();
 ```
 
+`addSelect()` adds properties to the default columns (or to an earlier
+`select()`). Use it to load `select: false` columns:
+
+```ts
+const user = await User.query().addSelect("passwordHash").where({ email }).getOne();
+```
+
+A `select()` that includes every primary column still hydrates entities and
+paginates like a default query. Projections without the primary key need an
+explicit unique `orderBy()` before `limit()` or `offset()`.
+
 Use `selectRaw()` for calculated or database-specific projections:
 
 ```ts
@@ -225,6 +236,8 @@ await User.delete({ active: false });
 ```
 
 These methods return a normalized `QueryResult` containing `rows` and `meta`.
+They reject values for columns declared with `insert: false` (insert/upsert) or
+`update: false` (update).
 Always make bulk update/delete predicates explicit.
 
 For adapters that support `RETURNING`, use a mutation builder:

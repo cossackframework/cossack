@@ -7,7 +7,9 @@
  *   pnpm bump <version> --dry-run
  *
  * What it does:
- *   1. Sets `version` in every workspace package.json to the target.
+ *   1. Sets `version` in every packages/* package.json and in the root
+ *      package.json to the target (publish.yml requires all of them to match
+ *      the release tag).
  *   2. Rewrites any `^<oldVersion>` range whose key is an in-monorepo package
  *      name to `^<newVersion>`. This covers standard dependency sections and
  *      the nested `scaffold.dependencyVersions` map uniformly.
@@ -23,6 +25,7 @@ import { readFile, writeFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const PACKAGES_DIR = new URL('../packages/', import.meta.url).pathname;
+const ROOT_PACKAGE = new URL('../package.json', import.meta.url).pathname;
 const KEYWORDS = new Set(['patch', 'minor', 'major']);
 
 function log(...args) {
@@ -184,13 +187,19 @@ async function main() {
     await writeFile(path, stringify(next), 'utf8');
   }
 
+  const workspace = await readJson(ROOT_PACKAGE);
+  log(`  ${'(root) ' + workspace.name}`.padEnd(34) + ` ${workspace.version} -> ${newVersion}`);
+  if (!dryRun) {
+    await writeFile(ROOT_PACKAGE, stringify({ ...workspace, version: newVersion }), 'utf8');
+  }
+
   log(`\nDone. ${totalRangeBumps} scoped range(s) rewritten across ${packages.length} packages.`);
   if (dryRun) {
     log('(dry-run: no files written)');
   } else {
-    log('Next: review with `git diff`, then commit and tag:');
-    log(`  git add -A && git commit -m "chore: release v${newVersion}" && git tag v${newVersion}`);
-    log(`  pnpm -r publish --no-git-checks`);
+    log('Next: review with `git diff`, commit, merge to master, then publish a');
+    log(`GitHub release with tag ${newVersion} targeting master. publish.yml checks`);
+    log('that the tag matches every package version and publishes to npm.');
   }
 }
 

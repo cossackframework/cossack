@@ -93,14 +93,21 @@ The definition's authored `name` and positive `version` are static metadata. Kee
 step names and control flow stable for existing instances. A version change creates
 new invocation identities. Coordinate it with your deployment and retention policy.
 Invocation hashes include namespace, definition name/version, tenant, actor and
-logical key. Reusing a key does not authorize another caller or promise that a
+logical key. The returned identity carries all of these fields (including `key`)
+next to `id`, and every client operation and the native entry recompute the hash
+and reject a mismatch with `WORKFLOW_IDENTITY_INVALID`. An identity whose `scope`,
+`key`, namespace or version was edited therefore never reaches `authorize` or the
+provider, so `authorize` may trust `identity.scope`. Treat `key` as visible to
+whoever holds the identity. Reusing a key does not authorize another caller or promise that a
 different payload replaces the original run. Invoking an existing key fails with
 `WORKFLOW_DUPLICATE`. The framework performs this check, because local workerd
 accepts a duplicate create. Inspection does not start or recreate an instance.
 
 All invocation, inspection, events and administrative pause/resume/terminate
 operations belong on the server. Derive scope and keys from trusted application
-context. A caller-provided identity is an identifier, never proof of ownership.
+context. A caller-provided identity is an identifier, never proof of ownership:
+its scope is verified to match its `id`, but holding it does not prove the caller
+is that tenant or actor. Compare `identity.scope` with the authenticated context.
 Use the optional `authorize` hook or enforce access before every client operation.
 The framework supplies no unauthenticated public inspection/admin endpoint. Inspection
 returns only identity, durability, status and a fixed failure code. It never

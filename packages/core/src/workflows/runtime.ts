@@ -29,11 +29,17 @@ export function defineWorkflow<T, E extends WorkflowEvents, Env = unknown>(defin
     for (const event of Object.keys(definition.events)) label(event);
     return Object.freeze({ ...definition, events: Object.freeze({ ...definition.events }) });
 }
-export function validateWorkflowIdentity(identity: WorkflowIdentity, definition: { name: string; version: number }, namespace?: string): WorkflowIdentity {
-    const safe = workflowData(identity) as WorkflowIdentity; label(safe.namespace); label(safe.name);
+async function workflowId(namespace: string, name: string, version: number, scope: WorkflowScope, key: string): Promise<string> {
+    const bytes = new TextEncoder().encode(JSON.stringify([namespace, name, version, scope.tenantId ?? null, scope.actorId ?? null, key]));
+    const digest = await crypto.subtle.digest('SHA-256', bytes); return Array.from(new Uint8Array(digest), n => n.toString(16).padStart(2, '0')).join('');
+}
+/** Identities are self-verifying: `id` must equal the digest of (namespace, name, version, scope, key), so a caller cannot rewrite `scope` (or any other field) without changing the instance it addresses. */
+export async function validateWorkflowIdentity(identity: WorkflowIdentity, definition: { name: string; version: number }, namespace?: string): Promise<WorkflowIdentity> {
+    const safe = workflowData(identity) as WorkflowIdentity; label(safe.namespace); label(safe.name); label(safe.key);
     if (!/^[a-f0-9]{64}$/.test(safe.id) || safe.name !== definition.name || safe.version !== definition.version || namespace !== undefined && safe.namespace !== namespace) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID');
-    if (!safe.scope || typeof safe.scope !== 'object' || Object.keys(safe).some(key => !['id', 'namespace', 'name', 'version', 'scope'].includes(key)) || Object.keys(safe.scope).some(key => !['tenantId', 'actorId'].includes(key))) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID');
+    if (!safe.scope || typeof safe.scope !== 'object' || Array.isArray(safe.scope) || Object.keys(safe).some(key => !['id', 'namespace', 'name', 'version', 'key', 'scope'].includes(key)) || Object.keys(safe.scope).some(key => !['tenantId', 'actorId'].includes(key))) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID');
     if (safe.scope.tenantId !== undefined) label(safe.scope.tenantId); if (safe.scope.actorId !== undefined) label(safe.scope.actorId);
+    if (await workflowId(safe.namespace, safe.name, safe.version, safe.scope, safe.key) !== safe.id) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID');
     return Object.freeze({ ...safe, scope: Object.freeze({ ...safe.scope }) });
 }
 async function parsed<T>(schema: { parse(value: unknown): Promise<T> }, input: unknown, event = false): Promise<T> {
@@ -50,7 +56,7 @@ function stepOptions(options: import('./contracts').WorkflowStepOptions | undefi
 }
 export async function executeWorkflow<T, E extends WorkflowEvents, Env>(definition: WorkflowDefinition<T, E, Env>, envelope: WorkflowEnvelope, driver: WorkflowDriver, env: Env): Promise<unknown> {
     envelope = workflowData(envelope) as WorkflowEnvelope;
-    if (envelope.format !== 1) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID'); const identity = validateWorkflowIdentity(envelope.identity, definition);
+    if (envelope.format !== 1) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID'); const identity = await validateWorkflowIdentity(envelope.identity, definition);
     const input = await parsed(definition.schema, envelope.payload);
     return workflowData(await definition.run(input, { identity, env, step: {
         do: (name, callback, options) => { stepName(name); return driver.do(name, async () => workflowData(await callback()) as Awaited<ReturnType<typeof callback>>, stepOptions(options)); },
@@ -60,13 +66,12 @@ export async function executeWorkflow<T, E extends WorkflowEvents, Env>(definiti
 }
 export function createWorkflowClient<T, E extends WorkflowEvents, Env>(definition: WorkflowDefinition<T, E, Env>, provider: WorkflowProvider, options: { namespace: string; authorize?: (operation: 'invoke' | 'inspect' | 'event' | 'pause' | 'resume' | 'terminate', identity: WorkflowIdentity) => void | Promise<void> }) {
     label(options.namespace);
-    async function authorize(operation: Parameters<NonNullable<typeof options.authorize>>[0], identity: WorkflowIdentity) { const safe = validateWorkflowIdentity(identity, definition, options.namespace); await options.authorize?.(operation, safe); return safe; }
+    async function authorize(operation: Parameters<NonNullable<typeof options.authorize>>[0], identity: WorkflowIdentity) { const safe = await validateWorkflowIdentity(identity, definition, options.namespace); await options.authorize?.(operation, safe); return safe; }
     return {
         async invoke(input: T, invocation: { key: string; scope?: WorkflowScope }): Promise<WorkflowIdentity> {
             label(invocation.key); const scope = workflowData(invocation.scope ?? {}) as WorkflowScope; if (Object.keys(scope).some(key => !['tenantId', 'actorId'].includes(key))) throw new WorkflowError('WORKFLOW_IDENTITY_INVALID'); if (scope.tenantId !== undefined) label(scope.tenantId); if (scope.actorId !== undefined) label(scope.actorId);
-            const bytes = new TextEncoder().encode(JSON.stringify([options.namespace, definition.name, definition.version, scope.tenantId ?? null, scope.actorId ?? null, invocation.key]));
-            const digest = await crypto.subtle.digest('SHA-256', bytes); const id = Array.from(new Uint8Array(digest), n => n.toString(16).padStart(2, '0')).join('');
-            const identity = Object.freeze({ id, namespace: options.namespace, name: definition.name, version: definition.version, scope: Object.freeze(scope) });
+            const id = await workflowId(options.namespace, definition.name, definition.version, scope, invocation.key);
+            const identity = Object.freeze({ id, namespace: options.namespace, name: definition.name, version: definition.version, key: invocation.key, scope: Object.freeze(scope) });
             await authorize('invoke', identity); const payload = await parsed(definition.schema, input); await provider.create({ format: 1, identity, payload }); return identity;
         },
         async inspect(identity: WorkflowIdentity): Promise<WorkflowInspection> { identity = await authorize('inspect', identity); const status = await provider.inspect(identity.id); return { identity, durability: provider.durability, status, ...(status === 'failed' ? { code: 'WORKFLOW_FAILED' as const } : {}) }; },

@@ -12,8 +12,9 @@ Cossack and its packages.
 ## What is included
 
 - Session authentication: `createAuth()` middleware that populates
- `c.get('user')`, plus a `createLoginHandler()` factory for credentials-based
- login.
+ `c.get('user')`, plus a `createLoginHandler()` factory for JSON credentials-based
+ login. It rejects cross-site requests (403), non-JSON content types (415) and
+ malformed bodies (400).
 - OAuth 2.0: `createOAuth()` with first-party providers for GitHub,
  Google, GitLab, Facebook, and Microsoft, plus a `defineOAuthProvider()`
  helper for any custom provider. It implements the full Authorization Code flow
@@ -158,7 +159,8 @@ interface OAuthUser {
     id: string;            // stable, provider-scoped
     nickname?: string;     // e.g. GitHub login
     name?: string;
-    email?: string | null; // null if hidden (GitHub) and unresolvable
+    email?: string | null; // only a provider-verified address, else null/absent
+    emailVerified?: boolean; // true only when the provider asserted ownership
     avatar?: string;
     raw: Record<string, unknown>; // full provider payload
 }
@@ -168,11 +170,11 @@ interface OAuthUser {
 
 | Provider | Quirk handled |
 | --- | --- |
-| GitHub | Falls back to `/user/emails` when the user's primary email is private. |
-| Google | OIDC `id_token` claims preferred. Options: `hostedDomain` (`hd`) and `offlineAccess` (`access_type=offline`). |
-| GitLab | Configurable `baseUrl` for self-hosted instances. Same email fallback as GitHub. |
+| GitHub | Confirms the email against `/user/emails`; returns only a verified address (profile email or verified primary). |
+| Google | OIDC `id_token` claims preferred. Options: `hostedDomain` (sent as `hd` and enforced on callback: the `hd` claim must match and `email_verified` must be `true`) and `offlineAccess` (`access_type=offline`). |
+| GitLab | Configurable `baseUrl` for self-hosted instances. Returns only confirmed addresses (primary of a confirmed account, else a confirmed `/user/emails` entry). |
 | Facebook | Sends explicit `fields=id,name,email,picture` on the user-info call. |
-| Microsoft | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID). OIDC `id_token` claims. |
+| Microsoft | Configurable `tenant` (`common`/`organizations`/`consumers`/GUID). OIDC `id_token` claims. `email` is the `email` claim only (never `preferred_username`); `emailVerified` requires `xms_edov`. |
 
 ### Custom providers
 
@@ -218,10 +220,12 @@ export const oauth = createOAuth({
 
 For cookie-less API clients, pass `stateless: true` to `createOAuth()`. In
 this mode, PKCE is also disabled. The verifier cannot be recovered without a
-cookie store. You become responsible for CSRF protection of the callback. For
-example, pass `state` through a signed query parameter and make sure that the
-value is valid. Use this mode only when cookies are not an option. The default
-stateful mode is more secure.
+cookie store. `secret` is still required: `state` becomes a signed token
+(HMAC-SHA256 over a random nonce, the provider ID and an expiry of
+`cookie.maxAge` seconds). The callback rejects forged, expired or
+other-provider state with `COSSACK_OAUTH_STATE_INVALID` before token exchange.
+The token is not bound to the browser and is not single-use. Use this mode only
+when cookies are not an option. The default stateful mode is more secure.
 
 OAuth failures expose an `OAuthError` with a fixed `code`, `stage`, `status`
 and safe message. Provider failures can include a numeric `providerStatus`.

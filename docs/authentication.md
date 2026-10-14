@@ -222,6 +222,21 @@ The handler uses the provider's `createSession` when omitted. Pass a per-handler
 `createSession` to override it. If neither is configured, the handler returns
 a configuration error (HTTP 500).
 
+The handler checks each request before it reads credentials. These checks stop
+login CSRF, where another site signs the browser in to an attacker's account:
+
+| Check | Failure |
+| --- | --- |
+| `Sec-Fetch-Site` is `same-origin`, `same-site`, `none` or absent | 403 |
+| A present `Origin` equals the request origin (`https://` + host is also accepted when `X-Forwarded-Proto: https` is set) | 403 |
+| `Content-Type` is `application/json` (parameters such as `charset` are allowed) | 415 |
+| The body is valid JSON | 400 |
+| The JSON body is an object | 400 |
+
+A cross-site HTML form cannot send `application/json` without a CORS preflight.
+Send credentials with `fetch()` and `Content-Type: application/json`. Clients on
+another origin are rejected. Add your own route if you need cross-origin login.
+
 ```typescript
 // src/auth.ts
 export const loginHandler = auth.createLoginHandler({
@@ -259,6 +274,28 @@ export class Dashboard extends Cossack {
     }
 }
 ```
+
+### The user in the browser
+
+On the server, `this.user` is the full user that your middleware set. The
+browser gets only a projection of it. By default the SSR hydration payload
+(`window.__INITIAL_STATE__`) contains only `{ id }`, so after hydration
+`this.user` on the client has only `id`. Durable Object storage never stores
+the user.
+
+Read other user fields on the server, for example in `init()`, and copy what
+the page displays into `@State` fields. If client code needs more user fields,
+opt in to them with `publicUser`. Return only data that is safe to show to that
+user. `id` always comes from the authenticated user.
+
+```typescript
+const app = createApp({
+    publicUser: (user) => ({ name: user.name, avatar: user.avatar }),
+});
+```
+
+SSR responses for a signed-in user get `Cache-Control: private, no-store`, so
+shared caches do not store personalized HTML.
 
 ## Generated token boundaries
 

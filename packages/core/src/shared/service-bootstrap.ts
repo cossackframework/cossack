@@ -3,7 +3,7 @@ import { noteOptimisticWrite } from './optimistic-state';
 import { collectServerMethodMetadata } from './server-method-metadata';
 // src/shared/service-bootstrap.ts
 import './metadata';
-import { isService } from './container';
+import { getServiceMetadata, isService } from './container';
 import { RESERVED_STATE_KEYS } from './component-types';
 import { isSharedMethod } from './shared-method';
 import { createStoreProxy, isPlainObjectOrArray } from './store';
@@ -150,6 +150,7 @@ export function bootstrapServices(component: any): void {
                     component._subscribeScopedConstructorService?.(dep);
                     continue;
                 }
+                assertNoSingletonState(dep);
                 // Set up @State getters/setters on the service
                 bootstrapService(serviceInstance);
 
@@ -166,6 +167,24 @@ export function bootstrapServices(component: any): void {
             }
         }
     }
+}
+
+/**
+ * Undeclared constructor dependencies come from the global container. A
+ * singleton lives for the whole isolate, so bridging its @State/@Store onto a
+ * component would let one request's client-sent state leak into another
+ * user's request. Such services must be owned by a layout (request-safe).
+ */
+function assertNoSingletonState(serviceClass: any): void {
+    if (getServiceMetadata(serviceClass)?.scope !== 'singleton') return;
+    const { state, store } = collectReactiveMetadata(serviceClass);
+    const keys = [...new Set([...Object.keys(state), ...Object.keys(store)])];
+    if (keys.length === 0) return;
+    const name = serviceClass.name || 'Service';
+    throw new Error(`[Cossack] ${name} is a global singleton service with @State/@Store (${keys.join(', ')}). `
+        + 'Singleton services are shared by every request in an isolate, so their state would leak between users. '
+        + `Declare it on the owning layout with @Page({ services: [${name}] }) and inject it there, `
+        + "or use @Service({ scope: 'transient' }) for per-component state.");
 }
 
 /**

@@ -59,8 +59,26 @@ const values = await session().getAll();
 
 The middleware creates an anonymous session when no live session ID is available.
 It replaces unknown and expired cookie IDs with a new server-generated ID.
-The cookie is HTTP-only, secure on HTTPS requests, and same-site lax.
-Writes extend the stored expiry. They cannot recreate missing or expired rows.
+The cookie is HTTP-only and same-site lax. `set()` extends the stored expiry
+and re-sends the cookie with a fresh `Max-Age`, so an active session does not
+expire in the browser while its row is still live. Reads do not re-send the
+cookie. Writes cannot recreate missing or expired rows.
+
+The `secure` option controls the cookie `Secure` attribute. The default,
+`'auto'`, sets it when the request URL uses HTTPS. Behind a TLS-terminating
+proxy (nginx, Fly.io, a load balancer) a Node.js server sees `http://`. Set
+`trustProxy: true` to also accept `X-Forwarded-Proto: https`, or set
+`secure: true` when the site is only served over HTTPS:
+
+```ts
+export const sessionMiddleware = createSessionMiddleware({
+  store: createDatabaseSessionStore(),
+  trustProxy: true, // only when the proxy always overwrites X-Forwarded-Proto
+});
+```
+
+The middleware never trusts `X-Forwarded-Proto` by default, because a client
+can send that header itself.
 
 ## Authentication bridge
 
@@ -89,7 +107,8 @@ need to change the response cookie. After response middleware finishes, they
 reject with `COSSACK_RESPONSE_HEADERS_COMMITTED` before changing the stored row.
 A lazy generator's body runs after this point, including code before its first
 yield. Session bag `set()` and `unset()` remain storage operations on the live
-row and do not issue a replacement cookie. See [RPC timing](./rpc.md).
+row and do not issue a replacement cookie. A `set()` that runs after response
+middleware finishes cannot refresh the cookie `Max-Age`. See [RPC timing](./rpc.md).
 
 The database store preserves the shared physical row representation:
 `id`, `user_id`, `data`, `meta`, tracking fields, `created_at`, and

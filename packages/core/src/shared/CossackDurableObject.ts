@@ -123,20 +123,22 @@ export abstract class CossackDurableObject {
 
         // Identity assertions are supplied by the Worker proxy, never message
         // payloads. Anonymous peers have no user, so the default key uses IP.
-        const userId = request.headers.get('X-User-ID');
-        const userData = request.headers.get('X-User-Data');
+        const encodedUserId = request.headers.get('X-User-ID');
         const identityHeader = request.headers.get('X-Cossack-Realtime-Identity');
-        const scopeKey = request.headers.get('X-Cossack-Realtime-Scope') ?? undefined;
+        const encodedScopeKey = request.headers.get('X-Cossack-Realtime-Scope');
+        let scopeKey: string | undefined;
         const targetValidity = request.headers.get('X-Cossack-Realtime-Target-Valid');
         let targetValid = true;
         let user: User | undefined;
         let identity: unknown;
         try {
-            const value = userData ? JSON.parse(userData) : userId ? { id: userId } : undefined;
-            if (value !== undefined && (!userId || !value || typeof value !== 'object' || Array.isArray(value) || value.id !== userId)) {
-                throw new TypeError('Invalid identity assertion');
+            // The proxy forwards only the percent-encoded id. Framework runtimes
+            // resolve the full user through middleware in authorizeWebSocketPeer.
+            if (encodedUserId !== null) {
+                const userId = decodeURIComponent(encodedUserId);
+                if (!userId) throw new TypeError('Invalid identity assertion');
+                user = { id: userId } as User;
             }
-            user = value;
             if (identityHeader) {
                 if (new TextEncoder().encode(identityHeader).length > 1024) throw new TypeError('Realtime identity exceeds limits');
                 identity = JSON.parse(identityHeader);
@@ -145,6 +147,7 @@ export abstract class CossackDurableObject {
                     throw new TypeError('Invalid realtime identity');
                 }
             }
+            if (encodedScopeKey !== null) scopeKey = decodeURIComponent(encodedScopeKey);
             if (scopeKey !== undefined && (!scopeKey || scopeKey.length > 2048)) throw new TypeError('Invalid realtime scope');
             if (targetValidity !== null) {
                 if (targetValidity !== 'true' && targetValidity !== 'false') throw new TypeError('Invalid realtime target status');
@@ -204,7 +207,7 @@ export abstract class CossackDurableObject {
                     const options: PageOptions | undefined = Reflect.getMetadata('page:options', component.constructor);
                     if (options?.stateful === true) {
                         await this.state.storage.put({ componentPath, url: `${page}${url.search}`, params,
-                            componentState: component.getInitialState(), providerName, stateful: true });
+                            componentState: component.getInitialState({ user: false }), providerName, stateful: true });
                     }
                     this.publishComponent(component);
                 } catch (error) { await this.disposeComponent(component); throw error; }
@@ -267,7 +270,7 @@ export abstract class CossackDurableObject {
         }
 
         if (url.pathname === '/state') {
-            const currentState = this.componentInstance.getInitialState();
+            const currentState = this.componentInstance.getInitialState({ user: false });
             return new Response(JSON.stringify(currentState), {
                 headers: { 'Content-Type': 'application/json' }
             });
