@@ -146,7 +146,7 @@ export function createFlashMiddleware(
     return async (c, next) => {
         ensureFlashAlsWired();
         const transport = c.req.path === '/crpc' || c.req.path === '/upload' ||
-            c.req.path === '/sse' || c.req.path.startsWith('/ws/');
+            c.req.path.startsWith('/sse/') || c.req.path.startsWith('/ws/');
 
         // 1. INCOMING: verify; consume only outside background transports.
         let incoming: Record<string, unknown> = {};
