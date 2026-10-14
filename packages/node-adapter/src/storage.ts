@@ -57,6 +57,15 @@ export class LocalStorageProvider implements StorageProvider {
         if (!options?.root || typeof options.root !== 'string') throw new LocalStorageError();
         this.root = path.resolve(options.root);
     }
+    /** Shared by concurrent callers; cleared on failure and when the root disappears. */
+    private initialized: Promise<void> | undefined;
+    private ready(): Promise<void> {
+        const pending = this.initialized ??= this.initialize().catch(error => {
+            if (this.initialized === pending) this.initialized = undefined;
+            throw error;
+        });
+        return pending;
+    }
     private async initialize(): Promise<void> {
         // Verify existing ancestors before mkdir, so a symlink ancestor cannot cause writes.
         let ancestor = this.root;
@@ -73,7 +82,18 @@ export class LocalStorageProvider implements StorageProvider {
         const lockKey = this.root + '/' + prefix;
         const previous = locks.get(lockKey) ?? Promise.resolve(); let release!: () => void;
         const held = new Promise<void>(resolve => { release = resolve; }); const tail = previous.then(() => held); locks.set(lockKey, tail);
-        try { await waitFor(previous, signal); aborted(signal); await this.initialize(); return await work(prefix); }
+        try {
+            await waitFor(previous, signal); aborted(signal);
+            const initialized = this.ready(); await initialized;
+            try { return await work(prefix); }
+            catch (error) {
+                if (!missing(error)) throw error;
+                // The root (or part of it) vanished after setup: set it up again and retry once.
+                // A body that was already read cannot be replayed, so such a put still fails.
+                if (this.initialized === initialized) this.initialized = undefined;
+                aborted(signal); await this.ready(); return await work(prefix);
+            }
+        }
         catch (error) { if ((error as Error)?.name === 'AbortError' || error instanceof LocalStorageError) throw error; throw new LocalStorageError(); }
         finally { release(); void tail.then(() => { if (locks.get(lockKey) === tail) locks.delete(lockKey); }); }
     }

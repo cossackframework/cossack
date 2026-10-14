@@ -126,3 +126,43 @@ it('composes real local persistence with authorized CRUD and expiring context-bo
     expect(await snapshot()).toEqual(original);
     await storage.delete(alice, key); expect(await storage.head(alice, key)).toBeNull(); expect(await readdir(root)).toEqual([]);
 });
+
+describe('root initialization', () => {
+    const initializations = () => vi.spyOn(LocalStorageProvider.prototype as unknown as { initialize(): Promise<void> }, 'initialize');
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    it('initializes the root once across sequential and concurrent operations', async () => {
+        const spy = initializations();
+        const provider = new LocalStorageProvider({ root: path.join(root, 'nested', 'store') });
+        await Promise.all(['a', 'b', 'c'].map(key => provider.put(key, bytes(key), { size: 1 })));
+        await provider.head('a');
+        expect(await text(provider, 'b')).toBe('b');
+        await provider.delete('c');
+        expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not cache a failed initialization', async () => {
+        const spy = initializations();
+        const blocker = path.join(root, 'blocker');
+        await writeFile(blocker, 'not a directory');
+        const provider = new LocalStorageProvider({ root: path.join(blocker, 'store') });
+        await expect(provider.put('key', bytes('x'), { size: 1 })).rejects.toThrow('Local storage failed.');
+        await rm(blocker);
+        await provider.put('key', bytes('x'), { size: 1 });
+        expect(await text(provider, 'key')).toBe('x');
+        expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-initializes when the storage directory has been removed', async () => {
+        const spy = initializations();
+        const store = path.join(root, 'store');
+        const provider = new LocalStorageProvider({ root: store });
+        await provider.put('key', bytes('one'), { size: 3 });
+        expect(await text(provider, 'key')).toBe('one');
+        await rm(store, { recursive: true });
+        expect(await provider.head('key')).toBeNull();
+        await provider.put('key', bytes('two'), { size: 3 });
+        expect(await text(provider, 'key')).toBe('two');
+        expect(spy).toHaveBeenCalledTimes(2);
+    });
+});
