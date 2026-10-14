@@ -3,6 +3,7 @@ import { Cossack, Component, Client, ClientState } from "@cossackframework/core"
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
 import { Calendar } from "./Calendar";
 import { parseDate, dateRange, dateLabel } from "../internal/date";
+import { ControlledValue } from "../internal/controlled";
 
 export type DatePickerProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'role'> & {
     /** Stable page-unique input ID. Label with for=id or aria-label. */
@@ -41,6 +42,7 @@ export class DatePicker extends Cossack {
     private trigger?: HTMLButtonElement;
     private popup?: HTMLElement;
     private cleanup?: () => void;
+    private controlled = new ControlledValue<string>();
     private get currentValue() { this.initialValue ??= this.props.defaultValue ?? ''; return this.props.value ?? this.draft ?? this.initialValue; }
 
     render() {
@@ -85,11 +87,11 @@ export class DatePicker extends Cossack {
     @Client()
     private commit(event: ControlEvent<HTMLInputElement, InputEvent>) {
         if (!this.editable()) { event.currentTarget.value = this.currentValue; return; }
-        const value = event.currentTarget.value, previous = this.currentValue;
+        const value = event.currentTarget.value, changed = this.controlled.changed(this.props, this.currentValue, value);
         // Native date inputs provide either a real date or empty while incomplete.
         parseDate(value, 'value');
         this.draft = value;
-        if (value !== previous) this.props.onChange?.(value);
+        if (changed) this.props.onChange?.(this.controlled.emit(this.props, value));
         void this.requestUpdate();
     }
     @Client()
@@ -134,7 +136,7 @@ export class DatePicker extends Cossack {
             let active = true;
             const reset = (event: Event) => {
                 if (event.target !== input.form) return;
-                queueMicrotask(() => { if (active && !event.defaultPrevented) { this.draft = undefined; void this.close(false); } });
+                queueMicrotask(() => { if (active && !event.defaultPrevented) { this.draft = undefined; this.controlled.reset(); void this.close(false); } });
             };
             const position = () => this.position();
             document.addEventListener('reset', reset, true);

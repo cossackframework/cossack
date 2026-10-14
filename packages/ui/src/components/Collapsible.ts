@@ -1,6 +1,7 @@
 import { html } from "@cossackframework/renderer";
 import { Cossack, Component, ClientState, Client, createRef } from "@cossackframework/core";
 
+import { ControlledValue } from "../internal/controlled";
 import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 
 export type CollapsibleProps = DisclosureProps & {
@@ -16,6 +17,7 @@ export class Collapsible extends Cossack {
     @ClientState() private internalOpen = false;
     @ClientState() private userInteracted = false;
     private initialOpen?: boolean;
+    private controlled = new ControlledValue<boolean>();
     private triggerButton?: HTMLButtonElement;
     contentRef = createRef<HTMLDivElement>();
     wrapperRef = createRef<HTMLDivElement>();
@@ -58,15 +60,15 @@ export class Collapsible extends Cossack {
     @Client()
     toggle() {
         if (this.props.disabled || this.triggerButton?.matches(':disabled')) return;
-        const currentOpen = this.isOpen;
+        const currentOpen = this.controlled.base(this.props, this.isOpen);
 
         if (this.props.open !== undefined) {
-            this.props.onToggle?.(!currentOpen);
+            this.props.onToggle?.(this.controlled.emit(this.props, !currentOpen));
             return;
         }
         this.userInteracted = true;
         this.internalOpen = !currentOpen;
-        this.props.onToggle?.(this.internalOpen);
+        this.props.onToggle?.(this.controlled.emit(this.props, this.internalOpen));
     }
 
     onMount() {

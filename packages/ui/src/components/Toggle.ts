@@ -2,6 +2,7 @@ import { html, classMap, PreventDefaultResult, preventDefault } from "@cossackfr
 import { Cossack, Component, ClientState } from "@cossackframework/core";
 
 import type { ButtonAttributes, ControlEvent } from '../native-attributes';
+import { ControlledValue } from '../internal/controlled';
 
 export type ToggleProps = Omit<ButtonAttributes, 'type' | 'role' | 'aria-pressed' | 'popovertarget' | 'popovertargetaction'> & {
     pressed?: boolean;
@@ -29,6 +30,7 @@ export class Toggle extends Cossack {
 
     @ClientState() private localPressed: boolean | undefined;
     private initialPressed?: boolean;
+    private controlled = new ControlledValue<boolean>();
     private currentPressed() {
         this.initialPressed ??= !!this.props.defaultPressed;
         return this.props.pressed ?? this.localPressed ?? this.initialPressed;
@@ -41,9 +43,9 @@ export class Toggle extends Cossack {
             if (typeof supplied === 'function') supplied(event as ControlEvent<HTMLButtonElement, PointerEvent>);
             else if (supplied instanceof PreventDefaultResult) supplied.handler.call(event.currentTarget, event);
             if (event.defaultPrevented || (event.currentTarget as HTMLButtonElement).matches(':disabled')) return;
-            const next = !this.currentPressed();
+            const next = !this.controlled.base(this.props, this.currentPressed());
             if (this.props.pressed === undefined) this.localPressed = next;
-            this.props.onPressedChange?.(next);
+            this.props.onPressedChange?.(this.controlled.emit(this.props, next));
         };
 
         const classes = classMap({

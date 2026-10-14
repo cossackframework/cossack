@@ -7,6 +7,7 @@ import {
     createRef,
     type RefObject,
 } from "@cossackframework/core";
+import { ControlledValue } from "../internal/controlled";
 import { DisclosureController, disclosureStyle, disclosureClick, validateDisclosure, restoreDisclosureFocus, type DisclosureProps } from "../internal/disclosure";
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
@@ -25,6 +26,7 @@ export class AccordionItem extends Cossack {
     @ClientState() private userInteracted: boolean = false;
 
     private initialOpen?: boolean;
+    private controlled = new ControlledValue<boolean>();
     private trigger?: HTMLButtonElement;
 
     contentRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
@@ -101,15 +103,15 @@ export class AccordionItem extends Cossack {
     @Client()
     toggle() {
         if (this.props.disabled || this.trigger?.matches(':disabled')) return;
-        const currentOpen = this.isOpen;
+        const currentOpen = this.controlled.base(this.props, this.isOpen);
 
         if (this.props.open !== undefined) {
-            this.props.onToggle?.(!currentOpen);
+            this.props.onToggle?.(this.controlled.emit(this.props, !currentOpen));
             return;
         }
         this.userInteracted = true;
         this.internalOpen = !currentOpen;
-        this.props.onToggle?.(this.internalOpen);
+        this.props.onToggle?.(this.controlled.emit(this.props, this.internalOpen));
     }
 
     onMount() {

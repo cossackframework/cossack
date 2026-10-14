@@ -1,6 +1,7 @@
 import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
+import { ControlledValue } from "../internal/controlled";
 import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths, dateLabel } from "../internal/date";
 
 export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'> & {
@@ -36,6 +37,7 @@ export class Calendar extends Cossack {
     private initialValue: string | undefined;
     private cursorOwner: string | undefined;
     private root?: HTMLDivElement;
+    private controlled = new ControlledValue<string>();
     private get selected() { this.initialValue ??= this.props.defaultValue ?? ''; return this.props.value ?? this.draft ?? this.initialValue; }
     private get referenceDay() { return this.props.today || new Date().toISOString().slice(0, 10); }
     private get contextKey() { return JSON.stringify([this.selected, this.props.min, this.props.max, this.referenceDay]); }
@@ -150,9 +152,9 @@ export class Calendar extends Cossack {
     private select(iso: string, source: HTMLButtonElement) {
         const range = dateRange(this.props.min, this.props.max);
         if (this.props.disabled || this.props.readonly || source.matches(':disabled') || iso < range.first || iso > range.last) return;
-        const previous = this.selected;
+        const changed = this.controlled.changed(this.props, this.selected, iso);
         this.draft = iso;
-        if (iso !== previous) this.props.onChange?.(iso);
+        if (changed) this.props.onChange?.(this.controlled.emit(this.props, iso));
         this.props.onSelect?.(iso);
         this.cursorOwner = this.contextKey;
         this.cursor = iso;

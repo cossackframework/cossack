@@ -1,6 +1,7 @@
 import { html, classMap, live, PreventDefaultResult, preventDefault, type nothing } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { InputAttributes, GlobalAttributes, ControlEvent } from "../native-attributes";
+import { ControlledValue } from "../internal/controlled";
 
 type OTPAttributes = Pick<InputAttributes, keyof GlobalAttributes<HTMLInputElement> |
     'name' | 'form' | 'required' | '?required' | 'disabled' | '?disabled' | 'readonly' | '?readonly' | 'enterkeyhint'>;
@@ -45,6 +46,7 @@ export class InputOTP extends Cossack {
     private boundInput?: HTMLInputElement;
     private resetCleanup?: () => void;
     private composingInput: HTMLInputElement | null = null;
+    private controlled = new ControlledValue<string>();
     @ClientState() private focused = false;
     @ClientState() private start = 0;
     @ClientState() private end = 0;
@@ -108,6 +110,7 @@ export class InputOTP extends Cossack {
                 if (!active || event.defaultPrevented) return;
                 this.composingInput = null;
                 this.draft = undefined;
+                this.controlled.reset();
                 input.value = this.code;
                 this.start = input.selectionStart ?? 0;
                 this.end = input.selectionEnd ?? this.start;
@@ -135,15 +138,17 @@ export class InputOTP extends Cossack {
     @Client()
     private commit(event: ControlEvent<HTMLInputElement>) {
         const input = event.currentTarget;
-        const previous = this.code, length = this.digitCount;
-        if (input.matches(':disabled') || input.readOnly) { input.value = previous; return; }
+        const length = this.digitCount;
+        if (input.matches(':disabled') || input.readOnly) { input.value = this.code; return; }
         const next = digits(input.value, length);
         const caret = digits(input.value.slice(0, input.selectionStart ?? input.value.length), length).length;
         input.value = next;
         input.setSelectionRange(caret, caret);
         this.selection(event);
+        const changed = this.controlled.changed(this.props, this.code, next);
         this.draft = next;
-        if (next !== previous) {
+        if (changed) {
+            this.controlled.emit(this.props, next);
             this.props.onChange?.(next, event);
             if (next.length === length) this.props.onComplete?.(next, event);
         }

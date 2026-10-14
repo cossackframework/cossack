@@ -1,6 +1,7 @@
 import { html, classMap, live, repeat, PreventDefaultResult, preventDefault, type nothing } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
+import { ControlledValue } from "../internal/controlled";
 
 export type ComboboxOption = { value: string; label: string; disabled?: boolean };
 export type ComboboxProps = Omit<GlobalAttributes<HTMLInputElement>, 'id' | 'role' | 'aria-expanded' | 'aria-controls' | 'aria-activedescendant' | 'aria-autocomplete' | 'aria-haspopup'> & {
@@ -50,6 +51,7 @@ export class Combobox extends Cossack {
     private input?: HTMLInputElement;
     private popup?: HTMLElement;
     private cleanup?: () => void;
+    private controlled = new ControlledValue<string | undefined>();
 
     private get selectedValue() {
         this.initialValue ??= this.props.defaultValue ?? '';
@@ -171,10 +173,10 @@ export class Combobox extends Cossack {
     @Client()
     private select(value: string) {
         if (!this.editable() || !this.filtered.some(option => option.value === value && !option.disabled)) return;
-        const previous = this.selected?.value;
+        const changed = this.controlled.changed(this.props, this.selected?.value, value);
         this.draft = value;
         this.close();
-        if (previous !== value) this.props.onChange?.(value);
+        if (changed) this.props.onChange?.(this.controlled.emit(this.props, value));
         void this.requestUpdate();
     }
 
@@ -195,6 +197,7 @@ export class Combobox extends Cossack {
                 queueMicrotask(() => {
                     if (!active || event.defaultPrevented) return;
                     this.draft = undefined;
+                    this.controlled.reset();
                     this.close();
                     this.syncValidity();
                 });

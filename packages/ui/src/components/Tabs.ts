@@ -1,6 +1,7 @@
 import { html, classMap, repeat, PreventDefaultResult, preventDefault } from '@cossackframework/renderer';
 import { Cossack, Component, ClientState, Client, createRef, type RefObject } from '@cossackframework/core';
 import type { GlobalAttributes, ControlEvent } from '../native-attributes';
+import { ControlledValue } from '../internal/controlled';
 
 export type TabsItem = { value: string; icon?: unknown; content?: unknown; disabled?: boolean } &
     ({ label: string; ariaLabel?: string } | { label: unknown; ariaLabel: string });
@@ -41,6 +42,7 @@ export class Tabs extends Cossack {
     private focusRepair?: Element;
     private pointerTrigger?: HTMLButtonElement;
     private generation = 0;
+    private controlled = new ControlledValue<string | undefined>();
     tablistRef: RefObject<HTMLDivElement> = createRef<HTMLDivElement>();
 
     private current() {
@@ -53,9 +55,9 @@ export class Tabs extends Cossack {
     private buttons() { return Array.from(this.tablistRef.value?.querySelectorAll<HTMLButtonElement>(':scope > [role="tab"]') ?? []); }
     @Client() private select(value: string) {
         if (!this.props.items?.some(item => item.value === value && !item.disabled) || this.buttons().find(button => button.dataset.value === value)?.matches(':disabled')) return;
-        if (this.current() === value) return;
+        if (!this.controlled.changed(this.props, this.current(), value)) return;
         if (this.props.value === undefined) this.localValue = value;
-        this.props.onChange?.(value);
+        this.props.onChange?.(this.controlled.emit(this.props, value));
     }
     @Client() private keydown(event: KeyboardEvent) {
         if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;

@@ -27,8 +27,17 @@ export class ControlledValue<T> {
         return this.emitted?.props === props;
     }
 
+    /**
+     * Whether setting `value` is a change worth emitting: it differs from the
+     * rendered value or from the pending one. Re-picking a pending value is
+     * emitted again, so a parent that ignored it can still accept it.
+     */
+    changed(props: object, current: T, value: T): boolean {
+        return !Object.is(value, current) || !Object.is(value, this.base(props, current));
+    }
+
     /** Records `value` as emitted under `props` and returns it. */
-    emit(props: object, value: T): T {
+    emit<V extends T>(props: object, value: V): V {
         this.emitted = { props, value };
         return value;
     }
