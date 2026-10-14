@@ -330,6 +330,33 @@ function wantsHtmlDocument(c: Context): boolean {
   return (c.req.header('accept') ?? '').toLowerCase().includes('text/html');
 }
 
+/**
+ * Serve Vite's hashed /assets/* files straight from the ASSETS binding.
+ * `X-Content-Type-Options: nosniff` is guaranteed on these responses since
+ * they are scripts and styles; other headers come from the asset server
+ * (for example `_headers` on Cloudflare).
+ */
+function createHashedAssetMiddleware(): Handler {
+  return async (c, next) => {
+    if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
+    if (c.req.header('upgrade')) return next();
+    const assets = (c.env as { ASSETS?: { fetch(request: Request): Promise<Response> } } | undefined)?.ASSETS;
+    if (!assets?.fetch) return next();
+    // Same guards as the policy-aware assets middleware: encoded separators,
+    // empty segments and backslashes stay in the normal pipeline.
+    const pathname = c.req.path;
+    if (/%(?:2f|5c)/i.test(new URL(c.req.url).pathname) || pathname.includes('//') || pathname.includes('\\')) return next();
+    const fetched = await assets.fetch(new Request(c.req.raw));
+    if (fetched.status === 404) {
+      await fetched.body?.cancel();
+      return next();
+    }
+    const response = new Response(fetched.body, fetched);
+    if (!response.headers.has('X-Content-Type-Options')) response.headers.set('X-Content-Type-Options', 'nosniff');
+    return response;
+  };
+}
+
 export interface CreateAppOptions {
   AppComponent?: new (...args: any[]) => any;
   htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
@@ -440,6 +467,15 @@ export function createApp(options: CreateAppOptions = {}) {
     getMiddlewares,
   };
 
+  // Hashed build assets — Vite emits content-hashed, immutable files under
+  // /assets/. Serve them before the global stack: config preparation, project
+  // middleware (auth/session lookups), locale catalogs and flash do nothing
+  // useful for them. A page that owns the /assets namespace keeps its policies,
+  // and a missing file continues through the normal pipeline (404).
+  const pageOwnsAssetsNamespace = resolvePageRouteFiles(Object.keys(pages))
+    .some(file => { const route = filePathToHttpRoute(file); return route === '/assets' || route.startsWith('/assets/'); });
+  if (!pageOwnsAssetsNamespace) app.use('/assets/*', createHashedAssetMiddleware());
+
   // Request-context middleware — scopes the Hono `Context` into
   // AsyncLocalStorage FIRST so `cookie()` / `session()` / `getRequestContext()`
   // work from anywhere downstream (including the user middlewares below).
@@ -453,13 +489,20 @@ export function createApp(options: CreateAppOptions = {}) {
   // (the factories object is empty). Workers-correct: env bindings (`c.env`)
   // are only available inside the request handler, so config is built per
   // request, not once at module load.
+  const configContext = { runtime: (options.runtimeAdapter ? ['cloudflare', 'node', 'desktop'].includes(options.runtimeAdapter.name) ? options.runtimeAdapter.name : 'unknown' : 'cloudflare') as ConfigRuntime,
+    ...(configEnvironment ? { environment: configEnvironment } : {}) };
+  // Config depends only on the env bindings, whose object identity is stable
+  // across requests in an isolate/process. Build it once per env object.
+  const configStores = new WeakMap<object, ReturnType<typeof prepareConfigStore>>();
   app.use('*', async (c, next) => {
     const envBindings = c.env as unknown as Record<string, unknown>;
-    const configContext = { runtime: (options.runtimeAdapter ? ['cloudflare', 'node', 'desktop'].includes(options.runtimeAdapter.name) ? options.runtimeAdapter.name : 'unknown' : 'cloudflare') as ConfigRuntime,
-      ...(configEnvironment ? { environment: configEnvironment } : {}) };
-    const store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings, {
-      requirements: configRequirements, context: configContext,
-    });
+    let store = envBindings && typeof envBindings === 'object' ? configStores.get(envBindings) : undefined;
+    if (!store) {
+      store = prepareConfigStore(configFactories as Record<string, unknown>, envBindings, {
+        requirements: configRequirements, context: configContext,
+      });
+      if (envBindings && typeof envBindings === 'object') configStores.set(envBindings, store);
+    }
     c.set('cossack.configContext', configContext);
     return runWithConfig(store, () => next());
   });
