@@ -83,7 +83,12 @@ Middleware cannot change responses for `/assets/*`. Put headers for these files
 in `public/_headers`. Cloudflare applies its rules to every static asset
 response, including assets that it serves directly. The generated file gives
 `/assets/*` a one-year `immutable` `Cache-Control`. Cloudflare also applies that
-rule to the `404` response for a missing file under `/assets/`.
+rule to the `404` response for a missing file under `/assets/`. Hashed names
+never return, so this is harmless after a normal one-step deploy. It matters
+when two versions serve traffic at once, during a gradual deployment, or after a
+rollback. A browser can then request a file from a version that does not have
+it, and keep that `404` for a year. Deploy in one step, keep each visitor on one
+version during a rollout, or shorten that rule's `max-age`.
 
 `cossack check cloudflare` and deploy preflight accept `run_worker_first: true`
 or exactly `["/*", "!/assets/*"]`. They reject any other value, because it lets
