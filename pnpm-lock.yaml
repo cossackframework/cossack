@@ -12,12 +12,10 @@ overrides:
   undici@>=7.0.0 <7.29.1: 7.29.1
   undici@>=6.0.0 <6.28.1: 6.28.1
   '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12
-  fast-uri@>=3.0.0 <3.1.8: 3.1.8
   sharp@<0.35.5: 0.35.5
   source-map-js@<1.2.2: 1.2.2
   image-size@<2.0.3: 2.0.4
   brace-expansion@>=1.0.0 <1.1.21: 1.1.21
-  brace-expansion@>=2.0.0 <2.1.7: 2.1.7
 
 patchedDependencies:
   appdmg@^0.6.6: b79de5cc1695d87f92549dfb4d17f7e5b17aebb2802c5c18b8180f41eadbcf67
