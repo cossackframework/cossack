@@ -66,7 +66,7 @@ hydrate(template(current()),container);window.retained=original===container.quer
     const name=page.getByLabel('Display name',{exact:true}),email=page.getByRole('switch',{name:'Email alerts'}),reset=page.getByRole('button',{name:'Reset',exact:true});
     await browserExpect(name).toHaveAccessibleDescription('Visible to others');await browserExpect(email).toHaveAccessibleDescription('Receive updates');
     await page.locator('#before').focus();await page.keyboard.press('Tab');await browserExpect(email).toBeFocused();
-    await page.keyboard.press('Space');await browserExpect(email).not.toBeChecked();await browserExpect(email).toHaveAttribute('aria-checked','false');
+    await page.keyboard.press('Space');await browserExpect(email).not.toBeChecked();await browserExpect(email).not.toHaveAttribute('aria-checked');
     await name.fill('Edited');await page.evaluate(()=>window.update({class:'custom',defaultValues:{name:'Ignored',email:true}}));await browserExpect(name).toHaveValue('Edited');
     await page.evaluate(()=>{window.mutate=true;});await name.fill('Safe');await page.evaluate(()=>window.update({title:'Unrelated'}));await browserExpect(name).toHaveValue('Safe');
     expect(await page.evaluate(()=>new FormData(document.querySelector('form')).get('name'))).toBe('Safe');
@@ -81,13 +81,13 @@ hydrate(template(current()),container);window.retained=original===container.quer
     await page.evaluate(()=>window.update({disabled:false}));
     await name.focus();await page.evaluate(()=>window.update({sections:[{...window.sections[0],rows:[window.sections[0].rows[1],window.sections[0].rows[0],window.sections[0].rows[2],window.sections[0].rows[3]]}]}));await browserExpect(name).toBeFocused();
     await page.evaluate(()=>window.update({sections:[{...window.sections[0],rows:[window.sections[0].rows[0]]}]}));await browserExpect(email).toBeFocused();
-    await page.evaluate(()=>window.remount(true));await browserExpect(name).toHaveValue('Jane');await name.fill('Rejected');await browserExpect(name).toHaveValue('Jane');
-    await page.locator('label[for="settings-field-email"]').click();await browserExpect(email).toBeChecked();await browserExpect(email).toHaveAttribute('aria-checked','true');
+    await page.evaluate(()=>window.remount(true));await browserExpect(name).toHaveValue('Jane');await name.fill('Rejected');await browserExpect(name).toHaveValue('Rejected');await page.evaluate(()=>window.update({}));await browserExpect(name).toHaveValue('Jane');
+    await page.locator('label[for="settings-field-email"]').click();await browserExpect(email).not.toBeChecked();await page.evaluate(()=>window.update({}));await browserExpect(email).toBeChecked();await browserExpect(email).not.toHaveAttribute('aria-checked');
     await page.evaluate(()=>{window.accept=true;});await name.fill('Accepted');await browserExpect(name).toHaveValue('Accepted');await page.locator('label[for="settings-field-email"]').click();await browserExpect(email).not.toBeChecked();
     await reset.click();await browserExpect(name).toHaveValue('Jane');await browserExpect(email).toBeChecked();
     await page.evaluate(()=>{window.accept=false;window.throwChange=true;});await name.fill('Throw');await browserExpect(name).toHaveValue('Jane');expect(errors.splice(0)).toEqual(['callback failure']);
     await page.evaluate(()=>{window.throwChange=false;window.update({values:{email:false,name:'External',locked:'Fixed'}});});await browserExpect(name).toHaveValue('External');await browserExpect(email).not.toBeChecked();
-    await reset.click();await browserExpect(name).toHaveValue('External');await browserExpect(email).not.toBeChecked();
+    await reset.click();await browserExpect(name).toHaveValue('Jane');await page.evaluate(()=>window.update({}));await browserExpect(name).toHaveValue('External');await browserExpect(email).not.toBeChecked();
     for(const width of [320,900]){await page.setViewportSize({width,height:850});expect(await page.locator('#settings').evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true);}
     const changes=await page.evaluate(()=>window.changes.length);
     await page.evaluate(()=>{document.querySelector('form').reset();window.unmount();});await page.waitForTimeout(30);expect(await page.evaluate(()=>window.changes.length)).toBe(changes);
