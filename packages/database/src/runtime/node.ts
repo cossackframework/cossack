@@ -9,7 +9,7 @@ import type {
 } from "../adapter/types.js";
 import type { CompiledQuery } from "../sql/fragment.js";
 import { createAsyncLocalScope } from "../adapter/scope.js";
-import { capabilities, meta } from "./helpers.js";
+import { capabilities, isMySQLSavepointControl, meta, postgresTypes, type PostgresTypes } from "./helpers.js";
 import { UnsupportedCapabilityError } from "../errors.js";
 import {
   introspectMySQL,
@@ -218,6 +218,7 @@ interface MySQLConnection {
 
 interface MySQLPool extends MySQLConnection {
   getConnection(): Promise<MySQLConnection>;
+  on?(event: "connection", listener: (connection: unknown) => void): unknown;
 }
 
 class MySQLDriver implements Driver {
@@ -234,10 +235,7 @@ class MySQLDriver implements Driver {
     operation: QueryOperation = "raw",
   ): Promise<QueryResult<Row>> {
     const start = performance.now();
-    // MySQL does not prepare SAVEPOINT statements. Framework-owned savepoint
-    // control has no parameters and must use the text protocol on this connection.
-    const savepoint = query.parameters.length === 0 && /^\s*(?:SAVEPOINT|RELEASE\s+SAVEPOINT|ROLLBACK\s+TO\s+SAVEPOINT)\b/i.test(query.text);
-    const [raw] = (savepoint ? await this.connection.query(query.text)
+    const [raw] = (isMySQLSavepointControl(query) ? await this.connection.query(query.text)
       : await this.connection.execute(query.text, query.parameters)) as [unknown, unknown];
     const object = raw as { affectedRows?: number; insertId?: number };
     return {
@@ -295,6 +293,15 @@ function mysqlPoolOptions(options: string | Readonly<Record<string, unknown>>): 
   return { timezone: "Z", ...options };
 }
 
+/** True when mysql2 converts DATETIME values as UTC for these pool options. */
+function mysqlPoolUsesUTC(options: Readonly<Record<string, unknown>>): boolean {
+  let zone = options.timezone;
+  if (zone === undefined && typeof options.uri === "string") {
+    try { zone = new URL(options.uri).searchParams.get("timezone") ?? undefined; } catch { zone = undefined; }
+  }
+  return typeof zone === "string" && /^(?:z|[+-]00:?00)$/i.test(zone);
+}
+
 function adapter(driver: Driver): Adapter {
   return {
     driver,
@@ -333,7 +340,9 @@ export async function postgres(
   const moduleName = "pg";
   const imported = await import(/* @vite-ignore */ moduleName);
   const Pool = imported.Pool as new (options: unknown) => PGPool;
-  const pool = new Pool(typeof options === "string" ? { connectionString: options } : options);
+  const config: Readonly<Record<string, unknown>> = typeof options === "string" ? { connectionString: options } : options;
+  const types = config.types ?? (imported.types ? postgresTypes(imported.types as PostgresTypes) : undefined);
+  const pool = new Pool({ ...config, types });
   return adapter(new PostgresDriver(pool, pool));
 }
 
@@ -342,7 +351,16 @@ export async function mysql(
 ): Promise<Adapter> {
   const moduleName = "mysql2/promise";
   const imported = await import(/* @vite-ignore */ moduleName);
-  const pool = imported.createPool(mysqlPoolOptions(options)) as MySQLPool;
+  const poolOptions = mysqlPoolOptions(options);
+  const pool = imported.createPool(poolOptions) as MySQLPool;
+  if (mysqlPoolUsesUTC(poolOptions)) {
+    // DEFAULT CURRENT_TIMESTAMP and NOW() use the session time zone (the
+    // server's zone unless set). Make database-filled timestamps UTC, like the
+    // values the ORM writes. The statement is queued before the first query.
+    pool.on?.("connection", (connection) => {
+      (connection as { query(text: string, callback: () => void): unknown }).query("SET time_zone = '+00:00'", () => {});
+    });
+  }
   return adapter(new MySQLDriver(pool, pool));
 }
 

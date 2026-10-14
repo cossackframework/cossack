@@ -157,7 +157,11 @@ describe("MySQL introspection", () => {
     table_name, index_name, non_unique, seq_in_index: 1, column_name, sub_part: null, index_type: "BTREE",
   });
 
-  it("reads column types, indexes, defaults and enum checks without drift", async () => {
+  // Tables created before DATETIME(3) keep a bare DATETIME; neither form drifts from the model.
+  it.each([
+    ["datetime", "CURRENT_TIMESTAMP"],
+    ["datetime(3)", "CURRENT_TIMESTAMP(3)"],
+  ])("reads column types, indexes, defaults and enum checks without drift (%s)", async (createdType, createdDefault) => {
     const queries: string[] = [];
     const driver = new MemoryDriver("mysql", (query) => {
       queries.push(query.text);
@@ -169,7 +173,7 @@ describe("MySQL introspection", () => {
           mysqlColumn("accounts", "active", "tinyint(1)", { column_default: "0" }),
           mysqlColumn("accounts", "status", "varchar(255)", { column_default: "draft" }),
           mysqlColumn("accounts", "total", "decimal(12,2)", { column_default: "0.00" }),
-          mysqlColumn("accounts", "created_at", "datetime", { column_default: "CURRENT_TIMESTAMP", extra: "DEFAULT_GENERATED" }),
+          mysqlColumn("accounts", "created_at", createdType, { column_default: createdDefault, extra: "DEFAULT_GENERATED" }),
           mysqlColumn("posts", "id", "int", { column_key: "PRI", extra: "auto_increment" }),
           mysqlColumn("posts", "title", "varchar(255)"),
           mysqlColumn("posts", "author_id", "int", { is_nullable: "YES", column_key: "MUL" }),
@@ -207,7 +211,7 @@ describe("MySQL introspection", () => {
       { columnName: "active", logicalType: "boolean", length: undefined, unique: false, default: "0" },
       { columnName: "status", logicalType: "enum", length: undefined, unique: false, default: "draft" },
       { columnName: "total", logicalType: "decimal", length: undefined, unique: false, default: 0 },
-      { columnName: "created_at", logicalType: "datetime", length: undefined, unique: false, default: "CURRENT_TIMESTAMP" },
+      { columnName: "created_at", logicalType: "datetime", length: undefined, unique: false, default: createdDefault },
     ]);
     expect(accounts.indexes).toEqual([{ name: "idx_accounts_handle", columns: ["handle"], unique: true }]);
     expect(physical.entities.find((entity) => entity.tableName === "posts")?.indexes).toEqual([]);
@@ -219,5 +223,12 @@ describe("MySQL introspection", () => {
     const statement = createTableDDL(createORM({ adapter: { driver: new MemoryDriver("mysql") }, entities: [DriftAccount] })
       .schema().entities[0]!, mysqlDialect)[0]!;
     expect(statement).toContain("`status` varchar(255) NOT NULL DEFAULT 'draft' CHECK (`status` IN ('draft', 'published'))");
+  });
+
+  it("keeps milliseconds with DATETIME(3) and a matching CURRENT_TIMESTAMP(3) default", () => {
+    const statement = createTableDDL(createORM({ adapter: { driver: new MemoryDriver("mysql") }, entities: [DriftAccount] })
+      .schema().entities[0]!, mysqlDialect)[0]!;
+    // MySQL rejects `DATETIME(3) DEFAULT CURRENT_TIMESTAMP` as an invalid default.
+    expect(statement).toContain("`created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)");
   });
 });
