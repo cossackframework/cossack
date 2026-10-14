@@ -5,6 +5,8 @@ import path from 'node:path';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { verifyReleaseVersion } from '../../../scripts/verify-release-version.mjs';
+import { publishedPackageNames } from '../../../scripts/verify-published-release.mjs';
+import { COSSACK_PACKAGES } from '../src/installed-packages.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const workflow = parse(readFileSync(path.join(root, '.github/workflows/publish.yml'), 'utf8'));
@@ -37,6 +39,13 @@ describe('release publishing coverage', () => {
   it('keeps test-utils internal and keeps the publish job identity', () => {
     const internal = JSON.parse(readFileSync(path.join(root, 'packages/test-utils/package.json'), 'utf8'));
     expect(internal.private).toBe(true);
+    // The release verifier and the CLI package allowlist name only packages
+    // that pnpm -r publish actually publishes (Desktop has its own gate).
+    const published = packages.map(pkg => pkg.name);
+    const privatePackages = manifests('packages').filter(pkg => pkg.private).map(pkg => pkg.name);
+    expect([...publishedPackageNames].sort()).toEqual(published.filter(name => name !== '@cossackframework/desktop').sort());
+    for (const name of privatePackages) expect(COSSACK_PACKAGES, name).not.toContain(name);
+    for (const name of published) expect(COSSACK_PACKAGES, name).toContain(name);
     const workspace = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
     expect(workspace.private).toBe(true);
     expect(workspace.scripts.build).toContain('pnpm --filter @cossackframework/test-utils run build');

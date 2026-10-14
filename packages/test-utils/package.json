@@ -1,6 +1,7 @@
 {
   "name": "@cossackframework/test-utils",
   "version": "0.9.0",
+  "description": "Internal test helpers for the Cossack repository. Private: not published to npm.",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -35,10 +36,6 @@
       "import": "./dist/index.mjs"
     }
   },
-  "files": [
-    "dist",
-    "agent-docs.json"
-  ],
   "type": "module",
   "private": true
 }

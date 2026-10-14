@@ -6,9 +6,11 @@ import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
 
 const execFileAsync = promisify(execFile);
+// Every non-private workspace package except Desktop, whose Linux runtime gate
+// is scripts/test-desktop-runtime.mjs. @cossackframework/test-utils is private.
 export const publishedPackageNames = [
   'renderer', 'core', 'node-adapter', 'auth', 'ui',
-  'framework', 'database', 'studio', 'scaffold', 'test-utils',
+  'framework', 'database', 'studio', 'scaffold',
 ].map(name => `@cossackframework/${name}`).concat('cossack');
 
 /** Inspect the installed artifacts, never workspace package manifests or aliases. */
@@ -103,8 +105,6 @@ import { LocalStorageProvider } from '@cossackframework/node-adapter/storage';
 import { createR2StorageProvider } from '@cossackframework/framework/storage/r2';
 import { createS3StorageProvider } from '@cossackframework/framework/storage/s3';
 import { createCloudflareWorkflowProvider } from '@cossackframework/framework/workflows/provider';
-import { withRequestScope, controlledAsync } from '@cossackframework/test-utils/server';
-import { getRequestContext } from '@cossackframework/core';
 import { defineWorkflow, workflowData } from '@cossackframework/core/workflows';
 import { resolveRecipe } from '@cossackframework/scaffold/registry';
 const body = () => new ReadableStream({start(c) {c.enqueue(new TextEncoder().encode('release'));c.close();}});
@@ -137,12 +137,10 @@ const workflows=createCloudflareWorkflowProvider({async create(value){createdWor
 await workflows.create({identity:{id:'fixture'}});assert.equal(await workflows.inspect('fixture'),'waiting');
 await workflows.sendEvent('fixture','ready',{});await workflows.control('fixture','pause');
 assert.deepEqual(calls,['fixture','ready','pause']);
-const context={acceptance:true};
-await withRequestScope({context},async()=>{assert.equal(getRequestContext(),context);const deferred=controlledAsync();deferred.resolve('done');assert.equal(await deferred.promise,'done');assert.equal(deferred.settled,true);});
 assert.deepEqual(workflowData({ok:true}),{ok:true});
 assert.equal(defineWorkflow({name:'acceptance',version:1,events:{},schema:{async parse(v){return v;}},async run(){return null;}}).name,'acceptance');
 assert.ok(resolveRecipe({adapter:'node',preset:'minimal',features:['resource','mutation','scoped-service']}).resolvedFeatures.includes('mutation'));
-console.log('Installed public storage/providers/request helpers/recipe acceptance passed.');
+console.log('Installed public storage/providers/workflow/recipe acceptance passed.');
 `);
   try {
     for (const args of [

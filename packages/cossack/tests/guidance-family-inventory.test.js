@@ -36,9 +36,9 @@ it('all maintained non-Desktop API families have discoverable usage and executab
   }
 }, 30000);
 it('missing or removed guidance stays visibly partial rather than claiming runtime behavior', () => {
-  const coverage = describeGuidanceCoverage('@cossackframework/test-utils', {guides:[{id:'production-server-fixtures'}]});
+  const coverage = describeGuidanceCoverage('@cossackframework/node-adapter', {guides:[{id:'node-runtime-lifecycle'}]});
   expect(coverage.status).toBe('partial');
-  expect(coverage.families[0].missing).toEqual(['request-scope-async-fixtures','browser-component-fixtures']);
+  expect(coverage.families[0].missing).toEqual(['notification-smtp-adapter','authorized-local-storage']);
   expect(coverage.behaviorVerification).toBe('not-performed');
   expect(describeGuidanceCoverage('@cossackframework/desktop', {guides:[]}).status).toBe('not-enumerated');
 });

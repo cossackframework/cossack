@@ -33,7 +33,6 @@ const packageDirectories = [
   'database',
   'studio',
   'scaffold',
-  'test-utils',
   'cossack',
 ];
 
@@ -56,7 +55,6 @@ async function buildPublishablePackages({ includeDesktop = false } = {}) {
   if (includeDesktop) await run('pnpm', ['--filter', '@cossackframework/desktop', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/database', 'build']);
   await run('pnpm', ['--filter', '@cossackframework/studio', 'build']);
-  await run('pnpm', ['--filter', '@cossackframework/test-utils', 'build']);
 }
 
 async function packPackages(destination, { includeDesktop = false } = {}) {
@@ -101,8 +99,7 @@ async function useTarballs(projectDir, tarballs, { documentation = false } = {})
   // their features into the minimal application.
   if (documentation) for (const name of [
     '@cossackframework/ui', '@cossackframework/auth', '@cossackframework/database',
-    '@cossackframework/node-adapter',
-    '@cossackframework/studio', '@cossackframework/test-utils',
+    '@cossackframework/node-adapter', '@cossackframework/studio',
   ]) {
     if (!pkg.dependencies?.[name]) pkg.devDependencies[name] = `file:${tarballs.get(name)}`;
   }
