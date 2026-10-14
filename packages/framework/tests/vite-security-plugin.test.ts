@@ -5,7 +5,7 @@ import { transformWithOxc } from 'vite';
  * Tests the code stripping functionality to ensure server-only code is properly removed from client bundles.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -2561,5 +2561,46 @@ class Demo extends Cossack {
     expect(result.diagnostics).toEqual([expect.objectContaining({
       code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: 'demo.ts',
     })]);
+  });
+});
+
+describe('cross-file base class warning', () => {
+  const run = (source: string, id: string) => {
+    const warn = vi.fn();
+    const result = (cossackSecurityPlugin().transform as Function).call({ environment: { name: 'client' }, warn }, source, id);
+    return { warn, code: result.code as string };
+  };
+  const subclass = (decorator = '') => `
+    import { BasePage } from '../../lib/base-page';
+    ${decorator}
+    export default class ReportPage extends BasePage {
+      render() { return 'report'; }
+      async loadSecrets() { return process.env.SECRET; }
+      get title() { return 'Report'; }
+    }
+  `;
+
+  it.each(['/src/pages/reports/index.ts', '/src/components/report.ts'])('warns for an undecorated subclass of an imported base in %s', id => {
+    const { warn, code } = run(subclass(), id);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain('ReportPage');
+    expect(message).toContain('BasePage');
+    expect(message).toContain('loadSecrets');
+    expect(message).not.toMatch(/\brender\b|\btitle\b/);
+    expect(message).toMatch(/@Page|@Component/);
+    expect(message).toContain('docs/client-bundle.md#build-failures-and-class-discovery');
+    // Stripping semantics are unchanged: the class is not transformed.
+    expect(code).toContain('process.env.SECRET');
+  });
+
+  it.each([
+    ['decorated with @Page', `import { Page } from '@cossackframework/core';\n${subclass('@Page()')}`, '/src/pages/reports/index.ts'],
+    ['outside pages and components', subclass(), '/src/lib/report.ts'],
+    ['only built-in methods', `import { BasePage } from './base'; export default class P extends BasePage { render() { return ''; } }`, '/src/pages/p.ts'],
+    ['a local base class', `class BasePage {} export default class P extends BasePage { load() {} }`, '/src/pages/p.ts'],
+    ['a framework base', `import { Cossack } from '@cossackframework/core'; export default class P extends Cossack { load() {} }`, '/src/pages/p.ts'],
+  ])('does not warn for %s', (_label, source, id) => {
+    expect(run(source, id).warn).not.toHaveBeenCalled();
   });
 });

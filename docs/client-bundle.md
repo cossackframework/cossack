@@ -256,3 +256,6 @@ Use a method or function field with a static name for server code.
 Keep secrets out of constructors, ordinary field initializers, accessors, and
 client-safe methods. Those parts still run in the browser. For a subclass of an
 imported custom base, use a component decorator or explicit `@Server` methods.
+The client build warns when a class in `src/pages/` or `src/components/`
+extends an imported, non-framework base without either, and has undecorated
+methods that would otherwise be stripped.

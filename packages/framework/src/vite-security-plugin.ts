@@ -219,6 +219,18 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         };
       }
 
+      // Discovery cannot see through a base class imported from another file.
+      // Warn (without changing stripping) when such a subclass in pages or
+      // components has methods that would otherwise be stripped.
+      for (const finding of findUnstrippedImportedSubclasses(code, id)) {
+        this.warn?.(
+          `[Cossack Security] ${id}: class ${finding.className} extends imported ${finding.baseName}, which the client ` +
+          `bundle transform cannot follow across files, so its undecorated methods (${finding.methods.join(', ')}) ` +
+          'ship to the browser unchanged. Decorate the class with @Page() or @Component(), or mark server methods ' +
+          'with @Server(). See docs/client-bundle.md#build-failures-and-class-discovery.',
+        );
+      }
+
       try {
         const stripped = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
         const transformed = stripClientServerOnlyImports(stripped, id);
@@ -1070,6 +1082,51 @@ function frameworkClassSelection(program: any): { selected: Set<any>; hidden?: a
   const result = { selected, hidden: nested.find(isFramework) };
   frameworkClassSets.set(program, result);
   return result;
+}
+
+/**
+ * @internal Classes under src/pages or src/components that extend a base
+ * imported from another (non-framework) module, are not otherwise recognised
+ * as framework classes, and declare undecorated non-builtin methods. Those
+ * methods are not stripped from the client bundle.
+ */
+export function findUnstrippedImportedSubclasses(
+  code: string,
+  id: string,
+): Array<{ className: string; baseName: string; methods: string[] }> {
+  const cleanId = id.split(/[?#]/)[0].replace(/\\/g, '/');
+  if (!/\/src\/(?:pages|components)\//.test(cleanId)) return [];
+  const program = parseProgram(code);
+  if (!program) return [];
+  const imported = new Set<string>();
+  for (const node of program.body ?? []) {
+    if (node.type !== 'ImportDeclaration' || node.importKind === 'type') continue;
+    if (String(node.source?.value).startsWith('@cossackframework/')) continue;
+    for (const specifier of node.specifiers ?? []) {
+      if (specifier.importKind !== 'type' && specifier.local?.name) imported.add(specifier.local.name);
+    }
+  }
+  if (!imported.size) return [];
+  const selected = frameworkClasses(program);
+  const findings: Array<{ className: string; baseName: string; methods: string[] }> = [];
+  for (const cls of findClasses(program)) {
+    if (selected.has(cls)) continue;
+    const superClass = unwrapExpression(cls.superClass);
+    const baseRoot = superClass?.type === 'Identifier' ? superClass.name
+      : superClass?.type === 'MemberExpression' && superClass.object?.type === 'Identifier' ? superClass.object.name : null;
+    if (!baseRoot || !imported.has(baseRoot)) continue;
+    const methods = (cls.body?.body ?? [])
+      .filter((member: any) => member.type === 'MethodDefinition' && member.kind === 'method' && !member.decorators?.length)
+      .map((member: any) => memberKeyName(member.key))
+      .filter((name: string | null): name is string => !!name && !BUILTIN_METHODS.has(name));
+    if (!methods.length) continue;
+    findings.push({
+      className: classNameOf(program, cls) ?? '(anonymous)',
+      baseName: code.slice(superClass.start, superClass.end),
+      methods,
+    });
+  }
+  return findings;
 }
 
 /** The static name of a class's `superClass` (e.g. `Cossack`), or null. */
