@@ -234,6 +234,27 @@ describe('server$ compiler macro', () => {
     expect(result).toContain('return this.__serverResourceResult("users", await');
   });
 
+  it('names generated resource methods from the project-relative path, not the checkout path', () => {
+    const source = `import { server$ } from '@cossackframework/core';
+      export default class Users extends Cossack { users = server$(() => 1, { initial: 0 }); }`;
+    const method = (code: string) => /__cossack_server_resource_[a-z0-9]+/.exec(code)?.[0];
+    const runPlugin = (root: string, id: string, environment: string) => {
+      const plugin = cossackSecurityPlugin({ devWarning: false });
+      (plugin.configResolved as Function)({ root });
+      return (plugin.transform as Function).call({ environment: { name: environment }, warn: () => {} }, source, id).code as string;
+    };
+    const server = method(runPlugin('/home/ci/build-a', '/home/ci/build-a/src/pages/users/index.ts', 'ssr'));
+    const client = method(runPlugin('/srv/other/checkout', '/srv/other/checkout/src/pages/users/index.ts', 'client'));
+    const windows = method(runPlugin('C:\\work\\app', 'C:\\work\\app\\src\\pages\\users\\index.ts?v=1', 'client'));
+    expect(server).toBeTruthy();
+    expect(client).toBe(server);
+    expect(windows).toBe(server);
+    // Direct calls agree with the build when given the same root.
+    expect(method(transformServerResources(source, '/x/y/src/pages/users/index.ts', undefined, '/x/y'))).toBe(server);
+    // A different project-relative path yields a different name.
+    expect(method(runPlugin('/home/ci/build-a', '/home/ci/build-a/src/pages/admin/index.ts', 'ssr'))).not.toBe(server);
+  });
+
   it('requires initial for fields', () => {
     const source = `import { server$ } from '@cossackframework/core'; class A extends Cossack { x = server$(() => 1); }`;
     expect(() => transformServerResources(source, 'a.ts')).toThrow('requires { initial }');

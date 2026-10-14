@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite';
 import { parseSync } from 'vite';
 import { readFileSync } from 'node:fs';
+import { posix } from 'node:path';
 import { isHttpHandlerModule } from './page-inspection.js';
 
 export interface CossackSecurityPluginOptions {
@@ -56,6 +57,9 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   const {
     devWarning = true,
   } = options;
+  // Vite's resolved root, shared by the client and server environments, so
+  // generated server$ method names agree between both bundles.
+  let projectRoot: string | undefined;
 
   /**
    * Check if the file should be processed.
@@ -87,6 +91,10 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   return {
     name: 'cossack-security',
     enforce: 'pre', // Run before other plugins to ensure we process raw source
+
+    configResolved(config) {
+      projectRoot = config.root;
+    },
 
     /**
      * Server-only config files (`src/config/*.ts`) must never reach the client
@@ -196,7 +204,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // server$ is a compiler macro in both environments. On the server its
       // generated method retains the loader; the normal client pass below
       // replaces that method with the existing RPC proxy stub.
-      if (code.includes('server$')) code = transformServerResources(code, id);
+      if (code.includes('server$')) code = transformServerResources(code, id, undefined, projectRoot);
 
       // Check if this file contains a Cossack class or a @Service decorated class
       // Class discovery is AST-based: whitespace, aliases and decorated
@@ -384,7 +392,24 @@ interface ResourceSource {
   offset: number;
 }
 
-export function transformServerResources(code: string, id: string, sources?: ResourceSource[]): string {
+/**
+ * Checkout-independent module key for generated server$ method names: the
+ * project-root-relative path with `/` separators. Client and server bundles
+ * built from different checkout paths (or operating systems) therefore agree.
+ * Without a root, the path from its last `src/` segment is used.
+ */
+function resourceModuleKey(id: string, root?: string): string {
+  const clean = id.split(/[?#]/)[0].replace(/\\/g, '/');
+  const absolute = /^(?:[A-Za-z]:)?\//.test(clean);
+  if (root && absolute) {
+    const base = root.replace(/\\/g, '/').replace(/\/+$/, '');
+    return posix.relative(base || '/', clean);
+  }
+  const src = clean.lastIndexOf('/src/');
+  return src >= 0 ? clean.slice(src + 1) : clean.replace(/^\.?\//, '');
+}
+
+export function transformServerResources(code: string, id: string, sources?: ResourceSource[], root?: string): string {
   const program = parseProgram(code);
   if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
   const bindings = new Set<string>();
@@ -419,7 +444,7 @@ export function transformServerResources(code: string, id: string, sources?: Res
       }
       if (loader.generator) throw new Error(`[Cossack server$] ${id}: ${name} loader must return data; use @Server for generators.`);
       const options = call.arguments[1] ? sourceSlice(code, call.arguments[1]) : '{}';
-      const method = `__cossack_server_resource_${stableResourceHash(`${id}:${className}:${name}`)}`;
+      const method = `__cossack_server_resource_${stableResourceHash(`${resourceModuleKey(id, root)}:${className}:${name}`)}`;
       const args = (loader.params ?? []).map((p: any) => sourceSlice(code, p)).join(', ');
       const body = loader.body.type === 'BlockStatement'
         ? sourceSlice(code, loader.body)
@@ -1592,7 +1617,7 @@ export interface CompilerClassFacts {
  * This is file-level compiler metadata, not a resolved project/inheritance model.
  * Resource methods retain the authored loader location through macro expansion.
  */
-export function inspectCompilerMethods(code: string, id: string): {
+export function inspectCompilerMethods(code: string, id: string, root?: string): {
   classes: CompilerClassFacts[];
   diagnostics: Array<{ code: string; file: string; message: string }>;
 } {
@@ -1604,7 +1629,7 @@ export function inspectCompilerMethods(code: string, id: string): {
   const originalProgram = parseProgram(code);
   if (!originalProgram) return unknown('Source could not be parsed.');
   const resources: ResourceSource[] = [];
-  try { code = transformServerResources(code, id, resources); }
+  try { code = transformServerResources(code, id, resources, root); }
   catch { return unknown('Unsupported server resource declaration.'); }
   const program = parseProgram(code);
   if (!program) return unknown('Expanded source could not be parsed.');
