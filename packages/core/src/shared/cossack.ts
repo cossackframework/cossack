@@ -2013,25 +2013,56 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
 
         // 1. @On (Component/Container Events)
-        // Components with a container delegate through it. Bootstrapped page
-        // and layout components don't have one (their content is composed into
-        // the App), so they fall back to document-level delegation — a
-        // page-level @On handler is expected to observe events across the whole
-        // page. Nested component() children are never bootstrapped and have no
-        // container: a document fallback would fire their handlers for every
-        // unrelated event on the page (N list items = N document listeners), so
-        // they skip @On instead.
-        const onTarget: EventTarget | undefined = this.container
+        // Regular components delegate through their container element. Page and
+        // layout components don't have one (their content is composed into the
+        // App), so fall back to document-level delegation — a page-level @On
+        // handler is expected to observe events across the whole page.
+        // component() children have no container; the renderer gives them the
+        // comment markers around their output instead. Delegate from the
+        // markers' parent and only handle events whose target lies between
+        // the markers, so siblings and the rest of the page never trigger it.
+        // Same registered symbol as the renderer's COMPONENT_RANGE.
+        const rangeKey = Symbol.for('@cossackframework/renderer/component-range');
+        const range = this.container ? undefined
+            : (this as unknown as Record<symbol, { readonly start: Comment; readonly end: Comment } | undefined>)[rangeKey];
+        if (range && typeof document !== 'undefined') {
+            const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
+            const inRange = (node: unknown): boolean => node instanceof Node
+                && (range.start.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+                && (range.end.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+            let cancelled = false;
+            this.eventCleanupFns.push(() => { cancelled = true; });
+            // Top-level markers sit in the renderer's staging fragment until
+            // the current render inserts it; resolve the parent afterwards.
+            queueMicrotask(() => {
+                if (cancelled) return;
+                const parent = range.start.parentNode;
+                const target: EventTarget = parent && parent.nodeType !== Node.DOCUMENT_FRAGMENT_NODE ? parent : document;
+                for (const { eventName, propertyKey } of domEvents) {
+                    if (eventName === 'mount' || eventName === 'navigate-complete') continue;
+                    if (!this.hasMethod(propertyKey)) continue;
+                    const method = this.getMethod(propertyKey) as Function;
+                    attach(target, eventName, function (this: unknown, event: Event) {
+                        if (inRange(event.target)) return method.call(this, event);
+                    });
+                }
+            });
+        }
+        // Bootstrapped pages and layouts without a container still delegate from
+        // document. A component() child with neither container nor range (for
+        // example rendered outside the renderer) skips @On rather than firing
+        // for every unrelated event on the page.
+        const onTarget: EventTarget | undefined = range ? undefined : this.container
             || (this._frameworkBootstrapped && typeof document !== 'undefined' ? document : undefined);
         const domEvents = Reflect.getMetadata('cossack:dom-events', this.constructor) || [];
-        if (!onTarget) {
+        if (!onTarget && !range) {
             for (const { eventName } of domEvents) {
                 if (eventName === 'mount' || eventName === 'navigate-complete') continue;
                 if (import.meta.env?.DEV) {
-                    console.warn(`[Cossack] @On('${eventName}') on ${this.constructor.name} was not attached: nested components rendered with component() have no container. Use a template event binding (e.g. @${eventName}=\${...}) on the element instead.`);
+                    console.warn(`[Cossack] @On('${eventName}') on ${this.constructor.name} was not attached: this component has no container or rendered range. Use a template event binding (e.g. @${eventName}=\${...}) on the element instead.`);
                 }
             }
-        } else {
+        } else if (onTarget) {
             for (const { eventName, propertyKey } of domEvents) {
                 // Lifecycle events are handled by setupLifecycleEventHandlers()
                 if (eventName === 'mount' || eventName === 'navigate-complete') continue;
