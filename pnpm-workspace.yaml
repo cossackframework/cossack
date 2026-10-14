@@ -37,4 +37,4 @@ minimumReleaseAgeExclude:
   - '@modelcontextprotocol/client@2.3.0'
 
 patchedDependencies:
-  appdmg@0.6.6: packages/scaffold/template/patches/appdmg@0.6.6.patch
+  appdmg@^0.6.6: packages/scaffold/template/patches/appdmg@0.6.6.patch

@@ -20,7 +20,7 @@ overrides:
   brace-expansion@>=2.0.0 <2.1.7: 2.1.7
 
 patchedDependencies:
-  appdmg@0.6.6: b79de5cc1695d87f92549dfb4d17f7e5b17aebb2802c5c18b8180f41eadbcf67
+  appdmg@^0.6.6: b79de5cc1695d87f92549dfb4d17f7e5b17aebb2802c5c18b8180f41eadbcf67
 
 importers:
 
