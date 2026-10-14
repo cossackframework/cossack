@@ -56,6 +56,19 @@ export type StoreProxyTrigger = (storeKey: string, path: string) => void;
  */
 const childProxyCache = new WeakMap<StoreProxyTrigger, Map<object, object>>();
 
+/** Maps every store proxy (top-level and nested) back to its raw target. */
+const storeProxyRaw = new WeakMap<object, object>();
+
+/**
+ * Return the raw target behind a store proxy, or the value unchanged. Used
+ * when a proxy is assigned back into state (`this.form = Object.assign(this.form, patch)`)
+ * so the StateContainer never stores a proxy and reads never wrap a proxy in a proxy.
+ */
+export function toRawStoreValue<T>(value: T): T {
+    if (value === null || typeof value !== 'object') return value;
+    return (storeProxyRaw.get(value as object) as T | undefined) ?? value;
+}
+
 /**
  * Returns true only for plain objects (`{}` literals) and arrays — the shapes
  * that are SAFE to wrap in a recursive Proxy. Built-in non-plain objects
@@ -107,6 +120,7 @@ export function createStoreProxy(
     trigger: StoreProxyTrigger,
     basePath: string = storeKey,
 ): Record<PropertyKey, unknown> {
+    target = toRawStoreValue(target);
     const inner = childProxyCache.get(trigger) ?? new Map<object, object>();
     if (inner.size === 0) childProxyCache.set(trigger, inner);
 
@@ -150,6 +164,7 @@ export function createStoreProxy(
             return value;
         },
         set(obj, prop, value) {
+            value = toRawStoreValue(value);
             const oldValue = Reflect.get(obj, prop);
             const ok = Reflect.set(obj, prop, value);
             // Strict inequality, but treat NaN === NaN as a no-op (NaN !== NaN
@@ -170,6 +185,7 @@ export function createStoreProxy(
     };
     const proxy = new Proxy(target, handler);
     inner.set(target, proxy);
+    storeProxyRaw.set(proxy, target);
     return proxy;
 }
 

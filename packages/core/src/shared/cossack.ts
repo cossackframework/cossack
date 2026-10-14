@@ -74,7 +74,7 @@ import {
 import { StateContainer } from './state-container';
 import { collectReactiveMetadata } from './reactive-metadata';
 import { noteOptimisticWrite } from './optimistic-state';
-import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath } from './store';
+import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath, toRawStoreValue } from './store';
 import { snapshotNavigationDraft } from './navigation-draft';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
@@ -2266,6 +2266,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 Object.defineProperty(this, key, {
                     get: () => readStoreValue(),
                     set: (newValue: any) => {
+                        // Assigning the store's own proxy (or a nested store
+                        // proxy) back must store the raw target; otherwise
+                        // reads would wrap a proxy in a proxy.
+                        newValue = toRawStoreValue(newValue);
                         const oldValue = isPublic
                             ? this._stateContainer.getPublic(key)
                             : this._stateContainer.getInternal(key);
