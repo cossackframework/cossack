@@ -124,6 +124,12 @@ const close = configureDesktopClose({
 });
 ```
 
+`desktop.mainWindow` is a live getter. It changes when the main window closes
+while another managed window stays open, and when macOS activation, a second
+instance or `desktop.show()` must create a new window. `desktop.shell` is
+stable and its window methods always target the current main window. A close
+policy applies to the window it was given.
+
 `quit` closes the application, `hide-to-tray` hides only while its tray is
 alive and otherwise quits, and `confirm-quit` uses an asynchronous native
 dialog. Linux tray activation varies by desktop host, so prefer

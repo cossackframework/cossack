@@ -126,6 +126,10 @@ export interface CreateDesktopWindowOptions extends SafeBrowserWindowOptions {
 
 export interface DesktopShell {
   readonly app: typeof app;
+  /**
+   * The window this shell controls. For `DesktopApplication.shell` it always
+   * resolves to the application's current main window.
+   */
   readonly window: BrowserWindow;
   readonly Menu: typeof Menu;
   readonly Tray: typeof Tray;
@@ -144,7 +148,13 @@ export interface DesktopShell {
 
 export interface DesktopApplication {
   readonly app: typeof app;
+  /**
+   * The current main window. It is replaced when the main window closes while
+   * another managed window stays open, and when activation (macOS) or a second
+   * instance needs a new window. Read it when needed instead of caching it.
+   */
   readonly mainWindow: BrowserWindow;
+  /** A stable shell whose window methods always target the current main window. */
   readonly shell: DesktopShell;
   readonly quitting: boolean;
   createWindow(options?: CreateDesktopWindowOptions): BrowserWindow;
@@ -439,9 +449,13 @@ export function createDesktopShell(options: { window?: BrowserWindow } = {}): De
   assertElectron();
   const window = options.window ?? BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   if (!window) throw new DesktopUnavailableError();
+  return shellFor(() => window);
+}
+
+function shellFor(currentWindow: () => BrowserWindow): DesktopShell {
   return {
     app,
-    window,
+    get window() { return currentWindow(); },
     Menu,
     Tray,
     dialog,
@@ -449,15 +463,15 @@ export function createDesktopShell(options: { window?: BrowserWindow } = {}): De
     nativeImage,
     shell: electronShell,
     get dock() { return app.dock; },
-    show() { window.show(); },
-    hide() { window.hide(); },
-    focus() { window.focus(); },
+    show() { currentWindow().show(); },
+    hide() { currentWindow().hide(); },
+    focus() { currentWindow().focus(); },
     quit() { app.quit(); },
     setBadge(value) {
       return app.setBadgeCount(value === null ? 0 : typeof value === 'number' ? value : Number(value) || 0);
     },
     setOverlayIcon(image, description = '') {
-      window.setOverlayIcon(image, description);
+      currentWindow().setOverlayIcon(image, description);
     },
   };
 }
@@ -471,6 +485,7 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
   const startPath = `/${(options.startPath ?? '/').replace(/^\/+/, '')}`;
   let quitting = false;
   let mainWindow: BrowserWindow;
+  let mainWindowOpen = false;
 
   app.setName(options.productName);
   if (process.platform === 'linux') {
@@ -563,22 +578,38 @@ async function initializeDesktopApp(options: CreateDesktopAppOptions): Promise<D
   });
   debugDesktop('registered cossack:// protocol handler');
 
-  mainWindow = createWindow();
-  const shell = createDesktopShell({ window: mainWindow });
+  const setMainWindow = (window: BrowserWindow): BrowserWindow => {
+    mainWindow = window;
+    mainWindowOpen = true;
+    window.once('closed', () => {
+      if (mainWindow !== window) return;
+      // Keep the application pointing at a live window when one remains.
+      // `windows` already dropped this window: its listener was added first.
+      const next = windows.values().next().value;
+      if (next) setMainWindow(next);
+      else mainWindowOpen = false;
+    });
+    return window;
+  };
+  const openMainWindow = (): BrowserWindow => mainWindowOpen ? mainWindow : setMainWindow(createWindow());
+
+  setMainWindow(createWindow());
+  // Resolve lazily so references taken before a window is replaced keep working.
+  const shell = shellFor(() => mainWindow);
   const application: DesktopApplication = {
     app,
-    mainWindow,
+    get mainWindow() { return mainWindow; },
     shell,
     get quitting() { return quitting; },
     createWindow,
-    show() { mainWindow.show(); mainWindow.focus(); },
-    hide() { mainWindow.hide(); },
+    show() { const window = openMainWindow(); window.show(); window.focus(); },
+    hide() { if (mainWindowOpen) mainWindow.hide(); },
     quit() { quitting = true; app.quit(); },
   };
 
   app.on('before-quit', () => { quitting = true; });
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) setMainWindow(createWindow());
     else application.show();
   });
   app.on('second-instance', () => application.show());

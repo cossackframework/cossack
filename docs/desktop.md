@@ -29,6 +29,16 @@ registration. Unpacked Forge output bypasses the launcher. To test unpacked
 output, pass `--no-sandbox --ozone-platform=x11`. Installed DEBs do not need the
 testing-only sandbox fallback.
 
+`desktop.mainWindow` always returns the current main window. If the main
+window closes while another managed window is open, that window becomes the
+main window. If no managed window is open, macOS activation, a second instance,
+or `desktop.show()` creates a new main window. `desktop.shell` is one stable
+object. Its `window`, `show()`, `hide()`, `focus()` and `setOverlayIcon()`
+always target the current main window, so a saved reference keeps working.
+Read `desktop.mainWindow` when you need it. Do not store it in a variable for
+later use. A close policy from `configureDesktopClose()` applies to one window,
+so configure it again for a replacement window.
+
 Use `configureDesktopClose()` to choose `quit`, `hide-to-tray`, or
 `confirm-quit`. Generated apps start with `quit`. Linux tray activation depends
 on the desktop host, so test `confirm-quit` on the target OS. Use
