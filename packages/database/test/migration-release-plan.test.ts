@@ -163,7 +163,7 @@ it('recognizes unchanged callback migrations recorded with the pre-0.9 checksum 
     await runner.ensureTable();
     await orm.executeFragment(orm.sql.unsafe('CREATE TABLE legacy_history (id integer)'), 'ddl');
     await orm.executeFragment(orm.sql.fragment`INSERT INTO _cossack_migrations VALUES (${migration.name}, ${previousChecksum}, ${1}, ${'2026-01-01T00:00:00Z'})`, 'insert');
-    expect(await runner.status({ readOnly: true })).toMatchObject([{ state: 'applied', checksum: previousChecksum }]);
+    expect(await runner.status({ readOnly: true })).toMatchObject([{ state: 'applied', applied: { checksum: previousChecksum } }]);
     expect(await runner.plan()).toEqual([]);
     expect(await runner.plan('down')).toMatchObject([{ complete: false, reason: expect.stringContaining('not executed') }]);
     expect(upCalls).toBe(0); expect(downCalls).toBe(0);

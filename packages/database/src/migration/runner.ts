@@ -6,20 +6,9 @@ import { dialectFor } from "../dialect/dialects.js";
 import { renderOperation } from "../schema/ddl.js";
 import type { SchemaOperation } from "../schema/operations.js";
 import { compileSQL, SQLFragment } from "../sql/fragment.js";
-import { digestEvidence, serializeEvidence, planTarget, executionPolicy, operationStatements, snapshotOperation } from "./plan.js";
+import { serializeEvidence, planTarget, executionPolicy, operationStatements, snapshotOperation } from "./plan.js";
+import { checksumMatches, migrationChecksum as checksum } from "./checksum.js";
 import type { BatchStatement } from "../adapter/types.js";
-
-async function checksum(migration: Migration): Promise<string> {
-  if (!migration.operations && migration.up && migration.down) {
-    const source = `${migration.name}\n${JSON.stringify(migration.replaces ?? [])}\n` +
-      `${Function.prototype.toString.call(migration.up)}\n${Function.prototype.toString.call(migration.down)}`;
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
-    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
-  }
-  return digestEvidence({ name: migration.name, replaces: migration.replaces ?? [], operations: migration.operations,
-    up: migration.up ? Function.prototype.toString.call(migration.up) : null,
-    down: migration.down ? Function.prototype.toString.call(migration.down) : null });
-}
 
 export class MigrationRunner {
   private readonly planned = new WeakMap<object, { direction: "up" | "down"; history: string; checksums: string; output: string; target: string; definitions: readonly Migration[] }>();
@@ -75,7 +64,7 @@ export class MigrationRunner {
         migration,
         checksum: hash,
         ...(value === undefined ? {} : { applied: value }),
-        state: !value ? "pending" : value.checksum === hash ? "applied" : "changed",
+        state: !value ? "pending" : await checksumMatches(migration, value.checksum, hash) ? "applied" : "changed",
       });
     }
     return result;
@@ -127,11 +116,12 @@ export class MigrationRunner {
     }));
     const hashes = await Promise.all(definitions.map(checksum));
     const target = planTarget(this.orm);
-    const statuses: MigrationStatus[] = definitions.map((migration, index) => {
+    const statuses: MigrationStatus[] = await Promise.all(definitions.map(async (migration, index) => {
       const applied = appliedByName.get(migration.name);
       return { migration, checksum: hashes[index]!, ...(applied ? { applied } : {}),
-        state: !applied ? "pending" : applied.checksum === hashes[index] ? "applied" : "changed" };
-    });
+        state: !applied ? "pending" as const
+          : await checksumMatches(migration, applied.checksum, hashes[index]!) ? "applied" as const : "changed" as const };
+    }));
     const changed = statuses.find(item => item.state === "changed");
     if (changed) throw new MigrationError(`Applied migration ${changed.migration.name} has a changed checksum.`);
     const selected = direction === "up"

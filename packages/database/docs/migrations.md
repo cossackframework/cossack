@@ -143,6 +143,13 @@ Applied migrations are recorded in `_cossack_migrations` with their name,
 SHA-256 checksum, batch, and application timestamp. Editing an applied migration
 causes checksum validation to fail. Create a new migration instead.
 
+Operation-based migrations (the generated form) hash their declared operations,
+so their checksum is the same in every build. A callback-only migration hashes
+the normalized source of `up()` and `down()`: comments, whitespace, `;`,
+trailing commas and quote style are ignored. A build that rewrites the code
+(minification, renamed variables, older `async` targets) still changes it, so
+use `operations` when the checksum must survive different build tools.
+
 ## Targets and plans
 
 Select the environment and database target explicitly:

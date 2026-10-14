@@ -88,6 +88,25 @@ JSON status results already include the current `checksum` and the stored `appli
 The runner also exposes `rehash(names, { dryRun: true })` for previews and
 `rehash(names)` to accept the selected definitions.
 
+### What the checksum covers
+
+Generated migrations declare `operations` (SQL statements). Their checksum
+hashes those operations, so it is the same in every build. This is the stable
+form. Prefer it for every migration that must keep its checksum.
+
+A hand-written migration that has only `up()` and `down()` callbacks has no
+operations to hash. Its checksum hashes the source text of the two functions,
+as JavaScript sees it at run time. Before hashing, the runner removes comments,
+collapses whitespace, treats `;` as whitespace, removes trailing commas, and
+rewrites single-quoted strings with double quotes. Thus a formatter, `tsx`, or a
+bundler that only reformats the code does not change the checksum. A build
+that rewrites the code itself (for example, it renames variables, minifies, or
+transpiles `async` functions to an older target) still changes it. If CI uses
+such a build, move the migration to `operations`.
+
+Checksums that earlier releases stored for callback migrations (from the raw
+source text) are still accepted for unchanged migrations.
+
 ## Environments and plans
 
 ```sh
