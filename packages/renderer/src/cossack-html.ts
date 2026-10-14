@@ -1,7 +1,7 @@
 import { serializeFormValues } from './ssr-form-values';
 import { analyzeTemplate, RAW_TEXT_TAGS, type TemplateAnalysis } from './template-analysis';
 import { ComponentResult, isComponentResult } from './component';
-import { CossackElement, pushCurrentInstance, popCurrentInstance } from './cossack-element';
+import { CossackElement, pushCurrentInstance, popCurrentInstance, getComponentRange, setComponentRange, type ComponentRange } from './cossack-element';
 import { LiveResult, RepeatResult, KeyResult, BindResult, PreventDefaultResult, IfDefinedResult, GuardResult, CacheResult, resolveField, setField } from './directives';
 
 export type TemplateResultType = 1 | 2;
@@ -823,6 +823,15 @@ class NodePart implements Part {
     this.updateNode(template, branch ?? null);
   }
   private componentInstance: CossackElement | null = null;
+  // Live view of this part's markers handed to component instances, so the
+  // range stays correct if the part is rebound to other anchors.
+  private readonly range: ComponentRange = (() => {
+    const part = this;
+    return {
+      get start() { return part.startNode; },
+      get end() { return part.endNode; },
+    };
+  })();
   private renderListener: ((t: TemplateResult | unknown | null) => void) | null = null;
   private _childParts: NodePart[] = [];
   private _partKeys: unknown[] = [];
@@ -1111,6 +1120,7 @@ class NodePart implements Part {
         (this.componentInstance as any)._setServiceScope(result.serviceScope);
       }
       assignChildId(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
       if (HYDRATION_DEV) {
         const ownMetadata = (this.componentInstance as CossackElement & { hydrationMetadata?: HydrationDiagnosticMetadata }).hydrationMetadata;
         const inherited = hydrationMetadata!.get(this);
@@ -1169,6 +1179,7 @@ class NodePart implements Part {
       // A retained child keeps its id but still takes its slot in this
       // render's sequence, so later new siblings number after it.
       advanceChildCounter(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
     }
     const instance = this.componentInstance;
     if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);
@@ -1255,6 +1266,7 @@ class NodePart implements Part {
       } catch {
         // Preserve the renderer's existing best-effort destruction behavior.
       } finally {
+        if (getComponentRange(instance) === this.range) setComponentRange(instance, undefined);
         releaseChildId(instance);
         instance._frameworkRendererDetached?.();
       }
@@ -1281,6 +1293,7 @@ class NodePart implements Part {
         (this.componentInstance as any)._setServiceScope(result.serviceScope);
       }
       assignChildId(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
       this.renderListener = (template) => {
         this.updateComponentTemplate(template);
       };
@@ -1302,6 +1315,7 @@ class NodePart implements Part {
       // A retained child keeps its id but still takes its slot in this
       // render's sequence, so later new siblings number after it.
       advanceChildCounter(this.componentInstance);
+      setComponentRange(this.componentInstance, this.range);
     }
     const instance = this.componentInstance;
     if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);

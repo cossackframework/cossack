@@ -15,6 +15,37 @@ export interface PropertyDeclarations {
 
 export type PropertyValues = Map<string | number | symbol, unknown>;
 
+/**
+ * @internal Framework-only. The comment markers that bracket a `component()`
+ * child's rendered output. Children have no host element, so this is how the
+ * framework scopes DOM work (such as `@On` delegation) to exactly their nodes.
+ * `start` and `end` always reflect the renderer's current markers.
+ */
+export interface ComponentRange {
+  readonly start: Comment;
+  readonly end: Comment;
+}
+
+/**
+ * @internal Framework-only. Registered-symbol key under which the client
+ * renderer stores a component instance's {@link ComponentRange}. A symbol key
+ * (instead of a declared field) keeps DOM types out of the component's
+ * public field types, and `Symbol.for` lets core read it without importing.
+ */
+export const COMPONENT_RANGE: unique symbol = Symbol.for('@cossackframework/renderer/component-range') as any;
+
+/**
+ * @internal Framework-only. The DOM range of a client-rendered `component()`
+ * child; undefined for root-mounted components and on the server.
+ */
+export const getComponentRange = (instance: object): ComponentRange | undefined =>
+  (instance as { [COMPONENT_RANGE]?: ComponentRange })[COMPONENT_RANGE];
+
+/** @internal */
+export const setComponentRange = (instance: object, range: ComponentRange | undefined): void => {
+  (instance as { [COMPONENT_RANGE]?: ComponentRange })[COMPONENT_RANGE] = range;
+};
+
 // --- Reactive Controllers ---
 
 export interface ReactiveController {
