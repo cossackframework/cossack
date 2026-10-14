@@ -25,9 +25,11 @@ import {
   resolveRecipe,
   recipeCapabilityRequirements,
   recipeCapabilityDiagnostics,
+  projectNameProblem,
 } from './registry.js';
 
 export {
+  projectNameProblem,
   ADAPTERS,
   FEATURES,
   AUTH_METHODS,
@@ -423,9 +425,13 @@ function middlewareRegistry(recipe) {
 }
 
 function wranglerConfig(recipe, projectName) {
+  const json = JSON.stringify;
+  // Comments cannot hold line breaks; names are validated on creation, but
+  // existing projects keep their directory name.
+  const commentName = projectName.replace(/[\r\n\u2028\u2029]/g, ' ');
   let database = '';
   if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') {
-    database = `,\n  // Remote D1 deployments require database_id. Use the returned ID for an existing database,\n  // or create a remote database and update this config with:\n  // pnpm exec wrangler d1 create ${projectName}-db --update-config --binding DB\n  // This command creates a Cloudflare resource. Local development keeps its separate local DB.\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": "${projectName}-db",\n    "preview_database_id": "${projectName}-local"\n  }]`;
+    database = `,\n  // Remote D1 deployments require database_id. Use the returned ID for an existing database,\n  // or create a remote database and update this config with:\n  // pnpm exec wrangler d1 create ${commentName}-db --update-config --binding DB\n  // This command creates a Cloudflare resource. Local development keeps its separate local DB.\n  "d1_databases": [{\n    "binding": "DB",\n    "database_name": ${json(`${projectName}-db`)},\n    "preview_database_id": ${json(`${projectName}-local`)}\n  }]`;
   } else if (recipe.resolvedFeatures.includes('database') &&
       recipe.config.database.startsWith('hyperdrive-')) {
     database = `,\n  // Replace this placeholder with a real Hyperdrive configuration ID before deploying.\n  "hyperdrive": [{\n    "binding": "HYPERDRIVE",\n    "id": "00000000000000000000000000000000"\n  }]`;
@@ -444,21 +450,21 @@ function wranglerConfig(recipe, projectName) {
   const compatibilityFlag = recipe.config.database.startsWith('hyperdrive-')
     ? 'nodejs_compat'
     : 'nodejs_als';
-  const jobDatabase = `{ "binding": "JOB_STATE", "database_name": "${projectName}-job-state", "preview_database_id": "${projectName}-job-state-local", "migrations_dir": "src/jobs/migrations" }`;
+  const jobDatabase = `{ "binding": "JOB_STATE", "database_name": ${json(`${projectName}-job-state`)}, "preview_database_id": ${json(`${projectName}-job-state-local`)}, "migrations_dir": "src/jobs/migrations" }`;
   const hasJobs = recipe.resolvedFeatures.includes('jobs');
   const jobs = hasJobs ? `,
-  "queues": { "producers": [{ "binding": "JOBS", "queue": "${projectName}-jobs" }], "consumers": [{ "queue": "${projectName}-jobs", "max_batch_size": 10, "max_retries": 5 }] }` : '';
+  "queues": { "producers": [{ "binding": "JOBS", "queue": ${json(`${projectName}-jobs`)} }], "consumers": [{ "queue": ${json(`${projectName}-jobs`)}, "max_batch_size": 10, "max_retries": 5 }] }` : '';
   if (hasJobs) {
     if (recipe.resolvedFeatures.includes('database') && recipe.config.database === 'd1') database = database.replace(/]$/, `,${jobDatabase}]`);
     else database += `,\n  "d1_databases": [${jobDatabase}]`;
   }
-  const workflows = recipe.resolvedFeatures.includes('workflows') ? `,\n  \"workflows\": [{ \"name\": \"${projectName}-approval\", \"binding\": \"WORKFLOWS\", \"class_name\": \"ApprovalWorkflow\" }]` : '';
+  const workflows = recipe.resolvedFeatures.includes('workflows') ? `,\n  \"workflows\": [{ \"name\": ${json(`${projectName}-approval`)}, \"binding\": \"WORKFLOWS\", \"class_name\": \"ApprovalWorkflow\" }]` : '';
   const schedules = recipe.resolvedFeatures.includes('schedules') ? ',\n  "triggers": { "crons": ["0 * * * *"] }' : '';
   const notifications = recipe.resolvedFeatures.includes('notifications') ? ',\n    "MAIL_FROM": "no-reply@example.com"' : '';
   const turnstile = recipe.resolvedFeatures.includes('turnstile') ? ',\n    "TURNSTILE_SITE_KEY": "your-site-key",\n    "TURNSTILE_HOSTNAME": "localhost"' : '';
   return `{
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "${projectName}",
+  "name": ${json(projectName)},
   "compatibility_flags": ["${compatibilityFlag}", "enable_request_signal"],
   "compatibility_date": "2026-06-06",
   "main": "./src/index.ts",
@@ -467,7 +473,7 @@ function wranglerConfig(recipe, projectName) {
   "secrets": { "required": ${JSON.stringify(cloudflareEnvironmentValues(recipe, true).map(([name]) => name))} },
   "vars": {
     "APP_URL": "https://example.com",
-    "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": "${projectName}-jobs-default"` : ''}${turnstile}${notifications}
+    "APP_LOCALE": "en"${hasJobs ? `,\n    "JOB_NAMESPACE": ${json(`${projectName}-jobs-default`)}` : ''}${turnstile}${notifications}
   }${database}${email}${sse}${jobs}${schedules}${workflows}
 }
 `;
@@ -954,13 +960,13 @@ export const frameworkApp = createApp({
 
 export async function startDesktop(createApplication = createDesktopApp) {
   const desktop = await createApplication({
-    identifier: '${desktopIdentifier(projectName)}',
-    productName: '${projectName.replaceAll("'", "\\'")}',
+    identifier: ${JSON.stringify(desktopIdentifier(projectName))},
+    productName: ${JSON.stringify(projectName)},
     assetsRoot: fileURLToPath(new URL('../client/', import.meta.url)),
     env,
     fetch: (request, requestEnv) => frameworkApp.fetch(request, requestEnv),
     window: {
-      title: '${projectName.replaceAll("'", "\\'")}',
+      title: ${JSON.stringify(projectName)},
       icon: fileURLToPath(new URL('../../desktop-assets/icon-256.png', import.meta.url)),
     },
   });
@@ -982,7 +988,10 @@ if (!import.meta.env.DEV) void startDesktop().catch((error) => {
 function forgeConfiguration(projectName) {
   const identifier = desktopIdentifier(projectName);
   const executableName = identifier.slice('dev.cossack.'.length);
-  const safeName = projectName.replaceAll("'", "\\'");
+  const name = JSON.stringify(projectName);
+  const description = JSON.stringify(`${projectName} desktop application`);
+  const bin = JSON.stringify(executableName);
+  const bundleId = JSON.stringify(identifier);
   return `import path from 'node:path';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerDMG } from '@electron-forge/maker-dmg';
@@ -995,9 +1004,9 @@ const config: ForgeConfig = {
     prune: false,
     // Package only runtime artifacts; never copy project secrets or web-server output.
     ignore: (file) => file !== '' && !/^\\/(?:package\\.json$|dist$|dist\\/(?:client|desktop)(?:\\/|$)|desktop-assets(?:\\/|$))/.test(file),
-    name: '${safeName}',
-    executableName: '${executableName}',
-    appBundleId: '${identifier}',
+    name: ${name},
+    executableName: ${bin},
+    appBundleId: ${bundleId},
     appCategoryType: 'public.app-category.developer-tools',
     icon: process.platform === 'darwin'
       ? 'desktop-assets/icon.icns'
@@ -1016,11 +1025,11 @@ const config: ForgeConfig = {
   makers: [
     new MakerDeb({
       options: {
-        name: '${executableName}',
-        productName: '${safeName}',
-        genericName: '${safeName}',
-        description: '${safeName} desktop application',
-        bin: '${executableName}',
+        name: ${bin},
+        productName: ${name},
+        genericName: ${name},
+        description: ${description},
+        bin: ${bin},
         maintainer: 'Cossack Framework <maintainers@cossack.dev>',
         homepage: 'https://cossack.dev',
         desktopTemplate: path.resolve('desktop-assets/linux.desktop.ejs'),
@@ -1030,14 +1039,14 @@ const config: ForgeConfig = {
       },
     }),
     new MakerWix({
-      name: '${safeName}',
+      name: ${name},
       manufacturer: 'Cossack Framework',
-      appUserModelId: '${identifier}',
+      appUserModelId: ${bundleId},
       icon: 'desktop-assets/icon.ico',
-      exe: '${executableName}.exe',
+      exe: ${JSON.stringify(`${executableName}.exe`)},
     }),
     new MakerDMG({
-      name: '${safeName}',
+      name: ${name},
       format: 'ULFO',
     }),
   ],
@@ -1419,7 +1428,8 @@ function mergeEnvironmentContent(existing, values) {
 function nodeEnvironmentValues(recipe, projectName, example = false) {
   const port = '3000';
   const values = [
-    ['APP_NAME', projectName],
+    // Quote names that dotenv would otherwise truncate or reinterpret.
+    ['APP_NAME', /^[\w./:@+-]*$/.test(projectName) ? projectName : JSON.stringify(projectName)],
     ['APP_ENV', 'development'],
     ['APP_DEBUG', 'true'],
     ['APP_URL', `http://localhost:${port}`],
@@ -2369,7 +2379,9 @@ async function confirmPlan(plan, options, summary = undefined) {
 }
 
 export async function createApp(projectName, options = {}) {
-  if (!projectName) throw new Error('Please provide a project name');
+  if (!projectName) throw Object.assign(new Error('Please provide a project name'), { code: 'COSSACK_ARGUMENT_MISSING' });
+  const nameProblem = projectNameProblem(path.basename(path.resolve(options.cwd ?? process.cwd(), projectName)));
+  if (nameProblem) throw Object.assign(new Error(nameProblem), { code: 'COSSACK_PROJECT_NAME_INVALID' });
   if (options.dryRun) options = { ...options, interactive: false };
   let previous = {};
   let startAtLast = false;

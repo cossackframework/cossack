@@ -1,3 +1,4 @@
+import { builtinModules } from 'node:module';
 import { checkCapabilityRequirements } from '@cossackframework/core/runtime-capabilities';
 
 export const ADAPTERS = ['cloudflare', 'node'];
@@ -6,6 +7,24 @@ export const AUTH_METHODS = ['credentials', 'oauth'];
 export const OAUTH_PROVIDERS = ['github', 'google', 'gitlab', 'facebook', 'microsoft'];
 export const UI_THEMES = ['default', 'neutral', 'zinc', 'stone', 'gray', 'slate', 'blue', 'green', 'red'];
 export const DASHBOARD_MODULES = ['users', 'sessions', 'settings', 'roles'];
+
+const WORKER_NAME = /^[a-z0-9-]+$/;
+
+/**
+ * Why `name` cannot be a project name, or null when it can. A project name is
+ * both the package.json name and the Cloudflare Worker name, so it follows the
+ * stricter of the two rules: 1-63 lowercase letters, digits and dashes that do
+ * not start or end with a dash, and not a Node.js built-in module name.
+ */
+export function projectNameProblem(name) {
+  if (typeof name !== 'string' || name.length === 0) return 'The project name is empty.';
+  if (name.length > 63) return 'The project name must be 63 characters or fewer (Cloudflare Worker name limit).';
+  if (name !== name.toLowerCase() && WORKER_NAME.test(name.toLowerCase())) return 'The project name must be lowercase.';
+  if (!WORKER_NAME.test(name)) return 'The project name may contain only lowercase letters, digits and dashes.';
+  if (name.startsWith('-') || name.endsWith('-')) return 'The project name must start and end with a letter or digit.';
+  if (builtinModules.includes(name)) return `The project name "${name}" is a Node.js built-in module name.`;
+  return null;
+}
 
 export const FEATURE_REGISTRY = {
   ui: { requires: [] },

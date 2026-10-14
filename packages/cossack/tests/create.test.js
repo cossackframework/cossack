@@ -135,4 +135,17 @@ describe('create command', () => {
     ));
     expect(createAppMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['My App', 'lowercase'],
+    ['my_app', 'lowercase letters, digits and dashes'],
+    ['apps/-bad', 'start and end'],
+  ])('rejects the invalid project name %j before scaffolding', async (name, message) => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(await createCommand([name], { cwd: '/tmp', flags: { json: true }, force: false })).toBe(1);
+    const envelope = JSON.parse(log.mock.calls.at(-1)[0]);
+    expect(envelope).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_PROJECT_NAME_INVALID' }] });
+    expect(envelope.diagnostics[0].message).toContain(message);
+    expect(createAppMock).not.toHaveBeenCalled();
+  });
 });

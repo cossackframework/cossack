@@ -120,6 +120,8 @@ lifecycle events:
 
 Scaffold a new Cossack project in a directory named `<name>`. Prompts for the runtime adapter (Cloudflare Workers or Node.js) unless `--adapter` is provided.
 
+The directory name becomes the package name and the Cloudflare Worker name. It must be 1 to 63 lowercase letters, digits and dashes, must start and end with a letter or digit, and must not be a Node.js built-in module name such as `http`. Other names fail with `COSSACK_PROJECT_NAME_INVALID` before any file is written.
+
 ```bash
 cossack create my-app
 cossack create my-app --adapter node --preset full-stack

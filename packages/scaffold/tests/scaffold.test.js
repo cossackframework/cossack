@@ -835,7 +835,7 @@ describe('composition', () => {
       expect(targetFiles.get('src/desktop/index.ts').content.toString())
         .toContain("behavior: 'quit'");
       expect(targetFiles.get('forge.config.ts').content.toString())
-        .toContain(`appBundleId: 'dev.cossack.${adapter}-desktop'`);
+        .toContain(`appBundleId: "dev.cossack.${adapter}-desktop"`);
       expect(targetFiles.get('desktop-assets/linux.desktop.ejs').content.toString())
         .toContain('Exec=<%= name %> --ozone-platform=x11 %U');
       for (const icon of ['icon.icns', 'icon.ico', 'icon-512.png', 'tray-macosTemplate@2x.png']) {
