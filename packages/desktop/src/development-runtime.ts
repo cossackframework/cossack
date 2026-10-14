@@ -5,10 +5,20 @@ import { createServer as createHttpServer } from 'node:http';
 import { desktopDevelopmentError } from './development-error.js';
 import { transformDesktopDocument } from './development-response.js';
 
+type DevelopmentVariables = Record<string, string | undefined>;
+
 interface DesktopDevelopmentEntry {
   frameworkApp: { fetch: DesktopFetch };
+  /** App-declared bindings. Used when the entry does not export `createEnv`. */
   env?: Record<string, unknown>;
+  /** Optional binding factory, matching the Node entry contract. */
+  createEnv?(variables: DevelopmentVariables): Record<string, unknown> | Promise<Record<string, unknown>>;
   startDesktop(factory: typeof createDesktopApp): Promise<DesktopApplication>;
+}
+
+interface LoadedDesktopEntry {
+  entry: DesktopDevelopmentEntry;
+  env: Record<string, unknown>;
 }
 
 // Electron evaluates native modules; Vite owns only transformation and client
@@ -16,8 +26,8 @@ interface DesktopDevelopmentEntry {
 async function main() {
   let server: ViteDevServer;
   let application: DesktopApplication | undefined;
-  let current: DesktopDevelopmentEntry | undefined;
-  let loading: Promise<DesktopDevelopmentEntry> | undefined;
+  let current: LoadedDesktopEntry | undefined;
+  let loading: Promise<LoadedDesktopEntry> | undefined;
   let stopped = false,
     dirty = false,
     revision = 0;
@@ -34,7 +44,7 @@ async function main() {
     if (process.connected) process.send?.({ type: 'cossack:desktop-restart' });
     else console.error('[desktop] Native configuration changed; restart desktop:dev to apply it.');
   };
-  const load = (): Promise<DesktopDevelopmentEntry> => {
+  const load = (): Promise<LoadedDesktopEntry> => {
     if (stopped) return Promise.reject(new Error('Desktop development is closing'));
     if (current) return Promise.resolve(current);
     return (loading ??= (async () => {
@@ -52,9 +62,13 @@ async function main() {
           throw new TypeError(
             'Desktop entry must export startDesktop(factory) and frameworkApp.fetch. Apply the Desktop bootstrap migration.',
           );
+        // Like production and Node development, only the app decides which
+        // variables become bindings. Host and dotenv variables are not
+        // exposed wholesale.
+        const env = (entry.createEnv ? await entry.createEnv(variables) : entry.env) ?? {};
         if (expected !== revision) continue;
-        current = entry;
-        return entry;
+        current = { entry, env };
+        return current;
       }
       throw new Error('Desktop development is closing');
     })().finally(() => {
@@ -150,11 +164,10 @@ async function main() {
       assets,
       fetch: async (request, requestEnv) => {
         try {
-          const entry = await load();
+          const { entry, env } = await load();
           const response = await entry.frameworkApp.fetch(request, {
             ...requestEnv,
-            ...variables,
-            ...entry.env,
+            ...env,
             ASSETS: requestEnv?.ASSETS,
             COSSACK_DESKTOP: requestEnv?.COSSACK_DESKTOP,
           });
@@ -169,7 +182,7 @@ async function main() {
     });
   function boot(): Promise<void> {
     return (booting ??= load()
-      .then(async (entry) => {
+      .then(async ({ entry }) => {
         if (!stopped && !application) {
           // Vite buffers errors until a browser connects. Replace the startup
           // error before opening the first window, so repaired source does not

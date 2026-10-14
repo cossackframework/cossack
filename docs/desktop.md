@@ -19,6 +19,13 @@ Development runs Vite inside Electron and retains the private origin. Source
 edits reload managed windows. Changes to the native bootstrap, the Vite
 configuration, or the root `.env*` files restart Electron. The bootstrap exports
 `frameworkApp`, `env`, and `startDesktop(factory)`.
+Development gives the application only the bindings it declares: the `env`
+passed to `createDesktopApp()` and the bootstrap's `env` export. Host process
+variables and root `.env*` values are not added automatically. To build
+bindings from those variables, export
+`createEnv(variables)` from the bootstrap, as the Node entry does. Development
+calls it with the `.env*` values for the `desktop` mode and the process
+variables, and uses its result in place of the `env` export.
 Enable `developmentTraces: true` in `cossackPages()` for the shared
 [inspector and CLI/MCP trace readers](./development-traces.md).
 Electron Forge creates the host installer only: DEB on Linux, MSI on Windows,

@@ -49,6 +49,10 @@ supervises Electron, which runs the development module loader and asset server.
 Pages retain the private origin and native request checks. Source edits reload
 managed windows. Changes under `src/desktop/`, to the Vite configuration, or to
 root `.env*` files restart Electron. Reloads do not undo application side effects.
+Development passes only declared bindings: the `env` given to
+`createDesktopApp()` and the bootstrap's `env` export, or the result of an
+exported `createEnv(variables)`, which receives the root `.env*` values for the
+`desktop` mode and the process variables. Other host variables are not exposed.
 Page syntax errors remain visible and source repair can recover without
 restarting the CLI.
 
