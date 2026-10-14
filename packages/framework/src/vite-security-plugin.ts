@@ -95,10 +95,6 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   // and each entry is taken (removed) by the first transform of its id.
   const loadedPrograms = new Map<string, { source: string; program: any }>();
 
-  /**
-   * Check if the file should be processed.
-   * Only process user application code, not framework/library code.
-   */
   /** An application source file: inside the Vite root, outside dependencies. */
   function isProjectModule(cleanId: string): boolean {
     if (!projectRoot || cleanId.includes('/node_modules/')) return false;
@@ -106,6 +102,10 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     return cleanId.replace(/\\/g, '/').startsWith(`${root}/`);
   }
 
+  /**
+   * Check if the file should be processed.
+   * Only process user application code, not framework/library code.
+   */
   function shouldProcessFile(id: string): boolean {
     // Skip node_modules
     if (id.includes('node_modules')) return false;
