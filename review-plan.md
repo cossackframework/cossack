@@ -211,6 +211,17 @@ Ordered by measured or structural impact.
 18. Config requirements re-normalized per request. `config.ts:184-191`.
 19. Hydration payload repeats the user per component (page, each layout, app). Phase 1 reduced it to `{ id }` plus opt-in fields, so this is now size only. Emit it once at the payload root and update the three client reads: core bootstrap (`cossack.ts` `this.user = metadata.user`), navigation hydration (`cossack.ts` `state.metadata?.user`) and `framework/src/client/app.ts`. Deferred from Phase 1.
 
+### Phase 3 outcome (2026-10-14)
+
+- PR #100 shipped items 3, 4, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18 and 19, plus a single-pass `escapeHtml`. Items 1, 2 and 6 were already fixed on master; Phase 3 froze the shared template analysis and pinned every cached inline-CSS decision with tests.
+- Item 14 shipped separately as option B: one `<style data-cossack-style>` per component style scope in `<head>`, reference-counted per style root on the client.
+- Item 5 still needs a design decision.
+- Follow-ups found during Phase 3:
+  - `runTasks()` creates an AbortController and context per task on every client render, about 100 µs with six tasks.
+  - `InMemoryCacheStore.write` scans every entry at capacity, the pattern item 8 fixed for rate limits.
+  - In dev, the framework demo's `/renderer/lit-compat` page logs four `cossack.hydration.mismatch` text-content warnings. They predate Phase 3.
+  - Studio's Postgres and MySQL introspection still runs three or four queries per table.
+
 ## Phase 4: design, dead code, docs, tests
 
 ### Structural refactors that remove bug classes
