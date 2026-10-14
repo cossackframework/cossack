@@ -77,6 +77,26 @@ function isSameOriginRequest(c: Context): boolean {
     return c.req.header('x-forwarded-proto')?.toLowerCase() === 'https' && origin === `https://${url.host}`;
 }
 
+/**
+ * Read and drop an unread request body (up to 64 KiB) before rejecting it.
+ * Rejecting with the body unread leaves the sender writing after the
+ * response, which breaks the next request on a keep-alive connection.
+ */
+async function discardBody(request: Request, limit = 64 * 1024): Promise<void> {
+    if (!request.body || request.bodyUsed || request.body.locked) return;
+    const reader = request.body.getReader();
+    let size = 0;
+    try {
+        while (true) {
+            const next = await reader.read();
+            if (next.done || (size += next.value.byteLength) > limit) break;
+        }
+    } catch { /* the connection is already gone */ } finally {
+        await Promise.race([reader.cancel().catch(() => {}), new Promise(resolve => setTimeout(resolve, 1000))]);
+        reader.releaseLock();
+    }
+}
+
 /** Only `application/json` (with optional parameters). Forms cannot send it cross-site without CORS preflight. */
 function isJsonContentType(value: string | undefined): boolean {
     return value !== undefined && value.split(';')[0]!.trim().toLowerCase() === 'application/json';
@@ -163,9 +183,11 @@ export function createAuth<User>(provider: AuthProvider<User>): AuthKit<User> {
     const createLoginHandler = (loginOptions: LoginHandlerOptions<User>): MiddlewareHandler => {
         return async (c: Context) => {
             if (!isSameOriginRequest(c)) {
+                await discardBody(c.req.raw);
                 return c.json({ error: 'Cross-site login requests are not allowed' }, 403);
             }
             if (!isJsonContentType(c.req.header('content-type'))) {
+                await discardBody(c.req.raw);
                 return c.json({ error: 'Login requires Content-Type: application/json' }, 415);
             }
             let credentials: unknown;

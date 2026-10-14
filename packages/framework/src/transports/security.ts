@@ -1,7 +1,8 @@
 import { isOriginAllowed, RpcError } from '@cossackframework/core';
 import type { MiddlewareHandler } from 'hono';
 import type { RouterContext } from '../route-ids.js';
-import { readRpcRequest } from './http.js';
+import { readRpcRequest, RPC_JSON_REQUEST_MAX_BYTES } from './http.js';
+import { discardRequestBody } from '../request-body.js';
 
 /** Apply the addressed page/layout guards before any transport can bootstrap it. */
 export function protectTransport(ctx: RouterContext): MiddlewareHandler {
@@ -11,6 +12,8 @@ export function protectTransport(ctx: RouterContext): MiddlewareHandler {
             // Multipart and text/plain requests can be sent without a CORS preflight.
             // CORS response headers alone cannot prevent their side effects.
             if (!isOriginAllowed(c.req.header('origin'), c.req.url, ctx.allowedOrigins)) {
+                // Drain (bounded) before rejecting so the connection stays usable.
+                await discardRequestBody(c.req.raw, ctx.rpcBodyLimits?.jsonBytes ?? RPC_JSON_REQUEST_MAX_BYTES);
                 return c.text('Origin not allowed', 403);
             }
             const suppliedId = c.req.header('X-Cossack-Request-Id');

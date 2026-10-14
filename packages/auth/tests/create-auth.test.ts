@@ -287,6 +287,22 @@ describe('createAuth — createLoginHandler request guards', () => {
         expect(createSession).not.toHaveBeenCalled();
     });
 
+    it('reads a rejected login body to the end so the connection stays usable', async () => {
+        const kit = createAuth<User>({
+            extractSessionId: () => undefined,
+            validateSessionId: async () => null,
+            resolveUserById: async () => null,
+        });
+        const app = buildApp(kit, kit.createLoginHandler({ validateCredentials: vi.fn(async () => user), createSession: vi.fn() }));
+        let pulls = 0;
+        const stream = new ReadableStream<Uint8Array>({
+            pull(controller) { if (pulls++ === 0) controller.enqueue(new TextEncoder().encode('email=a')); else controller.close(); },
+        });
+        const res = await app.request('http://localhost/api/login', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: stream, duplex: 'half' } as RequestInit);
+        expect(res.status).toBe(415);
+        expect(pulls).toBe(2);
+    });
+
     it('accepts application/json with parameters', async () => {
         const { post } = setup();
         const res = await post({ 'Content-Type': 'Application/JSON; charset=utf-8' });
