@@ -64,6 +64,43 @@ describe('Studio static assets', () => {
     expect(decompress(target.body()).toString()).toBe(source);
   });
 
+  it('rejects malformed percent-encoding with 400 instead of throwing', async () => {
+    const { root } = await fixture();
+    const target = responseSink();
+    expect(await serveStudioAsset({
+      method: 'GET',
+      url: '/%zz',
+      headers: {},
+    } as any, target.response as any, root)).toBe(true);
+    expect(target.response.statusCode).toBe(400);
+    expect(target.body().toString()).toBe('Bad Request');
+  });
+
+  it.each([
+    '/../package.json',
+    '/%2e%2e/package.json',
+    '/%2e%2e%2fpackage.json',
+    '/assets/../../package.json',
+    '/assets/..%2f..%2fpackage.json',
+    '/assets/%2e%2e%2f%2e%2e%2fpackage.json',
+    '/..%5cpackage.json',
+  ])('never serves files outside the asset root for %s', async (url) => {
+    const parent = await mkdtemp(path.join(tmpdir(), 'cossack-studio-traversal-'));
+    temporaryDirectories.push(parent);
+    const root = path.join(parent, 'client');
+    await mkdir(path.join(root, 'assets'), { recursive: true });
+    // The file a traversal out of the asset root would reach.
+    await writeFile(path.join(parent, 'package.json'), '{"secret":true}');
+    const target = responseSink();
+    const served = await serveStudioAsset({
+      method: 'GET',
+      url,
+      headers: {},
+    } as any, target.response as any, root);
+    expect(target.body().toString()).not.toContain('secret');
+    if (served) expect(target.response.statusCode).not.toBe(200);
+  });
+
   it('keeps HEAD responses uncompressed with their original length', async () => {
     const { root, source } = await fixture();
     const target = responseSink();

@@ -53,6 +53,44 @@ describe('Studio readiness and disposal', () => {
     await expect(fetch(`http://127.0.0.1:${port}`)).rejects.toThrow();
   });
 
+  it('answers malformed paths with 400 and hides internal error details', async () => {
+    const connection = await localConnection();
+    const abort = new AbortController();
+    const port = await availablePort();
+    let launchUrl = '';
+    let resolveReady!: () => void;
+    const ready = new Promise<void>(resolve => { resolveReady = resolve; });
+    vi.spyOn(console, 'log').mockImplementation((message?: unknown) => {
+      const text = String(message);
+      if (text.startsWith('Cossack Studio: ')) launchUrl = text.slice('Cossack Studio: '.length);
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const running = runStudio({ port, connection, open: false, signal: abort.signal,
+      applicationName: 'Fixture', onReady: () => resolveReady() });
+    try {
+      await ready;
+      const launch = await fetch(launchUrl, { redirect: 'manual' });
+      expect(launch.status).toBe(302);
+      const cookie = launch.headers.get('set-cookie')!.split(';')[0]!;
+      const origin = new URL(launchUrl).origin;
+
+      const malformed = await fetch(`${origin}/%zz`, { headers: { cookie } });
+      expect(malformed.status).toBe(400);
+      expect(await malformed.text()).toBe('Bad Request');
+
+      // Under test the server entry is not built, so loading it fails.
+      const failed = await fetch(`${origin}/`, { headers: { cookie } });
+      expect(failed.status).toBe(500);
+      const body = await failed.text();
+      expect(body).toBe('Internal Server Error');
+      expect(body).not.toContain('entry-server');
+      expect(errors).toHaveBeenCalled();
+    } finally {
+      abort.abort();
+      await running;
+    }
+  });
+
   it('closes a connection when schema inspection fails before readiness', async () => {
     const connection: StudioConnection = {
       info: { provider: 'sqlite', label: 'fixture', remote: false },
