@@ -23,11 +23,13 @@ export function createCredentialVerifier<Record, User>(options: CredentialVerifi
         (hasher.needsRehash !== undefined && typeof hasher.needsRehash !== 'function')) throw new AuthError('COSSACK_AUTH_CONFIGURATION_INVALID');
     // Misses verify against a hash from the same hasher so their cost matches
     // a wrong password and response timing does not reveal which accounts exist.
+    // The first miss creates that hash instead of verifying: hashing costs one
+    // derivation too, so a cold isolate's first miss is not twice as slow.
     let dummyHash: Promise<string> | undefined;
     const rejectMiss = async (password: string): Promise<null> => {
         try {
-            dummyHash ??= hasher.hash(Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join(''));
-            await hasher.verify(password, await dummyHash);
+            if (dummyHash) await hasher.verify(password, await dummyHash);
+            else await (dummyHash = hasher.hash(Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')));
         } catch {
             // Retry next time; a miss must still fail the same way.
             dummyHash = undefined;
