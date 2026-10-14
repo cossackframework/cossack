@@ -748,11 +748,6 @@ describe('composition', () => {
     expect(compactReadme).toContain('only needs the opaque configuration ID');
     expect(compactReadme).toContain('Do not put the connection string or credentials in source-controlled files.');
 
-    const configTemplate = await fs.readFile(
-      new URL('../template/wrangler.jsonc', import.meta.url), 'utf8',
-    );
-    expect(configTemplate).toContain('Remote D1 deployment requires database_id.');
-    expect(configTemplate).not.toContain('provisions D1 on deployment');
   });
 
   it('renders isolated recipes for every runtime/provider target', async () => {

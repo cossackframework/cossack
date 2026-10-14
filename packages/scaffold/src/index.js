@@ -222,7 +222,6 @@ const BASE_PATHS = new Set([
   'src/vite-env.d.ts',
   'vite.config.dev.ts',
   'vite.config.ts',
-  'wrangler.jsonc',
   'vitest.config.ts',
 ]);
 const UI_PATHS = new Set([
@@ -868,7 +867,7 @@ ${appName}.get(
 );`).join('\n');
 }
 
-function nodeEntry(providers = []) {
+function nodeEntry(providers = [], { sqlite = false } = {}) {
   const oauthImport = providers.length
     ? "import { oauth, handleOAuthUser } from './auth';\n"
     : '';
@@ -900,8 +899,7 @@ app.all('*', c => frameworkApp.fetch(c.req.raw, c.env));
 // The same binding factory is used by production and the Node Vite plugin.
 export async function createEnv(variables: Record<string, string | undefined> = process.env): Promise<Record<string, unknown>> {
   const bindings: Record<string, unknown> = {
-    ...variables,
-    DB_PATH: variables.DB_PATH ?? './database.sqlite',
+    ...variables,${sqlite ? "\n    DB_PATH: variables.DB_PATH ?? './database.sqlite'," : ''}
     ASSETS: createStaticAssets({ root: fileURLToPath(new URL('../client', import.meta.url)), index: false }),
   };
   if (variables.SMTP_HOST) {
@@ -1609,6 +1607,7 @@ export async function renderRecipe(recipe, options = {}) {
     if (recipe.adapter === 'node' && rel === 'src/index.ts') {
       content = text(nodeEntry(
         recipe.config.authMethods.includes('oauth') ? recipe.config.oauth : [],
+        { sqlite: recipe.resolvedFeatures.includes('database') && recipe.config.database === 'sqlite' },
       ));
     }
     if ((recipe.adapter === 'node') && rel === 'vite.config.ts') {
@@ -1858,7 +1857,8 @@ export async function renderRecipe(recipe, options = {}) {
     if (exampleValues.length) {
     files.set('.dev.vars.example', {
       content: text(environmentExample(exampleValues)),
-      capability: 'database',
+      // APP_SECRET is required by every Cloudflare recipe, not only databases.
+      capability: 'base',
     });
     }
   }
@@ -2389,7 +2389,14 @@ export async function createApp(projectName, options = {}) {
     const prompted = await promptCreationOptions(options, previous, startAtLast);
     const projectDir = path.resolve(prompted.cwd ?? process.cwd(), projectName);
     const recipe = ensureEnvironmentSecrets(resolveRecipe(prompted));
-    if (await access(projectDir) && (await fs.readdir(projectDir)).length > 0 && !prompted.force) {
+    const existing = await fs.stat(projectDir).catch(error => {
+      if (error?.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (existing && !existing.isDirectory()) {
+      throw Object.assign(new Error(`Target path exists and is not a directory: ${projectDir}`), { code: 'COSSACK_TARGET_NOT_DIRECTORY' });
+    }
+    if (existing && (await fs.readdir(projectDir)).length > 0 && !prompted.force) {
       throw new Error(`Target directory is not empty: ${projectDir}`);
     }
     const rendered = await renderRecipe(recipe, {
