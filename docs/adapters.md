@@ -112,9 +112,36 @@ You can generate a project pre-configured with this adapter using the `cossack` 
 
 ## Node static files
 
-`serveStatic` from `@cossackframework/node-adapter` streams files from disk. It
-does not read a whole file into memory. Each response has `Content-Length`, a weak
-`ETag`, `Last-Modified`, and `Accept-Ranges: bytes`.
+The generated Node entry routes built files the same way as the generated
+Cloudflare configuration:
+
+- It mounts `serveStatic` for `/assets/*` only, in front of the framework.
+  Vite's hashed build output there skips global and page middleware. Hashed
+  names get `Cache-Control: public, max-age=31536000, immutable`. A missing
+  file under `/assets/` continues to the framework and its 404 handling.
+- Every other request goes to the framework, including files from `public/`.
+  The framework's assets middleware serves them from the `ASSETS` binding
+  (`createStaticAssets`) after global and owning page/layout policies run.
+  These responses get `Cache-Control: public, max-age=0, must-revalidate`.
+  Known `index.html` and `.html` page aliases redirect to the canonical route
+  after the page's policies run. The entry sets `index: false`, so a directory
+  URL continues to SSR instead of serving its `index.html`. Missing files
+  continue to SSR or API handlers.
+
+The `/assets/` namespace is reserved for build output. The build fails if
+`public/assets/` exists or a route resolves under `/assets`. See
+[Static assets and authentication](./deployment.md#static-assets-and-authentication).
+Projects generated before this layout mount `serveStatic` for every path, so
+page and global policies do not protect their `public/` files. Change that
+mount to `app.use('/assets/*', ...)` as in a newly generated `src/index.ts`.
+`cossack upgrade --apply-template` updates the entry if you have not edited it.
+Node does not read `public/_headers`. The entry sets the `/assets/*` cache
+header itself. Set headers for `public/` files in middleware.
+
+Both paths use `serveStatic` from `@cossackframework/node-adapter`, which
+streams files from disk. It does not read a whole file into memory. Each
+response has `Content-Length`, a weak `ETag`, `Last-Modified`, and
+`Accept-Ranges: bytes`.
 
 - Conditional requests: a matching `If-None-Match` returns `304 Not Modified`.
   If the request has no `If-None-Match`, an `If-Modified-Since` date at or after
@@ -135,6 +162,11 @@ The Node and Desktop asset servers resolve symlinks before reading a file.
 They reject files outside the configured asset directory, including symlinked
 directory indexes. Keep the asset directory writable only by trusted build and
 deployment processes.
+
+The Desktop asset server answers every existing file in its asset directory
+before the framework runs, so page and global policies do not apply to those
+files. A packaged Desktop application contains these files, so policies could
+not keep them from its user anyway. Do not ship private data in `public/`.
 
 If a trusted reverse proxy terminates HTTPS before a Node server, configure
 `createApp({ allowedOrigins: ['https://your-public-host'] })` for transport

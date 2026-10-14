@@ -1,6 +1,8 @@
-# Cloudflare-style _headers file.
-# https://developers.cloudflare.com/pages/configuration/headers/
+# Cloudflare _headers file.
+# https://developers.cloudflare.com/workers/static-assets/headers/
 # Served from the build root (Vite copies public/* to dist). Apply edits freely.
+# Cloudflare applies these rules to every static asset response. Node ignores
+# this file.
 
 /*
   X-Content-Type-Options: nosniff
@@ -9,5 +11,8 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
 # Long-cache fingerprinted build assets (Vite emits content-hashed filenames).
+# Cloudflare serves /assets/* without running the Worker, so middleware cannot
+# add headers there. Set them here. This rule also applies to the 404 response
+# for a missing file under /assets/.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

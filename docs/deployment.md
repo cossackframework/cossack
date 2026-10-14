@@ -45,14 +45,23 @@ Generated applications configure assets as follows:
 ```jsonc
 "assets": {
   "binding": "ASSETS",
-  "run_worker_first": true
+  "run_worker_first": ["/*", "!/assets/*"]
 }
 ```
 
-Every request enters the Worker middleware pipeline. The framework returns
-matching assets after global and owning page/layout policies run. Missing
-assets continue to SSR or API handlers. Client JavaScript and CSS still use
-the asset binding. The framework streams those responses.
+Vite writes hashed client JavaScript, CSS, and imported files to `assets/`.
+Every visitor downloads these files, and the security plugin removes server
+code from them. Cloudflare serves requests under `/assets/` from static assets
+without running the Worker. These requests do not count as Worker invocations,
+and global middleware does not run for them. A missing file under `/assets/`
+gets Cloudflare's empty `404` response. It does not reach the Worker or your
+404 page.
+
+Every other request runs the Worker first, including files from `public/`.
+Global middleware runs for these requests. The framework returns a matching
+asset after global and owning page/layout policies run. Missing assets continue
+to SSR or API handlers. Put work needed only by a page in its route or layout
+middleware.
 
 Page policies also protect files inside that page's URL namespace. Known
 `index.html` and `.html` page aliases pass through those policies and redirect
@@ -60,10 +69,31 @@ to the canonical route. Source route groups and dynamic parameters retain
 their enclosing layout policies. Global middleware can protect asset paths
 that have no page component. Match the entire protected path namespace.
 
-Global middleware runs for asset requests too. Put work needed only by a
-page in its route or layout middleware. `cossack check cloudflare` and deploy
-preflight reject asset configurations that bypass the Worker or rename the
-framework's `ASSETS` binding.
+The `/assets/` namespace is reserved for build output. The build,
+`cossack check cloudflare`, and deploy preflight fail with
+`COSSACK_ASSETS_NAMESPACE_RESERVED` if `public/assets/` exists or a page or API
+route resolves under `/assets`. Keep the client build's `entryFileNames`,
+`chunkFileNames`, and `assetFileNames` under `assets/`. If the client manifest
+lists files outside `assets/`, the build warns. With the pattern above, the
+built-artifact check in `cossack deploy` (and in builds with budgets) then fails
+with `COSSACK_ASSETS_PATTERN_UNCOVERED`, because those files would still invoke
+the Worker.
+
+Middleware cannot change responses for `/assets/*`. Put headers for these files
+in `public/_headers`. Cloudflare applies its rules to every static asset
+response, including assets that it serves directly. The generated file gives
+`/assets/*` a one-year `immutable` `Cache-Control`. Cloudflare also applies that
+rule to the `404` response for a missing file under `/assets/`.
+
+`cossack check cloudflare` and deploy preflight accept `run_worker_first: true`
+or exactly `["/*", "!/assets/*"]`. They reject any other value, because it lets
+Cloudflare serve `public/` files before your policies run. They also reject a
+renamed `ASSETS` binding. Existing applications with `true` keep working: every
+request, including hashed files, runs the Worker first. To stop paying for
+asset requests, replace `true` with the pattern. First make sure that no global
+middleware must run for `/assets/` files. Move any headers that it adds there to
+`public/_headers`. Local Wrangler and Miniflare, including Wrangler's
+`createTestHarness`, apply the same routing.
 
 SSG only publishes anonymous, public HTML. A route that requires login or
 sets visitor cookies must use SSR. See [Static Site Generation](./static-site-generation.md).
@@ -304,6 +334,10 @@ pnpm build
 # Start the server
 node dist/server/index.js
 ```
+
+The generated entry serves hashed build output under `/assets/` before the
+framework. Every other file, including `public/`, is served after global and
+page policies run, as on Cloudflare. See [Node static files](./adapters.md#node-static-files).
 
 Component, WebSocket, and SSE coordinator state is local to each Node process.
 Use database or storage providers for persisted application data. Multiple server

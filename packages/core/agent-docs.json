@@ -334,7 +334,7 @@
         {
           "id": "image-rendering-diagnostics",
           "language": "typescript",
-          "source": "import { Image, imageDiagnostics } from '@cossackframework/core';\nconst props={src:'/assets/avatar.png',width:64,height:64,alt:'Profile portrait',quality:80};\nconst diagnostics=imageDiagnostics(props,{provider:'none'});\nif(!diagnostics.some(item=>item.code==='COSSACK_IMAGE_TRANSFORM_UNAVAILABLE'))throw new Error('Missing transform warning');\nif(!imageDiagnostics({...props,width:0}).some(item=>item.severity==='error'))throw new Error('Invalid dimension accepted');\nconst template=Image({src:props.src,width:64,height:64,alt:props.alt});\nif(!template)throw new Error('Image did not produce a template');\n"
+          "source": "import { Image, imageDiagnostics } from '@cossackframework/core';\nconst props={src:'/images/avatar.png',width:64,height:64,alt:'Profile portrait',quality:80};\nconst diagnostics=imageDiagnostics(props,{provider:'none'});\nif(!diagnostics.some(item=>item.code==='COSSACK_IMAGE_TRANSFORM_UNAVAILABLE'))throw new Error('Missing transform warning');\nif(!imageDiagnostics({...props,width:0}).some(item=>item.severity==='error'))throw new Error('Invalid dimension accepted');\nconst template=Image({src:props.src,width:64,height:64,alt:props.alt});\nif(!template)throw new Error('Image did not produce a template');\n"
         }
       ]
     },
