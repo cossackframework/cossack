@@ -137,6 +137,8 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     },{timeout:30000}).toBeTruthy();
     const origin=cliOrigin??/TRACE_ORIGIN=(https?:\/\/127\.0\.0\.1:\d+)/.exec(output)[1];
     page.on('pageerror',error=>errors.push(error.message));
+    // Count document requests: same-document history updates issue none.
+    let documentLoads=0;page.on('request',request=>{if(request.isNavigationRequest()&&request.frame()===page.mainFrame())documentLoads++;});
     page.on('request',request=>{if(request.url().includes('development-trace'))output+='\nTRACE_MODULE='+request.url();});
     page.on('console',message=>{if(message.type()==='error')output+='\nBROWSER_ERROR='+message.text();});
     page.on('websocket',socket=>{
@@ -200,6 +202,9 @@ export async function verifyDevelopmentTraceApplication(root,{onRecorded,additio
     for(const method of ['nativeBody','nativeEmpty','componentNative'])expect(JSON.stringify(recorded.snapshot.events)).not.toContain(method);
     await onRecorded({snapshot,recorded});
     expect(errors).toEqual([]);
+    // A dependency Vite first sees while the page loads re-bundles shared chunks
+    // and forces a reload, which a page still fetching its modules can miss.
+    expect(documentLoads,'Vite reloaded the page during its first load; pre-bundle the dependencies it discovered').toBe(1);
   } catch(error) {throw new Error(`${error.stack}\nGenerated Vite output:\n${output}`);}
   finally {
     await browser?.close();

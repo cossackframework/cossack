@@ -11,6 +11,7 @@ import { logRuntimeFailure } from '@cossackframework/core/server-diagnostics';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { installDevelopmentTraceBridge, TRACE_BRIDGE_MODULE } from './vite-development-traces.js';
 import { installPublicReloadPrivacy } from './vite-public-diagnostics.js';
+import { clientOptimizedDependencies } from './vite-dependency-optimization.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname, relative } from 'path';
 import { generateRoutes, scanPagesDir, ROUTES_MODULE_ID, ROUTES_SOURCE_PATH, ROUTE_GLOB_EXCLUDES } from './route-codegen.js';
@@ -179,13 +180,10 @@ export function cossackPages(options: CossackPagesOptions = {}): Plugin {
         environments: {
           client: {
             optimizeDeps: {
-              // Vite treats linked packages as application source by default.
-              // Bundle the library barrels in development instead of loading
-              // every re-export as a separate browser request. The framework
-              // entry stays in Vite's graph for its virtual modules and HMR.
-              // Devtools shares the component inspector registry with core;
-              // optimizing both entries keeps a single copy of that state.
-              include: ['@cossackframework/core', '@cossackframework/core/devtools', '@cossackframework/renderer'],
+              // The framework client app stays in Vite's graph for its
+              // virtual modules and HMR when linked; see the helper for why
+              // an installed framework also lists its devtools entry.
+              include: clientOptimizedDependencies(import.meta.url),
             },
           },
           ssr: {

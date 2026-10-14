@@ -18,8 +18,11 @@ call a method that was stripped.
 
 Vite serves application modules separately in development. `cossackPages()`
 pre-bundles core and renderer, including linked local packages, to reduce the
-number of browser requests. This does not make the dev bundle a measure of
-production size. After rebuilding a linked package, restart with
+number of browser requests. With an installed framework it also pre-bundles
+`@cossackframework/framework/client/devtools`, which the development trace
+bridge loads with every page. Vite would otherwise find it during the first page
+load, re-bundle, and reload the page. This does not make the dev bundle a
+measure of production size. After rebuilding a linked package, restart with
 `pnpm dev --force` to refresh Vite's dependency cache.
 
 Production builds remove unused library exports. The browser runtime also
