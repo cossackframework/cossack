@@ -78,7 +78,7 @@ import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath, toRawStoreV
 import { snapshotNavigationDraft } from './navigation-draft';
 import { flashed, old } from './flash';
 import { LifecyclePhase } from './component-types';
-import { supportsViewTransitions, type NavigateOptions, type NavigateResult } from '../client/navigation';
+import { supportsViewTransitions, supportsViewTransitionTypes, type NavigateOptions, type NavigateResult } from '../client/navigation';
 import type {
     ComponentState,
     SerializedComponentState,
@@ -3105,7 +3105,9 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             // snapshots the new state.
             await this.requestUpdate();
         };
-        const transition = types && types.length
+        // The object form is only understood by engines with types support;
+        // older engines (Chrome < 125, Safari 18) never run its update.
+        const transition = types?.length && supportsViewTransitionTypes()
             ? (document as any).startViewTransition({ update, types })
             : (document as any).startViewTransition(update);
         // A superseding transition may reject `ready` even though its DOM
