@@ -1674,19 +1674,26 @@ class SpreadPart implements Part {
   // remove only those (not the component's own classes) and merge with the
   // existing class list instead of overwriting it.
   private spreadClasses: string[] = [];
+  // One delegating listener per spread event key. The handler is swapped on
+  // each render, so fresh closures never pile up, and the storage is private
+  // to this part so an `@event` attribute part on the same element is
+  // independent of it.
+  private eventHandlers = new Map<string, { listener: EventListener; handler: EventListener | undefined }>();
   constructor(public element: Element) {}
   update(value: unknown) {
-    if (value !== nothing && (typeof value !== 'object' || value === null)) return;
-    const props = value === nothing ? {} : value as Record<string, unknown>;
+    // `nothing`, null, undefined and non-objects all spread nothing, which
+    // clears whatever a previous render applied (SSR renders them as empty).
+    const props = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
     const selectPending = this.selectCommit.cancel();
 
     for (const key of Object.keys(this.previousValues)) {
       if (!(key in props)) {
         if (key.startsWith('@')) {
-          const eventName = key.slice(1);
-          const propName = `__crp_handler_${eventName}`;
-          const oldHandler = (this.element as any)[propName];
-          if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
+          const entry = this.eventHandlers.get(key);
+          if (entry) {
+            this.element.removeEventListener(key.slice(1), entry.listener);
+            this.eventHandlers.delete(key);
+          }
         } else if (key.startsWith('.')) {
           // Detach a previously-bound writeback listener when the key is dropped.
           const state = this.bindStates.get(key);
@@ -1713,11 +1720,9 @@ class SpreadPart implements Part {
     for (const [key, val] of Object.entries(props)) {
       if (key.startsWith('@')) {
         const eventName = key.slice(1);
-        const propName = `__crp_handler_${eventName}`;
-        const oldHandler = (this.element as any)[propName];
-        if (oldHandler) this.element.removeEventListener(eventName, oldHandler);
+        let entry = this.eventHandlers.get(key);
         if (val === nothing || (typeof val !== 'function' && !(val instanceof PreventDefaultResult))) {
-          (this.element as any)[propName] = undefined;
+          if (entry) entry.handler = undefined;
           continue;
         }
         // Unwrap `preventDefault(handler)` into a wrapper that prevents the
@@ -1742,8 +1747,16 @@ class SpreadPart implements Part {
         } else {
           handler = val as EventListener;
         }
-        (this.element as any)[propName] = handler;
-        this.element.addEventListener(eventName, handler);
+        if (!entry) {
+          const created: { listener: EventListener; handler: EventListener | undefined } = {
+            handler: undefined,
+            listener: (e: Event) => created.handler?.call(e.currentTarget, e),
+          };
+          entry = created;
+          this.eventHandlers.set(key, entry);
+          this.element.addEventListener(eventName, entry.listener);
+        }
+        entry.handler = handler;
       } else if (key.startsWith('.')) {
         const propName = key.slice(1);
         const priorBind = this.bindStates.get(key);
@@ -1948,6 +1961,10 @@ class AttributePart implements Part {
   // a different `bind(otherComponent, 'field')` recreates the listener instead
   // of silently writing to the old target.
   private bindListener: ((e: Event) => void) | null = null;
+  // `@event` binding: the current handler and the one listener that calls it.
+  private eventHandler: EventListener | undefined = undefined;
+  private eventListener: EventListener | null = null;
+  private eventListenerTarget: Element | null = null;
   private boundPropName: string | null = null;
   private boundComponent: unknown = null;
   private boundFieldName: string | null = null;
@@ -1999,7 +2016,7 @@ class AttributePart implements Part {
         return;
       }
       if (this.name.startsWith('@')) {
-        (this.element as any)[`__crp_handler_${this.name.slice(1)}`] = undefined;
+        this.eventHandler = undefined;
         this.element.removeAttribute(this.domName);
       } else if (this.name.startsWith('.')) {
         const propName = this.name.slice(1);
@@ -2069,20 +2086,20 @@ class AttributePart implements Part {
     }
 
     if (this.name.startsWith('@')) {
-      // Stable delegating wrapper: register a single listener on the element
-      // that delegates to whatever handler is stored at any given moment.
-      // This avoids remove/add churn during dispatch (re-entrancy) and
-      // correctly disables when value becomes non-function (null/undefined).
+      // Stable delegating wrapper: register a single listener per part that
+      // delegates to whatever handler is stored at any given moment. This
+      // avoids remove/add churn during dispatch (re-entrancy) and correctly
+      // disables when value becomes non-function (null/undefined). The state
+      // is per part, so a spread `@event` on the same element is unaffected.
       const eventName = this.name.slice(1);
-      const handlerProp = `__crp_handler_${eventName}`;
-      const wrapperProp = `__crp_wrapper_${eventName}`;
-      if (!(this.element as any)[wrapperProp]) {
-        const wrapper = (e: Event) => {
-          const current = (e.currentTarget as any)?.[handlerProp];
+      if (!this.eventListener || this.eventListenerTarget !== this.element) {
+        const listener = (e: Event) => {
+          const current = this.eventHandler;
           if (typeof current === 'function') current.call(e.currentTarget, e);
         };
-        (this.element as any)[wrapperProp] = wrapper;
-        this.element.addEventListener(eventName, wrapper);
+        this.eventListener = listener;
+        this.eventListenerTarget = this.element;
+        this.element.addEventListener(eventName, listener);
       }
       // Unwrap `preventDefault(handler)` into the inner handler; when present,
       // wrap it so the event's default is prevented first. `novalidate` (on by
@@ -2109,7 +2126,7 @@ class AttributePart implements Part {
           inner.call(e.currentTarget, e);
         };
       }
-      (this.element as any)[handlerProp] = typeof resolved === 'function' ? resolved : undefined;
+      this.eventHandler = typeof resolved === 'function' ? resolved as EventListener : undefined;
       if (this.element.hasAttribute(this.domName)) this.element.removeAttribute(this.domName);
     } else if (this.name.startsWith('.')) {
       const propName = this.name.slice(1);
