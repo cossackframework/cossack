@@ -305,7 +305,7 @@ Starts the Vite dev server with hot module replacement. This is the default comm
 
 ### `cossack build`
 
-Production build. Runs `vite build` followed by `cossack ssg` to pre-render any pages marked `ssg: true`.
+Production build. Runs the project's `vite build`. Static site generation is not a separate step: the `cossackSsg()` Vite plugin pre-renders pages marked `ssg: true` (and Markdown pages) inside that build.
 
 ### `cossack start`
 
@@ -395,11 +395,35 @@ cossack d component UserCard
 
 ### `cossack add <feature>`
 
-Add an opinionated, working feature to the current project. Each feature wires its dependencies, scaffolds the necessary files, and registers middleware in `src/bootstrap/middlewares.ts`.
+Add an opinionated, working feature to the current project. Each feature adds its package dependencies and files, and wires them into the application (for example, middleware in `src/bootstrap/middlewares.ts`). Missing prerequisites are added first. The result is recorded in `.cossack/scaffold.json`.
 
 ```bash
 cossack add <feature> [options]
 ```
+
+| Feature | Also adds |
+| --- | --- |
+| `ui` | |
+| `database` | |
+| `studio` | `database` |
+| `auth` | `ui`, `database` |
+| `dashboard` | `auth` |
+| `markdown` | |
+| `examples` | `ui`, `markdown` |
+| `desktop` | |
+| `resource` | |
+| `mutation` | |
+| `scoped-service` | |
+| `protected-route` | `auth` |
+| `jobs` | |
+| `turnstile` | `ui` |
+| `schedules` | `jobs` |
+| `notifications` | `jobs` |
+| `workflows` | |
+
+Prerequisites are resolved transitively: `dashboard` also adds `ui` and
+`database` through `auth`. Files you changed are reported as conflicts and are
+not overwritten unless you pass `--force`. Run `pnpm install` afterwards.
 
 #### `cossack add database`
 
@@ -463,9 +487,18 @@ See [Authentication](/docs/authentication.md) and [Social Login](/docs/oauth.md)
 Manage translation catalogs under `src/lang/`.
 
 ```bash
-cossack lang publish          # Extract strings and publish the English catalog
-cossack lang add fr           # Add a locale catalog (French)
+cossack lang publish          # Write a starter English catalog, wire root.ts and APP_LOCALE
+cossack lang add fr           # Add a locale catalog (French) with the English keys
+cossack lang extract          # List static __() calls and unresolved keys
+cossack lang check            # Validate catalogs, placeholders and source calls
+cossack lang types            # Generate .cossack/translations.d.ts
 ```
+
+`lang publish` does not scan your source files. It writes a starter catalog
+(`src/lang/en.json` by default, or `--locale <code>`), adds `{{ cossackLang }}`
+to `src/root.ts`, and adds `APP_LOCALE` to the `vars` of `wrangler.jsonc` when
+that file exists. The `wrangler.jsonc` edit keeps comments and other values.
+Use `lang extract` to find the translation calls in your sources.
 
 See [Localization](/docs/localization.md) for details.
 
@@ -514,7 +547,7 @@ See [Database](/docs/database.md), [Queries](/docs/queries.md), [Migrations](/do
 
 ### `cossack ssg`
 
-Pre-render pages decorated with `ssg: true` to static HTML at build time. Run automatically as part of `cossack build`, or standalone for integration into a custom pipeline.
+Pre-render pages decorated with `ssg: true` to static HTML. SSG runs inside `vite build` through the `cossackSsg()` plugin, so `cossack build` already does it. `cossack ssg` runs the same `vite build`; use it when a pipeline expects an explicit SSG command.
 
 ```typescript
 @Page({ ssg: true })

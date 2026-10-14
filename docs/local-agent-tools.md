@@ -38,10 +38,22 @@ The project binding is not a filesystem sandbox against a malicious local projec
 
 | Field | Values |
 | --- | --- |
-| `scope` | Required: `routes`, `cloudflare`, or `providers`. |
+| `scope` | Required: `routes`, `cloudflare`, `providers`, `localization`, `schedules`, or `workflows`. |
 | `environment` | Optional environment name. Defaults to `CLOUDFLARE_ENV` when set. |
 | `route` | Optional exact public route or source identity from route inspection. Only valid for `scope: "routes"` with `check: false`. |
+| `locale` | Optional locale code. Only valid for `scope: "localization"`; defaults to `en`. |
 | `check` | Optional boolean, default `false`. Report validation errors through `ok: false`. |
+
+The scopes report:
+
+- `routes`: the static route model, layouts, runtime capabilities and, with
+  `check: true`, route diagnostics.
+- `cloudflare`: resolved Wrangler bindings, secret names and configuration
+  requirements.
+- `providers`: cache and rate-limit provider configuration.
+- `localization`: catalogs, static translation calls and placeholder diagnostics.
+- `schedules`: declared schedules and their cron triggers.
+- `workflows`: declared workflows and their Wrangler bindings.
 
 Example tool input:
 
@@ -53,6 +65,14 @@ Results contain `schemaVersion: 1`, `versions`, `ok`, `data` and `diagnostics`.
 `versions.cli` identifies the server package. `versions.framework` identifies the
 framework installed for the project, or is `null` when unavailable. The server
 does not execute application modules to detect versions.
+
+Application modules are never executed. But the `cloudflare`, `routes`,
+`providers`, `schedules` and `workflows` scopes import the project's installed
+Wrangler package when they read a Wrangler configuration, so they use
+Wrangler's own configuration parser and environment rules. Wrangler code runs
+inside the inspection worker with the project's dependency resolution. Only
+`localization` reads files without importing project dependencies. When
+Wrangler is not installed, these scopes report a diagnostic instead of data.
 
 The tool uses the CLI's static inspection models, route explanations and checks.
 Cloudflare inspection reports binding and secret names, not configured secret

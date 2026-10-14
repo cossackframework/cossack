@@ -114,7 +114,18 @@ export async function addCommand(args, ctx) {
 }
 
 export function addHelp() {
-  return commandSpecs.add.help(`cossack add <${FEATURES.join('|')}> [component]`);
-}
+  return commandSpecs.add.help(`cossack add <${FEATURES.join('|')}> [component]
 
-/* wrapper closed below */
+Add a feature to an existing project. Missing prerequisites are added too
+(for example, auth also adds ui and database). The project's scaffold
+manifest (.cossack/scaffold.json) records the result so later add, remove,
+adapter and upgrade commands know what the project contains. Files you
+changed are not overwritten unless you pass --force; --dry-run lists the
+planned changes without writing.
+
+\`cossack add ui <component>\` adds the ui feature when it is missing and
+copies one UI component into src/components/ui/.
+
+Run \`pnpm install\` afterwards to install new dependencies. Features that
+include the database also need \`cossack migration up\`.`);
+}
