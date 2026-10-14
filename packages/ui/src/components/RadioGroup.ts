@@ -1,5 +1,5 @@
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
-import { html, classMap, repeat } from "@cossackframework/renderer";
+import { html, classMap, live, repeat } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export type RadioGroupItem = { value: string; label?: unknown; disabled?: boolean; id?: string };
@@ -7,7 +7,7 @@ export type RadioGroupItem = { value: string; label?: unknown; disabled?: boolea
 export type RadioGroupProps = Omit<GlobalAttributes<HTMLDivElement>, 'role' | 'aria-orientation'> & {
     /** Shared `name` for the radio inputs (required for native grouping). */
     name: string;
-    /** Currently selected value. */
+    /** Controlled selected value; re-applied on every render. Omit for native uncontrolled radios. */
     value?: string;
     /** Layout direction. */
     orientation?: "horizontal" | "vertical";
@@ -75,7 +75,7 @@ export class RadioGroup extends Cossack {
                                 value=${item.value}
                                 id=${item.id}
                                 form=${form}
-                                .checked=${value === item.value}
+                                ...=${value === undefined ? {} : { '.checked': live(value === item.value) }}
                                 ?disabled=${disabled || !!item.disabled}
                                 ?required=${required}
                                 @change=${(event: Event) => {

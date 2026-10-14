@@ -1,9 +1,9 @@
 import type { CheckControlAttributes } from "../native-attributes";
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, live } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export type CheckboxProps = CheckControlAttributes & {
-    /** Checked state. */
+    /** Controlled checked state; re-applied on every render. Omit for a native uncontrolled checkbox. */
     checked?: boolean;
     /** Indeterminate visual (sets the native indeterminate property on mount). */
     indeterminate?: boolean;
@@ -23,7 +23,7 @@ export class Checkbox extends Cossack {
     declare props: CheckboxProps;
 
     render() {
-        const { checked = false, indeterminate = false, label, ...rest } = this.props;
+        const { checked, indeterminate = false, label, ...rest } = this.props;
 
         const wrapperClasses = classMap({
             "cs-checkbox": true,
@@ -36,9 +36,8 @@ export class Checkbox extends Cossack {
                 <input
                     type="checkbox"
                     class="cs-checkbox__input disabled:cursor-not-allowed size-4 shrink-0 rounded-[4px] border border-input shadow-xs accent-primary outline-none transition-[color,box-shadow] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:border-ring"
-                    .checked=${checked}
                     .indeterminate=${indeterminate}
-                    ...=${rest}
+                    ...=${checked === undefined ? rest : { '.checked': live(checked), ...rest }}
                 />
                 ${label ?? this.children}
             </label>

@@ -1,4 +1,4 @@
-import { html, repeat } from '@cossackframework/renderer';
+import { html, live, repeat } from '@cossackframework/renderer';
 import { Cossack, Component } from '@cossackframework/core';
 
 export interface DataTableSort { columnId: string; direction: 'asc' | 'desc' }
@@ -149,7 +149,7 @@ export class DataTable<Row> extends Cossack {
                         <caption>${p.caption}</caption>
                         <thead><tr>
                             ${p.selection ? html`<th scope="col" class="border-b p-2 text-left"><input type="checkbox" class="size-4 accent-primary" aria-label="Select visible rows"
-                                .checked=${all} .indeterminate=${mixed} aria-checked=${mixed ? 'mixed' : String(all)}
+                                ...=${{ '.checked': live(all) }} .indeterminate=${mixed} aria-checked=${mixed ? 'mixed' : String(all)}
                                 ?disabled=${blocked || !selectable.length}
                                 @change=${(event: Event) => this.selectVisible((event.currentTarget as HTMLInputElement).checked)} /></th>` : null}
                             ${p.columns.map(column => html`<th scope="col" class="border-b p-2 text-left" aria-sort=${p.state.sort?.columnId === column.id ? p.state.sort.direction === 'asc' ? 'ascending' : 'descending' : column.sortable ? 'none' : undefined}>
@@ -158,7 +158,7 @@ export class DataTable<Row> extends Cossack {
                         </tr></thead>
                         <tbody>${repeat(rows, item => item.id, item => html`<tr>
                             ${p.selection ? html`<td class="border-b p-2"><input type="checkbox" class="size-4 accent-primary" aria-label=${`Select ${p.rowLabel?.(item.row) ?? item.id}`}
-                                .checked=${p.selection.has(item.id)} ?disabled=${blocked || !item.selectable}
+                                ...=${{ '.checked': live(p.selection.has(item.id)) }} ?disabled=${blocked || !item.selectable}
                                 @change=${(event: Event) => this.selectRow(item.id, (event.currentTarget as HTMLInputElement).checked)} /></td>` : null}
                             ${p.columns.map(column => {
                                 const value = column.cell ? column.cell(item.row) : column.accessor ? column.accessor(item.row) : item.row[column.key];

@@ -16,7 +16,7 @@ it('renders named native controls, descriptions and safe explicit actions on the
     expect(out).toContain('for="settings-field-name"');
     expect(out).toContain('aria-labelledby="settings-field-email-label"');
     expect(out).toContain('aria-describedby="settings-field-email-hint"');
-    expect(out).toContain('value="Jane"'); expect(out).toContain('aria-checked="true"');
+    expect(out).toContain('value="Jane"'); expect(out.match(/<input[^>]*name="email"[^>]*>/)?.[0]).toMatch(/\schecked(?:=|\s|\/|>)/); expect(out).not.toContain('aria-checked');
     expect(out).toContain('name="email"'); expect(out).toContain('name="name"');
     expect(out).toContain('type="button"'); expect(out).not.toContain('cs-button--destructive');
     expect(out).toContain('data-panel="account"'); expect(out).toContain('custom');

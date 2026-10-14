@@ -82,10 +82,8 @@ export class SettingsPanel extends Cossack {
         for (const input of this.root.value?.querySelectorAll<HTMLInputElement>('input[data-setting-control]') ?? []) {
             const key = input.dataset.settingControl!;
             if (!Object.hasOwn(values, key)) continue;
-            if (input.type === 'checkbox') {
-                input.checked = values[key] as boolean;
-                input.setAttribute('aria-checked', String(values[key]));
-            } else if (input.value !== values[key]) input.value = values[key] as string;
+            if (input.type === 'checkbox') input.checked = values[key] as boolean;
+            else if (input.value !== values[key]) input.value = values[key] as string;
         }
     }
     private resetListener = (event: Event) => {

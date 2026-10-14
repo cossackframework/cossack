@@ -1,9 +1,9 @@
 import type { CheckControlAttributes } from "../native-attributes";
-import { html, classMap } from "@cossackframework/renderer";
+import { html, classMap, live } from "@cossackframework/renderer";
 import { Cossack, Component } from "@cossackframework/core";
 
 export type SwitchProps = CheckControlAttributes & {
-    /** Checked (on) state. */
+    /** Controlled on state; re-applied on every render. Omit for a native uncontrolled switch. */
     checked?: boolean;
 }
 
@@ -20,7 +20,7 @@ export class Switch extends Cossack {
     declare props: SwitchProps;
 
     render() {
-        const { checked = false, ...rest } = this.props;
+        const { checked, ...rest } = this.props;
 
         const wrapperClasses = classMap({
             "cs-switch": true,
@@ -33,10 +33,8 @@ export class Switch extends Cossack {
                 <input
                     type="checkbox"
                     role="switch"
-                    aria-checked=${checked}
                     class="cs-switch__input peer sr-only"
-                    .checked=${checked}
-                    ...=${rest}
+                    ...=${checked === undefined ? rest : { '.checked': live(checked), ...rest }}
                 />
                 <span
                     class="cs-switch__track inline-block h-6 w-11 rounded-full border border-transparent bg-input transition-colors duration-200 peer-checked:bg-primary peer-focus-visible:ring-ring/50 peer-focus-visible:ring-[3px] peer-focus-visible:border-ring"
