@@ -242,14 +242,12 @@ const targets: Target[] = [
   },
 ];
 
+/** Drops referencing tables first; `tableNames` is in that order. */
 async function dropTables(orm: ORM): Promise<void> {
   const dialect = orm.driver.dialect;
-  if (dialect === "mysql") await orm.executeFragment(orm.sql.unsafe("SET FOREIGN_KEY_CHECKS = 0"), "raw");
   for (const table of tableNames) {
-    const quoted = dialect === "mysql" ? `\`${table}\`` : `"${table}"`;
-    await orm.executeFragment(orm.sql.unsafe(`DROP TABLE IF EXISTS ${quoted}${dialect === "postgres" ? " CASCADE" : ""}`), "ddl");
+    await orm.executeFragment(orm.sql.fragment`DROP TABLE IF EXISTS ${orm.sql.id(table)}${orm.sql.unsafe(dialect === "postgres" ? " CASCADE" : "")}`, "ddl");
   }
-  if (dialect === "mysql") await orm.executeFragment(orm.sql.unsafe("SET FOREIGN_KEY_CHECKS = 1"), "raw");
 }
 
 async function resetSchema(orm: ORM): Promise<void> {
