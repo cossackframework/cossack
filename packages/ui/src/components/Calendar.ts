@@ -2,7 +2,7 @@ import { html, classMap } from "@cossackframework/renderer";
 import { Cossack, Component, Client, ClientState } from "@cossackframework/core";
 import type { GlobalAttributes, ControlEvent } from "../native-attributes";
 import { ControlledValue } from "../native-attributes";
-import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths, dateLabel } from "../internal/date";
+import { parseDate, isoDate, dateFromParts, dateRange, clampDate, monthDays, shiftDays, shiftMonths } from "../internal/date";
 
 export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'> & {
     /** Stable page-unique ID for the calendar and month heading. */
@@ -35,6 +35,21 @@ export type CalendarProps = Omit<GlobalAttributes<HTMLDivElement>, 'id' | 'role'
 /** A Gregorian date grid with one day in the tab order and bounded keyboard navigation. */
 const utcToday = () => new Date().toISOString().slice(0, 10);
 
+type CalendarFormats = { day: Intl.NumberFormat; full: Intl.DateTimeFormat; longWeekday: Intl.DateTimeFormat; shortWeekday: Intl.DateTimeFormat; month: Intl.DateTimeFormat };
+const formatCache = new Map<string, CalendarFormats>();
+/** Intl formatters are costly to build; keep a few per locale instead of five per render. */
+function calendarFormats(locale: string): CalendarFormats {
+    let formats = formatCache.get(locale);
+    if (!formats) {
+        const date = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(locale, { ...options, calendar: 'gregory', timeZone: 'UTC' });
+        formats = { day: new Intl.NumberFormat(locale), full: date({ dateStyle: 'full' }), longWeekday: date({ weekday: 'long' }),
+            shortWeekday: date({ weekday: 'short' }), month: date({ year: 'numeric', month: 'long' }) };
+        if (formatCache.size >= 16) formatCache.delete(formatCache.keys().next().value!);
+        formatCache.set(locale, formats);
+    }
+    return formats;
+}
+
 @Component()
 export class Calendar extends Cossack {
     declare props: CalendarProps;
@@ -65,10 +80,7 @@ export class Calendar extends Cossack {
         const year = date.getUTCFullYear(), month = date.getUTCMonth() + 1, first = dateFromParts(year, month, 1);
         const padding = (first.getUTCDay() - weekStartsOn + 7) % 7, count = monthDays(year, month);
         const cells = Array.from({ length: Math.ceil((padding + count) / 7) * 7 }, (_, i) => i < padding || i >= padding + count ? undefined : isoDate(dateFromParts(year, month, i - padding + 1)));
-        const dayNumber = new Intl.NumberFormat(locale);
-        const fullDate = new Intl.DateTimeFormat(locale, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' });
-        const longWeekday = new Intl.DateTimeFormat(locale, { weekday: 'long', calendar: 'gregory', timeZone: 'UTC' });
-        const shortWeekday = new Intl.DateTimeFormat(locale, { weekday: 'short', calendar: 'gregory', timeZone: 'UTC' });
+        const { day: dayNumber, full: fullDate, longWeekday, shortWeekday, month: monthTitle } = calendarFormats(locale);
         const rows = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
         const previous = clampDate(shiftMonths(focus, -1), range.first, range.last), next = clampDate(shiftMonths(focus, 1), range.first, range.last);
         return html`<div ref=${(element: Element) => this.connect(element as HTMLDivElement)} id=${id} role="group" aria-label="Calendar"
@@ -77,7 +89,7 @@ export class Calendar extends Cossack {
                 <button type="button" aria-label=${previousLabel} ?disabled=${disabled || previous.slice(0, 7) === focus.slice(0, 7)}
                     class="cs-calendar__prev size-8 rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
                     @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.move(previous, event.currentTarget, false)}><span aria-hidden="true">‹</span></button>
-                <span id=${`${id}-month`} aria-live="polite" aria-atomic="true" class="cs-calendar__title text-sm font-medium">${dateLabel(focus, locale, { year: 'numeric', month: 'long' })}</span>
+                <span id=${`${id}-month`} aria-live="polite" aria-atomic="true" class="cs-calendar__title text-sm font-medium">${monthTitle.format(date)}</span>
                 <button type="button" aria-label=${nextLabel} ?disabled=${disabled || next.slice(0, 7) === focus.slice(0, 7)}
                     class="cs-calendar__next size-8 rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
                     @click=${(event: ControlEvent<HTMLButtonElement, MouseEvent>) => this.move(next, event.currentTarget, false)}><span aria-hidden="true">›</span></button>

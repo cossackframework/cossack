@@ -39,6 +39,9 @@ export class MessageScroller extends Cossack {
     private resizeObserver?: ResizeObserver;
     private observedRows = new Set<Element>();
     private frame?: number;
+    private anchorFrame?: number;
+    /** scrollTop when anchors were measured. Offsets shift by the scroll since then. */
+    private anchorTop = 0;
     private generation = 0;
     private following = true;
     private restoringFocus = false;
@@ -107,16 +110,49 @@ export class MessageScroller extends Cossack {
     private innerTop() { return this.viewport!.getBoundingClientRect().top + this.viewport!.clientTop; }
     private rows() { return Array.from(this.content?.children ?? []); }
     private distance() { const vp = this.viewport!; return Math.max(0, vp.scrollHeight - vp.clientHeight - vp.scrollTop); }
+    /** Record the reading position. Scroll metrics are cheap and recorded now; rows are measured once per frame. */
     private remember() {
         const vp = this.viewport;
         if (!vp?.isConnected || !vp.clientHeight) return;
-        const top = this.innerTop(), bottom = top + vp.clientHeight;
         this.lastTop = vp.scrollTop;
         this.lastMaximum = Math.max(0, vp.scrollHeight - vp.clientHeight);
-        this.anchors = this.rows().flatMap(element => {
+        const window = vp.ownerDocument.defaultView;
+        if (!window) { this.measureAnchors(); return; }
+        this.anchorFrame ??= window.requestAnimationFrame(() => { this.anchorFrame = undefined; this.measureAnchors(); });
+    }
+    private measureAnchors() {
+        const vp = this.viewport;
+        if (this.anchorFrame !== undefined) { vp?.ownerDocument.defaultView?.cancelAnimationFrame(this.anchorFrame); this.anchorFrame = undefined; }
+        if (!vp?.isConnected || !vp.clientHeight) return;
+        const top = this.innerTop(), bottom = top + vp.clientHeight, rows = this.rows();
+        const measure = (from: number) => {
+            const anchors: ReadingAnchor[] = [];
+            for (let index = from; index < rows.length; index++) {
+                const rect = rows[index].getBoundingClientRect();
+                if (rect.height <= 0) continue;
+                if (rect.top >= bottom) break;
+                if (rect.bottom > top) anchors.push({ element: rows[index], offset: rect.top - top });
+            }
+            return anchors;
+        };
+        // Rows stack in DOM order, so binary-search the first row that ends
+        // below the viewport top. Empty (hidden) rows defer to the next row.
+        let low = 0, high = rows.length;
+        while (low < high) {
+            const middle = (low + high) >> 1;
+            let probe = middle, rect = rows[probe].getBoundingClientRect();
+            while (rect.height <= 0 && probe + 1 < high) rect = rows[++probe].getBoundingClientRect();
+            if (rect.height <= 0 || rect.bottom > top) high = middle;
+            else low = probe + 1;
+        }
+        let anchors = measure(low);
+        // Content laid out out of DOM order (CSS order, reversed flex): scan everything.
+        if (!anchors.length && rows.length) anchors = rows.flatMap(element => {
             const rect = element.getBoundingClientRect();
             return rect.height > 0 && rect.bottom > top && rect.top < bottom ? [{ element, offset: rect.top - top }] : [];
         });
+        this.anchors = anchors;
+        this.anchorTop = vp.scrollTop;
     }
     private updateJump() {
         if (!this.viewport?.isConnected) return;
@@ -150,10 +186,13 @@ export class MessageScroller extends Cossack {
         if (this.following) vp.scrollTo({ top: vp.scrollHeight, behavior: 'instant' });
         else {
             const anchor = this.anchors.find(item => content.contains(item.element) && item.element.getBoundingClientRect().height > 0);
-            const top = anchor ? vp.scrollTop + anchor.element.getBoundingClientRect().top - this.innerTop() - anchor.offset : this.lastTop;
+            // Anchors can be up to a frame old; the reader has since scrolled from anchorTop to lastTop.
+            const offset = anchor ? anchor.offset + this.anchorTop - this.lastTop : 0;
+            const top = anchor ? vp.scrollTop + anchor.element.getBoundingClientRect().top - this.innerTop() - offset : this.lastTop;
             vp.scrollTo({ top, behavior: 'instant' });
         }
-        this.remember(); this.updateJump();
+        // Geometry just changed, so the next reconcile needs fresh anchors now.
+        this.remember(); this.measureAnchors(); this.updateJump();
     }
     private connect(viewport: HTMLDivElement) {
         this.viewport = viewport;
@@ -197,7 +236,8 @@ export class MessageScroller extends Cossack {
     onCleanup() {
         this.generation++;
         if (this.frame !== undefined) this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.frame);
-        this.frame = undefined; this.disposeObservers?.(); this.disposeObservers = undefined; this.resizeObserver = undefined;
+        if (this.anchorFrame !== undefined) this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.anchorFrame);
+        this.frame = undefined; this.anchorFrame = undefined; this.disposeObservers?.(); this.disposeObservers = undefined; this.resizeObserver = undefined;
         this.observedRows.clear(); this.anchors = []; this.viewport = undefined; this.content = undefined; this.jumpButton = undefined; this.focusedBeforeRender = undefined;
     }
 }
