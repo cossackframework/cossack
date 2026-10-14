@@ -59,10 +59,17 @@ const values = await session().getAll();
 
 The middleware creates an anonymous session when no live session ID is available.
 It replaces unknown and expired cookie IDs with a new server-generated ID.
-The cookie is HTTP-only and same-site lax. `set()` extends the stored expiry
-and re-sends the cookie with a fresh `Max-Age`, so an active session does not
-expire in the browser while its row is still live. Reads do not re-send the
-cookie. Writes cannot recreate missing or expired rows.
+The cookie is HTTP-only and same-site lax. Sessions last `ttl` milliseconds
+(default 30 days) after the last `set()`:
+
+- `set()` extends the stored expiry by `ttl` and re-sends the cookie with a
+  fresh `Max-Age`, so an active session does not expire in the browser while
+  its row is still live.
+- Reads and `unset()` change neither the stored expiry nor the cookie.
+- Writes cannot recreate missing or expired rows.
+- When the ID comes from `authCookieReader`, `set()` extends the stored row
+  only. The middleware never sets or refreshes the authentication cookie, so
+  its lifetime is the one your auth provider gives it.
 
 The `secure` option controls the cookie `Secure` attribute. The default,
 `'auto'`, sets it when the request URL uses HTTPS. Behind a TLS-terminating

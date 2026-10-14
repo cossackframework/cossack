@@ -250,6 +250,26 @@ describe('generic session middleware', () => {
     expect(header).toMatch(/HttpOnly/);
   });
 
+  it('slides only on set(), and never re-sends an auth-managed session ID', async () => {
+    const store = new MemorySessionStore();
+    const authId = await store.create(1_000);
+    const app = new Hono();
+    app.use('*', createRequestContextMiddleware());
+    app.use('*', createSessionMiddleware({ store, ttl: 120_000,
+      authCookieReader: (context) => context.req.header('x-auth-session') }));
+    app.post('/set', async (context) => { await session().set('cart', 1); return context.text('ok'); });
+    app.post('/unset', async (context) => { await session().unset('cart'); return context.text('ok'); });
+    const anonymous = cookieValue(await app.request('/set', { method: 'POST' }), 'cossack_sid')!;
+    // unset() changes the row but neither its expiry nor the cookie.
+    const unset = await app.request('/unset', { method: 'POST', headers: { cookie: `cossack_sid=${anonymous}` } });
+    expect(unset.headers.getSetCookie()).toEqual([]);
+    // An auth-managed ID slides its stored row, but its cookie belongs to the auth provider.
+    const before = store.rows.get(authId)!.expiresAt;
+    const written = await app.request('/set', { method: 'POST', headers: { 'x-auth-session': authId } });
+    expect(written.headers.getSetCookie()).toEqual([]);
+    expect(store.rows.get(authId)!.expiresAt).toBeGreaterThan(before);
+  });
+
   it('throws a clear error without a configured store or request session', async () => {
     expect(() => session()).toThrow(/No session in scope/);
     const app = new Hono();

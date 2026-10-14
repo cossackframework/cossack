@@ -148,13 +148,28 @@ By default, each page instance gets its own Durable Object instance: the page co
 })
 ```
 
-The scope function is evaluated once during SSR with the full request context (including params and query). The resulting `scopeKey` is embedded in the page's initial state and reused as the DO ID name. SSR, the WebSocket connection, and `/crpc` then agree on the same instance, even when scope depends on params not present in later requests.
+The framework evaluates the scope function more than once. SSR evaluates it to
+name the instance in the page's initial state. The WebSocket upgrade evaluates
+it again with the live request, and each action checks it again.
+These later requests have the page's route params (`c.req.param()`) and the
+authenticated user, but not the page URL or its query string, because their own
+URL is `/ws/...`. Write scope functions that depend only on route params and
+the user. When the key computed for the upgrade differs from the key in the
+initial state, the proxy rejects the connection.
 
-The same `scope` option also applies to the `sse` transport (where the default is per-user instead of per-page-instance). Without `scope`, the default per-page-instance behavior is unchanged.
+The same `scope` option also applies to the `sse` transport, where the default
+is one scope per user instead of one per page instance. Each SSE subscription
+and each SSE `/crpc` action evaluates the scope again in the same way. Without
+`scope`, the default per-page-instance behavior is unchanged.
+
+A Durable Object or Node instance hosts one page. Two different pages cannot
+share an instance, even when their scope functions return the same key: on
+Cloudflare the second page's connection is rejected with
+`COSSACK_WS_SCOPE_MISMATCH`, and on Node each page gets its own instance.
 
 This architecture has three parts: `StateProvider`, `Channel`, and `Event`.
 
-- `StateProvider` (the where): A State Provider determines which stateful backend a component connects to. By default, components use a `PageStateProvider`, which scopes state to the current URL. You can create custom providers for other contexts. A `UserSessionProvider` shares state across all pages for a logged-in user. A `GlobalProvider` shares a singleton state with all users.
+- `StateProvider` (the where): A State Provider determines which stateful backend a component connects to. By default, components use the `page` provider, which connects to the page instance described above: the page plus its route params, or its scope key. See [providers](#providers) for the limits of custom providers.
 
 - `Channel` (the what): A Channel is a logical partition within a provider. It groups related pieces of state. When an automatic update occurs, the framework sends a partial state object containing only the properties for the affected channel.
 
@@ -264,7 +279,7 @@ export class Tasks extends Cossack {
 
 Real-time communication in Cossack has two levels:
 
-1. Connection: The framework establishes a physical WebSocket connection for each State Provider a component uses. For most components, this is a single connection to the default `PageStateProvider`.
+1. Connection: The framework establishes a physical WebSocket connection for each State Provider a component uses. For most components, this is a single connection to the default `page` provider.
 2. Channel: A channel is a logical grouping of state within a single provider's connection. It lets the framework send partial state updates.
 
 By default, all state and actions use the `global` channel within the default `page` provider.
@@ -387,45 +402,19 @@ Behavior:
 - The "Increment Notifications" button behaves identically but for the `notificationCount` state.
 - If `this.name` changes, the partial update contains only the `name` property.
 
-## Sharing State Across Pages/Components with Providers
+## Providers
 
-To share state between pages or components (for example, a shopping cart or notifications), you can create a custom `StateProvider`.
+`@Page({ providers })` declares more named connections, and
+`@State({ provider })` and `@Server({ provider })` select one. A provider class
+extends `StateProvider` and returns its connection target from
+`getConnectionTarget()`. SSR serializes the target in the page's initial state.
 
-For example, a `UserSessionProvider` connects to a Durable Object whose ID comes from the user's session instead of the URL.
-
-```typescript
-// 1. Define a custom provider
-export class UserSessionProvider extends StateProvider {
-  getDurableObjectId() {
-    const userId = this.component.user?.id;
-    if (!userId) throw new Error("User not authenticated!");
-    // All components using this provider will connect to the SAME DO for this user
-    return this.env.SESSION_DO.idFromName(userId);
-  }
-}
-
-// 2. Register it in your component
-@Page({
-  transport: 'durable-object',
-  providers: {
-    session: new UserSessionProvider()
-  }
-})
-export class MyPageComponent extends Cossack {
-
-  // 3. Target the provider for state and actions
-  @State({ provider: 'session' })
-  private notificationCount: number = 0;
-
-  @Server({ provider: 'session' })
-  private async markNotificationsAsRead() {
-    // This action is sent to the user's session DO, not the page DO.
-    this.notificationCount = 0;
-  }
-}
-```
-
-Now, `notificationCount` can be accessed and modified consistently from any page that registers and uses the `session` provider.
+The WebSocket proxy, on Cloudflare and on Node, accepts a connection only when
+its target equals the page's own identity: the page plus its route params, or
+its scope key. It rejects every other target, so a provider cannot connect a
+page to another page's instance or to a per-user Durable Object. Keep state
+that several pages share in a database or another storage service, and use the
+event-driven re-fetch pattern to update open pages.
 
 ## Authentication on shared connections
 

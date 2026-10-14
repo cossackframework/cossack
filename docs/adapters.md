@@ -1,33 +1,44 @@
 ---
 title: "Server Adapters"
-description: "The CossackServerRuntime interface separates the framework core from the server environment. The framework runs on Cloudflare Workers and Node.js."
+description: "createApp() runs on Cloudflare Workers by default. A runtime adapter, such as the Node.js adapter, runs the same application on another server runtime."
 ---
 
 # Server Adapters
 
-The `CossackServerRuntime` interface separates the framework core from the server environment.
+`createApp()` runs on Cloudflare Workers by default. To run on another server
+runtime, pass a runtime adapter: `createApp({ runtimeAdapter })`. The adapter
+implements `CossackRuntimeAdapter`. It names the transports it supports and
+handles WebSocket upgrades after the router has authorized them.
 
-The framework supports two adapters:
+The framework supports two runtimes:
 
 ## 1. Cloudflare Workers (Default)
 
-This is the default adapter. It uses Cloudflare Workers and Durable Objects.
+Cloudflare Workers is the default runtime. It uses Workers and Durable Objects.
 
 - Runtime: Cloudflare Workers
-- Transport: Cloudflare Durable Objects with WebSockets
-- State persistence: automatic through Durable Object storage
-- Scaling: Durable Objects give each component instance strong consistency and a globally unique identity
+- WebSocket transport: one Durable Object per page instance (the page plus its
+  route params) or per scope key. See [scope](./websockets.md#scope--controlling-which-durable-object-instance-a-page-connects-to).
+- SSE transport: the `SseDurableObject` coordinator (`COSSACK_SSE` binding)
+- State persistence: Durable Object storage for `stateful: true` pages. Other
+  pages keep state in memory while clients are connected.
 
 ### Usage
 
-This adapter is used by default when creating a new Cossack app. The application entry point (`src/index.ts`) exports a standard Worker module:
+New Cossack apps use this runtime. The application entry point
+(`src/index.ts`) exports a Worker module and the Durable Object classes that
+`wrangler.jsonc` binds:
 
 ```typescript
-import { createApp, AppDurableObject } from '@cossackframework/framework';
+import { createApp } from '@cossackframework/framework/router';
+import { AppDurableObject } from '@cossackframework/framework/DurableObject';
+import { SseDurableObject } from '@cossackframework/framework/SseDurableObject';
+import { App } from './App';
+import { template } from './root';
 
-const app = createApp();
+const app = createApp({ AppComponent: App, htmlTemplate: template });
 
-export { AppDurableObject };
+export { AppDurableObject, SseDurableObject };
 export default {
   fetch: app.fetch,
 };
@@ -37,10 +48,16 @@ export default {
 
 Use this adapter to run a Cossack application on Node.js, such as in a container, on a VPS, or on your computer.
 
-- Runtime: Node.js 20 or later
-- Transport: the `ws` library with WebSockets
-- State persistence: memory only. State is lost when the server process restarts.
-- Scaling: single-instance deployments or sticky-session clusters
+- Runtime: Node.js 22 or later
+- WebSocket transport: the `ws` library. A `durable-object` page has one
+  in-memory instance per page instance (the page plus its route params) or per
+  scope key, the same identity as on Cloudflare.
+- SSE transport: a store in the server process
+- State persistence: memory only. State is lost when the server process
+  restarts. This runtime does not support `durable-object` pages with
+  `stateful: true`: their requests fail with an error.
+- Scaling: one server process. Instances and SSE state are not shared between
+  processes, so a cluster needs sticky sessions.
 
 ### Usage
 
