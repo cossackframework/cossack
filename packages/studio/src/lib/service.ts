@@ -8,6 +8,7 @@ import {
 } from './sql.js';
 import { findObject, introspectSchema } from './schema.js';
 import { normalizeQueryResult } from './transport.js';
+import { chunkStatements, runStatements } from './batch.js';
 import type { DatabaseInspection } from '@cossackframework/database/tooling';
 import type {
   StudioColumn,
@@ -16,6 +17,7 @@ import type {
   StudioPragma,
   StudioPragmaOption,
   StudioExecutor,
+  StudioQueryResult,
   StudioSchema,
 } from './schema-types.js';
 import type {
@@ -188,6 +190,24 @@ function isSqliteProvider(provider: StudioConnection['info']['provider']): boole
     provider === 'd1-remote';
 }
 
+function pragmaEntry(
+  definition: PragmaDefinition,
+  result: StudioQueryResult,
+): StudioPragma | undefined {
+  const row = result.rows[0];
+  if (!row) return undefined;
+  const rawValue = row[definition.name] ?? Object.values(row)[0];
+  if (rawValue === undefined || rawValue === null) return undefined;
+  const rawText = String(rawValue);
+  return {
+    name: definition.name,
+    value: definition.name === 'journal_mode' ? rawText.toUpperCase() : rawText,
+    kind: definition.kind,
+    description: definition.description,
+    options: definition.options?.map(({ value, label }) => ({ value, label })),
+  };
+}
+
 export class StudioDatabase {
   private schema?: StudioSchema;
   private schemaLoad?: Promise<StudioSchema>;
@@ -195,6 +215,8 @@ export class StudioDatabase {
   private inspectionLoad?: Promise<DatabaseInspection | undefined>;
   private databaseVersion?: string;
   private generation = 0;
+  /** PRAGMA names this connection could read, learned on the first read. */
+  private readablePragmas?: Set<string>;
 
   constructor(
     readonly connection: StudioConnection,
@@ -295,17 +317,11 @@ export class StudioDatabase {
     const pageSize = options.pageSize ?? 100;
     const safePageSize = Math.min(500, Math.max(1, Math.floor(pageSize)));
     const predicate = this.browsePredicate(object, options.filters ?? []);
-    let countSql = `SELECT COUNT(*) AS ${this.quote('__cossack_total')} ` +
-      `FROM ${this.quote(object.name)}${predicate.sql}`;
-    let countParameters = [...predicate.parameters];
-    ({ sql: countSql, parameters: countParameters } = this.bind(countSql, countParameters));
-    const countResult = await this.connection.execute(countSql, countParameters);
-    const rawTotal = countResult.rows[0]?.__cossack_total;
-    const totalRows = typeof rawTotal === 'bigint'
-      ? Number(rawTotal)
-      : Math.max(0, Number(rawTotal ?? 0));
-    const lastPage = Math.max(1, Math.ceil(totalRows / safePageSize));
-    const safePage = Math.min(lastPage, Math.max(1, Math.floor(page)));
+    const count = this.bind(
+      `SELECT COUNT(*) AS ${this.quote('__cossack_total')} ` +
+      `FROM ${this.quote(object.name)}${predicate.sql}`,
+      [...predicate.parameters],
+    );
     const order = this.browseOrder(object, options.sort ?? []);
     const locatorProjection = this.locatorProjection(object);
     const selection = locatorProjection.length
@@ -318,16 +334,44 @@ export class StudioDatabase {
     ];
     const displayOrderExpressions = order.map((item) =>
       `${this.quote(item.column)} ${item.direction.toUpperCase()}`);
-    let sql = `SELECT ${selection} FROM ${this.quote(object.name)}${predicate.sql}` +
-      (orderExpressions.length ? ` ORDER BY ${orderExpressions.join(', ')}` : '') +
-      ` LIMIT ${safePageSize} OFFSET ${(safePage - 1) * safePageSize}`;
-    const displaySql = `SELECT * FROM ${this.quote(object.name)}${predicate.sql}` +
-      (displayOrderExpressions.length ? ` ORDER BY ${displayOrderExpressions.join(', ')}` : '') +
-      ` LIMIT ${safePageSize} OFFSET ${(safePage - 1) * safePageSize}`;
-    const displayQuery = this.renderParameters(displaySql, predicate.parameters);
-    let parameters = [...predicate.parameters];
-    ({ sql, parameters } = this.bind(sql, parameters));
-    const normalized = normalizeQueryResult(await this.connection.execute(sql, parameters));
+    const pageQuery = (pageNumber: number) => {
+      const window = ` LIMIT ${safePageSize} OFFSET ${(pageNumber - 1) * safePageSize}`;
+      return {
+        statement: this.bind(
+          `SELECT ${selection} FROM ${this.quote(object.name)}${predicate.sql}` +
+          (orderExpressions.length ? ` ORDER BY ${orderExpressions.join(', ')}` : '') +
+          window,
+          [...predicate.parameters],
+        ),
+        display: this.renderParameters(
+          `SELECT * FROM ${this.quote(object.name)}${predicate.sql}` +
+          (displayOrderExpressions.length ? ` ORDER BY ${displayOrderExpressions.join(', ')}` : '') +
+          window,
+          predicate.parameters,
+        ),
+      };
+    };
+    // Count and page run together (one Wrangler process on remote D1). The
+    // page is fetched again only when the count shows it is past the end.
+    const requestedPage = Math.min(1_000_000_000, Math.max(1, Math.floor(page) || 1));
+    let query = pageQuery(requestedPage);
+    const [countResult, firstPage] = await runStatements(this.connection, [
+      { sql: count.sql, parameters: count.parameters },
+      { sql: query.statement.sql, parameters: query.statement.parameters },
+    ]);
+    const rawTotal = countResult!.rows[0]?.__cossack_total;
+    const totalRows = typeof rawTotal === 'bigint'
+      ? Number(rawTotal)
+      : Math.max(0, Number(rawTotal ?? 0));
+    const lastPage = Math.max(1, Math.ceil(totalRows / safePageSize));
+    const safePage = Math.min(lastPage, requestedPage);
+    let pageResult = firstPage!;
+    if (safePage !== requestedPage) {
+      query = pageQuery(safePage);
+      pageResult = await this.connection.execute(query.statement.sql, query.statement.parameters);
+    }
+    const displayQuery = query.display;
+    const normalized = normalizeQueryResult(pageResult);
     const internalColumns = new Set(object.rowLocators
       .filter((locator) =>
         locator.kind === 'sqlite-rowid' || locator.kind === 'postgres-ctid')
@@ -394,9 +438,10 @@ export class StudioDatabase {
 
   /**
    * Run a console statement, asking the database for at most one row more
-   * than the console displays so large SELECTs are not fully materialised.
-   * The bounded form is a derived table; when a database rejects it (for
-   * example MySQL with duplicate column names) the original query runs.
+   * than the console displays so large SELECTs are not fully materialised
+   * and the extra row still signals truncation (see `limitStatementRows`).
+   * When the database rejects the bounded form, the original query runs so
+   * errors refer to the statement the user wrote.
    */
   private async executeBounded(statement: string) {
     const bounded = limitStatementRows(
@@ -418,34 +463,38 @@ export class StudioDatabase {
     if (!isSqliteProvider(this.connection.info.provider)) {
       throw new Error('Pragmas are available only for SQLite, Turso, and D1 databases.');
     }
+    // A batch fails as a whole when one PRAGMA is not allowed (D1 rejects
+    // several with SQLITE_AUTH), so batching connections read the PRAGMAs
+    // one by one once and then batch only those that could be read.
+    const readable = this.readablePragmas;
+    if (this.connection.batch && readable) {
+      const definitions = SQLITE_PRAGMAS.filter((definition) => readable.has(definition.name));
+      try {
+        const results = await runStatements(
+          this.connection,
+          definitions.map((definition) => ({ sql: `PRAGMA ${definition.name}` })),
+        );
+        return definitions.flatMap((definition, index) =>
+          pragmaEntry(definition, results[index]!) ?? []);
+      } catch {
+        // Read them one by one below and learn the readable set again.
+      }
+    }
     const pragmas: StudioPragma[] = [];
+    const learned = new Set<string>();
     let firstError: unknown;
     for (const definition of SQLITE_PRAGMAS) {
       try {
         const result = await this.connection.execute(`PRAGMA ${definition.name}`);
-        const row = result.rows[0];
-        if (!row) continue;
-        const rawValue = row[definition.name] ?? Object.values(row)[0];
-        if (rawValue === undefined || rawValue === null) continue;
-        const rawText = String(rawValue);
-        const value = definition.name === 'journal_mode'
-          ? rawText.toUpperCase()
-          : rawText;
-        pragmas.push({
-          name: definition.name,
-          value,
-          kind: definition.kind,
-          description: definition.description,
-          options: definition.options?.map(({ value: optionValue, label }) => ({
-            value: optionValue,
-            label,
-          })),
-        });
+        learned.add(definition.name);
+        const entry = pragmaEntry(definition, result);
+        if (entry) pragmas.push(entry);
       } catch (error) {
         firstError ??= error;
       }
     }
     if (!pragmas.length && firstError) throw firstError;
+    this.readablePragmas = learned;
     return pragmas;
   }
 
@@ -637,8 +686,11 @@ export class StudioDatabase {
   /**
    * Run single-row batch statements, each of which must affect exactly one
    * row. Local connections with transaction support apply all or nothing.
-   * Connections without transactions (remote and local D1) are best-effort:
-   * rows changed before a failure stay changed, and the error says how many.
+   * Connections without transactions are best-effort: rows changed before a
+   * failure stay changed, and the error says how many. Connections with
+   * `batch()` (remote D1) send the statements in a few batches; D1 runs each
+   * batch as one transaction, so a failing statement rolls back its batch,
+   * while a stale row (no change) does not stop the rest of its batch.
    */
   private async runBatch(
     kind: 'delete' | 'update',
@@ -669,7 +721,35 @@ export class StudioDatabase {
       return affectedRows;
     };
     if (this.connection.transaction) return this.connection.transaction(run);
+    if (this.connection.batch) return this.runRemoteBatch(kind, statements);
     return run((sql, parameters) => this.connection.execute(sql, parameters), false);
+  }
+
+  private async runRemoteBatch(
+    kind: 'delete' | 'update',
+    statements: Array<{ sql: string; parameters: unknown[] }>,
+  ): Promise<number> {
+    let affectedRows = 0;
+    for (const chunk of chunkStatements(statements)) {
+      let results;
+      try {
+        results = await this.connection.batch!(chunk);
+      } catch (error: any) {
+        throw new Error(
+          `Batch ${kind} stopped after ${affectedRows} row(s): ${error?.message ?? String(error)}`,
+          { cause: error },
+        );
+      }
+      const stale = results.filter((result) => result.affectedRows !== 1).length;
+      affectedRows += results.reduce((total, result) => total + result.affectedRows, 0);
+      if (stale) {
+        throw new Error(
+          `Batch ${kind} stopped after ${affectedRows} row(s): ` +
+          `${stale} selected row(s) were stale.`,
+        );
+      }
+    }
+    return affectedRows;
   }
 
   close(): Promise<void> {

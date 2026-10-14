@@ -303,7 +303,12 @@ function apiSyntax(program: AstNode) {
 export async function isHttpHandlerModule(code: string): Promise<boolean> {
   const parser = await loadParseSync();
   const program = parser && parsedProgram(parser, code);
-  return Boolean(program && apiSyntax(program).http);
+  return Boolean(program && isHttpHandlerProgram(program));
+}
+
+/** {@link isHttpHandlerModule} for a module the caller has already parsed with Oxc. */
+export function isHttpHandlerProgram(program: AstNode): boolean {
+  return apiSyntax(program).http;
 }
 
 export interface ApiContractFact {

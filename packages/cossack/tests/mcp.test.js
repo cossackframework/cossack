@@ -179,6 +179,36 @@ it('serves the current protocol revision through the SDK stdio negotiation', asy
   const result = await client.callTool({ name: 'inspect_project', arguments: { scope: 'routes' } });
   expect(result.structuredContent).toMatchObject({ schemaVersion: 1, ok: true, data: { scope: 'routes' } });
 }, 30_000);
+it('keeps one warm inspection worker without returning stale project facts', async () => {
+  const root = await fixture();
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  await fs.mkdir(path.join(root, 'node_modules'), { recursive: true });
+  await fs.symlink(path.dirname(require.resolve('wrangler/package.json')), path.join(root, 'node_modules/wrangler'), 'junction');
+  const config = { name: 'warm-worker', compatibility_date: '2026-10-05', assets: { binding: 'ASSETS', run_worker_first: true } };
+  const configFile = path.join(root, 'wrangler.jsonc');
+  await fs.writeFile(configFile, JSON.stringify(config));
+  const runner = new InspectionRunner(root); runners.push(runner);
+  const codes = result => result.diagnostics.map(item => item.code);
+  const routes = await runner.run({ scope: 'routes' });
+  expect(routes.data.routes.map(page => page.route)).not.toContain('/about');
+  await fs.writeFile(path.join(root, 'src/pages/about.ts'), `import { Cossack, Page } from '@cossackframework/core';
+    @Page({transport:'http'}) export default class About extends Cossack { render(){return null;} }`);
+  const updated = await runner.run({ scope: 'routes' });
+  expect(updated.data.routes.map(page => page.route)).toContain('/about');
+  expect(updated).toEqual(await inspectProject(root, { scope: 'routes' }));
+  expect(codes(await runner.run({ scope: 'cloudflare', check: true }))).not.toContain('COSSACK_ASSETS_WORKER_FIRST_REQUIRED');
+  await fs.writeFile(configFile, JSON.stringify({ ...config, assets: { binding: 'ASSETS', run_worker_first: false } }));
+  expect(codes(await runner.run({ scope: 'cloudflare', check: true }))).toContain('COSSACK_ASSETS_WORKER_FIRST_REQUIRED');
+  await fs.writeFile(configFile, '{"name": ');
+  expect(await runner.run({ scope: 'cloudflare', check: true })).toMatchObject({ ok: false, diagnostics: [{ code: 'COSSACK_WRANGLER_CONFIG_INVALID' }] });
+  await fs.writeFile(configFile, JSON.stringify(config));
+  const recovered = await runner.run({ scope: 'cloudflare', check: true });
+  expect(codes(recovered)).not.toContain('COSSACK_WRANGLER_CONFIG_INVALID');
+  expect(recovered).toEqual(await inspectProject(root, { scope: 'cloudflare', check: true }));
+  expect(runner.workerCount).toBe(1);
+  expect(runner.activeCount).toBe(0);
+}, 60_000);
 it('bounds concurrent worker calls and large results', async () => {
   const root = await fixture(); const worker = path.join(root, 'blocked.mjs');
   await fs.writeFile(worker, 'setInterval(()=>{},1000);');

@@ -29,6 +29,11 @@ export type StudioExecutor = (
   parameters?: readonly unknown[],
 ) => Promise<StudioQueryResult>;
 
+export interface StudioStatement {
+  sql: string;
+  parameters?: readonly unknown[];
+}
+
 export interface StudioConnection {
   readonly info: StudioConnectionInfo;
   readonly logicalSchema?: OrmSchema;
@@ -42,6 +47,14 @@ export interface StudioConnection {
   transaction?<T>(
     callback: (execute: StudioExecutor, atomic: boolean) => Promise<T>,
   ): Promise<T>;
+  /**
+   * Run several statements in one round trip and return one result per
+   * statement, in order. Connections implement it when a round trip is
+   * expensive: remote D1 starts one Wrangler process per call and sends the
+   * statements as one D1 batch, which D1 runs as a transaction. Callers keep
+   * each batch small with `runStatements()`/`chunkStatements()`.
+   */
+  batch?(statements: readonly StudioStatement[]): Promise<StudioQueryResult[]>;
   close(): Promise<void>;
 }
 

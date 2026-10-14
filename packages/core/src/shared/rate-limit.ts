@@ -103,24 +103,37 @@ function readCounter(value: unknown): RateLimitCounter {
     return { count, resetAt };
 }
 
-/** Minimum time between full expiry scans of a full in-memory store. */
-const MEMORY_PRUNE_INTERVAL_MS = 1000;
+/** Buckets examined per capacity insert by the incremental expiry sweep. */
+const MEMORY_SWEEP_BATCH = 8;
+
+interface MemoryBucket {
+    readonly key: string;
+    count: number;
+    readonly resetAt: number;
+    /** Neighbours in window-start order (oldest first). */
+    older?: MemoryBucket;
+    newer?: MemoryBucket;
+}
 
 /**
  * Simple in-memory fixed-window counter holding at most `maxEntries` buckets
- * (default 10 000). When full, expired buckets are dropped first (from the
- * oldest end, plus a full expiry scan at most once per second), then the
- * buckets whose window started earliest are evicted to admit the new caller.
- * Admitting a caller at capacity is amortized O(1), so a flood of distinct
- * keys cannot turn every insert into a full scan. Eviction forgets those
- * callers' spent quota, so size `maxEntries` above the expected live caller
- * count or use a shared provider for strict limits.
+ * (default 10 000). Buckets form a list in window-start order. When full,
+ * expired buckets are dropped from the oldest end and an incremental sweep
+ * reclaims a few expired buckets hidden behind longer windows; then the
+ * bucket whose window started earliest is evicted to admit the new caller.
+ * Every hit is O(1), so a flood of distinct keys cannot turn inserts into
+ * scans. Eviction forgets those callers' spent quota, so size `maxEntries`
+ * above the expected live caller count or use a shared provider for strict
+ * limits.
  */
 export class InMemoryRateLimitStore implements RateLimitStore {
     readonly capabilities = storageCapabilities('rate-limit', 'memory');
-    private readonly entries = new Map<string, { count: number; resetAt: number }>();
+    private readonly entries = new Map<string, MemoryBucket>();
     private readonly maxEntries: number;
-    private nextPruneAt = 0;
+    private oldest: MemoryBucket | undefined;
+    private newest: MemoryBucket | undefined;
+    /** Next bucket the incremental expiry sweep examines (wraps to the oldest). */
+    private sweep: MemoryBucket | undefined;
 
     constructor(maxEntries = 10_000) {
         if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 100000) {
@@ -136,43 +149,55 @@ export class InMemoryRateLimitStore implements RateLimitStore {
         assertRateLimitNotAborted(options.signal);
         const now = Date.now();
         const existing = this.entries.get(key);
-        if (!existing || now >= existing.resetAt) {
-            if (existing) this.entries.delete(key);
-            else if (this.entries.size >= this.maxEntries) {
-                // Map order tracks window start, so expired buckets cluster at
-                // the head: dropping them there is O(1) per bucket. A full scan
-                // (for long windows started before shorter, expired ones) runs
-                // opportunistically, at most once per interval.
-                for (const [oldest, bucket] of this.entries) {
-                    if (now < bucket.resetAt) break;
-                    this.entries.delete(oldest);
-                }
-                if (this.entries.size >= this.maxEntries && now >= this.nextPruneAt) {
-                    this.nextPruneAt = now + MEMORY_PRUNE_INTERVAL_MS;
-                    this.prune(now);
-                }
-                // Evict the oldest live windows rather than rejecting new callers:
-                // throwing here would let a flood of distinct keys deny service to
-                // every rate-limited endpoint until those windows expire.
-                for (const oldest of this.entries.keys()) {
-                    if (this.entries.size < this.maxEntries) break;
-                    this.entries.delete(oldest);
-                }
-            }
-            const resetAt = now + windowMs;
-            // Re-insert so Map order tracks window start (oldest first).
-            this.entries.set(key, { count: 1, resetAt });
-            return { count: 1, resetAt };
+        if (existing && now < existing.resetAt) {
+            existing.count = readCounter({ count: existing.count + 1, resetAt: existing.resetAt }).count;
+            return { count: existing.count, resetAt: existing.resetAt };
         }
-        existing.count = readCounter({ count: existing.count + 1, resetAt: existing.resetAt }).count;
-        return { count: existing.count, resetAt: existing.resetAt };
+        if (existing) this.remove(existing);
+        else if (this.entries.size >= this.maxEntries) this.makeRoom(now);
+        // A new window joins the newest end, so list order tracks window start.
+        const bucket: MemoryBucket = { key, count: 1, resetAt: now + windowMs, older: this.newest };
+        if (this.newest) this.newest.newer = bucket; else this.oldest = bucket;
+        this.newest = bucket;
+        this.entries.set(key, bucket);
+        return { count: 1, resetAt: bucket.resetAt };
     }
 
     /** Drop every expired entry. Exposed for testing/custom stores. */
     prune(now: number): void {
-        for (const [k, v] of this.entries) {
-            if (now >= v.resetAt) this.entries.delete(k);
+        for (let bucket = this.oldest; bucket;) {
+            const next = bucket.newer;
+            if (now >= bucket.resetAt) this.remove(bucket);
+            bucket = next;
         }
+    }
+
+    /** Free one slot in amortized O(1): expired buckets first, then the oldest window. */
+    private makeRoom(now: number): void {
+        // Equal windows expire in list order, so expired buckets cluster at the
+        // oldest end; each removal is paid for by that bucket's own insert.
+        while (this.oldest && now >= this.oldest.resetAt) this.remove(this.oldest);
+        // A long window started early can hide shorter expired ones behind it.
+        // Sweep a bounded batch per capacity insert instead of a full scan.
+        const batch = Math.min(MEMORY_SWEEP_BATCH, this.entries.size);
+        for (let examined = 0; examined < batch && this.entries.size >= this.maxEntries; examined++) {
+            const bucket = this.sweep ?? this.oldest;
+            if (!bucket) break;
+            this.sweep = bucket.newer;
+            if (now >= bucket.resetAt) this.remove(bucket);
+        }
+        // Evict the oldest live window rather than rejecting the new caller:
+        // throwing here would let a flood of distinct keys deny service to
+        // every rate-limited endpoint until those windows expire.
+        if (this.entries.size >= this.maxEntries && this.oldest) this.remove(this.oldest);
+    }
+
+    private remove(bucket: MemoryBucket): void {
+        if (this.sweep === bucket) this.sweep = bucket.newer;
+        if (bucket.older) bucket.older.newer = bucket.newer; else this.oldest = bucket.newer;
+        if (bucket.newer) bucket.newer.older = bucket.older; else this.newest = bucket.older;
+        bucket.older = bucket.newer = undefined;
+        this.entries.delete(bucket.key);
     }
 }
 

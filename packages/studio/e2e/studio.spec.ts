@@ -14,8 +14,22 @@ import {
 import { nodeSQLite } from '@cossackframework/database/node';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { createServer, type AddressInfo } from 'node:net';
 import { runStudio } from '../dist/index.js';
 import { createLocalConnection } from '../src/testing';
+
+// Studio validates its port before listening, so reserve a free one first. A
+// fixed port inside Linux's ephemeral range can be held by any other socket.
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
 
 let launchUrl = '';
 let abort: AbortController;
@@ -106,7 +120,7 @@ test.beforeAll(async () => {
     originalLog(message);
   };
   running = runStudio({
-    port: 51_984,
+    port: await freePort(),
     open: false,
     connection,
     signal: abort.signal,

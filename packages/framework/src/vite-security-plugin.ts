@@ -2,7 +2,7 @@ import type { Plugin } from 'vite';
 import { parseSync } from 'vite';
 import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
-import { isHttpHandlerModule } from './page-inspection.js';
+import { isHttpHandlerProgram } from './page-inspection.js';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
@@ -60,6 +60,12 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
   // Vite's resolved root, shared by the client and server environments, so
   // generated server$ method names agree between both bundles.
   let projectRoot: string | undefined;
+  // load() parses every client script module it inspects. When it leaves the
+  // module to Vite, the client transform() of the same id normally receives
+  // exactly that source next, so it takes over the program instead of
+  // parsing again. A program is reused only for an identical source string,
+  // and each entry is taken (removed) by the first transform of its id.
+  const loadedPrograms = new Map<string, { source: string; program: any }>();
 
   /**
    * Check if the file should be processed.
@@ -114,11 +120,19 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     async load(id) {
       const isClientEnvironment = this.environment?.name === 'client';
       if (id.includes('node_modules')) return;
+      // Virtual modules have no file on disk for any branch below to inspect.
+      if (id.startsWith('\0')) return;
 
       // Vite module ids frequently include query strings (e.g. `src/auth.ts?import`
       // or `?v=abc123`). Strip `?…` / `#…` before matching or reading the file so
       // the regex anchors ($>) and readFileSync both see the real path.
       const cleanId = id.split('?')[0].split('#')[0];
+      // Only script modules can be client-only, server-only, config or HTTP
+      // route modules. CSS, images, JSON, fonts and `?raw`/`?url` assets are
+      // never read or parsed here. A script path keeps its treatment whatever
+      // the query, so `server.ts?raw` cannot inline a server-only module's
+      // source into the client bundle.
+      if (!isScriptModulePath(cleanId)) return;
       if (/(^|\/)vite-security-plugin\.m?ts$/.test(cleanId)) return;
 
       // Browser-only modules are loaded verbatim by the client build. Every
@@ -132,14 +146,30 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 
       if (!isClientEnvironment) return;
 
+      // The branches below share one read and one parse of the module, made
+      // on first use (the config branch needs neither). `null` records a
+      // file that could not be read or parsed.
+      let source: string | null | undefined;
+      let program: any | null | undefined;
+      const parsedModule = (): any | null => {
+        if (program !== undefined) return program;
+        if (source === undefined) {
+          try { source = readFileSync(cleanId, 'utf8'); } catch { source = null; }
+        }
+        program = source === null ? null : parseProgram(source);
+        return program;
+      };
+
       // Functional HTTP routes are server-only even when they use only Web
       // APIs or platform bindings, without a known server-library import.
       // Keep their export interface in the browser route catalog, but never
       // load their bodies or transitive database/credential dependencies.
       if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
-        const source = readFileSync(cleanId, 'utf8');
-        if (await isHttpHandlerModule(source)) {
-          const shape = readClientOnlyExports(source, cleanId, 'Server-only HTTP route');
+        // An unreadable page fails the build instead of being skipped.
+        source = readFileSync(cleanId, 'utf8');
+        const pageProgram = parsedModule();
+        if (pageProgram && isHttpHandlerProgram(pageProgram)) {
+          const shape = clientOnlyExportsOf(pageProgram, cleanId, 'Server-only HTTP route');
           const label = JSON.stringify(moduleLabelFromId(cleanId));
           const lines = [`const __httpOnly = name => () => { throw new Error('HTTP route export ' + name + ' from ' + ${label} + ' is server-only. Call its URL or use a @Server method.'); };`];
           shape.named.forEach((name, index) => lines.push(
@@ -168,7 +198,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // the Oxc AST) so it tracks the generator exactly — including conditional
       // OAuth exports (`oauth`, `handleOAuthUser`) — and never drifts.
       if (/(^|\/)src\/auth\.m?ts$/.test(cleanId)) {
-        return generateAuthClientStub(cleanId);
+        const authProgram = parsedModule();
+        return authClientStub(authProgram ? namedExportsOf(authProgram) : []);
       }
 
       // General server-only detection: any other user module that imports from
@@ -180,18 +211,19 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // from these, but the real calls live inside stripped `@Server` bodies, so
       // stubbing named exports to throwing placeholders keeps the graph clean.
       // `src/config/*` is already handled above and `src/auth.ts` above that.
-      if (isServerOnlyModule(cleanId)) {
+      const moduleProgram = parsedModule();
+      if (moduleProgram && isServerOnlyProgram(moduleProgram)) {
         // Component modules must reach transform() first: @Server bodies and
         // server$ loaders are removed there, after which their now-unused
         // server-only imports can be tree-shaken. Stubbing the whole module in
         // load() would erase the component before the AST security pass.
+        let component = false;
         try {
-          const source = readFileSync(cleanId, 'utf8');
-          const program = parseProgram(source);
-          if (program && frameworkClasses(program).size > 0) return;
+          component = frameworkClasses(moduleProgram).size > 0;
         } catch { /* generate the conservative stub below */ }
-        return generateServerOnlyStub(cleanId, moduleLabelFromId(cleanId));
+        if (!component) return serverOnlyStub(namedExportsOf(moduleProgram), moduleLabelFromId(cleanId));
       }
+      if (moduleProgram && source && shouldProcessFile(id)) loadedPrograms.set(id, { source, program: moduleProgram });
     },
 
     transform(code, id) {
@@ -200,11 +232,19 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         return { code, map: null };
       }
       const original = code;
+      const loaded = isClientEnvironment ? loadedPrograms.get(id) : undefined;
+      if (loaded) loadedPrograms.delete(id);
+      // One parse serves every step below while the source is unchanged. A
+      // step that rewrites the source invalidates AST positions, so the next
+      // step that needs a program parses the rewritten source once.
+      let module = new ParsedModule(code, loaded?.source === code ? loaded.program : undefined);
 
       // server$ is a compiler macro in both environments. On the server its
       // generated method retains the loader; the normal client pass below
       // replaces that method with the existing RPC proxy stub.
-      if (code.includes('server$')) code = transformServerResources(code, id, undefined, projectRoot);
+      if (code.includes('server$')) {
+        module = module.with(expandServerResources(module.code, module.program, id, undefined, projectRoot));
+      }
 
       // Check if this file contains a Cossack class or a @Service decorated class
       // Class discovery is AST-based: whitespace, aliases and decorated
@@ -217,12 +257,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // bootstrap replace its stripped stub with the normal transport proxy.
       if (!isClientEnvironment) {
         return {
-          code: injectAutomaticServerMethodMetadata(
-            code,
-            id,
-            isClientSafeMethod,
-            BUILTIN_METHODS,
-          ),
+          code: injectServerMethodMetadata(module, isClientSafeMethod, BUILTIN_METHODS),
           map: null,
         };
       }
@@ -230,7 +265,7 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // Discovery cannot see through a base class imported from another file.
       // Warn (without changing stripping) when such a subclass in pages or
       // components has methods that would otherwise be stripped.
-      for (const finding of findUnstrippedImportedSubclasses(code, id)) {
+      for (const finding of unstrippedImportedSubclasses(module, id)) {
         this.warn?.(
           `[Cossack Security] ${id}: class ${finding.className} extends imported ${finding.baseName}, which the client ` +
           `bundle transform cannot follow across files, so its undecorated methods (${finding.methods.join(', ')}) ` +
@@ -239,18 +274,20 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
         );
       }
 
-      try {
-        const stripped = transformCossackClass(code, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
-        const transformed = stripClientServerOnlyImports(stripped, id);
-        // Never return `map: null` for rewritten client modules: the bundler
-        // would then fill `sourcesContent` from the ORIGINAL file and ship
-        // stripped @Server bodies / server$ loaders inside client `.map` files.
-        if (transformed !== original) return { code: transformed, map: strippedSourceMap(id, transformed) };
-      } catch (error) {
-        throw error;
-      }
+      const stripped = stripClientClasses(module, id, isClientSafeMethod, BUILTIN_METHODS, devWarning);
+      // The class pass only removes imports or adds `@cossackframework/core`
+      // ones, so the stripped module has a runtime server-only import only
+      // if `module` had one. Without one there is nothing to remove or
+      // reject, and the stripped source needs no further parse.
+      const transformed = module.program.body.some(isRuntimeServerOnlyImport)
+        ? stripServerOnlyImports(stripped, id)
+        : stripped.code;
+      // Never return `map: null` for rewritten client modules: the bundler
+      // would then fill `sourcesContent` from the ORIGINAL file and ship
+      // stripped @Server bodies / server$ loaders inside client `.map` files.
+      if (transformed !== original) return { code: transformed, map: strippedSourceMap(id, transformed) };
 
-      return { code, map: null };
+      return { code: module.code, map: null };
     },
   };
 }
@@ -271,6 +308,15 @@ export function strippedSourceMap(id: string, code: string) {
     names: [] as string[],
     mappings: 'AAAA' + ';AACA'.repeat(lines - 1),
   };
+}
+
+/**
+ * An import declaration {@link stripClientServerOnlyImports} must remove or
+ * reject. `import type` is erased by every TypeScript transform.
+ */
+function isRuntimeServerOnlyImport(statement: any): boolean {
+  return statement.type === 'ImportDeclaration' && statement.importKind !== 'type' &&
+    isServerOnlyImportSource(String(statement.source?.value ?? ''));
 }
 
 function isServerOnlyImportSource(source: string): boolean {
@@ -302,16 +348,17 @@ const RUNTIME_TS_NODES: ReadonlySet<string> = new Set([
  * and the client build must fail instead of loading a Node/server module.
  */
 export function stripClientServerOnlyImports(code: string, id: string): string {
-  const program = parseProgram(code);
+  return stripServerOnlyImports(new ParsedModule(code), id);
+}
+
+function stripServerOnlyImports(module: ParsedModule, id: string): string {
+  const { code, program } = module;
   if (!program) throw new Error(`[Cossack Security] Could not validate server-only imports in ${id}.`);
 
   const candidates: Array<{ node: any; source: string; bindings: string[]; replacement: string }> = [];
   for (const statement of program.body ?? []) {
-    if (statement.type !== 'ImportDeclaration') continue;
-    // `import type` is erased by every TypeScript transform.
-    if (statement.importKind === 'type') continue;
-    const source = String(statement.source?.value ?? '');
-    if (!isServerOnlyImportSource(source)) continue;
+    if (!isRuntimeServerOnlyImport(statement)) continue;
+    const source = String(statement.source.value);
     // Page decorators evaluate guard.requireRole()/requirePermission() in both
     // environments. This pure factory is client-safe; auth/session operations
     // and namespace imports must still pass the server-only reference check.
@@ -410,7 +457,11 @@ function resourceModuleKey(id: string, root?: string): string {
 }
 
 export function transformServerResources(code: string, id: string, sources?: ResourceSource[], root?: string): string {
-  const program = parseProgram(code);
+  return expandServerResources(code, parseProgram(code), id, sources, root);
+}
+
+/** {@link transformServerResources} given `program`, the parse of `code` (or null). */
+function expandServerResources(code: string, program: any | null, id: string, sources?: ResourceSource[], root?: string): string {
   if (!program) throw new Error(`[Cossack server$] Could not parse ${id}.`);
   const bindings = new Set<string>();
   for (const statement of program.body ?? []) {
@@ -545,6 +596,44 @@ function parseProgram(code: string): any | null {
   }
 }
 
+/**
+ * A module source and its Oxc program, parsed on first use. The program's
+ * byte offsets are valid only for exactly `code`, so a step that rewrites the
+ * source continues with {@link ParsedModule.with}, which keeps the program
+ * when the step changed nothing and otherwise defers a parse of the new
+ * source to the next step that needs one. Programs are never mutated.
+ */
+class ParsedModule {
+  #program: any | null | undefined;
+
+  /** `program` (when known) must be the parse of exactly `code`. */
+  constructor(readonly code: string, program?: any | null) {
+    this.#program = program;
+  }
+
+  /** The program for `code`, or `null` when it does not parse. */
+  get program(): any | null {
+    if (this.#program === undefined) this.#program = parseProgram(this.code);
+    return this.#program;
+  }
+
+  /** The module after a step that produced `code`. */
+  with(code: string): ParsedModule {
+    return code === this.code ? this : new ParsedModule(code);
+  }
+}
+
+/**
+ * Script extensions the load() hook inspects. Parsing is TypeScript-mode, so
+ * plain JavaScript (and JSX-free `.tsx`/`.jsx`) modules are covered too.
+ */
+const SCRIPT_MODULE_PATH = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/** Whether a query-free module path names a script the security passes inspect. */
+function isScriptModulePath(cleanId: string): boolean {
+  return SCRIPT_MODULE_PATH.test(cleanId);
+}
+
 /** Whether a Vite module id uses the browser-only module filename convention. */
 export function isClientOnlyModuleId(id: string): boolean {
   const cleanId = id.split('?')[0].split('#')[0];
@@ -612,6 +701,11 @@ export function generateClientOnlyServerStub(id: string, moduleName = moduleLabe
 function readClientOnlyExports(source: string, id: string, kind = 'Client-only module'): ClientOnlyExports {
   const program = parseProgram(source);
   if (!program) throw new Error(`[Cossack Security] Could not parse ${kind.toLowerCase()} ${id}.`);
+  return clientOnlyExportsOf(program, id, kind);
+}
+
+/** Runtime export interface of a parsed module whose exports are all stubbed. */
+function clientOnlyExportsOf(program: any, id: string, kind: string): ClientOnlyExports {
   const named = new Set<string>();
   let hasDefault = false;
   for (const stmt of program.body ?? []) {
@@ -663,7 +757,11 @@ function readClientOnlyExports(source: string, id: string, kind = 'Client-only m
  * a build never hard-fails, but accidental client use is still loud).
  */
 export function generateServerOnlyStub(id: string, moduleName: string): string {
-  const namedExports = readNamedExports(id);
+  return serverOnlyStub(readNamedExports(id), moduleName);
+}
+
+/** {@link generateServerOnlyStub} for already collected runtime export names. */
+function serverOnlyStub(namedExports: string[], moduleName: string): string {
   const header =
     `// [cossack-security] ${commentText(moduleName)} is server-only — stubbed on the client.\n` +
     `const stub = (name) => () => { throw new Error(${jsString(`${moduleName}.`)} + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
@@ -685,7 +783,8 @@ export function generateServerOnlyStub(id: string, moduleName: string): string {
 }
 
 /**
- * Generate the client-side stub module for `src/auth.ts`.
+ * Generate the client-side stub module for `src/auth.ts` from its runtime
+ * export names (empty when the file could not be read or parsed).
  *
  * Specialized wrapper over {@link generateServerOnlyStub} that preserves the
  * `auth` export's shape: client code (the login page) references
@@ -694,8 +793,7 @@ export function generateServerOnlyStub(id: string, moduleName: string): string {
  * createSession: stub }` rather than a bare function. Other exports are stubbed
  * normally.
  */
-function generateAuthClientStub(id: string): string {
-  const namedExports = readNamedExports(id);
+function authClientStub(namedExports: string[]): string {
   const header =
     `// [cossack-security] src/auth.ts is server-only — stubbed on the client.\n` +
     `const stub = (name) => () => { throw new Error('auth.' + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
@@ -775,8 +873,11 @@ export function readImportSources(id: string): string[] {
     return [];
   }
   const program = parseProgram(source);
-  if (!program) return [];
+  return program ? importSourcesOf(program) : [];
+}
 
+/** Runtime import and re-export sources of a parsed module (see {@link readImportSources}). */
+function importSourcesOf(program: any): string[] {
   const sources = new Set<string>();
   for (const stmt of program.body ?? []) {
     if (stmt.type === 'ImportDeclaration' && stmt.source?.value) {
@@ -816,13 +917,19 @@ export function readImportSources(id: string): string[] {
  * service file importing an ORM entity does not leak server code into the bundle.
  */
 export function isServerOnlyModule(id: string): boolean {
-  const sources = readImportSources(id);
-  return sources.some((spec) => {
-    if (spec.startsWith('node:')) return true;
-    return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
-      spec === source || spec.startsWith(`${source}/`),
-    );
-  });
+  return readImportSources(id).some(isServerOnlyModuleSource);
+}
+
+/** {@link isServerOnlyModule} for an already parsed module. */
+function isServerOnlyProgram(program: any): boolean {
+  return importSourcesOf(program).some(isServerOnlyModuleSource);
+}
+
+function isServerOnlyModuleSource(spec: string): boolean {
+  if (spec.startsWith('node:')) return true;
+  return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
+    spec === source || spec.startsWith(`${source}/`),
+  );
 }
 
 /**
@@ -854,8 +961,11 @@ function readNamedExports(id: string): string[] {
     return [];
   }
   const program = parseProgram(source);
-  if (!program) return [];
+  return program ? namedExportsOf(program) : [];
+}
 
+/** Runtime named exports of a parsed module (see {@link readNamedExports}). */
+function namedExportsOf(program: any): string[] {
   const names = new Set<string>();
   for (const stmt of program.body ?? []) {
     switch (stmt.type) {
@@ -1025,7 +1135,9 @@ function typedMemberDecorator(callee: any): string | null {
  * `./rpc` module, or a re-export) and any `const S = x.Server` /
  * `const { Server: S } = x` binding is an alias, regardless of origin.
  */
-function typedDecoratorBindings(program: any): { aliases: Map<string, string>; namespaces: Set<string> } {
+function typedDecoratorBindings(program: any): { aliases: ReadonlyMap<string, string>; namespaces: ReadonlySet<string> } {
+  const cached = typedDecoratorBindingSets.get(program);
+  if (cached) return cached;
   const factories = new Set<string>(), coreNamespaces = new Set<string>();
   const aliases = new Map<string, string>(), namespaces = new Set<string>();
   for (const node of program.body ?? []) {
@@ -1063,8 +1175,12 @@ function typedDecoratorBindings(program: any): { aliases: Map<string, string>; n
       }
     }
   }
-  return { aliases, namespaces };
+  const result = { aliases, namespaces };
+  typedDecoratorBindingSets.set(program, result);
+  return result;
 }
+
+const typedDecoratorBindingSets = new WeakMap<any, { aliases: ReadonlyMap<string, string>; namespaces: ReadonlySet<string> }>();
 
 const frameworkClassSets = new WeakMap<any, { selected: Set<any>; hidden?: any }>();
 
@@ -1149,9 +1265,16 @@ export function findUnstrippedImportedSubclasses(
   code: string,
   id: string,
 ): Array<{ className: string; baseName: string; methods: string[] }> {
+  return unstrippedImportedSubclasses(new ParsedModule(code), id);
+}
+
+function unstrippedImportedSubclasses(
+  module: ParsedModule,
+  id: string,
+): Array<{ className: string; baseName: string; methods: string[] }> {
   const cleanId = id.split(/[?#]/)[0].replace(/\\/g, '/');
   if (!/\/src\/(?:pages|components)\//.test(cleanId)) return [];
-  const program = parseProgram(code);
+  const { code, program } = module;
   if (!program) return [];
   const imported = new Set<string>();
   for (const node of program.body ?? []) {
@@ -1234,6 +1357,8 @@ interface AstMethod {
   fieldIsAsync?: boolean;
   /** Declared return-type annotation text (no colon), for RpcCall rewrites. */
   returnTypeText?: string;
+  /** The annotation's type node in the module AST (spans `returnTypeText`). */
+  returnTypeNode?: any;
   /** Annotation span INCLUDING the leading colon; replaced by the call type. */
   returnTypeStart?: number;
   returnTypeEnd?: number;
@@ -1242,15 +1367,16 @@ interface AstMethod {
   modifierEnd?: number;
 }
 
+const memberDecoratorNameSets = new WeakMap<any, { aliases: ReadonlyMap<string, string>; namespaces: ReadonlySet<string> }>();
+
 /**
- * Collect every method/field-function in a class body as {@link AstMethod}s.
- * Getters/setters (`MethodDefinition.kind === 'get' | 'set'`) are intentionally
- * SKIPPED — they are read as bare property accesses inside preserved methods
- * like `render()`, and the transitive-preservation pass only sees parenthesised
- * calls, so stripping them would break client rendering.
+ * Module-wide decorator name tables for {@link collectAstMethods}: framework
+ * import aliases (local → imported name), framework namespaces, and typed
+ * State/Server aliases. Computed once per program and shared by its classes.
  */
-function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
-  const methods: AstMethod[] = [];
+function memberDecoratorNames(program: any): { aliases: ReadonlyMap<string, string>; namespaces: ReadonlySet<string> } {
+  const cached = memberDecoratorNameSets.get(program);
+  if (cached) return cached;
   const aliases = new Map<string, string>();
   const namespaces = new Set<string>();
   for (const statement of program.body ?? []) {
@@ -1263,6 +1389,21 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
   const typed = typedDecoratorBindings(program);
   typed.aliases.forEach((name, alias) => aliases.set(alias, name));
   typed.namespaces.forEach(name => namespaces.add(name));
+  const result = { aliases, namespaces };
+  memberDecoratorNameSets.set(program, result);
+  return result;
+}
+
+/**
+ * Collect every method/field-function in a class body as {@link AstMethod}s.
+ * Getters/setters (`MethodDefinition.kind === 'get' | 'set'`) are intentionally
+ * SKIPPED — they are read as bare property accesses inside preserved methods
+ * like `render()`, and the transitive-preservation pass only sees parenthesised
+ * calls, so stripping them would break client rendering.
+ */
+function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
+  const methods: AstMethod[] = [];
+  const { aliases, namespaces } = memberDecoratorNames(program);
   const decoratorSources = (member: any): string[] => (member.decorators ?? []).map((d: any) => {
     const callee = decoratorCallee(d);
     let canonical: string | undefined;
@@ -1303,6 +1444,7 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         // Client-side result typing (RT-01): the original declared return
         // type's text and span, used to rewrite the signature to RpcCall.
         returnTypeText: fn.returnType ? typeAnnotationText(code, fn.returnType) : undefined,
+        returnTypeNode: fn.returnType?.typeAnnotation,
         returnTypeStart: fn.returnType?.start,
         returnTypeEnd: fn.returnType?.end,
         isGenerator: !!fn.generator,
@@ -1331,6 +1473,7 @@ function collectAstMethods(cls: any, code: string, program: any): AstMethod[] {
         fieldKind: kind,
         fieldIsAsync: !!value.async,
         returnTypeText: value.returnType ? typeAnnotationText(code, value.returnType) : undefined,
+        returnTypeNode: value.returnType?.typeAnnotation,
         returnTypeStart: value.returnType?.start,
         returnTypeEnd: value.returnType?.end,
         isGenerator: !!value.generator,
@@ -1626,12 +1769,15 @@ export function inspectCompilerMethods(code: string, id: string, root?: string):
     diagnostics: [{ code: 'COSSACK_COMPILER_INSPECTION_UNKNOWN', file: id, message }],
   });
   const authored = code;
-  const originalProgram = parseProgram(code);
+  const original = new ParsedModule(code);
+  const originalProgram = original.program;
   if (!originalProgram) return unknown('Source could not be parsed.');
   const resources: ResourceSource[] = [];
-  try { code = transformServerResources(code, id, resources, root); }
+  let expanded: ParsedModule;
+  try { expanded = original.with(expandServerResources(code, originalProgram, id, resources, root)); }
   catch { return unknown('Unsupported server resource declaration.'); }
-  const program = parseProgram(code);
+  code = expanded.code;
+  const program = expanded.program;
   if (!program) return unknown('Expanded source could not be parsed.');
   const originalClasses = [...frameworkClasses(originalProgram)];
   const roots = new Set(['Cossack', 'CossackElement']);
@@ -1926,14 +2072,23 @@ export function injectAutomaticServerMethodMetadata(
   isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
   builtinMethods: ReadonlySet<string>,
 ): string {
-  const program = parseProgram(code);
+  return injectServerMethodMetadata(new ParsedModule(code), isClientSafeMethodFn, builtinMethods);
+}
+
+function injectServerMethodMetadata(
+  module: ParsedModule,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
+): string {
+  const { code, program } = module;
   if (!program) return code;
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
 
+  const selected = frameworkClasses(program);
   for (const cls of findClasses(program)) {
-    if (!frameworkClasses(program).has(cls)) continue;
+    if (!selected.has(cls)) continue;
 
-    const { methods, preserved, automaticRpc } = analyzeClassMethods(
+    const { automaticRpc } = analyzeClassMethods(
       cls, code, program, isClientSafeMethodFn, builtinMethods,
     );
     if (automaticRpc.size === 0) continue;
@@ -1973,17 +2128,20 @@ function typeAnnotationText(code: string, returnType: any): string | undefined {
  * Recognizes AsyncGenerator<Y, R[, N]> (any arity via textual prefix),
  * AsyncIterableIterator<Y>, and Promise<R>. Returns undefined when the
  * annotation is absent or unrecognized — those keep their declared types.
+ * Classifies `returnTypeNode` (the annotation's node in the module AST) when
+ * given; otherwise parses `returnTypeText` on its own. Both see the same
+ * type: the node spans exactly that text.
  */
 export function clientCallType(method: {
   returnTypeText?: string;
+  returnTypeNode?: any;
   isGenerator?: boolean;
 }): string | undefined {
   const text = method.returnTypeText?.trim();
   if (!text) return undefined;
-  const source = `type __Result = ${text};`;
-  const type = parseProgram(source)?.body[0]?.typeAnnotation;
+  const type = method.returnTypeNode ?? parseProgram(`type __Result = ${text};`)?.body[0]?.typeAnnotation;
   if (type?.type !== 'TSTypeReference' || type.typeName?.type !== 'Identifier') return undefined;
-  const args = (type.typeArguments?.params ?? []).map((node: any) => sourceSlice(source, node));
+  const args = type.typeArguments?.params ?? [];
   const clientType = () => `RpcCall<import('@cossackframework/core').RpcResult<${text}>, import('@cossackframework/core').RpcYield<${text}>>`;
   if (type.typeName.name === 'AsyncGenerator' && args.length >= 1 && args.length <= 3) {
     return clientType();
@@ -2042,9 +2200,10 @@ function inputRuntimeReferences(root: any): Set<string> {
 }
 
 /** Remove module declarations reachable only through stripped input contracts. */
-function stripInputDependencies(code: string, roots: Set<string>, privateRoots = roots): string {
-  if (!roots.size) return code;
-  const program = parseProgram(code);
+function stripInputDependencies(module: ParsedModule, roots: Set<string>, privateRoots = roots): ParsedModule {
+  if (!roots.size) return module;
+  let { code } = module;
+  const { program } = module;
   if (!program) throw new Error('[Cossack Security] Could not validate server input dependencies.');
   type Definition = {node:any; statement:any; exported:boolean; importSource?:string; typeOnly?:boolean; unsupported?:boolean; dependencies:Set<string>};
   const definitions = new Map<string, Definition>();
@@ -2155,13 +2314,14 @@ function stripInputDependencies(code: string, roots: Set<string>, privateRoots =
     }
   }
   for (const edit of edits.sort((a,b)=>b.start-a.start)) code=code.slice(0,edit.start)+edit.replacement+code.slice(edit.end);
-  return code;
+  return module.with(code);
 }
 
 /** Remove server validation closures before analyzing client dependencies. */
-function stripServerActionInput(code: string): {code:string;bindings:Set<string>} {
+function stripServerActionInput(module: ParsedModule): {code:string;bindings:Set<string>} {
   const bindings=new Set<string>();
-  const program = parseProgram(code);
+  let { code } = module;
+  const { program } = module;
   if (!program) return {code,bindings};
   const aliases = new Set(['Server']);
   const namespaces = new Set<string>();
@@ -2212,17 +2372,33 @@ export function transformCossackClass(
   builtinMethods: ReadonlySet<string>,
   devWarning: boolean
 ): string {
+  return stripClientClasses(new ParsedModule(code), id, isClientSafeMethodFn, builtinMethods, devWarning).code;
+}
+
+/**
+ * {@link transformCossackClass} over a parsed module. Each step reuses the
+ * module's program while the source is unchanged; a step that rewrote it
+ * (SSG params, @Server input options, method stubs, unused dependencies)
+ * leaves the next step to parse the new source once.
+ */
+function stripClientClasses(
+  module: ParsedModule,
+  id: string,
+  isClientSafeMethodFn: (decorators: string[], methodName: string, builtinMethods: ReadonlySet<string>) => boolean,
+  builtinMethods: ReadonlySet<string>,
+  devWarning: boolean
+): ParsedModule {
   // Strip SSG generateStaticParams bodies from @Page(...) / @Component(...)
   // decorator arguments first, so method-stripping operates on sanitized source.
-  const staticParams = stripSsgStaticParams(code);
-  code = staticParams.code;
-  const serverInput = stripServerActionInput(code);
-  code = serverInput.code;
+  const staticParams = stripSsgStaticParams(module);
+  module = module.with(staticParams.code);
+  const serverInput = stripServerActionInput(module);
+  module = module.with(serverInput.code);
   // Module bindings referenced only by removed code (stubbed bodies, input
   // contracts, SSG param loaders) are removed when nothing else uses them.
   const bodyDependencies = new Set([...serverInput.bindings, ...staticParams.bindings]);
 
-  const program = parseProgram(code);
+  const { code, program } = module;
   if (!program) {
     throw new Error(`[Cossack Security] Could not parse ${id}; refusing to emit unstripped client code.`);
   }
@@ -2244,8 +2420,9 @@ export function transformCossackClass(
   }
   let needsRpcType = false;
 
+  const selected = frameworkClasses(program);
   for (const cls of findClasses(program)) {
-    if (!frameworkClasses(program).has(cls)) continue;
+    if (!selected.has(cls)) continue;
 
     const className = classNameOf(program, cls) ?? 'Anonymous';
 
@@ -2314,7 +2491,7 @@ export function transformCossackClass(
     }
   }
 
-  if (replacements.length === 0) return stripInputDependencies(code, bodyDependencies, serverInput.bindings);
+  if (replacements.length === 0) return stripInputDependencies(module, bodyDependencies, serverInput.bindings);
 
   // The rewritten signatures reference RpcCall; ensure the emitted module has
   // a type-only import available (the bundler erases it in production).
@@ -2330,7 +2507,10 @@ export function transformCossackClass(
   for (const r of [...replacements].sort((a, b) => b.start - a.start)) {
     result = result.slice(0, r.start) + r.replacement + result.slice(r.end);
   }
-  return stripInputDependencies(result, bodyDependencies, serverInput.bindings);
+  // The stubs moved every offset after them, and the dependency pass must see
+  // the stubbed bodies' references rather than the originals: it parses the
+  // stubbed source once.
+  return stripInputDependencies(module.with(result), bodyDependencies, serverInput.bindings);
 }
 
 /**
@@ -2362,7 +2542,7 @@ function findConstructor(cls: any): any | null {
  * Exported for unit testing.
  */
 export function stripSsgGenerateStaticParams(code: string): string {
-  return stripSsgStaticParams(code).code;
+  return stripSsgStaticParams(new ParsedModule(code)).code;
 }
 
 /**
@@ -2372,10 +2552,11 @@ export function stripSsgGenerateStaticParams(code: string): string {
  * decorators all receive the same treatment, because the option is SSG-only
  * whichever decorator carries it.
  */
-function stripSsgStaticParams(code: string): { code: string; bindings: Set<string> } {
+function stripSsgStaticParams(module: ParsedModule): { code: string; bindings: Set<string> } {
   const bindings = new Set<string>();
+  const { code } = module;
   if (!code.includes('generateStaticParams')) return { code, bindings };
-  const program = parseProgram(code);
+  const { program } = module;
   if (!program) return { code, bindings };
 
   // `@Page(options)` may reference a module-level `const options = { ... }`.

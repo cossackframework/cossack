@@ -67,11 +67,22 @@ describe('dialect-aware placeholder scanning', () => {
 });
 
 describe('console row limiting', () => {
-  it('wraps SELECT and WITH statements in a bounded outer query', () => {
-    expect(limitStatementRows('SELECT * FROM t', 'sqlite', 1001))
-      .toBe('SELECT * FROM (\nSELECT * FROM t\n) AS __q LIMIT 1001');
-    expect(limitStatementRows('/* c */ with x as (select 1) select * from x -- tail', 'postgres', 5))
-      .toBe('SELECT * FROM (\n/* c */ with x as (select 1) select * from x -- tail\n) AS __q LIMIT 5');
+  it('appends a LIMIT to queries without their own row-limiting clause', () => {
+    expect(limitStatementRows('SELECT * FROM t;', 'sqlite', 1001))
+      .toBe('SELECT * FROM t\nLIMIT 1001');
+    expect(limitStatementRows('/* c */ with x as (select 1 limit 1) select * from x -- tail', 'postgres', 5))
+      .toBe('/* c */ with x as (select 1 limit 1) select * from x -- tail\nLIMIT 5');
+    expect(limitStatementRows("SELECT 'LIMIT 3' AS `offset` FROM a UNION SELECT b FROM c ORDER BY 1", 'mysql', 5))
+      .toBe("SELECT 'LIMIT 3' AS `offset` FROM a UNION SELECT b FROM c ORDER BY 1\nLIMIT 5");
+  });
+
+  it('wraps queries that already limit, offset or fetch rows in a bounded outer query', () => {
+    expect(limitStatementRows('SELECT * FROM t LIMIT 5000', 'sqlite', 1001))
+      .toBe('SELECT * FROM (\nSELECT * FROM t LIMIT 5000\n) AS __q LIMIT 1001');
+    expect(limitStatementRows('SELECT * FROM t OFFSET 10', 'postgres', 5))
+      .toBe('SELECT * FROM (\nSELECT * FROM t OFFSET 10\n) AS __q LIMIT 5');
+    expect(limitStatementRows('SELECT * FROM t FETCH FIRST 9 ROWS ONLY', 'postgres', 5))
+      .toBe('SELECT * FROM (\nSELECT * FROM t FETCH FIRST 9 ROWS ONLY\n) AS __q LIMIT 5');
   });
 
   it('leaves non-query and table-creating statements untouched', () => {

@@ -55,8 +55,13 @@ export interface SerializedComponentState {
         /** Public path and query for destination-owned hydration. */
         url?: string;
         params?: Record<string, string>;
-        user?: unknown;
     };
+    /**
+     * Browser-visible user (`{ id }` plus `publicUser` fields). Set once, at
+     * the root of the page hydration payload; layout, App and child states
+     * never repeat it.
+     */
+    user?: User;
     /** Provider targets for WebSocket connections */
     providerTargets?: Record<string, string>;
     /** Nested children states */

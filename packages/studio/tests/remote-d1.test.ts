@@ -133,6 +133,38 @@ database_name = "preview-db"
     expect(args.slice(1)).toEqual(['d1', 'execute', 'DB', '--remote', '--json', '--command', 'SELECT 1']);
   });
 
+  it('sends a batch as one Wrangler command and maps one result per statement', async () => {
+    const root = await fixture('{"d1_databases":[{"binding":"DB"}]}');
+    const execute = vi.fn().mockResolvedValue({
+      stdout: JSON.stringify([
+        { success: true, results: [{ n: 1 }], meta: { changes: 0 } },
+        { success: true, results: [], meta: { changes: 1, last_row_id: 7 } },
+      ]),
+      stderr: '',
+      exitCode: 0,
+    });
+    const connection = await createRemoteD1Connection({ projectRoot: root, wranglerCommand: 'wrangler', execute });
+    const results = await connection.batch([
+      { sql: 'SELECT 1 AS n -- first;' },
+      { sql: "DELETE FROM items WHERE name = 'a;b';  " },
+    ]);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]![1]).toEqual([
+      'd1', 'execute', 'DB', '--remote', '--json', '--command',
+      "SELECT 1 AS n -- first\n;\nDELETE FROM items WHERE name = 'a;b'",
+    ]);
+    expect(results.map(({ rows, affectedRows, insertId }) => ({ rows, affectedRows, insertId }))).toEqual([
+      { rows: [{ n: 1 }], affectedRows: 0, insertId: undefined },
+      { rows: [], affectedRows: 1, insertId: '7' },
+    ]);
+    await expect(connection.batch([{ sql: 'SELECT 1' }, { sql: 'SELECT 2' }, { sql: 'SELECT 3' }]))
+      .rejects.toThrow('Wrangler returned 2 result(s) for 3 statement(s).');
+    await expect(connection.batch([{ sql: 'SELECT ?', parameters: [1] }]))
+      .rejects.toThrow('escaped SQLite literals');
+    expect(await connection.batch([])).toEqual([]);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
   it('explains how to fix a project without Wrangler', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cossack-studio-no-wrangler-'));
     directories.push(root);

@@ -153,12 +153,13 @@ class SocketFrameQueue {
     private failed = false;
     private resolvers: Array<(result: IteratorResult<RpcStreamFrame>) => void> = [];
 
-    push(frame: RpcStreamFrame): void {
+    /** `bytes` is the size measured when the frame was routed; it is never re-serialized. */
+    push(frame: RpcStreamFrame, bytes?: number): void {
         if (this.failed) return;
         const resolve = this.resolvers.shift();
         if (resolve) resolve({ value: frame, done: false });
         else {
-            const bytes = new TextEncoder().encode(JSON.stringify(frame)).length;
+            bytes ??= new TextEncoder().encode(JSON.stringify(frame)).length;
             if (this.frames.length >= 256 || this.bytes + bytes > 4 * 1024 * 1024) {
                 this.fail({ v: 1, type: 'error', requestId: frame.requestId,
                     code: 'COSSACK_RPC_BUFFER_EXCEEDED', message: 'RPC consumer fell behind the bounded realtime buffer.' });
@@ -472,11 +473,11 @@ export function proxyServerMethods(component: any, serverMethods: ServerMethodWs
                     `${where ? `: unsupported value at ${where}` : ''}.`, name);
             }
             const apply = createStateApplier(component, requestState, optimisticCall, trace ? () => trace.state() : undefined);
-            wsPendingCalls(ws).set(requestId, (frame, interrupted) => {
+            wsPendingCalls(ws).set(requestId, (frame, interrupted, bytes) => {
                 // Application error frames follow their earlier yields; only local
                 // transport failures discard queued data and interrupt a paused call.
                 if (interrupted && frame.type === 'error') { trace?.response(requestId); queue.fail(frame); }
-                else queue.push(frame);
+                else queue.push(frame, bytes);
             });
             try {
                 ws.send(message);

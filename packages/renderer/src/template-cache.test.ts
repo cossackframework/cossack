@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { html, render, renderToString, component, nothing } from './cossack-html';
 import { CossackElement } from './cossack-element';
 import { css } from './css';
-import { templateAnalysisStats } from './template-analysis';
+import { analyzeTemplate, getTemplateAnalysis, templateAnalysisStats } from './template-analysis';
+import { ifDefined, live } from './directives';
 
 describe('template analysis cache', () => {
   class Row extends CossackElement {
@@ -46,5 +47,34 @@ describe('template analysis cache', () => {
     expect(renderToString(tpl('b'))).toBe('<div class="a b" id="x"></div>');
     expect(renderToString(tpl(nothing))).toBe('<div id="x"></div>');
     expect(renderToString(tpl('c'))).toBe('<div class="a c" id="x"></div>');
+  });
+
+  it('shares one frozen analysis that renders with any values leave unchanged', () => {
+    const tpl = (cls: unknown, title: unknown, spread: unknown, text: unknown) => html`<div class="a ${cls}" title=${title} ...=${spread}>
+      <input value="d" .value=${text}><textarea .value=${text}></textarea><b ?hidden=${cls}>${text}</b></div>`;
+    const variants: [unknown, unknown, unknown, unknown][] = [
+      ['b', 't', { class: 'merged', id: 'x' }, 'one'],
+      [nothing, nothing, nothing, ''],
+      [false, ifDefined(undefined), { '.value': 'v', '?open': true }, ['a', html`<i>${1}</i>`]],
+      [live('c'), live('t'), null, 0],
+    ];
+    const { strings } = tpl(...variants[0]);
+    for (const values of variants) {
+      renderToString(tpl(...values));
+      renderToString(tpl(...values), { hydrate: true });
+      render(tpl(...values), document.createElement('div'));
+    }
+    const cached = getTemplateAnalysis(strings);
+    expect(getTemplateAnalysis(strings)).toBe(cached);
+    expect(cached).toEqual(analyzeTemplate(strings));
+    expect(Object.isFrozen(cached)).toBe(true);
+    expect(Object.isFrozen(cached.strings)).toBe(true);
+    expect(Object.isFrozen(cached.bindings)).toBe(true);
+    expect(cached.bindings.every((binding) => Object.isFrozen(binding))).toBe(true);
+    expect(Object.isFrozen(cached.attributeGroups)).toBe(true);
+    const groups = cached.attributeGroups.filter((group) => group !== undefined);
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.every((group) => Object.isFrozen(group) && Object.isFrozen(group!.indices))).toBe(true);
+    expect(() => { (cached.bindings as unknown[]).push({ kind: 'node' }); }).toThrow(TypeError);
   });
 });

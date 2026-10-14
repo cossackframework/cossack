@@ -81,7 +81,8 @@ Pass a real `ServiceScope` when the component injects layout services. Set
 Otherwise dispose the externally owned scope yourself. State uses the normal
 hydration envelope, including `public` and any production metadata. Bootstrap
 options such as context, user and environment retain their production meaning.
-Browser identity comes from hydrated metadata.
+In the browser, `this.user` comes from the `user` option. Without it, it comes
+from `state.user`, where the page hydration payload keeps the user.
 
 `click(selector)` activates the element like a user click. A disabled form
 control, or a control inside a disabled `<fieldset>`, ignores the click, so its

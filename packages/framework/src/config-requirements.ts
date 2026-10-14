@@ -132,38 +132,63 @@ function matchesBinding(value: unknown, kind: BindingKind): boolean {
   if (kind === 'object') return true;
   return METHODS[kind].every(method => typeof (value as Record<string, unknown>)[method] === 'function');
 }
-/** Validate all active requirements before evaluating factories; values remain private. */
-export function checkConfigRequirements(collection: ConfigRequirementCollection, envBindings: Record<string, unknown>,
-  context: ConfigRequirementContext) {
-  const diagnostics: ConfigRequirementDiagnostic[] = [];
-  const variables: Record<string, string | number | boolean> = Object.create(null);
-  const variableTypes: Record<string, VariableType> = Object.create(null);
-  const unverifiedSecrets = new Set<string>();
+/**
+ * The requirement rules active in one runtime, normalized and merged across
+ * config files. Depends only on the static metadata and the runtime, so callers
+ * may reuse it across requests. Frozen plain data.
+ */
+export interface ConfigRequirementPlan {
+  readonly variables: readonly (readonly [string, VariableRequirement])[];
+  readonly bindings: readonly (readonly [string, BindingRequirement])[];
+  /** Metadata problems, reported before any value check. */
+  readonly problems: readonly Readonly<Pick<ConfigRequirementDiagnostic, 'code' | 'kind' | 'name'> & { reason: string }>[];
+}
+
+/** Normalize and merge requirement metadata for one runtime, without reading any values. */
+export function planConfigRequirements(collection: ConfigRequirementCollection, runtime: ConfigRuntime): ConfigRequirementPlan {
+  const problems: ConfigRequirementPlan['problems'][number][] = [];
+  const invalid = () => problems.push(Object.freeze({ code: 'COSSACK_CONFIG_REQUIREMENTS_INVALID', kind: 'metadata' as const, name: 'requirements', reason: 'has invalid metadata' }));
   const active: { variables: Record<string, VariableRequirement>; bindings: Record<string, BindingRequirement> } = {
     variables: Object.create(null), bindings: Object.create(null),
   };
   let metadataEntries: unknown[];
   try { metadataEntries = Object.values(record(collection)); }
-  catch { diagnostics.push(diagnostic('COSSACK_CONFIG_REQUIREMENTS_INVALID', 'metadata', 'requirements', 'has invalid metadata', context)); metadataEntries = []; }
+  catch { invalid(); metadataEntries = []; }
   for (const metadata of metadataEntries) {
     let normalized: ConfigRequirements;
     try { normalized = normalizeConfigRequirements(metadata); }
-    catch { diagnostics.push(diagnostic('COSSACK_CONFIG_REQUIREMENTS_INVALID', 'metadata', 'requirements', 'has invalid metadata', context)); continue; }
+    catch { invalid(); continue; }
     for (const group of ['variables', 'bindings'] as const) {
       for (const [name, rule] of Object.entries(normalized[group] ?? {})) {
-        if (rule.runtimes && !rule.runtimes.includes(context.runtime)) continue;
+        if (rule.runtimes && !rule.runtimes.includes(runtime)) continue;
         const rules = active[group] as Record<string, VariableRequirement & BindingRequirement>;
         const previous = rules[name];
         if (previous && ((group === 'variables' && (previous.type !== (rule as VariableRequirement).type || previous.coerce !== (rule as VariableRequirement).coerce))
           || (group === 'bindings' && previous.kind !== (rule as BindingRequirement).kind))) {
-          diagnostics.push(diagnostic('COSSACK_CONFIG_REQUIREMENT_CONFLICT', group === 'variables' ? 'variable' : 'binding', name, 'has incompatible declarations', context)); continue;
+          problems.push(Object.freeze({ code: 'COSSACK_CONFIG_REQUIREMENT_CONFLICT', kind: group === 'variables' ? 'variable' as const : 'binding' as const, name, reason: 'has incompatible declarations' })); continue;
         }
         rules[name] = { ...rule, required: previous?.required === true || rule.required === true,
           ...(group === 'variables' ? { secret: previous?.secret === true || (rule as VariableRequirement).secret === true } : {}) } as VariableRequirement & BindingRequirement;
       }
     }
   }
-  for (const [name, rule] of Object.entries(active.variables)) {
+  const entries = <T extends RequirementBase>(rules: Record<string, T>) =>
+    Object.freeze(Object.entries(rules).map(([name, rule]) => Object.freeze([name, Object.freeze({ ...rule, ...(rule.runtimes ? { runtimes: Object.freeze([...rule.runtimes]) } : {}) })] as const)));
+  return Object.freeze({ variables: entries(active.variables), bindings: entries(active.bindings), problems: Object.freeze(problems) });
+}
+
+/**
+ * Validate all active requirements before evaluating factories; values remain
+ * private. Pass a `plan` from {@link planConfigRequirements} for this
+ * collection and runtime to skip normalizing the metadata again.
+ */
+export function checkConfigRequirements(collection: ConfigRequirementCollection, envBindings: Record<string, unknown>,
+  context: ConfigRequirementContext, plan: ConfigRequirementPlan = planConfigRequirements(collection, context.runtime)) {
+  const diagnostics: ConfigRequirementDiagnostic[] = plan.problems.map(problem => diagnostic(problem.code, problem.kind, problem.name, problem.reason, context));
+  const variables: Record<string, string | number | boolean> = Object.create(null);
+  const variableTypes: Record<string, VariableType> = Object.create(null);
+  const unverifiedSecrets = new Set<string>();
+  for (const [name, rule] of plan.variables) {
     variableTypes[name] = rule.type;
     let value: unknown;
     try { value = Object.hasOwn(envBindings, name) ? envBindings[name] : undefined; }
@@ -182,7 +207,7 @@ export function checkConfigRequirements(collection: ConfigRequirementCollection,
     if (parsed === undefined) diagnostics.push(diagnostic('COSSACK_CONFIG_VARIABLE_INVALID', 'variable', name, `must be a ${rule.type}${rule.coerce ? ' using the documented coercion rules' : ''}`, context));
     else variables[name] = parsed;
   }
-  for (const [name, rule] of Object.entries(active.bindings)) {
+  for (const [name, rule] of plan.bindings) {
     let value: unknown;
     try { value = context.mode === 'declarations' ? context.bindingKinds && Object.hasOwn(context.bindingKinds, name) ? context.bindingKinds[name] : undefined : Object.hasOwn(envBindings, name) ? envBindings[name] : undefined; }
     catch { diagnostics.push(diagnostic('COSSACK_CONFIG_VALUE_UNREADABLE', 'binding', name, 'cannot be read safely', context)); continue; }

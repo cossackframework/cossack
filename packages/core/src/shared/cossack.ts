@@ -24,7 +24,6 @@ import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, type RpcStreamFrame, describeUnsupportedStateValue } from './rpc-stream';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
-import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
@@ -72,7 +71,7 @@ import {
     getForwardedServerMethodClass,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
-import { collectReactiveMetadata } from './reactive-metadata';
+import { collectReactiveMetadata, collectTaskRegistrations } from './reactive-metadata';
 import { noteOptimisticWrite } from './optimistic-state';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath, toRawStoreValue } from './store';
 import { snapshotNavigationDraft } from './navigation-draft';
@@ -89,7 +88,7 @@ import type {
     CossackInternalState,
     CossackRuntimeInfo,
 } from './component-types';
-import { toPublicUser, type User } from './user';
+import type { User } from './user';
 import type { RedirectStatusCode } from 'hono/utils/http-status';
 import { ServerResourceSerializationError, type ServerResourceOptions, type ServerResourceName, type ServerResourceValue, type ServerResourceStatus, type ServerResourceReconciliation } from './server-resource';
 import type { ServiceClass } from './container';
@@ -1133,9 +1132,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         } else {
             const clientInitialState = initialState || this.getInitialStateFromWindow();
             this.runtime = (clientInitialState?.runtime as CossackRuntimeInfo | undefined) ?? { platform: 'web' };
-            // Access metadata from the new state structure
+            // The page payload carries the user once, at its root. The framework
+            // passes it to layouts and the App, whose own states omit it.
+            this.user = user ?? clientInitialState?.user;
             const metadata = clientInitialState?.metadata || {};
-            this.user = metadata.user;
             this._cossack_params = metadata.params || {};
             this._cossack_path = metadata.pathname || window.location.pathname;
             this._cossack_url = new URL(metadata.url ?? window.location.href, window.location.href).href;
@@ -1467,9 +1467,13 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         };
     }
 
-    /** @internal Replace SSR resource ownership in a retained browser component. */
+    /**
+     * @internal Replace SSR resource ownership in a retained browser component.
+     * `user` is the destination payload's root user: component states omit it.
+     */
     @Client()
-    public _frameworkHydrateNavigationResources(state: SerializedComponentState, pathname: string, destination: string): void {
+    public _frameworkHydrateNavigationResources(state: SerializedComponentState, pathname: string, destination: string,
+        user: User | undefined): void {
         if (this.isServer || this._phase === LifecyclePhase.Destroyed) return;
         const resources = new Map<string, ServerResourceEntry>();
         for (const [name, resource] of Object.entries(state.serverResources ?? {})) {
@@ -1481,7 +1485,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         this._serverResources = resources;
         this.updatePath(pathname, destination);
         this._cossack_params = { ...state.metadata?.params };
-        const user = state.metadata?.user as User | undefined;
         this.user = user;
         this.provide(UserContext, user);
         this._serviceScope?.bindRequest({ context: this._ambientContext(), user: this._ambientUser(), env: this.env });
@@ -1825,20 +1828,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.isRunningTasks) return false;
         this.isRunningTasks = true;
         try {
-            // Gather own declarations across inheritance. A child declaration
-            // replaces the same method's kind/track contract, without dropping siblings.
-            const constructors: Function[] = [];
-            for (let ctor = this.constructor; ctor; ctor = Object.getPrototypeOf(ctor)) constructors.unshift(ctor);
-            const registrations = new Map<string | symbol, TaskRegistration & { kind: string }>();
-            for (const ctor of constructors) {
-                for (const kind of ['tasks', 'server-tasks', 'client-tasks']) {
-                    for (const entry of (Reflect.getOwnMetadata(`cossack:${kind}`, ctor) || []) as TaskRegistration[]) {
-                        registrations.set(entry.propertyKey, { ...entry, kind });
-                    }
-                }
-            }
-            const allTasks = [...registrations.values()].filter(entry => entry.kind === 'tasks' ||
-                (this.isServer ? entry.kind === 'server-tasks' : entry.kind === 'client-tasks'));
+            // Merged across inheritance once per class, not on every run.
+            const allTasks = collectTaskRegistrations(this.constructor, this.isServer);
             const isFilteredRun = changedPaths !== undefined;
             // Each task runs under its own cancellation identity. Dependency
             // changes abort the previous signal; owned commits gate reactive
@@ -2222,18 +2213,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // server$ results too so they neither refetch nor flash `initial`.
         // Client only: on the server, serialized state may come from a client.
         if (!this.isServer && serializedState?.serverResources) this._hydrateServerResources(serializedState.serverResources);
-        const { state: stateProperties, store: storeProperties,
-            clientState: clientStateProperties, clientStore: clientStoreProperties } = collectReactiveMetadata(this.constructor);
+        const { state: stateProperties, store: storeProperties, clientState: clientStateProperties,
+            clientStore: clientStoreProperties, keys: allKeys } = collectReactiveMetadata(this.constructor);
 
-        const stateKeys = Object.keys(stateProperties);
-        const clientKeys = Array.from(clientStateProperties) as string[];
-        const storeKeys = Object.keys(storeProperties);
-        const clientStoreKeys = Array.from(clientStoreProperties) as string[];
-        const allKeys = [...new Set([...stateKeys, ...clientKeys, ...storeKeys, ...clientStoreKeys])];
-
-        // Determine the state source based on environment
-        // Ensure stateSource is always a Record<string, unknown> for type-safe indexing
-        const stateSource: Record<string, unknown> = this.isServer
+        // Determine the state source based on environment. Resolved only when
+        // a field still needs initialization: willUpdate() calls this on every
+        // update, when every field is normally initialized already.
+        let source: Record<string, unknown> | undefined;
+        const stateSource = (): Record<string, unknown> => source ??= this.isServer
             ? (serializedState?.public || {})
             : (serializedState?.public || (this._id === 'root' ? this.getInitialStateFromWindow()?.public : undefined) || {});
 
@@ -2270,11 +2257,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
 
             // Only sync properties that are NOT client-only
-            if (!isClientOnly && stateSource && stateSource[key] !== undefined) {
+            const hydrated = isClientOnly ? undefined : stateSource()[key];
+            if (hydrated !== undefined) {
                 if (import.meta.env?.DEV && !this.isServer) {
-                    diagnoseHydrationState(value, stateSource[key], String(key), this.hydrationMetadata);
+                    diagnoseHydrationState(value, hydrated, String(key), this.hydrationMetadata);
                 }
-                value = stateSource[key];
+                value = hydrated;
             }
 
             // Store the raw value in the appropriate container. Object/array
@@ -3221,11 +3209,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
     /**
      * Serialize the component's state for transmission between server and client.
      * Returns a unified SerializedComponentState containing public state, metadata, and children.
-     * The user is reduced to its browser-visible projection (`{ id }` by
-     * default). Pass `{ user: false }` for snapshots that outlive the request,
-     * such as Durable Object storage.
+     * It never contains the user: the page hydration payload carries the
+     * browser-visible user once, at its root (`SerializedComponentState.user`).
      */
-    public getInitialState(options: { user?: boolean } = {}): SerializedComponentState {
+    public getInitialState(): SerializedComponentState {
         const ambient = this._ambientContext() as Context | undefined;
         const params = ambient?.req.param() || {};
         const requestUrl = ambient?.req.url;
@@ -3239,7 +3226,6 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
                 pathname: ambient?.req.path,
                 url: destination ? destination.pathname + destination.search : undefined,
                 params,
-                ...(options.user === false ? {} : { user: toPublicUser(this._ambientUser()) }),
             },
         };
         if (this._ownsServiceScope) {
@@ -3274,7 +3260,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // Add nested children states
         const childrenState: Record<string, SerializedComponentState> = {};
         for (const [id, comp] of this.activeComponents) {
-            childrenState[id] = comp.getInitialState(options);
+            childrenState[id] = comp.getInitialState();
         }
         serializedState.children = childrenState;
 

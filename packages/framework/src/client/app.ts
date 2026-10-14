@@ -396,19 +396,20 @@ export async function createClientApp({
   let currentPageState: any;
   let committedUrl = window.location.href;
   let publication: object | undefined;
+  // The payload carries the user once, at its root (`pageState.user`).
   const ownershipKey = (state: any) => JSON.stringify([
-    state?.metadata?.user ?? null, state?.runtime ?? null,
+    state?.user ?? null, state?.runtime ?? null,
     state?.transport ?? 'http', state?.scopeKey ?? null, state?.providerTargets ?? null,
   ]);
   const layoutOwnership = new WeakMap<Cossack, string>();
   const layoutOwnershipKey = (state: any, pageState: any, Component: Function) => ownershipKey({
-    metadata: state?.metadata, runtime: pageState?.runtime, scopeKey: pageState?.scopeKey,
+    user: pageState?.user, runtime: pageState?.runtime, scopeKey: pageState?.scopeKey,
     // The layout owns its transport. Changing a child page from SSE to HTTP
     // does not revoke a retained layout's services or their in-flight calls.
     transport: state?.transport ?? Reflect.getMetadata('page:options', Component)?.transport ?? 'http',
     providerTargets: state?.providerTargets,
   });
-  const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? { metadata: state?.metadata }, state, AppComponent);
+  const rootOwnershipKey = (state: any) => layoutOwnershipKey(state?._app_state ?? {}, state, AppComponent);
   let rootOwnership = rootOwnershipKey(window.__INITIAL_STATE__);
 
   const composeContent = () => {
@@ -461,6 +462,7 @@ export async function createClientApp({
   await appInstance.bootstrap({
     container: containerEl as Element,
     initialState: { ...initialAppState, metadata: { ...initialAppState?.metadata, url: window.location.href } },
+    user: window.__INITIAL_STATE__.user,
     skipInit: true,
     deferMount: true,
   });
@@ -557,7 +559,7 @@ export async function createClientApp({
         root.updateHead = () => { if (appInstance === root) syncHead(); };
         const appState = initialState._app_state ?? initialState;
         await root.bootstrap({ container: containerEl as HTMLElement, initialState: { ...appState,
-          metadata: { ...appState?.metadata, url: destinationUrl } }, skipInit: true, stageNavigation: true });
+          metadata: { ...appState?.metadata, url: destinationUrl } }, user: initialState.user, skipInit: true, stageNavigation: true });
         assertCurrent();
       }
       if (nextApp === appInstance) trace?.bindComponent?.(nextApp, 'app');
@@ -582,7 +584,7 @@ export async function createClientApp({
           hookUpdates(instance);
           await instance.bootstrap({ initialState: { ...state,
             metadata: { ...state?.metadata, url: destinationUrl }, componentRouteId },
-            skipInit: true, stageNavigation: true });
+            user: initialState.user, skipInit: true, stageNavigation: true });
           assertCurrent();
           layoutOwnership.set(instance, layoutOwnershipKey(state, initialState, Layout));
         } else trace?.bindComponent?.(instance, 'layout');
@@ -675,12 +677,12 @@ export async function createClientApp({
           clientServiceRoot = nextRoot;
           rootOwnership = nextRootOwnership;
           onMutation?.(initialState);
-          appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl);
+          appInstance._frameworkHydrateNavigationResources?.(initialState._app_state ?? initialState, pathname, destinationUrl, initialState.user);
           appInstance.updatePath(pathname, destinationUrl);
           assertCurrent();
           for (const { path, state } of layoutStack) {
             const instance = nextLayouts.get(path)!;
-            if (!staged.has(instance)) instance._frameworkHydrateNavigationResources?.(state ?? {}, pathname, destinationUrl);
+            if (!staged.has(instance)) instance._frameworkHydrateNavigationResources?.(state ?? {}, pathname, destinationUrl, initialState.user);
             instance.updatePath(pathname, destinationUrl);
             assertCurrent();
           }

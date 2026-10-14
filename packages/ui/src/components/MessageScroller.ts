@@ -18,6 +18,8 @@ export type MessageScrollerProps = Omit<GlobalAttributes<HTMLDivElement>, 'id'> 
 };
 
 type ReadingAnchor = { element: Element; offset: number };
+/** Row edges in scroll-content coordinates: viewport-relative top plus scrollTop, so scrolling never changes them. */
+type RowBox = { top: number; bottom: number };
 function scrollerListener(supplied: unknown, own: (event: Event) => void) {
     const listener: EventListener = event => {
         if (typeof supplied === 'function') supplied(event);
@@ -48,6 +50,8 @@ export class MessageScroller extends Cossack {
     private lastTop = 0;
     private lastMaximum = 0;
     private anchors: ReadingAnchor[] = [];
+    /** Row geometry cache. Observed resizes and mutations, and every reconcile, clear it. */
+    private boxes = new Map<Element, RowBox>();
     private focusedBeforeRender?: HTMLElement;
 
     render() {
@@ -120,16 +124,31 @@ export class MessageScroller extends Cossack {
         if (!window) { this.measureAnchors(); return; }
         this.anchorFrame ??= window.requestAnimationFrame(() => { this.anchorFrame = undefined; this.measureAnchors(); });
     }
+    /** Drop cached row geometry and reconcile on the next frame. */
+    private geometryChanged() { this.boxes.clear(); this.schedule(); }
     private measureAnchors() {
         const vp = this.viewport;
         if (this.anchorFrame !== undefined) { vp?.ownerDocument.defaultView?.cancelAnimationFrame(this.anchorFrame); this.anchorFrame = undefined; }
         if (!vp?.isConnected || !vp.clientHeight) return;
-        const top = this.innerTop(), bottom = top + vp.clientHeight, rows = this.rows();
+        // Work in scroll-content coordinates: a scroll moves the viewport window,
+        // not the cached rows, so only rows never measured since the last geometry change are read.
+        const scrollTop = vp.scrollTop, top = scrollTop, bottom = top + vp.clientHeight, rows = this.rows();
+        let origin: number | undefined;
+        const box = (element: Element): RowBox => {
+            let cached = this.boxes.get(element);
+            if (!cached) {
+                origin ??= this.innerTop() - scrollTop;
+                const rect = element.getBoundingClientRect();
+                cached = { top: rect.top - origin, bottom: rect.bottom - origin };
+                this.boxes.set(element, cached);
+            }
+            return cached;
+        };
         const measure = (from: number) => {
             const anchors: ReadingAnchor[] = [];
             for (let index = from; index < rows.length; index++) {
-                const rect = rows[index].getBoundingClientRect();
-                if (rect.height <= 0) continue;
+                const rect = box(rows[index]);
+                if (rect.bottom - rect.top <= 0) continue;
                 if (rect.top >= bottom) break;
                 if (rect.bottom > top) anchors.push({ element: rows[index], offset: rect.top - top });
             }
@@ -140,19 +159,19 @@ export class MessageScroller extends Cossack {
         let low = 0, high = rows.length;
         while (low < high) {
             const middle = (low + high) >> 1;
-            let probe = middle, rect = rows[probe].getBoundingClientRect();
-            while (rect.height <= 0 && probe + 1 < high) rect = rows[++probe].getBoundingClientRect();
-            if (rect.height <= 0 || rect.bottom > top) high = middle;
+            let probe = middle, rect = box(rows[probe]);
+            while (rect.bottom - rect.top <= 0 && probe + 1 < high) rect = box(rows[++probe]);
+            if (rect.bottom - rect.top <= 0 || rect.bottom > top) high = middle;
             else low = probe + 1;
         }
         let anchors = measure(low);
         // Content laid out out of DOM order (CSS order, reversed flex): scan everything.
         if (!anchors.length && rows.length) anchors = rows.flatMap(element => {
-            const rect = element.getBoundingClientRect();
-            return rect.height > 0 && rect.bottom > top && rect.top < bottom ? [{ element, offset: rect.top - top }] : [];
+            const rect = box(element);
+            return rect.bottom - rect.top > 0 && rect.bottom > top && rect.top < bottom ? [{ element, offset: rect.top - top }] : [];
         });
         this.anchors = anchors;
-        this.anchorTop = vp.scrollTop;
+        this.anchorTop = scrollTop;
     }
     private updateJump() {
         if (!this.viewport?.isConnected) return;
@@ -180,6 +199,7 @@ export class MessageScroller extends Cossack {
     private reconcile() {
         const vp = this.viewport, content = this.content;
         if (!this.disposeObservers || !vp?.isConnected || !content || !vp.clientHeight) return;
+        this.boxes.clear();
         const rows = new Set(this.rows());
         for (const row of this.observedRows) if (!rows.has(row)) { this.resizeObserver?.unobserve(row); this.observedRows.delete(row); }
         for (const row of rows) if (!this.observedRows.has(row)) { this.resizeObserver?.observe(row); this.observedRows.add(row); }
@@ -202,11 +222,17 @@ export class MessageScroller extends Cossack {
             if (!this.disposeObservers) {
                 this.following = (this.props.initialPosition ?? 'end') === 'end' && viewport.scrollTop === 0 && !viewport.contains(viewport.ownerDocument.activeElement);
                 this.remember();
-                const resize = new ResizeObserver(() => this.schedule()); this.resizeObserver = resize;
+                const resize = new ResizeObserver(() => this.geometryChanged()); this.resizeObserver = resize;
                 resize.observe(viewport); resize.observe(this.content);
-                const mutations = new MutationObserver(() => this.schedule());
+                const mutations = new MutationObserver(() => this.geometryChanged());
                 mutations.observe(this.content, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
-                this.disposeObservers = () => { resize.disconnect(); mutations.disconnect(); };
+                // Finished transforms and transitions move rows without resizing them.
+                const moved = () => this.boxes.clear(), content = this.content;
+                for (const type of ['transitionend', 'animationend'] as const) content.addEventListener(type, moved);
+                this.disposeObservers = () => {
+                    resize.disconnect(); mutations.disconnect();
+                    for (const type of ['transitionend', 'animationend'] as const) content.removeEventListener(type, moved);
+                };
             }
             const old = this.focusedBeforeRender; this.focusedBeforeRender = undefined;
             if (old && (viewport.ownerDocument.activeElement === old || viewport.ownerDocument.activeElement === viewport.ownerDocument.body)) {
@@ -238,6 +264,6 @@ export class MessageScroller extends Cossack {
         if (this.frame !== undefined) this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.frame);
         if (this.anchorFrame !== undefined) this.viewport?.ownerDocument.defaultView?.cancelAnimationFrame(this.anchorFrame);
         this.frame = undefined; this.anchorFrame = undefined; this.disposeObservers?.(); this.disposeObservers = undefined; this.resizeObserver = undefined;
-        this.observedRows.clear(); this.anchors = []; this.viewport = undefined; this.content = undefined; this.jumpButton = undefined; this.focusedBeforeRender = undefined;
+        this.observedRows.clear(); this.anchors = []; this.boxes.clear(); this.viewport = undefined; this.content = undefined; this.jumpButton = undefined; this.focusedBeforeRender = undefined;
     }
 }

@@ -96,8 +96,8 @@ export class DurableObjectRuntime implements CossackServerRuntime {
 
     async persistState(): Promise<void> {
         if (!this.isStateful) return;
-        // Persisted snapshots outlive the request: never store a user in them.
-        const stateToPersist = this.component.getInitialState({ user: false });
+        // Persisted snapshots outlive the request. Component state never holds the user.
+        const stateToPersist = this.component.getInitialState();
         await this.state.storage.put('componentState', stateToPersist);
     }
 

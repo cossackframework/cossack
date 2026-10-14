@@ -80,8 +80,12 @@ values. Source identities and static declarations remain visible. Dynamic runtim
 behavior, built artifacts, credentials and remote readiness remain unverified.
 All tool annotations declare read-only, non-destructive, idempotent local work.
 
-Each call owns a worker. Cancellation, shutdown or a 30-second deadline terminates
-that worker, including synchronous compiler work. At most four calls run at once.
+Each call owns a worker while it runs. Cancellation, shutdown or a 30-second
+deadline terminates that worker, including synchronous compiler work. At most four
+calls run at once. A worker that finished cleanly is reused by the next call, so
+dependencies such as Wrangler load once. Every call still reads project files
+fresh. Idle workers are replaced when `package.json`, the lockfile or the installed
+Wrangler changes, after a failed or cancelled call, and after five idle minutes.
 Results larger than 4 MiB fail with `COSSACK_MCP_RESULT_TOO_LARGE`. Dependency logs
 are drained inside workers and cannot corrupt protocol output. EOF, SIGINT and
 SIGTERM close the server and its active workers.

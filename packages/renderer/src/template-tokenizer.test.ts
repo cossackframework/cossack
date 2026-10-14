@@ -189,8 +189,8 @@ describe('analyzeTemplate', () => {
 
   it('records attribute groups for nothing removal', () => {
     const { attributeGroups } = analyzeTemplate(['<div  class="a ', ' b ', '" id=', '>'] as unknown as TemplateStringsArray);
-    expect(attributeGroups.get(0)).toEqual({ indices: [0, 1], prefix: '  class="a ', suffixLength: 1 });
-    expect(attributeGroups.get(2)).toEqual({ indices: [2], prefix: ' id=', suffixLength: 0 });
+    expect(attributeGroups[0]).toEqual({ indices: [0, 1], prefix: '  class="a ', suffixLength: 1 });
+    expect(attributeGroups[2]).toEqual({ indices: [2], prefix: ' id=', suffixLength: 0 });
   });
 
   it('inserts the scope attribute only into static opening tags', () => {

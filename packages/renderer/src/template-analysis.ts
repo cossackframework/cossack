@@ -49,23 +49,52 @@ export interface AttributeBinding {
 
 /** An attribute that contains bindings, used to drop it whole for `nothing`. */
 export interface AttributeGroup {
-  indices: number[];
+  readonly indices: readonly number[];
   /** Static text from the whitespace before the name up to the first binding. */
-  prefix: string;
+  readonly prefix: string;
   /** Static text after the last binding that still belongs to the attribute. */
-  suffixLength: number;
+  readonly suffixLength: number;
 }
 
+/**
+ * Everything the renderers need to know about a template's static strings.
+ * It never depends on values, so one analysis is shared by every render and
+ * every instance of the template. It is deeply frozen: a render that tried to
+ * write to it would corrupt every later render, so that throws instead.
+ */
 export interface TemplateAnalysis {
   /** Template strings with the style scope attribute added to static tags. */
-  strings: readonly string[];
-  bindings: BindingInfo[];
-  /** Keyed by the first binding index of each attribute. */
-  attributeGroups: Map<number, AttributeGroup>;
+  readonly strings: readonly string[];
+  readonly bindings: readonly Readonly<BindingInfo>[];
+  /**
+   * Indexed by binding: the attribute whose first binding has that index, or
+   * undefined. Same length as `bindings`.
+   */
+  readonly attributeGroups: readonly (AttributeGroup | undefined)[];
 }
 
 /** @internal Counts analysis runs so tests can verify the cache. */
 export const templateAnalysisStats = { runs: 0 };
+
+// Tagged-template strings arrays are identity-stable per call site, so the
+// analysis is computed once per (strings, style scope).
+const analyses = new WeakMap<TemplateStringsArray, Map<string, TemplateAnalysis>>();
+
+/** The shared analysis for a template's strings in a style scope. */
+export const getTemplateAnalysis = (input: TemplateStringsArray, scopeId?: string): TemplateAnalysis => {
+  let byScope = analyses.get(input);
+  if (!byScope) {
+    byScope = new Map();
+    analyses.set(input, byScope);
+  }
+  const key = scopeId ?? '';
+  let analysis = byScope.get(key);
+  if (!analysis) {
+    analysis = analyzeTemplate(input, scopeId);
+    byScope.set(key, analysis);
+  }
+  return analysis;
+};
 
 const enum State {
   Data,
@@ -109,7 +138,7 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
   const scopeAttr = scopeId ? ` data-cossack-scope="${scopeId}"` : '';
   const strings: string[] = [];
   const bindings: BindingInfo[] = [];
-  const attributeGroups = new Map<number, AttributeGroup>();
+  const attributeGroups = Array.from<AttributeGroup | undefined>({ length: Math.max(input.length - 1, 0) });
 
   let state = State.Data;
   let tagName = '';
@@ -136,8 +165,8 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
       if (attr && attr.indices.length > 0 && attr.stringIndex === attr.indices[0]) {
         const last = attr.indices[attr.indices.length - 1];
         // The suffix lives at the start of the string after the last binding.
-        attributeGroups.set(attr.indices[0], {
-          indices: attr.indices,
+        attributeGroups[attr.indices[0]] = Object.freeze({
+          indices: Object.freeze(attr.indices),
           prefix: attr.prefix,
           suffixLength: i === last + 1 ? endInThisString : 0,
         });
@@ -354,5 +383,11 @@ export const analyzeTemplate = (input: readonly string[], scopeId?: string): Tem
     strings.push(out);
   }
 
-  return { strings, bindings, attributeGroups };
+  // `directValue` is resolved when each tag closes, so freeze only now.
+  for (const binding of bindings) Object.freeze(binding);
+  return Object.freeze({
+    strings: Object.freeze(strings),
+    bindings: Object.freeze(bindings),
+    attributeGroups: Object.freeze(attributeGroups),
+  });
 };
