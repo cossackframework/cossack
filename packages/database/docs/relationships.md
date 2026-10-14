@@ -137,6 +137,9 @@ class User extends BaseEntity {
 }
 ```
 
+Load either side with `relations`. `User.find({ relations: ["profile"] })` sets
+`profile` to the matching profile, or `null` when there is none.
+
 ## Many-to-many
 
 Put `@JoinTable()` on exactly one side:
