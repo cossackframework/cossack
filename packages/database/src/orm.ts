@@ -268,7 +268,8 @@ export class ORM {
     return encodeValue(column, value, this.driver.dialect);
   }
 
-  hydrate<T extends BaseEntity>(metadata: EntityMetadata, row: Record<string, unknown>): T {
+  /** Builds an entity from a database row and awaits its `@AfterLoad` hooks. */
+  async hydrate<T extends BaseEntity>(metadata: EntityMetadata, row: Record<string, unknown>): Promise<T> {
     const entity = new metadata.target() as T;
     const snapshot: Record<string, unknown> = {};
     for (const column of metadata.columns) {
@@ -288,7 +289,7 @@ export class ORM {
       raw: { ...row },
       isNew: false,
     });
-    void this.invokeHooks(entity, metadata, "after-load");
+    await this.invokeHooks(entity, metadata, "after-load");
     return entity;
   }
 
@@ -332,6 +333,10 @@ export class ORM {
     }
 
     await this.invokeHooks(entity, metadata, "before-update");
+    // Cascaded relations may receive their keys here, and a reassigned owning
+    // relation updates its join column, so both must run before change detection.
+    await this.saveCascades(entity, metadata, "update");
+    this.syncRelationColumns(entity, metadata, state.original);
     const changes: Record<string, unknown> = {};
     for (const column of metadata.columns) {
       if (!column.update || column.primary || column.updateDate || column.version) continue;
@@ -352,8 +357,6 @@ export class ORM {
       changes[version.propertyName] = oldVersion + 1;
       (entity as unknown as Record<string, unknown>)[version.propertyName] = oldVersion + 1;
     }
-    await this.saveCascades(entity, metadata, "update");
-    this.syncRelationColumns(entity, metadata);
     const relationChanged = await this.syncJoinTables(entity, metadata, "update");
     if (Object.keys(changes).length) {
       const result = await this.model(metadata.target).update(where, changes);
@@ -432,9 +435,14 @@ export class ORM {
         }
       } else if (relation.kind === "one-to-many") {
         const inverse = targetMetadata.relations.find((candidate) => candidate.propertyName === relation.inverseProperty);
-        const ownerColumn = metadata.primaryColumns[0];
+        // The child's join column references this field, which is not always the primary key
+        // (for example `@JoinColumn({ referencedColumnName: "email" })`).
+        const ownerColumn = inverse?.referencedProperty
+          ? metadata.columnByProperty.get(inverse.referencedProperty)
+          : metadata.primaryColumns[0];
         if (!inverse?.joinColumn || !ownerColumn) continue;
-        const keys = entities.map((entity) => (entity as unknown as Record<string, unknown>)[ownerColumn.propertyName]);
+        const keys = [...new Set(entities.map((entity) => (entity as unknown as Record<string, unknown>)[ownerColumn.propertyName])
+          .filter((value) => value != null))];
         const loaded = await this.chunkedFindPhysical(targetMetadata, inverse.joinColumn, keys);
         const groups = new Map<string, BaseEntity[]>();
         for (const child of loaded) {
@@ -646,17 +654,30 @@ export class ORM {
     }
   }
 
-  private syncRelationColumns(entity: BaseEntity, metadata: EntityMetadata): void {
+  /**
+   * Copies owning relation keys into their join column properties. For a loaded
+   * entity (`original` given) an explicitly changed join column property wins over
+   * a relation object that still points at the previously stored key.
+   */
+  private syncRelationColumns(
+    entity: BaseEntity,
+    metadata: EntityMetadata,
+    original?: Record<string, unknown>,
+  ): void {
     const record = entity as unknown as Record<string, unknown>;
     for (const relation of metadata.relations) {
       if (!relation.owner || !relation.joinProperty || !relation.referencedProperty) continue;
       const related = record[relation.propertyName];
-      if (related === null) {
-        record[relation.joinProperty] = null;
-      } else if (related && typeof related === "object") {
-        record[relation.joinProperty] =
-          (related as Record<string, unknown>)[relation.referencedProperty];
+      if (related !== null && (!related || typeof related !== "object")) continue;
+      const key = related === null ? null : (related as Record<string, unknown>)[relation.referencedProperty];
+      // An unsaved related entity has no key yet; never turn that into NULL.
+      if (key === undefined) continue;
+      if (original && relation.joinProperty in original) {
+        const current = record[relation.joinProperty];
+        const stored = original[relation.joinProperty];
+        if (!equalValue(current, stored) && equalValue(key ?? null, stored ?? null)) continue;
       }
+      record[relation.joinProperty] = key;
     }
   }
 
@@ -674,27 +695,67 @@ export class ORM {
       if (!Array.isArray(related)) continue;
       const ownerKey = record[join.referencedProperty];
       if (ownerKey === null || ownerKey === undefined) continue;
-      await this.executeFragment(
-        this.sql.fragment`DELETE FROM ${this.sql.id(join.name)} WHERE ${this.sql.id(join.joinColumn)} = ${ownerKey as never}`,
-        "delete",
-      );
-      if (related.length) {
-        const rows = related.map((target) => ({
-          [join.joinColumn]: ownerKey as import("./adapter/types.js").DatabaseValue,
-          [join.inverseJoinColumn]:
-            (target as Record<string, unknown>)[join.inverseReferencedProperty] as import("./adapter/types.js").DatabaseValue,
-        }));
-        for (let index = 0; index < rows.length; index += this.driver.capabilities.batchLimit) {
-          const chunk = rows.slice(index, index + this.driver.capabilities.batchLimit);
-          await this.executeFragment(
-            this.sql.fragment`INSERT INTO ${this.sql.id(join.name)} ${this.sql.values(chunk)}`,
-            "insert",
-          );
-        }
+      const statements: { fragment: SQLFragment; operation: QueryOperation }[] = [{
+        fragment: this.sql.fragment`DELETE FROM ${this.sql.id(join.name)} WHERE ${this.sql.id(join.joinColumn)} = ${ownerKey as never}`,
+        operation: "delete",
+      }];
+      const rows = related.map((target) => ({
+        [join.joinColumn]: ownerKey as import("./adapter/types.js").DatabaseValue,
+        [join.inverseJoinColumn]:
+          (target as Record<string, unknown>)[join.inverseReferencedProperty] as import("./adapter/types.js").DatabaseValue,
+      }));
+      // Each join row binds two parameters; keep every statement within the provider limit.
+      const { parameterLimit, batchLimit } = this.driver.capabilities;
+      const rowsPerStatement = Math.max(1, Math.min(batchLimit, Math.floor(parameterLimit / 2)));
+      for (let index = 0; index < rows.length; index += rowsPerStatement) {
+        statements.push({
+          fragment: this.sql.fragment`INSERT INTO ${this.sql.id(join.name)} ${this.sql.values(rows.slice(index, index + rowsPerStatement))}`,
+          operation: "insert",
+        });
       }
+      // Replacing the rows is all-or-nothing: a failed insert must not leave the DELETE applied.
+      await this.executeAtomically(statements);
       changed = true;
     }
     return changed;
+  }
+
+  /**
+   * Runs statements in one interactive transaction, or one provider batch (D1),
+   * or sequentially when already inside a transaction or neither is available.
+   */
+  private async executeAtomically(
+    statements: readonly { fragment: SQLFragment; operation: QueryOperation }[],
+  ): Promise<void> {
+    const sequential = async () => {
+      for (const statement of statements) await this.executeFragment(statement.fragment, statement.operation);
+    };
+    const driver = this.currentScopedORM().driver;
+    if (statements.length < 2 || (this.context()?.transactionDepth ?? 0) > 0) return sequential();
+    if (driver.capabilities.transactions && driver.transaction) return this.transaction(sequential);
+    if (driver.capabilities.batch && driver.batch) {
+      if (statements.length > driver.capabilities.batchLimit) {
+        throw new UnsupportedCapabilityError(
+          `atomic batch of ${statements.length} statements (limit ${driver.capabilities.batchLimit})`,
+          driver.dialect,
+        );
+      }
+      const dialect = dialectFor(driver.dialect);
+      const compiled = statements.map((statement) => ({
+        query: compileSQL(statement.fragment, dialect),
+        operation: statement.operation,
+      }));
+      if (compiled.some(({ query }) => query.parameters.length > driver.capabilities.parameterLimit)) {
+        throw new UnsupportedCapabilityError("query parameter limit", driver.dialect);
+      }
+      try {
+        await driver.batch(compiled);
+      } catch (cause) {
+        throw cause instanceof QueryError ? cause : new QueryError("Failed to execute batch.", compiled[0]!.query.text, cause);
+      }
+      return;
+    }
+    return sequential();
   }
 
   private async chunkedFind(
@@ -747,11 +808,16 @@ function redact(value: unknown): string {
   return `<${typeof value}>`;
 }
 
+/** Deep snapshot so nested mutations (for example inside JSON columns) are detected as changes. */
 function cloneValue(value: unknown): unknown {
   if (value instanceof Date) return new Date(value);
   if (value instanceof Uint8Array) return value.slice();
   if (Array.isArray(value)) return value.map(cloneValue);
-  if (value && typeof value === "object") return { ...(value as Record<string, unknown>) };
+  if (value && typeof value === "object") {
+    const copy: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) copy[key] = cloneValue(item);
+    return copy;
+  }
   return value;
 }
 

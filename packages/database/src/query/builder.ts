@@ -208,7 +208,10 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
 
   async getMany(): Promise<readonly T[]> {
     const rows = await this.getRawMany() as readonly Record<string, unknown>[];
-    return rows.map((row) => this.orm.hydrate<T>(this.metadata, row));
+    const entities: T[] = [];
+    // Hydrate in order so `@AfterLoad` hooks finish (or throw) before entities are returned.
+    for (const row of rows) entities.push(await this.orm.hydrate<T>(this.metadata, row));
+    return entities;
   }
 
   async getOne(): Promise<T | null> {
