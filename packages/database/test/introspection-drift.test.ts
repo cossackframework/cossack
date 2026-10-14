@@ -46,6 +46,15 @@ class DriftLabel extends BaseEntity {
   @PrimaryColumn({ type: "integer" }) declare id: number;
 }
 
+// The generated sessions table: SQLite cannot ADD COLUMN ... UNIQUE, so the
+// migration adds the column and a separate unique index.
+@Entity({ tableName: "tokens" })
+class DriftToken extends BaseEntity {
+  @PrimaryColumn({ type: "varchar" }) declare id: string;
+  @Index("tokens_public_id_unique", { unique: true })
+  @Column({ type: "varchar", name: "public_id", length: 36, nullable: true, unique: true }) declare publicId: string | null;
+}
+
 describe("SQLite drift", () => {
   it("reports no drift for tables created from the model's own DDL", async () => {
     const orm = createORM({ adapter: await nodeSQLite(), entities: [DriftAccount, DriftTicket, DriftLabel] });
@@ -59,6 +68,20 @@ describe("SQLite drift", () => {
         expect(accounts.columns.find((column) => column.columnName === "status")?.enumValues).toEqual(["draft", "published"]);
         expect(accounts.indexes).toEqual([{ name: "idx_accounts_handle", columns: ["handle"], unique: true }]);
         expect(diffSchemas(physical, orm.schema()).operations).toEqual([]);
+      });
+    } finally {
+      await orm.close();
+    }
+  });
+
+  it("treats a single-column unique index as the column's UNIQUE rule", async () => {
+    const orm = createORM({ adapter: await nodeSQLite(), entities: [DriftToken] });
+    try {
+      await orm.run(async () => {
+        await orm.sql`CREATE TABLE tokens (id VARCHAR(255) NOT NULL PRIMARY KEY)`;
+        await orm.sql`ALTER TABLE tokens ADD COLUMN public_id VARCHAR(36)`;
+        await orm.sql`CREATE UNIQUE INDEX tokens_public_id_unique ON tokens (public_id)`;
+        expect(diffSchemas(await orm.introspect(), orm.schema()).operations).toEqual([]);
       });
     } finally {
       await orm.close();

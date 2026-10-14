@@ -1,6 +1,6 @@
 import { DestructiveSchemaChangeError } from "../errors.js";
 import type { SchemaDiff, SchemaOperation } from "./operations.js";
-import type { ColumnSchema, EntitySchema, OrmSchema } from "./types.js";
+import type { ColumnSchema, EntitySchema, IndexSchema, OrmSchema } from "./types.js";
 
 function sqliteStorageType(type: ColumnSchema['logicalType']): string {
   if (type === 'integer' || type === 'bigint' || type === 'boolean') return 'integer';
@@ -30,7 +30,17 @@ function normalizeDefault(value: unknown): unknown {
   return precise ? `CURRENT_TIMESTAMP(${precise[1]})` : value;
 }
 
-function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect']): string {
+/**
+ * A single-column unique index and an inline UNIQUE constraint enforce the same
+ * rule. SQLite cannot add a UNIQUE column with ALTER TABLE, so migrations often
+ * use an index; models may declare either form. Compare the effective rule.
+ */
+function enforcesUnique(entity: { readonly indexes: readonly IndexSchema[] }, column: ColumnSchema): boolean {
+  return column.unique || entity.indexes.some((index) =>
+    index.unique && index.columns.length === 1 && index.columns[0] === column.columnName);
+}
+
+function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect'], unique = column.unique): string {
   let logicalType = dialect === 'sqlite' ? sqliteStorageType(column.logicalType) : column.logicalType;
   let length = dialect === 'sqlite' || column.logicalType === 'enum' ? undefined : column.length;
   let { precision, scale } = column;
@@ -68,7 +78,7 @@ function comparableColumn(column: ColumnSchema, dialect?: OrmSchema['dialect']):
     nullable: column.nullable,
     primary: column.primary,
     generated,
-    unique: column.unique,
+    unique,
     length,
     precision,
     scale,
@@ -130,7 +140,8 @@ export function diffSchemas(
           to: desiredColumn.columnName,
         });
       }
-      if (comparableColumn(existingColumn, dialect) !== comparableColumn(desiredColumn, dialect)) {
+      if (comparableColumn(existingColumn, dialect, enforcesUnique(source, existingColumn))
+          !== comparableColumn(desiredColumn, dialect, enforcesUnique(target, desiredColumn))) {
         const operation: SchemaOperation = {
           kind: "alter-column",
           tableName: target.tableName,
