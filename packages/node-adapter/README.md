@@ -11,9 +11,9 @@ Cossack and its packages.
 ## Exports
 
 - `createNodeAdapter`: connects framework-guarded WebSocket upgrades to a Node server, shares process-local scope instances, and manages cleanup.
-- `CossackNodeAdapter` and `nodeRuntimeAdapter`: a legacy registry adapter and a metadata-only adapter. Generated apps use `createNodeAdapter`.
 - `serveStatic`: Node `fs`-based Hono middleware for serving static assets.
-- `NodeWebSocketRuntime`: the WebSocket runtime used by the adapter.
+- `createStaticAssets`: an `ASSETS`-style binding backed by `serveStatic`.
+- `installNodeShutdown`: SIGTERM/SIGINT draining for a Node server and its runtime.
 - `createNodeEmailSender`: Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
 - `cossackNode` from `/vite`: standalone Vite HTTP development integration. See the lifecycle limits below.
 

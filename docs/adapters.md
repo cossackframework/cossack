@@ -44,28 +44,53 @@ Use this adapter to run a Cossack application on Node.js, such as in a container
 
 ### Usage
 
-To use the Node.js adapter, start a Node.js HTTP server and attach `CossackNodeAdapter` in your application entry point.
+Create the runtime with `createNodeAdapter()` and pass it to `createApp` as the
+`runtimeAdapter`. Serve HTTP with the framework's `fetch` handler, then call
+`runtime.attach(server, fetch)` with the same handler. The adapter sends every
+`/ws/` upgrade through that handler, so middleware, origin checks,
+authentication, route lookup and scope authorization all run before the adapter
+accepts the socket.
 
 ```typescript
 import { serve } from '@hono/node-server';
-import { CossackNodeAdapter, nodeRuntimeAdapter } from '@cossackframework/node-adapter';
-import { createApp } from './router';
-// Import your pages/components registry logic here
+import { createApp } from '@cossackframework/framework/router';
+import { createNodeAdapter, installNodeShutdown } from '@cossackframework/node-adapter';
+import { App } from './App';
+import { template } from './root';
 
-const app = createApp({ runtimeAdapter: nodeRuntimeAdapter });
-// Keys must match Cossack route paths, e.g. '/account/:id'.
-const componentRegistry = ...; // Map<RoutePath, ComponentClass>
+const runtime = createNodeAdapter();
+const app = createApp({ AppComponent: App, htmlTemplate: template, runtimeAdapter: runtime });
+const env = { ...process.env };
+const fetch = (request: Request) => app.fetch(request, env);
 
-const server = serve({
-    fetch: app.fetch,
-    port: 3000,
-});
-
-new CossackNodeAdapter({
-    server,
-    componentRegistry,
-});
+const server = serve({ fetch, port: Number(process.env.PORT) || 3000 });
+runtime.attach(server, fetch);
+installNodeShutdown(server, { dispose: () => runtime.dispose() });
 ```
+
+`createNodeAdapter(options)` accepts:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `maxInstances` | `512` | Largest number of process-local component instances, including instances that are still initializing. |
+| `idleTimeoutMs` | 15 minutes | Time after the last client disconnects before an instance can be removed. |
+| `maxPayload` | 1 MiB | Largest accepted WebSocket message. A larger message closes the socket with code 1009. |
+
+The request scheme follows the real Node socket. An upgrade on a TLS socket
+(`node:https`) produces an `https://` request URL, so the default same-origin
+check accepts `https://` pages. The adapter does not trust forwarded scheme
+headers such as `x-forwarded-proto`. If a reverse proxy ends TLS in front of the
+server, set `allowedOrigins` (see below).
+
+Call `await runtime.dispose()` before you close an embedded server. Disposal
+removes the upgrade listener, closes sockets, waits for active actions and
+destroys components. `installNodeShutdown` does this for SIGTERM and SIGINT.
+
+### Upgrade requests outside `/ws/`
+
+The adapter handles only `/ws/` upgrades. By default it also rejects other
+upgrade requests, ted `app` from `/src/index.ts` and passes only `/ws/`
+upgrades to the exported runtime. Vite keeps its own HMR WebSocket.
 
 You can generate a project pre-configured with this adapter using the `cossack` CLI.
 

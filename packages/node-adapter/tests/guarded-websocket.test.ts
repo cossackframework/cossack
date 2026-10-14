@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createNodeAdapter } from '../src/adapter';
-import { Cossack, Page, Server, State, RateLimit, InMemoryRateLimitStore, setRateLimitStore } from '@cossackframework/core';
+import { Cossack, Page, Server, State, RateLimit, InMemoryRateLimitStore, setRateLimitStore, isOriginAllowed } from '@cossackframework/core';
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { await Promise.all(cleanups.splice(0).map(cleanup => cleanup())); });
 function page() {
@@ -147,4 +147,57 @@ it('waits for a running action during shutdown', async () => {
   release();
   await disposal;
   expect(component.destroyAsync).toHaveBeenCalledTimes(1);
+});
+it('reconstructs an https request URL for upgrades on an encrypted socket so same-origin checks pass', async () => {
+  const component = page();
+  const seen: string[] = [];
+  const runtime = createNodeAdapter({ idleTimeoutMs: 0 });
+  const app = new Hono();
+  // Mirrors the framework's upgrade route: same-origin against the request URL.
+  app.get('/ws/:provider/:target', c => {
+    seen.push(c.req.url);
+    if (!isOriginAllowed(c.req.header('origin'), c.req.url)) return c.text('Forbidden origin', 403);
+    return upgrade(runtime, component)(c);
+  });
+  const server = createServer();
+  // Stand in for a TLS listener: node:https sockets are TLSSockets with `encrypted: true`.
+  server.on('connection', socket => { (socket as { encrypted?: boolean }).encrypted = true; });
+  runtime.attach(server, request => app.fetch(request));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  cleanups.push(async () => { await runtime.dispose(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const { socket, state } = connected(`ws://127.0.0.1:${port}/ws/page/user:one`, { origin: `https://127.0.0.1:${port}` });
+  expect(await state).toEqual({ type: 'state-update', state: { count: 1 } });
+  expect(seen).toEqual([`https://127.0.0.1:${port}/ws/page/user:one`]);
+  socket.close();
+});
+it('counts pending initializations against maxInstances and rejects the overflow scope', async () => {
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const first = page();
+  const factories = { first: vi.fn(async () => { await gate; return first as any; }), second: vi.fn(async () => page() as any) };
+  const runtime = createNodeAdapter({ maxInstances: 1, idleTimeoutMs: 0 });
+  const app = new Hono();
+  app.get('/ws/:provider/:target', c => {
+    const target = c.req.param('target') as 'first' | 'second';
+    return runtime.handleWebSocketUpgrade(c, { target, provider: 'page', componentId: target, createComponent: factories[target] });
+  });
+  const server = createServer();
+  runtime.attach(server, request => app.fetch(request));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  cleanups.push(async () => { release(); await runtime.dispose(); await new Promise<void>(resolve => server.close(() => resolve())); spy.mockRestore(); });
+  const a = connected(`ws://127.0.0.1:${port}/ws/page/first`);
+  await vi.waitFor(() => expect(factories.first).toHaveBeenCalledTimes(1));
+  const b = new WebSocket(`ws://127.0.0.1:${port}/ws/page/second`);
+  const closed = await new Promise<{ code: number; reason: string }>((resolve, reject) => {
+    b.once('error', reject); b.once('close', (code, reason) => resolve({ code, reason: String(reason) }));
+  });
+  expect(closed).toEqual({ code: 1013, reason: 'Runtime unavailable' });
+  expect(factories.second).not.toHaveBeenCalled();
+  expect(spy).toHaveBeenCalledWith(expect.objectContaining({ runtime: 'node', stage: 'initialization' }));
+  release();
+  expect(await a.state).toEqual({ type: 'state-update', state: { count: 1 } });
+  a.socket.close();
 });
