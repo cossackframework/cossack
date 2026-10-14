@@ -31,7 +31,8 @@ describe('@On on nested components', () => {
         }
         const container = document.createElement('div');
         const outside = document.createElement('button');
-        document.body.append(container, outside);
+        document.body.appendChild(container);
+        document.body.appendChild(outside);
         const page = new Page();
         await page.bootstrap({ container, initialState: emptyState });
         await settle();

@@ -24,7 +24,7 @@ describe('client link interception', () => {
         const anchor = document.createElement('a');
         anchor.setAttribute('href', href);
         anchor.textContent = href;
-        document.body.append(anchor);
+        document.body.appendChild(anchor);
         return anchor;
     };
     const click = (anchor: HTMLAnchorElement) => {
