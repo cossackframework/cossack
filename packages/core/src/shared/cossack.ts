@@ -24,7 +24,6 @@ import { Client, PageOptions, Server, ClientState, Shared } from './decorators';
 import { isActionValidationError, isClientVisibleError } from './errors';
 import { RpcError, isUncertainRpcError, rpcCancellations, sendRpcFrame, type RpcStreamFrame, describeUnsupportedStateValue } from './rpc-stream';
 import { evaluateRateLimit, getRateLimitForAction } from './rate-limit';
-import type { TaskRegistration } from './decorators';
 import { enterRender, exitRender, isRendering as isRenderingFn } from './server-fn';
 import type { Context } from 'hono';
 import type { CossackServerRuntime } from './runtime';
@@ -72,7 +71,7 @@ import {
     getForwardedServerMethodClass,
 } from './service-bootstrap';
 import { StateContainer } from './state-container';
-import { collectReactiveMetadata } from './reactive-metadata';
+import { collectReactiveMetadata, collectTaskRegistrations } from './reactive-metadata';
 import { noteOptimisticWrite } from './optimistic-state';
 import { createStoreProxy, isPlainObjectOrArray, matchesTrackedPath, toRawStoreValue } from './store';
 import { snapshotNavigationDraft } from './navigation-draft';
@@ -1825,20 +1824,8 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         if (this.isRunningTasks) return false;
         this.isRunningTasks = true;
         try {
-            // Gather own declarations across inheritance. A child declaration
-            // replaces the same method's kind/track contract, without dropping siblings.
-            const constructors: Function[] = [];
-            for (let ctor = this.constructor; ctor; ctor = Object.getPrototypeOf(ctor)) constructors.unshift(ctor);
-            const registrations = new Map<string | symbol, TaskRegistration & { kind: string }>();
-            for (const ctor of constructors) {
-                for (const kind of ['tasks', 'server-tasks', 'client-tasks']) {
-                    for (const entry of (Reflect.getOwnMetadata(`cossack:${kind}`, ctor) || []) as TaskRegistration[]) {
-                        registrations.set(entry.propertyKey, { ...entry, kind });
-                    }
-                }
-            }
-            const allTasks = [...registrations.values()].filter(entry => entry.kind === 'tasks' ||
-                (this.isServer ? entry.kind === 'server-tasks' : entry.kind === 'client-tasks'));
+            // Merged across inheritance once per class, not on every run.
+            const allTasks = collectTaskRegistrations(this.constructor, this.isServer);
             const isFilteredRun = changedPaths !== undefined;
             // Each task runs under its own cancellation identity. Dependency
             // changes abort the previous signal; owned commits gate reactive
@@ -2222,18 +2209,14 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // server$ results too so they neither refetch nor flash `initial`.
         // Client only: on the server, serialized state may come from a client.
         if (!this.isServer && serializedState?.serverResources) this._hydrateServerResources(serializedState.serverResources);
-        const { state: stateProperties, store: storeProperties,
-            clientState: clientStateProperties, clientStore: clientStoreProperties } = collectReactiveMetadata(this.constructor);
+        const { state: stateProperties, store: storeProperties, clientState: clientStateProperties,
+            clientStore: clientStoreProperties, keys: allKeys } = collectReactiveMetadata(this.constructor);
 
-        const stateKeys = Object.keys(stateProperties);
-        const clientKeys = Array.from(clientStateProperties) as string[];
-        const storeKeys = Object.keys(storeProperties);
-        const clientStoreKeys = Array.from(clientStoreProperties) as string[];
-        const allKeys = [...new Set([...stateKeys, ...clientKeys, ...storeKeys, ...clientStoreKeys])];
-
-        // Determine the state source based on environment
-        // Ensure stateSource is always a Record<string, unknown> for type-safe indexing
-        const stateSource: Record<string, unknown> = this.isServer
+        // Determine the state source based on environment. Resolved only when
+        // a field still needs initialization: willUpdate() calls this on every
+        // update, when every field is normally initialized already.
+        let source: Record<string, unknown> | undefined;
+        const stateSource = (): Record<string, unknown> => source ??= this.isServer
             ? (serializedState?.public || {})
             : (serializedState?.public || (this._id === 'root' ? this.getInitialStateFromWindow()?.public : undefined) || {});
 
@@ -2270,11 +2253,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             }
 
             // Only sync properties that are NOT client-only
-            if (!isClientOnly && stateSource && stateSource[key] !== undefined) {
+            const hydrated = isClientOnly ? undefined : stateSource()[key];
+            if (hydrated !== undefined) {
                 if (import.meta.env?.DEV && !this.isServer) {
-                    diagnoseHydrationState(value, stateSource[key], String(key), this.hydrationMetadata);
+                    diagnoseHydrationState(value, hydrated, String(key), this.hydrationMetadata);
                 }
-                value = stateSource[key];
+                value = hydrated;
             }
 
             // Store the raw value in the appropriate container. Object/array
