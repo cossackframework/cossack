@@ -94,7 +94,8 @@ describe('ssg-renderer', () => {
       // still emits the module script tag pointing at the dev entry-client.
       // When a build manifest IS present (e.g. after `vite build`), the
       // production asset path is used instead. Accept either form.
-      expect(html).toContain('<script type="module"');
+      // Minified production output may drop the quotes around simple values.
+      expect(html).toMatch(/<script type=["']?module["']?[ >]/);
       expect(html).toMatch(/src=["']?(\/src\/client\/entry-client\.ts|\/assets\/entry-client\.[\w.-]+\.js)["']?/);
     });
 
@@ -160,7 +161,8 @@ describe('ssg-renderer', () => {
       expect(html).toMatch(/<html lang=["']?zz["']?>/);
       expect(html).toMatch(/<body class=["']?custom["']?>/);
       // Template helpers are still invoked inside the custom template:
-      expect(html).toContain('<script type="module"');
+      // Minified production output may drop the quotes around simple values.
+      expect(html).toMatch(/<script type=["']?module["']?[ >]/);
       expect(html).toContain('window.__INITIAL_STATE__');
     });
 
