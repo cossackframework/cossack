@@ -233,12 +233,13 @@ export const preventDefault = (
  * the Lit-faithful `ifDefined` directive.
  *
  * By default a plain Cossack attribute binding `href="${url}"` already omits the
- * attribute for `null`/`undefined`/`false`, and renders everything else. The
- * difference `ifDefined` makes is two-fold:
+ * attribute for `null`/`undefined` and renders everything else; `false` renders
+ * as `"false"` (only boolean attributes such as `disabled` are omitted for
+ * `false`). The difference `ifDefined` makes is two-fold:
  *
- *  1. Only `undefined` drops the attribute — `null` is rendered as `"null"`,
- *     `false` as `"false"` (useful for data attributes where you want the
- *     literal string rather than an omission).
+ *  1. Only `undefined` drops the attribute — `null` is rendered as `"null"`
+ *     (useful for data attributes where you want the literal string rather
+ *     than an omission).
  *  2. When the value transitions from defined back to `undefined` on a
  *     re-render, the attribute is explicitly removed.
  *
