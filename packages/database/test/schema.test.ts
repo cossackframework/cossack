@@ -46,7 +46,7 @@ const base: OrmSchema = {
 describe("schema diff", () => {
   it("normalizes SQLite literal defaults for drift comparisons", async () => {
     const schema = await introspectSQLite(async (text) => {
-      if (text.startsWith("SELECT name FROM sqlite_master")) {
+      if (text.startsWith("SELECT name, sql FROM sqlite_master")) {
         return { rows: [{ name: "sessions" }] } as any;
       }
       if (text.startsWith("PRAGMA table_info")) {

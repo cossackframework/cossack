@@ -289,6 +289,24 @@ cossack-orm schema pull \
 Unknown physical database types are retained with a `custom:<type>` logical
 type rather than discarded.
 
+The comparison ignores differences that the database cannot store or that
+mean the same thing:
+
+- `now()`, `CURRENT_TIMESTAMP` and `transaction_timestamp()` are the same
+  default.
+- The enum `CHECK (column IN (...))` that the ORM creates is read back as an
+  `enum` column with the same values. Other check constraints still stop
+  PostgreSQL and MySQL introspection, because they cannot be represented.
+- On SQLite, a single `INTEGER PRIMARY KEY` matches a model key whether or not
+  the model marks it as generated. Only `UNIQUE` constraints mark a column as
+  unique. A `CREATE UNIQUE INDEX` stays an index.
+- On PostgreSQL, `increment` and identity columns match.
+- On MySQL, a column-level `UNIQUE` is recognized by its index name, which is
+  the column name. Indexes that MySQL creates for foreign keys are not reported.
+  Functional, prefix, `FULLTEXT` and `SPATIAL` indexes stop introspection.
+- Many-to-many join tables belong to their owning model and are not reported as
+  extra tables.
+
 ## Baseline an existing database
 
 Baseline lets an existing deployment adopt migration bookkeeping without

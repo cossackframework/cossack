@@ -57,6 +57,46 @@ function parsePrecision(databaseType: string): { precision?: number; scale?: num
   return match ? { precision: Number(match[1]), scale: Number(match[2]) } : {};
 }
 
+function unquoteIdentifier(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed.slice(1, -1).replaceAll('""', '"');
+  if (trimmed.startsWith("`") && trimmed.endsWith("`")) return trimmed.slice(1, -1).replaceAll("``", "`");
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+function stringLiterals(list: string): string[] {
+  return [...list.matchAll(/(?:_\w+)?'((?:[^'\\]|''|\\.)*)'/g)]
+    .map((match) => match[1]!.replaceAll("''", "'").replace(/\\(.)/g, "$1"));
+}
+
+const IDENTIFIER = /"(?:[^"]|"")+"|`(?:[^`]|``)+`|\[[^\]]+\]|[A-Za-z_][\w$]*/.source;
+const LITERAL = /(?:_\w+)?'(?:[^'\\]|''|\\.)*'/.source;
+const LITERAL_LIST = `${LITERAL}(?:\\s*,\\s*${LITERAL})*`;
+
+/**
+ * Finds the enum checks the ORM's own DDL emits, `CHECK ("column" IN ('a', 'b'))`,
+ * in a SQLite `CREATE TABLE` statement or a MySQL check clause.
+ */
+function enumChecks(definition: string): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  const pattern = new RegExp(String.raw`CHECK\s*\(\s*(${IDENTIFIER})\s+IN\s*\(\s*(${LITERAL_LIST})\s*\)\s*\)`, "gi");
+  for (const match of definition.matchAll(pattern)) result.set(unquoteIdentifier(match[1]!), stringLiterals(match[2]!));
+  return result;
+}
+
+/** Recognizes PostgreSQL's rendering of the ORM's enum check; other checks return undefined. */
+function postgresEnumCheck(definition: string): { column: string; values: string[] } | undefined {
+  const cast = String.raw`(?:::[\w\s"]+(?:\[\])?)?`;
+  const column = String.raw`\(*\s*(${IDENTIFIER})\s*\)?${cast}\s*`;
+  const anyArray = new RegExp(String.raw`^CHECK\s*\(+${column}=\s*ANY\s*\(+\s*ARRAY\[(.*)\]\)?${cast}\s*\)+$`, "i");
+  const single = new RegExp(String.raw`^CHECK\s*\(+${column}=\s*('(?:[^']|'')*')${cast}\s*\)+$`, "i");
+  const match = anyArray.exec(definition.trim()) ?? single.exec(definition.trim());
+  if (!match) return undefined;
+  const values = stringLiterals(match[2]!);
+  return values.length ? { column: unquoteIdentifier(match[1]!), values } : undefined;
+}
+
 function postgresIndexColumn(value: string): string | undefined {
   const trimmed = value.trim();
   const quoted = /^"((?:[^"]|"")+)"$/.exec(trimmed);
@@ -68,10 +108,10 @@ export async function introspectSQLite(
   execute: Execute,
   options: { readonly excludedTablePrefixes?: readonly string[] } = {},
 ): Promise<OrmSchema> {
-  const tables = await execute<{ name: string }>(
+  const tables = await execute<{ name: string; sql?: string | null }>(
     // Keep catalog filtering outside SQL: workerd's SQLite authorizer rejects
     // some filtered catalog queries used by D1. This query also works on Node.
-    "SELECT name FROM sqlite_master WHERE type = 'table'",
+    "SELECT name, sql FROM sqlite_master WHERE type = 'table'",
   );
   const entities = [];
   const visibleTables = tables.rows.filter(table => table.name !== "_cossack_migrations" &&
@@ -114,22 +154,30 @@ export async function introspectSQLite(
       to: string;
       on_delete: "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION";
     }>(`PRAGMA foreign_key_list("${escaped}")`);
+    const checks = enumChecks(table.sql ?? "");
+    const primaryCount = columnsResult.rows.filter((column) => column.pk).length;
     const columns: ColumnSchema[] = columnsResult.rows.map((column) => {
       const length = parseLength(column.type);
+      const values = checks.get(column.name);
       return {
         propertyName: column.name,
         columnName: column.name,
-        logicalType: logicalFromDatabase(column.type),
+        logicalType: values ? "enum" : logicalFromDatabase(column.type),
         databaseType: column.type,
         nullable: !column.notnull && !column.pk,
         primary: Boolean(column.pk),
-        generated: Boolean(column.pk) && column.type.toLowerCase().includes("int") ? "increment" : false,
+        // Only a single-column `INTEGER PRIMARY KEY` is a rowid alias that SQLite fills in.
+        generated: column.pk && primaryCount === 1 && column.type.trim().toLowerCase() === "integer" ? "increment" : false,
+        // Only UNIQUE constraints (origin "u") make a column unique; explicit
+        // CREATE UNIQUE INDEX statements stay in `indexes`.
         unique: allIndexes.some((index) =>
           index.unique &&
-          index.origin !== "pk" &&
+          index.origin === "u" &&
           index.columns.length === 1 &&
           index.columns[0] === column.name),
         ...(length === undefined ? {} : { length }),
+        ...(logicalFromDatabase(column.type) === "decimal" ? parsePrecision(column.type) : {}),
+        ...(values ? { enumValues: values } : {}),
         ...(column.dflt_value === null ? {} : { default: sqliteDefault(column.dflt_value) }),
         insert: true,
         update: true,
@@ -280,9 +328,18 @@ export async function introspectPostgres(execute: Execute): Promise<OrmSchema> {
     });
     indexesByTable.set(tableName, tableIndexes);
   }
+  const enumsByColumn = new Map<string, string[]>();
+  const columnKeys = new Set(columnsResult.rows.map((row) => `${String(row["table_name"])}\0${String(row["column_name"])}`));
   for (const constraint of constraintsResult.rows) {
+    const tableName = String(constraint["table_name"]);
+    const enumCheck = constraint["constraint_type"] === "c" ? postgresEnumCheck(String(constraint["definition"] ?? "")) : undefined;
+    const key = enumCheck ? `${tableName}\0${enumCheck.column}` : "";
+    if (enumCheck && columnKeys.has(key) && !enumsByColumn.has(key)) {
+      enumsByColumn.set(key, enumCheck.values);
+      continue;
+    }
     unsupported.push(
-      `constraint ${String(constraint["constraint_name"])} on ${String(constraint["table_name"])} ` +
+      `constraint ${String(constraint["constraint_name"])} on ${tableName} ` +
       `(${String(constraint["definition"])})`,
     );
   }
@@ -315,10 +372,12 @@ export async function introspectPostgres(execute: Execute): Promise<OrmSchema> {
         const identity = Boolean(String(column["identity_kind"] ?? ""));
         const length = logicalFromDatabase(baseType) === "varchar" ? parseLength(baseType) : undefined;
         const precision = parsePrecision(baseType);
+        const values = enumsByColumn.get(`${tableName}\0${String(column["column_name"])}`);
         return {
           propertyName: String(column["column_name"]),
           columnName: String(column["column_name"]),
-          logicalType: logicalFromDatabase(baseType),
+          logicalType: values ? "enum" as const : logicalFromDatabase(baseType),
+          ...(values ? { enumValues: values } : {}),
           databaseType,
           nullable: !Boolean(column["not_null"]),
           primary: Boolean(column["is_primary"]),
@@ -342,22 +401,178 @@ export async function introspectPostgres(execute: Execute): Promise<OrmSchema> {
   };
 }
 
-export async function introspectMySQL(execute: Execute): Promise<OrmSchema> {
-  const rows = await execute<Record<string, unknown>>(`
-    SELECT table_name, column_name, data_type, is_nullable, column_default, column_key, extra
-    FROM information_schema.columns
-    WHERE table_schema = DATABASE()
-    ORDER BY table_name, ordinal_position
-  `);
-  return rowsToSchema("mysql", rows.rows);
+function mysqlLogicalType(columnType: string): LogicalType {
+  const type = columnType.trim().toLowerCase();
+  if (/^tinyint\(1\)/.test(type) || type === "boolean" || type === "bool") return "boolean";
+  const base = type.replace(/\(.*?\)/g, "").replace(/\b(?:unsigned|signed|zerofill)\b/g, "").trim();
+  if (base === "enum") return "enum";
+  const logical = logicalFromDatabase(base);
+  return logical.startsWith("custom:") ? `custom:${columnType}` : logical;
 }
 
-function rowsToSchema(
-  dialect: "postgres" | "mysql",
-  rows: readonly Record<string, unknown>[],
-): OrmSchema {
+function mysqlDefault(value: unknown, logicalType: LogicalType, extra: string): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  // MariaDB quotes literal defaults and reports a missing default as NULL.
+  if (/^null$/i.test(trimmed)) return null;
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replaceAll("''", "'").replace(/\\(.)/g, "$1");
+  }
+  if (/^(?:current_timestamp(?:\(\d*\))?|now\(\d*\))$/i.test(trimmed)) return trimmed;
+  if (/DEFAULT_GENERATED/i.test(extra)) return trimmed;
+  if (["integer", "bigint", "decimal"].includes(logicalType) && /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  return value;
+}
+
+export async function introspectMySQL(execute: Execute): Promise<OrmSchema> {
+  // MySQL 8 labels information_schema columns in upper case unless they are aliased.
+  const columnsResult = await execute<Record<string, unknown>>(`
+    SELECT
+      table_name AS table_name,
+      column_name AS column_name,
+      column_type AS column_type,
+      is_nullable AS is_nullable,
+      column_default AS column_default,
+      column_key AS column_key,
+      extra AS extra
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name <> '_cossack_migrations'
+    ORDER BY table_name, ordinal_position
+  `);
+  const indexesResult = await execute<Record<string, unknown>>(`
+    SELECT
+      table_name AS table_name,
+      index_name AS index_name,
+      non_unique AS non_unique,
+      seq_in_index AS seq_in_index,
+      column_name AS column_name,
+      sub_part AS sub_part,
+      index_type AS index_type
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+      AND table_name <> '_cossack_migrations'
+    ORDER BY table_name, index_name, seq_in_index
+  `);
+  const foreignKeysResult = await execute<Record<string, unknown>>(`
+    SELECT
+      table_name AS table_name,
+      constraint_name AS constraint_name,
+      column_name AS column_name
+    FROM information_schema.key_column_usage
+    WHERE table_schema = DATABASE()
+      AND referenced_table_name IS NOT NULL
+    ORDER BY table_name, constraint_name, ordinal_position
+  `);
+  let checkRows: readonly Record<string, unknown>[] = [];
+  try {
+    checkRows = (await execute<Record<string, unknown>>(`
+      SELECT
+        table_constraint.table_name AS table_name,
+        table_constraint.constraint_name AS constraint_name,
+        check_constraint.check_clause AS check_clause
+      FROM information_schema.table_constraints table_constraint
+      JOIN information_schema.check_constraints check_constraint
+        ON check_constraint.constraint_schema = table_constraint.constraint_schema
+        AND check_constraint.constraint_name = table_constraint.constraint_name
+      WHERE table_constraint.table_schema = DATABASE()
+        AND table_constraint.constraint_type = 'CHECK'
+        AND table_constraint.table_name <> '_cossack_migrations'
+      ORDER BY table_constraint.table_name, table_constraint.constraint_name
+    `)).rows;
+  } catch {
+    // Servers before MySQL 8.0.16 have no check constraint catalog (and do not enforce checks).
+  }
+
+  const unsupported: string[] = [];
+  const key = (table: unknown, column: unknown) => `${String(table)}\0${String(column)}`;
+  const columnKeys = new Set(columnsResult.rows.map((row) => key(row["table_name"], row["column_name"])));
+  for (const column of columnsResult.rows) {
+    if (/\bGENERATED\b/i.test(String(column["extra"] ?? "")) && !/DEFAULT_GENERATED/i.test(String(column["extra"] ?? ""))) {
+      unsupported.push(`generated column ${String(column["table_name"])}.${String(column["column_name"])}`);
+    }
+  }
+
+  const enums = new Map<string, string[]>();
+  for (const check of checkRows) {
+    const clause = String(check["check_clause"] ?? "").replaceAll("\\'", "'");
+    // Only a clause that is exactly `column IN ('a', 'b')` is the ORM's enum check.
+    const match = new RegExp(`^\\(*\\s*(${IDENTIFIER})\\s+IN\\s*\\(\\s*(${LITERAL_LIST})\\s*\\)\\s*\\)*$`, "i").exec(clause.trim());
+    const column = match ? unquoteIdentifier(match[1]!) : undefined;
+    if (match && column && columnKeys.has(key(check["table_name"], column))) {
+      enums.set(key(check["table_name"], column), stringLiterals(match[2]!));
+      continue;
+    }
+    unsupported.push(`constraint ${String(check["constraint_name"])} on ${String(check["table_name"])} (${clause})`);
+  }
+
+  const foreignKeys = new Map<string, { name: string; columns: string[] }>();
+  for (const row of foreignKeysResult.rows) {
+    const id = key(row["table_name"], row["constraint_name"]);
+    const entry = foreignKeys.get(id) ?? { name: String(row["constraint_name"]), columns: [] };
+    entry.columns.push(String(row["column_name"]));
+    foreignKeys.set(id, entry);
+  }
+
+  const rawIndexes = new Map<string, { table: string; name: string; unique: boolean; type: string; columns: (string | null)[]; prefix: boolean }>();
+  for (const row of indexesResult.rows) {
+    if (String(row["index_name"]) === "PRIMARY") continue;
+    const id = key(row["table_name"], row["index_name"]);
+    const entry = rawIndexes.get(id) ?? {
+      table: String(row["table_name"]),
+      name: String(row["index_name"]),
+      unique: Number(row["non_unique"]) === 0,
+      type: String(row["index_type"] ?? "BTREE").toUpperCase(),
+      columns: [],
+      prefix: false,
+    };
+    entry.columns.push(row["column_name"] === null || row["column_name"] === undefined ? null : String(row["column_name"]));
+    if (row["sub_part"] !== null && row["sub_part"] !== undefined) entry.prefix = true;
+    rawIndexes.set(id, entry);
+  }
+
+  const uniqueColumns = new Set<string>();
+  const indexesByTable = new Map<string, { name: string; columns: string[]; unique: boolean }[]>();
+  for (const index of rawIndexes.values()) {
+    const reasons = [
+      ...(index.type !== "BTREE" ? [`index type ${index.type}`] : []),
+      ...(index.columns.some((column) => column === null) ? ["expressions"] : []),
+      ...(index.prefix ? ["column prefixes"] : []),
+    ];
+    if (reasons.length) {
+      unsupported.push(`index ${index.name} on ${index.table} (${reasons.join(", ")})`);
+      continue;
+    }
+    const columns = index.columns as string[];
+    // A column-level UNIQUE creates a unique index named after its column.
+    if (index.unique && columns.length === 1 && index.name === columns[0]) {
+      uniqueColumns.add(key(index.table, columns[0]));
+      continue;
+    }
+    // MySQL creates an index for a foreign key that has none, named after the
+    // constraint or its column. It is not part of the model.
+    const foreignKeyIndex = !index.unique && [...foreignKeys.entries()].some(([id, foreignKey]) =>
+      id.startsWith(`${index.table}\0`) &&
+      (index.name === foreignKey.name || index.name === foreignKey.columns[0]) &&
+      foreignKey.columns.join("\0") === columns.join("\0"));
+    if (foreignKeyIndex) continue;
+    const tableIndexes = indexesByTable.get(index.table) ?? [];
+    tableIndexes.push({ name: index.name, columns, unique: index.unique });
+    indexesByTable.set(index.table, tableIndexes);
+  }
+
+  if (unsupported.length) {
+    throw new Error(
+      `[Cossack database] MySQL introspection cannot safely represent ${unsupported.join("; ")}. ` +
+      "Schema diff/check, schema pull, and migration baseline were stopped to avoid misleading drift. " +
+      "Use model snapshots with migration status/check, or manage these objects in reviewed raw migrations.",
+    );
+  }
+
   const grouped = new Map<string, Record<string, unknown>[]>();
-  for (const row of rows) {
+  for (const row of columnsResult.rows) {
     const table = String(row["table_name"]);
     const group = grouped.get(table) ?? [];
     group.push(row);
@@ -365,28 +580,43 @@ function rowsToSchema(
   }
   return {
     version: 1,
-    dialect,
+    dialect: "mysql",
     entities: [...grouped].map(([tableName, columns]) => ({
       modelName: tableName,
       tableName,
-      columns: columns.map((column) => ({
-        propertyName: String(column["column_name"]),
-        columnName: String(column["column_name"]),
-        logicalType: logicalFromDatabase(String(column["data_type"])),
-        databaseType: String(column["data_type"]),
-        nullable: String(column["is_nullable"]).toUpperCase() === "YES",
-        primary: String(column["column_key"] ?? "") === "PRI",
-        generated: String(column["extra"] ?? "").includes("auto_increment") ? "increment" : false,
-        unique: String(column["column_key"] ?? "") === "UNI",
-        ...(column["column_default"] === null || column["column_default"] === undefined
-          ? {}
-          : { default: column["column_default"] }),
-        insert: true,
-        update: true,
-        select: true,
-      })),
+      columns: columns.map((column): ColumnSchema => {
+        const columnName = String(column["column_name"]);
+        const columnType = String(column["column_type"]);
+        const extra = String(column["extra"] ?? "");
+        const checked = enums.get(key(tableName, columnName));
+        const nativeEnum = mysqlLogicalType(columnType) === "enum" ? stringLiterals(columnType) : undefined;
+        const enumValues = checked ?? nativeEnum;
+        const logicalType = enumValues ? "enum" : mysqlLogicalType(columnType);
+        const length = logicalType === "varchar" ? parseLength(columnType) : undefined;
+        const precision = logicalType === "decimal" ? parsePrecision(columnType) : {};
+        const defaultValue = column["column_default"];
+        return {
+          propertyName: columnName,
+          columnName,
+          logicalType,
+          databaseType: columnType,
+          nullable: String(column["is_nullable"]).toUpperCase() === "YES",
+          primary: String(column["column_key"] ?? "") === "PRI",
+          generated: /auto_increment/i.test(extra) ? "increment" : false,
+          unique: uniqueColumns.has(key(tableName, columnName)),
+          ...(length === undefined ? {} : { length }),
+          ...precision,
+          ...(enumValues ? { enumValues } : {}),
+          ...(defaultValue === null || defaultValue === undefined
+            ? {}
+            : { default: mysqlDefault(defaultValue, logicalType, extra) }),
+          insert: true,
+          update: true,
+          select: true,
+        };
+      }),
       relations: [],
-      indexes: [],
+      indexes: indexesByTable.get(tableName) ?? [],
       virtual: false,
     })),
   };
