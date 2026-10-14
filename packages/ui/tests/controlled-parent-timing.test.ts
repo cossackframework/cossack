@@ -21,6 +21,7 @@ import { DataTable, type DataTableState } from '../src/components/DataTable';
 import { Checkbox } from '../src/components/Checkbox';
 import { Switch } from '../src/components/Switch';
 import { RadioGroup } from '../src/components/RadioGroup';
+import { PasswordInput } from '../src/components/PasswordInput';
 import { Command } from '../src/components/Command';
 import { AuthForm, type AuthFormMode } from '../src/blocks/AuthForm/index';
 import { CommandPalette } from '../src/blocks/CommandPalette/index';
@@ -136,6 +137,12 @@ const cases: Record<string, Case<unknown>> = {
         draw: (value, propose) => html`${component(InputOTP, { length: 4, 'aria-label': 'Code', value, onValueChange: propose })}`,
         shown: root => root.querySelector('input')!.value,
         first: [type('input', '1'), '1'], second: [type('input', '12'), '12'],
+    }),
+    PasswordInput: controlled<string>({
+        initial: '',
+        draw: (value, propose) => html`${component(PasswordInput, { id: 'password', 'aria-label': 'Password', value, onValueChange: propose })}`,
+        shown: root => root.querySelector('input')!.value,
+        first: [type('input', 'a'), 'a'], second: [type('input', 'ab'), 'ab'],
     }),
     Resizable: controlled<number>({
         initial: 50,
@@ -256,4 +263,18 @@ it.each([
     parentRenders(false);
     expect(proposals).toEqual([true, false, false]);
     expect(instance.isOpen).toBe(false);
+});
+
+it('PasswordInput: the reveal toggle keeps native edits that the parent has not rendered', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    render(html`${component(PasswordInput, { id: 'password', 'aria-label': 'Password', value: 'initial', onValueChange: () => {} })}`, container);
+    await settle();
+    const input = container.querySelector('input')!;
+    input.value = 'typed';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    container.querySelector<HTMLButtonElement>('button[aria-label="Show password"]')!.click();
+    await settle();
+    expect(input.type).toBe('text');
+    expect(input.value).toBe('typed');
 });

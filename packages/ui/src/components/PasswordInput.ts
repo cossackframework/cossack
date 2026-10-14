@@ -1,5 +1,5 @@
 import type { PasswordAttributes, ControlEvent } from "../native-attributes";
-import { html, classMap, component, PreventDefaultResult, preventDefault } from "@cossackframework/renderer";
+import { html, classMap, component, live, PreventDefaultResult, preventDefault } from "@cossackframework/renderer";
 import {
     Cossack,
     Component,
@@ -13,7 +13,11 @@ import { EyeIcon } from "@cossackframework/solar-icons/eye";
 import { EyeClosedIcon } from "@cossackframework/solar-icons/eye-closed";
 
 export type PasswordInputProps = PasswordAttributes & {
-    /** Optional parent value. Omit for native ownership, including pre-hydration edits and autofill. */
+    /**
+     * Optional parent value. Each parent render applies it, so a parent rejects an
+     * edit by rendering its old value. Omit for native ownership, including
+     * pre-hydration edits and autofill.
+     */
     value?: string;
     /** Disable the input and its reveal button. Fieldset disabling also applies. */
     disabled?: boolean;
@@ -50,6 +54,7 @@ export class PasswordInput extends Cossack {
 
     @ClientState() private revealed = false;
     inputRef: RefObject<HTMLInputElement> = createRef<HTMLInputElement>();
+    private renderedProps?: PasswordInputProps;
 
     render() {
         const { value, placeholder = "••••••••", autocomplete = "current-password",
@@ -63,6 +68,11 @@ export class PasswordInput extends Cossack {
         };
         const inputHandler = nativeInput instanceof PreventDefaultResult
             ? preventDefault(onInput, { novalidate: nativeInput.novalidate }) : onInput;
+        // A parent render assigns new props and applies value, even when it equals
+        // the last rendered value. The reveal toggle's own renders keep native edits.
+        const parentRender = this.renderedProps !== this.props;
+        this.renderedProps = this.props;
+        const shown = parentRender ? value : this.inputRef.value?.value ?? value;
 
         return html`
             <div class="cs-password-input relative inline-block w-full">
@@ -85,7 +95,7 @@ export class PasswordInput extends Cossack {
                         [SIZES[size]]: true,
                     })}
                     @input=${inputHandler}
-                    ...=${value === undefined ? rest : { ...rest, '.value': value }}
+                    ...=${value === undefined ? rest : { ...rest, '.value': live(shown) }}
                 />
                 <button
                     type="button"
