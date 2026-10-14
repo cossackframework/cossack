@@ -1,6 +1,7 @@
 // src/shared/CossackDurableObject.ts
 import type { Cossack } from './cossack';
 import type { User } from './user';
+import type { SerializedComponentState } from './component-types';
 import type { PageOptions } from './decorators';
 import { DurableObjectRuntime } from './runtimes/durable-object';
 import './metadata';
@@ -51,7 +52,8 @@ export abstract class CossackDurableObject {
         this.componentInstance = component;
     }
 
-    private async createAndBootstrapComponent(componentName: string, params: Record<string, string>, page: string, providerName: string): Promise<Cossack | undefined> {
+    private async createAndBootstrapComponent(componentName: string, params: Record<string, string>, page: string, providerName: string,
+        initialState?: SerializedComponentState): Promise<Cossack | undefined> {
         const PageComponent = (await this.getComponentRegistry()).get(componentName);
         if (!PageComponent) {
             logRuntimeFailure({ runtime: 'cloudflare' }, 'initialization');
@@ -61,7 +63,7 @@ export abstract class CossackDurableObject {
         const component = new PageComponent();
         component.__cossack_rpcOwner = componentName;
         const context = { req: { param: (key?: string) => key ? params[key] : params } } as any;
-        try { await component.bootstrap({ context, env: this.env, page, providerName, skipInit: true }); }
+        try { await component.bootstrap({ context, env: this.env, page, providerName, skipInit: true, initialState }); }
         catch (error) { await this.disposeComponent(component); throw error; }
         return component;
     }
@@ -76,13 +78,15 @@ export abstract class CossackDurableObject {
             const url = stored.get('url') as string | undefined;
             const providerName = stored.get('providerName') as string | undefined;
             if (!componentPath || !url || !providerName) return;
+            // Restore through bootstrap's state initialization (the same path
+            // as bootstrap({ initialState }) elsewhere): assigning persisted
+            // keys through reactive setters would broadcast and re-persist
+            // the state that was just read.
+            const snapshot = stored.get('componentState') as SerializedComponentState | undefined;
             const component = await this.createAndBootstrapComponent(componentPath,
-                stored.get('params') as Record<string, string> || {}, url, providerName);
+                stored.get('params') as Record<string, string> || {}, url, providerName, snapshot);
             if (!component) return;
             try {
-                const snapshot = stored.get('componentState') as Record<string, any> | undefined;
-                if (snapshot?.children) (component as any)._childrenStateRegistry = snapshot.children;
-                for (const [key, value] of Object.entries(snapshot?.public || {})) (component as any)[key] = value;
                 component._render();
                 this.publishComponent(component);
             } catch (error) { await this.disposeComponent(component); throw error; }

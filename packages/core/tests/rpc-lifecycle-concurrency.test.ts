@@ -56,6 +56,22 @@ it('waits for fresh initialization before accepting any concurrent peer or state
     const frames = f.peers.flatMap(peer => (peer as ReturnType<typeof socket>).send.mock.calls.map(([data]) => JSON.parse(data)));
     expect(frames.filter(frame => frame.type === 'state-update').map(frame => frame.state.count)).toEqual([91, 91]);
 });
+it('restores persisted state quietly, without a redundant broadcast or storage write', async () => {
+    const seen: number[] = [];
+    @Page({ transport: 'durable-object', stateful: true })
+    class Live extends Cossack {
+        @State() count = 0;
+        @Server() read() { seen.push(this.count); return this.count; }
+    }
+    const f = objectFixture(Live, true);
+    const peer = socket();
+    f.peers.push(peer);
+    await f.object.webSocketMessage(socket() as unknown as WebSocket, JSON.stringify({ type: 'action', requestId: 'read', action: 'read', payload: [] }));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(seen).toEqual([37]);
+    expect(f.state.storage.put).not.toHaveBeenCalled();
+    expect(peer.send.mock.calls.map(([data]) => JSON.parse(data)).filter(frame => frame.type === 'state-update')).toEqual([]);
+});
 it('cleans one failed shared restoration and permits a subsequent complete retry', async () => {
     const restore = gate(); let fail = true, gets = 0, cleanup = 0;
     @Page({ transport: 'durable-object', stateful: true })
