@@ -90,7 +90,7 @@ Key facts to convey:
 - **Icon** uses the **Solar** icon set (https://solar-icons.vercel.app/) in six styles: `line`, `bold`, `duotone`, `broken`, `outline`, `line-duotone`. It falls back to `line` when a requested style is missing.
 - Event handlers pass through props with an `@` prefix, e.g. `"@click": this.save` (methods are auto-bound).
 
-Available component groups: Buttons & Actions, Forms & Inputs (Input, Textarea, Select, Checkbox, Switch, Slider, InputOTP, Calendar, DatePicker, …), Layout & Display (Card, Table, Avatar, Badge, Skeleton, Progress, Tooltip, Typography, Sidebar, …), Chat (Bubble, Message, MessageScroller, …), Overlay & Interactive (Modal, Popover, DropdownMenu, Sheet, Accordion, Tabs, Toaster, …).
+Available component groups: Buttons & Actions, Forms & Inputs (Input, Textarea, NativeSelect, Checkbox, Switch, Slider, InputOTP, Calendar, DatePicker, …), Layout & Display (Card, Table, Avatar, Badge, Skeleton, Progress, Tooltip, Typography, Sidebar, …), Chat (Bubble, Message, MessageScroller, …), Overlay & Interactive (Modal, Popover, DropdownMenu, Sheet, Accordion, Tabs, Toaster, …).
 
 ## Step 4: (Optional) Eject a component for customization
 

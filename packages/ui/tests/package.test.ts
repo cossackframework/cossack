@@ -45,6 +45,14 @@ describe('published package contract', () => {
     }
   });
 
+  it('exports one native select and one accordion section component', async () => {
+    const ui: Record<string, unknown> = await import('../src/index');
+    expect(ui).not.toHaveProperty('Select');
+    expect(ui).not.toHaveProperty('AccordionItem');
+    expect((ui.NativeSelect as { name: string }).name).toBe('NativeSelect');
+    expect((ui.Accordion as { name: string }).name).toBe('Accordion');
+  });
+
   it('builds before publishing', () => {
     expect(packageJson.scripts.prepublishOnly).toBe('pnpm run build');
   });

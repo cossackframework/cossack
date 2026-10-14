@@ -12,15 +12,15 @@ import { DisclosureController, disclosureStyle, disclosureClick, validateDisclos
 import { Icon } from "../icons/Icon";
 import { AltArrowDownIcon as altArrowDownIcon } from "@cossackframework/solar-icons/alt-arrow-down";
 
-export type AccordionItemProps = DisclosureProps & {
+export type AccordionProps = DisclosureProps & {
     summary: string;
     headingLevel?: 2 | 3 | 4 | 5 | 6;
 };
 
-/** Independent accordion section with native button activation and a typed panel. */
+/** One independent accordion section with native button activation and a typed panel. Stack several for a group. */
 @Component()
-export class AccordionItem extends Cossack {
-    declare props: AccordionItemProps;
+export class Accordion extends Cossack {
+    declare props: AccordionProps;
 
     @ClientState() private internalOpen: boolean = false;
     @ClientState() private userInteracted: boolean = false;
@@ -123,5 +123,3 @@ export class AccordionItem extends Cossack {
         this.trigger = undefined; this.wrapperRef.value = undefined; this.contentRef.value = undefined;
     }
 }
-
-export { AccordionItem as Accordion };

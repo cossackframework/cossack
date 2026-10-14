@@ -9,7 +9,7 @@ import { DatePicker, type DatePickerProps } from '../src/components/DatePicker';
 import { Calendar, type CalendarProps } from '../src/components/Calendar';
 import { InputOTP, type InputOTPProps } from '../src/components/InputOTP';
 import { Toggle } from '../src/components/Toggle';
-import { AccordionItem } from '../src/components/Accordion';
+import { Accordion } from '../src/components/Accordion';
 import { Collapsible } from '../src/components/Collapsible';
 import { Sidebar } from '../src/components/Sidebar';
 import { Resizable } from '../src/components/Resizable';
@@ -109,7 +109,7 @@ it('Toggle: a double click proposes pressed then unpressed', () => {
 });
 
 it.each([
-    ['AccordionItem', () => { const item = new AccordionItem(); item.props = { id: 'faq', summary: 'FAQ', open: false }; return item; }],
+    ['Accordion', () => { const item = new Accordion(); item.props = { id: 'faq', summary: 'FAQ', open: false }; return item; }],
     ['Collapsible', () => { const item = new Collapsible(); item.props = { id: 'more', trigger: 'More', open: false }; return item; }],
 ] as const)('%s: a double toggle proposes open then closed', (_name, create) => {
     const onToggle = vi.fn();

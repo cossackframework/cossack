@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
 import { component, renderToString } from '@cossackframework/renderer';
-import { AccordionItem } from '../src/components/Accordion';
+import { Accordion } from '../src/components/Accordion';
 import { Collapsible } from '../src/components/Collapsible';
 
 it('owns accordion heading, trigger and panel identities', () => {
-    const output = renderToString(component(AccordionItem, { id: 'section', summary: 'Details', headingLevel: 2, 'data-root': 'root', triggerProps: { 'data-trigger': 'trigger' }, panelProps: { 'data-panel': 'panel' } }, 'Content'));
+    const output = renderToString(component(Accordion, { id: 'section', summary: 'Details', headingLevel: 2, 'data-root': 'root', triggerProps: { 'data-trigger': 'trigger' }, panelProps: { 'data-panel': 'panel' } }, 'Content'));
     expect(output).toContain('role="heading" aria-level="2"');
     expect(output).toContain('id="section-trigger"');
     expect(output).toContain('aria-controls="section-panel"');
@@ -21,7 +21,7 @@ it('renders a native collapsible button without an interactive wrapper', () => {
     expect(output).toContain('inert');
 });
 it('rejects unstable IDs, empty labels and invalid heading levels', () => {
-    expect(() => renderToString(component(AccordionItem, { id: 'two words', summary: 'Details' }))).toThrow('id');
+    expect(() => renderToString(component(Accordion, { id: 'two words', summary: 'Details' }))).toThrow('id');
     expect(() => renderToString(component(Collapsible, { id: 'more', trigger: '' }))).toThrow('trigger text');
-    expect(() => renderToString(component(AccordionItem, { id: 'section', summary: 'Details', headingLevel: 9 as 3 }))).toThrow('headingLevel');
+    expect(() => renderToString(component(Accordion, { id: 'section', summary: 'Details', headingLevel: 9 as 3 }))).toThrow('headingLevel');
 });

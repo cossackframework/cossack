@@ -24,15 +24,10 @@ export { Badge, type BadgeProps } from "./components/Badge";
 export { Label, type LabelProps } from "./components/Label";
 export { Alert, type AlertProps } from "./components/Alert";
 export { Modal, type ModalProps } from "./components/Modal";
-export {
-    Accordion,
-    AccordionItem,
-    type AccordionItemProps,
-} from "./components/Accordion";
+export { Accordion, type AccordionProps } from "./components/Accordion";
 export { Textarea, type TextareaProps } from "./components/Textarea";
 export { Checkbox, type CheckboxProps } from "./components/Checkbox";
 export { Switch, type SwitchProps } from "./components/Switch";
-export { Select, type SelectProps } from "./components/Select";
 export { Spinner, type SpinnerProps } from "./components/Spinner";
 export { Avatar, type AvatarProps } from "./components/Avatar";
 export { AvatarGroup, type AvatarGroupProps, type AvatarGroupItem } from "./components/AvatarGroup";

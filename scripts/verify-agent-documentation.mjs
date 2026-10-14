@@ -513,7 +513,8 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     assert.ok(radio.propsContract.members.some(member => member.name === 'onValueChange' && member.callSignatures.some(signature => signature.includes('HTMLInputElement'))));
     for (const control of [radio, slider]) assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'radio-and-range'));
-    for (const [name, element] of [['Textarea','HTMLTextAreaElement'],['Select','HTMLSelectElement'],['NativeSelect','HTMLSelectElement'],['InputGroup','HTMLInputElement']]) {
+    assert.ok(!uiSymbols.some(symbol => ['Select', 'AccordionItem'].includes(symbol.name)));
+    for (const [name, element] of [['Textarea','HTMLTextAreaElement'],['NativeSelect','HTMLSelectElement'],['InputGroup','HTMLInputElement']]) {
       const control = uiSymbols.find(symbol => symbol.name === name);
       assert.equal(control.propsContract.status, 'declared');
       assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));
@@ -602,7 +603,7 @@ it('installed reporter records the actual outcome', () => expect(2 + 2).toBe(4))
     assert.ok(commandPalette.propsContract.members.some(member => member.name === 'shortcut'));
     assert.ok(uiSymbols.some(symbol => symbol.name === 'CommandItem'));
     assert.ok(uiPackage.guidance.guides.some(guide => guide.id === 'modal-command-search'));
-    for (const name of ['Accordion', 'AccordionItem', 'Collapsible']) {
+    for (const name of ['Accordion', 'Collapsible']) {
       const control = uiSymbols.find(symbol => symbol.name === name);
       assert.equal(control.propsContract.status, 'declared');
       assert.ok(!control.propsContract.indexSignatures.some(index => index.keyType === 'string' && index.valueType === 'any'));

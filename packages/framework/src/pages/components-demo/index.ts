@@ -12,11 +12,10 @@ import {
     Label,
     Alert,
     Modal,
-    AccordionItem,
+    Accordion,
     Textarea,
     Checkbox,
     Switch,
-    Select,
     Spinner,
     Avatar,
     AvatarGroup,
@@ -268,9 +267,9 @@ export class ComponentsDemo extends Cossack {
                 <section class="space-y-3">
                     <h2 class="text-lg font-semibold">Accordion</h2>
                     <div class="space-y-2">
-                        ${component(AccordionItem, { id: 'demo-about', defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
-                        ${component(AccordionItem, { id: 'demo-native', summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
-                        ${component(AccordionItem, { id: 'demo-javascript', summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
+                        ${component(Accordion, { id: 'demo-about', defaultOpen: true, summary: 'What is Cossack?' }, html`<p class="text-sm">A full-stack TypeScript framework for Cloudflare Workers and Node.js.</p>`)}
+                        ${component(Accordion, { id: 'demo-native', summary: 'Why native elements?' }, html`<p class="text-sm">They handle accessibility, keyboard, and form participation for free.</p>`)}
+                        ${component(Accordion, { id: 'demo-javascript', summary: 'Does this need JavaScript?' }, html`<p class="text-sm">The accordion uses a div+button+state pattern for smooth height animation.</p>`)}
                     </div>
                 </section>
 
@@ -281,7 +280,7 @@ export class ComponentsDemo extends Cossack {
                         ${component(Label, { for: 'bio' }, 'Bio')}
                         ${component(Textarea, { id: 'bio', rows: 4, placeholder: 'Tell us about yourself' })}
                         ${component(Label, { for: 'country' }, 'Country')}
-                        ${component(Select, { id: 'country' }, html`<option>United States</option><option>Vietnam</option><option>Germany</option>`)}
+                        ${component(NativeSelect, { id: 'country' }, html`<option>United States</option><option>Vietnam</option><option>Germany</option>`)}
                         <div class="flex items-center gap-6 pt-2">
                             ${component(Checkbox, { checked: true }, 'Subscribe to newsletter')}
                             ${component(Switch, { checked: true })}

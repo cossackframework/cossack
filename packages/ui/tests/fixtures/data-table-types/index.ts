@@ -89,22 +89,22 @@ component(Slider, {'.value':1000});
 // @ts-expect-error Range controls cannot change native type through props.
 component(Slider, {type:'text'});
 
-import { Textarea, Select, NativeSelect } from '@cossackframework/ui';
+import { Textarea, NativeSelect } from '@cossackframework/ui';
 component(Textarea, {rows:4, cols:40, required:true, wrap:'soft', '.value':live('Notes'),
     '@input':event=>{const control:HTMLTextAreaElement=event.currentTarget;void control;}});
-component(Select, {name:'choice', required:true, '.value':'b',
+component(NativeSelect, {name:'choice', required:true, '.value':'b',
     '@change':event=>{const control:HTMLSelectElement=event.currentTarget;void control;}});
 component(NativeSelect, {multiple:true, '.value':bind({choice:'b'},'choice'), '?disabled':false});
 // @ts-expect-error HTML textarea has no value attribute; use .value.
 component(Textarea, {value:'Notes'});
 // @ts-expect-error HTML select has no value attribute; use .value.
-component(Select, {value:'b'});
+component(NativeSelect, {value:'b'});
 // @ts-expect-error Native select rejects misspelled attributes.
 component(NativeSelect, {requried:true});
 // @ts-expect-error Textarea does not support input checked state.
 component(Textarea, {checked:true});
-// @ts-expect-error Select change handlers target a select, not a text input.
-component(Select, {'@change':event=>event.currentTarget.selectionStart});
+// @ts-expect-error NativeSelect change handlers target a select, not a text input.
+component(NativeSelect, {'@change':event=>event.currentTarget.selectionStart});
 
 
 import { InputGroup, PasswordInput } from '@cossackframework/ui';
@@ -283,17 +283,17 @@ component(Command, { id: 'commands', label: 'Navigate', role: 'listbox' });
 // @ts-expect-error Arbitrary unimplemented props are rejected.
 component(Command, { id: 'commands', label: 'Navigate', fuzzy: true });
 
-import { AccordionItem, Collapsible } from '@cossackframework/ui';
-component(AccordionItem, { id: 'section', summary: 'Details', headingLevel: 2, '@click': event => { const div: HTMLDivElement = event.currentTarget; void div; }, triggerProps: { '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } }, panelProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
+import { Accordion, Collapsible } from '@cossackframework/ui';
+component(Accordion, { id: 'section', summary: 'Details', headingLevel: 2, '@click': event => { const div: HTMLDivElement = event.currentTarget; void div; }, triggerProps: { '@click': event => { const button: HTMLButtonElement = event.currentTarget; void button; } }, panelProps: { '@keydown': event => { const div: HTMLDivElement = event.currentTarget; void div; } } });
 component(Collapsible, { id: 'more', trigger: 'More', open: true, onToggle: open => { const value: boolean = open; void value; } });
 // @ts-expect-error Stable IDs are required.
-component(AccordionItem, { summary: 'Details' });
+component(Accordion, { summary: 'Details' });
 // @ts-expect-error Trigger content is now text in the owned native button.
 component(Collapsible, { id: 'more', trigger: {} });
 // @ts-expect-error Trigger state and relationships belong to the disclosure.
 component(Collapsible, { id: 'more', trigger: 'More', triggerProps: { 'aria-expanded': true } });
 // @ts-expect-error Panel animation style belongs to the disclosure.
-component(AccordionItem, { id: 'section', summary: 'Details', panelProps: { style: 'height:20px' } });
+component(Accordion, { id: 'section', summary: 'Details', panelProps: { style: 'height:20px' } });
 
 import { Tabs, type TabsItem } from '@cossackframework/ui';
 const tabItems: readonly TabsItem[] = [{ value: 'a', label: 'A' }, { value: 'b', label: { text: 'B' }, ariaLabel: 'B' }];

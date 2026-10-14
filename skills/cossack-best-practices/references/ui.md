@@ -59,7 +59,7 @@ html`
 ## Components by category
 
 - **Buttons & Actions:** Button, Spinner.
-- **Forms & Inputs:** Input, Textarea, Select, NativeSelect, InputGroup,
+- **Forms & Inputs:** Input, Textarea, NativeSelect, InputGroup,
   Checkbox, Switch, RadioGroup, Slider, InputOTP, Calendar, DatePicker, Label,
   PasswordInput, Field, Toggle, ToggleGroup.
 - **Layout & Display:** Card, Separator, Table (+ sub-components), Avatar,
@@ -126,7 +126,7 @@ colors (used by Badge, Alert, Toast).
 `cossack add ui <component>` copies a single component into
 `src/components/ui/<Component>.ts` for customization. The ejected copy is yours
 — re-run with `--force` to overwrite. Full kebab-case names: `button`, `input`,
-`textarea`, `select`, `native-select`, `input-group`, `label`, `checkbox`,
+`textarea`, `native-select`, `input-group`, `label`, `checkbox`,
 `switch`, `radio-group`, `slider`, `input-otp`, `password-input`, `field`,
 `toggle`, `toggle-group`, `badge`, `kbd`, `card`, `separator`, `table`,
 `avatar`, `avatar-group`, `skeleton`, `progress`, `spinner`, `aspect-ratio`,

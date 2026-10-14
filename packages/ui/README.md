@@ -57,8 +57,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 |---|---|---|
 | Input | `<input>` | Token-driven text input with variant/size |
 | Textarea | `<textarea>` | Multiline text input |
-| Select | `<select>` | Native select with chevron overlay |
-| NativeSelect | `<select>` | Styled native select (no JS, no popover, mobile-friendly) |
+| NativeSelect | `<select>` | Styled native select with chevron overlay (no JS, no popover, mobile-friendly) |
 | InputGroup | `<input>` + addons | Input with prefix/suffix adornments (@, $, icons) |
 | Checkbox | `<input type="checkbox">` | Checkbox with label wrapper |
 | Switch | `<input type="checkbox">` | Toggle switch (role="switch") |
@@ -104,7 +103,7 @@ Then add to `src/style.css` (after `@import "tailwindcss";`):
 | Popover | `popover` attribute | Top-layer popover with JS positioning + light dismiss |
 | DropdownMenu | `popover` attribute | Menu with keyboard navigation (Arrow/Escape), collision-aware side/align flip, scroll/resize repositioning |
 | Sheet | `<dialog>` | Slide-in panel (drawer) from any edge |
-| Accordion | `<button>` + `<div>` | Animated collapsible sections |
+| Accordion | `<button>` + `<div>` | One animated collapsible section. Stack several for a group |
 | Tabs | conditional render | Accessible tabbed interface with ARIA tablist |
 | Toaster + `toast` | reactive store | Global toast notification system |
 
@@ -295,7 +294,7 @@ from the package's Toast module.
 
 Available component names (kebab-case, passed to `cossack add ui <name>`):
 
-`button`, `input`, `textarea`, `select`, `native-select`, `input-group`,
+`button`, `input`, `textarea`, `native-select`, `input-group`,
 `label`, `checkbox`, `switch`, `radio-group`, `slider`, `input-otp`,
 `password-input`, `field`, `toggle`, `toggle-group`, `badge`, `kbd`, `card`,
 `separator`, `table`, `avatar`, `avatar-group`, `skeleton`, `progress`,

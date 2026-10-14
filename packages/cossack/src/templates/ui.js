@@ -110,7 +110,6 @@ export const UI_COMPONENTS = {
   textarea: { className: 'Textarea', template: fromPackage('Textarea') },
   checkbox: { className: 'Checkbox', template: fromPackage('Checkbox') },
   switch: { className: 'Switch', template: fromPackage('Switch') },
-  select: { className: 'Select', template: fromPackage('Select') },
   spinner: { className: 'Spinner', template: fromPackage('Spinner') },
   avatar: { className: 'Avatar', template: fromPackage('Avatar') },
   'avatar-group': { className: 'AvatarGroup', template: fromPackage('AvatarGroup') },

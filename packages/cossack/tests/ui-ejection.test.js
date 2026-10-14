@@ -13,7 +13,7 @@ describe('UI source ejection', () => {
     const source = UI_COMPONENTS[name].template();
     expect(source).not.toContain('export {};');
     expect(source).not.toMatch(/from ["']\./);
-    expect(source).toContain(name === 'accordion' ? 'class AccordionItem' : `class ${UI_COMPONENTS[name].className}`);
+    expect(source).toContain(`class ${UI_COMPONENTS[name].className}`);
     if (name === 'accordion' || name === 'collapsible') {
       expect(source).toContain('class DisclosureController');
       expect(source).toContain('function disclosureStyle');

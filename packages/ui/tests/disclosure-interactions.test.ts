@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 // @Client methods need the browser environment flag at module initialization.
 vi.stubGlobal('window', { document: {} });
-const { AccordionItem } = await import('../src/components/Accordion');
+const { Accordion } = await import('../src/components/Accordion');
 const { Collapsible } = await import('../src/components/Collapsible');
 const { renderToString } = await import('@cossackframework/renderer');
 
-describe.each([AccordionItem, Collapsible])('%s state ownership', (Component) => {
+describe.each([Accordion, Collapsible])('%s state ownership', (Component) => {
     it('toggles default-open content before the first render', () => {
         const instance = new Component();
         const onToggle = vi.fn();

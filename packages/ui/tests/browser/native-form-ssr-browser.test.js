@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { html, renderToString, minifyHtml } from '../../../renderer/dist/server.js';
 import { component } from '../../../renderer/dist/index.js';
-import { Textarea, Select, NativeSelect, InputGroup, PasswordInput } from '../../dist/index.js';
+import { Textarea, NativeSelect, InputGroup, PasswordInput } from '../../dist/index.js';
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 const require = createRequire(new URL('../../package.json', import.meta.url));
@@ -21,7 +21,7 @@ it('serves native values without JS and hydrates controls with typed UI controls
   const value = '\n<&" </textarea><script>alert(1)</script>';
   const templateSource = `(message, choice, disabled=false) => html\`<form>
     <label for="message">Message</label>\${component(Textarea,{id:'message',name:'message',required:true,disabled,'.value':message,'@input':event=>window.controlEvents.push(event.currentTarget.tagName)})}
-    <label for="choice">Choice</label>\${component(Select,{id:'choice',name:'choice',required:true,disabled,'.value':choice,'@change':event=>window.controlEvents.push(event.currentTarget.tagName)},html\`
+    <label for="choice">Choice</label>\${component(NativeSelect,{id:'choice',name:'choice',required:true,disabled,'.value':choice,'@change':event=>window.controlEvents.push(event.currentTarget.tagName)},html\`
       <optgroup label="Choices > more"><option selected value="a">A</option>
         \${['b&c', 'd'].map(v => html\`<option value=\${v}>\${v}</option>\`)}
       </optgroup>\`)}
@@ -30,7 +30,7 @@ it('serves native values without JS and hydrates controls with typed UI controls
     <label for="ssr-password">SSR password</label>\${component(PasswordInput,{id:'ssr-password',name:'addonPassword',value:message?'initial-secret':'',autocomplete:'new-password',disabled,required:true})}
     <label for="ssr-amount">SSR amount</label>\${component(InputGroup,{id:'ssr-amount',name:'addonAmount',type:'number','.value':12,prefix:'$',disabled})}
   </form>\``;
-  const template = new Function('html','component','Textarea','Select','NativeSelect','InputGroup','PasswordInput', `return (${templateSource})`)(html,component,Textarea,Select,NativeSelect,InputGroup,PasswordInput);
+  const template = new Function('html','component','Textarea','NativeSelect','InputGroup','PasswordInput', `return (${templateSource})`)(html,component,Textarea,NativeSelect,InputGroup,PasswordInput);
   try {
     const scope = path.join(root, 'node_modules/@cossackframework');
     await fs.mkdir(scope, {recursive:true});
@@ -38,7 +38,7 @@ it('serves native values without JS and hydrates controls with typed UI controls
     await fs.writeFile(path.join(root, 'index.html'), `<html><body><main id="app">${minifyHtml(renderToString(template(value, 'b&c'), { hydrate: true }))}</main><script type="module" src="/main.js"></script></body></html>`);
     await fs.writeFile(path.join(root, 'main.js'), `
 import {html,hydrate,render,component,renderToString} from '@cossackframework/renderer';
-import {Textarea,Select,NativeSelect,InputGroup,PasswordInput} from '@cossackframework/ui';
+import {Textarea,NativeSelect,InputGroup,PasswordInput} from '@cossackframework/ui';
 const template=${templateSource};
 try { renderToString(html\`<p>Example</p>\`); } catch(error) { window.ssrError=error.message; }
 window.controlEvents=[];
