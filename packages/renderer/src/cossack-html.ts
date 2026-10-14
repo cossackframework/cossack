@@ -164,6 +164,18 @@ const releaseChildId = (instance: CossackElement): void => {
   if (live?.get(instance._id) === instance) live.delete(instance._id);
 };
 
+const renderComponentSSR = (instance: CossackElement, opts: { hydrate?: boolean }): string => {
+  (instance as any).willUpdate(new Map());
+  // Framework components own render guards, loading output and development
+  // boundary wrappers. SSR must use the same template as their client render.
+  const wrappedRender = (instance as CossackElement & { _getWrappedTemplate?: () => unknown })._getWrappedTemplate;
+  const template = typeof wrappedRender === 'function'
+    ? wrappedRender.call(instance)
+    : instance._finalizeRenderOutput(instance.render());
+  if (!template) return '';
+  return renderToString(isTemplateResult(template) ? template : html`${template}`, opts);
+};
+
 const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string => {
   if (value === nothing || value === '' || value === null || value === undefined || value === false) {
     return '';
@@ -237,17 +249,19 @@ const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string
 
     pushCurrentInstance(instance);
     try {
-      (instance as any).willUpdate(new Map());
-      // Framework components own render guards, loading output and development
-      // boundary wrappers. SSR must use the same template as their client render.
-      const wrappedRender = (instance as CossackElement & { _getWrappedTemplate?: () => unknown })._getWrappedTemplate;
-      const template = typeof wrappedRender === 'function'
-        ? wrappedRender.call(instance)
-        : instance._finalizeRenderOutput(instance.render());
-      if (!template) return '';
-      return renderToString(isTemplateResult(template) ? template : html`${template}`, opts);
+      return renderComponentSSR(instance, opts);
     } finally {
       popCurrentInstance();
+      // An SSR instance lives for one render. Disconnect it so controllers
+      // release what hostConnected acquired (intervals, subscriptions);
+      // otherwise every request leaks them on long-lived servers. Core keeps
+      // the instance registered for state serialization; destroy() stays the
+      // owner's job.
+      try {
+        instance.disconnectedCallback();
+      } catch (error) {
+        console.error('[cossack] SSR component disconnection failed:', error);
+      }
     }
   }
   if (isUnsafeHTML(value)) {
