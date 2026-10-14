@@ -50,6 +50,24 @@ describe('HTTP component RPC targeting', () => {
         });
     });
 
+    it('reads scopeKey and pageParams at call time, not at proxy creation', async () => {
+        const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({})));
+        vi.stubGlobal('fetch', fetchMock);
+        let initial: any = { componentRouteId: 'leaf-a', scopeKey: 'scope-a', metadata: { params: { id: '1' } } };
+        const component = { ...makeComponent(), getInitialStateFromWindow: () => initial };
+
+        proxyHttpMethods(component, [{ name: 'save' }]);
+        await component.__cossack_proxies.get('save')?.();
+        // SPA navigation replaces the window state; the persistent layout's
+        // proxies must follow it.
+        initial = { componentRouteId: 'leaf-b', scopeKey: 'scope-b', metadata: { params: { id: '2' } } };
+        await component.__cossack_proxies.get('save')?.();
+
+        const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string));
+        expect(bodies[0]).toMatchObject({ componentRouteId: 'layout-route-id', scopeKey: 'scope-a', pageParams: { id: '1' } });
+        expect(bodies[1]).toMatchObject({ componentRouteId: 'layout-route-id', scopeKey: 'scope-b', pageParams: { id: '2' } });
+    });
+
     it('invalidates only after a successful HTTP response has been decoded', async () => {
         let resolveFetch!: (value: unknown) => void;
         const fetchPromise = new Promise((resolve) => { resolveFetch = resolve; });

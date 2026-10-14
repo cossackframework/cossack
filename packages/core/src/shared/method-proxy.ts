@@ -215,11 +215,13 @@ function serverMethodTimeout(constructor: any, name: string): number | undefined
 
 /** HTTP and SSE actions share a single response-local promise/iterator call. */
 export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase[]): void {
-    const initialState = component.getInitialStateFromWindow();
-    const componentRouteId = component.constructor.name === 'App'
+    // Persistent App/layout instances outlive SPA navigations, which replace
+    // the window state. Resolve scopeKey/pageParams (and a fallback route id)
+    // on every call instead of freezing the first page's values.
+    const resolveRouteId = (initialState: any) => component.constructor.name === 'App'
         ? initialState?.appRouteId
         : component.__cossack_componentRouteId || initialState?.componentRouteId;
-    if (!componentRouteId) {
+    if (!resolveRouteId(component.getInitialStateFromWindow())) {
         console.error('[Cossack] Cannot create HTTP proxies: componentRouteId not found in initial state.');
         return;
     }
@@ -229,6 +231,8 @@ export function proxyHttpMethods(component: any, serverMethods: ServerMethodBase
         if (isSharedMethod(component.constructor, name)) continue;
         const defaultTimeoutMs = serverMethodTimeout(component.constructor, name);
         const proxy = (...args: any[]) => {
+            const initialState = component.getInitialStateFromWindow();
+            const componentRouteId = resolveRouteId(initialState);
             const optimisticCall = runOptimisticHandler(component, name, args, optimisticHandlers[name], stateKeys);
             component.loading[name] = (component.loading[name] || 0) + 1;
             component.requestUpdate();
