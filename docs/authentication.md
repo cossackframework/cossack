@@ -280,8 +280,10 @@ export class Dashboard extends Cossack {
 On the server, `this.user` is the full user that your middleware set. The
 browser gets only a projection of it. By default the SSR hydration payload
 (`window.__INITIAL_STATE__`) contains only `{ id }`, so after hydration
-`this.user` on the client has only `id`. Durable Object storage never stores
-the user.
+`this.user` on the client has only `id`. The payload has the user once, in its
+root `user` field. The page, its layouts and the App all read that copy, on the
+first load and after client navigation. Component state never contains the
+user, so Durable Object storage never stores it.
 
 Read other user fields on the server, for example in `init()`, and copy what
 the page displays into `@State` fields. If client code needs more user fields,

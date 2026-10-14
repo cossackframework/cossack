@@ -9,7 +9,7 @@ import { getForwardedServerMethodClass } from '@cossackframework/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Hono, type Context, type Handler } from 'hono';
 import { renderRoot, TemplateHelpers } from './root.js';
-import { Page, PageOptions, Cossack, User, setPublicUserProjection, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
+import { Page, PageOptions, Cossack, User, setPublicUserProjection, toPublicUser, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
   createInstance,
   createRootServiceScope,
@@ -706,6 +706,8 @@ export function createApp(options: CreateAppOptions = {}) {
         if (boundary && pageInitialState.metadata) pageInitialState.metadata.routePath = path;
         const finalInitialState = {
           ...pageInitialState,
+          // Once for the page, its layouts and the App: component states omit it.
+          user: toPublicUser(user),
           routePath: boundary ? path : filePathToRoutePath(path),
           componentPath: path,
           _cossackBoundary: boundary ? { type: kind, source: path } : undefined,

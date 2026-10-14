@@ -136,13 +136,13 @@ it('restores retained query, user, parameters, resources and shared service bind
     const requestContext = { context: { request: 'committed' }, user: { id: 'old' }, env: {} };
     const bind = vi.fn();
     (layout as any)._serviceScope = { bindRequest: bind, getRequestContext: () => requestContext };
-    await layout.bootstrap({ initialState: { ...state(), metadata: { ...state().metadata,
-        user: { id: 'old' }, params: { id: 'before' } },
-        serverResources: { item: { argsKey: '[1]', value: 'one' } } }, deferMount: true });
+    await layout.bootstrap({ initialState: { ...state(), metadata: { ...state().metadata, params: { id: 'before' } },
+        serverResources: { item: { argsKey: '[1]', value: 'one' } } }, user: { id: 'old' }, deferMount: true });
     const restore = layout._frameworkCaptureNavigationContext();
-    layout._frameworkHydrateNavigationResources({ public: {}, metadata: { componentId: 'list', user: { id: 'new' }, params: { id: 'after' } },
-        serverResources: { item: { argsKey: '[2]', value: 'two' } } }, '/list', '/list?page=2');
+    layout._frameworkHydrateNavigationResources({ public: {}, metadata: { componentId: 'list', params: { id: 'after' } },
+        serverResources: { item: { argsKey: '[2]', value: 'two' } } }, '/list', '/list?page=2', { id: 'new' });
     expect(layout.item).toBe('two');
+    expect(layout.currentUser).toMatchObject({ id: 'new' });
     restore();
     expect(layout.item).toBe('one');
     expect(layout.request.query('page')).toBe('1');
@@ -167,7 +167,7 @@ it.each(['resolve', 'reject'] as const)('retained resource handoff discards a la
     expect(layout.item).toBe('one'); expect(loader).not.toHaveBeenCalled();
     const refresh = layout.refresh$('item'); await vi.waitFor(() => expect(loader).toHaveBeenCalledOnce());
     layout._frameworkHydrateNavigationResources({ ...state(2), metadata: { ...state(2).metadata, params: { id: 'next' } },
-        serverResources: { item: { argsKey: '[2]', value: 'two' } } }, '/list', '/list?page=2');
+        serverResources: { item: { argsKey: '[2]', value: 'two' } } }, '/list', '/list?page=2', undefined);
     expect(layout.item).toBe('two'); expect(layout.request.param('id')).toBe('next');
     expect(layout.resourceStatus$('item')).toMatchObject({ state: 'ready', value: 'two' });
     if (settlement === 'resolve') resolve('obsolete'); else reject(new Error('obsolete'));
@@ -182,7 +182,7 @@ it('does not partially hand off URL or resources if SSR values are invalid', asy
     await component.bootstrap({ initialState: state(), skipInit: true, deferMount: true });
     expect(() => component._frameworkHydrateNavigationResources({ public: {}, serverResources: {
         invalid: { argsKey: '[]', value: new Map() },
-    } }, '/list', '/list?page=2')).toThrow();
+    } }, '/list', '/list?page=2', undefined)).toThrow();
     expect(component.urlState(filters).page).toBe(1); component.destroy();
 });
 

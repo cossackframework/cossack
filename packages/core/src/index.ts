@@ -5,7 +5,7 @@ export * from './shared/decorators';
 export * from './shared/environment';
 export * from './shared/StateProvider';
 export type { User, PublicUserProjection } from './shared/user';
-export { setPublicUserProjection } from './shared/user';
+export { setPublicUserProjection, toPublicUser } from './shared/user';
 export * from './shared/head';
 export * from './shared/runtime';
 export * from './shared/runtime-capabilities';
