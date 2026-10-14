@@ -285,8 +285,8 @@ classify, which fails the build when stripping would change it.
 A class is a framework class when one of these is true:
 
 - Its superclass expression names `Cossack`, `CossackElement` or
-  `CossackService` from a `@cossackframework/*` package, directly, through an
-  import alias, or through a namespace import (`core.Cossack`). The name can be
+  `CossackService`, directly, through an alias of a `@cossackframework/*`
+  import, or through a namespace import (`core.Cossack`). The name can be
   anywhere in the expression, for example in a mixin call such as
   `extends WithTracking(Cossack)` or a cast such as `extends (Cossack as any)`.
 - Its superclass is another framework class in the same module.
