@@ -2,7 +2,7 @@ import type { Plugin } from 'vite';
 import { parseSync } from 'vite';
 import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
-import { isHttpHandlerModule } from './page-inspection.js';
+import { isHttpHandlerProgram } from './page-inspection.js';
 
 export interface CossackSecurityPluginOptions {
   devWarning?: boolean;
@@ -114,11 +114,19 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
     async load(id) {
       const isClientEnvironment = this.environment?.name === 'client';
       if (id.includes('node_modules')) return;
+      // Virtual modules have no file on disk for any branch below to inspect.
+      if (id.startsWith('\0')) return;
 
       // Vite module ids frequently include query strings (e.g. `src/auth.ts?import`
       // or `?v=abc123`). Strip `?…` / `#…` before matching or reading the file so
       // the regex anchors ($>) and readFileSync both see the real path.
       const cleanId = id.split('?')[0].split('#')[0];
+      // Only script modules can be client-only, server-only, config or HTTP
+      // route modules. CSS, images, JSON, fonts and `?raw`/`?url` assets are
+      // never read or parsed here. A script path keeps its treatment whatever
+      // the query, so `server.ts?raw` cannot inline a server-only module's
+      // source into the client bundle.
+      if (!isScriptModulePath(cleanId)) return;
       if (/(^|\/)vite-security-plugin\.m?ts$/.test(cleanId)) return;
 
       // Browser-only modules are loaded verbatim by the client build. Every
@@ -132,14 +140,30 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
 
       if (!isClientEnvironment) return;
 
+      // The branches below share one read and one parse of the module, made
+      // on first use (the config branch needs neither). `null` records a
+      // file that could not be read or parsed.
+      let source: string | null | undefined;
+      let program: any | null | undefined;
+      const parsedModule = (): any | null => {
+        if (program !== undefined) return program;
+        if (source === undefined) {
+          try { source = readFileSync(cleanId, 'utf8'); } catch { source = null; }
+        }
+        program = source === null ? null : parseProgram(source);
+        return program;
+      };
+
       // Functional HTTP routes are server-only even when they use only Web
       // APIs or platform bindings, without a known server-library import.
       // Keep their export interface in the browser route catalog, but never
       // load their bodies or transitive database/credential dependencies.
       if (/(?:^|[/\\])src[/\\]pages[/\\].+\.m?ts$/.test(cleanId)) {
-        const source = readFileSync(cleanId, 'utf8');
-        if (await isHttpHandlerModule(source)) {
-          const shape = readClientOnlyExports(source, cleanId, 'Server-only HTTP route');
+        // An unreadable page fails the build instead of being skipped.
+        source = readFileSync(cleanId, 'utf8');
+        const pageProgram = parsedModule();
+        if (pageProgram && isHttpHandlerProgram(pageProgram)) {
+          const shape = clientOnlyExportsOf(pageProgram, cleanId, 'Server-only HTTP route');
           const label = JSON.stringify(moduleLabelFromId(cleanId));
           const lines = [`const __httpOnly = name => () => { throw new Error('HTTP route export ' + name + ' from ' + ${label} + ' is server-only. Call its URL or use a @Server method.'); };`];
           shape.named.forEach((name, index) => lines.push(
@@ -168,7 +192,8 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // the Oxc AST) so it tracks the generator exactly — including conditional
       // OAuth exports (`oauth`, `handleOAuthUser`) — and never drifts.
       if (/(^|\/)src\/auth\.m?ts$/.test(cleanId)) {
-        return generateAuthClientStub(cleanId);
+        const authProgram = parsedModule();
+        return authClientStub(authProgram ? namedExportsOf(authProgram) : []);
       }
 
       // General server-only detection: any other user module that imports from
@@ -180,17 +205,16 @@ export function cossackSecurityPlugin(options: CossackSecurityPluginOptions = {}
       // from these, but the real calls live inside stripped `@Server` bodies, so
       // stubbing named exports to throwing placeholders keeps the graph clean.
       // `src/config/*` is already handled above and `src/auth.ts` above that.
-      if (isServerOnlyModule(cleanId)) {
+      const moduleProgram = parsedModule();
+      if (moduleProgram && isServerOnlyProgram(moduleProgram)) {
         // Component modules must reach transform() first: @Server bodies and
         // server$ loaders are removed there, after which their now-unused
         // server-only imports can be tree-shaken. Stubbing the whole module in
         // load() would erase the component before the AST security pass.
         try {
-          const source = readFileSync(cleanId, 'utf8');
-          const program = parseProgram(source);
-          if (program && frameworkClasses(program).size > 0) return;
+          if (frameworkClasses(moduleProgram).size > 0) return;
         } catch { /* generate the conservative stub below */ }
-        return generateServerOnlyStub(cleanId, moduleLabelFromId(cleanId));
+        return serverOnlyStub(namedExportsOf(moduleProgram), moduleLabelFromId(cleanId));
       }
     },
 
@@ -545,6 +569,17 @@ function parseProgram(code: string): any | null {
   }
 }
 
+/**
+ * Script extensions the load() hook inspects. Parsing is TypeScript-mode, so
+ * plain JavaScript (and JSX-free `.tsx`/`.jsx`) modules are covered too.
+ */
+const SCRIPT_MODULE_PATH = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/** Whether a query-free module path names a script the security passes inspect. */
+function isScriptModulePath(cleanId: string): boolean {
+  return SCRIPT_MODULE_PATH.test(cleanId);
+}
+
 /** Whether a Vite module id uses the browser-only module filename convention. */
 export function isClientOnlyModuleId(id: string): boolean {
   const cleanId = id.split('?')[0].split('#')[0];
@@ -612,6 +647,11 @@ export function generateClientOnlyServerStub(id: string, moduleName = moduleLabe
 function readClientOnlyExports(source: string, id: string, kind = 'Client-only module'): ClientOnlyExports {
   const program = parseProgram(source);
   if (!program) throw new Error(`[Cossack Security] Could not parse ${kind.toLowerCase()} ${id}.`);
+  return clientOnlyExportsOf(program, id, kind);
+}
+
+/** Runtime export interface of a parsed module whose exports are all stubbed. */
+function clientOnlyExportsOf(program: any, id: string, kind: string): ClientOnlyExports {
   const named = new Set<string>();
   let hasDefault = false;
   for (const stmt of program.body ?? []) {
@@ -663,7 +703,11 @@ function readClientOnlyExports(source: string, id: string, kind = 'Client-only m
  * a build never hard-fails, but accidental client use is still loud).
  */
 export function generateServerOnlyStub(id: string, moduleName: string): string {
-  const namedExports = readNamedExports(id);
+  return serverOnlyStub(readNamedExports(id), moduleName);
+}
+
+/** {@link generateServerOnlyStub} for already collected runtime export names. */
+function serverOnlyStub(namedExports: string[], moduleName: string): string {
   const header =
     `// [cossack-security] ${commentText(moduleName)} is server-only — stubbed on the client.\n` +
     `const stub = (name) => () => { throw new Error(${jsString(`${moduleName}.`)} + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
@@ -685,7 +729,8 @@ export function generateServerOnlyStub(id: string, moduleName: string): string {
 }
 
 /**
- * Generate the client-side stub module for `src/auth.ts`.
+ * Generate the client-side stub module for `src/auth.ts` from its runtime
+ * export names (empty when the file could not be read or parsed).
  *
  * Specialized wrapper over {@link generateServerOnlyStub} that preserves the
  * `auth` export's shape: client code (the login page) references
@@ -694,8 +739,7 @@ export function generateServerOnlyStub(id: string, moduleName: string): string {
  * createSession: stub }` rather than a bare function. Other exports are stubbed
  * normally.
  */
-function generateAuthClientStub(id: string): string {
-  const namedExports = readNamedExports(id);
+function authClientStub(namedExports: string[]): string {
   const header =
     `// [cossack-security] src/auth.ts is server-only — stubbed on the client.\n` +
     `const stub = (name) => () => { throw new Error('auth.' + name + ' is server-only and was called on the client. Move the call into a @Server method.'); };\n`;
@@ -775,8 +819,11 @@ export function readImportSources(id: string): string[] {
     return [];
   }
   const program = parseProgram(source);
-  if (!program) return [];
+  return program ? importSourcesOf(program) : [];
+}
 
+/** Runtime import and re-export sources of a parsed module (see {@link readImportSources}). */
+function importSourcesOf(program: any): string[] {
   const sources = new Set<string>();
   for (const stmt of program.body ?? []) {
     if (stmt.type === 'ImportDeclaration' && stmt.source?.value) {
@@ -816,13 +863,19 @@ export function readImportSources(id: string): string[] {
  * service file importing an ORM entity does not leak server code into the bundle.
  */
 export function isServerOnlyModule(id: string): boolean {
-  const sources = readImportSources(id);
-  return sources.some((spec) => {
-    if (spec.startsWith('node:')) return true;
-    return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
-      spec === source || spec.startsWith(`${source}/`),
-    );
-  });
+  return readImportSources(id).some(isServerOnlyModuleSource);
+}
+
+/** {@link isServerOnlyModule} for an already parsed module. */
+function isServerOnlyProgram(program: any): boolean {
+  return importSourcesOf(program).some(isServerOnlyModuleSource);
+}
+
+function isServerOnlyModuleSource(spec: string): boolean {
+  if (spec.startsWith('node:')) return true;
+  return [...SERVER_ONLY_IMPORT_SOURCES].some((source) =>
+    spec === source || spec.startsWith(`${source}/`),
+  );
 }
 
 /**
@@ -854,8 +907,11 @@ function readNamedExports(id: string): string[] {
     return [];
   }
   const program = parseProgram(source);
-  if (!program) return [];
+  return program ? namedExportsOf(program) : [];
+}
 
+/** Runtime named exports of a parsed module (see {@link readNamedExports}). */
+function namedExportsOf(program: any): string[] {
   const names = new Set<string>();
   for (const stmt of program.body ?? []) {
     switch (stmt.type) {
