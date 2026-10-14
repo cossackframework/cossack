@@ -1097,7 +1097,7 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         return this as unknown as CossackElementInternal;
     }
 
-    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, deferMount, stageNavigation }: BootstrapOptions = {}) {
+    public async bootstrap({ container, initialState, context, user, env, runtime, page, providerName, providerTargets, skipInit, skipGet, deferMount, stageNavigation }: BootstrapOptions = {}) {
         if (this.isInPhase(LifecyclePhase.Destroyed)) return;
         this._providerTargets = providerTargets ? { ...providerTargets } : undefined;
         // Transition to Bootstrapping phase from Creating phase
@@ -1202,8 +1202,10 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
         // the security plugin strips them from client bundles, so we must not
         // invoke them during hydration (use clientInit() for client-side setup).
         if (this.isServer) {
-            await this.get();
-            if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+            if (!skipGet) {
+                await this.get();
+                if (this.isInPhase(LifecyclePhase.Destroyed)) return;
+            }
             if (!skipInit) {
                 await this.init();
                 if (this.isInPhase(LifecyclePhase.Destroyed)) return;

@@ -85,8 +85,10 @@ export function createApiHandler(ComponentClass: new () => Cossack, methodNames:
             try {
                 instance = createInstance(ComponentClass, { serviceScope: chain.scope });
                 // Bootstrap provides `this.c` (the augmented Cossack context,
-                // e.g. `getFormData<T>()`), `this.user` and `this.env`.
-                await instance.bootstrap({ ...facilities, runtime: await options.runtimeInfo?.(), skipInit: true });
+                // e.g. `getFormData<T>()`), `this.user` and `this.env`. The verb
+                // method is the handler: `get()` must not run before `post()`
+                // (it may deny or load data for a GET) nor twice for a GET.
+                await instance.bootstrap({ ...facilities, runtime: await options.runtimeInfo?.(), skipInit: true, skipGet: true });
 
                 // Call the designated API method (get, post, etc.)
                 const result = await (instance as any)[methodName]();

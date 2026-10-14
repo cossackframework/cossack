@@ -44,12 +44,21 @@ class PlainPage extends Cossack {
     render() { return html`<p>plain</p>`; }
 }
 
+// get() is the GET handler: it must run once for GET and never for other verbs.
+const verbCalls: string[] = [];
+@Page({ transport: 'http' })
+class RecordApi extends Cossack {
+    async get() { verbCalls.push('get'); return this.c.json({ verb: 'get' }); }
+    async post() { verbCalls.push('post'); return this.c.json({ verb: 'post' }); }
+}
+
 registry.layouts['/src/pages/layout.ts'] = { default: Layout };
 registry.pages['/src/pages/api/greet.ts'] = { default: GreetApi };
 registry.pages['/src/pages/plain/index.ts'] = { default: PlainPage };
+registry.pages['/src/pages/api/records/[id]/index.ts'] = { default: RecordApi };
 const { createApp } = await import('../src/router');
 
-afterEach(() => { disposed = 0; });
+afterEach(() => { disposed = 0; verbCalls.length = 0; });
 
 describe('class-based HTTP handlers', () => {
     it('constructs handlers through DI with layout service scopes and request facilities', async () => {
@@ -68,6 +77,15 @@ describe('class-based HTTP handlers', () => {
         expect(response.status).toBe(status);
         if (status === 403) expect(await response.json()).toMatchObject({ code: 'COSSACK_AUTH_FORBIDDEN' });
         else expect(await response.json()).toEqual({ saved: true });
+    });
+
+    it('runs get() exactly once for GET and not at all for other verbs', async () => {
+        const app = createApp();
+        expect(await (await app.request('/api/records/1', {}, {} as any)).json()).toEqual({ verb: 'get' });
+        expect(verbCalls).toEqual(['get']);
+        verbCalls.length = 0;
+        expect(await (await app.request('/api/records/1', { method: 'POST' }, {} as any)).json()).toEqual({ verb: 'post' });
+        expect(verbCalls).toEqual(['post']);
     });
 
     it('does not expose verbs inherited from the framework base class as routes', async () => {

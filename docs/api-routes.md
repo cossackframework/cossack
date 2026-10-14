@@ -254,6 +254,12 @@ layout service scopes as SSR, so constructor `@Service` parameters and
 `@Server({ authorize })` declaration on a verb handler runs before the class
 is constructed and denies the request with 401 or 403.
 
+The verb method is the whole handler. `get()` runs once for a `GET` request
+and does not run before `post()`, `put()`, `patch()` or `delete()`; `init()`
+does not run for class-based API routes at all. A request body that a handler
+leaves unread is read to the end before the response is sent, so the
+connection stays usable.
+
 ### Server-only lifecycle methods
 
 `get()` and `init()` are server-only. Their bodies are stripped from client
