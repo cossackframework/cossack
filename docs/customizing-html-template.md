@@ -81,7 +81,7 @@ Both approaches provide the same two helpers:
 ## Important Notes
 
 - The `#root` container is required. Client-side hydration looks for `<div id="root">` to mount the application. If you use a function template, always include `cossackBody()` in your output. If you use a string template, include the `{{ cossackBody }}` placeholder.
-- Production minification still applies. The output is minified via `minifyHtml` in production builds in both template modes.
+- Production minification still applies. The output is minified via `minifyHtml` in production builds in both template modes. Minification does not change how the page renders: whitespace between tags collapses to one space (or one line break) and is removed only before `<html>`, inside `<head>` and before `<body>`. The content of `<pre>`, `<textarea>`, `<script>`, `<style>` and of elements whose `style` attribute or Tailwind class (`whitespace-pre`, `whitespace-pre-wrap`, `whitespace-break-spaces`) preserves whitespace is kept as written. If a stylesheet rule preserves whitespace on an element, give it one of those classes too, or minification collapses its whitespace.
 - The `<meta charset="utf-8">` tag is your responsibility. The default template includes it. Include it in your custom template as well.
 
 ## TypeScript
