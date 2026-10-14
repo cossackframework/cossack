@@ -125,6 +125,10 @@ const styles = { color: 'red', display: isVisible ? 'block' : 'none' };
 html`<div class="${classMap(classes)}" style="${styleMap(styles)}">...</div>`;
 ```
 
+`styleMap` keys can be CSS property names (`'font-size'`, `'--gap'`) or
+camelCase names (`fontSize`, `backgroundColor`), which are converted to
+dash-case. Custom properties (`--name`) are used exactly as written.
+
 ### `ref`
 
 Get a reference to the DOM element.

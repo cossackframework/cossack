@@ -105,13 +105,23 @@ export const classMap = (classInfo: Record<string, string | boolean | number>) =
 };
 
 /**
- * Generates a style string from an object.
- * Usage: style="${styleMap({ color: 'red' })}"
+ * CSS property name for a styleMap key. Keys containing a dash (`font-size`,
+ * `--custom-prop`) are used as written; camelCase keys are dash-cased the way
+ * Lit does it (`backgroundColor` -> `background-color`,
+ * `webkitTransition` -> `-webkit-transition`).
+ */
+const cssPropertyName = (key: string): string =>
+  key.includes('-') ? key : key.replace(/(?:^(webkit|moz|ms|o)|)(?=[A-Z])/g, '-$&').toLowerCase();
+
+/**
+ * Generates a style string from an object. Keys may be CSS names
+ * (`'font-size'`, `'--gap'`) or camelCase (`fontSize`).
+ * Usage: style="${styleMap({ color: 'red', backgroundColor: 'white' })}"
  */
 export const styleMap = (styleInfo: Record<string, string | undefined | null>) => {
   return Object.keys(styleInfo)
     .filter((key) => styleInfo[key] != null)
-    .map((key) => `${key}:${styleInfo[key]}`)
+    .map((key) => `${cssPropertyName(key)}:${styleInfo[key]}`)
     .join(';');
 };
 
