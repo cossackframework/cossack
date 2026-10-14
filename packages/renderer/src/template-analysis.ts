@@ -50,6 +50,9 @@ export interface TemplateAnalysis {
   attributeGroups: Map<number, AttributeGroup>;
 }
 
+/** @internal Counts analysis runs so tests can verify the cache. */
+export const templateAnalysisStats = { runs: 0 };
+
 const enum State {
   Data,
   TagName,
@@ -88,6 +91,7 @@ interface OpenAttribute {
  * comments or raw text, and never inside nested values).
  */
 export const analyzeTemplate = (input: readonly string[], scopeId?: string): TemplateAnalysis => {
+  templateAnalysisStats.runs++;
   const scopeAttr = scopeId ? ` data-cossack-scope="${scopeId}"` : '';
   const strings: string[] = [];
   const bindings: BindingInfo[] = [];

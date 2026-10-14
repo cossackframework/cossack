@@ -437,8 +437,24 @@ const mergeClassIntoResult = (result: string, extraClass: string): string | null
   return result.slice(0, tagStart) + rewrittenTag;
 };
 
-const getTemplateAnalysis = (result: TemplateResult): TemplateAnalysis =>
-  analyzeTemplate(result.strings, result.__cossackScope);
+// Template analysis depends only on the static strings and the style scope,
+// so it is computed once per (strings, scope) and shared by every render and
+// every TemplateResult instance (e.g. each row of a list).
+const templateAnalyses = new WeakMap<TemplateStringsArray, Map<string, TemplateAnalysis>>();
+const getTemplateAnalysis = (result: TemplateResult): TemplateAnalysis => {
+  let byScope = templateAnalyses.get(result.strings);
+  if (!byScope) {
+    byScope = new Map();
+    templateAnalyses.set(result.strings, byScope);
+  }
+  const scope = result.__cossackScope ?? '';
+  let analysis = byScope.get(scope);
+  if (!analysis) {
+    analysis = analyzeTemplate(result.strings, result.__cossackScope);
+    byScope.set(scope, analysis);
+  }
+  return analysis;
+};
 
 const rawTextString = (value: unknown): string => {
   value = unwrapNodeValue(value);
@@ -2417,9 +2433,13 @@ const containerCache = new WeakMap<Node, { identity: object; parts: Part[] }>();
  * Shared by `render()` (append into a wiped container) and `hydrate()`
  * (rebind the parts to the existing SSR DOM).
  */
-const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
-  const parts: Part[] = [];
-  const { strings, bindings } = getTemplateAnalysis(result);
+// Parsed <template> per template identity (strings + type + scope). Each
+// render clones it instead of re-parsing the markup, as Lit does.
+const templateElements = new WeakMap<object, HTMLTemplateElement>();
+const getTemplateElement = (result: TemplateResult, { strings, bindings }: TemplateAnalysis): HTMLTemplateElement => {
+  const identity = templateIdentity(result);
+  const cached = templateElements.get(identity);
+  if (cached && cached.ownerDocument === document) return cached;
 
   // Same classification as SSR: node bindings get comment anchors, attribute
   // and raw-text bindings get inline placeholders, comment/element bindings
@@ -2432,15 +2452,6 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
     else if (kind === 'attribute' || kind === 'raw-text') htmlString += `__CRP_${i}__`;
   }
   htmlString += strings[strings.length - 1];
-
-  // Property, event and boolean bindings keep the author's case
-  // (`.innerHTML`, `@myEvent`); the parser lowercased the attribute name.
-  // Plain attributes use the parser's name, which also applies SVG case
-  // adjustments such as `viewBox`.
-  const authoredName = (index: number, domName: string): string => {
-    const binding = bindings[index];
-    return binding?.kind === 'attribute' && /^[.@?]/.test(binding.name) ? binding.name : domName;
-  };
 
   const template = document.createElement('template');
   if (result['_$litType$'] === 2) {
@@ -2457,6 +2468,25 @@ const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[
   } else {
     template.innerHTML = htmlString;
   }
+  templateElements.set(identity, template);
+  return template;
+};
+
+const compileTemplate = (result: TemplateResult): { fragment: Node; parts: Part[] } => {
+  const parts: Part[] = [];
+  const analysis = getTemplateAnalysis(result);
+  const { bindings } = analysis;
+
+  // Property, event and boolean bindings keep the author's case
+  // (`.innerHTML`, `@myEvent`); the parser lowercased the attribute name.
+  // Plain attributes use the parser's name, which also applies SVG case
+  // adjustments such as `viewBox`.
+  const authoredName = (index: number, domName: string): string => {
+    const binding = bindings[index];
+    return binding?.kind === 'attribute' && /^[.@?]/.test(binding.name) ? binding.name : domName;
+  };
+
+  const template = getTemplateElement(result, analysis);
   const instance = template.content.cloneNode(true);
 
   const walker = document.createTreeWalker(instance, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
