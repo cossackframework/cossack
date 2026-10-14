@@ -154,8 +154,11 @@ export class Toaster extends Cossack {
         if (!presenters.has(store)) throw new Error('Toaster requires a live store from createToastStore.');
         if (this.connectedStore && this.connectedStore !== store) throw new Error('Toaster store cannot change while mounted. Remount the presenter.');
         if (this.children != null && this.children !== false && this.children !== '') throw new Error('Toaster renders store messages, not children.');
-        return html`<div class=${`cs-toaster fixed z-[100] flex flex-col gap-2 p-4 pointer-events-none w-full max-w-[432px] ${positions[position]}`}
-            ...=${rest} role="region" aria-label=${label} tabindex="-1" ref=${(element: Element) => { this.rootElement = element as HTMLDivElement; this.schedulePresenter(); }}>
+        // popover="manual" puts the region in the top layer once shown, above
+        // modal dialogs that make the rest of the document inert. The resets
+        // undo the UA popover box; fixed/z-index remain the fallback.
+        return html`<div class=${`cs-toaster fixed z-[100] inset-auto m-0 border-0 bg-transparent overflow-visible flex flex-col gap-2 p-4 pointer-events-none w-full max-w-[432px] ${positions[position]}`}
+            popover="manual" ...=${rest} role="region" aria-label=${label} tabindex="-1" ref=${(element: Element) => { this.rootElement = element as HTMLDivElement; this.schedulePresenter(); }}>
             <div class="sr-only" role="status" aria-live="polite" aria-atomic="false" aria-relevant="additions">${repeat(this.toasts, item => item.id, item => html`<div>${item.message}</div>`)}</div>
             <ol class="cs-toaster__items flex flex-col gap-2 m-0 p-0 list-none">${repeat(this.toasts, item => item.id, item => html`<li data-toast-id=${item.id}
                 class=${`cs-toast pointer-events-auto rounded-md shadow-lg p-4 pe-10 w-full min-w-0 break-words text-sm relative ${styles[item.variant]}`}>
@@ -196,9 +199,34 @@ export class Toaster extends Cossack {
         root.addEventListener('mouseenter', enter); root.addEventListener('mouseleave', leave); root.addEventListener('keydown', keydown);
         document.addEventListener('visibilitychange', visibility); window.addEventListener('blur', blur); window.addEventListener('focus', focus);
         visibility(); presenter.pause('window', !document.hasFocus()); presenter.pause('focus', root.contains(document.activeElement));
+        // A modal <dialog> makes everything outside it inert, the top layer
+        // included. While one is open, the region moves into the topmost modal
+        // and shows as a manual popover, so it paints above the dialog and stays
+        // interactive. It returns to its own place when the last modal closes.
+        const topLayer = typeof root.showPopover === 'function' && root.hasAttribute('popover');
+        const home = { parent: root.parentNode, next: root.nextSibling };
+        const modals = () => { try { return [...document.querySelectorAll<HTMLDialogElement>('dialog:modal')]; } catch { return []; } };
+        const place = () => {
+            const open = modals(), modal = open.find(dialog => dialog.contains(document.activeElement)) ?? open.at(-1);
+            if (modal && root.parentNode !== modal) modal.append(root);
+            else if (!modal && root.parentNode !== home.parent) {
+                if (home.next?.parentNode === home.parent) home.parent!.insertBefore(root, home.next);
+                else if (home.parent?.isConnected) home.parent.appendChild(root);
+            }
+            if (topLayer && root.isConnected && !root.matches(':popover-open')) root.showPopover();
+        };
+        place();
+        const observer = new MutationObserver(records => {
+            if (!root.isConnected || records.some(record => record.type === 'attributes' && record.target instanceof window.HTMLDialogElement)) place();
+        });
+        observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['open'] });
         let unsubscribe: (() => void) | undefined;
         this.releaseResources = () => {
             unsubscribe?.();
+            observer.disconnect();
+            if (topLayer && root.matches(':popover-open')) root.hidePopover();
+            // The renderer removes the region only from its own place.
+            if (root.parentNode !== home.parent) root.remove();
             root.removeEventListener('focusin', focusIn); root.removeEventListener('focusout', focusOut);
             root.removeEventListener('mouseenter', enter); root.removeEventListener('mouseleave', leave); root.removeEventListener('keydown', keydown);
             document.removeEventListener('visibilitychange', visibility); window.removeEventListener('blur', blur); window.removeEventListener('focus', focus);
