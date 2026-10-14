@@ -21,6 +21,12 @@ function matchesEveryRow(predicate: unknown): boolean {
   return typeof predicate === "object" && Object.keys(predicate).length === 0;
 }
 
+/** Text for a validated LIMIT/OFFSET value; refuses anything but a safe non-negative integer. */
+function integerLiteral(value: number): string {
+  if (!Number.isSafeInteger(value) || value < 0) throw new ConfigurationError("Pagination requires a non-negative integer.");
+  return String(value);
+}
+
 interface JoinClause {
   readonly kind: "INNER" | "LEFT";
   readonly table: string;
@@ -201,12 +207,15 @@ export class SelectQueryBuilder<T extends BaseEntity, Row = T> {
       });
       nodes.push({ kind: "text", value: " ORDER BY " }, { kind: "fragment", value: new SQLFragment(orderNodes) });
     }
-    if (this.limitValue !== undefined) nodes.push({ kind: "text", value: " LIMIT " }, { kind: "value", value: this.limitValue });
+    // LIMIT and OFFSET are inlined: limit() and offset() only accept safe
+    // non-negative integers. mysql2 binds JavaScript numbers as DOUBLE, and
+    // MySQL 8.0.22+ rejects a DOUBLE LIMIT in a prepared statement.
+    if (this.limitValue !== undefined) nodes.push({ kind: "text", value: ` LIMIT ${integerLiteral(this.limitValue)}` });
     if (this.offsetValue !== undefined && this.limitValue === undefined) {
       if (this.orm.driver.dialect === "mysql") nodes.push({ kind: "text", value: " LIMIT 18446744073709551615" });
       else if (this.orm.driver.dialect === "sqlite") nodes.push({ kind: "text", value: " LIMIT -1" });
     }
-    if (this.offsetValue !== undefined) nodes.push({ kind: "text", value: " OFFSET " }, { kind: "value", value: this.offsetValue });
+    if (this.offsetValue !== undefined) nodes.push({ kind: "text", value: ` OFFSET ${integerLiteral(this.offsetValue)}` });
     return new SQLFragment(nodes);
   }
 

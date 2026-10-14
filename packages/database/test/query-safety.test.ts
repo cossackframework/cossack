@@ -104,3 +104,32 @@ describe("raw SQL empty lists", () => {
     expect(compileSQL(sql.fragment`id IN (${[1, 2]})`, dialectFor("postgres")).text).toBe("id IN ($1, $2)");
   });
 });
+
+describe("pagination literals", () => {
+  // mysql2 sends JavaScript numbers as DOUBLE parameters, and MySQL 8.0.22+
+  // rejects a DOUBLE LIMIT in a prepared statement (ER_WRONG_ARGUMENTS), which
+  // broke every findOne() on MySQL. LIMIT and OFFSET are validated integers.
+  it.each(["sqlite", "postgres", "mysql"] as const)("renders LIMIT and OFFSET as integer literals on %s", async (dialect) => {
+    const { driver, orm } = memoryORM(dialect);
+    await orm.run(async () => {
+      await Widget.findOne({ where: { name: "a" } });
+      await Widget.find({ take: 10, skip: 20 });
+    });
+    const [single, page] = driver.statements.map((statement) => statement.query);
+    expect(single?.text).toMatch(/ LIMIT 1$/);
+    expect(single?.parameters).toEqual(["a"]);
+    expect(page?.text).toMatch(/ LIMIT 10 OFFSET 20$/);
+    expect(page?.parameters).toEqual([]);
+    await orm.close();
+  });
+
+  it("rejects non-integer pagination before building SQL", async () => {
+    const { orm } = memoryORM("mysql");
+    orm.run(() => {
+      expect(() => Widget.query().limit(1.5)).toThrow(ConfigurationError);
+      expect(() => Widget.query().offset(-1)).toThrow(ConfigurationError);
+      expect(() => Widget.query().limit("1 OR 1=1" as never)).toThrow(ConfigurationError);
+    });
+    await orm.close();
+  });
+});
