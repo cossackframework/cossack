@@ -23,7 +23,8 @@ describe("cross-dialect codecs", () => {
     expect(decodeValue(column("boolean"), 0)).toBe(false);
 
     const date = new Date("2026-01-02T03:04:05.000Z");
-    expect(encodeValue(column("datetime"), date, "sqlite")).toBe(date.toISOString());
+    expect(encodeValue(column("datetime"), date, "sqlite")).toBe("2026-01-02 03:04:05.000");
+    expect(encodeValue(column("datetime"), date, "postgres")).toBe(date.toISOString());
     expect(decodeValue(column("datetime"), date.toISOString())).toEqual(date);
 
     expect(encodeValue(column("json"), { ok: true }, "sqlite")).toBe('{"ok":true}');

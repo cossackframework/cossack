@@ -283,6 +283,18 @@ class MySQLDriver implements Driver {
   }
 }
 
+/**
+ * mysql2 reads and writes DATETIME values in the process time zone by default.
+ * The ORM stores datetimes in UTC, so default the connection time zone to UTC
+ * unless the caller chose one.
+ */
+function mysqlPoolOptions(options: string | Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  if (typeof options === "string") {
+    return /[?&]timezone=/i.test(options) ? { uri: options } : { uri: options, timezone: "Z" };
+  }
+  return { timezone: "Z", ...options };
+}
+
 function adapter(driver: Driver): Adapter {
   return {
     driver,
@@ -330,7 +342,7 @@ export async function mysql(
 ): Promise<Adapter> {
   const moduleName = "mysql2/promise";
   const imported = await import(/* @vite-ignore */ moduleName);
-  const pool = imported.createPool(options) as MySQLPool;
+  const pool = imported.createPool(mysqlPoolOptions(options)) as MySQLPool;
   return adapter(new MySQLDriver(pool, pool));
 }
 

@@ -78,6 +78,11 @@ const adapter = await mysql({
 });
 ```
 
+The adapter sets the mysql2 `timezone` option to `"Z"` (UTC) unless you pass
+your own `timezone`, in the options object or as a `timezone` URL parameter.
+The ORM stores datetimes in UTC, so a different time zone shifts the values
+that you read.
+
 Turso (choose the client matching the connection):
 
 ```sh

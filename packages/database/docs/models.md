@@ -107,6 +107,14 @@ Supported logical types are `varchar`, `text`, `integer`, `bigint`, `decimal`,
 `boolean`, `datetime`, `date`, `json`, `enum`, `blob`, `uuid`, and
 `custom:<database-type>`.
 
+`datetime` values are always stored in UTC. On SQLite, D1, Turso and MySQL, the
+ORM writes a `Date` as `YYYY-MM-DD HH:MM:SS.SSS`. This is the same text shape
+that `DEFAULT CURRENT_TIMESTAMP` produces, so values that the application writes
+and values that the database fills in sort and compare correctly. On
+PostgreSQL, the ORM sends an ISO string with `Z` to a `timestamptz` column. When
+the ORM reads a timestamp that has no offset, it reads it as UTC, not as the
+time zone of the server. `date` values are written as `YYYY-MM-DD`.
+
 Common column options include:
 
 ```ts

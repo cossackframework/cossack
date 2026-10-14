@@ -264,6 +264,8 @@ export async function hyperdriveMySQL(binding: HyperdriveBinding): Promise<Adapt
       user: binding.user,
       password: binding.password,
       database: binding.database,
+      // The ORM stores DATETIME values in UTC; keep mysql2 from applying the local zone.
+      timezone: "Z",
       disableEval: true,
     }) as Promise<MySQLConnection>),
   };
