@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Cossack, Page, Server, State, readRpcStream, RateLimit, __resetRateLimitForTests } from '@cossackframework/core';
 import { component, html } from '@cossackframework/renderer';
 import { computeRouteIds } from '../src/route-ids';
-import { registerSseStoreEntry } from '../src/transports/sse';
+import { registerSseStoreEntry, __sseStoreState } from '../src/transports/sse';
 
 const { registry } = vi.hoisted(() => ({ registry: { pages: {} as Record<string, any>, layouts: {}, loadings: {} } }));
 vi.mock('virtual:cossack-pages', () => ({ default: registry }));
@@ -63,9 +63,7 @@ describe.each(['http', 'sse'] as const)('%s child RPC ownership', transport => {
             // HTTP pages also support API-only GET behavior; do not invent SSR.
             expect((await call('notAnAction')).status).toBe(403);
         }
-        if (transport === 'sse') registerSseStoreEntry(ids as any, paths.sse, scopeKey, Object.assign(snapshot, {
-            getPublicState(this: { count: number }): { count: number } { return { count: this.count }; },
-        }));
+        if (transport === 'sse') registerSseStoreEntry(ids as any, paths.sse, scopeKey, snapshot);
         expect(childId).toBeTruthy(); cleaned = 0;
     });
     afterEach(() => { vi.restoreAllMocks(); });
@@ -73,20 +71,20 @@ describe.each(['http', 'sse'] as const)('%s child RPC ownership', transport => {
         const response = await call('increment', childId, multipart);
         expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ count: 1, _cossack_return: 1 });
         expect(mutations).toBe(1); expect(cleaned).toBe(1);
-        if (transport === 'sse') expect(snapshot.count).toBe(10);
+        if (transport === 'sse') expect(__sseStoreState(`${routeId}:${scopeKey}`)?.count).toBe(10);
     });
     it.each([false, true])('keeps streaming child state separate from the page (multipart=%s)', async multipart => {
         const response = await call('stream', childId, multipart); const frames = [];
         for await (const frame of readRpcStream(response)) frames.push(frame);
         expect(frames.map(frame => frame.type === 'error' ? frame.code : frame.state.count)).toEqual([1, 2]);
         expect(mutations).toBe(1); expect(cleaned).toBe(1);
-        if (transport === 'sse') expect(snapshot.count).toBe(10);
+        if (transport === 'sse') expect(__sseStoreState(`${routeId}:${scopeKey}`)?.count).toBe(10);
     });
     it.each(['missing', 7])('rejects invalid target %j without executing a root action', async target => {
         const response = await call('increment', target);
         expect(response.status).toBe(typeof target === 'string' ? 404 : 400);
         expect(await response.json()).toMatchObject({ code: typeof target === 'string' ? 'COSSACK_RPC_NOT_FOUND' : 'COSSACK_RPC_REQUEST_INVALID', requestId: expect.any(String) });
-        expect(mutations).toBe(0); if (transport === 'sse') expect(snapshot.count).toBe(10);
+        expect(mutations).toBe(0); if (transport === 'sse') expect(__sseStoreState(`${routeId}:${scopeKey}`)?.count).toBe(10);
     });
     it('rejects framework actions on a valid child and cleans its tree', async () => {
         const response = await call('destroy', childId);
@@ -104,6 +102,6 @@ describe.each(['http', 'sse'] as const)('%s child RPC ownership', transport => {
         expect(denied.status).toBe(429); expect(denied.headers.get('Retry-After')).toMatch(/^\d+$/);
         expect(await denied.json()).toMatchObject({ code: 'COSSACK_RPC_RATE_LIMITED', requestId: expect.any(String) });
         expect(mutations).toBe(1); expect(cleaned).toBe(2);
-        if (transport === 'sse') expect(snapshot.count).toBe(10);
+        if (transport === 'sse') expect(__sseStoreState(`${routeId}:${scopeKey}`)?.count).toBe(10);
     });
 });

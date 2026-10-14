@@ -12,7 +12,6 @@ import { renderRoot, TemplateHelpers } from './root.js';
 import { Page, PageOptions, Cossack, User, setPublicUserProjection, type CossackRuntimeInfo, type Middleware, type PublicUserProjection } from '@cossackframework/core';
 import {
   createInstance,
-  createLayoutServiceScope,
   createRootServiceScope,
   snapshotRpcValue,
   RpcError,
@@ -89,6 +88,7 @@ async function rpcRedirectResponse(c: Context, result: unknown): Promise<Respons
   return c.json({ _cossack_redirect: location });
 }
 import { createApiHandler, getAuthoredRouteMember } from './api-handler.js';
+import { createServiceScopeChain } from './service-scope-chain.js';
 import registry from 'virtual:cossack-pages';
 import configuredMiddlewares from 'virtual:cossack-middlewares';
 import configFactories, { requirements as configRequirements, environment as configEnvironment } from 'virtual:cossack-config';
@@ -542,22 +542,17 @@ export function createApp(options: CreateAppOptions = {}) {
 
         // Bootstrap Layouts
         const layoutStates: Record<string, any> = {};
-        let activeServiceScope = requestServiceScope;
-        for (const lPath of layoutPaths) {
-          const LComp = getModuleDefault(layouts[lPath] as object) as new () => Cossack;
-          const layoutServiceScope = createLayoutServiceScope(activeServiceScope, LComp, {
-            ownerRouteId: routePathToIdMap.get(lPath),
-            ownerRoutePath: lPath,
-            scopeKey,
-          });
-          layoutServiceScope.bindRequest({ context: c, user, env: c.env });
-          const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
-          requestComponents.push(lInst);
-          await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
-          layoutInstances.push(lInst);
-          layoutStates[lPath] = lInst.getInitialState();
-          activeServiceScope = layoutServiceScope;
-        }
+        const { scope: activeServiceScope } = await createServiceScopeChain({
+          componentPath: path, layouts, routePathToIdMap, scopeKey,
+          facilities: { context: c, user, env: c.env }, root: requestServiceScope,
+          onLayout: async ({ path: lPath, component: LComp, scope: layoutServiceScope }) => {
+            const lInst = createInstance(LComp, { serviceScope: layoutServiceScope, ownsServiceScope: true });
+            requestComponents.push(lInst);
+            await lInst.bootstrap({ context: c, user, env: c.env, runtime: runtimeInfo, page: c.req.path });
+            layoutInstances.push(lInst);
+            layoutStates[lPath] = lInst.getInitialState();
+          },
+        });
 
         const pageInstance = createInstance(PageComponent, { serviceScope: activeServiceScope });
         requestComponents.push(pageInstance);
@@ -593,6 +588,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // the scope: first initialization wins and later requests hydrate the
         // snapshot instead of overwriting it. Node keeps the
         // process-local store entry for the SSE endpoint and /crpc.
+        let registerLocalSseState = false;
         if (pageOptions?.transport === 'sse') {
           const componentRouteId = routePathToIdMap.get(path);
           const sseStub = componentRouteId ? getSseScopeStub(c.env, componentRouteId, scopeKey) : undefined;
@@ -605,7 +601,7 @@ export function createApp(options: CreateAppOptions = {}) {
           } else if (isCloudflareRuntime()) {
             throw new Error(`${sseBindingMissingMessage()} (page: ${path})`);
           } else {
-            registerSseStoreEntry(routerContext, path, scopeKey, pageInstance);
+            registerLocalSseState = true;
           }
         }
 
@@ -629,6 +625,9 @@ export function createApp(options: CreateAppOptions = {}) {
         layoutPaths.forEach((layoutPath, index) => {
           layoutStates[layoutPath] = layoutInstances[index].getInitialState();
         });
+        // The process-local store keeps a detached snapshot of the rendered
+        // state, never this instance: the request destroys it in `finally`.
+        if (registerLocalSseState) registerSseStoreEntry(routerContext, path, scopeKey, pageInstance.getPublicState());
 
         // Head Merging (page → layouts → app, inside-out)
         const headTags = Cossack.composeHead(pageInstance, layoutInstances, appInstance);
@@ -823,18 +822,12 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
         rejectAuthorization,
         env: c.env as unknown as Record<string, unknown>,
         createComponent: async () => {
-          const rootScope = createRootServiceScope();
-          rootScope.bindRequest({ context: componentContext, user, env: c.env });
+          const { root: rootScope, scope: activeScope } = await createServiceScopeChain({
+            componentPath, layouts, routePathToIdMap, scopeKey,
+            facilities: { context: componentContext, user, env: c.env },
+          });
           let instance: Cossack | undefined;
           try {
-            let activeScope = rootScope;
-            for (const layoutPath of getLayoutStack(componentPath)) {
-              const Layout = getModuleDefault(layouts[layoutPath]) as new () => Cossack;
-              activeScope = createLayoutServiceScope(activeScope, Layout, {
-                ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey,
-              });
-              activeScope.bindRequest({ context: componentContext, user, env: c.env });
-            }
             instance = createInstance(ComponentClass, { serviceScope: activeScope }) as Cossack;
             instance.__cossack_rpcOwner = componentPath;
             instance._ownServiceScopeLifetime(rootScope);
@@ -887,21 +880,11 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
       requestScope.bindRequest({ context: c, user, env: c.env });
       let responseOwnsCleanup = false;
       try {
-        let activeScope = requestScope;
-        let ownerScope: ReturnType<typeof createLayoutServiceScope> | undefined;
-        for (const layoutPath of getLayoutStack(ownerPath)) {
-          const layoutModule = layouts[layoutPath];
-          if (!layoutModule) return c.json({ error: 'Service layout not found' }, 404);
-          const LayoutComponent = getModuleDefault(layoutModule as object) as new () => Cossack;
-          const nextScope = createLayoutServiceScope(activeScope, LayoutComponent, {
-            ownerRouteId: routePathToIdMap.get(layoutPath),
-            ownerRoutePath: layoutPath,
-            scopeKey: clientScopeKey,
-          });
-          nextScope.bindRequest({ context: c, user, env: c.env });
-          activeScope = nextScope;
-          if (layoutPath === ownerPath) ownerScope = nextScope;
-        }
+        const chain = await createServiceScopeChain({
+          componentPath: ownerPath, layouts, routePathToIdMap, scopeKey: clientScopeKey,
+          facilities: { context: c, user, env: c.env }, root: requestScope,
+        });
+        const ownerScope = chain.layouts.find(layout => layout.path === ownerPath)?.scope;
         if (!ownerScope) return c.json({ error: 'Service owner is not active' }, 400);
         const owned = ownerScope.getOwnedService(slot);
         if (!owned) return c.json({ error: `Unknown service slot '${slot}'` }, 404);
@@ -1069,14 +1052,10 @@ Route: ${escapeHtml(failureContext.route)}</pre>`
     ): Promise<Response> => {
       try {
         if (componentContext.req.raw.signal.aborted) throw new RpcError('COSSACK_RPC_CANCELLED', 'RPC call was cancelled.');
-        let activeScope = requestScope;
-        for (const layoutPath of getLayoutStack(componentPath)) {
-          const LayoutClass = getModuleDefault(layouts[layoutPath] as object) as new () => Cossack;
-          activeScope = createLayoutServiceScope(activeScope, LayoutClass, {
-            ownerRouteId: routePathToIdMap.get(layoutPath), ownerRoutePath: layoutPath, scopeKey: effectiveScopeKey,
-          });
-          activeScope.bindRequest({ context: componentContext, user, env: c.env });
-        }
+        const { scope: activeScope } = await createServiceScopeChain({
+          componentPath, layouts, routePathToIdMap, scopeKey: effectiveScopeKey,
+          facilities: { context: componentContext, user, env: c.env }, root: requestScope,
+        });
         componentInstance = createInstance(ComponentClass, { serviceScope: activeScope });
         componentInstance.__cossack_rpcOwner = componentPath;
         const coordinatorRuntime = sseStub ? attachCoordinatorRuntime(componentInstance, sseStub) : undefined;
