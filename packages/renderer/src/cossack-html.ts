@@ -138,6 +138,32 @@ const isPartDirective = (value: unknown): boolean =>
   isComponentResult(value) || Array.isArray(value) || value instanceof RepeatResult ||
   value instanceof KeyResult || value instanceof GuardResult || value instanceof CacheResult;
 
+/**
+ * Give a client-rendered child the next free `parent:n` id. Ids follow render
+ * order, so a first render (and hydration) matches SSR, but an id a live
+ * sibling still holds is skipped: `${cond ? component(A) : null}${component(B)}`
+ * must not hand A the id B kept from a render where A was absent.
+ */
+const assignChildId = (instance: CossackElement): void => {
+  const parent = instance.__parent;
+  if (!parent) return;
+  let id: string;
+  do {
+    id = `${parent._id}:${parent._childCounter++}`;
+  } while (parent._liveChildIds.has(id));
+  instance._id = id;
+  parent._liveChildIds.set(id, instance);
+};
+
+const advanceChildCounter = (instance: CossackElement): void => {
+  if (instance.__parent) instance.__parent._childCounter++;
+};
+
+const releaseChildId = (instance: CossackElement): void => {
+  const live = instance.__parent?._liveChildIds;
+  if (live?.get(instance._id) === instance) live.delete(instance._id);
+};
+
 const valueToString = (value: unknown, opts: { hydrate?: boolean } = {}): string => {
   if (value === nothing || value === '' || value === null || value === undefined || value === false) {
     return '';
@@ -1016,9 +1042,7 @@ class NodePart implements Part {
       if (result.serviceScope && typeof (this.componentInstance as any)._setServiceScope === 'function') {
         (this.componentInstance as any)._setServiceScope(result.serviceScope);
       }
-      if (this.componentInstance.__parent) {
-        this.componentInstance._id = `${this.componentInstance.__parent._id}:${(this.componentInstance.__parent as any)._childCounter++}`;
-      }
+      assignChildId(this.componentInstance);
       if (HYDRATION_DEV) {
         const ownMetadata = (this.componentInstance as CossackElement & { hydrationMetadata?: HydrationDiagnosticMetadata }).hydrationMetadata;
         const inherited = hydrationMetadata!.get(this);
@@ -1073,6 +1097,10 @@ class NodePart implements Part {
         this.disposeComponent();
         throw error;
       }
+    } else {
+      // A retained child keeps its id but still takes its slot in this
+      // render's sequence, so later new siblings number after it.
+      advanceChildCounter(this.componentInstance);
     }
     const instance = this.componentInstance;
     if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);
@@ -1159,6 +1187,7 @@ class NodePart implements Part {
       } catch {
         // Preserve the renderer's existing best-effort destruction behavior.
       } finally {
+        releaseChildId(instance);
         instance._frameworkRendererDetached?.();
       }
     }
@@ -1183,9 +1212,7 @@ class NodePart implements Part {
       if (result.serviceScope && typeof (this.componentInstance as any)._setServiceScope === 'function') {
         (this.componentInstance as any)._setServiceScope(result.serviceScope);
       }
-      if (this.componentInstance.__parent) {
-        this.componentInstance._id = `${this.componentInstance.__parent._id}:${this.componentInstance.__parent._childCounter++}`;
-      }
+      assignChildId(this.componentInstance);
       this.renderListener = (template) => {
         this.updateComponentTemplate(template);
       };
@@ -1203,6 +1230,10 @@ class NodePart implements Part {
         this.disposeComponent();
         throw error;
       }
+    } else {
+      // A retained child keeps its id but still takes its slot in this
+      // render's sequence, so later new siblings number after it.
+      advanceChildCounter(this.componentInstance);
     }
     const instance = this.componentInstance;
     if (this._draft?.snapshot.component?.instance === instance) this.restoreComponentDraft(instance);

@@ -79,6 +79,12 @@ export class CossackElement implements ReactiveControllerHost {
   public __parent: CossackElement | null = null;
   public _id: string = '';
   public _childCounter: number = 0;
+  /**
+   * @internal Live client-rendered children by `_id`. The counter restarts
+   * every render while retained children keep their ids, so a newly created
+   * child skips any id a live sibling still holds.
+   */
+  public _liveChildIds: Map<string, CossackElement> = new Map();
 
   private __providedContexts: Map<Context<unknown>, unknown> = new Map();
   private __properties: Map<string, unknown> = new Map();

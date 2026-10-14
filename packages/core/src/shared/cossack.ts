@@ -819,6 +819,12 @@ export abstract class Cossack<Env = any, T extends CossackOptions = {}> extends 
             this.activeComponents.set(component._id, component);
             const childState = this._childrenStateRegistry[component._id];
             if (childState) {
+                // In the browser, restored state belongs to the one instance
+                // that hydrates the SSR child. Consume it so a later child that
+                // reuses the id never inherits a sibling's state. Server render
+                // passes create fresh instances for the same positional ids and
+                // must each receive the state again.
+                if (!this.isServer) delete this._childrenStateRegistry[component._id];
                 component.initializeState(childState);
             }
         }
