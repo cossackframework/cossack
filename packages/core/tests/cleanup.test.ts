@@ -54,6 +54,21 @@ describe('awaitable cleanup', () => {
     expect(finished).toHaveBeenCalledTimes(1);
   });
 
+  it('releases completed child disposals even when they failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    @Service()
+    class Broken { async onDispose() { throw new Error('child cleanup failed'); } }
+    const root = new ServiceScope();
+    for (let i = 0; i < 5; i++) {
+      const child = new ServiceScope(root, [Broken]);
+      await child.disposeAsync().catch(() => {});
+    }
+    // A long-lived browser root must not retain one promise per failed layout.
+    expect((root as any).childDisposals.size).toBe(0);
+    // The failures were reported by the child disposals that owned them.
+    await expect(root.disposeAsync()).resolves.toBeUndefined();
+  });
+
   it('collects synchronous and asynchronous service failures while disposing siblings', async () => {
     const finished = vi.fn();
     const syncFailure = new Error('sync resource');
