@@ -19,9 +19,9 @@ async function context() {
     return result;
 }
 
-const internalRecords = (spy: ReturnType<typeof vi.spyOn>) => spy.mock.calls
+const internalRecords = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls
     .map(([record]) => record as any)
-    .filter(record => record?.event === 'cossack.runtime.failure' && record.code === 'COSSACK_RPC_INTERNAL_ERROR');
+    .filter((record: any) => record?.event === 'cossack.runtime.failure' && record.code === 'COSSACK_RPC_INTERNAL_ERROR');
 
 class Actions extends Cossack {
     @Server() visible() { throw new ClientVisibleError('Name is taken'); }
