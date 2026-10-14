@@ -23,10 +23,10 @@ it('keeps toasts visible and dismissible above an open modal dialog', async () =
 import './style.css';
 import {html,render,component} from '@cossackframework/renderer';
 import {Toaster,Modal,toast} from '@cossackframework/ui';
-const container=document.querySelector('#app');let open=false;
-function draw(){render(html\`\${component(Toaster,{position:'top-right'})}
+const container=document.querySelector('#app');let open=false,mounted=true;
+function draw(){render(html\`\${mounted?component(Toaster,{position:'top-right'}):null}
   \${component(Modal,{open,'aria-label':'Settings',onOpenChange:value=>{open=value;draw();}},html\`<p>Modal body</p><button type="button" id="inside">Inside</button>\`)}\`,container);}
-window.toast=toast;window.setOpen=value=>{open=value;draw();};draw();window.ready=true;
+window.toast=toast;window.setOpen=value=>{open=value;draw();};window.setToaster=value=>{mounted=value;draw();};draw();window.ready=true;
 `);
     await build({ root, configFile: false, logLevel: 'silent', plugins: [await tailwind()], build: { outDir: 'dist', emptyOutDir: true } });
     server = createServer(async (request, response) => {
@@ -67,6 +67,20 @@ window.toast=toast;window.setOpen=value=>{open=value;draw();};draw();window.read
     await page.evaluate(() => window.setOpen(false));
     await region.getByRole('button', { name: 'Dismiss: Before modal' }).click();
     await browserExpect(region.locator('[data-toast-id]')).toHaveCount(0);
+
+    // A Toaster that mounts while a modal is already open also shows above it,
+    // and dismissing its toast leaves the modal open.
+    await page.evaluate(() => window.setToaster(false));
+    await browserExpect(region).toHaveCount(0);
+    await page.evaluate(() => window.setOpen(true));
+    await browserExpect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+    await page.evaluate(() => window.setToaster(true));
+    const late = await page.evaluate(() => window.toast.show('Mounted late', { duration: 0 }));
+    await browserExpect(region.locator('[data-toast-id]', { hasText: 'Mounted late' })).toBeVisible();
+    await browserExpect.poll(() => topmost(late)).toBe(true);
+    await region.getByRole('button', { name: 'Dismiss: Mounted late' }).click();
+    await browserExpect(region.locator('[data-toast-id]')).toHaveCount(0);
+    await browserExpect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();
