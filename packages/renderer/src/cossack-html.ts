@@ -623,6 +623,15 @@ export interface HydrationDiagnosticMetadata {
   expectedClientOnly?: boolean;
 }
 const HYDRATION_DEV = !!(import.meta as any).env?.DEV;
+const RENDERER_DEV = HYDRATION_DEV;
+
+/** Index of the `occurrence`-th (0-based) entry equal to `key`, or -1. */
+const nthIndex = (keys: readonly unknown[], key: unknown, occurrence: number): number => {
+  for (let i = 0, seen = 0; i < keys.length; i++) {
+    if (Object.is(keys[i], key) && seen++ === occurrence) return i;
+  }
+  return -1;
+};
 const hydrationMetadata = HYDRATION_DEV ? new WeakMap<object, HydrationDiagnosticMetadata & { boundary?: 'root' | 'component' }>() : undefined;
 const bindHydrationMetadata = (parts: Part[], metadata?: HydrationDiagnosticMetadata) => {
   if (!HYDRATION_DEV || !metadata) return;
@@ -1261,33 +1270,53 @@ class NodePart implements Part {
 
   private updateRepeat(result: RepeatResult) {
     const { items, keyFn, templateFn } = result;
-    const oldPartsMap = new Map<unknown, NodePart>();
+    // Key -> queue of parts. Duplicate keys are reused in order; every part
+    // left over (including parts from a previous unkeyed array render) is
+    // disposed so its DOM and components never leak.
+    const oldPartsMap = new Map<unknown, NodePart[]>();
+    const unkeyed: NodePart[] = [];
     this._childParts.forEach((part, i) => {
+      if (i >= this._partKeys.length) {
+        unkeyed.push(part);
+        return;
+      }
       const key = this._partKeys[i];
-      if (key !== undefined) oldPartsMap.set(key, part);
+      const queue = oldPartsMap.get(key);
+      if (queue) queue.push(part);
+      else oldPartsMap.set(key, [part]);
     });
     const newParts: NodePart[] = [];
     const newKeys: unknown[] = [];
+    const occurrences = new Map<unknown, number>();
+    let duplicateKey = false;
     let insertAfterNode: Node = this.startNode;
     try {
       items.forEach((item, index) => {
         const key = keyFn(item, index);
         newKeys.push(key);
-        let part = oldPartsMap.get(key);
+        const occurrence = occurrences.get(key) ?? 0;
+        occurrences.set(key, occurrence + 1);
+        if (occurrence > 0) duplicateKey = true;
+        let part = oldPartsMap.get(key)?.shift();
         if (part) {
-          oldPartsMap.delete(key);
           if (part.startNode.previousSibling !== insertAfterNode) this.movePart(part, insertAfterNode);
         } else {
           part = this.createChildPart(insertAfterNode);
         }
         // Record ownership before user templates/connection hooks can throw.
         newParts.push(part);
-        const draftIndex = this._draft?.snapshot.keys.findIndex(value => Object.is(value, key)) ?? -1;
-        if (this._draft && draftIndex !== -1) part.restoreDraft(this._draft.snapshot.children[draftIndex], this._draft.context);
+        if (this._draft) {
+          const draftIndex = nthIndex(this._draft.snapshot.keys, key, occurrence);
+          if (draftIndex !== -1) part.restoreDraft(this._draft.snapshot.children[draftIndex], this._draft.context);
+        }
         part.update(templateFn(item, index));
         insertAfterNode = part.endNode;
       });
-      oldPartsMap.forEach((part) => part.dispose());
+      if (duplicateKey && RENDERER_DEV) {
+        console.warn('[cossack/renderer] repeat() received a duplicate key. Keys must be unique; duplicates are matched by position and lose identity when the list reorders.');
+      }
+      oldPartsMap.forEach((queue) => queue.forEach((part) => part.dispose()));
+      unkeyed.forEach((part) => part.dispose());
       this._childParts = newParts;
       this._partKeys = newKeys;
     } catch (error) {
