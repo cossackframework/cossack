@@ -22,6 +22,8 @@ export interface NodeUpgradeServer {
   once(event: 'close', listener: () => void): unknown;
   off(event: 'upgrade', listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown;
   off(event: 'close', listener: () => void): unknown;
+  /** Used to decide whether unmatched upgrades belong to another listener. */
+  listenerCount?(event: 'upgrade'): number;
 }
 /** Default largest accepted WebSocket message (1 MiB). Larger frames close the socket with 1009. */
 export const DEFAULT_WEBSOCKET_MAX_PAYLOAD = 1024 * 1024;
@@ -39,6 +41,14 @@ export interface NodeAdapterOptions {
    * messages close the connection with code 1009 before they are parsed.
    */
   maxPayload?: number;
+  /**
+   * What to do with an upgrade request whose path is outside `/ws/`.
+   * `true` answers `404` and closes the socket. `false` leaves it to other
+   * listeners, which must then end it. By default the adapter rejects it only
+   * when no other `upgrade` listener is attached to the server at that time,
+   * so Vite HMR and host-owned WebSocket servers keep working.
+   */
+  destroyUnmatchedUpgrades?: boolean;
 }
 interface Entry {
   runtime: InMemoryWebSocketRuntime<WebSocket>;
@@ -200,7 +210,16 @@ export function createNodeAdapter(options: NodeAdapterOptions = {}) {
     attach(server: NodeUpgradeServer, fetch: (request: Request) => Response | Promise<Response>) {
       if (stopped) throw new Error('Node runtime is disposed');
       const onUpgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-        if (!request.url?.startsWith('/ws/')) return;
+        if (!request.url?.startsWith('/ws/')) {
+          // Node only closes upgrades that have no listener; ours counts as one.
+          const reject = options.destroyUnmatchedUpgrades
+            ?? (typeof server.listenerCount === 'function' && server.listenerCount('upgrade') <= 1);
+          if (reject && !socket.destroyed) {
+            socket.on('error', () => socket.destroy());
+            socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
+          }
+          return;
+        }
         sockets.add(socket);
         socket.once('close', () => sockets.delete(socket));
         socket.on('error', () => socket.destroy());

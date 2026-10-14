@@ -75,6 +75,7 @@ installNodeShutdown(server, { dispose: () => runtime.dispose() });
 | `maxInstances` | `512` | Largest number of process-local component instances, including instances that are still initializing. |
 | `idleTimeoutMs` | 15 minutes | Time after the last client disconnects before an instance can be removed. |
 | `maxPayload` | 1 MiB | Largest accepted WebSocket message. A larger message closes the socket with code 1009. |
+| `destroyUnmatchedUpgrades` | automatic | What to do with an upgrade request whose path does not start with `/ws/`. See below. |
 
 The request scheme follows the real Node socket. An upgrade on a TLS socket
 (`node:https`) produces an `https://` request URL, so the default same-origin
@@ -89,8 +90,23 @@ destroys components. `installNodeShutdown` does this for SIGTERM and SIGINT.
 ### Upgrade requests outside `/ws/`
 
 The adapter handles only `/ws/` upgrades. By default it also rejects other
-upgrade requests, ted `app` from `/src/index.ts` and passes only `/ws/`
-upgrades to the exported runtime. Vite keeps its own HMR WebSocket.
+upgrade requests, but only when it is the only `upgrade` listener on the server
+at the time the request arrives. It writes `HTTP/1.1 404 Not Found` and closes
+the socket. Without this, an unmatched upgrade would keep its socket open until
+the client gave up. When another listener is present (for example Vite's HMR
+server or your own WebSocket server), the adapter leaves the request to that
+listener.
+
+Set `destroyUnmatchedUpgrades: true` to always reject unmatched upgrades, or
+`false` to never touch them. With `false`, your own listener must end every
+unmatched socket.
+
+### Development with Vite
+
+Add `cossackNode()` from `@cossackframework/node-adapter/vite` to the Vite
+plugins. It serves the exported `app` from `/src/index.ts` and passes only `/ws/`
+upgrades to the exported runtime. Vite keeps its own HMR WebSocket, and the
+runtime never sees HMR upgrades, whatever `destroyUnmatchedUpgrades` is set to.
 
 You can generate a project pre-configured with this adapter using the `cossack` CLI.
 

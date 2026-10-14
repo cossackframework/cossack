@@ -3,6 +3,8 @@ import { createServer, type ViteDevServer } from 'vite';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { WebSocket } from 'ws';
 import { cossackNode } from '../src/vite';
 
 const roots: string[] = [];
@@ -138,4 +140,31 @@ it('accepts a runnable SSR environment created by another Vite copy', async () =
     (install as () => void)();
     expect(middlewares).toHaveLength(1);
     expect(() => configure.call({}, server({ moduleGraph: {} }))).toThrow('runnable Vite SSR environment');
+});
+it('keeps Vite HMR upgrades working beside an attached createNodeAdapter runtime', async () => {
+    const adapter = JSON.stringify(fileURLToPath(new URL('../src/adapter.ts', import.meta.url)));
+    const { server, origin } = await fixture(`
+        import { createNodeAdapter } from ${adapter};
+        // Even forced rejection must not see HMR: the plugin forwards only /ws/ upgrades.
+        export const runtime = createNodeAdapter({ destroyUnmatchedUpgrades: true });
+        export const app = { fetch() { return new Response('ready'); } };
+    `);
+    // Loading the entry attaches the runtime before the HMR client connects.
+    expect(await (await fetch(origin)).text()).toBe('ready');
+    const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/?token=${server.config.webSocketToken}`, 'vite-hmr');
+    const frame = await new Promise<{ type: string }>((resolve, reject) => {
+        socket.once('message', data => resolve(JSON.parse(String(data))));
+        socket.once('error', reject);
+        socket.once('unexpected-response', (_request, response) => reject(new Error(`HMR upgrade rejected with ${response.statusCode}`)));
+    });
+    expect(frame.type).toBe('connected');
+    // The connection must survive: a late rejection would close it after the greeting.
+    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise<void>((resolve, reject) => {
+        socket.once('pong', () => resolve());
+        socket.once('close', () => reject(new Error('HMR socket closed')));
+        socket.ping();
+    });
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+    socket.close();
 });

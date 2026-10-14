@@ -86,7 +86,9 @@ Now `await this.env.EMAIL.send(...)` works identically in `@Server` methods on b
 ## WebSocket lifetime
 
 `runtime.attach(server, fetch)` handles `/ws/` upgrade requests. Other upgrade
-paths remain available to the host. Authentication, origin checks, route lookup,
+paths are answered with `404` and closed when the adapter is the only `upgrade`
+listener on the server; when another listener is attached they remain with the
+host. Set `destroyUnmatchedUpgrades: true` or `false` to always or never reject them. Authentication, origin checks, route lookup,
 and scope authorization run through the framework before the handshake. Response
 cookies and application headers reach the handshake. Components for the same
 route/provider/scope share one initialization and process-local state.
