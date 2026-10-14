@@ -118,7 +118,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     let apiContracts = null;
     try {
       const absolute = path.join(projectRoot, page.filePath.replace('/src/pages/', 'src/pages/'));
-      const source = fs.readFileSync(absolute, 'utf8');
+      const source = await fs.promises.readFile(absolute, 'utf8');
       if (page.kind === 'api' && await isHttpHandlerModule(source)) {
         routeStyle = 'http-handlers';
         apiContracts = await inspectApiContractsFromAst(source, page.filePath);
@@ -189,7 +189,7 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     let reason = null;
     try {
       const absolute = path.join(projectRoot, layout.filePath.replace('/src/pages/', 'src/pages/'));
-      const source = fs.readFileSync(absolute, 'utf8');
+      const source = await fs.promises.readFile(absolute, 'utf8');
       moduleExport = await inspectDefaultClassExport(source);
       const ast = await extractPageOptionsFromAst(source);
       if (ast === null) {
@@ -233,6 +233,6 @@ export async function buildEffectiveRouteModel(projectRoot, options = {}) {
     page.layoutAndPageMiddlewareCount = page.middlewareStack.every(entry => entry.count !== null)
       ? page.middlewareStack.reduce((total, entry) => total + entry.count, 0) : null;
   }
-  return { pages, layouts, scaffold, manifest: model.manifest, discovery: { includeMarkdown }, runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment,
+  return { pages, layouts, scaffold, manifest: model.manifest, routeModel: model, discovery: { includeMarkdown }, runtime: await inspectRuntimeMetadata(projectRoot, pages, options.environment,
     scaffold.recipe?.capabilityRequirements?.web ?? []) };
 }
