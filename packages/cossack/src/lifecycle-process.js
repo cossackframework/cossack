@@ -10,7 +10,7 @@ export function runLifecycle(command, executable, args, options = {}) {
     const json = options.json !== false;
     const child = spawn(executable, args, {
       cwd: options.cwd ?? process.cwd(), env: options.env ? { ...process.env, ...options.env } : process.env,
-      stdio: json ? ['ignore', 'ignore', 'ignore'] : 'inherit', shell: process.platform === 'win32' && executable !== process.execPath,
+      stdio: json ? ['ignore', 'ignore', 'ignore'] : 'inherit', shell: false,
     });
     let stopping = false, forced = false, timer;
     const stop = () => {
