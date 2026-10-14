@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Cossack, Page, PageOptions, createInstance, createRootServiceScope, createLayoutServiceScope } from '@cossackframework/core';
 import { html } from '@cossackframework/renderer';
+import { collectComponentStyles, type ComponentStyle } from '@cossackframework/renderer/server';
 import {
     getLocale,
     getLocaleCatalog,
@@ -239,6 +240,7 @@ export async function renderSsgPage(
 
       let body: any;
       let finalHtml = '';
+      let componentStyles: ComponentStyle[] = [];
       const resourceOwners = [pageInstance, ...layoutInstances, appInstance];
       for (let pass = 0; pass < 10; pass++) {
         body = (pageInstance as any)._getWrappedTemplate();
@@ -247,7 +249,7 @@ export async function renderSsgPage(
           body = layoutInstances[i]._getWrappedTemplate();
         }
         appInstance.children = body;
-        finalHtml = appInstance._render();
+        ({ result: finalHtml, styles: componentStyles } = collectComponentStyles(() => appInstance._render()));
         const pending = resourceOwners.flatMap((owner) => owner.__serverResourcePending());
         if (!pending.length) break;
         if (pass === 9) throw new Error('[Cossack server$] SSG resources did not stabilize after 10 render passes.');
@@ -323,6 +325,7 @@ export async function renderSsgPage(
         },
         manifest,
         headTags,
+        componentStyles,
         modulePreloads,
         htmlTemplate,
         lang: activeLocale,

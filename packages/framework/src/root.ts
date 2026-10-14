@@ -1,6 +1,6 @@
 import { HeadTag } from '@cossackframework/core';
 import { escapeHtml } from '@cossackframework/renderer';
-import { minifyHtml } from '@cossackframework/renderer/server';
+import { minifyHtml, renderComponentStyles, type ComponentStyle } from '@cossackframework/renderer/server';
 
 export interface TemplateHelpers {
     cossackScripts: () => string;
@@ -30,6 +30,8 @@ type RenderRootProps = {
     initialState?: Record<string, any>;
     manifest: Record<string, any>;
     headTags?: HeadTag[];
+    /** Component style scopes the page render used (`collectComponentStyles`), in first-use order. */
+    componentStyles?: readonly ComponentStyle[];
     inlineCss?: string;
     modulePreloads?: string[];
     htmlTemplate?: string | ((helpers: TemplateHelpers) => string);
@@ -120,6 +122,11 @@ export const renderRoot = (props: RenderRootProps) => {
             : `<link rel="stylesheet" href="${escapeHtml(css)}">`;
     }
 
+    // One <style data-cossack-style> per component style scope, after the
+    // application CSS so component rules keep winning ties against it. The
+    // client style registry adopts these elements on hydration.
+    const componentStylesHtml = renderComponentStyles(props.componentStyles ?? []);
+
     const modulePreloadHtml = (props.modulePreloads || [])
         .map(href => `<link rel="modulepreload" href="${escapeHtml(href)}">`)
         .join('\n');
@@ -131,7 +138,7 @@ export const renderRoot = (props: RenderRootProps) => {
         : '';
 
     const cossackScripts = () =>
-        `${headTagsHtml}\n${cssHtml}\n${initialStateScript}\n${modulePreloadHtml}\n${localePreloadHtml}\n<script type="module" src="${escapeHtml(clientScript)}"></script>`;
+        `${headTagsHtml}\n${cssHtml}\n${componentStylesHtml}\n${initialStateScript}\n${modulePreloadHtml}\n${localePreloadHtml}\n<script type="module" src="${escapeHtml(clientScript)}"></script>`;
 
     const cossackBody = () => `<div id="root">${props.body}</div>`;
 

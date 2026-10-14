@@ -1,5 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { waitForHydration } from '../fixtures/helpers';
+
+const headStyleIds = (page: Page) => page.locator('head style[data-cossack-style]').evaluateAll((styles) =>
+  styles.map((style) => style.getAttribute('data-cossack-style')!));
+
+async function sidebarLink(page: Page, href: string) {
+  const link = page.getByTestId('desktop-sidebar').locator(`a[href="${href}"]`);
+  const group = link.locator('xpath=ancestor::details[1]');
+  if (await group.count() && await group.getAttribute('open') === null) {
+    await group.locator(':scope > summary').click();
+  }
+  await expect(link).toBeVisible();
+  return link;
+}
 
 test.describe('Renderer Lit compatibility demos', () => {
   test.beforeEach(async ({ page }) => {
@@ -87,12 +100,43 @@ test.describe('Renderer Lit compatibility demos', () => {
     await expect(childSibling).toHaveCSS('color', 'rgb(185, 28, 28)');
     await expect(projected).toHaveCSS('color', 'rgb(37, 99, 235)');
 
-    const cardStyleIds = await page.locator('style[data-cossack-style]').evaluateAll((styles) =>
-      styles
-        .map((style) => style.getAttribute('data-cossack-style'))
-        .filter((id): id is string => id !== null),
-    );
-    expect(cardStyleIds.length).toBeGreaterThanOrEqual(5);
-    expect(cardStyleIds.some((id, index) => cardStyleIds.indexOf(id) !== index)).toBe(true);
+    // Two StyledCard instances share one head stylesheet; none sits in the body.
+    const styleIds = await headStyleIds(page);
+    expect(styleIds.length).toBeGreaterThanOrEqual(4);
+    expect(new Set(styleIds).size).toBe(styleIds.length);
+    expect(styleIds).toEqual(expect.arrayContaining([pageScope, childScope]));
+    await expect(page.locator('body style[data-cossack-style]')).toHaveCount(0);
+    await expect(page.locator('[data-demo-card]')).toHaveCount(2);
+  });
+
+  test('adopts the server head styles and swaps them on client navigation', async ({ page }) => {
+    const documents: string[] = [];
+    page.on('request', (request) => {
+      if (request.resourceType() === 'document') documents.push(request.url());
+    });
+    const ssrIds = await headStyleIds(page);
+    expect(ssrIds.length).toBeGreaterThanOrEqual(4);
+    // Hydration adopted the server-rendered elements instead of adding copies.
+    await page.evaluate(() => {
+      for (const style of document.head.querySelectorAll('style[data-cossack-style]')) (style as any).__fromServer = true;
+    });
+    await page.locator('#svg-color-toggle').click();
+    expect(await headStyleIds(page)).toEqual(ssrIds);
+    expect(await page.evaluate(() => [...document.head.querySelectorAll('style[data-cossack-style]')]
+      .every((style) => (style as any).__fromServer === true))).toBe(true);
+
+    // The directives page has no styled components: the last teardown removes them.
+    await (await sidebarLink(page, '/renderer/directives')).click();
+    await expect(page).toHaveURL(/\/renderer\/directives$/);
+    await expect(page.locator('head style[data-cossack-style]')).toHaveCount(0);
+
+    // Navigating back inserts each scope once again, without a document load.
+    await (await sidebarLink(page, '/renderer/lit-compat')).click();
+    await expect(page).toHaveURL(/\/renderer\/lit-compat$/);
+    await expect(page.locator('[data-demo-card]')).toHaveCount(2);
+    await expect.poll(async () => (await headStyleIds(page)).sort()).toEqual([...ssrIds].sort());
+    await expect(page.locator('body style[data-cossack-style]')).toHaveCount(0);
+    await expect(page.locator('[data-demo-sibling]')).toHaveCSS('color', 'rgb(185, 28, 28)');
+    expect(documents).toHaveLength(0);
   });
 });

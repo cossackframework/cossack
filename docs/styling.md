@@ -121,9 +121,38 @@ loadingTemplate() {
 
 If you need styles that Tailwind utilities cannot express (custom animations, complex selectors), use one of these two options:
 
+### Scoped Component Styles
+
+Declare `static styles` with the `css` tag. Cossack adds a `data-cossack-scope` attribute to the elements the component renders and rewrites every selector to match only them:
+
+```typescript
+import { Cossack, css, html } from '@cossackframework/core';
+
+export class Card extends Cossack {
+    static styles = css`
+        .card { border: 1px solid #e5e7eb; border-radius: 0.75rem; }
+        .card h3 { margin: 0; }
+    `;
+
+    render() {
+        return html`<div class="card"><h3>${this.props.title}</h3></div>`;
+    }
+}
+```
+
+Each style scope gets one `<style data-cossack-style="…">` element in `<head>`, no matter how many instances render:
+
+- SSR and static generation emit it in `<head>`, after the application CSS, in the order the page first uses each scope.
+- In the browser, hydration adopts those elements. A scope's style is added when its first instance renders and removed after its last instance is gone. During a client navigation, styles that the next page also uses stay in place.
+- Components rendered inside a shadow root get their own copy in that shadow root.
+
+Scoped rules only match elements that carry their own scope, so the order of two components' styles only matters for global at-rules (`@font-face`, `@property`, `@counter-style`, `@layer` order). Those follow first-use order. Keep conflicting global at-rules in `src/style.css`.
+
+> **Migration note.** Component output used to start with its own `<style>` element, which sat between sibling components. Structural selectors now match as written: `li + li`, `:first-child`, `:last-child`, `:nth-child()`, `:empty` and Tailwind `first:`, `odd:`, `even:`, `space-*` and `divide-*` see only the elements components render. Review selectors that worked around the old style elements.
+
 ### Per-Component `<style>` Blocks
 
-You can include a `<style>` tag inside a component's `render()` method. These styles are scoped to the component's rendered output:
+You can also include a raw `<style>` tag inside a component's `render()` method. Cossack does not scope or deduplicate it: its rules apply to the whole document while the component is rendered, and every instance adds another copy. Prefer `static styles` for reusable components.
 
 ```typescript
 render() {

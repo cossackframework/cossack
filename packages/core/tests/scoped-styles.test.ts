@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { describe, expect, it } from 'vitest';
-import { isTemplateResult, renderToString } from '@cossackframework/renderer';
+import { collectComponentStyles, isTemplateResult, renderToString } from '@cossackframework/renderer';
 import { Cossack } from '../src/shared/cossack';
 import { css, html } from '../src/index';
 
@@ -18,9 +18,11 @@ describe('Cossack component output finalization', () => {
     const page = new PageComponent();
     const layout = new LayoutComponent();
     layout.children = page._getWrappedTemplate();
-    const output = renderToString(layout._getWrappedTemplate()!);
+    const { result: output, styles } = collectComponentStyles(() => renderToString(layout._getWrappedTemplate()!));
 
-    const styleIds = [...output.matchAll(/data-cossack-style="([^"]+)"/g)].map((match) => match[1]);
+    // Styles are collected for the page <head>, not inlined into the markup.
+    expect(output).not.toContain('<style');
+    const styleIds = styles.map((style) => style.scopeId);
     expect(styleIds).toHaveLength(2);
     expect(styleIds[0]).not.toBe(styleIds[1]);
     expect(output).toContain(`<section data-cossack-scope="${styleIds[0]}" class="layout">`);

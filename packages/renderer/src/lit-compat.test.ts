@@ -14,6 +14,10 @@ import {
 import { component } from './cossack-html';
 import { CossackElement } from './cossack-element';
 import { css, unsafeCSS, type CSSResultGroup } from './css';
+import { collectComponentStyles, renderComponentStyles } from './style-runtime';
+
+const headStyles = (scopeId: string) => document.head.querySelectorAll(`style[data-cossack-style="${scopeId}"]`);
+const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -183,12 +187,14 @@ describe('Light DOM component styles', () => {
       static styles: CSSResultGroup = [Base.styles, middle, repeated];
       render() { return html`<div class="repeated middle"></div>`; }
     }
-    const output = renderToString(component(Styled));
-    const middleIndex = output.indexOf('.middle');
-    const repeatedIndex = output.indexOf('.repeated');
+    const { styles } = collectComponentStyles(() => renderToString(component(Styled)));
+    expect(styles).toHaveLength(1);
+    const cssText = styles[0].cssText;
+    const middleIndex = cssText.indexOf('.middle');
+    const repeatedIndex = cssText.indexOf('.repeated');
     expect(middleIndex).toBeGreaterThan(-1);
     expect(repeatedIndex).toBeGreaterThan(middleIndex);
-    expect(output.match(/\.repeated/g)).toHaveLength(1);
+    expect(cssText.match(/\.repeated/g)).toHaveLength(1);
   });
 
   it('rejects non-CSSResult static style entries', () => {
@@ -208,8 +214,10 @@ describe('Light DOM component styles', () => {
       `;
       render() { return html`<div class="card"><span></span><p></p></div>`; }
     }
-    const output = renderToString(component(Styled));
-    const scope = output.match(/data-cossack-style="([^"]+)"/)![1];
+    const { result: markup, styles } = collectComponentStyles(() => renderToString(component(Styled)));
+    const [{ scopeId: scope, cssText: output }] = styles;
+    expect(markup).toContain(`<div data-cossack-scope="${scope}" class="card">`);
+    expect(markup).not.toContain('<style');
     expect(output).toContain(`.card[data-cossack-scope="${scope}"]>span[data-cossack-scope="${scope}"]:hover`);
     expect(output).toContain(`.active[data-cossack-scope="${scope}"]`);
     expect(output).toContain(`@media (min-width:1px){p[data-cossack-scope="${scope}"]`);
@@ -242,51 +250,66 @@ describe('Light DOM component styles', () => {
     }
 
     const container = document.createElement('div');
+    document.body.appendChild(container);
     const parent = new Parent();
     parent.mount(container);
-    return parent.updateComplete.then(() => Promise.resolve()).then(() => {
-      const styleIds = Array.from(container.querySelectorAll('style')).map((style) => style.dataset.cossackStyle!);
-      const [parentScope, childScope] = styleIds;
-      expect(parentScope).toBeTruthy();
-      expect(childScope).toBeTruthy();
+    return parent.updateComplete.then(settle).then(() => {
+      const parentScope = new Parent()._getStyleScopeId()!;
+      const childScope = new Child()._getStyleScopeId()!;
       expect(parentScope).not.toBe(childScope);
+      expect(container.querySelector('style')).toBeNull();
+      expect(headStyles(parentScope)).toHaveLength(1);
+      expect(headStyles(childScope)).toHaveLength(1);
       expect(container.querySelector('div.target')!.getAttribute('data-cossack-scope')).toBe(parentScope);
       expect(container.querySelector('section.target')!.getAttribute('data-cossack-scope')).toBe(childScope);
       expect(container.querySelector('strong.target')!.getAttribute('data-cossack-scope')).toBe(parentScope);
+      container.remove();
     });
   });
 
-  it('keeps one managed style node stable across updates and hydration', async () => {
+  it('keeps one head style node stable across updates and hydration', async () => {
     class Styled extends CossackElement {
       static properties = { count: { state: true } };
-      static styles = css`button { color: red; }`;
+      static styles = css`button { color: rebeccapurple; }`;
       declare count: number;
       constructor() { super(); this.count = 0; }
       render() { return html`<button>${this.count}</button>`; }
     }
+    const scope = new Styled()._getStyleScopeId()!;
 
+    // SSR: the markup carries no style; the collected style goes to <head>.
+    const embedded = () => html`${component(Styled)}`;
+    const { result: markup, styles } = collectComponentStyles(() => renderToString(embedded(), { hydrate: true }));
+    expect(markup).not.toContain('<style');
+    expect(styles.map((style) => style.scopeId)).toEqual([scope]);
+    document.head.insertAdjacentHTML('beforeend', renderComponentStyles(styles));
+    const ssrStyle = headStyles(scope)[0];
+    const hydrated = document.createElement('div');
+    document.body.appendChild(hydrated);
+    hydrated.innerHTML = markup;
+    const ssrButton = hydrated.querySelector('button')!;
+    hydrate(embedded(), hydrated);
+    await settle();
+    expect(hydrated.querySelector('button')).toBe(ssrButton);
+    expect(headStyles(scope)).toHaveLength(1);
+    expect(headStyles(scope)[0]).toBe(ssrStyle);
+
+    // A client mount of another instance reuses the adopted head style.
     const instance = new Styled();
     const container = document.createElement('div');
+    document.body.appendChild(container);
     instance.mount(container);
     await instance.updateComplete;
-    const style = container.querySelector('style')!;
     const button = container.querySelector('button')!;
     instance.count = 1;
     await instance.updateComplete;
-    expect(container.querySelectorAll('style')).toHaveLength(1);
-    expect(container.querySelector('style')).toBe(style);
+    await settle();
+    expect(container.querySelector('style')).toBeNull();
     expect(container.querySelector('button')).toBe(button);
-
-    const embedded = () => html`${component(Styled)}`;
-    const hydrated = document.createElement('div');
-    hydrated.innerHTML = renderToString(embedded(), { hydrate: true });
-    const ssrStyle = hydrated.querySelector('style')!;
-    const ssrButton = hydrated.querySelector('button')!;
-    hydrate(embedded(), hydrated);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(hydrated.querySelector('style')).toBe(ssrStyle);
-    expect(hydrated.querySelector('button')).toBe(ssrButton);
+    expect(headStyles(scope)).toHaveLength(1);
+    expect(headStyles(scope)[0]).toBe(ssrStyle);
+    hydrated.remove();
+    container.remove();
   });
 
   it('uses deterministic scopes for multiple instances and leaves escape-hatch nodes untouched', async () => {
@@ -306,14 +329,16 @@ describe('Light DOM component styles', () => {
     second.mount(secondContainer);
     await Promise.all([first.updateComplete, second.updateComplete]);
 
-    const firstId = firstContainer.querySelector('style')!.dataset.cossackStyle;
-    const secondId = secondContainer.querySelector('style')!.dataset.cossackStyle;
+    await settle();
+    const firstId = firstContainer.querySelector('span')!.getAttribute('data-cossack-scope');
+    const secondId = secondContainer.querySelector('span')!.getAttribute('data-cossack-scope');
     expect(firstId).toBe(secondId);
-    expect(firstContainer.querySelector('span')!.getAttribute('data-cossack-scope')).toBe(firstId);
+    expect(firstId).toBe(first._getStyleScopeId());
     expect(firstContainer.querySelector('span')!.getAttribute('title')).toBe('literal <b> text');
     expect(firstContainer.querySelector('i')!.hasAttribute('data-cossack-scope')).toBe(false);
-    expect(firstContainer.querySelectorAll('style')).toHaveLength(1);
-    expect(secondContainer.querySelectorAll('style')).toHaveLength(1);
+    expect(firstContainer.querySelector('style')).toBeNull();
+    expect(secondContainer.querySelector('style')).toBeNull();
+    expect(headStyles(firstId!)).toHaveLength(1);
   });
 
   it('preserves authored text that resembles an internal template marker', () => {

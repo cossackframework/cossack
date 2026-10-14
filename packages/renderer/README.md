@@ -80,6 +80,17 @@ const htmlString = renderToString(app.render());
 console.log(htmlString);
 ```
 
+Component styles are not part of that string. To serve a page with styled
+components, collect the styles the render used and put them in `<head>`
+(the Cossack framework does this for every SSR and SSG page):
+
+```typescript
+import { collectComponentStyles, renderComponentStyles, renderToString } from '@cossackframework/renderer/server';
+
+const { result: body, styles } = collectComponentStyles(() => renderToString(page, { hydrate: true }));
+const head = renderComponentStyles(styles); // one <style data-cossack-style="…"> per scope
+```
+
 ## Template Syntax
 
 Cossack uses tagged template literals via `html`.
@@ -222,11 +233,41 @@ class EmphasizedNotice extends Notice {
 ```
 
 Cossack scopes selectors by adding deterministic `data-cossack-scope`
-attributes to elements created by that component and emits one managed style
-element per component instance. Conditional at-rules and functional selectors
-are scoped recursively. Keyframe names and matching animation declarations are
+attributes to elements created by that component. Each style scope has one
+managed `<style data-cossack-style="<scope id>">` element per page, however
+many instances render. Scope ids hash the CSS, so classes with identical
+styles share one. Conditional at-rules and functional selectors are scoped
+recursively. Keyframe names and matching animation declarations are
 rewritten. `:host`, `:host-context`, and `::slotted` are rejected because
 Cossack uses Light DOM rather than Shadow DOM.
+
+Where the style elements live:
+
+- **SSR and SSG** emit them in `<head>`, after the application CSS, in the
+  order the render first used each scope (see `collectComponentStyles()`).
+- **On the client** a registry counts the rendered instances per scope. It
+  adopts the server-rendered head styles on hydration, inserts a scope's style
+  in `<head>` when its first instance renders (before `updated()` runs and
+  before paint), and removes it a task after its last instance is gone, so a
+  client navigation keeps every style the next page also uses.
+- **Inside a shadow root** components get their own copy at the start of that
+  shadow root, counted separately from the document.
+
+Ordering caveat: scoped rules only match elements that carry their own scope,
+so the order of two components' styles only matters for global at-rules
+(`@font-face`, `@property`, `@counter-style`, `@layer` order) and for selectors
+you scope by hand. Those follow first-use order: a scope first used later in
+the page, or first inserted by a client render, comes later in `<head>`, and a
+scope keeps its place while any instance remains. Keep conflicting global
+at-rules in the application stylesheet.
+
+Migration note: component outputs used to begin with their own `<style>`
+element. Structural selectors now match as written, because no style element
+sits between sibling component outputs anymore: `li + li`, `:first-child`,
+`:last-child`, `:nth-child()`, `:empty` and Tailwind `first:`, `odd:`,
+`even:`, `space-*` and `divide-*` see only the elements components render.
+Review selectors that compensated for the old style siblings (for example
+`:nth-child(2n)` used to select odd items).
 
 Scoping follows template ownership. Nested components use their own scope, while
 projected templates retain the scope of the component that created them. This

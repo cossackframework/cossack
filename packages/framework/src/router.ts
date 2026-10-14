@@ -95,6 +95,7 @@ import configFactories, { requirements as configRequirements, environment as con
 import { SSR_MANIFEST_ASSET_PATH } from './runtime-constants.js';
 import { computeRouteIds, filePathToRoutePath, filePathToHttpRoute, getModulePreloads, compareHttpRoutes, resolvePageRouteFiles, resolveLayoutPaths, resolveNearestSpecialPage, createNotFoundResolver, classifyRoute, APP_ROUTE_ID, type RouterContext } from './route-ids.js';
 import { CossackElement, escapeHtml, html } from '@cossackframework/renderer';
+import { collectComponentStyles, type ComponentStyle } from '@cossackframework/renderer/server';
 import {
   handleSseEndpoint,
   syncSseState,
@@ -650,6 +651,7 @@ export function createApp(options: CreateAppOptions = {}) {
         // Wrap rendering
         let body: any;
         let finalHtml = '';
+        let componentStyles: ComponentStyle[] = [];
         const resourceOwners = [pageInstance, ...layoutInstances, appInstance];
         for (let pass = 0; pass < 10; pass++) {
           body = (pageInstance as any)._getWrappedTemplate();
@@ -658,7 +660,7 @@ export function createApp(options: CreateAppOptions = {}) {
             body = layoutInstances[i]._getWrappedTemplate();
           }
           appInstance.children = body;
-          finalHtml = appInstance._render();
+          ({ result: finalHtml, styles: componentStyles } = collectComponentStyles(() => appInstance._render()));
           const pending = resourceOwners.flatMap((owner) => owner.__serverResourcePending());
           if (!pending.length) break;
           if (pass === 9) throw new Error('[Cossack server$] SSR resources did not stabilize after 10 render passes.');
@@ -742,6 +744,7 @@ export function createApp(options: CreateAppOptions = {}) {
             initialState: finalInitialState,
             manifest,
             headTags,
+            componentStyles,
             inlineCss,
             modulePreloads,
             htmlTemplate: options.htmlTemplate,

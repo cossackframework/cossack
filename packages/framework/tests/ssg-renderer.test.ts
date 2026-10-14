@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { describe, it, expect, vi } from 'vitest';
 import { Cossack, Page } from '@cossackframework/core';
-import { html } from '@cossackframework/renderer';
+import { component, css, CossackElement, html } from '@cossackframework/renderer';
 import { getCookie } from 'hono/cookie';
 import { filePathToRoutePath, renderSsgPage } from '../src/ssg-renderer';
 
@@ -36,6 +36,20 @@ class CookieReadingApp extends Cossack {
 
   render() {
     return html`<div data-theme="${this.theme}">${this.children}</div>`;
+  }
+}
+
+class SsgCard extends CossackElement {
+  static styles = css`.ssg-card { border: 1px solid #ccc; }`;
+  render() {
+    return html`<li class="ssg-card">${this.props.label}</li>`;
+  }
+}
+
+@Page({ ssg: true, transport: 'http' })
+class StyledSsgPage extends Cossack {
+  render() {
+    return html`<ul>${['a', 'b', 'c'].map((label) => component(SsgCard, { label }))}</ul>`;
   }
 }
 
@@ -104,6 +118,17 @@ describe('ssg-renderer', () => {
       expect(output).toContain('<h1>Hello SSG</h1>');
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('No AppComponent'));
       warn.mockRestore();
+    });
+
+    it('emits one head style per component style scope', async () => {
+      const output = await renderSsgPage(StyledSsgPage, '/styled', undefined, {}, 'https://example.com', TestApp);
+      const head = output.slice(0, output.indexOf('</head>'));
+      const body = output.slice(output.indexOf('<body'));
+      const scope = new SsgCard()._getStyleScopeId();
+      expect(head.match(/data-cossack-style=/g)).toHaveLength(1);
+      expect(head).toMatch(new RegExp(`<style data-cossack-style=["']?${scope}["']?>\\.ssg-card\\[data-cossack-scope=`));
+      expect(body).not.toContain('<style');
+      expect(body.match(new RegExp(`data-cossack-scope=["']?${scope}`, 'g'))).toHaveLength(3);
     });
 
     it('produces HTML containing window.__INITIAL_STATE__', async () => {
