@@ -11,7 +11,7 @@ const workflow = parse(readFileSync(path.join(root, '.github/workflows/e2e-tests
 const job = workflow.jobs['e2e-tests'];
 const detection = job.steps.find(step => step.id === 'changes').run;
 
-function detectChange(filename, missingBase = false) {
+function detectChange(filename, missingBase = false, eventName = 'pull_request') {
   const cwd = mkdtempSync(path.join(tmpdir(), 'cossack-ci-changes-'));
   const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   try {
@@ -26,7 +26,7 @@ function detectChange(filename, missingBase = false) {
     git('commit', '-m', 'head');
     const output = path.join(cwd, 'outputs');
     execFileSync('bash', ['-e', '-o', 'pipefail', '-c', detection], {
-      cwd, env: { ...process.env, BASE_SHA: missingBase ? '' : base, HEAD_SHA: git('rev-parse', 'HEAD'), GITHUB_OUTPUT: output },
+      cwd, env: { ...process.env, EVENT_NAME: eventName, BASE_SHA: missingBase ? '' : base, HEAD_SHA: git('rev-parse', 'HEAD'), GITHUB_OUTPUT: output },
       stdio: 'pipe',
     });
     return Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => line.split('=')));
@@ -49,7 +49,14 @@ it.each(['packages/renderer/src/css.ts', 'packages/database/src/index.ts', 'pack
 
 it('skips optional suites for unrelated docs and runs them when the base is unavailable', () => {
   expect(detectChange('README.md')).toEqual({ desktop: 'false', generated_app: 'false', studio: 'false' });
+  expect(detectChange('README.md', false, 'push')).toEqual({ desktop: 'false', generated_app: 'false', studio: 'false' });
   expect(detectChange('README.md', true)).toEqual({ desktop: 'true', generated_app: 'true', studio: 'true' });
+});
+
+it.each(['release', 'workflow_dispatch'])('runs every optional suite when called for %s', eventName => {
+  // publish.yml calls this workflow; the caller's event reaches the step.
+  expect(workflow.on).toHaveProperty('workflow_call');
+  expect(detectChange('README.md', false, eventName)).toEqual({ desktop: 'true', generated_app: 'true', studio: 'true' });
 });
 
 it('pins the runner, installs only Chromium and uploads existing reports after test failures', () => {
