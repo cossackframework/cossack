@@ -11,7 +11,7 @@ Cossack and its packages.
 ## Exports
 
 - `createNodeAdapter`: connects framework-guarded WebSocket upgrades to a Node server, shares process-local scope instances, and manages cleanup.
-- `serveStatic`: Node `fs`-based Hono middleware for serving static assets.
+- `serveStatic`: Node `fs`-based Hono middleware for serving static assets. It streams files with `Content-Length` and a weak `ETag`, and answers a matching `If-None-Match` with `304`. `prefix` matches whole path segments (`/assets` does not match `/assets-x`).
 - `createStaticAssets`: an `ASSETS`-style binding backed by `serveStatic`.
 - `installNodeShutdown`: SIGTERM/SIGINT draining for a Node server and its runtime.
 - `createNodeEmailSender`: Node.js polyfill for Cloudflare's `send_email` binding (`env.EMAIL`).
