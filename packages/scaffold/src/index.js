@@ -2406,8 +2406,7 @@ export async function createApp(projectName, options = {}) {
     if (!confirmation) {
       return { projectDir, adapter: recipe.adapter, manifestPath: path.join(projectDir, '.cossack/scaffold.json'), recipe: publicRecipe(recipe), status: 'cancelled' };
     }
-    await applyPlan(projectDir, rendered, plan);
-    const manifestPath = await writeManifest(projectDir, recipe, rendered, undefined, plan);
+    const manifestPath = await applyPlanAndManifestAtomically(projectDir, rendered, plan, recipe, undefined);
     return {
       status: 'created',
       changes: plan,
@@ -2578,6 +2577,12 @@ async function packageFieldConflicts(projectDir, previousRendered, rendered) {
   return changedPackageFields(current, previous, desired);
 }
 
+/**
+ * Apply a plan and write the manifest as one unit. On any failure, every
+ * touched file is restored to its previous bytes (or removed when it did not
+ * exist) and directories created for the plan are removed again, so a failed
+ * command leaves neither half-written files nor a stale manifest.
+ */
 async function applyPlanAndManifestAtomically(
   projectDir,
   rendered,
@@ -2585,7 +2590,6 @@ async function applyPlanAndManifestAtomically(
   recipe,
   manifest,
 ) {
-  const manifestPath = path.join(projectDir, '.cossack/scaffold.json');
   const affected = new Set([
     ...plan.writes.map((change) => change.path),
     ...plan.deletes.map((change) => change.path),
@@ -2595,22 +2599,46 @@ async function applyPlanAndManifestAtomically(
   for (const rel of affected) {
     try {
       snapshots.set(rel, await fs.readFile(path.join(projectDir, rel)));
-    } catch {
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
       snapshots.set(rel, null);
+    }
+  }
+  // Directories that do not exist yet, including the project directory itself.
+  const createdDirectories = new Set();
+  for (const rel of affected) {
+    let directory = path.dirname(path.join(projectDir, rel));
+    while (!createdDirectories.has(directory) && !(await access(directory))) {
+      createdDirectories.add(directory);
+      const parent = path.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
     }
   }
   try {
     await applyPlan(projectDir, rendered, plan);
     return await writeManifest(projectDir, recipe, rendered, manifest, plan);
   } catch (error) {
+    const failures = [];
     for (const [rel, content] of snapshots) {
       const absolute = path.join(projectDir, rel);
-      if (content === null) {
-        await fs.rm(absolute, { force: true });
-      } else {
-        await fs.mkdir(path.dirname(absolute), { recursive: true });
-        await fs.writeFile(absolute, content);
+      try {
+        if (content === null) {
+          await fs.rm(absolute, { force: true });
+        } else {
+          await fs.mkdir(path.dirname(absolute), { recursive: true });
+          await fs.writeFile(absolute, content);
+        }
+      } catch {
+        failures.push(rel);
       }
+    }
+    // Deepest first; a directory that still holds other files is kept.
+    for (const directory of [...createdDirectories].sort((a, b) => b.length - a.length)) {
+      await fs.rmdir(directory).catch(() => {});
+    }
+    if (failures.length) {
+      error.message += ` Restoring the project also failed for: ${failures.join(', ')}.`;
     }
     throw error;
   }
@@ -3063,8 +3091,7 @@ export async function addFeature(projectDir, feature, options = {}) {
         manifestPath: path.join(root, '.cossack/scaffold.json'),
       };
     }
-    await applyPlan(root, rendered, plan);
-    const manifestPath = await writeManifest(root, recipe, rendered, manifest, plan);
+    const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, manifest);
     return {
       status: 'added',
       recipe: publicRecipe(recipe),
@@ -3152,8 +3179,7 @@ export async function removeFeatureFromProject(projectDir, feature, options = {}
       manifestPath: path.join(root, '.cossack/scaffold.json'),
     };
   }
-  await applyPlan(root, rendered, plan);
-  const manifestPath = await writeManifest(root, recipe, rendered, manifest, plan);
+  const manifestPath = await applyPlanAndManifestAtomically(root, rendered, plan, recipe, manifest);
   return {
     status: 'removed',
     recipe: publicRecipe(recipe),
