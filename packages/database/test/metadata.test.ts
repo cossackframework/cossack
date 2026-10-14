@@ -126,4 +126,31 @@ describe("metadata", () => {
     });
     await orm.close();
   });
+
+  it("sizes a synthesized join column like the column it references", async () => {
+    @Entity({ tableName: "sized_accounts" })
+    class SizedAccount extends BaseEntity {
+      @PrimaryGeneratedColumn() declare id: number;
+      @Column({ type: "varchar", length: 64, unique: true }) declare handle: string;
+      @Column({ type: "varchar", unique: true }) declare email: string;
+      @Column({ type: "decimal", precision: 12, scale: 2, unique: true }) declare code: string;
+    }
+
+    @Entity({ tableName: "sized_notes" })
+    class SizedNote extends BaseEntity {
+      @PrimaryGeneratedColumn() declare id: number;
+      @ManyToOne(() => SizedAccount) @JoinColumn({ name: "account_handle", referencedColumnName: "handle" }) declare byHandle: SizedAccount;
+      @ManyToOne(() => SizedAccount) @JoinColumn({ name: "account_email", referencedColumnName: "email" }) declare byEmail: SizedAccount;
+      @ManyToOne(() => SizedAccount) @JoinColumn({ name: "account_code", referencedColumnName: "code" }) declare byCode: SizedAccount;
+    }
+
+    const orm = createORM({ adapter: { driver: new MemoryDriver("postgres") }, entities: [SizedAccount, SizedNote] });
+    const note = orm.schema().entities.find((entity) => entity.modelName === "SizedNote")!;
+    const column = (name: string) => note.columns.find((candidate) => candidate.columnName === name);
+    // Without the referenced size, varchar(64) keys got a varchar(255) join column and drift checks always failed.
+    expect(column("account_handle")).toMatchObject({ logicalType: "varchar", length: 64 });
+    expect(column("account_email")).toMatchObject({ logicalType: "varchar", length: 255 });
+    expect(column("account_code")).toMatchObject({ logicalType: "decimal", precision: 12, scale: 2 });
+    await orm.close();
+  });
 });
